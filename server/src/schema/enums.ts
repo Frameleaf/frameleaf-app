@@ -1,4 +1,4 @@
-import { registerEnum } from '@immich/sql-tools';
+import { registerEnum } from '@frameleaf/sql-tools';
 import { AlbumUserRole, AssetStatus, AssetVisibility, ChecksumAlgorithm, SourceType, VideoCodec } from 'src/enum.js';
 
 export const album_user_role_enum = registerEnum({

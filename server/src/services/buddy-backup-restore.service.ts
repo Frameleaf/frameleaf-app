@@ -38,7 +38,7 @@ import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studi
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -715,7 +715,6 @@ export class BuddyBackupRestoreService {
       if (file.role === 'buddy-version' && inspect) {
         // These deterministic owner-private copies are immutable. Publication still uses the ordinary
         // unreferenced-path guard; inspection also permits a retry after their metadata committed.
-        await lockForkWrites(trx, 'Buddy versions cannot be restored during database handoff');
         await lockFilePath(trx, file.target);
         return action(trx, ownerId);
       }

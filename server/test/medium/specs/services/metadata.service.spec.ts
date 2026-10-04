@@ -1,4 +1,4 @@
-import { createPostgres } from '@immich/sql-tools';
+import { createPostgres } from '@frameleaf/sql-tools';
 import { Kysely } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Stats } from 'node:fs';

@@ -4,13 +4,14 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import type { UserMetadata } from 'src/types.js';
 import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
-import { DB } from 'src/schema/index.js';
 
+import { DB } from 'src/schema/index.js';
 @Injectable()
 export class PhotographyWorkspaceRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   get(userId: string) {
     return this.db
       .selectFrom('user_metadata')
@@ -18,13 +19,18 @@ export class PhotographyWorkspaceRepository {
       .where('userId', '=', userId)
       .where('key', '=', UserMetadataKey.PhotographyWorkspace)
       .executeTakeFirst() as Promise<
-      { value: { shoots: StoredShoot[]; brand?: PhotographyBrand }; updateId: string } | undefined
+      | {
+          value: {
+            shoots: StoredShoot[];
+            brand?: PhotographyBrand;
+          };
+          updateId: string;
+        }
+      | undefined
     >;
   }
-
   async save(userId: string, shoots: StoredShoot[], expectedRevision: string | null, validateAlbumIds: string[]) {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx);
       // Hold current ownership and deletion state until the reference write commits.
       if (validateAlbumIds.length > 0) {
         const albums = await tx
@@ -63,10 +69,8 @@ export class PhotographyWorkspaceRepository {
         .executeTakeFirst();
     });
   }
-
   async saveBrand(userId: string, brand: PhotographyBrand, expectedRevision: string | null) {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx);
       if (expectedRevision !== null) {
         return tx
           .updateTable('user_metadata')
@@ -89,13 +93,15 @@ export class PhotographyWorkspaceRepository {
         .executeTakeFirst();
     });
   }
-
   async currentRevisions(userId: string, assetIds: string[]) {
     if (assetIds.length === 0) {
       return new Map<string, string>();
     }
-    const { rows } = await sql<{ assetId: string; id: string }>`
-      SELECT "assetId", id FROM immich_fork.asset_develop_revision
+    const { rows } = await sql<{
+      assetId: string;
+      id: string;
+    }>`
+      SELECT "assetId", id FROM public.asset_develop_revision
       WHERE "ownerId" = ${userId}::uuid AND "assetId" = ANY(${assetIds}::uuid[]) AND "isCurrent"
     `.execute(this.db);
     return new Map(rows.map(({ assetId, id }) => [assetId, id]));

@@ -3,8 +3,8 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetStatus, AssetType, AssetVisibility, VectorIndex, VideoMomentSource } from 'src/enum.js';
-import { probes } from 'src/repositories/database.repository.js';
+import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
+
 import { DB } from 'src/schema/index.js';
 import {
   VideoMomentFrameTable,
@@ -615,8 +615,8 @@ export class VideoMomentRepository {
     scope: VideoMomentSearchScope,
   ): Promise<VideoMomentSearchHit[]> {
     const rows = await this.db.transaction().execute(async (trx) => {
-      // Like every other vector search, set the probes here rather than relying on a database default.
-      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.VideoMomentFrame])}`.execute(trx);
+      // Like every other vector search, set HNSW search breadth here rather than relying on a database default.
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
       return trx
         .selectFrom('video_moment_frame_embedding')
         .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')

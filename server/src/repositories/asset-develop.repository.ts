@@ -7,12 +7,11 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
-import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
 import { developRenderArtifacts } from 'src/utils/develop-recipe.js';
-
 export type AssetDevelopRevision = {
   id: string;
   assetId: string;
@@ -42,7 +41,6 @@ export type AssetDevelopRevision = {
   updatedAt: Date;
   renderedAt: Date | null;
 };
-
 export type AssetDevelopRevisionUpdate = Partial<
   Pick<
     AssetDevelopRevision,
@@ -61,14 +59,15 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'attempts'
   >
 >;
-
-const TABLE = sql`immich_fork.asset_develop_revision`;
-const ARTIFACTS = sql`immich_fork.asset_develop_artifact`;
-
+const TABLE = sql`public.asset_develop_revision`;
+const ARTIFACTS = sql`public.asset_develop_artifact`;
 /** FL-233: the artifact ids a recipe's masks and Clean Up name (whether or not they render). */
 const referencedArtifacts = (recipe: AssetDevelopRecipe): string[] => {
   const ids = new Set<string>();
-  const value = recipe as { masks?: unknown; cleanup?: unknown };
+  const value = recipe as {
+    masks?: unknown;
+    cleanup?: unknown;
+  };
   for (const [list, key] of [
     [value.masks, 'artifact'],
     [value.cleanup, 'fill'],
@@ -82,10 +81,8 @@ const referencedArtifacts = (recipe: AssetDevelopRecipe): string[] => {
   }
   return [...ids];
 };
-
 /** FL-233: a photo keeps at most this many develop artifacts. */
 export const DEVELOP_ARTIFACT_PER_ASSET = 64;
-
 /** FL-233: a stored develop artifact (fork migration 0000000000212). */
 export type AssetDevelopArtifact = {
   assetId: string;
@@ -98,7 +95,6 @@ export type AssetDevelopArtifact = {
   height: number;
   createdAt: Date;
 };
-
 /**
  * Storage for still-image develop revisions (FL-113). Rows are append-only history: a new
  * save always creates the next revision number, revert only moves the `isCurrent` flag, and
@@ -106,27 +102,26 @@ export type AssetDevelopArtifact = {
  */
 @Injectable()
 export class AssetDevelopRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async listByAsset(assetId: string): Promise<AssetDevelopRevision[]> {
     const { rows } = await sql<AssetDevelopRevision>`
       SELECT * FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid ORDER BY revision DESC
     `.execute(this.db);
     return rows;
   }
-
   async get(id: string): Promise<AssetDevelopRevision | undefined> {
     const { rows } = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE} WHERE id = ${id}::uuid`.execute(this.db);
     return rows[0];
   }
-
   async getCurrent(assetId: string): Promise<AssetDevelopRevision | undefined> {
     const { rows } = await sql<AssetDevelopRevision>`
       SELECT * FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid AND "isCurrent" LIMIT 1
     `.execute(this.db);
     return rows[0];
   }
-
   /** Inserts the next revision for the asset; the number is assigned inside the statement. */
   async create(input: {
     assetId: string;
@@ -169,7 +164,10 @@ export class AssetDevelopRepository {
       const artifactIds = referencedArtifacts(recipe);
       const touched =
         artifactIds.length > 0
-          ? await sql<{ id: string; kind: string }>`
+          ? await sql<{
+              id: string;
+              kind: string;
+            }>`
               UPDATE ${ARTIFACTS} SET "createdAt" = clock_timestamp()
               WHERE "assetId" = ${input.assetId}::uuid AND id IN (${sql.join(artifactIds)})
               RETURNING id, kind
@@ -211,7 +209,6 @@ export class AssetDevelopRepository {
       return rows[0];
     });
   }
-
   /** Revisions whose render the queue may have lost (a restart, a flushed queue): queued or rendering. */
   async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>[]> {
     const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>>`
@@ -221,7 +218,6 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows;
   }
-
   /**
    * Records the start of a render attempt and returns the attempt number, or undefined when the
    * revision is gone, finished, cancelled meanwhile, or held by a render whose lease has not
@@ -249,7 +245,6 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   async update(id: string, patch: AssetDevelopRevisionUpdate): Promise<AssetDevelopRevision | undefined> {
     const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (entries.length === 0) {
@@ -264,7 +259,6 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   /**
    * Moves the asset's current flag to the given revision, or clears it entirely for the
    * original. One statement pair inside a transaction so the partial unique index never
@@ -284,21 +278,20 @@ export class AssetDevelopRepository {
       }
     });
   }
-
   /** Marks a revision as wanting to stop; the renderer checks the flag between stages. */
   async requestCancel(id: string): Promise<void> {
     await sql`UPDATE ${TABLE} SET "cancelRequested" = true, "updatedAt" = now() WHERE id = ${id}::uuid`.execute(
       this.db,
     );
   }
-
   async isCancelRequested(id: string): Promise<boolean> {
-    const { rows } = await sql<{ cancelRequested: boolean }>`
+    const { rows } = await sql<{
+      cancelRequested: boolean;
+    }>`
       SELECT "cancelRequested" FROM ${TABLE} WHERE id = ${id}::uuid
     `.execute(this.db);
     return rows[0]?.cancelRequested;
   }
-
   /** Every rendered file path for an asset, used when the asset itself is deleted. */
   /**
    * Deletes the revisions of assets that no longer exist (of `assetId` only, when given) and queues
@@ -310,10 +303,10 @@ export class AssetDevelopRepository {
    */
   async releaseRemovedAssetRevisions(queue: (files: string[]) => Promise<void>, assetId?: string): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return [];
-      }
-      const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+      const { rows } = await sql<{
+        masterPath: string | null;
+        previewPath: string | null;
+      }>`
         DELETE FROM ${TABLE} revision
         WHERE NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = revision."assetId")
         ${assetId ? sql`AND revision."assetId" = ${assetId}::uuid` : sql``}
@@ -331,9 +324,7 @@ export class AssetDevelopRepository {
       return files;
     });
   }
-
   // ------------------------------------------------------------------ develop artifacts (FL-233)
-
   /** The stored artifacts of an asset among `ids`. */
   async getArtifacts(assetId: string, ids: string[]): Promise<AssetDevelopArtifact[]> {
     if (ids.length === 0) {
@@ -344,7 +335,6 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows.map((row) => ({ ...row, bytes: Number(row.bytes) }));
   }
-
   /**
    * Record a stored artifact. `true` when it is new; `false` when the asset already had it (the
    * same bitmap uploaded again, which restarts its grace period). Refused while fork writes are.
@@ -356,11 +346,12 @@ export class AssetDevelopRepository {
    */
   async addArtifact(artifact: Omit<AssetDevelopArtifact, 'createdAt'>): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      await lockForkWrites(trx, 'An edit cannot be saved while the server is being handed over');
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_artifact:${artifact.assetId}`}, 0))`.execute(
         trx,
       );
-      const { rows } = await sql<{ inserted: boolean }>`
+      const { rows } = await sql<{
+        inserted: boolean;
+      }>`
         INSERT INTO ${ARTIFACTS} ("assetId", id, "ownerId", kind, path, bytes, width, height)
         VALUES (
           ${artifact.assetId}::uuid, ${artifact.id}, ${artifact.ownerId}::uuid, ${artifact.kind}, ${artifact.path},
@@ -372,7 +363,9 @@ export class AssetDevelopRepository {
       if (!rows[0]?.inserted) {
         return false;
       }
-      const count = await sql<{ count: string }>`
+      const count = await sql<{
+        count: string;
+      }>`
         SELECT count(*) AS count FROM ${ARTIFACTS} WHERE "assetId" = ${artifact.assetId}::uuid
       `.execute(trx);
       if (Number(count.rows[0].count) > DEVELOP_ARTIFACT_PER_ASSET) {
@@ -397,7 +390,6 @@ export class AssetDevelopRepository {
       return true;
     });
   }
-
   /**
    * Release artifacts and queue their files' deletion in the same transaction, holding the files'
    * path locks: those of removed assets (or of `assetId` once it is removed), and those no saved
@@ -407,13 +399,17 @@ export class AssetDevelopRepository {
    */
   async releaseArtifacts(
     queue: (files: string[]) => Promise<void>,
-    options: { assetId?: string; unreferencedBefore?: Date },
+    options: {
+      assetId?: string;
+      unreferencedBefore?: Date;
+    },
   ): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return [];
-      }
-      const { rows } = await sql<{ path: string; ownerId: string; bytes: string }>`
+      const { rows } = await sql<{
+        path: string;
+        ownerId: string;
+        bytes: string;
+      }>`
         DELETE FROM ${ARTIFACTS} artifact
         WHERE (
           NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = artifact."assetId")
@@ -455,7 +451,6 @@ export class AssetDevelopRepository {
       return files;
     });
   }
-
   /**
    * FL-304: recount storage usage (of user `id`, or of every live user) as `UserRepository.syncUsage`
    * does, plus the develop artifacts each owner keeps, in one statement, so an upload committing
@@ -464,9 +459,6 @@ export class AssetDevelopRepository {
    */
   async syncUsage(id?: string): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return false;
-      }
       await sql`
         UPDATE public."user" AS "user"
         SET

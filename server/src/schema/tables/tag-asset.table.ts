@@ -1,5 +1,5 @@
-import { AfterDeleteTrigger, BeforeUpdateTrigger, ForeignKeyColumn, Index, Table } from '@immich/sql-tools';
-import type { Generated } from '@immich/sql-tools';
+import { AfterDeleteTrigger, BeforeUpdateTrigger, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
 import { UpdateIdColumn } from 'src/decorators.js';
 import { tag_asset_delete_audit, tag_asset_update_id } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';

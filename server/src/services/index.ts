@@ -35,10 +35,6 @@ import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
-import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
-import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
-import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
@@ -203,10 +199,6 @@ export const services = [
   DuplicateDecisionService,
   DuplicateService,
   EnrichmentPlanService,
-  ForkCutoverVerificationService,
-  ForkHandoffService,
-  ForkSchemaCutoverService,
-  ForkSchemaMigrationService,
   ImageEnrichmentService,
   IntegrityService,
   HlsService,

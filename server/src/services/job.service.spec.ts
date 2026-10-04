@@ -64,10 +64,12 @@ describe(JobService.name, () => {
         status: 'ready',
       } as VideoEditVersion);
 
-      await sut.onJobRun(QueueName.VideoConversion, {
-        name: JobName.AssetVideoEditGeneration,
-        data: { id: asset.id, versionId },
-      });
+      await expect(
+        sut.onJobRun(QueueName.VideoConversion, {
+          name: JobName.AssetVideoEditGeneration,
+          data: { id: asset.id, versionId },
+        }),
+      ).rejects.toThrow('Handler returned Failed');
 
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_update', asset.ownerId, mapAsset(asset));
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AssetEditReadyV2', asset.ownerId, expect.anything());
@@ -222,7 +224,7 @@ describe(JobService.name, () => {
       it(`should not queue any jobs when ${item.name} fails`, async () => {
         mocks.job.run.mockResolvedValue(JobStatus.Failed);
 
-        await sut.onJobRun(QueueName.BackgroundTask, item);
+        await expect(sut.onJobRun(QueueName.BackgroundTask, item)).rejects.toThrow('Handler returned Failed');
 
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });
@@ -230,7 +232,7 @@ describe(JobService.name, () => {
   });
 
   describe('a handler that throws (FL-71)', () => {
-    it('reports the error and rethrows it, so BullMQ records the job as failed', async () => {
+    it('reports the error and rethrows it, so the SQL queue records the job as failed', async () => {
       const error = new Error('Input file is missing');
       mocks.job.run.mockRejectedValue(error);
       const item = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
@@ -255,16 +257,19 @@ describe(JobService.name, () => {
       { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } },
       { name: JobName.LibrarySyncFiles, data: { libraryId: 'library-1', paths: [] } },
       { name: JobName.FacialRecognition, data: { id: 'face-1' } },
-    ] as JobItem[])('reports but does not rethrow a $name failure, so no failed record is kept', async (item) => {
-      const error = new Error('boom');
-      mocks.job.run.mockRejectedValue(error);
+    ] as JobItem[])(
+      'rethrows a $name failure so the queue retains a redacted needs-attention outcome',
+      async (item) => {
+        const error = new Error('boom');
+        mocks.job.run.mockRejectedValue(error);
 
-      await expect(sut.onJobRun(QueueName.BackgroundTask, item)).resolves.toBeUndefined();
+        await expect(sut.onJobRun(QueueName.BackgroundTask, item)).rejects.toBe(error);
 
-      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job: item, error });
-      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobSuccess', expect.anything());
-      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, item);
-    });
+        expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job: item, error });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('JobSuccess', expect.anything());
+        expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, item);
+      },
+    );
 
     it('rethrows the handler error, not an error from a JobError listener', async () => {
       const error = new Error('Input file is missing');
@@ -291,25 +296,15 @@ describe(JobService.name, () => {
 
       expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
       expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.Sidecar, item);
-      expect(mocks.logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('after it succeeded'),
-        expect.any(String),
-      );
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Unable to notify success'));
     });
 
-    it('logs an error from a follow-up job instead of failing the job', async () => {
+    it('does not commit completion when required follow-up construction fails', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
-      mocks.job.queue.mockRejectedValue(new Error('redis down'));
+      mocks.job.queue.mockRejectedValue(new Error('database unavailable'));
       const item = { name: JobName.SidecarCheck, data: { id: 'asset-1' } } as const;
-
-      await expect(sut.onJobRun(QueueName.Sidecar, item)).resolves.toBeUndefined();
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetExtractMetadata, data: item.data });
-      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
-      expect(mocks.logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('after it succeeded'),
-        expect.any(String),
-      );
+      await expect(sut.onJobRun(QueueName.Sidecar, item)).rejects.toThrow('database unavailable');
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', expect.anything());
     });
   });
 

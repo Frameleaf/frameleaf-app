@@ -4,12 +4,11 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
-
 export type ItemShareRow = {
   id: string;
   assetId: string;
@@ -17,19 +16,19 @@ export type ItemShareRow = {
   sharedWithId: string;
   createdAt: Date;
 };
-
 const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed over';
-
 /**
- * Items shared with a person in this library (FL-83 AL-30b) in `immich_fork.asset_user_share`
+ * Items shared with a person in this library (FL-83 AL-30b) in `public.asset_user_share`
  * (fork migration 0000000000206): one row per item and recipient. The service decides who may share
  * what; this only stores the rows and reads them back. A read for the recipient never returns an
  * item that is Hidden or locked now, trashed, or whose owner is gone.
  */
 @Injectable()
 export class ItemShareRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** Keep privacy checks, mutation and response together; serialize sharing with asset lock/hide writers. */
   withTransaction<T>(
     callback: (
@@ -41,7 +40,6 @@ export class ItemShareRepository {
     assetIds: string[] = [],
   ): Promise<T> {
     return this.inTransaction(async (tx) => {
-      await lockForkWrites(tx, WRITE_REFUSAL);
       if (assetIds.length > 0) {
         // Lock propagation takes sources before derived results, which can oppose UUID order.
         // Refuse contention so rollback releases partial locks without blocking the privacy writer.
@@ -63,11 +61,9 @@ export class ItemShareRepository {
       );
     });
   }
-
   private inTransaction<T>(callback: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.isTransaction ? callback(this.db as Transaction<DB>) : this.db.transaction().execute(callback);
   }
-
   /** Recipients to notify after a lock, including items now excluded from recipient reads. */
   async getRecipients(assetIds: string[]): Promise<Pick<ItemShareRow, 'assetId' | 'sharedWithId'>[]> {
     if (assetIds.length === 0) {
@@ -75,12 +71,11 @@ export class ItemShareRepository {
     }
     const { rows } = await sql<Pick<ItemShareRow, 'assetId' | 'sharedWithId'>>`
       SELECT "assetId", "sharedWithId"
-      FROM immich_fork.asset_user_share
+      FROM public.asset_user_share
       WHERE "assetId" = ANY(${assetIds}::uuid[])
     `.execute(this.db);
     return rows;
   }
-
   /** The owner's shares of these items, oldest first. */
   async getForAssets(ownerId: string, assetIds: string[]): Promise<ItemShareRow[]> {
     if (assetIds.length === 0) {
@@ -88,22 +83,20 @@ export class ItemShareRepository {
     }
     const { rows } = await sql<ItemShareRow>`
       SELECT id, "assetId", "ownerId", "sharedWithId", "createdAt"
-      FROM immich_fork.asset_user_share
+      FROM public.asset_user_share
       WHERE "ownerId" = ${ownerId}::uuid AND "assetId" = ANY(${assetIds}::uuid[])
       ORDER BY "createdAt", id
     `.execute(this.db);
     return rows;
   }
-
   /** Shares each item with each person; a pair that is already shared keeps its row. */
   async add(ownerId: string, assetIds: string[], userIds: string[]): Promise<ItemShareRow[]> {
     if (assetIds.length === 0 || userIds.length === 0) {
       return [];
     }
     return this.inTransaction(async (tx) => {
-      await lockForkWrites(tx, WRITE_REFUSAL);
       const { rows } = await sql<ItemShareRow>`
-        INSERT INTO immich_fork.asset_user_share ("assetId", "ownerId", "sharedWithId")
+        INSERT INTO public.asset_user_share ("assetId", "ownerId", "sharedWithId")
         SELECT asset_id, ${ownerId}::uuid, user_id
         FROM unnest(${assetIds}::uuid[]) AS asset_id
         CROSS JOIN unnest(${userIds}::uuid[]) AS user_id
@@ -113,16 +106,14 @@ export class ItemShareRepository {
       return rows;
     });
   }
-
   /** Stops sharing each of the owner's items with each person (revoke). */
   async remove(ownerId: string, assetIds: string[], userIds: string[]): Promise<ItemShareRow[]> {
     if (assetIds.length === 0 || userIds.length === 0) {
       return [];
     }
     return this.inTransaction(async (tx) => {
-      await lockForkWrites(tx, WRITE_REFUSAL);
       const { rows } = await sql<ItemShareRow>`
-        DELETE FROM immich_fork.asset_user_share
+        DELETE FROM public.asset_user_share
         WHERE "ownerId" = ${ownerId}::uuid
           AND "assetId" = ANY(${assetIds}::uuid[])
           AND "sharedWithId" = ANY(${userIds}::uuid[])
@@ -131,7 +122,6 @@ export class ItemShareRepository {
       return rows;
     });
   }
-
   /**
    * What the recipient sees: the items shared with them, newest share first, leaving out any item
    * that is Hidden or locked now, trashed, no longer owned by the person who shared it, or whose owner's
@@ -140,7 +130,7 @@ export class ItemShareRepository {
   async getReceived(userId: string): Promise<ItemShareRow[]> {
     const { rows } = await sql<ItemShareRow>`
       SELECT share.id, share."assetId", share."ownerId", share."sharedWithId", share."createdAt"
-      FROM immich_fork.asset_user_share share
+      FROM public.asset_user_share share
       JOIN asset ON asset.id = share."assetId" AND asset."ownerId" = share."ownerId" AND asset."deletedAt" IS NULL
       JOIN "user" owner ON owner.id = share."ownerId" AND owner."deletedAt" IS NULL
       WHERE share."sharedWithId" = ${userId}::uuid

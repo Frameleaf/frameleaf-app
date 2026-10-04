@@ -11,18 +11,18 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
-
 export type AssetUploadResource = Selectable<AssetUploadResourceTable>;
-
 @Injectable()
 export class AssetUploadResourceRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   private async ready(db: Kysely<DB>) {
     const result = await sql<{
       ready: boolean;
@@ -33,15 +33,18 @@ export class AssetUploadResourceRepository {
       throw new ServiceUnavailableException('Resumable uploads require the upload-resource migration');
     }
   }
-
   async create(
     id: string,
     ownerId: string,
-    input: { metadata: AssetUploadResource['metadata']; checksum: Buffer; contentType: string; size?: number },
+    input: {
+      metadata: AssetUploadResource['metadata'];
+      checksum: Buffer;
+      contentType: string;
+      size?: number;
+    },
   ) {
     return this.db.transaction().execute(async (tx) => {
       await this.ready(tx);
-      await lockPublicForkWrites(tx);
       const owner = await tx
         .selectFrom('user')
         .select('id')
@@ -81,7 +84,6 @@ export class AssetUploadResourceRepository {
         .executeTakeFirstOrThrow();
     });
   }
-
   async get(id: string, ownerId: string) {
     await this.ready(this.db);
     const row = await this.db
@@ -97,7 +99,6 @@ export class AssetUploadResourceRepository {
     }
     return row;
   }
-
   /** The transaction and its file attempt are never reused after lock/connection loss. */
   async locked<T>(
     id: string,
@@ -107,7 +108,6 @@ export class AssetUploadResourceRepository {
   ) {
     return this.lockedMany([id], ownerId, (tx, rows) => callback(tx, rows[0]), allowExpiredPublished);
   }
-
   /** All resource locks share one transaction and a deterministic acquisition order. */
   async lockedMany<T>(
     ids: string[],
@@ -120,7 +120,6 @@ export class AssetUploadResourceRepository {
     }
     return this.db.transaction().execute(async (tx) => {
       await this.ready(tx);
-      await lockPublicForkWrites(tx);
       const rows: AssetUploadResource[] = [];
       for (const id of [...ids].sort()) {
         const row = await tx
@@ -177,7 +176,6 @@ export class AssetUploadResourceRepository {
       return callback(tx, rows);
     });
   }
-
   parts(tx: Transaction<DB> | undefined, id: string) {
     return (tx ?? this.db)
       .selectFrom('asset_upload_part')
@@ -186,7 +184,6 @@ export class AssetUploadResourceRepository {
       .orderBy('offset', 'asc')
       .execute();
   }
-
   private pendingCreatedOrigin(tx: Transaction<DB>, ownerId: string, assetId: string, checksum: Buffer) {
     return tx
       .selectFrom('asset_upload_resource')
@@ -200,7 +197,6 @@ export class AssetUploadResourceRepository {
       .forShare()
       .executeTakeFirst();
   }
-
   async completeDuplicate(id: string, ownerId: string) {
     return this.locked(id, ownerId, async (tx, resource) => {
       if (resource.state !== 'published' || resource.resultStatus !== AssetMediaStatus.DUPLICATE || resource.ingested) {
@@ -229,13 +225,18 @@ export class AssetUploadResourceRepository {
         .executeTakeFirstOrThrow();
     });
   }
-
   /** Asset, initial privacy/enrichment, quota, checksum evidence and upload result commit together. */
   async publish(
     tx: Transaction<DB>,
     resource: AssetUploadResource,
-    prepared: { asset: Parameters<AssetRepository['create']>[0]; lock: Parameters<AssetRepository['create']>[1] },
-    options: { rejectDuplicate?: boolean; quotaCharged?: boolean } = {},
+    prepared: {
+      asset: Parameters<AssetRepository['create']>[0];
+      lock: Parameters<AssetRepository['create']>[1];
+    },
+    options: {
+      rejectDuplicate?: boolean;
+      quotaCharged?: boolean;
+    } = {},
   ) {
     if (
       resource.resultAssetId ||
@@ -293,7 +294,7 @@ export class AssetUploadResourceRepository {
         exif: { assetId, fileSizeInByte: resource.offset },
         lockedPropertiesBehavior: 'override',
       });
-      await new ForkSchemaRepository(tx).recordAssetChecksums({
+      await new AssetChecksumRepository(tx).recordAssetChecksums({
         assetId,
         sha1: resource.legacyChecksum,
         sha256: resource.verifiedChecksum,
@@ -314,7 +315,6 @@ export class AssetUploadResourceRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   /** Both assets, checksum evidence, metadata, results and the combined quota debit commit atomically. */
   async publishLivePhoto(
     tx: Transaction<DB>,
@@ -417,7 +417,6 @@ export class AssetUploadResourceRepository {
     );
     return { still: publishedStill, video: publishedVideo };
   }
-
   /** A declared half cannot acknowledge completion until its current committed sibling is ingested too. */
   async livePhotoPairIngested(resource: AssetUploadResource) {
     if (resource.state !== 'published' || !resource.ingested || !resource.ownerId || !resource.resultAssetId) {
@@ -450,7 +449,6 @@ export class AssetUploadResourceRepository {
       .executeTakeFirst();
     return !!pair;
   }
-
   async claimIngestion(id: string, ownerId: string, token: string) {
     return this.locked(
       id,
@@ -473,7 +471,6 @@ export class AssetUploadResourceRepository {
       true,
     );
   }
-
   async checkIngestion(id: string, ownerId: string, token: string) {
     const resource = await this.db
       .selectFrom('asset_upload_resource')
@@ -512,7 +509,6 @@ export class AssetUploadResourceRepository {
     }
     return resource;
   }
-
   async completeIngestion(id: string, ownerId: string, token: string) {
     return this.locked(
       id,
@@ -538,7 +534,7 @@ export class AssetUploadResourceRepository {
           throw new NotFoundException('Upload result unavailable');
         }
         const evidence =
-          await sql`UPDATE immich_fork.asset_checksum SET "verifiedPaths" = ARRAY[${asset.originalPath}]::text[], "updatedAt" = now() WHERE "assetId" = ${asset.id}::uuid AND sha256 = ${resource.verifiedChecksum}`.execute(
+          await sql`UPDATE public.asset_checksum SET "verifiedPaths" = ARRAY[${asset.originalPath}]::text[], "updatedAt" = now() WHERE "assetId" = ${asset.id}::uuid AND sha256 = ${resource.verifiedChecksum}`.execute(
             tx,
           );
         if (evidence.numAffectedRows !== 1n) {
@@ -555,7 +551,6 @@ export class AssetUploadResourceRepository {
       true,
     );
   }
-
   async cleanupCandidates() {
     await this.ready(this.db);
     return this.db
@@ -600,7 +595,6 @@ export class AssetUploadResourceRepository {
       .where('deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   async recoverable() {
     await this.ready(this.db);
     return this.db
@@ -616,11 +610,9 @@ export class AssetUploadResourceRepository {
       .limit(100)
       .execute();
   }
-
   async cleanup(id: string, removeFiles: () => Promise<void>) {
     const claimed = await this.db.transaction().execute(async (tx) => {
       await this.ready(tx);
-      await lockPublicForkWrites(tx);
       const lock = await sql<{
         acquired: boolean;
       }>`SELECT pg_try_advisory_xact_lock(-225, hashtext(${id})::int) AS acquired`.execute(tx);
@@ -668,7 +660,7 @@ export class AssetUploadResourceRepository {
           state: 'cancelled',
           ingestionToken: null,
           ingestionLeaseExpiresAt: null,
-          expiresAt: new Date(Date.now() + (row.state === 'cancelled' ? 86_400 : 600) * 1000),
+          expiresAt: new Date(Date.now() + (row.state === 'cancelled' ? 86400 : 600) * 1000),
         })
         .where('id', '=', id)
         .execute();

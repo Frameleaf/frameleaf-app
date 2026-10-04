@@ -19,9 +19,11 @@ import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'sr
 import { bucketRef } from 'src/utils/cloud-backup.js';
 import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
 import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
-
-export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
-
+export type CloudBackupIndexedObject = {
+  sha256: string;
+  size: number;
+  etag: string | null;
+};
 export type CloudBackupManifestRow = {
   id: string;
   bucket: string;
@@ -30,7 +32,6 @@ export type CloudBackupManifestRow = {
   status: string;
   createdAt: Date;
 };
-
 export type CloudBackupEntry = {
   fileKey: string;
   assetId: string | null;
@@ -41,26 +42,26 @@ export type CloudBackupEntry = {
   size: number;
   mtime: Date | null;
 };
-
 /** One asset a run backs up: its original with the checksum on record, and its other files by type. */
 export type CloudBackupAsset = {
   id: string;
   ownerId: string;
   originalPath: string;
-  /** Lowercase hex SHA-256 from `immich_fork.asset_checksum`, or null when none is recorded. */
+  /** Lowercase hex SHA-256 from `public.asset_checksum`, or null when none is recorded. */
   sha256: string | null;
   checksumSize: number | null;
   verifiedAt: Date | null;
   /** The checksum was verified at this very path (`verifiedPaths` holds the original's path). */
   checksumPathVerified: boolean;
-  files: Array<{ type: AssetFileType; path: string }>;
+  files: Array<{
+    type: AssetFileType;
+    path: string;
+  }>;
 };
-
 const MANIFEST_COLUMNS = ['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'] as const;
 const ENTRY_COLUMNS = ['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'] as const;
 /** FL-164: manifests that are in the bucket and kept: complete ones, and ones a verification marked degraded. */
 const KEPT_MANIFEST_STATUSES = ['complete', 'degraded'] as const;
-
 /** FL-164: an asset a manifest names, as the library holds it now. */
 export type CloudBackupLibraryAsset = {
   status: 'active' | 'trashed';
@@ -71,7 +72,6 @@ export type CloudBackupLibraryAsset = {
   /** Locked (an `asset_lock` record): its name is never shown in a restore list. */
   locked: boolean;
 };
-
 /** FL-164: a manifest found in the bucket, as recorded when this server had no record of it. */
 export type CloudBackupAdoptedManifest = {
   key: string;
@@ -81,7 +81,6 @@ export type CloudBackupAdoptedManifest = {
   fileCount: number;
   bytes: number;
 };
-
 /** FL-164: a kept manifest as the restore picker and retention read it. */
 export type CloudBackupKeptManifest = {
   key: string;
@@ -93,13 +92,11 @@ export type CloudBackupKeptManifest = {
   fileCount: number;
   bytes: number;
 };
-
 const FINISHED_OPERATIONS = [
   MediaOperationStatus.Completed,
   MediaOperationStatus.Cancelled,
   MediaOperationStatus.Failed,
 ];
-
 /**
  * Cloud backup's own tables (FL-160): the index of objects already in a claimed bucket, the run
  * manifests and the files a running manifest has recorded; and the reads a run makes over the library.
@@ -153,11 +150,9 @@ export class CloudBackupIndexRepository {
         ORDER BY proof."checkedAt" DESC LIMIT 1
       ) verification ON true`;
   }
-
   async getSafetyAssets(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
     return (await this.safetyQuery(assets, bucket).execute(this.db)).rows;
   }
-
   async getSafetySummary(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
     const { rows } = await sql<{
       total: number;
@@ -172,8 +167,10 @@ export class CloudBackupIndexRepository {
       FROM (${this.safetyQuery(assets, bucket)}) safety`.execute(this.db);
     return rows[0];
   }
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** The hashes of these that are already in the bucket. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   async getExisting(bucket: string, hashes: string[]): Promise<Set<string>> {
@@ -188,7 +185,6 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Set(rows.map(({ sha256 }) => sha256));
   }
-
   /** Record objects that are in the bucket (uploaded, or found by the listing). Recording twice is harmless. */
   @GenerateSql({
     params: [DummyValue.STRING, [{ sha256: DummyValue.STRING, size: DummyValue.NUMBER, etag: DummyValue.STRING }]],
@@ -210,7 +206,6 @@ export class CloudBackupIndexRepository {
       )
       .execute();
   }
-
   /** Mark objects as referenced by the run in hand. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   async touch(bucket: string, hashes: string[]): Promise<void> {
@@ -224,13 +219,11 @@ export class CloudBackupIndexRepository {
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }
-
   /** Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. */
   @GenerateSql({ params: [DummyValue.STRING] })
   async deleteBucket(bucket: string): Promise<void> {
     await this.db.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
   }
-
   /**
    * The database's clock, which stamps `lastSeenAt`, as ISO 8601 text with its microseconds. A `Date`
    * keeps only milliseconds, so a row stamped earlier in the same millisecond would not compare as
@@ -241,7 +234,6 @@ export class CloudBackupIndexRepository {
     const row = await this.db.selectNoFrom(sql<string>`to_json(now())`.as('now')).executeTakeFirstOrThrow();
     return row.now;
   }
-
   /** Forget objects the bucket listing no longer holds: every row the listing did not touch since `since`. */
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.DATE] })
   async pruneUnseen(bucket: string, since: string): Promise<number> {
@@ -252,10 +244,12 @@ export class CloudBackupIndexRepository {
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }
-
   /** How many unique files the bucket holds for this server, and their size. */
   @GenerateSql({ params: [DummyValue.STRING] })
-  async getUsage(bucket: string): Promise<{ objects: number; bytes: number }> {
+  async getUsage(bucket: string): Promise<{
+    objects: number;
+    bytes: number;
+  }> {
     const row = await this.db
       .selectFrom('cloud_backup_object')
       .select((eb) => [eb.fn.countAll<string>().as('objects'), sql<string>`coalesce(sum("size"), 0)`.as('bytes')])
@@ -263,7 +257,6 @@ export class CloudBackupIndexRepository {
       .executeTakeFirst();
     return { objects: Number(row?.objects ?? 0), bytes: Number(row?.bytes ?? 0) };
   }
-
   @GenerateSql({ params: [{ bucket: DummyValue.STRING, key: DummyValue.STRING, operationId: DummyValue.UUID }] })
   async createManifest(values: { bucket: string; key: string; operationId: string }): Promise<CloudBackupManifestRow> {
     return this.db
@@ -272,7 +265,6 @@ export class CloudBackupIndexRepository {
       .returning(MANIFEST_COLUMNS)
       .executeTakeFirstOrThrow() as Promise<CloudBackupManifestRow>;
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getManifest(id: string): Promise<CloudBackupManifestRow | undefined> {
     return this.db
@@ -281,7 +273,6 @@ export class CloudBackupIndexRepository {
       .where('id', '=', id)
       .executeTakeFirst() as Promise<CloudBackupManifestRow | undefined>;
   }
-
   @GenerateSql({
     params: [
       DummyValue.UUID,
@@ -290,7 +281,12 @@ export class CloudBackupIndexRepository {
   })
   async finishManifest(
     id: string,
-    values: { status: 'complete' | 'cancelled' | 'failed'; assetCount?: number; fileCount?: number; bytes?: number },
+    values: {
+      status: 'complete' | 'cancelled' | 'failed';
+      assetCount?: number;
+      fileCount?: number;
+      bytes?: number;
+    },
   ): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
       const manifest = await tx
@@ -325,7 +321,6 @@ export class CloudBackupIndexRepository {
         .execute();
     });
   }
-
   /** Persist the actual check under its current worker claim, never as a completed-run assertion. */
   @GenerateSql({
     params: [
@@ -381,7 +376,6 @@ export class CloudBackupIndexRepository {
       )
       .execute();
   }
-
   /** Internal facts only: completion qualifies the run, not current asset access or backup eligibility. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   getCompletedObjectVerifications(bucket: string, hashes: string[]) {
@@ -408,13 +402,11 @@ export class CloudBackupIndexRepository {
       .orderBy('proof.checkedAt', 'desc')
       .execute();
   }
-
   /** The database dump a manifest names, so no complete manifest ever loses its dump to pruning. */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   async setManifestDatabase(id: string, databaseKey: string): Promise<void> {
     await this.db.updateTable('cloud_backup_manifest').set({ databaseKey }).where('id', '=', id).execute();
   }
-
   /**
    * FL-164: the database dumps named by this bucket's manifests that are still kept (complete, or complete
    * and degraded by a verification), so no kept manifest ever loses its dump to pruning.
@@ -430,7 +422,6 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Set(rows.map(({ databaseKey }) => databaseKey!));
   }
-
   /** FL-164: which of these manifest keys this server has a record of, in any state. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   async getManifestKeys(bucket: string, keys: string[]): Promise<Set<string>> {
@@ -445,7 +436,6 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Set(rows.map(({ key }) => key));
   }
-
   /**
    * FL-164: record manifests found in the bucket that this server has no record of (a bucket claimed
    * again, or a database restored from before them) as complete, so they can be listed and restored from.
@@ -494,7 +484,6 @@ export class CloudBackupIndexRepository {
       .execute();
     return fresh.length;
   }
-
   /** FL-164: this bucket's kept manifests, newest first: what a restore can be made from. */
   @GenerateSql({ params: [DummyValue.STRING] })
   async listKeptManifests(bucket: string): Promise<CloudBackupKeptManifest[]> {
@@ -516,7 +505,6 @@ export class CloudBackupIndexRepository {
       bytes: Number(row.bytes),
     }));
   }
-
   /**
    * FL-164: mark manifests by their bucket key: `pruned` once retention removed them from the bucket,
    * `degraded` when a verification found an object they name missing or damaged. A pruned manifest stays
@@ -536,7 +524,6 @@ export class CloudBackupIndexRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
-
   /**
    * FL-164: forget objects that are no longer in the bucket (removed by retention, or found missing or
    * damaged by a verification), so the next run uploads them again from this server's files. Forgetting
@@ -553,7 +540,6 @@ export class CloudBackupIndexRepository {
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }
-
   /**
    * FL-164: which of these assets are in the library now, for the restore list: active, trashed, or gone.
    * Backend work that sees Locked assets too; the caller is an administrator's restore of the whole server.
@@ -584,7 +570,6 @@ export class CloudBackupIndexRepository {
       ]),
     );
   }
-
   /** Presence and caller privacy from one snapshot, including non-active rows that cannot be treated as absent. */
   async getOwnerHistoryState(auth: AuthDto, assetIds: string[]): Promise<Map<string, OwnerBackupState>> {
     if (assetIds.length === 0) return new Map();
@@ -637,7 +622,6 @@ export class CloudBackupIndexRepository {
       ? execute(this.db)
       : this.db.transaction().setIsolationLevel('repeatable read').execute(execute);
   }
-
   async getOwnerRestoreIdentities(ids: string[]) {
     const rows = await this.db
       .selectFrom('asset')
@@ -648,11 +632,10 @@ export class CloudBackupIndexRepository {
       rows.map(({ id, checksum, ...rest }) => [id, { ...rest, checksum: checksum.toString('hex') }]),
     );
   }
-
-  async getOwnerRestoreAuth(owner: {
-    ownerId: string;
-    sessionId: string;
-  }): Promise<{ auth: AuthDto; storageLabel: string | null }> {
+  async getOwnerRestoreAuth(owner: { ownerId: string; sessionId: string }): Promise<{
+    auth: AuthDto;
+    storageLabel: string | null;
+  }> {
     const row = await this.db
       .selectFrom('user')
       .innerJoin('session', 'session.userId', 'user.id')
@@ -680,14 +663,25 @@ export class CloudBackupIndexRepository {
       storageLabel: row.storageLabel,
     };
   }
-
   async withOwnerRestore<T>(
-    owner: { ownerId: string; sessionId: string },
-    identity: { bucketRef: string; keyFingerprint: string; manifestKey: string },
+    owner: {
+      ownerId: string;
+      sessionId: string;
+    },
+    identity: {
+      bucketRef: string;
+      keyFingerprint: string;
+      manifestKey: string;
+    },
     assetId: string,
-    lease: { operationId: string; claimToken: string },
+    lease: {
+      operationId: string;
+      claimToken: string;
+    },
     callback: (trx: Transaction<DB>) => Promise<T>,
-    buddy?: { authorize: () => Promise<void> },
+    buddy?: {
+      authorize: () => Promise<void>;
+    },
   ): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
       const operation = await trx
@@ -751,7 +745,13 @@ export class CloudBackupIndexRepository {
           .forShare()
           .noWait()
           .executeTakeFirst();
-        const claim = metadata?.value as { bucketRef?: string; keyFingerprint?: string; target?: string } | undefined;
+        const claim = metadata?.value as
+          | {
+              bucketRef?: string;
+              keyFingerprint?: string;
+              target?: string;
+            }
+          | undefined;
         const storedConfig = await trx
           .selectFrom('system_metadata')
           .select('value')
@@ -806,7 +806,6 @@ export class CloudBackupIndexRepository {
       return callback(trx);
     });
   }
-
   /** FL-164: the names of these accounts, for the restore list's owner column. */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   async getOwnerNames(userIds: string[]): Promise<Map<string, string>> {
@@ -820,7 +819,6 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Map(rows.map(({ id, name }) => [id, name]));
   }
-
   /**
    * End every running manifest whose run is over or gone (a run the lease sweep failed, or one removed):
    * it is marked failed and its recorded files are deleted. Answers how many were ended.
@@ -856,7 +854,6 @@ export class CloudBackupIndexRepository {
     }
     return ended.length;
   }
-
   /** Record files of a running manifest; a file recorded again is replaced. */
   @GenerateSql({
     params: [
@@ -896,7 +893,6 @@ export class CloudBackupIndexRepository {
       )
       .execute();
   }
-
   /** A page of a manifest's files in `fileKey` order, after `afterFileKey`: an asset's files are adjacent. */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.NUMBER] })
   async getEntriesPage(manifestId: string, afterFileKey: string | null, limit: number): Promise<CloudBackupEntry[]> {
@@ -914,12 +910,10 @@ export class CloudBackupIndexRepository {
       mtime: row.mtime ? new Date(row.mtime as unknown as string) : null,
     }));
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteEntries(manifestId: string): Promise<void> {
     await this.db.deleteFrom('cloud_backup_manifest_entry').where('manifestId', '=', manifestId).execute();
   }
-
   /** How many assets a run backs up. */
   @GenerateSql()
   async countAssets(): Promise<number> {
@@ -931,7 +925,6 @@ export class CloudBackupIndexRepository {
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
-
   /**
    * The next assets after `afterId`, in id order, with the SHA-256 on record and their files: the
    * sidecar always, thumbnails and previews and transcoded videos only when asked for. Every owner's
@@ -966,7 +959,6 @@ export class CloudBackupIndexRepository {
     if (assets.length === 0) {
       return [];
     }
-
     const ids = assets.map(({ id }) => id);
     const checksums = await sql<{
       assetId: string;
@@ -976,11 +968,10 @@ export class CloudBackupIndexRepository {
       verifiedPaths: string[];
     }>`
       select "assetId", encode("sha256", 'hex') as "sha256", "sizeInBytes"::text as "size", "verifiedAt", "verifiedPaths"
-      from immich_fork.asset_checksum
+      from public.asset_checksum
       where "assetId" = any(${ids}::uuid[])
     `.execute(this.db);
     const checksumOf = new Map(checksums.rows.map((row) => [row.assetId, row]));
-
     const types: AssetFileType[] = [AssetFileType.Sidecar];
     if (options.includeThumbs) {
       types.push(AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail);
@@ -997,7 +988,6 @@ export class CloudBackupIndexRepository {
       .orderBy('type')
       .orderBy('path')
       .execute();
-
     return assets.map((asset) => {
       const checksum = checksumOf.get(asset.id);
       return {
@@ -1014,16 +1004,21 @@ export class CloudBackupIndexRepository {
       };
     });
   }
-
   /**
    * FL-164 (manifest v2): each item's record and the details that live in the database rather than in
    * its file (favourite, visibility, rating, description, date and place, tags, albums, faces, stack and
    * edits), for the manifest a run writes. Backend work: Locked items included.
    */
   // No @GenerateSql: several plain reads assembled here, each covered by the medium spec.
-  async getAssetDetails(
-    assetIds: string[],
-  ): Promise<Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>> {
+  async getAssetDetails(assetIds: string[]): Promise<
+    Map<
+      string,
+      {
+        record: CloudBackupAssetRecord;
+        details: CloudBackupAssetDetails;
+      }
+    >
+  > {
     const ids = [...new Set(assetIds)];
     if (ids.length === 0) {
       return new Map();
@@ -1095,7 +1090,13 @@ export class CloudBackupIndexRepository {
         .execute(),
     ]);
     const iso = (value: unknown) => (value ? new Date(value as string).toISOString() : null);
-    const grouped = <T extends { assetId: string }>(rows: T[]) => {
+    const grouped = <
+      T extends {
+        assetId: string;
+      },
+    >(
+      rows: T[],
+    ) => {
       const map = new Map<string, T[]>();
       for (const row of rows) {
         map.set(row.assetId, [...(map.get(row.assetId) ?? []), row]);
@@ -1154,7 +1155,6 @@ export class CloudBackupIndexRepository {
       ]),
     );
   }
-
   /** FL-164 (manifest v2): these albums as a deleted one is made again: name, cover, order, owner, sharing. */
   // No @GenerateSql: covered by the medium spec.
   async getAlbumRecords(albumIds: string[]): Promise<Map<string, CloudBackupAlbum>> {
@@ -1196,13 +1196,17 @@ export class CloudBackupIndexRepository {
     }
     return records;
   }
-
   /**
    * FL-164 (manifest v2): the people these faces name, as each face's owner sees them (a person is one
    * owner's name for a person group).
    */
   // No @GenerateSql: covered by the medium spec.
-  async getPersonRecords(pairs: Array<{ ownerId: string; personId: string }>): Promise<Map<string, CloudBackupPerson>> {
+  async getPersonRecords(
+    pairs: Array<{
+      ownerId: string;
+      personId: string;
+    }>,
+  ): Promise<Map<string, CloudBackupPerson>> {
     const groupIds = [...new Set(pairs.map(({ personId }) => personId))];
     if (groupIds.length === 0) {
       return new Map();
@@ -1230,7 +1234,6 @@ export class CloudBackupIndexRepository {
     }
     return records;
   }
-
   /** FL-164: the items each of these albums holds now; an album that is gone is left out. */
   // No @GenerateSql: covered by the medium spec.
   async getAlbumMembers(albumIds: string[]): Promise<Map<string, Set<string>>> {
@@ -1257,10 +1260,14 @@ export class CloudBackupIndexRepository {
     }
     return held;
   }
-
   /** Every account's profile image. */
   @GenerateSql()
-  async listProfileImages(): Promise<Array<{ userId: string; path: string }>> {
+  async listProfileImages(): Promise<
+    Array<{
+      userId: string;
+      path: string;
+    }>
+  > {
     const rows = await this.db
       .selectFrom('user')
       .select(['id', 'profileImagePath'])

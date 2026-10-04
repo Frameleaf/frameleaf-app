@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, Table, Unique } from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AnalyticsSampleGrain, AnalyticsSeriesId } from 'src/enum.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';

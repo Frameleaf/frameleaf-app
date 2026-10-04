@@ -3,13 +3,11 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder } from 'src/enum.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
-
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
-
 /**
  * Fields a copy follows from its source until its owner changes them. `isFavorite` and trash are never
  * here: they are always the copy owner's own (spec §4.2).
@@ -24,14 +22,12 @@ export enum AssetOriginField {
   Visibility = 'visibility',
   Sensitive = 'sensitive',
 }
-
 export enum AlbumOriginField {
   Title = 'title',
   Description = 'description',
   Membership = 'membership',
   Cover = 'cover',
 }
-
 export type OriginRow = {
   /** The copy: `assetId` or `albumId`. */
   id: string;
@@ -43,9 +39,9 @@ export type OriginRow = {
   overriddenFields: string[];
   following: boolean;
 };
-
-export type OriginInput = Omit<OriginRow, 'overriddenFields' | 'following'> & { sourceId: string };
-
+export type OriginInput = Omit<OriginRow, 'overriddenFields' | 'following'> & {
+  sourceId: string;
+};
 /** A person copy, keyed as a person is (owner + person group). */
 export type PersonOriginRow = {
   ownerId: string;
@@ -57,9 +53,7 @@ export type PersonOriginRow = {
   overriddenFields: string[];
   following: boolean;
 };
-
 export type PersonOriginInput = Omit<PersonOriginRow, 'overriddenFields' | 'following'>;
-
 /** What a partner copy of one asset is made from (spec §4.3). */
 export type AssetCopyInput = {
   sourceAssetId: string;
@@ -67,49 +61,50 @@ export type AssetCopyInput = {
   rootOwnerId: string;
   partnerSharedById: string;
   /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
-  original: { id: string; path: string };
+  original: {
+    id: string;
+    path: string;
+  };
   /**
    * Spec §4.9: the lock the copy carries from the moment it exists (the source's lock reason, or `marked`
    * for an item the sharer's Locked rules hide), inserted in the same transaction as the copy.
    */
   lockReason?: AssetLockReason;
 };
-
 /** Why a source may not be copied yet (Task 13 lifts the Locked and sensitive skip). */
-export type AssetCopyBlockers = { locked: boolean; sensitive: boolean };
-
+export type AssetCopyBlockers = {
+  locked: boolean;
+  sensitive: boolean;
+};
 const GENERATED_FILE_TYPES = [
   AssetFileType.Thumbnail,
   AssetFileType.Preview,
   AssetFileType.FullSize,
   AssetFileType.EncodedVideo,
 ];
-
 /** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
 const MAX_LINEAGE_DEPTH = 64;
-
 const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
-
 /**
  * Whether `sharedById` still shares with `sharedWithId`, holding the partner row FOR SHARE until the
  * caller's transaction ends: `PartnerService.remove` deletes that row before it stops following, so a copy
  * either commits first (and then stops following with the rest) or sees no partnership and is not made.
  */
 const lockPartnership = async (trx: Transaction<DB>, sharedById: string, sharedWithId: string) => {
-  const { rows } = await sql<{ present: number }>`
+  const { rows } = await sql<{
+    present: number;
+  }>`
     SELECT 1 AS present FROM partner
     WHERE "sharedById" = ${sharedById}::uuid AND "sharedWithId" = ${sharedWithId}::uuid
     FOR SHARE
   `.execute(trx);
   return rows.length > 0;
 };
-
 /** Serializes copies of the same content into the same library (the one-copy rule under concurrency). */
 const lockLibraryContent = async (trx: Transaction<DB>, ownerId: string, checksum: Buffer) => {
   const key = createHash('sha1').update(ownerId).update(checksum).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
 };
-
 export type AlbumForCopy = {
   id: string;
   ownerId: string;
@@ -120,14 +115,12 @@ export type AlbumForCopy = {
   albumThumbnailAssetId: string | null;
   deletedAt: Date | null;
 };
-
 export enum PartnerBackfillState {
   Pending = 'pending',
   Running = 'running',
   Done = 'done',
   Stopped = 'stopped',
 }
-
 export type PartnerBackfillRow = {
   sharedById: string;
   sharedWithId: string;
@@ -136,18 +129,23 @@ export type PartnerBackfillRow = {
   total: number;
   done: number;
 };
-
-const TABLES: Record<OriginKind, { table: string; key: string; source: string; copy: string }> = {
-  asset: { table: 'immich_fork.asset_origin', key: 'assetId', source: 'sourceAssetId', copy: 'asset' },
-  album: { table: 'immich_fork.album_origin', key: 'albumId', source: 'sourceAlbumId', copy: 'album' },
+const TABLES: Record<
+  OriginKind,
+  {
+    table: string;
+    key: string;
+    source: string;
+    copy: string;
+  }
+> = {
+  asset: { table: 'public.asset_origin', key: 'assetId', source: 'sourceAssetId', copy: 'asset' },
+  album: { table: 'public.album_origin', key: 'albumId', source: 'sourceAlbumId', copy: 'album' },
 };
-
 const selectOrigin = (kind: OriginKind) => {
   const { key, source } = TABLES[kind];
   return sql`origin.${sql.id(key)} AS id, origin.${sql.id(source)} AS "sourceId", origin."ownerId",
     origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following`;
 };
-
 /**
  * Where a partner's copy came from (FL-326, spec §4.2), in the `immich_fork` origin tables of fork
  * migration 0000000000220, and the resumable backfill of each partnership. The copy engine
@@ -157,8 +155,10 @@ const selectOrigin = (kind: OriginKind) => {
  */
 @Injectable()
 export class PartnerOriginRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async createOrigin(kind: OriginKind, input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     const { table, key, source } = TABLES[kind];
     await sql`
@@ -168,7 +168,6 @@ export class PartnerOriginRepository {
       ON CONFLICT (${sql.id(key)}) DO NOTHING
     `.execute(kysely);
   }
-
   /**
    * Record an album copy's origin, only while its partnership still exists (held FOR SHARE, see
    * `lockPartnership`). Returns false when the partnership has ended: the caller removes the album copy.
@@ -182,11 +181,9 @@ export class PartnerOriginRepository {
       return true;
     });
   }
-
   createAssetOrigin(input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     return this.createOrigin('asset', input, kysely);
   }
-
   async getOrigin(kind: OriginKind, id: string): Promise<OriginRow | undefined> {
     const { table, key } = TABLES[kind];
     const { rows } = await sql<OriginRow>`
@@ -194,7 +191,6 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   /** Every live copy that still follows `sourceId`. */
   async getFollowers(kind: OriginKind, sourceId: string): Promise<OriginRow[]> {
     const { table, key, source, copy } = TABLES[kind];
@@ -207,7 +203,6 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
-
   /** Of `ids`, those that have at least one live copy following them. */
   async getIdsWithFollowers(kind: OriginKind, ids: string[]): Promise<string[]> {
     const list = [...new Set(ids)];
@@ -215,7 +210,9 @@ export class PartnerOriginRepository {
       return [];
     }
     const { table, key, source, copy } = TABLES[kind];
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT DISTINCT origin.${sql.id(source)} AS id
       FROM ${sql.raw(table)} origin
       JOIN ${sql.raw(copy)} copy ON copy.id = origin.${sql.id(key)}
@@ -223,7 +220,6 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   /**
    * Write the source's current values of these followed fields onto one copy (spec §4.6). Tags and
    * faces are written by the copy engine; favorites and trash are never touched.
@@ -248,7 +244,6 @@ export class PartnerOriginRepository {
         sql`, `,
       );
     await this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, COPY_REFUSAL);
       if (exifColumns.length > 0) {
         await sql`
           UPDATE asset_exif copy SET ${assignments(exifColumns)}
@@ -266,11 +261,12 @@ export class PartnerOriginRepository {
       }
     });
   }
-
   /** The copy `ownerId` holds of `sourceId`, if any (followed or not). */
   async getCopyId(kind: OriginKind, sourceId: string, ownerId: string): Promise<string | undefined> {
     const { table, key, source, copy } = TABLES[kind];
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT origin.${sql.id(key)} AS id
       FROM ${sql.raw(table)} origin
       JOIN ${sql.raw(copy)} copy ON copy.id = origin.${sql.id(key)}
@@ -279,7 +275,6 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows[0]?.id;
   }
-
   /**
    * The copy's owner changed these fields: from now on they are theirs (spec §4.6). Only rows that
    * are copies are touched, so callers can pass any ids the user edited. `ownerId` restricts the change
@@ -307,13 +302,12 @@ export class PartnerOriginRepository {
         ${ownerId ? sql`AND origin."ownerId" = ${ownerId}::uuid` : sql``}
     `.execute(kysely);
   }
-
   /**
    * A partnership ended (spec §4.7): every copy `ownerId` received through `partnerSharedById` stops
    * following. The copies stay.
    */
   async stopFollowing(partnerSharedById: string, ownerId: string): Promise<void> {
-    for (const table of [...Object.values(TABLES).map(({ table }) => table), 'immich_fork.person_origin']) {
+    for (const table of [...Object.values(TABLES).map(({ table }) => table), 'public.person_origin']) {
       await sql`
         UPDATE ${sql.raw(table)}
         SET following = false
@@ -321,35 +315,32 @@ export class PartnerOriginRepository {
       `.execute(this.db);
     }
   }
-
   async createPersonOrigin(input: PersonOriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     await sql`
-      INSERT INTO immich_fork.person_origin
+      INSERT INTO public.person_origin
         ("ownerId", "personGroupId", "sourceOwnerId", "sourcePersonGroupId", "rootOwnerId", "partnerSharedById")
       VALUES (${input.ownerId}::uuid, ${input.personGroupId}::uuid, ${input.sourceOwnerId}::uuid,
         ${input.sourcePersonGroupId}::uuid, ${input.rootOwnerId}::uuid, ${input.partnerSharedById}::uuid)
       ON CONFLICT ("ownerId", "personGroupId") DO NOTHING
     `.execute(kysely);
   }
-
   /** The person `targetOwnerId` holds as a copy of `sourcePersonGroupId`, if any. */
   async getPersonMapping(targetOwnerId: string, sourcePersonGroupId: string): Promise<PersonOriginRow | undefined> {
     const { rows } = await sql<PersonOriginRow>`
       SELECT origin."ownerId", origin."personGroupId", origin."sourceOwnerId", origin."sourcePersonGroupId",
         origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following
-      FROM immich_fork.person_origin origin
+      FROM public.person_origin origin
       JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
       WHERE origin."ownerId" = ${targetOwnerId}::uuid AND origin."sourcePersonGroupId" = ${sourcePersonGroupId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /** Every live person copy that still follows the source person. */
   async getPersonFollowers(sourceOwnerId: string, sourcePersonGroupId: string): Promise<PersonOriginRow[]> {
     const { rows } = await sql<PersonOriginRow>`
       SELECT origin."ownerId", origin."personGroupId", origin."sourceOwnerId", origin."sourcePersonGroupId",
         origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following
-      FROM immich_fork.person_origin origin
+      FROM public.person_origin origin
       JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
       WHERE origin."sourceOwnerId" = ${sourceOwnerId}::uuid
         AND origin."sourcePersonGroupId" = ${sourcePersonGroupId}::uuid AND origin.following
@@ -357,13 +348,12 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
-
   async markPersonOverridden(ownerId: string, personGroupIds: string[], fields: string[]): Promise<void> {
     if (personGroupIds.length === 0 || fields.length === 0) {
       return;
     }
     await sql`
-      UPDATE immich_fork.person_origin origin
+      UPDATE public.person_origin origin
       SET "overriddenFields" = ARRAY(
         SELECT DISTINCT field FROM unnest(origin."overriddenFields" || ${fields}::text[]) AS field ORDER BY field
       )
@@ -371,20 +361,20 @@ export class PartnerOriginRepository {
         AND NOT (origin."overriddenFields" @> ${fields}::text[])
     `.execute(this.db);
   }
-
   /**
    * The one-copy rule (spec §4.3): whether `ownerId`'s library already holds this content, live or in
    * their trash.
    */
   async libraryHasChecksum(ownerId: string, checksum: Buffer): Promise<boolean> {
-    const { rows } = await sql<{ present: boolean }>`
+    const { rows } = await sql<{
+      present: boolean;
+    }>`
       SELECT EXISTS (
         SELECT 1 FROM asset WHERE "ownerId" = ${ownerId}::uuid AND checksum = ${checksum}
       ) AS present
     `.execute(this.db);
     return rows[0]?.present ?? false;
   }
-
   /**
    * Whether `ownerId`'s library ever received a copy of `sourceAssetId`, even one its owner has since
    * permanently deleted: the origin row outlives the copy (fork tables never foreign-key into the
@@ -392,29 +382,27 @@ export class PartnerOriginRepository {
    * metadata, a retried job or a re-run backfill must not undo the recipient's delete).
    */
   async hasEverCopied(sourceAssetId: string, ownerId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
-    const { rows } = await sql<{ present: boolean }>`
+    const { rows } = await sql<{
+      present: boolean;
+    }>`
       SELECT EXISTS (
-        SELECT 1 FROM immich_fork.asset_origin
+        SELECT 1 FROM public.asset_origin
         WHERE "sourceAssetId" = ${sourceAssetId}::uuid AND "ownerId" = ${ownerId}::uuid
       ) AS present
     `.execute(kysely);
     return rows[0]?.present ?? false;
   }
-
   /** Locked or sensitive evidence on a source, from either store (positive evidence anywhere counts). */
   async getCopyBlockers(assetId: string): Promise<AssetCopyBlockers> {
     const { rows } = await sql<AssetCopyBlockers>`
       SELECT
         (asset.visibility = 'locked' OR EXISTS (SELECT 1 FROM asset_lock WHERE asset_lock."assetId" = asset.id)) AS locked,
-        (asset.is_nsfw OR EXISTS (
-          SELECT 1 FROM immich_fork.asset_privacy privacy WHERE privacy."assetId" = asset.id AND privacy."isNsfw"
-        )) AS sensitive
+        (asset.is_nsfw OR asset.is_nsfw) AS sensitive
       FROM asset
       WHERE asset.id = ${assetId}::uuid
     `.execute(this.db);
     return rows[0] ?? { locked: false, sensitive: false };
   }
-
   /**
    * Create `ownerId`'s copy of one asset (spec §4.3): a new asset row of theirs linked to the source's
    * original and generated files, with the source's exif, smart-search embedding, OCR and job status
@@ -430,7 +418,6 @@ export class PartnerOriginRepository {
    */
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, COPY_REFUSAL);
       if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
         return;
       }
@@ -438,7 +425,6 @@ export class PartnerOriginRepository {
       if (!source) {
         return;
       }
-
       const files = await trx
         .selectFrom('asset_file')
         .selectAll()
@@ -449,7 +435,6 @@ export class PartnerOriginRepository {
       for (const path of [...new Set([input.original.path, ...files.map((file) => file.path)])].toSorted()) {
         await lockFilePath(trx, path);
       }
-
       const physical = await trx
         .selectFrom('physical_file')
         .select('id')
@@ -459,7 +444,6 @@ export class PartnerOriginRepository {
       if (!physical) {
         throw new ConflictException('Partner copy source file changed');
       }
-
       await lockLibraryContent(trx, input.ownerId, source.checksum);
       const existing = await trx
         .selectFrom('asset')
@@ -470,15 +454,20 @@ export class PartnerOriginRepository {
       if (existing || (await this.hasEverCopied(source.id, input.ownerId, trx))) {
         return;
       }
-
       const {
         id: _id,
         createdAt: _createdAt,
         updatedAt: _updatedAt,
         updateId: _updateId,
         ...columns
-      } = source as typeof source & { createId?: string };
-      delete (columns as { createId?: string }).createId;
+      } = source as typeof source & {
+        createId?: string;
+      };
+      delete (
+        columns as {
+          createId?: string;
+        }
+      ).createId;
       const copy = await trx
         .insertInto('asset')
         .values({
@@ -505,7 +494,6 @@ export class PartnerOriginRepository {
           .values({ assetId: copy.id, reason: input.lockReason, lockedBy: null })
           .execute();
       }
-
       const exif = await trx.selectFrom('asset_exif').selectAll().where('assetId', '=', source.id).executeTakeFirst();
       if (exif) {
         const { updatedAt: _exifUpdatedAt, updateId: _exifUpdateId, ...exifColumns } = exif;
@@ -514,7 +502,6 @@ export class PartnerOriginRepository {
           .values({ ...exifColumns, assetId: copy.id })
           .execute();
       }
-
       if (files.length > 0) {
         await trx
           .insertInto('asset_file')
@@ -530,7 +517,6 @@ export class PartnerOriginRepository {
           )
           .execute();
       }
-
       await sql`
         INSERT INTO smart_search ("assetId", embedding)
         SELECT ${copy.id}::uuid, embedding FROM smart_search WHERE "assetId" = ${source.id}::uuid
@@ -563,14 +549,13 @@ export class PartnerOriginRepository {
         .execute();
       // the fork's checksum evidence names the same file, so the copy carries it too
       await sql`
-        INSERT INTO immich_fork.asset_checksum
-        SELECT (jsonb_populate_record(NULL::immich_fork.asset_checksum,
+        INSERT INTO public.asset_checksum
+        SELECT (jsonb_populate_record(NULL::public.asset_checksum,
           to_jsonb(checksum) || jsonb_build_object('assetId', ${copy.id}::uuid))).*
-        FROM immich_fork.asset_checksum checksum
+        FROM public.asset_checksum checksum
         WHERE checksum."assetId" = ${source.id}::uuid
         ON CONFLICT DO NOTHING
       `.execute(trx);
-
       await this.createAssetOrigin(
         {
           id: copy.id,
@@ -581,21 +566,20 @@ export class PartnerOriginRepository {
         },
         trx,
       );
-
       // spec §4.3: every library is charged the full size; copying never fails on quota
       await sql`
         UPDATE "user"
         SET "quotaUsageInBytes" = "quotaUsageInBytes" + coalesce(${exif?.fileSizeInByte ?? null}::bigint, 0)
         WHERE id = ${input.ownerId}::uuid
       `.execute(trx);
-
       return copy.id;
     });
   }
-
   /** One page of `ownerId`'s assets after `cursor`, in id order, for the backfill. */
   async getOwnerAssetIdsAfter(ownerId: string, cursor: string | null, limit: number): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT id FROM asset
       WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
         ${cursor ? sql`AND id > ${cursor}::uuid` : sql``}
@@ -604,14 +588,14 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   async countOwnerAssets(ownerId: string): Promise<number> {
-    const { rows } = await sql<{ count: number }>`
+    const { rows } = await sql<{
+      count: number;
+    }>`
       SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
     `.execute(this.db);
     return rows[0]?.count ?? 0;
   }
-
   /** An album as the copy engine needs it, with its owner (spec §4.4). */
   async getAlbumForCopy(albumId: string): Promise<AlbumForCopy | undefined> {
     const { rows } = await sql<AlbumForCopy>`
@@ -623,10 +607,11 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   /** The plain albums `ownerId` owns, for the backfill. Collections and shared spaces are not copied. */
   async getOwnedAlbumIds(ownerId: string): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT album.id
       FROM album
       JOIN album_user owner ON owner."albumId" = album.id AND owner.role = 'owner'
@@ -635,89 +620,94 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   /** Whether `userId` already sees this album (any membership, owners included). */
   async isAlbumMember(albumId: string, userId: string): Promise<boolean> {
-    const { rows } = await sql<{ present: boolean }>`
+    const { rows } = await sql<{
+      present: boolean;
+    }>`
       SELECT EXISTS (
         SELECT 1 FROM album_user WHERE "albumId" = ${albumId}::uuid AND "userId" = ${userId}::uuid
       ) AS present
     `.execute(this.db);
     return rows[0]?.present ?? false;
   }
-
   /**
    * `ownerId`'s copies of the items in `sourceAlbumId`. An item counts as copied when the library holds a
    * copy of it or of anything it was itself copied from: with A→B, A→C and B→C, C's copy of A's photo is
    * the one that belongs in C's copy of B's album (the one-copy rule never gave C a copy of B's copy).
    */
   async getAlbumAssetCopyIds(sourceAlbumId: string, ownerId: string): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       WITH RECURSIVE lineage(id, depth) AS (
         SELECT album_asset."assetId", 0 FROM album_asset WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
         UNION
         SELECT up."sourceAssetId", lineage.depth + 1
         FROM lineage
-        JOIN immich_fork.asset_origin up ON up."assetId" = lineage.id
+        JOIN public.asset_origin up ON up."assetId" = lineage.id
         WHERE up."sourceAssetId" IS NOT NULL AND lineage.depth < ${MAX_LINEAGE_DEPTH}
       )
       SELECT DISTINCT origin."assetId" AS id
       FROM lineage
-      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = lineage.id
+      JOIN public.asset_origin origin ON origin."sourceAssetId" = lineage.id
         AND origin."ownerId" = ${ownerId}::uuid
       JOIN asset copy ON copy.id = origin."assetId" AND copy."deletedAt" IS NULL
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   /**
    * Whether `ownerId` already holds a copy of this album or of any album it descends from or that
    * descends from the same original (the root album): one copy per library per root album, however many
    * partners pass it on (A→B, A→C, B→C must not give C two).
    */
   async hasAlbumCopyOfRoot(albumId: string, ownerId: string): Promise<boolean> {
-    const { rows } = await sql<{ present: boolean }>`
+    const { rows } = await sql<{
+      present: boolean;
+    }>`
       WITH RECURSIVE source_lineage(id, depth) AS (
         SELECT ${albumId}::uuid, 0
         UNION
         SELECT up."sourceAlbumId", source_lineage.depth + 1
         FROM source_lineage
-        JOIN immich_fork.album_origin up ON up."albumId" = source_lineage.id
+        JOIN public.album_origin up ON up."albumId" = source_lineage.id
         WHERE up."sourceAlbumId" IS NOT NULL AND source_lineage.depth < ${MAX_LINEAGE_DEPTH}
       ),
       root AS (SELECT id FROM source_lineage ORDER BY depth DESC LIMIT 1),
       copy_lineage(id, depth) AS (
         SELECT origin."sourceAlbumId", 1
-        FROM immich_fork.album_origin origin
+        FROM public.album_origin origin
         JOIN album copy ON copy.id = origin."albumId"
         WHERE origin."ownerId" = ${ownerId}::uuid AND origin."sourceAlbumId" IS NOT NULL
         UNION
         SELECT up."sourceAlbumId", copy_lineage.depth + 1
         FROM copy_lineage
-        JOIN immich_fork.album_origin up ON up."albumId" = copy_lineage.id
+        JOIN public.album_origin up ON up."albumId" = copy_lineage.id
         WHERE up."sourceAlbumId" IS NOT NULL AND copy_lineage.depth < ${MAX_LINEAGE_DEPTH}
       )
       SELECT EXISTS (SELECT 1 FROM copy_lineage WHERE id IN (SELECT id FROM root)) AS present
     `.execute(this.db);
     return rows[0]?.present ?? false;
   }
-
   /** The items in an album. */
   async getAlbumAssetIds(albumId: string): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT "assetId" AS id FROM album_asset WHERE "albumId" = ${albumId}::uuid
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   /**
    * `ownerId`'s album copies whose membership still follows a source album holding `sourceAssetId`: a
    * new copy of that item belongs in them (spec §4.4).
    */
   async getFollowingAlbumCopiesHolding(sourceAssetId: string, ownerId: string): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT origin."albumId" AS id
-      FROM immich_fork.album_origin origin
+      FROM public.album_origin origin
       JOIN album copy ON copy.id = origin."albumId" AND copy."deletedAt" IS NULL
       JOIN album_asset ON album_asset."albumId" = origin."sourceAlbumId"
         AND album_asset."assetId" = ${sourceAssetId}::uuid
@@ -726,34 +716,35 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   async getBackfill(sharedById: string, sharedWithId: string): Promise<PartnerBackfillRow | undefined> {
     const { rows } = await sql<PartnerBackfillRow>`
       SELECT "sharedById", "sharedWithId", state, cursor, total, done
-      FROM immich_fork.partner_backfill
+      FROM public.partner_backfill
       WHERE "sharedById" = ${sharedById}::uuid AND "sharedWithId" = ${sharedWithId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /** Start (or restart from the beginning) a partnership's backfill. */
   async startBackfill(sharedById: string, sharedWithId: string, total: number): Promise<void> {
     await sql`
-      INSERT INTO immich_fork.partner_backfill ("sharedById", "sharedWithId", state, cursor, total, done)
+      INSERT INTO public.partner_backfill ("sharedById", "sharedWithId", state, cursor, total, done)
       VALUES (${sharedById}::uuid, ${sharedWithId}::uuid, ${PartnerBackfillState.Pending}, NULL, ${total}, 0)
       ON CONFLICT ("sharedById", "sharedWithId") DO UPDATE
       SET state = excluded.state, cursor = NULL, total = excluded.total, done = 0, "updatedAt" = clock_timestamp()
     `.execute(this.db);
   }
-
   /** Record a finished batch: the cursor only moves forward and `done` never shrinks. */
   async advanceBackfill(
     sharedById: string,
     sharedWithId: string,
-    update: { cursor: string | null; processed: number; state: PartnerBackfillState },
+    update: {
+      cursor: string | null;
+      processed: number;
+      state: PartnerBackfillState;
+    },
   ): Promise<void> {
     await sql`
-      UPDATE immich_fork.partner_backfill
+      UPDATE public.partner_backfill
       SET cursor = coalesce(${update.cursor}::uuid, cursor),
         done = done + ${update.processed},
         total = GREATEST(total, done + ${update.processed}),
@@ -764,15 +755,13 @@ export class PartnerOriginRepository {
         AND (cursor IS NULL OR ${update.cursor}::uuid IS NULL OR ${update.cursor}::uuid > cursor)
     `.execute(this.db);
   }
-
   async stopBackfill(sharedById: string, sharedWithId: string): Promise<void> {
     await sql`
-      UPDATE immich_fork.partner_backfill
+      UPDATE public.partner_backfill
       SET state = ${PartnerBackfillState.Stopped}, "updatedAt" = clock_timestamp()
       WHERE "sharedById" = ${sharedById}::uuid AND "sharedWithId" = ${sharedWithId}::uuid
     `.execute(this.db);
   }
-
   /**
    * FL-326 (spec §5.2, partner-people-locked): the "From {owner}'s library" label of `ownerId`'s own copies
    * among `ids`: the original uploader's id and current name. Copies of other owners are never labelled.
@@ -781,12 +770,24 @@ export class PartnerOriginRepository {
     kind: OriginKind,
     ids: string[],
     ownerId: string,
-  ): Promise<Map<string, { rootOwnerId: string; rootOwnerName: string }>> {
+  ): Promise<
+    Map<
+      string,
+      {
+        rootOwnerId: string;
+        rootOwnerName: string;
+      }
+    >
+  > {
     if (ids.length === 0) {
       return new Map();
     }
     const { table, key } = TABLES[kind];
-    const { rows } = await sql<{ id: string; rootOwnerId: string; rootOwnerName: string }>`
+    const { rows } = await sql<{
+      id: string;
+      rootOwnerId: string;
+      rootOwnerName: string;
+    }>`
       SELECT origin.${sql.id(key)} AS id, origin."rootOwnerId", root.name AS "rootOwnerName"
       FROM ${sql.raw(table)} origin
       JOIN public."user" root ON root.id = origin."rootOwnerId"
@@ -794,15 +795,22 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return new Map(rows.map(({ id, rootOwnerId, rootOwnerName }) => [id, { rootOwnerId, rootOwnerName }]));
   }
-
   /** Partnerships that have never been backfilled (existing ones at upgrade, spec §4.7). */
-  async getPartnershipsWithoutBackfill(): Promise<{ sharedById: string; sharedWithId: string }[]> {
-    const { rows } = await sql<{ sharedById: string; sharedWithId: string }>`
+  async getPartnershipsWithoutBackfill(): Promise<
+    {
+      sharedById: string;
+      sharedWithId: string;
+    }[]
+  > {
+    const { rows } = await sql<{
+      sharedById: string;
+      sharedWithId: string;
+    }>`
       SELECT partner."sharedById", partner."sharedWithId"
       FROM partner
       WHERE partner."sharedById" <> partner."sharedWithId"
         AND NOT EXISTS (
-          SELECT 1 FROM immich_fork.partner_backfill backfill
+          SELECT 1 FROM public.partner_backfill backfill
           WHERE backfill."sharedById" = partner."sharedById" AND backfill."sharedWithId" = partner."sharedWithId"
         )
       ORDER BY partner."sharedById", partner."sharedWithId"

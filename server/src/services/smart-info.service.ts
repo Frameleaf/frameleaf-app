@@ -144,10 +144,24 @@ export class SmartInfoService extends BaseService {
     }
 
     await this.searchRepository.upsert(asset.id, embedding);
-    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, embedding);
-    // The owner's classification rules (FL-60) can compare the new visual embedding. Never throws.
-    await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
+    await this.jobRepository.collectFollowups(() =>
+      this.jobRepository.queue({
+        name: JobName.SmartSearchPostprocess,
+        data: { id: asset.id },
+      }),
+    );
+    return JobStatus.Success;
+  }
 
+  @OnJob({ name: JobName.SmartSearchPostprocess, queue: QueueName.SmartSearch })
+  async handlePostprocessClip({ id }: JobOf<JobName.SmartSearchPostprocess>): Promise<JobStatus> {
+    const asset = await this.assetJobRepository.getForClipEncoding(id);
+    const persisted = await this.searchRepository.getEmbedding(id);
+    if (!asset || !persisted || asset.visibility === AssetVisibility.Hidden) {
+      return JobStatus.Skipped;
+    }
+    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding);
+    await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     return JobStatus.Success;
   }
 }

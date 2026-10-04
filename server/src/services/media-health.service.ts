@@ -62,7 +62,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -241,7 +241,7 @@ export class MediaHealthService {
     private assetRepository: AssetRepository,
     private cryptoRepository: CryptoRepository,
     private eventRepository: EventRepository,
-    private forkSchemaRepository: ForkSchemaRepository,
+    private forkSchemaRepository: AssetChecksumRepository,
     private jobRepository: JobRepository,
     private libraryRepository: LibraryRepository,
     private mediaHealthRepository: MediaHealthRepository,
@@ -269,7 +269,6 @@ export class MediaHealthService {
         configRepo: this.configRepository,
         metadataRepo: this.systemMetadataRepository,
         logger: this.logger,
-        forkSchemaRepo: this.forkSchemaRepository,
       },
       { withCache },
     );

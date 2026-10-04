@@ -4,13 +4,12 @@ resources:
     memory: 4096
 
 frameleaf:
-  postgres_image_selector: vectorchord_14_image
+  postgres_image_selector: pgvector_19_image
   enable_ml: true
   ml_image_selector: ml_image
   log_level: log
   hugging_face_endpoint: ""
   db_password: immich
-  redis_password: immich
   db_storage_type: SSD
   additional_envs: []
 

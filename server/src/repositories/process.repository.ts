@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { SpawnOptionsWithoutStdio, fork, spawn } from 'node:child_process';
 import { Duplex } from 'node:stream';
+import { parentPort } from 'node:worker_threads';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 
 @Injectable()
 export class ProcessRepository {
@@ -27,7 +29,9 @@ export class ProcessRepository {
     let drainCallback: undefined | ((error?: Error | null) => void);
     let stderr = '';
 
-    const process = this.spawn(command, args, options);
+    const signal = options?.signal ?? jobSignal();
+    const process = this.spawn(command, args, { ...options, signal });
+    if (process.pid) parentPort?.postMessage({ type: 'queue-child', pid: process.pid, active: true });
     const lostInputError = () => new Error(`${command} exited before reading all of its input\n${stderr}`);
 
     const releaseWrite = () => {
@@ -74,10 +78,15 @@ export class ProcessRepository {
       },
 
       destroy(error, callback) {
-        if (process.exitCode === null && process.signalCode === null) {
-          process.kill();
-        }
-        callback(error);
+        if (isClosed) return callback(error);
+        // Do not give a queue claim back while its subprocess can still publish output.
+        const terminate = setTimeout(() => process.kill('SIGKILL'), 10_000);
+        terminate.unref();
+        process.once('close', () => {
+          clearTimeout(terminate);
+          callback(error);
+        });
+        process.kill('SIGTERM');
       },
     });
 
@@ -89,6 +98,7 @@ export class ProcessRepository {
 
     // stdout -> duplex
     process.stdout.on('data', (chunk) => {
+      advanceJobProgress(chunk.byteLength);
       // handle stream backpressure
       if (!duplex.push(chunk)) {
         process.stdout.pause();
@@ -110,11 +120,14 @@ export class ProcessRepository {
       }
     });
 
-    process.stderr.on('data', (chunk) => (stderr += chunk));
+    process.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-65_536);
+    });
 
     // end handling: 'close' comes after the exit and once stdout and stderr are fully read
     process.on('close', (code, signal) => {
       isClosed = true;
+      if (process.pid) parentPort?.postMessage({ type: 'queue-child', pid: process.pid, active: false });
       console.info(`${command} exited (${code ?? signal})`);
 
       // FL-298: a write still waiting for 'drain' never gets one now; on Linux a child that exits before

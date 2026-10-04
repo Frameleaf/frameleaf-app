@@ -1,4 +1,4 @@
-import { ForeignKeyColumn, Table } from '@immich/sql-tools';
+import { ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 
 @Table('album_closure')

@@ -1,5 +1,5 @@
-import { Column, PrimaryColumn, Table } from '@immich/sql-tools';
-import type { Timestamp } from '@immich/sql-tools';
+import { Column, PrimaryColumn, Table } from '@frameleaf/sql-tools';
+import type { Timestamp } from '@frameleaf/sql-tools';
 
 /** Latest actual physical deletion. No asset/user FK: capture survives cascades and audit pruning.
  * ponytail: retain conservatively; authoritative kept-history/parent-motion pruning needs a later bounded job.

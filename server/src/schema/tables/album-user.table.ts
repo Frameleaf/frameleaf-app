@@ -7,8 +7,8 @@ import {
   Index,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { CreateIdColumn, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { album_user_role_enum } from 'src/schema/enums.js';

@@ -1982,7 +1982,6 @@ export enum ImmichWorker {
    * safety copy of the database, then hands over to the configured workers. Started by the supervisor
    * only, never through FRAMELEAF_WORKERS_INCLUDE.
    */
-  FirstLaunch = 'first-launch',
 }
 
 export enum ImmichTelemetry {
@@ -2135,7 +2134,6 @@ export enum DatabaseExtension {
   Cube = 'cube',
   EarthDistance = 'earthdistance',
   Vector = 'vector',
-  VectorChord = 'vchord',
 }
 
 export enum BootstrapEventPriority {
@@ -2145,8 +2143,6 @@ export enum BootstrapEventPriority {
   StorageService = -195,
   // Other services may need to queue jobs on bootstrap.
   JobService = -190,
-  // FL-289: start the fork-schema backfill once the queues exist, on the API worker
-  ForkSchemaAutoStart = -185,
   // FL-326: queue the universal storage upgrade migration once the fork schema has started
   UniversalStorageMigration = -184,
   // Initialize config after other bootstrap services, stop other services from using config on bootstrap
@@ -2217,7 +2213,6 @@ export enum JobName {
   ICloudSync = 'ICloudSync',
   /** FL-79: the nightly local analytics collector, with its retention and downsampling. */
   AnalyticsCollect = 'AnalyticsCollect',
-  ForkSchemaBackfill = 'ForkSchemaBackfill',
 
   AssetDelete = 'AssetDelete',
   AssetDeleteCheck = 'AssetDeleteCheck',
@@ -2301,6 +2296,7 @@ export enum JobName {
 
   SmartSearchQueueAll = 'SmartSearchQueueAll',
   SmartSearch = 'SmartSearch',
+  SmartSearchPostprocess = 'SmartSearchPostprocess',
 
   StorageTemplateMigration = 'StorageTemplateMigration',
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
@@ -2541,7 +2537,6 @@ export const PhysicalDeduplicationPlanModeSchema = z
 export enum ExitCode {
   AppRestart = 7,
   /** FL-295: the "Getting Ready…" worker finished (or skipped) the safety copy; normal startup follows. */
-  FirstLaunchReady = 8,
 }
 
 export enum SyncRequestType {

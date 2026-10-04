@@ -1,5 +1,13 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import {
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  Index,
+  Table,
+  Unique,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';

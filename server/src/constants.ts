@@ -82,9 +82,8 @@ export const ErrorMessages = {
   TypeOrmUpgrade: 'Invalid upgrade path. For more information, see https://help.frameleaf.app',
 };
 
-export const POSTGRES_VERSION_RANGE = '>=14.0.0';
-export const VECTORCHORD_VERSION_RANGE = '>=0.3 <2';
-export const VECTOR_VERSION_RANGE = '>=0.5 <1';
+export const POSTGRES_VERSION_RANGE = '>=19.0.0 <20.0.0';
+export const VECTOR_VERSION_RANGE = '>=0.8.7 <0.9.0';
 
 export const JOBS_ASSET_PAGINATION_SIZE = 1000;
 export const JOBS_LIBRARY_PAGINATION_SIZE = 10_000;
@@ -93,18 +92,15 @@ export const EXTENSION_NAMES: Record<DatabaseExtension, string> = {
   cube: 'cube',
   earthdistance: 'earthdistance',
   vector: 'pgvector',
-  vchord: 'VectorChord',
 } as const;
 
-export const VECTOR_EXTENSIONS = [DatabaseExtension.VectorChord, DatabaseExtension.Vector] as const;
+export const VECTOR_EXTENSIONS = [DatabaseExtension.Vector] as const;
 
 export const VECTOR_INDEX_TABLES = {
   [VectorIndex.Clip]: 'smart_search',
   [VectorIndex.Face]: 'face_search',
   [VectorIndex.VideoMomentFrame]: 'video_moment_frame_embedding',
 } as const;
-
-export const VECTORCHORD_LIST_SLACK_FACTOR = 1.2;
 
 export const SALT_ROUNDS = 10;
 // Syntactically valid bcrypt hash used in login() preventing timing-based user enumeration.

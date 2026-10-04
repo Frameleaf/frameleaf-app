@@ -1,4 +1,4 @@
-import { ForeignKeyColumn, Table } from '@immich/sql-tools';
+import { ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import { TagTable } from 'src/schema/tables/tag.table.js';
 
 @Table('tag_closure')

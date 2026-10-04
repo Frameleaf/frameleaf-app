@@ -1,3 +1,4 @@
+import { fetchJobText } from 'src/queue/http.js';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
@@ -684,12 +685,13 @@ export class MachineLearningRepository implements RestorationInference {
     const target = `${selection.kind} destination ${selection.destinationId}`;
 
     let response: Response;
+    let body: string;
     try {
-      response = await fetch(new URL('predict', selection.endpoint.url), {
+      ({ response, body } = await fetchJobText(new URL('predict', selection.endpoint.url), {
         method: 'POST',
         headers: this.authHeaders(selection.endpoint),
         body: formData,
-      });
+      }));
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
       selection.record(usage('failure', 0));
@@ -699,7 +701,6 @@ export class MachineLearningRepository implements RestorationInference {
       );
     }
 
-    const body = await response.text();
     if (!response.ok) {
       selection.record(usage('failure', body.length));
       throw new Error(

@@ -1,5 +1,5 @@
-import { CreateDateColumn, ForeignKeyColumn, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { CreateDateColumn, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 

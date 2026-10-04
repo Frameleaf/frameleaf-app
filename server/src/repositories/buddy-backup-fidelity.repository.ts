@@ -3,7 +3,7 @@ import type { DB } from 'src/schema/index.js';
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { AssetType } from 'src/enum.js';
 import { DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   type BuddyAssetFidelity,
@@ -17,29 +17,27 @@ import {
 } from 'src/utils/buddy-backup-fidelity.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { canonicalJson } from 'src/utils/object.js';
-
 type Row = Record<string, unknown>;
 const tables = {
-  video: 'immich_fork.video_edit_version',
-  develop: 'immich_fork.asset_develop_revision',
-  artifact: 'immich_fork.asset_develop_artifact',
+  video: 'public.video_edit_version',
+  develop: 'public.asset_develop_revision',
+  artifact: 'public.asset_develop_artifact',
   exported: 'public.develop_export',
   restoration: 'public.asset_restoration',
 } as const;
 type Table = (typeof tables)[keyof typeof tables];
 const jsonColumns = new Set(['recipe', 'files', 'previewRegion', 'provenance']);
 const checksumColumns = new Set(['sourceChecksum', 'renditionChecksum']);
-
 /** Internal snapshot/publication adapter. Publication requires the caller's live Buddy guard transaction. */
 export class BuddyBackupFidelityRepository {
   constructor(private db: Kysely<DB>) {}
-
   private async rows(table: Table, assetId: string) {
-    const result = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM ${sql.table(table)} item
+    const result = await sql<{
+      record: Row;
+    }>`SELECT to_jsonb(item) AS record FROM ${sql.table(table)} item
       WHERE "assetId"=${assetId}::uuid ORDER BY id`.execute(this.db);
     return result.rows.map(({ record }) => record);
   }
-
   async capture(
     assetId: string,
     originalSha256: string,
@@ -51,8 +49,11 @@ export class BuddyBackupFidelityRepository {
       .select(['id', 'ownerId', 'checksum', 'checksumAlgorithm', 'type'])
       .where('id', '=', assetId)
       .executeTakeFirstOrThrow();
-    const selection = await sql<{ requestedVersionId: string | null; currentVersionId: string | null }>`
-      SELECT "requestedVersionId", "currentVersionId" FROM immich_fork.video_edit_selection
+    const selection = await sql<{
+      requestedVersionId: string | null;
+      currentVersionId: string | null;
+    }>`
+      SELECT "requestedVersionId", "currentVersionId" FROM public.video_edit_selection
       WHERE "assetId"=${assetId}::uuid AND "ownerId"=${asset.ownerId}::uuid`.execute(this.db);
     return buddyAssetFidelitySchema.parse({
       version: 1,
@@ -77,7 +78,6 @@ export class BuddyBackupFidelityRepository {
       files: [],
     });
   }
-
   /** Called only after all files in the same exported snapshot have been hashed and encrypted. */
   bindFiles(state: BuddyAssetFidelity, inventory: ReadonlyMap<string, CloudBackupManifestFile>) {
     const paths = new Set(buddyFidelityPaths(state));
@@ -94,7 +94,6 @@ export class BuddyBackupFidelityRepository {
       return file;
     });
   }
-
   async publish(options: {
     state: BuddyAssetFidelity;
     ownerId: string;
@@ -128,7 +127,6 @@ export class BuddyBackupFidelityRepository {
       if (mode === 'replace') throw new Error('Buddy version original has not been restored');
       return 'preserved-source';
     }
-    await lockForkWrites(trx, 'Buddy versions cannot be restored during database handoff');
     for (const name of ['asset_develop_revision', 'asset_develop_artifact']) {
       const lock = await sql<{
         locked: boolean;
@@ -152,7 +150,7 @@ export class BuddyBackupFidelityRepository {
       requestedVersionId: string | null;
       currentVersionId: string | null;
     }>`
-      SELECT "ownerId", "requestedVersionId", "currentVersionId" FROM immich_fork.video_edit_selection
+      SELECT "ownerId", "requestedVersionId", "currentVersionId" FROM public.video_edit_selection
       WHERE "assetId"=${asset.id}::uuid FOR UPDATE`.execute(trx);
     const previousDevelop = await this.rows(tables.develop, asset.id);
     const previousRestorations = await this.rows(tables.restoration, asset.id);
@@ -172,7 +170,6 @@ export class BuddyBackupFidelityRepository {
       .orderBy('sequence')
       .forUpdate()
       .execute();
-
     for (const version of state.videoVersions) {
       const value = {
         ...version,
@@ -228,7 +225,9 @@ export class BuddyBackupFidelityRepository {
         if (!charged) throw new Error('More storage quota is needed to restore these edit artifacts');
       }
     }
-    const count = await sql<{ count: string }>`SELECT count(*) AS count FROM immich_fork.asset_develop_artifact
+    const count = await sql<{
+      count: string;
+    }>`SELECT count(*) AS count FROM public.asset_develop_artifact
       WHERE "assetId"=${asset.id}::uuid`.execute(trx);
     if (Number(count.rows[0].count) > DEVELOP_ARTIFACT_PER_ASSET)
       throw new Error('Too many retained develop artifacts');
@@ -324,7 +323,6 @@ export class BuddyBackupFidelityRepository {
             : [],
       );
     }
-
     if (mode === 'replace' || previousDevelop.length === 0) {
       const current = state.developRevisions.find(
         (row) =>
@@ -332,11 +330,11 @@ export class BuddyBackupFidelityRepository {
           row.status === 'rendered' &&
           (row.sourceChecksum === null || row.sourceChecksum === state.source.sha256),
       );
-      await sql`UPDATE immich_fork.asset_develop_revision SET "isCurrent"=false WHERE "assetId"=${asset.id}::uuid`.execute(
+      await sql`UPDATE public.asset_develop_revision SET "isCurrent"=false WHERE "assetId"=${asset.id}::uuid`.execute(
         trx,
       );
       if (current)
-        await sql`UPDATE immich_fork.asset_develop_revision SET "isCurrent"=true
+        await sql`UPDATE public.asset_develop_revision SET "isCurrent"=true
         WHERE id=${current.id}::uuid AND "assetId"=${asset.id}::uuid AND "ownerId"=${ownerId}::uuid`.execute(trx);
     }
     if (mode === 'replace' || previousRestorations.length === 0) {
@@ -368,14 +366,14 @@ export class BuddyBackupFidelityRepository {
         const current = ready(state.videoSelection.currentVersionId);
         // In-flight recipes stay in history, but cannot become a requested background render.
         const requested = ready(state.videoSelection.requestedVersionId) ?? current;
-        await sql`INSERT INTO immich_fork.video_edit_selection ("assetId","ownerId","requestedVersionId","currentVersionId")
+        await sql`INSERT INTO public.video_edit_selection ("assetId","ownerId","requestedVersionId","currentVersionId")
           VALUES (${asset.id}::uuid,${ownerId}::uuid,${requested}::uuid,${current}::uuid)
           ON CONFLICT ("assetId") DO UPDATE SET "requestedVersionId"=excluded."requestedVersionId", "currentVersionId"=excluded."currentVersionId"
-          WHERE immich_fork.video_edit_selection."ownerId"=excluded."ownerId"`.execute(trx);
+          WHERE public.video_edit_selection."ownerId"=excluded."ownerId"`.execute(trx);
       } else {
         // An unedited video has no selection row. A null selection instead means a refused
         // version source to the normal renderer and would break later thumbnail generation.
-        await sql`DELETE FROM immich_fork.video_edit_selection
+        await sql`DELETE FROM public.video_edit_selection
           WHERE "assetId"=${asset.id}::uuid AND "ownerId"=${ownerId}::uuid`.execute(trx);
       }
       // Write the captured recipe without replaceAll(), which would enqueue a new historical render version.
@@ -409,7 +407,6 @@ export class BuddyBackupFidelityRepository {
     }
     return 'restored';
   }
-
   /** Immutable identity conflicts stop the transaction. Only already verified file locations may be rebound. */
   private async put(
     table: Table,
@@ -434,7 +431,9 @@ export class BuddyBackupFidelityRepository {
       VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING id`.execute(
       this.db,
     );
-    const stored = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM ${sql.table(table)} item
+    const stored = await sql<{
+      record: Row;
+    }>`SELECT to_jsonb(item) AS record FROM ${sql.table(table)} item
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy version revision identity conflicts with a current version');
     const current = normalize(stored.rows[0].record);

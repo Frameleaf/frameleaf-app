@@ -9,8 +9,8 @@ import {
   Table,
   Unique,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn } from 'src/decorators.js';
 import { PetObservationSource, PetObservationState, PetSpecies } from 'src/enum.js';
 import {

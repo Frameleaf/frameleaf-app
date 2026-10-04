@@ -6,8 +6,8 @@ import {
   PrimaryColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { media_health_updated_at } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 

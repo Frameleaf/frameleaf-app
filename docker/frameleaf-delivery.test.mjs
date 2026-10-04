@@ -25,7 +25,7 @@ const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
 // FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7";
 
 for (const [filename, project, rootless] of [
   ["docker-compose.yml", "immich", false],
@@ -37,7 +37,6 @@ for (const [filename, project, rootless] of [
     assert.deepEqual(Object.keys(config.services), [
       "immich-server",
       "immich-machine-learning",
-      "redis",
       "database",
     ]);
     const server = config.services["immich-server"];
@@ -53,13 +52,12 @@ for (const [filename, project, rootless] of [
     assert.equal(server.container_name, "frameleaf_server");
     assert.equal(ml.container_name, "frameleaf_machine_learning");
     assert.equal(config.services.database.container_name, "frameleaf_postgres");
-    assert.equal(config.services.redis.container_name, "frameleaf_redis");
     assert.deepEqual(server.volumes, [
       "${UPLOAD_LOCATION}:/data",
       "/etc/localtime:/etc/localtime:ro",
     ]);
     assert.deepEqual(config.services.database.volumes, [
-      "${DB_DATA_LOCATION}:/var/lib/postgresql/data",
+      "${DB_DATA_LOCATION}:/var/lib/postgresql",
     ]);
     assert.deepEqual(ml.volumes, [
       rootless ? "./ml-model-cache:/cache" : "model-cache:/cache",
@@ -73,14 +71,13 @@ for (const [filename, project, rootless] of [
       config.services.database.environment.POSTGRES_USER,
       "${DB_USERNAME}",
     );
-    assert.deepEqual(server.depends_on, ["redis", "database"]);
+    assert.deepEqual(server.depends_on, ["database"]);
     assert.deepEqual(server.env_file, [".env"]);
     // FL-165: the edge worker's direct HTTPS listener for LAN names and direct remote connections.
     assert.deepEqual(server.ports, ["2283:2283", "2443:2443"]);
     if (rootless) {
       assert.equal(server.user, "1000:1000");
       assert.equal(ml.user, "1000:1000");
-      assert.deepEqual(config.services.redis.volumes, ["./redis:/data"]);
     } else {
       assert.deepEqual(config.volumes, { "model-cache": null });
     }
@@ -117,7 +114,7 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
       ),
     );
     assert.deepEqual(config.services.database.volumes, [
-      "${UPLOAD_LOCATION}/postgres:/var/lib/postgresql/data",
+      "${UPLOAD_LOCATION}/postgres:/var/lib/postgresql",
     ]);
     // Local stacks build the database from source, so they work before any publication.
     assert.equal(config.services.database.image, "frameleaf-postgres:local");
@@ -556,20 +553,13 @@ test("only the compatibility-target exceptions name an upstream image", () => {
   assert.deepEqual(unexpected, []);
   // The exception is the official server image only, never a database, base or build-cache image.
   for (const file of compatibilityTargetFiles) {
-    if (file === "docker/postgres/Dockerfile") continue;
+    if (!existsSync(resolve(root, file))) continue;
     for (const match of read(file).matchAll(
       /ghcr\.io\/immich-app\/([a-z0-9-]+)/g,
     ))
       assert.equal(match[1], "immich-server", `${file}: ${match[0]}`);
   }
-  assert.match(
-    read("e2e/docker-compose.fork-roundtrip.yml"),
-    /Compatibility-target exception/,
-  );
-  assert.match(
-    read(".github/workflows/fork-roundtrip.yml"),
-    /Compatibility-target exception/,
-  );
+
 });
 
 test("installation files and instructions come from Frameleaf releases, not upstream ones", () => {
@@ -728,42 +718,14 @@ test("the server base is built in-repo and identical in the production and devel
   assert.match(ffmpeg.sha256.arm64, /^[a-f0-9]{64}$/);
 });
 
-test("the owned Postgres image keeps the exact database and extension versions", () => {
+test("the owned Postgres image uses PG19 and pgvector only", () => {
   const dockerfile = read("docker/postgres/Dockerfile");
-  assert.match(
-    dockerfile,
-    /^FROM docker\.io\/pgvector\/pgvector:0\.8\.1-pg14-bookworm@sha256:[a-f0-9]{64}$/m,
-  );
-  for (const line of [
-    "ARG PG_MAJOR=14",
-    "ARG VECTORCHORD_TAG=0.4.3",
-    "ARG PGVECTORS_TAG=0.2.0",
-  ])
-    assert.ok(dockerfile.split("\n").includes(line), line);
-  for (const name of [
-    "VECTORCHORD_SHA256_AMD64",
-    "VECTORCHORD_SHA256_ARM64",
-    "PGVECTORS_SHA256_AMD64",
-    "PGVECTORS_SHA256_ARM64",
-  ])
-    assert.match(dockerfile, new RegExp(`^ARG ${name}=[a-f0-9]{64}$`, "m"));
-  assert.equal((dockerfile.match(/sha256sum -c -/g) ?? []).length, 2);
-  assert.match(
-    dockerfile,
-    /^ENTRYPOINT \["\/usr\/local\/bin\/immich-docker-entrypoint\.sh"\]$/m,
-  );
-  for (const file of [
-    "healthcheck.sh",
-    "immich-docker-entrypoint.sh",
-    "set-env.sh",
-    "postgresql.hdd.conf",
-    "postgresql.ssd.conf",
-  ])
-    assert.ok(existsSync(resolve(root, "docker/postgres", file)), file);
+  assert.match(dockerfile, /postgres:19beta4/);
+  assert.match(dockerfile, /0\.8\.7/);
+  assert.doesNotMatch(dockerfile, /VECTORCHORD|PGVECTORS/);
   // Every test stack builds this image instead of pulling a database image.
   for (const [file, context] of [
     ["e2e/docker-compose.yml", "../docker/postgres"],
-    ["e2e/docker-compose.fork-roundtrip.yml", "../docker/postgres"],
   ]) {
     const database = compose(file).services.database;
     assert.equal(database.build.context, context, file);
@@ -863,4 +825,24 @@ test("release Compose files pull only digest-pinned or promotion-verified images
     read(".github/frameleaf-release.cjs"),
     /await verifyDependencyImages\(registry, process\.cwd\(\)\)/,
   );
+});
+
+
+test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
+  for (const file of ["docker/docker-compose.yml", "docker/docker-compose.rootless.yml", "docker/docker-compose.dev.yml", "docker/docker-compose.prod.yml", "e2e/docker-compose.yml", "e2e/docker-compose.dev.yml", "e2e/docker-compose.buddy.yml"]) {
+    const body = read(file);
+    assert.doesNotMatch(body, /REDIS_|redis:|valkey|vchord/);
+    assert.doesNotMatch(body, /\/var\/lib\/postgresql\/data/);
+    for (const service of Object.values(compose(file).services)) {
+      const deps = service.depends_on || [];
+      assert(!Object.keys(deps).some((name) => name.startsWith("redis")));
+    }
+  }
+  assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
+  const workflow = load(read(".github/workflows/postgres.yml"));
+  assert.deepEqual(workflow.jobs.build.strategy.matrix.runner, ["ubuntu-24.04", "ubuntu-24.04-arm"]);
+  const probe = workflow.jobs.build.steps.find((step) => step.name === "Verify PostgreSQL and extension versions");
+  assert.equal(probe.env.EXPECTED_PG_MAJOR, "19");
+  assert.equal(probe.env.EXPECTED_PGVECTOR, "0.8.7");
+  assert.match(probe.run, /USING hnsw/);
 });

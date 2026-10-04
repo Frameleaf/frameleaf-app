@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
+import { JobRunResponseDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -20,6 +21,13 @@ export class JobController {
     private queueService: QueueService,
     private runningJobService: RunningJobService,
   ) {}
+
+  @Get('runs')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({ summary: 'List durable job runs', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getJobRuns(@Query() dto: JobRunSearchDto): Promise<JobRunResponseDto[]> {
+    return this.service.getRuns(dto);
+  }
 
   @Get()
   @Authenticated({ permission: Permission.JobRead, admin: true })

@@ -6,8 +6,8 @@ import {
   Table,
   Unique,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 

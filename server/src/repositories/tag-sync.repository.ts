@@ -9,7 +9,7 @@ import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
@@ -24,7 +24,6 @@ import { getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/h
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
-
 type Kind =
   | 'tag'
   | 'assetTag'
@@ -85,22 +84,18 @@ const types = {
   pet: { upsert: SyncEntityType.PetV1, delete: SyncEntityType.PetDeleteV1 },
   petObservation: { upsert: SyncEntityType.PetObservationV1, delete: SyncEntityType.PetObservationDeleteV1 },
 } as const;
-
 /** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
   constructor(
     private db: Kysely<DB>,
     private readSharedAssets?: SharedAssetReader,
   ) {}
-
   private async locked<T>(sessionId: string, run: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx);
       await sql`select pg_advisory_xact_lock(hashtextextended(${`tag-sync:${sessionId}`}, 0))`.execute(tx);
       return run(tx);
     });
   }
-
   private async visible(
     db: Kysely<DB>,
     kind: Kind,
@@ -121,7 +116,6 @@ export class TagSync {
         };
       });
     }
-
     if (kind === 'pin') {
       if (auth.sharedLink) throw new ForbiddenException('Pinned collections require a user session');
       if (!readPins) throw new Error('Pin sync requires current authorized hydration');
@@ -317,7 +311,6 @@ export class TagSync {
         data: { ...mapPetObservation(row) },
       }));
     }
-
     const suppressed = options.hiddenContent?.tagIds ?? [];
     const tagVisible = sql<boolean>`(${tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options), { hideLocked: !getLockedOwnerId(auth) })}) and not ${tagIsSuppressed(sql.ref('tag.id'), suppressed)}`;
     if (kind === 'tag') {
@@ -359,7 +352,6 @@ export class TagSync {
       ])
       .execute();
   }
-
   async reconcile(auth: AuthDto, kind: Kind, readPins?: ReadPins) {
     const sessionId = auth.session!.id;
     return this.locked(sessionId, async (tx) => {
@@ -478,7 +470,6 @@ export class TagSync {
       return pending;
     });
   }
-
   async prepare(auth: AuthDto, kind: Kind, eventId: string, readPins?: ReadPins) {
     const sessionId = auth.session!.id;
     return this.locked(sessionId, async (tx) => {
@@ -549,7 +540,6 @@ export class TagSync {
       };
     });
   }
-
   async acknowledge(sessionId: string, ack: SyncAck): Promise<boolean> {
     const kind = Object.keys(types).find((k) =>
       (Object.values(types[k as Kind]) as SyncEntityType[]).includes(ack.type),
@@ -601,15 +591,13 @@ export class TagSync {
     });
     return true;
   }
-
   async cleanupAuditTables(days: number) {
     // Official-origin libraries do not have legacy-fork public additions until adoption.
-    const { rows } = await sql<{ table: string | null }>`select to_regclass('public.tag_audit')::text as table`.execute(
-      this.db,
-    );
+    const { rows } = await sql<{
+      table: string | null;
+    }>`select to_regclass('public.tag_audit')::text as table`.execute(this.db);
     if (!rows[0]?.table) return;
     await this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx);
       await tx
         .deleteFrom('tag_audit')
         .where('deletedAt', '<', sql<Date>`now() - ${days} * interval '1 day'`)
@@ -633,7 +621,6 @@ export class TagSync {
       }
     });
   }
-
   async reset(sessionId: string, requested?: SyncEntityType[]) {
     const kinds = (Object.keys(types) as Kind[]).filter(
       (kind) => !requested || Object.values(types[kind]).some((type) => requested.includes(type)),

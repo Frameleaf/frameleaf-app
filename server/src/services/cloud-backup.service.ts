@@ -91,7 +91,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import {
   FrameleafCloudBackupRepository,
   ManagedBackupApi,
@@ -370,7 +370,7 @@ export class CloudBackupService {
     private logger: LoggingRepository,
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
-    private forkSchemaRepository: ForkSchemaRepository,
+    private forkSchemaRepository: AssetChecksumRepository,
     private databaseRepository: DatabaseRepository,
     private instanceIdentityRepository: InstanceIdentityRepository,
     private frameleafCloudRepository: FrameleafCloudRepository,
@@ -3855,7 +3855,6 @@ export class CloudBackupService {
       configRepo: this.configRepository,
       metadataRepo: this.systemMetadataRepository,
       logger: this.logger,
-      forkSchemaRepo: this.forkSchemaRepository,
     };
   }
 

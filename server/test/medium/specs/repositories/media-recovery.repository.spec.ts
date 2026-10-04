@@ -13,10 +13,7 @@ import {
   MediaHealthSeverity,
   MediaHealthStatus,
 } from 'src/enum.js';
-import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import {
@@ -48,11 +45,59 @@ describe(MediaRecoveryRepository.name, () => {
   beforeAll(async () => {
     db = await getKyselyDB();
     await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
     const statements = [
       'CREATE SCHEMA public',
-      'CREATE SCHEMA immich_fork',
-      'CREATE TABLE public.migration_overrides (name text)',
+      `CREATE TABLE public.icloud_connection (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "ownerId" uuid NOT NULL,
+      label text NOT NULL CHECK (length(label) BETWEEN 1 AND 256),
+      state text NOT NULL DEFAULT 'paused',
+      "encryptedSession" text,
+      config jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(config) = 'object'),
+      "lastError" text,
+      "authAttempts" integer NOT NULL DEFAULT 0 CHECK ("authAttempts" >= 0),
+      "authRetryAt" timestamptz,
+      "nextRunAt" timestamptz,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (id, "ownerId")
+    )`,
+      `CREATE TABLE public.icloud_resource (
+      "auditRequestId" uuid,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "connectionId" uuid NOT NULL,
+      "ownerId" uuid NOT NULL,
+      "libraryKey" text NOT NULL,
+      library jsonb NOT NULL CHECK (jsonb_typeof(library) = 'object'),
+      "sourceAssetId" text NOT NULL,
+      "recordId" text NOT NULL,
+      "resourceKey" text NOT NULL,
+      role text NOT NULL,
+      fingerprint text NOT NULL,
+      source jsonb NOT NULL CHECK (jsonb_typeof(source) = 'object'),
+      "expectedSize" bigint NOT NULL CHECK ("expectedSize" >= 0 AND "expectedSize" <= 9007199254740991),
+      status text NOT NULL DEFAULT 'pending',
+      sha1 bytea CHECK (octet_length(sha1) = 20),
+      sha256 bytea CHECK (octet_length(sha256) = 32),
+      "assetId" uuid,
+      path text,
+      "stagingPath" text,
+      "promotedPath" text,
+      "expectedTarget" jsonb,
+      verification jsonb,
+      "pendingJobs" jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof("pendingJobs") = 'array'),
+      attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      "nextAttemptAt" timestamptz,
+      "leaseToken" uuid,
+      "leaseExpiresAt" timestamptz,
+      "reservedBytes" bigint NOT NULL DEFAULT 0 CHECK ("reservedBytes" >= 0 AND "reservedBytes" <= 9007199254740991),
+      "lastError" text,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now(),
+      FOREIGN KEY ("connectionId", "ownerId") REFERENCES public.icloud_connection (id, "ownerId") ON DELETE CASCADE,
+      UNIQUE ("connectionId", "libraryKey", "sourceAssetId", "resourceKey", fingerprint),
+      CHECK (("leaseToken" IS NULL) = ("leaseExpiresAt" IS NULL))
+    )`,
       'CREATE TABLE public.user (id uuid PRIMARY KEY, "quotaUsageInBytes" bigint DEFAULT 0, "quotaSizeInBytes" bigint)',
       `CREATE TABLE public.asset (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "ownerId" uuid REFERENCES public.user,
         "updateId" uuid DEFAULT gen_random_uuid(), "originalPath" text, "originalFileName" text, checksum bytea,
@@ -69,31 +114,19 @@ describe(MediaRecoveryRepository.name, () => {
       'CREATE TABLE public.user_metadata ("userId" uuid, key text, value jsonb)',
       'CREATE TABLE public.asset_metadata ("assetId" uuid, key text, value jsonb)',
       'CREATE TABLE public.album_asset ("assetId" uuid, "albumId" uuid)',
-      'CREATE TABLE public.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid REFERENCES public.asset, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
+      'CREATE TABLE public.physical_file ("createdAt" timestamptz DEFAULT now(), "updatedAt" timestamptz DEFAULT now(), id uuid PRIMARY KEY, "canonicalAssetId" uuid REFERENCES public.asset, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
       'ALTER TABLE public.asset ADD FOREIGN KEY ("physicalOriginalFileId") REFERENCES public.physical_file',
-      'CREATE TABLE immich_fork.state (id integer PRIMARY KEY, phase text)',
-      "INSERT INTO immich_fork.state VALUES (1, 'dual-write')",
-      'CREATE TABLE immich_fork.migration_audit (name text, status text)',
-      'CREATE TABLE immich_fork.asset_storage_reservation ("assetId" uuid, status text)',
-      'CREATE TABLE immich_fork.asset_privacy ("assetId" uuid PRIMARY KEY, "isNsfw" boolean, suppression jsonb, "updatedAt" timestamptz)',
-      'CREATE TABLE immich_fork.asset_enrichment ("assetId" uuid PRIMARY KEY)',
-      'CREATE TABLE immich_fork.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
-      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE, "createdAt" timestamptz NOT NULL, "updatedAt" timestamptz NOT NULL)',
-      'CREATE TABLE immich_fork.asset_physical_file ("assetId" uuid PRIMARY KEY, "physicalFileId" uuid, "upstreamPath" text, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
+      'CREATE TABLE public.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
       `CREATE TABLE public.asset_health (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "assetId" uuid, "runId" uuid, category text,
         status text, severity text, "originalPath" text, "originalFileName" text, evidence jsonb DEFAULT '{}', resolution jsonb DEFAULT '{}',
         "checkedAt" timestamptz, "resolvedAt" timestamptz, "dismissedAt" timestamptz, "createdAt" timestamptz DEFAULT now(),
         "updatedAt" timestamptz DEFAULT now(), UNIQUE("assetId", category))`,
-      'CREATE TABLE immich_fork.asset_health (LIKE public.asset_health INCLUDING ALL)',
       'CREATE TABLE public.asset_health_candidate (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "healthId" uuid, status text, resolution jsonb DEFAULT \'{}\')',
-      'CREATE TABLE immich_fork.asset_health_candidate (LIKE public.asset_health_candidate INCLUDING ALL)',
     ];
     for (const statement of statements) {
       await sql.raw(statement).execute(db);
     }
-    await migration.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
-    sut = new MediaRecoveryRepository(db, new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db));
+    sut = new MediaRecoveryRepository(db);
     health = new MediaHealthRepository(db);
   });
   afterAll(async () => {
@@ -110,10 +143,10 @@ describe(MediaRecoveryRepository.name, () => {
     await sql`INSERT INTO public.user (id, "quotaUsageInBytes") VALUES (${ownerId}::uuid, ${existing ? bytes.length : 0})`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.icloud_connection (id, "ownerId", label, state) VALUES (${connectionId}::uuid, ${ownerId}::uuid, 'Photos', 'connected')`.execute(
+    await sql`INSERT INTO public.icloud_connection (id, "ownerId", label, state) VALUES (${connectionId}::uuid, ${ownerId}::uuid, 'Photos', 'connected')`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.icloud_resource (id, "connectionId", "ownerId", "libraryKey", library, "sourceAssetId", "recordId",
+    await sql`INSERT INTO public.icloud_resource (id, "connectionId", "ownerId", "libraryKey", library, "sourceAssetId", "recordId",
       "resourceKey", role, fingerprint, source, "expectedSize", "stagingPath", "leaseToken", "leaseExpiresAt")
       VALUES (${resourceId}::uuid, ${connectionId}::uuid, ${ownerId}::uuid, 'private', '{}', 'source', 'record', 'original', 'original', 'v1', '{}',
         ${bytes.length}, '/stage/good.jpg', ${leaseToken}::uuid, now() + interval '1 hour')`.execute(db);
@@ -124,10 +157,7 @@ describe(MediaRecoveryRepository.name, () => {
       );
       await sql`INSERT INTO public.asset_exif VALUES (${assetId}::uuid, ${bytes.length})`.execute(db);
       await sql`INSERT INTO public.album_asset VALUES (${assetId}::uuid, ${albumId}::uuid)`.execute(db);
-      await sql`INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw") VALUES (${assetId}::uuid, false)`.execute(
-        db,
-      );
-      for (const schema of ['public', 'immich_fork']) {
+      for (const schema of ['public']) {
         await sql`INSERT INTO ${sql.id(schema, 'asset_health')} ("assetId", category, status, severity, "originalPath", "originalFileName", "dismissedAt", "checkedAt", evidence)
           VALUES (${assetId}::uuid, 'missing', 'dismissed', 'critical', '/managed/missing.jpg', 'original.jpg', now(), now(), '{"reason":"original_missing"}')`.execute(
           db,
@@ -165,84 +195,76 @@ describe(MediaRecoveryRepository.name, () => {
     return { authority, candidate, reservation, commitInput, reserveInput, assetId, albumId };
   };
 
-  it.each(['dual-write', 'active'])(
-    'repairs same ID, associations, dismissed history and outbox in %s',
-    async (phase) => {
-      await sql`UPDATE immich_fork.state SET phase = ${phase}`.execute(db);
-      const context = await arrange();
-      expect(await sut.commit(context.commitInput)).toEqual({ outcome: 'repaired-missing', assetId: context.assetId });
-      expect(
-        (
-          await sql`SELECT "createdAt", "updatedAt" FROM immich_fork.physical_file WHERE "canonicalAssetId" = ${context.assetId}::uuid`.execute(
-            db,
-          )
-        ).rows,
-      ).toEqual([{ createdAt: expect.any(Date), updatedAt: expect.any(Date) }]);
-      expect(
-        await db.selectFrom('asset').selectAll().where('id', '=', context.assetId).executeTakeFirst(),
-      ).toMatchObject({
+  it('repairs same ID, associations, dismissed history and outbox in canonical public', async () => {
+    const context = await arrange();
+    expect(await sut.commit(context.commitInput)).toEqual({ outcome: 'repaired-missing', assetId: context.assetId });
+    expect(
+      (
+        await sql`SELECT "createdAt", "updatedAt" FROM public.physical_file WHERE "canonicalAssetId" = ${context.assetId}::uuid`.execute(
+          db,
+        )
+      ).rows,
+    ).toEqual([{ createdAt: expect.any(Date), updatedAt: expect.any(Date) }]);
+    expect(await db.selectFrom('asset').selectAll().where('id', '=', context.assetId).executeTakeFirst()).toMatchObject(
+      {
         id: context.assetId,
         originalPath: context.reservation.promotedPath,
         isFavorite: true,
         isOffline: false,
         checksum: verified.sha256,
         checksumAlgorithm: 'sha256',
-      });
-      expect(
+      },
+    );
+    expect(
+      (
+        await sql`SELECT 1 FROM public.album_asset WHERE "assetId" = ${context.assetId}::uuid AND "albumId" = ${context.albumId}::uuid`.execute(
+          db,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    const finding = (
+      await sql<{
+        status: string;
+        resolvedAt: Date;
+        resolution: object;
+      }>`SELECT * FROM public.asset_health WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
+    ).rows[0];
+    expect(finding).toMatchObject({
+      status: 'resolved',
+      resolution: { previousPath: '/managed/missing.jpg', previousEvidence: { reason: 'original_missing' } },
+    });
+    expect(finding.resolvedAt).not.toBeNull();
+    const resource = (
+      await sql<{
+        status: string;
+        pendingJobs: unknown[];
+      }>`SELECT * FROM public.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(db)
+    ).rows[0];
+    expect(resource.status).toBe('committed');
+    expect(resource.pendingJobs).toEqual([
+      { name: JobName.AssetExtractMetadata, data: { id: context.assetId, source: 'upload' } },
+      { name: JobName.AssetGenerateThumbnails, data: { id: context.assetId, source: 'upload' } },
+    ]);
+    expect(await sut.commit(context.commitInput)).toMatchObject({ outcome: 'reused', assetId: context.assetId });
+    expect(
+      Number(
         (
-          await sql`SELECT 1 FROM public.album_asset WHERE "assetId" = ${context.assetId}::uuid AND "albumId" = ${context.albumId}::uuid`.execute(
-            db,
-          )
-        ).rows,
-      ).toHaveLength(1);
-      const finding = (
-        await sql<{
-          status: string;
-          resolvedAt: Date;
-          resolution: object;
-        }>`SELECT * FROM immich_fork.asset_health WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
-      ).rows[0];
-      expect(finding).toMatchObject({
-        status: 'resolved',
-        resolution: { previousPath: '/managed/missing.jpg', previousEvidence: { reason: 'original_missing' } },
-      });
-      expect(finding.resolvedAt).not.toBeNull();
-      const resource = (
-        await sql<{
-          status: string;
-          pendingJobs: unknown[];
-        }>`SELECT * FROM immich_fork.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(db)
-      ).rows[0];
-      expect(resource.status).toBe('committed');
-      expect(resource.pendingJobs).toEqual([
-        { name: JobName.AssetExtractMetadata, data: { id: context.assetId, source: 'upload' } },
-        { name: JobName.AssetGenerateThumbnails, data: { id: context.assetId, source: 'upload' } },
-      ]);
-      expect(await sut.commit(context.commitInput)).toMatchObject({ outcome: 'reused', assetId: context.assetId });
-      expect(
-        Number(
-          (
-            await db
-              .selectFrom('user')
-              .select('quotaUsageInBytes')
-              .where('id', '=', context.authority.ownerId)
-              .executeTakeFirstOrThrow()
-          ).quotaUsageInBytes,
-        ),
-      ).toBe(bytes.length);
-    },
-  );
+          await db
+            .selectFrom('user')
+            .select('quotaUsageInBytes')
+            .where('id', '=', context.authority.ownerId)
+            .executeTakeFirstOrThrow()
+        ).quotaUsageInBytes,
+      ),
+    ).toBe(bytes.length);
+  });
   it('imports once with canonical privacy/enrichment and quota bookkeeping', async () => {
     const { commitInput, authority } = await arrange(false);
     const result = await sut.commit(commitInput);
     expect(result.outcome).toBe('imported');
     expect(
-      (await sql`SELECT 1 FROM immich_fork.asset_privacy WHERE "assetId" = ${result.assetId}::uuid`.execute(db)).rows,
-    ).toHaveLength(1);
-    expect(
-      (await sql`SELECT 1 FROM immich_fork.asset_enrichment WHERE "assetId" = ${result.assetId}::uuid`.execute(db))
-        .rows,
-    ).toHaveLength(1);
+      await db.selectFrom('asset').select(['id', 'is_nsfw']).where('id', '=', result.assetId!).executeTakeFirst(),
+    ).toMatchObject({ id: result.assetId, is_nsfw: false });
     expect(await sut.commit(commitInput)).toMatchObject({ outcome: 'reused', assetId: result.assetId });
     expect(
       Number(
@@ -272,7 +294,7 @@ describe(MediaRecoveryRepository.name, () => {
       (
         await sql<{
           status: string;
-        }>`SELECT status FROM immich_fork.asset_health WHERE "assetId" = ${assetId}::uuid`.execute(db)
+        }>`SELECT status FROM public.asset_health WHERE "assetId" = ${assetId}::uuid`.execute(db)
       ).rows[0].status,
     ).toBe('dismissed');
   });
@@ -281,7 +303,7 @@ describe(MediaRecoveryRepository.name, () => {
     await db.updateTable('asset').set({ isFavorite: false }).where('id', '=', first.assetId).execute();
     expect(await sut.commit(first.commitInput)).toMatchObject({ outcome: 'retry', reason: 'target_changed' });
     const second = await arrange();
-    await sql`UPDATE immich_fork.icloud_resource SET "leaseToken" = ${randomUUID()}::uuid WHERE id = ${second.authority.resourceId}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET "leaseToken" = ${randomUUID()}::uuid WHERE id = ${second.authority.resourceId}::uuid`.execute(
       db,
     );
     expect(await sut.commit(second.commitInput)).toMatchObject({ outcome: 'retry', reason: 'lease_changed' });
@@ -317,7 +339,7 @@ describe(MediaRecoveryRepository.name, () => {
         sha256: createHash('sha256').update(wrong).digest(),
         sizeInBytes: wrong.length,
       };
-      await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${other.sha1}, ${other.sha256})`.execute(
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${other.sha1}, ${other.sha256})`.execute(
         db,
       );
       const candidate = (await sut.findCandidates(context.authority.ownerId, other))[0];
@@ -333,14 +355,14 @@ describe(MediaRecoveryRepository.name, () => {
     await sql`UPDATE public.asset SET "checksumAlgorithm" = 'sha1-path', checksum = ${Buffer.alloc(20)} WHERE id = ${context.assetId}::uuid`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256})`.execute(
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256})`.execute(
       db,
     );
     expect((await sut.findCandidates(context.authority.ownerId, verified))[0]).toMatchObject({
       matchesContent: true,
       identityConflict: false,
     });
-    await sql`UPDATE immich_fork.asset_checksum SET sha256 = ${Buffer.alloc(32)} WHERE "assetId" = ${context.assetId}::uuid`.execute(
+    await sql`UPDATE public.asset_checksum SET sha256 = ${Buffer.alloc(32)} WHERE "assetId" = ${context.assetId}::uuid`.execute(
       db,
     );
     expect((await sut.findCandidates(context.authority.ownerId, verified))[0]).toMatchObject({
@@ -357,13 +379,10 @@ describe(MediaRecoveryRepository.name, () => {
     try {
       await writeFile(stagedPath, bytes);
       await writeFile(promotedPath, bytes);
-      await sql`UPDATE immich_fork.icloud_resource SET "stagingPath" = ${stagedPath}, "promotedPath" = ${promotedPath}
+      await sql`UPDATE public.icloud_resource SET "stagingPath" = ${stagedPath}, "promotedPath" = ${promotedPath}
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
       await sql`INSERT INTO public.asset (id, "ownerId", "originalPath", "originalFileName", checksum, "checksumAlgorithm", type)
         VALUES (${context.assetId}::uuid, ${context.authority.ownerId}::uuid, '/upload/winner.jpg', 'original.jpg', ${verified.sha256}, 'sha256', 'IMAGE')`.execute(
-        db,
-      );
-      await sql`INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw") VALUES (${context.assetId}::uuid, false)`.execute(
         db,
       );
       const integrity = { validate: vi.fn().mockResolvedValue(verified) };
@@ -424,17 +443,12 @@ describe(MediaRecoveryRepository.name, () => {
       .execute();
     expect(await sut.findCandidates(context.authority.ownerId, verified)).toEqual([]);
   });
-  it('rejects removed tombstones and normalization reservations', async () => {
+  it('rejects removed source tombstones', async () => {
     const first = await arrange();
-    await sql`UPDATE immich_fork.icloud_resource SET status = 'removed' WHERE id = ${first.authority.resourceId}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET status = 'removed' WHERE id = ${first.authority.resourceId}::uuid`.execute(
       db,
     );
     expect(await sut.commit(first.commitInput)).toMatchObject({ outcome: 'retry', reason: 'lease_changed' });
-    const second = await arrange();
-    await sql`INSERT INTO immich_fork.asset_storage_reservation VALUES (${second.assetId}::uuid, 'reserved')`.execute(
-      db,
-    );
-    expect(await sut.commit(second.commitInput)).toMatchObject({ outcome: 'retry', reason: 'target_changed' });
   });
   it('reuses a durable reservation after a promotion crash', async () => {
     const context = await arrange();
@@ -470,7 +484,7 @@ describe(MediaRecoveryRepository.name, () => {
     async ({ pendingJobs }) => {
       const context = await arrange();
       await db.updateTable('asset').set({ isOffline: false }).where('id', '=', context.assetId).execute();
-      await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
       const candidate = (await sut.findCandidates(context.authority.ownerId, verified))[0];
@@ -484,7 +498,7 @@ describe(MediaRecoveryRepository.name, () => {
       expect(await sut.commit({ ...context.commitInput, reservation: reservation! })).toMatchObject({
         outcome: 'reused',
       });
-      await sql`UPDATE immich_fork.icloud_resource SET "pendingJobs" = ${pendingJobs}::jsonb WHERE id = ${context.authority.resourceId}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET "pendingJobs" = ${pendingJobs}::jsonb WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
       const current = (await sut.findCandidates(context.authority.ownerId, verified))[0];
@@ -513,7 +527,7 @@ describe(MediaRecoveryRepository.name, () => {
             status: string;
             pendingJobs: unknown[];
             stagingPath: string;
-          }>`SELECT status, "pendingJobs", "stagingPath" FROM immich_fork.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(
+          }>`SELECT status, "pendingJobs", "stagingPath" FROM public.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(
             db,
           )
         ).rows[0],
@@ -529,7 +543,7 @@ describe(MediaRecoveryRepository.name, () => {
         .set({ isExternal: true, libraryId, isOffline: false })
         .where('id', '=', context.assetId)
         .execute();
-      await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
       const candidate = (await sut.findCandidates(context.authority.ownerId, verified))[0];
@@ -577,12 +591,12 @@ describe(MediaRecoveryRepository.name, () => {
       });
       const checksum = await sql<{
         evidence: { source: string };
-      }>`SELECT evidence FROM immich_fork.asset_checksum WHERE "assetId" = ${result.assetId}::uuid`.execute(db);
+      }>`SELECT evidence FROM public.asset_checksum WHERE "assetId" = ${result.assetId}::uuid`.execute(db);
       expect(checksum.rows[0].evidence.source).toBe('icloud-recovery');
       const resource = await sql<{
         assetId: string;
         verification: { outcome: string; matchedExternalAssetId: string };
-      }>`SELECT "assetId", verification FROM immich_fork.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(
+      }>`SELECT "assetId", verification FROM public.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
       expect(resource.rows[0]).toMatchObject({
@@ -600,7 +614,7 @@ describe(MediaRecoveryRepository.name, () => {
       const stagedPath = join(directory, 'stage.jpg');
       try {
         await writeFile(stagedPath, bytes);
-        await sql`UPDATE immich_fork.icloud_resource SET "stagingPath" = ${stagedPath} WHERE id = ${context.authority.resourceId}::uuid`.execute(
+        await sql`UPDATE public.icloud_resource SET "stagingPath" = ${stagedPath} WHERE id = ${context.authority.resourceId}::uuid`.execute(
           db,
         );
         const integrity = { validate: vi.fn().mockResolvedValue(verified) };
@@ -632,9 +646,6 @@ describe(MediaRecoveryRepository.name, () => {
           db,
         );
       } else {
-        await sql`UPDATE immich_fork.asset_privacy SET "isNsfw" = true WHERE "assetId" = ${context.assetId}::uuid`.execute(
-          db,
-        );
         await sql`UPDATE public.asset SET is_nsfw = true WHERE id = ${context.assetId}::uuid`.execute(db);
       }
       expect((await sut.findCandidates(context.authority.ownerId, verified))[0].hidden).toBe(true);
@@ -701,7 +712,7 @@ describe(MediaRecoveryRepository.name, () => {
       if (visibility === 'hidden') {
         await sql`UPDATE public.asset SET "isOffline" = true WHERE id = ${context.assetId}::uuid`.execute(db);
         expect(await recovery.verifyMapped(context.authority)).toBeUndefined();
-        await sql`UPDATE immich_fork.icloud_resource SET status = 'validated', "expectedTarget" = NULL, "promotedPath" = NULL
+        await sql`UPDATE public.icloud_resource SET status = 'validated', "expectedTarget" = NULL, "promotedPath" = NULL
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
         const damaged = (await sut.findCandidates(context.authority.ownerId, verified))[0];
         const reservation = await sut.reserve({
@@ -776,10 +787,10 @@ describe(MediaRecoveryRepository.name, () => {
       await sql`INSERT INTO public.asset_edit VALUES (${context.assetId}::uuid, '[{"action":"rotate","parameters":{"angle":90}}]')`.execute(
         db,
       );
-      await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL,
+      await sql`UPDATE public.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL,
         "expectedSize" = ${png.length}, "stagingPath" = ${stagedPath}, sha1 = NULL, sha256 = NULL
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
-      for (const schema of ['public', 'immich_fork']) {
+      for (const schema of ['public']) {
         await sql`UPDATE ${sql.id(schema, 'asset_health')} SET "originalPath" = ${brokenPath} WHERE "assetId" = ${context.assetId}::uuid`.execute(
           db,
         );
@@ -833,7 +844,7 @@ describe(MediaRecoveryRepository.name, () => {
         (
           await sql<{
             status: string;
-          }>`SELECT status FROM immich_fork.asset_health WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
+          }>`SELECT status FROM public.asset_health WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
         ).rows[0].status,
       ).toBe('resolved');
       expect(await service.verifyMapped(context.authority)).toEqual({ outcome: 'reused', assetId: context.assetId });
@@ -841,15 +852,5 @@ describe(MediaRecoveryRepository.name, () => {
       paths.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
-  });
-  it('uses fork physical associations when the active schema has no public physical pointer', async () => {
-    await sql`UPDATE immich_fork.state SET phase = 'active'`.execute(db);
-    await sql`ALTER TABLE public.asset DROP COLUMN "physicalOriginalFileId" CASCADE`.execute(db);
-    const context = await arrange();
-    expect(await sut.commit(context.commitInput)).toMatchObject({ outcome: 'repaired-missing' });
-    expect(
-      (await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId" = ${context.assetId}::uuid`.execute(db))
-        .rows,
-    ).toHaveLength(1);
   });
 });

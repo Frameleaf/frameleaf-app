@@ -8,8 +8,8 @@ import {
   PrimaryGeneratedColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { UserTable } from 'src/schema/tables/user.table.js';

@@ -21,7 +21,6 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
@@ -234,7 +233,6 @@ export class PreservationWorkerService {
     private users: UserRepository,
     private albumRepository: AlbumRepository,
     private tagRepository: TagRepository,
-    private enrichment: ForkEnrichmentRepository,
     private assetMedia: AssetMediaService,
     private assets: AssetService,
     private albums: AlbumService,
@@ -653,21 +651,9 @@ export class PreservationWorkerService {
    * description and its enrichment metadata before that, exactly as enrichment itself reads them.
    */
   private async enrichmentProvenance(assetId: string, description: string | null) {
-    let metadata: Record<string, unknown> | null;
-    let manual: string | null;
-    let generated: string[];
-    if (await this.enrichment.shouldReadSidecar()) {
-      const sidecar = await this.enrichment.get(assetId);
-      metadata = sidecar ? asRecord(sidecar.provenance) : null;
-      manual = sidecar?.userDescription?.trim() ? sidecar.userDescription : splitDescription(description).manual;
-      generated = sidecar?.generatedDescription
-        ? [sidecar.generatedDescription]
-        : splitDescription(description).generated;
-    } else {
-      const row = await this.repository.getEnrichmentMetadata(assetId);
-      metadata = row ? asRecord(row.value) : null;
-      ({ manual, generated } = splitDescription(description));
-    }
+    const row = await this.repository.getEnrichmentMetadata(assetId);
+    const metadata = row ? asRecord(row.value) : null;
+    const { manual, generated } = splitDescription(description);
     return { manual, generated, metadata };
   }
 

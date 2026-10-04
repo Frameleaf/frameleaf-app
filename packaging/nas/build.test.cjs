@@ -5,7 +5,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { build } = require('./build.cjs');
-const { NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cjs');
 const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
 
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
@@ -50,9 +49,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-nas-'));
   const tag = 'frameleaf-v3.1.0-1';
   const sha = 'a'.repeat(40);
-  const qualificationSha = 'b'.repeat(40);
-  const receiptCommit = 'c'.repeat(40);
-  const database = 'ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0';
+  const database = 'ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7';
   const bundle = path.join(root, 'bundle');
   const output = path.join(root, 'output');
   const sourceRoot = path.join(root, 'source');
@@ -63,31 +60,15 @@ test('authenticated release packaging, negative trust cases, and Synology worker
   try {
     for (const name of INSTALL_FILES)
       write(path.join(sourceRoot, 'docker', name), fs.readFileSync(path.join(__dirname, '../../docker', name)));
-    write(path.join(sourceRoot, 'server/src/fork-schema/supported-versions.json'), '{}');
     const release = {
-      schemaVersion: 2, repository: REPOSITORY, tag, sourceCommit: sha,
-      certifiedBuildRun: `${SOURCE}/actions/runs/123`,
+      schemaVersion: 3, repository: REPOSITORY, tag, sourceCommit: sha,
+      buildRun: `${SOURCE}/actions/runs/123`,
       images: VARIANTS.map((spec, i) => ({
         image: `ghcr.io/frameleaf/${spec.image}`, suffix: spec.suffix,
         digest: digest(i + 1), sourceCommit: sha, platforms: spec.platforms,
       })),
       dependencies: [{ reference: database, digest: digest(8) }],
     };
-    const reports = {};
-    const receipts = Object.fromEntries([['officialImmich', 'v3.1.0'], ['priorFrameleaf', 'frameleaf-v3.1.0-0']].map(([family, version]) => {
-      const file = `packaging/nas/qualification/${family.toLowerCase()}.json`;
-      const report = JSON.stringify({
-        schemaVersion: 1, environment: 'sanitized-production-shaped', sourceVersion: version,
-        targetServer: `${release.images[0].image}@${release.images[0].digest}`,
-        targetPostgres: `${database}@${digest(8)}`, run: `${SOURCE}/actions/runs/456`, sourceCommit: qualificationSha,
-        checks: { preflight: 'passed', backupRestore: 'passed', migration: 'passed', rollback: 'passed' },
-      });
-      reports[`contents/${file}?ref=${receiptCommit}`] = { encoding: 'base64', content: Buffer.from(report).toString('base64') };
-      return [family, [{ version, evidence: { commit: receiptCommit, path: file, digest: hash(report) } }]];
-    }));
-    const migration = Object.fromEntries(Object.entries(receipts).map(([family, entries]) => [family, entries.map((entry) => entry.version)]));
-    const signedReports = Object.values(reports).map((report) => JSON.parse(Buffer.from(report.content, 'base64')));
-    write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(migration));
     await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
     const nas = JSON.parse(fs.readFileSync(path.join(bundle, 'nas-manifest.json')));
     assert.equal(nas.images.postgres, `${database}@${digest(8)}`);
@@ -99,7 +80,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       if (args[0] === 'verify') return '[]';
       const [name, value] = args.at(-1).split('@');
       const type = args[4];
-      return (type === NAS_ATTESTATION_TYPE ? signedReports : [release]).map((predicate) => JSON.stringify({ payload: Buffer.from(JSON.stringify({
+      return [release].map((predicate) => JSON.stringify({ payload: Buffer.from(JSON.stringify({
         predicateType: type, predicate,
         subject: [{ name, digest: { sha256: value.slice(7) } }],
       })).toString('base64') })).join('\n') + '\n';
@@ -108,44 +89,21 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       head_sha: sha, head_branch: 'fork/main', head_repository: { full_name: REPOSITORY },
       event: 'push', status: 'completed', conclusion: 'success', path: '.github/workflows/docker.yml',
     };
-    const jobs = { total_count: 2, jobs: Object.entries(receipts).map(([family, [source]]) => ({
-      name: `NAS qualification (${family}, ${source.version})`, conclusion: 'success',
-      steps: ['Preflight', 'Backup and restore', 'Migration', 'Rollback'].map((name) => ({ name, conclusion: 'success' })),
-    })) };
     const request = async (endpoint) => {
-      if (reports[endpoint]) return reports[endpoint];
       if (endpoint === 'actions/runs/123') return trusted;
-      if (endpoint === 'actions/runs/456') return { ...trusted, head_sha: qualificationSha, path: '.github/workflows/nas-qualification.yml' };
-      if (endpoint === 'actions/runs/456/jobs?filter=latest&per_page=100') return jobs;
       throw new Error(`Unexpected evidence request: ${endpoint}`);
     };
     let rejected = 0;
     const reject = async (pattern, verification = {}) => {
       const out = path.join(root, `rejected-${rejected++}`);
-      await assert.rejects(build(bundle, tag, out, receipts, { run, request, ...verification }), pattern);
+      await assert.rejects(build(bundle, tag, out, { run, request, ...verification }), pattern);
       assert(!fs.existsSync(out), 'An unverified bundle must produce no package');
     };
     await reject(/signature rejected/, { run: () => { throw new Error('signature rejected'); } });
     await reject(/Signed attestation differs/, { run: (command, args) => args[0] === 'verify' ? '[]' : JSON.stringify({
       payload: Buffer.from(JSON.stringify({ predicateType: ATTESTATION_TYPE, predicate: {}, subject: [] })).toString('base64'),
     }) });
-    await reject(/Build certification is not trusted/, { request: async (endpoint) => endpoint === 'actions/runs/123' ? { ...trusted, head_sha: 'b'.repeat(40) } : request(endpoint) });
-    await reject(/Migration evidence run is not trusted/, { request: async (endpoint) => endpoint === 'actions/runs/456' ? { ...trusted, head_sha: sha } : request(endpoint) });
-    await reject(/Missing successful migration qualification steps/, { request: async (endpoint) => endpoint.includes('/jobs?') ? { ...jobs, jobs: [] } : request(endpoint) });
-    await reject(/Migration evidence checksum differs/, { request: async (endpoint) => endpoint.startsWith('contents/') ? { encoding: 'base64', content: Buffer.from('{}').toString('base64') } : request(endpoint) });
-    // Rehashing caller-provided receipts cannot authorize a changed target or unsigned report.
-    const receipt = receipts.officialImmich[0];
-    const receiptDigest = receipt.evidence.digest;
-    for (const [patch, pattern] of [
-      [{ targetServer: `${release.images[0].image}@${digest(9)}` }, /Migration target server differs/],
-      [{ sourceCommit: 'd'.repeat(40) }, /Signed attestation differs/],
-    ]) {
-      const altered = JSON.stringify({ ...signedReports[0], ...patch });
-      receipt.evidence.digest = hash(altered);
-      await reject(pattern, { request: async (endpoint) => endpoint.includes('/officialimmich.json?') ?
-        { encoding: 'base64', content: Buffer.from(altered).toString('base64') } : request(endpoint) });
-    }
-    receipt.evidence.digest = receiptDigest;
+    await reject(/Build provenance is not trusted/, { request: async (endpoint) => endpoint === 'actions/runs/123' ? { ...trusted, head_sha: 'b'.repeat(40) } : request(endpoint) });
     const originalNas = fs.readFileSync(path.join(bundle, 'nas-manifest.json'));
     write(path.join(bundle, 'nas-manifest.json'), '{}');
     await reject(/checksum differs/);
@@ -156,23 +114,13 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     write(path.join(bundle, 'SHA256SUMS'), sums);
     // Even a rehashed checksum list cannot authenticate a modified release manifest.
     const originalRelease = fs.readFileSync(path.join(bundle, 'release-manifest.json'));
-    const forgedRelease = JSON.stringify({ ...release, certification: 'forged' });
+    const forgedRelease = JSON.stringify({ ...release, provenance: 'forged' });
     write(path.join(bundle, 'release-manifest.json'), forgedRelease);
     write(path.join(bundle, 'SHA256SUMS'), sums.replace(hash(originalRelease).slice(7), hash(forgedRelease).slice(7)));
     await reject(/Signed attestation differs/);
     write(path.join(bundle, 'release-manifest.json'), originalRelease);
     write(path.join(bundle, 'SHA256SUMS'), sums);
-    for (const invalid of [{ officialImmich: [], priorFrameleaf: [] }, { officialImmich: ['v3.0.0'], priorFrameleaf: ['frameleaf-v3.1.0-0'] }]) {
-      write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(invalid));
-      await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
-      await reject(/migration version allowlist is required|Migration receipts differ/);
-    }
-    write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(migration));
-    await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
-    await assert.rejects(build(bundle, tag, path.join(root, 'missing-receipts'), undefined, { run, request }), /receipts are required/);
-    assert(!fs.existsSync(path.join(root, 'missing-receipts')));
-    // The release SHA, qualification workflow SHA and report commit intentionally differ.
-    await build(bundle, tag, output, receipts, { run, request });
+    await build(bundle, tag, output, { run, request });
     assert(calls.some((args) => args[0] === 'verify-attestation' && args.at(-1) === nas.images.server));
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
     const unraidServer = read('unraid/templates/frameleaf-server.xml');
@@ -188,7 +136,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
-    assert(values.includes(`14-vectorchord0.4.3-pgvectors0.2.0@${digest(8)}`));
+    assert(values.includes(`19beta4-pgvector0.8.7@${digest(8)}`));
     assert(!values.includes('immich-app'));
     if (process.env.TRUENAS_LIBRARY) {
       const rendered = execFileSync('python3', [path.join(__dirname, 'check-truenas.py'), path.join(output, 'truenas/ix-dev/community/frameleaf'), process.env.TRUENAS_LIBRARY]).toString();

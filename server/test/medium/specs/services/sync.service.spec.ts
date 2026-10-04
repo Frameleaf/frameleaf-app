@@ -1,4 +1,4 @@
-import { schemaFromCode } from '@immich/sql-tools';
+import { schemaFromCode } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { v4 } from 'uuid';

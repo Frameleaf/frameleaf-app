@@ -10,14 +10,6 @@ export const envData: EnvData = {
   logFormat: LogFormat.Console,
 
   buildMetadata: {},
-  bull: {
-    config: {
-      connection: {},
-      prefix: 'immich_bull',
-    },
-    queues: [{ name: 'queue-1' }],
-  },
-
   cls: {
     config: {},
   },
@@ -25,14 +17,14 @@ export const envData: EnvData = {
   database: {
     config: {
       connectionType: 'parts',
-      database: 'immich',
+      database: 'frameleaf',
       host: 'database',
       port: 5432,
       username: 'postgres',
       password: 'postgres',
     },
     skipMigrations: false,
-    vectorExtension: DatabaseExtension.VectorChord,
+    vectorExtension: DatabaseExtension.Vector,
   },
 
   helmet: {
@@ -46,12 +38,6 @@ export const envData: EnvData = {
 
   network: {
     trustedProxies: [],
-  },
-
-  redis: {
-    host: 'redis',
-    port: 6379,
-    db: 0,
   },
 
   resourcePaths: {

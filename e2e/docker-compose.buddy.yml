@@ -7,7 +7,7 @@ x-app: &app
   environment: &environment
     DB_USERNAME: postgres
     DB_PASSWORD: postgres
-    DB_DATABASE_NAME: immich
+    DB_DATABASE_NAME: frameleaf
     FRAMELEAF_PORT: '2285'
     FRAMELEAF_ENV: testing
     # The host fixture runs the real direct/proxy classes; ACME/EdgeState enrollment is out of scope.
@@ -27,14 +27,14 @@ x-app: &app
 x-db: &db
   image: frameleaf-postgres:e2e
   # Retain production durability settings for the restart assertion.
-  command: -c fsync=on -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
+  command: -c fsync=on -c shared_preload_libraries=
   environment:
     POSTGRES_PASSWORD: postgres
     POSTGRES_USER: postgres
-    POSTGRES_DB: immich
+    POSTGRES_DB: frameleaf
   shm_size: 128mb
   healthcheck:
-    test: ['CMD-SHELL', 'pg_isready -U postgres -d immich']
+    test: ['CMD-SHELL', 'pg_isready -U postgres -d frameleaf']
     interval: 1s
     timeout: 5s
     retries: 30
@@ -46,7 +46,6 @@ services:
     environment:
       <<: *environment
       DB_HOSTNAME: db-a
-      REDIS_HOSTNAME: redis-a
       FRAMELEAF_EDGE_SECRET: fl310-buddy-a-test-only
     ports:
       - 127.0.0.1:3285:2285
@@ -58,14 +57,11 @@ services:
     depends_on:
       db-a:
         condition: service_healthy
-      redis-a:
-        condition: service_healthy
   buddy-b:
     <<: *app
     environment:
       <<: *environment
       DB_HOSTNAME: db-b
-      REDIS_HOSTNAME: redis-b
       FRAMELEAF_EDGE_SECRET: fl310-buddy-b-test-only
     ports:
       - 127.0.0.1:3286:2285
@@ -77,29 +73,18 @@ services:
     depends_on:
       db-b:
         condition: service_healthy
-      redis-b:
-        condition: service_healthy
   db-a:
     <<: *db
     ports:
       - 127.0.0.1:5535:5432
     volumes:
-      - db-a:/var/lib/postgresql/data
+      - db-a:/var/lib/postgresql
   db-b:
     <<: *db
     ports:
       - 127.0.0.1:5536:5432
     volumes:
-      - db-b:/var/lib/postgresql/data
-  redis-a:
-    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-    healthcheck:
-      test: redis-cli ping || exit 1
-  redis-b:
-    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-    healthcheck:
-      test: redis-cli ping || exit 1
-
+      - db-b:/var/lib/postgresql
 volumes:
   db-a:
   db-b:

@@ -1,10 +1,7 @@
-import { DatabaseConnectionParams } from '@immich/sql-tools';
-import { RegisterQueueOptions } from '@nestjs/bullmq';
+import { DatabaseConnectionParams } from '@frameleaf/sql-tools';
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { QueueOptions } from 'bullmq';
 import { Request, Response } from 'express';
 import { HelmetOptions } from 'helmet';
-import { RedisOptions } from 'ioredis';
 import { CLS_ID, ClsModuleOptions } from 'nestjs-cls';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,7 +16,6 @@ import {
   ImmichWorker,
   LogFormat,
   LogLevel,
-  QueueName,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
@@ -55,11 +51,6 @@ export interface EnvData {
     thirdPartyBugFeatureUrl?: string;
     thirdPartyDocumentationUrl?: string;
     thirdPartySupportUrl?: string;
-  };
-
-  bull: {
-    config: QueueOptions;
-    queues: RegisterQueueOptions[];
   };
 
   cls: {
@@ -102,8 +93,6 @@ export interface EnvData {
     };
     corePlugin: string;
   };
-
-  redis: RedisOptions;
 
   setup: {
     allow: boolean;
@@ -174,11 +163,9 @@ export interface EnvData {
 }
 
 // FL-295: the "Getting Ready…" worker is the supervisor's to start, never a configured one
-const WORKER_TYPES = new Set<ImmichWorker>(
-  Object.values(ImmichWorker).filter((worker) => worker !== ImmichWorker.FirstLaunch),
-);
+const WORKER_TYPES = new Set<ImmichWorker>(Object.values(ImmichWorker));
 
-const asSet = <T>(value: string | undefined, defaults: T[]) => {
+const asSet = <T,>(value: string | undefined, defaults: T[]) => {
   const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
   return new Set(values.length === 0 ? defaults : (values as T[]));
 };
@@ -241,24 +228,6 @@ const getEnv = (): EnvData => {
     web: join(buildFolder, 'www'),
   };
 
-  let redisConfig = {
-    host: dto.REDIS_HOSTNAME || 'redis',
-    port: dto.REDIS_PORT || 6379,
-    db: dto.REDIS_DBINDEX || 0,
-    username: dto.REDIS_USERNAME || undefined,
-    password: dto.REDIS_PASSWORD || undefined,
-    path: dto.REDIS_SOCKET || undefined,
-  };
-
-  const redisUrl = dto.REDIS_URL;
-  if (redisUrl && redisUrl.startsWith('ioredis://')) {
-    try {
-      redisConfig = JSON.parse(Buffer.from(redisUrl.slice(10), 'base64').toString());
-    } catch (error) {
-      throw new Error('Failed to decode redis options', { cause: error });
-    }
-  }
-
   const databaseConnection: DatabaseConnectionParams = dto.DB_URL
     ? { connectionType: 'url', url: dto.DB_URL }
     : {
@@ -267,23 +236,11 @@ const getEnv = (): EnvData => {
         port: dto.DB_PORT || 5432,
         username: dto.DB_USERNAME || 'postgres',
         password: dto.DB_PASSWORD || 'postgres',
-        database: dto.DB_DATABASE_NAME || 'immich',
+        database: dto.DB_DATABASE_NAME || 'frameleaf',
         ssl: dto.DB_SSL_MODE || undefined,
       };
 
-  let vectorExtension: VectorExtension | undefined;
-  if (dto.DB_VECTOR_EXTENSION) {
-    switch (dto.DB_VECTOR_EXTENSION) {
-      case 'pgvector': {
-        vectorExtension = DatabaseExtension.Vector;
-        break;
-      }
-      case 'vectorchord': {
-        vectorExtension = DatabaseExtension.VectorChord;
-        break;
-      }
-    }
-  }
+  const vectorExtension = DatabaseExtension.Vector;
 
   const shutdownGraceMs = (dto.FRAMELEAF_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS) * 1000;
   const shutdownDeadlineMs = (dto.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
@@ -316,21 +273,6 @@ const getEnv = (): EnvData => {
       thirdPartyBugFeatureUrl: helpLinks.bugFeatureUrl,
       thirdPartyDocumentationUrl: helpLinks.documentationUrl,
       thirdPartySupportUrl: helpLinks.supportUrl,
-    },
-
-    bull: {
-      config: {
-        prefix: 'immich_bull',
-        connection: { ...redisConfig },
-        defaultJobOptions: {
-          attempts: 1,
-          removeOnComplete: true,
-          // FL-71: failed jobs are kept for the Job manager to review, retry or remove; each queue
-          // keeps its newest 1,000, the most one "Remove failed records" clears.
-          removeOnFail: { count: 1000 },
-        },
-      },
-      queues: Object.values(QueueName).map((name) => ({ name })),
     },
 
     cls: {
@@ -366,8 +308,6 @@ const getEnv = (): EnvData => {
     network: {
       trustedProxies: dto.FRAMELEAF_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
     },
-
-    redis: redisConfig,
 
     resourcePaths: {
       lockFile: join(buildFolder, 'build-lock.json'),

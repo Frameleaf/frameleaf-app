@@ -1,4 +1,4 @@
-import { Column, PrimaryColumn, Table } from '@immich/sql-tools';
+import { Column, PrimaryColumn, Table } from '@frameleaf/sql-tools';
 import type { SystemMetadata } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 

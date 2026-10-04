@@ -29,14 +29,14 @@
     "test:cov": "vitest --config test/vitest.config.mjs --coverage",
     "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
     "test:medium": "vitest --config test/vitest.config.medium.mjs",
-    "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate --debug",
-    "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate",
-    "migrations:create": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations create",
-    "migrations:run": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations run",
-    "migrations:revert": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations revert",
+    "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate --debug",
+    "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate",
+    "migrations:create": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations create",
+    "migrations:run": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations run",
+    "migrations:revert": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations revert",
     "migrations:sync-order": "sql-tools migrations sync-order",
     "migrations:verify-order": "sql-tools migrations verify-order",
-    "schema:drop": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} query 'DROP schema public cascade; CREATE schema public;'",
+    "schema:drop": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} query 'DROP schema public cascade; CREATE schema public;'",
     "schema:reset": "pnpm run schema:drop && pnpm run migrations:run",
     "email:dev": "email dev -p 3050 --dir src/emails"
   },
@@ -44,8 +44,7 @@
     "@achingbrain/nat-port-mapper": "4.0.5",
     "@extism/extism": "2.0.0-rc13",
     "@immich/plugin-sdk": "workspace:*",
-    "@immich/sql-tools": "^0.6.3",
-    "@nestjs/bullmq": "^12.0.0",
+    "@frameleaf/sql-tools": "workspace:*",
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
     "@nestjs/platform-express": "^12.0.0",
@@ -55,14 +54,12 @@
     "@nestjs/websockets": "^12.0.0",
     "@react-email/components": "^1.0.0",
     "@react-email/render": "^2.0.0",
-    "@socket.io/redis-adapter": "^8.3.0",
     "acme-client": "^5.4.0",
     "archiver": "^7.0.0",
     "async-lock": "^1.4.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
     "bonjour-service": "^1.4.4",
-    "bullmq": "^5.51.0",
     "chokidar": "^4.0.3",
     "compression": "^1.8.0",
     "cookie": "^1.0.2",
@@ -77,7 +74,6 @@
     "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
     "i18n-iso-countries": "^7.6.0",
-    "ioredis": "^5.8.2",
     "jose": "^6.0.0",
     "js-yaml": "^5.0.0",
     "jsonwebtoken": "^9.0.2",
@@ -113,7 +109,8 @@
     "ua-parser-js": "^2.0.0",
     "uuid": "^14.0.0",
     "validator": "^13.12.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@socket.io/postgres-adapter": "0.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
@@ -165,7 +162,8 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.28.0",
     "unplugin-swc": "^1.4.5",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "socket.io-client": "^4.8.1"
   },
   "overrides": {
     "sharp": "^0.35.3"

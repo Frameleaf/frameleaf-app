@@ -1,4 +1,5 @@
-import { Database, Extensions, Generated, Int8 } from '@immich/sql-tools';
+import type { QueueDatabase } from 'src/queue/table-types.js';
+import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import {
   album_user_role_enum,
   asset_face_source_type,
@@ -194,8 +195,8 @@ import { WorkflowRunStepTable } from 'src/schema/tables/workflow-run-step.table.
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 
-@Extensions(['uuid-ossp', 'unaccent', 'cube', 'earthdistance', 'pg_trgm', 'plpgsql'])
-@Database({ name: 'immich' })
+@Extensions(['uuid-ossp', 'unaccent', 'cube', 'earthdistance', 'pg_trgm', 'plpgsql', 'vector'])
+@Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
     AssetUploadResourceTable,
@@ -382,11 +383,11 @@ export interface Migrations {
   timestamp: Int8;
 }
 
-export interface DB {
+export interface DB extends QueueDatabase {
   backup_device: BackupDeviceTable;
   asset_backup_deletion: AssetBackupDeletionTable;
   backup_reconciliation: BackupReconciliationTable;
-  kysely_migrations: { timestamp: string; name: string };
+  frameleaf_migrations: { timestamp: string; name: string };
 
   activity: ActivityTable;
   admin_audit_event: AdminAuditEventTable;

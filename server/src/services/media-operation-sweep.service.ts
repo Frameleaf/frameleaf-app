@@ -7,7 +7,7 @@ import { MediaOperationRecovery, MediaOperationRepository } from 'src/repositori
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 
 /** How often lapsed claims are recovered. */
-export const MEDIA_OPERATION_SWEEP_MS = 60_000;
+export const MEDIA_OPERATION_SWEEP_MS = 30_000;
 
 /** What a job whose worker vanished and that has no retry left is reported with. */
 export const MEDIA_OPERATION_LEASE_EXPIRED = {
@@ -20,8 +20,8 @@ export const MEDIA_OPERATION_LEASE_EXPIRED = {
  *
  * A claim whose lease lapsed — the worker died, the server restarted, the network went — is judged
  * here and nowhere else, for every kind: bulk, render worker jobs (Studio exports and previews,
- * quick edits), restorations and Studio bundles. It returns to the queue while it has attempts
- * left, gets its one automatic retry when it has not, and fails only after that; see
+ * quick edits), restorations and Studio bundles. Safe local work returns to the queue for its one automatic retry,
+ * while unsafe or exhausted work is reported for attention; see
  * `MediaOperationRepository.recoverExpiredClaims`.
  *
  * No worker owns this, on purpose. When each runner swept its own kinds, two passes could judge

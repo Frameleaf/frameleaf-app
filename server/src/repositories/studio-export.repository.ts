@@ -15,10 +15,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/derivative-privacy.repository.js';
-import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -34,7 +31,6 @@ import {
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
-
 /**
  * FL-195 follow-up (owner decision, September 27, 2026): which sessions a version is hidden from. A
  * result carries the lock its sources had when it was published, and any source lock added later
@@ -44,8 +40,9 @@ import {
  * library item the owner locked directly. Unlocking the last locked source releases an inherited lock
  * (`releaseDerivedResults`), so the version shows again. `revealed` is the owner's unlocked session.
  */
-export type StudioExportVisibility = HiddenContentQueryOptions & { revealed: boolean };
-
+export type StudioExportVisibility = HiddenContentQueryOptions & {
+  revealed: boolean;
+};
 const versionHiddenFrom = (visibility: StudioExportVisibility) => {
   const hiddenSource = sql<boolean>`exists (
     select 1
@@ -65,37 +62,38 @@ const versionHiddenFrom = (visibility: StudioExportVisibility) => {
     ? sql<boolean>`(${hiddenSource} or ${hiddenResult})`
     : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource} or ${hiddenResult})`;
 };
-
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
-export const STUDIO_EXPORT_HANDOFF_REFUSAL = 'Studio exports are unavailable during database handoff';
-
 export type StudioExportVersion = Selectable<StudioExportVersionTable>;
 export type StudioExportVersionSource = Selectable<StudioExportVersionSourceTable>;
 export type StudioExportRemoteReference = Selectable<StudioExportRemoteReferenceTable>;
-
 export type StudioExportSourceInput = Omit<
   Insertable<StudioExportVersionSourceTable>,
   'versionId' | 'locked' | 'lockReason' | 'sensitive'
 >;
-
 /** One source's persisted stream facts (FL-93 / FL-102). */
 export type StudioSourceMediaFacts = {
   assetId: string;
-  video: { timeBase: number; pixelFormat: string; colorTransfer: number } | null;
+  video: {
+    timeBase: number;
+    pixelFormat: string;
+    colorTransfer: number;
+  } | null;
   packets: VideoPacketInfo | null;
-  audio: { codecName: string; channels: number | null; channelLayout: string | null; sampleRate: number | null } | null;
+  audio: {
+    codecName: string;
+    channels: number | null;
+    channelLayout: string | null;
+    sampleRate: number | null;
+  } | null;
 };
-
 /** Versions that are still somebody's pending work. */
 export const PENDING_STUDIO_EXPORT_STATES: readonly StudioExportVersionState[] = [
   StudioExportVersionState.Rendering,
   StudioExportVersionState.Staged,
 ];
-
 /** Library source kinds: the graph names a library asset by id and FL-90 recorded its owner. */
 export const isLibrarySource = (source: Pick<StudioExportVersionSource, 'assetId' | 'ownerId'>): boolean =>
   !!source.assetId && !!source.ownerId;
-
 /**
  * Why a publication stopped. `cancel` refusals end the version as `cancelled` (the owner, the
  * project or a source went away, or the database is being handed over); `fail` refusals end the
@@ -105,7 +103,6 @@ export type StudioExportRefusalCode =
   | 'owner-unavailable'
   | 'project-unavailable'
   | 'source-unavailable'
-  | 'handoff-in-progress'
   | 'source-changed'
   | 'source-access-lost'
   | 'scope-changed'
@@ -115,14 +112,11 @@ export type StudioExportRefusalCode =
   | 'claim-lost'
   /** FL-102: the rendered file does not have the precision or audio its export promised. */
   | 'output-rejected';
-
 const CANCELLING_REFUSALS: ReadonlySet<StudioExportRefusalCode> = new Set([
   'owner-unavailable',
   'project-unavailable',
   'source-unavailable',
-  'handoff-in-progress',
 ]);
-
 export class StudioExportRefusal extends Error {
   constructor(
     readonly code: StudioExportRefusalCode,
@@ -131,13 +125,11 @@ export class StudioExportRefusal extends Error {
     super(message);
     this.name = 'StudioExportRefusal';
   }
-
   /** The version is cancelled rather than failed: pending work whose premise went away. */
   get cancels(): boolean {
     return CANCELLING_REFUSALS.has(this.code);
   }
 }
-
 export type StudioExportPublication = {
   versionId: string;
   /** The publication job holding the claim. Only its own staged version is published. */
@@ -159,7 +151,6 @@ export type StudioExportPublication = {
   assetType: AssetType;
   originalFileName: string;
 };
-
 /** A `project` result the owner saves to their library (FL-194). */
 export type StudioExportLibrarySave = Pick<
   StudioExportPublication,
@@ -174,12 +165,10 @@ export type StudioExportLibrarySave = Pick<
   | 'assetType'
   | 'originalFileName'
 >;
-
 type StudioExportAssetInput = Pick<
   StudioExportPublication,
   'ownerId' | 'path' | 'checksum' | 'sizeInBytes' | 'assetType' | 'originalFileName'
 >;
-
 export type StudioExportPublished = {
   status: 'published';
   version: StudioExportVersion;
@@ -189,9 +178,12 @@ export type StudioExportPublished = {
   /** An existing asset of the owner's with the same bytes and at least the same privacy. */
   reusedAssetId: string | null;
 };
-
-const isUniqueViolation = (error: unknown): boolean => (error as { code?: string } | null)?.code === '23505';
-
+const isUniqueViolation = (error: unknown): boolean =>
+  (
+    error as {
+      code?: string;
+    } | null
+  )?.code === '23505';
 /**
  * Studio export versions (FL-106, `STU-404`).
  *
@@ -202,21 +194,17 @@ const isUniqueViolation = (error: unknown): boolean => (error as { code?: string
 @Injectable()
 export class StudioExportRepository {
   constructor(
-    @InjectKysely() private db: Kysely<DB>,
+    @InjectKysely()
+    private db: Kysely<DB>,
     private privacy: DerivativePrivacyRepository,
-    private forkPrivacy: ForkPrivacyRepository,
-    private forkEnrichment: ForkEnrichmentRepository,
   ) {}
-
   /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-    return withPublicForkWrites(this.db, query, STUDIO_EXPORT_HANDOFF_REFUSAL);
+    return this.db.transaction().execute(query);
   }
-
   /* ------------------------------------------------------------------ */
   /* Versions                                                            */
   /* ------------------------------------------------------------------ */
-
   /**
    * FL-93 / FL-102: what the library already knows about each source's streams — the video time
    * base, colour, packet scan and the audio layout — so an export can declare its cadence, carry
@@ -278,7 +266,6 @@ export class StudioExportRepository {
             },
     }));
   }
-
   /** The render job and the version it will become, together or not at all. */
   async createWithRender(
     operation: MediaOperationCreate,
@@ -286,9 +273,11 @@ export class StudioExportRepository {
       Insertable<StudioExportVersionTable>,
       'ownerId' | 'projectId' | 'revision' | 'revisionDigest' | 'destination' | 'settings'
     >,
-  ): Promise<{ operation: MediaOperation; version: StudioExportVersion }> {
+  ): Promise<{
+    operation: MediaOperation;
+    version: StudioExportVersion;
+  }> {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       const created = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       const row = await tx
         .insertInto('studio_export_version')
@@ -298,13 +287,11 @@ export class StudioExportRepository {
       return { operation: created as unknown as MediaOperation, version: row as unknown as StudioExportVersion };
     });
   }
-
   getById(id: string): Promise<StudioExportVersion | undefined> {
     return this.db.selectFrom('studio_export_version').selectAll().where('id', '=', id).executeTakeFirst() as Promise<
       StudioExportVersion | undefined
     >;
   }
-
   /** Owner-scoped. Somebody else's version answers like one that does not exist. */
   getForOwner(
     id: string,
@@ -319,7 +306,6 @@ export class StudioExportRepository {
       .$if(!!visibility, (qb) => qb.where(sql<boolean>`not ${versionHiddenFrom(visibility!)}`))
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
-
   getByRenderOperation(operationId: string): Promise<StudioExportVersion | undefined> {
     return this.db
       .selectFrom('studio_export_version')
@@ -327,7 +313,6 @@ export class StudioExportRepository {
       .where('renderOperationId', '=', operationId)
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
-
   getByPublishOperation(operationId: string): Promise<StudioExportVersion | undefined> {
     return this.db
       .selectFrom('studio_export_version')
@@ -335,13 +320,19 @@ export class StudioExportRepository {
       .where('publishOperationId', '=', operationId)
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
-
   /** Newest first. Published versions by number, then everything still on its way or stopped. */
   async listForProject(
     projectId: string,
     ownerId: string,
-    page: { take: number; skip: number; visibility: StudioExportVisibility },
-  ): Promise<{ items: StudioExportVersion[]; total: number }> {
+    page: {
+      take: number;
+      skip: number;
+      visibility: StudioExportVisibility;
+    },
+  ): Promise<{
+    items: StudioExportVersion[];
+    total: number;
+  }> {
     // A result that inherited a lock, or whose source is hidden from the session now, exists only for
     // a session that may see it (FL-34, FL-195): elsewhere the row is not listed and not counted.
     const query = this.db
@@ -358,7 +349,6 @@ export class StudioExportRepository {
     ]);
     return { items: items as unknown as StudioExportVersion[], total };
   }
-
   /** The sources of several versions in one query, by version. */
   async getSourcesFor(versionIds: readonly string[]): Promise<Map<string, StudioExportVersionSource[]>> {
     const bySource = new Map<string, StudioExportVersionSource[]>(versionIds.map((id) => [id, []]));
@@ -377,7 +367,6 @@ export class StudioExportRepository {
     }
     return bySource;
   }
-
   getSources(versionId: string): Promise<StudioExportVersionSource[]> {
     return this.db
       .selectFrom('studio_export_version_source')
@@ -386,7 +375,6 @@ export class StudioExportRepository {
       .orderBy('key', 'asc')
       .execute() as Promise<StudioExportVersionSource[]>;
   }
-
   /**
    * Record what a render claim was granted: the worker, its engine and every source with the
    * checksum it may read. Every claim replaces the previous one's list, because the retry reads
@@ -394,10 +382,13 @@ export class StudioExportRepository {
    */
   async recordRenderClaim(
     renderOperationId: string,
-    claim: { workerId: string; engineDigest: string | null; sources: readonly StudioExportSourceInput[] },
+    claim: {
+      workerId: string;
+      engineDigest: string | null;
+      sources: readonly StudioExportSourceInput[];
+    },
   ): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       const version = await tx
         .updateTable('studio_export_version')
         .set({ workerId: claim.workerId, engineDigest: claim.engineDigest, updatedAt: sql<Date>`now()` })
@@ -418,7 +409,6 @@ export class StudioExportRepository {
       return true;
     });
   }
-
   /**
    * The render reported a file: record it and queue its publication, in one transaction. Only a
    * current validating claim can move a rendering version; cancelled or replaced claims queue nothing.
@@ -435,9 +425,14 @@ export class StudioExportRepository {
     },
     publish: (version: StudioExportVersion) => MediaOperationCreate,
     requireActiveClaim = false,
-  ): Promise<{ version: StudioExportVersion; operation: MediaOperation } | undefined> {
+  ): Promise<
+    | {
+        version: StudioExportVersion;
+        operation: MediaOperation;
+      }
+    | undefined
+  > {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken, requireActiveClaim))) {
         return;
       }
@@ -451,13 +446,11 @@ export class StudioExportRepository {
       if (!version) {
         return;
       }
-
       const operation = await tx
         .insertInto('media_operation')
         .values(publish(version))
         .returningAll()
         .executeTakeFirstOrThrow();
-
       const staged = await tx
         .updateTable('studio_export_version')
         .set({
@@ -473,15 +466,16 @@ export class StudioExportRepository {
         .where('id', '=', version.id)
         .returningAll()
         .executeTakeFirstOrThrow();
-
       return { version: staged as unknown as StudioExportVersion, operation: operation as unknown as MediaOperation };
     });
   }
-
   /** End a pending version as failed. A published version is never touched. */
   async markFailed(
     id: string,
-    failure: { errorCode: string; error: string },
+    failure: {
+      errorCode: string;
+      error: string;
+    },
   ): Promise<StudioExportVersion | undefined> {
     return this.write((db) =>
       db
@@ -498,9 +492,14 @@ export class StudioExportRepository {
         .executeTakeFirst(),
     ) as Promise<StudioExportVersion | undefined>;
   }
-
   /** End a pending version as cancelled. A published version is never touched. */
-  async cancel(id: string, reason: { errorCode: string; error: string }): Promise<StudioExportVersion | undefined> {
+  async cancel(
+    id: string,
+    reason: {
+      errorCode: string;
+      error: string;
+    },
+  ): Promise<StudioExportVersion | undefined> {
     return this.write((db) =>
       db
         .updateTable('studio_export_version')
@@ -517,7 +516,6 @@ export class StudioExportRepository {
         .executeTakeFirst(),
     ) as Promise<StudioExportVersion | undefined>;
   }
-
   /** Serialize publication and staging against cancellation and claim recovery (FL-43). */
   private async lockClaim(
     tx: Kysely<DB>,
@@ -541,11 +539,9 @@ export class StudioExportRepository {
       .executeTakeFirst();
     return !!held;
   }
-
   /* ------------------------------------------------------------------ */
   /* Publication                                                         */
   /* ------------------------------------------------------------------ */
-
   /**
    * Publish a staged version, atomically.
    *
@@ -580,7 +576,6 @@ export class StudioExportRepository {
         .where('id', '=', input.versionId)
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
-
       if (version?.state === StudioExportVersionState.Published && version.publishOperationId === input.operationId) {
         const privacy = (version.privacy ?? {}) as unknown as DerivativePrivacy;
         return { status: 'published', version, privacy, createdAssetId: null, reusedAssetId: null };
@@ -595,8 +590,6 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('not-staged', 'This export is no longer waiting to be published');
       }
 
-      await this.assertNoHandoff(tx);
-
       const owner = await tx
         .selectFrom('user')
         .select('id')
@@ -607,7 +600,6 @@ export class StudioExportRepository {
       if (!owner) {
         throw new StudioExportRefusal('owner-unavailable', 'The account this export belongs to is being deleted');
       }
-
       const project = await tx
         .selectFrom('studio_project')
         .select(['id', 'ownerId', 'deletedAt'])
@@ -617,24 +609,20 @@ export class StudioExportRepository {
       if (!project || project.deletedAt || project.ownerId !== input.ownerId) {
         throw new StudioExportRefusal('project-unavailable', 'The project is gone or in the trash');
       }
-
       const privacy = await this.lockSourcePrivacy(tx, input);
       const scope = input.retainInProject ? StudioExportScope.Project : privacy.union.scope;
       if (scope !== input.expectedScope) {
         throw new StudioExportRefusal('scope-changed', 'The sources of this export changed hands');
       }
-
       const { createdAssetId, reusedAssetId } =
         scope === StudioExportScope.Library
           ? await this.adoptLibraryAsset(tx, input, privacy.union)
           : { createdAssetId: null, reusedAssetId: null };
-
       const next = await tx
         .selectFrom('studio_export_version')
         .select((eb) => sql<number>`coalesce(max(${eb.ref('version')}), 0) + 1`.as('next'))
         .where('projectId', '=', project.id)
         .executeTakeFirstOrThrow();
-
       for (const row of privacy.evidence) {
         await tx
           .updateTable('studio_export_version_source')
@@ -643,7 +631,6 @@ export class StudioExportRepository {
           .where('assetId', '=', row.assetId)
           .execute();
       }
-
       const published = await tx
         .updateTable('studio_export_version')
         .set({
@@ -661,7 +648,6 @@ export class StudioExportRepository {
         .where('id', '=', version.id)
         .returningAll()
         .executeTakeFirstOrThrow();
-
       return {
         status: 'published',
         version: published as unknown as StudioExportVersion,
@@ -671,7 +657,6 @@ export class StudioExportRepository {
       };
     });
   }
-
   /**
    * Save a published `project` result to its owner's library (FL-194), atomically: the version is
    * locked, the database must not be handed over, every library source is re-checked under locks
@@ -680,11 +665,12 @@ export class StudioExportRepository {
    * the same bytes, restricted at least as much, is referenced. A version already in the library
    * answers with itself.
    */
-  async saveToLibrary(
-    input: StudioExportLibrarySave,
-  ): Promise<{ version: StudioExportVersion; createdAssetId: string | null; reusedAssetId: string | null }> {
+  async saveToLibrary(input: StudioExportLibrarySave): Promise<{
+    version: StudioExportVersion;
+    createdAssetId: string | null;
+    reusedAssetId: string | null;
+  }> {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       const version = (await tx
         .selectFrom('studio_export_version')
         .selectAll()
@@ -705,12 +691,10 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('not-staged', 'This export has no file to save');
       }
 
-      await this.assertNoHandoff(tx);
       const privacy = await this.lockSourcePrivacy(tx, input);
       if (privacy.union.scope !== StudioExportScope.Library) {
         throw new StudioExportRefusal('source-access-lost', 'A result made with shared media stays with its project');
       }
-
       const { createdAssetId, reusedAssetId } = await this.adoptLibraryAsset(tx, input, privacy.union);
       const saved = await tx
         .updateTable('studio_export_version')
@@ -727,7 +711,6 @@ export class StudioExportRepository {
       return { version: saved as unknown as StudioExportVersion, createdAssetId, reusedAssetId };
     });
   }
-
   /**
    * Share-lock every library source and read the union of their Locked and sensitive evidence. A
    * source gone, in the trash, offline or with another checksum refuses; a source of somebody
@@ -736,7 +719,10 @@ export class StudioExportRepository {
   private async lockSourcePrivacy(
     tx: Kysely<DB>,
     input: Pick<StudioExportPublication, 'ownerId' | 'sources' | 'nsfwHiding'>,
-  ): Promise<{ union: DerivativePrivacy; evidence: LockedSourceRow[] }> {
+  ): Promise<{
+    union: DerivativePrivacy;
+    evidence: LockedSourceRow[];
+  }> {
     const librarySources = input.sources.filter((source) => !!source.assetId);
     const rows = await this.privacy.lockSources(tx, [...new Set(librarySources.map((source) => source.assetId!))]);
     for (const source of librarySources) {
@@ -748,7 +734,6 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('source-changed', 'A source of this export changed after it was rendered');
       }
     }
-
     const evidence: LockedSourceRow[] = rows.values().toArray();
     const foreign = evidence.filter((row) => row.ownerId !== input.ownerId);
     if (foreign.length > 0) {
@@ -757,7 +742,6 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('source-access-lost', 'A shared source of this export is no longer shared');
       }
     }
-
     const union = unionDerivativePrivacy(
       input.ownerId,
       evidence.map((row): DerivativeSourceEvidence => ({
@@ -770,7 +754,6 @@ export class StudioExportRepository {
     );
     return { union, evidence };
   }
-
   /**
    * The result as an asset of the owner's: an existing asset with the same bytes and at least the
    * same restrictions, or a new one.
@@ -779,7 +762,10 @@ export class StudioExportRepository {
     tx: Kysely<DB>,
     input: StudioExportAssetInput,
     privacy: DerivativePrivacy,
-  ): Promise<{ createdAssetId: string | null; reusedAssetId: string | null }> {
+  ): Promise<{
+    createdAssetId: string | null;
+    reusedAssetId: string | null;
+  }> {
     // Locks an asset lockIn may also be locking; should Postgres pick this transaction as a deadlock
     // victim, the publication attempt fails and its automatic retry publishes it (FL-104).
     const duplicate = await tx
@@ -802,38 +788,15 @@ export class StudioExportRepository {
     }
     return { createdAssetId: await this.createAsset(tx, input, privacy), reusedAssetId: null };
   }
-
   /** Library and audio-of-asset sources carry the asset checksum; an edited master carries its own. */
   private checksumBearing(kind: string): boolean {
     return kind === 'library-asset' || kind === 'audio';
   }
-
   /**
    * Nothing is published while the database is being handed to the official server or taken back
    * from it, and nothing after a handover (`inactive`) or a failed cutover. The state row is
    * share-locked so a cutover that starts now waits for this transaction.
    */
-  private async assertNoHandoff(tx: Kysely<DB>): Promise<void> {
-    const schema = await sql<{ present: boolean }>`
-      SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
-    `.execute(tx);
-    if (!schema.rows[0]?.present) {
-      return;
-    }
-    const state = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE`.execute(tx);
-    const phase = state.rows[0]?.phase ?? (await getForkSchemaPhase(tx));
-    if (phase === 'inactive' || phase === 'failed') {
-      throw new StudioExportRefusal('handoff-in-progress', 'This server has been handed over; nothing is published');
-    }
-    const running = await sql`
-      SELECT 1 FROM immich_fork.migration_audit
-      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
-      LIMIT 1
-    `.execute(tx);
-    if (running.rows.length > 0) {
-      throw new StudioExportRefusal('handoff-in-progress', 'A handover is in progress; nothing is published');
-    }
-  }
 
   /**
    * The result as a new asset of the owner's, with its privacy installed in the same transaction
@@ -854,7 +817,6 @@ export class StudioExportRepository {
     if (!quota) {
       throw new StudioExportRefusal('quota-exceeded', 'This export does not fit in your storage quota');
     }
-
     const now = new Date();
     const assetId = randomUUID();
     await tx
@@ -876,28 +838,31 @@ export class StudioExportRepository {
       })
       .execute();
     await tx.insertInto('asset_exif').values({ assetId, fileSizeInByte: input.sizeInBytes }).execute();
-
     await this.privacy.install(tx, assetId, privacy);
-    await this.forkPrivacy.mirrorFromLegacy(assetId, tx);
-    await this.forkEnrichment.initialize([assetId], tx);
     return assetId;
   }
-
   /* ------------------------------------------------------------------ */
   /* Sweeps                                                              */
   /* ------------------------------------------------------------------ */
-
   /**
    * Pending versions whose premise went away: the owner is being deleted, the project is gone or
    * in the trash, a recorded library source is gone, in the trash or offline, or the database is
    * being handed over. The sweep cancels them and their jobs.
    */
-  async listOrphanedWork(limit = 200): Promise<Array<StudioExportVersion & { orphanReason: StudioExportRefusalCode }>> {
-    const handoff = await this.handoffInProgress();
-    const rows = await sql<StudioExportVersion & { orphanReason: StudioExportRefusalCode }>`
+  async listOrphanedWork(limit = 200): Promise<
+    Array<
+      StudioExportVersion & {
+        orphanReason: StudioExportRefusalCode;
+      }
+    >
+  > {
+    const rows = await sql<
+      StudioExportVersion & {
+        orphanReason: StudioExportRefusalCode;
+      }
+    >`
       SELECT version.*,
         CASE
-          WHEN ${handoff}::boolean THEN 'handoff-in-progress'
           WHEN owner."deletedAt" IS NOT NULL THEN 'owner-unavailable'
           WHEN project.id IS NULL OR project."deletedAt" IS NOT NULL THEN 'project-unavailable'
           ELSE 'source-unavailable'
@@ -907,8 +872,7 @@ export class StudioExportRepository {
       LEFT JOIN studio_project project ON project.id = version."projectId"
       WHERE version.state = ANY(${[...PENDING_STUDIO_EXPORT_STATES]}::text[])
         AND (
-          ${handoff}::boolean
-          OR owner."deletedAt" IS NOT NULL
+          owner."deletedAt" IS NOT NULL
           OR project.id IS NULL
           OR project."deletedAt" IS NOT NULL
           OR EXISTS (
@@ -924,14 +888,23 @@ export class StudioExportRepository {
     `.execute(this.db);
     return rows.rows;
   }
-
   /**
    * Pending versions whose job already ended without them: a render or publication that failed or
    * was cancelled by the recovery sweep, a cancel, or a job row that is gone. The version follows its
    * job; an earlier published version is untouched.
    */
-  async listSettledWork(limit = 200): Promise<Array<StudioExportVersion & { jobStatus: string | null }>> {
-    const { rows } = await sql<StudioExportVersion & { jobStatus: string | null }>`
+  async listSettledWork(limit = 200): Promise<
+    Array<
+      StudioExportVersion & {
+        jobStatus: string | null;
+      }
+    >
+  > {
+    const { rows } = await sql<
+      StudioExportVersion & {
+        jobStatus: string | null;
+      }
+    >`
       SELECT version.*, job.status AS "jobStatus"
       FROM studio_export_version version
       LEFT JOIN media_operation job ON job.id = CASE
@@ -945,7 +918,6 @@ export class StudioExportRepository {
     `.execute(this.db);
     return rows;
   }
-
   /**
    * Files no published result references any more: the staged output of a version that failed or
    * was cancelled, and the file of a `project` result whose project was deleted for good. A
@@ -971,11 +943,9 @@ export class StudioExportRepository {
       .limit(limit)
       .execute() as Promise<StudioExportVersion[]>;
   }
-
   /** The output row is durable cleanup intent until its exact, unreferenced file is removed. */
   async markOutputRemoved(id: string, unlink: (version: StudioExportVersion) => Promise<void>): Promise<boolean> {
     // Preserve the public writer's handoff refusal even when there is no removable output.
-    await this.write(async () => {});
     const version = await this.db
       .selectFrom('studio_export_version')
       .selectAll()
@@ -996,31 +966,11 @@ export class StudioExportRepository {
     );
     return result.deleted;
   }
-
   /** Whether the database is being handed over or taken back, or has been handed over. */
-  async handoffInProgress(kysely: Kysely<DB> = this.db): Promise<boolean> {
-    const schema = await sql<{ present: boolean }>`
-      SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
-    `.execute(kysely);
-    if (!schema.rows[0]?.present) {
-      return false;
-    }
-    const phase = await getForkSchemaPhase(kysely);
-    if (phase === 'inactive' || phase === 'failed') {
-      return true;
-    }
-    const running = await sql`
-      SELECT 1 FROM immich_fork.migration_audit
-      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
-      LIMIT 1
-    `.execute(kysely);
-    return running.rows.length > 0;
-  }
 
   /* ------------------------------------------------------------------ */
   /* Remote references                                                   */
   /* ------------------------------------------------------------------ */
-
   /**
    * Remember that a remote destination has to stop or delete something. Idempotent per render job,
    * worker and reason, and never erases an acknowledgement.
@@ -1046,7 +996,6 @@ export class StudioExportRepository {
       }
     }
   }
-
   /** What one worker still has to drop, oldest first. */
   listRemoteReferences(workerId: string, limit = 100): Promise<StudioExportRemoteReference[]> {
     return this.db
@@ -1058,7 +1007,6 @@ export class StudioExportRepository {
       .limit(limit)
       .execute() as Promise<StudioExportRemoteReference[]>;
   }
-
   /** Every unacknowledged reference, for the operator's view and for tests. */
   listUnacknowledgedRemoteReferences(limit = 500): Promise<StudioExportRemoteReference[]> {
     return this.db
@@ -1069,7 +1017,6 @@ export class StudioExportRepository {
       .limit(limit)
       .execute() as Promise<StudioExportRemoteReference[]>;
   }
-
   /** The worker that holds it confirms it is gone. Anybody else's acknowledgement changes nothing. */
   async acknowledgeRemoteReference(id: string, workerId: string): Promise<boolean> {
     const result = await this.db
@@ -1081,7 +1028,6 @@ export class StudioExportRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows) === 1;
   }
-
   /** A render's cancel was acknowledged with its resources released: its cancel reference is settled. */
   async acknowledgeRemoteCancel(operationId: string, workerId: string): Promise<boolean> {
     const result = await this.db

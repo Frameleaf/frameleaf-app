@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { PushPlatform } from 'src/enum.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';

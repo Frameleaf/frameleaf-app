@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, Table } from '@immich/sql-tools';
-import type { Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
+import type { Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_job_status')

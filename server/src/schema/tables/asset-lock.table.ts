@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { asset_visibility_enum } from 'src/schema/enums.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';

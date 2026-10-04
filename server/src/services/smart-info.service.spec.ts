@@ -220,6 +220,7 @@ describe(SmartInfoService.name, () => {
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
     });
 
     it('should skip invisible assets', async () => {
@@ -258,6 +259,7 @@ describe(SmartInfoService.name, () => {
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
     });
   });
 

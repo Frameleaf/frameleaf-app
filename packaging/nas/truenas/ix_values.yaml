@@ -17,21 +17,17 @@ images:
   ml_openvino_image:
     repository: ghcr.io/frameleaf/frameleaf-machine-learning
     tag: "@ML_OPENVINO_TAG@"
-  vectorchord_14_image:
+  pgvector_19_image:
     repository: "@PG_REPOSITORY@"
     tag: "@PG_TAG@"
-  redis_image:
-    repository: "@VALKEY_REPOSITORY@"
-    tag: "@VALKEY_TAG@"
 
 consts:
   server_container_name: server
   ml_container_name: machine-learning
   pgvecto_container_name: pgvecto
-  redis_container_name: redis
   perms_container_name: permissions
   ml_port: 32002
   ml_cache_path: /mlcache
   db_user: immich
-  db_name: immich
+  db_name: frameleaf
   base_path: /data

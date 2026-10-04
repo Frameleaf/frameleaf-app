@@ -1,5 +1,5 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { ClassificationMatchDecision } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';

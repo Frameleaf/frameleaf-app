@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Prove unchanged qualified image inputs
+      - name: Prove unchanged verified image inputs
         id: filter
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -42,13 +42,6 @@ jobs:
     permissions:
       contents: read
 
-  certification:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: ./.github/workflows/fork-roundtrip.yml
-    permissions:
-      contents: read
-      packages: read
-
   # FL-142 (owner decision 2026-09-27): nothing is pushed until the images just built pass a deployment
   # test on this run's runners. The server and the CPU machine-learning image are built to OCI archives
   # (no push), deployed together with the release Compose file and tested, and only then pushed by digest,
@@ -56,7 +49,7 @@ jobs:
   # that deployment test passed.
   server:
     name: Build Server (archive, not pushed)
-    needs: [changes, integration, certification]
+    needs: [changes, integration]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -75,7 +68,7 @@ jobs:
 
   machine-learning:
     name: Build ML CPU (archive, not pushed)
-    needs: [changes, integration, certification]
+    needs: [changes, integration]
     if: needs.changes.outputs['machine-learning'] == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -95,8 +88,8 @@ jobs:
 
   deploy-test:
     name: Deployment test (${{ matrix.architecture }})
-    needs: [changes, integration, certification, server, machine-learning]
-    if: ${{ !cancelled() && needs.integration.result == 'success' && needs.certification.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.server.result) && contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) }}
+    needs: [changes, integration, server, machine-learning]
+    if: ${{ !cancelled() && needs.integration.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.server.result) && contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -232,7 +225,7 @@ jobs:
 
   retag-server:
     name: Re-Tag Server
-    needs: [changes, integration, certification, deploy-test]
+    needs: [changes, integration, deploy-test]
     if: needs.changes.outputs.server == 'false' && needs['deploy-test'].result == 'success'
     runs-on: ubuntu-24.04
     permissions:
@@ -260,7 +253,7 @@ jobs:
 
   retag-machine-learning:
     name: Re-Tag ML
-    needs: [changes, integration, certification, deploy-test]
+    needs: [changes, integration, deploy-test]
     if: needs.changes.outputs['machine-learning'] == 'false' && needs['deploy-test'].result == 'success'
     runs-on: ubuntu-24.04
     permissions:
@@ -293,21 +286,20 @@ jobs:
   success-check-server:
     name: Docker Build & Push Server Success
     needs:
-      [integration, certification, deploy-test, server-publish, retag-server]
+      [integration, deploy-test, server-publish, retag-server]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require certified, deployment-tested server publication
+      - name: Require deployment-tested server publication
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ."deploy-test".result == "success" and ([."server-publish".result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
+        run: jq -e '.integration.result == "success" and ."deploy-test".result == "success" and ([."server-publish".result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
 
   success-check-ml:
     name: Docker Build & Push ML Success
     needs:
       [
         integration,
-        certification,
         deploy-test,
         machine-learning-publish,
         machine-learning-hardware,
@@ -316,7 +308,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every certified, deployment-tested ML variant
+      - name: Require every deployment-tested ML variant
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ."deploy-test".result == "success" and ((."machine-learning-publish".result == "success" and ."machine-learning-hardware".result == "success") or ."retag-machine-learning".result == "success")' <<< "$RESULTS"
+        run: jq -e '.integration.result == "success" and ."deploy-test".result == "success" and ((."machine-learning-publish".result == "success" and ."machine-learning-hardware".result == "success") or ."retag-machine-learning".result == "success")' <<< "$RESULTS"

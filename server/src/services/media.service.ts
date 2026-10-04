@@ -1,3 +1,5 @@
+import { sql } from 'kysely';
+import { attemptOutputPath, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -191,22 +193,15 @@ export class MediaService extends BaseService {
     const config = await this.getConfig({ withCache: true });
 
     const isFullsizeEnabled = config.image.fullsize.enabled;
-    for await (const assets of batched(
-      this.assetJobRepository.streamForThumbnailJob({ force, fullsizeEnabled: isFullsizeEnabled }),
-    )) {
-      const jobs: JobItem[] = [];
-      for (const asset of assets) {
-        if (force || !asset.isEdited) {
-          jobs.push({ name: JobName.AssetGenerateThumbnails, data: { id: asset.id } });
-        }
-
-        if (asset.isEdited) {
-          jobs.push({ name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } });
-        }
-      }
-
-      await this.jobRepository.queueAll(jobs);
-    }
+    const selected = this.assetJobRepository.selectionForThumbnailJob({ force, fullsizeEnabled: isFullsizeEnabled });
+    await this.jobRepository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      force ? selected : selected.where('asset.isEdited', '=', false),
+    );
+    await this.jobRepository.queueSelection(
+      JobName.AssetEditThumbnailGeneration,
+      selected.where('asset.isEdited', '=', true),
+    );
 
     for await (const people of batched(this.personRepository.getAll(force ? undefined : { thumbnailPath: '' }))) {
       const jobs: JobItem[] = [];
@@ -362,7 +357,13 @@ export class MediaService extends BaseService {
     }
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
-      await this.assetRepository.update({ id: asset.id, thumbhash });
+      if (
+        !deferJobAdoption(async (tx) => {
+          await sql`update asset set thumbhash = ${thumbhash} where id = ${asset.id}::uuid`.execute(tx);
+        })
+      ) {
+        await this.assetRepository.update({ id: asset.id, thumbhash });
+      }
     }
 
     const fullsizeDimensions = generated?.fullsizeDimensions ?? getDimensions(asset.exifInfo!);
@@ -944,11 +945,10 @@ export class MediaService extends BaseService {
   async handleQueueVideoConversion(job: JobOf<JobName.AssetEncodeVideoQueueAll>): Promise<JobStatus> {
     const { force } = job;
 
-    for await (const assets of batched(this.assetJobRepository.streamForVideoConversion(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetEncodeVideo, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(
+      JobName.AssetEncodeVideo,
+      this.assetJobRepository.selectionForVideoConversion(force),
+    );
 
     return JobStatus.Success;
   }
@@ -1056,7 +1056,7 @@ export class MediaService extends BaseService {
     }
 
     const input = asset.originalPath;
-    const output = StorageCore.getEncodedVideoPath(asset);
+    const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
 
     const { videoStream, format } = asset;
     const audioStream = asset.audioStream ?? undefined;
@@ -1143,6 +1143,23 @@ export class MediaService extends BaseService {
     }
 
     this.logger.log(`Successfully encoded ${asset.id}`);
+
+    if (queueExecution.getStore()) {
+      await this.stageGeneratedFiles(
+        asset.files.filter((file) => file.type === AssetFileType.EncodedVideo && !file.isEdited),
+        [
+          {
+            assetId: asset.id,
+            type: AssetFileType.EncodedVideo,
+            path: output,
+            isEdited: false,
+            isProgressive: false,
+            isTransparent: false,
+          },
+        ],
+      );
+      return JobStatus.Success;
+    }
 
     const { file: encodedVideo, pathToDelete } = await this.applyPhysicalDeduplicationToGeneratedFile({
       assetId: asset.id,
@@ -2590,6 +2607,11 @@ export class MediaService extends BaseService {
   }
 
   private async syncFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
+    if (queueExecution.getStore()?.claim.name === JobName.AssetGenerateThumbnails) {
+      await this.stageGeneratedFiles(oldFiles, newFiles);
+      return;
+    }
+
     const toUpsert: UpsertFileOptions[] = [];
     const pathsToDelete: string[] = [];
     const toDelete = new Set(oldFiles);
@@ -2636,6 +2658,68 @@ export class MediaService extends BaseService {
 
     if (pathsToDelete.length > 0) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: pathsToDelete } });
+    }
+  }
+
+  /** Hash/stat happen without a connection. Only accepted output references enter the final SQL commit. */
+  private async stageGeneratedFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
+    const prepared = [];
+    const discarded: string[] = [];
+    for (const input of newFiles) {
+      const original = await this.physicalFileRepository.getOriginalPhysicalFile(input.assetId);
+      const canonical =
+        !input.isEdited && original?.canonicalAssetId !== input.assetId
+          ? await this.physicalFileRepository.getCanonicalGeneratedFile(input.assetId, input.type)
+          : undefined;
+      if (canonical) {
+        prepared.push({ file: { ...input, path: canonical.path, physicalFileId: canonical.id }, physical: undefined });
+        if (input.path !== canonical.path) {
+          discarded.push(input.path);
+        }
+      } else {
+        const physical =
+          !input.isEdited && original?.canonicalAssetId === input.assetId
+            ? {
+                id: randomUUID(),
+                checksum: await this.cryptoRepository.hashFile(input.path),
+                size: (await this.storageRepository.stat(input.path)).size,
+                type: this.toPhysicalFileType(input.type),
+              }
+            : undefined;
+        prepared.push({ file: { ...input, physicalFileId: physical?.id ?? null }, physical });
+      }
+    }
+    const retained = new Set(prepared.map(({ file }) => file.path));
+    const obsolete = oldFiles.filter((file) => !retained.has(file.path));
+    deferJobAdoption(async (tx) => {
+      for (const { file, physical } of prepared) {
+        if (physical) {
+          await sql`insert into physical_file(id, type, checksum, "sizeInBytes", path, "canonicalAssetId")
+            values (${physical.id}::uuid, ${physical.type}, ${physical.checksum}, ${physical.size}, ${file.path}, ${file.assetId}::uuid)
+            on conflict (path) do nothing`.execute(tx);
+        }
+        await sql`insert into asset_file("assetId", type, path, "isEdited", "isProgressive", "isTransparent", "physicalFileId")
+          values (${file.assetId}::uuid, ${file.type}, ${file.path}, ${file.isEdited}, ${file.isProgressive}, ${file.isTransparent}, ${file.physicalFileId}::uuid)
+          on conflict ("assetId", type, "isEdited") do update set path = excluded.path,
+            "isProgressive" = excluded."isProgressive", "isTransparent" = excluded."isTransparent",
+            "physicalFileId" = excluded."physicalFileId"`.execute(tx);
+      }
+      for (const file of obsolete) {
+        if (
+          !prepared.some(
+            ({ file: replacement }) => replacement.type === file.type && replacement.isEdited === file.isEdited,
+          )
+        ) {
+          await sql`delete from asset_file where "assetId" = ${file.assetId}::uuid and type = ${file.type}
+            and "isEdited" = ${file.isEdited} and path = ${file.path}`.execute(tx);
+        }
+      }
+    });
+    const paths = [...discarded, ...obsolete.map((file) => file.path)];
+    if (paths.length) {
+      await this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } }),
+      );
     }
   }
 
@@ -2762,7 +2846,11 @@ export class MediaService extends BaseService {
     asset: ThumbnailPathEntity,
     options: ImagePathOptions & { isProgressive: boolean; isTransparent: boolean },
   ) {
-    const path = StorageCore.getImagePath(asset, options);
+    const originalPath = StorageCore.getImagePath(asset, options);
+    const path =
+      queueExecution.getStore()?.claim.name === JobName.AssetGenerateThumbnails
+        ? attemptOutputPath(originalPath)
+        : originalPath;
     return {
       assetId: asset.id,
       type: options.fileType,

@@ -304,14 +304,10 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       recursive: true,
     });
     await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, "packaging/nas/certified-sources.json"),
-      '{"officialImmich":[],"priorFrameleaf":[]}',
-    );
     for (const name of INSTALL_FILES) {
       const text =
         name === "docker-compose.yml"
-          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-release}}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
+          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-release}}\n  database:\n    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@${digest(2)}\nvolumes: [model-cache]\n`
           : name.startsWith("docker-compose")
             ? "image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}\nvolumes: [model-cache]\n"
             : name === "example.env"
@@ -319,10 +315,6 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
               : "services: {}\n";
       await fs.writeFile(path.join(root, "docker", name), text);
     }
-    await fs.writeFile(
-      path.join(root, "server/src/fork-schema/supported-versions.json"),
-      '{"certifiedTags":["v3.1.0"]}',
-    );
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
     const files = await createBundle(dir, root, tag, {
@@ -342,7 +334,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
         },
       ],
     });
-    assert.equal(files.length, 9);
+    assert.equal(files.length, 8);
     const nas = JSON.parse(
       await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
     );
@@ -350,7 +342,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       nas.images.server,
       `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`,
     );
-    assert.deepEqual(nas.migration.officialImmich, []);
+    assert.equal(nas.migration, undefined);
     const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
     assert(
       env.includes(`FRAMELEAF_VERSION=${tag}\n`) &&
@@ -550,6 +542,7 @@ test("qualified unchanged reuse retains immutable build source and rejects alter
   f.entries.set(f.result.digest, f.result);
   const qualified = "b".repeat(40);
   const manifest = {
+    schemaVersion: 3,
     repository: "Frameleaf/frameleaf-app",
     tag: "frameleaf-v3.2.0-1",
     sourceCommit: sha,
@@ -675,8 +668,8 @@ test("a reused candidate restates the index annotations validateIndex requires",
     `index:org.opencontainers.image.source=${release.SOURCE}`,
     `index:org.opencontainers.image.revision=${"a".repeat(40)}`,
     `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
-    `index:org.frameleaf.qualification.revision=${"c".repeat(40)}`,
-    "index:org.frameleaf.qualification.release=frameleaf-v1.0.0",
+    `index:org.frameleaf.reuse.revision=${"c".repeat(40)}`,
+    "index:org.frameleaf.reuse.release=frameleaf-v1.0.0",
     `index:org.frameleaf.build.digest=sha256:${"b".repeat(64)}`,
   ]);
 });
@@ -687,6 +680,7 @@ test("release accepts truthful reused candidate index and rejects changed qualif
   f.entries.set(f.result.digest, f.result);
   const qualified = "b".repeat(40);
   const manifest = {
+    schemaVersion: 3,
     repository: "Frameleaf/frameleaf-app",
     tag: "frameleaf-v3.2.0-1",
     sourceCommit: sha,
@@ -701,8 +695,8 @@ test("release accepts truthful reused candidate index and rejects changed qualif
   };
   const index = clone(f.index);
   Object.assign(index.annotations, {
-    "org.frameleaf.qualification.release": manifest.tag,
-    "org.frameleaf.qualification.revision": qualified,
+    "org.frameleaf.reuse.release": manifest.tag,
+    "org.frameleaf.reuse.revision": qualified,
     "org.frameleaf.build.digest": f.result.digest,
   });
   const candidate = {
@@ -728,7 +722,7 @@ test("release accepts truthful reused candidate index and rejects changed qualif
   assert.equal(result.buildDigest, f.result.digest);
   assert.equal(result.buildSourceCommit, sha);
   assert.equal(result.sourceCommit, qualified);
-  index.annotations["org.frameleaf.qualification.revision"] = sha;
+  index.annotations["org.frameleaf.reuse.revision"] = sha;
   await assert.rejects(
     candidateImage(
       registry,
@@ -737,9 +731,9 @@ test("release accepts truthful reused candidate index and rejects changed qualif
       async () => manifest,
       () => {},
     ),
-    /qualification revision/,
+    /reuse revision/,
   );
-  index.annotations["org.frameleaf.qualification.revision"] = qualified;
+  index.annotations["org.frameleaf.reuse.revision"] = qualified;
   index.manifests.pop();
   await assert.rejects(
     candidateImage(
@@ -770,7 +764,7 @@ test("manual dispatch rejects existing fresh or reused same-SHA candidates befor
     for (const reused of [false, true]) {
       const f = fixture();
       if (reused)
-        f.index.annotations["org.frameleaf.qualification.revision"] =
+        f.index.annotations["org.frameleaf.reuse.revision"] =
           "b".repeat(40);
       await fs.writeFile(output, "");
       await assert.rejects(
@@ -822,8 +816,6 @@ async function dependencyRoot(databaseImage) {
           "services:",
           "  immich-server:",
           "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
-          "  redis:",
-          `    image: docker.io/valkey/valkey:9@${digest(7)}`,
           "  database:",
           `    image: ${databaseImage}`,
           "",
@@ -833,19 +825,11 @@ async function dependencyRoot(databaseImage) {
         : "services: {}\n";
     await fs.writeFile(path.join(root, "docker", name), text);
   }
-  await fs.writeFile(
-    path.join(root, "server/src/fork-schema/supported-versions.json"),
-    "{}",
-  );
   await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-  await fs.writeFile(
-    path.join(root, "packaging/nas/certified-sources.json"),
-    '{"officialImmich":[],"priorFrameleaf":[]}',
-  );
   return root;
 }
 const database =
-  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7";
 const published = (entries) => ({
   read: async (image, reference) => {
     const found = entries[`${image}:${reference}`];
@@ -865,12 +849,12 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
         published({ "frameleaf-cli:latest": digest(2) }),
         root,
       ),
-      /frameleaf-postgres:14-vectorchord0\.4\.3-pgvectors0\.2\.0 is not published/,
+      /frameleaf-postgres:19beta4-pgvector0\.8\.7 is not published/,
     );
     await assert.rejects(
       verifyDependencyImages(
         published({
-          "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+          "frameleaf-postgres:19beta4-pgvector0.8.7": digest(1),
         }),
         root,
       ),
@@ -878,7 +862,7 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
     );
     const resolved = await verifyDependencyImages(
       published({
-        "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        "frameleaf-postgres:19beta4-pgvector0.8.7": digest(1),
         "frameleaf-cli:latest": digest(2),
       }),
       root,
@@ -964,7 +948,7 @@ test("promotion rejects stale pins, upstream images and unpinned third-party ima
       await assert.rejects(
         verifyDependencyImages(
           published({
-            "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+            "frameleaf-postgres:19beta4-pgvector0.8.7": digest(1),
             "frameleaf-cli:latest": digest(2),
           }),
           root,

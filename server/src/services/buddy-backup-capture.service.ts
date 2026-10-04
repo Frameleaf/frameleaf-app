@@ -74,7 +74,6 @@ export type BuddyManifest = {
   storageRoots: string[];
   settings: {
     system: unknown;
-    fork: Array<{ key: string; value: unknown }>;
     users: Array<{ userId: string; key: string; value: unknown }>;
     buddy?: BuddySettingsSnapshot;
   };
@@ -86,14 +85,14 @@ const inside = (directory: string, path: string) => {
   return !child || (!child.startsWith(`..${sep}`) && child !== '..' && !child.startsWith(sep));
 };
 
-const dependencyPaths = sql<{ path: string }>`SELECT path FROM immich_fork.studio_project_import
-  UNION SELECT path FROM immich_fork.studio_generated_resource
-  UNION SELECT path FROM immich_fork.asset_develop_artifact
-  UNION SELECT "masterPath" AS path FROM immich_fork.asset_develop_revision WHERE "masterPath" IS NOT NULL
-  UNION SELECT "previewPath" AS path FROM immich_fork.asset_develop_revision WHERE "previewPath" IS NOT NULL
-  UNION SELECT "masterPath" AS path FROM immich_fork.video_edit_version WHERE "masterPath" IS NOT NULL
-  UNION SELECT "proxyPath" AS path FROM immich_fork.video_edit_version WHERE "proxyPath" IS NOT NULL
-  UNION SELECT f->>'path' AS path FROM immich_fork.video_edit_version, jsonb_array_elements(files) f
+const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_project_import
+  UNION SELECT path FROM public.studio_generated_resource
+  UNION SELECT path FROM public.asset_develop_artifact
+  UNION SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" IS NOT NULL
+  UNION SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" IS NOT NULL
+  UNION SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" IS NOT NULL
+  UNION SELECT "proxyPath" AS path FROM public.video_edit_version WHERE "proxyPath" IS NOT NULL
+  UNION SELECT f->>'path' AS path FROM public.video_edit_version, jsonb_array_elements(files) f
   UNION SELECT "outputPath" AS path FROM public.studio_export_version WHERE "outputPath" IS NOT NULL AND "outputRemovedAt" IS NULL
   UNION SELECT "resultPath" AS path FROM public.asset_restoration WHERE "resultPath" IS NOT NULL
   UNION SELECT "resultPreviewPath" AS path FROM public.asset_restoration WHERE "resultPreviewPath" IS NOT NULL`;
@@ -196,7 +195,7 @@ export class BuddyBackupCaptureService {
       environment: { ...process.env },
       storageRoot: StorageCore.getMediaLocation(),
       storageRoots: [],
-      settings: { system: null, fork: [], users: [], buddy: readBuddySettingsSnapshot({ version: 1, settings }) },
+      settings: { system: null, users: [], buddy: readBuddySettingsSnapshot({ version: 1, settings }) },
       library: {
         format: CLOUD_BACKUP_MANIFEST_FORMAT,
         version: 2,
@@ -308,7 +307,7 @@ export class BuddyBackupCaptureService {
             const dependencies = (await dependencyPaths.execute(trx)).rows;
             const lineageCandidates = await sql<{
               path: string;
-            }>`SELECT "masterPath" AS path FROM immich_fork.video_edit_version
+            }>`SELECT "masterPath" AS path FROM public.video_edit_version
           WHERE "masterPath" IS NOT NULL UNION SELECT path FROM public.asset_file WHERE "isEdited"`.execute(trx);
             for (const { path } of lineageCandidates.rows) {
               const lineage = getEditedMasterLineagePath(path);
@@ -343,7 +342,7 @@ export class BuddyBackupCaptureService {
             }
             const paths = [...new Set([...pinnedPaths.keys(), ...pinnedPaths.values()])];
             for (let offset = 0; offset < paths.length; offset += 1000)
-              await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId", path)
+              await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
             SELECT ${options.runId}::uuid, path FROM unnest(${paths.slice(offset, offset + 1000)}::text[]) AS path
             ON CONFLICT DO NOTHING`.execute(connection);
             await sql`SELECT pg_advisory_unlock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection);
@@ -366,9 +365,6 @@ export class BuddyBackupCaptureService {
                   .where('key', '=', SystemMetadataKey.SystemConfig)
                   .executeTakeFirst()
               )?.value ?? {};
-            manifest.settings.fork = (
-              await sql<{ key: string; value: unknown }>`SELECT key, value FROM immich_fork.config`.execute(trx)
-            ).rows;
             manifest.settings.users = await trx
               .selectFrom('user_metadata')
               .select(['userId', 'key', 'value'])
@@ -508,12 +504,12 @@ export class BuddyBackupCaptureService {
   }
 
   async release(runId: string) {
-    const { rows } = await sql<{ path: string }>`SELECT path FROM immich_fork.buddy_backup_reference
+    const { rows } = await sql<{ path: string }>`SELECT path FROM public.buddy_backup_reference
       WHERE "runId" = ${runId}::uuid ORDER BY path`.execute(this.repository.db);
     for (const { path } of rows) {
       const deferred = await this.repository.db.transaction().execute(async (trx) => {
         await lockFilePath(trx, path);
-        const released = await sql<{ deleteRequested: boolean }>`UPDATE immich_fork.buddy_backup_reference
+        const released = await sql<{ deleteRequested: boolean }>`UPDATE public.buddy_backup_reference
           SET released = true WHERE "runId" = ${runId}::uuid AND path = ${path}
           RETURNING "deleteRequested"`.execute(trx);
         return released.rows[0]?.deleteRequested ?? false;
@@ -521,7 +517,7 @@ export class BuddyBackupCaptureService {
       // A released row is a durable outbox until the existing durable queue accepts the deletion.
       // Retrying after a crash can enqueue twice; FileDelete's reference check is idempotent.
       if (deferred) await this.jobs.queue({ name: JobName.FileDelete, data: { files: [path] } });
-      await sql`DELETE FROM immich_fork.buddy_backup_reference
+      await sql`DELETE FROM public.buddy_backup_reference
         WHERE "runId" = ${runId}::uuid AND path = ${path} AND released`.execute(this.repository.db);
     }
     // Per-run staging can be reclaimed even when capture.json was never completed.
@@ -532,7 +528,7 @@ export class BuddyBackupCaptureService {
   async reconcile() {
     const { rows } = await sql<{
       runId: string;
-    }>`SELECT DISTINCT "runId" FROM immich_fork.buddy_backup_reference`.execute(this.repository.db);
+    }>`SELECT DISTINCT "runId" FROM public.buddy_backup_reference`.execute(this.repository.db);
     const directories = await readdir(join(this.repository.root(), 'runs')).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
       return [] as string[];

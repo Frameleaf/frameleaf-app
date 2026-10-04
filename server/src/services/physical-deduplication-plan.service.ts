@@ -407,9 +407,7 @@ export class PhysicalDeduplicationPlanService {
     const total = snapshot.items.length;
 
     // Checked on every claim, not only at submit: the handoff phase or the administrator may change.
-    if (!(await this.deduplication.canApplyPlans())) {
-      throw new Error('Physical deduplication is unavailable while the storage handoff is not active');
-    }
+
     const owner = await this.users.get(operation.ownerId, { withDeleted: false });
     if (!owner?.isAdmin) {
       throw new Error('The administrator who applied this plan no longer has administrator access');

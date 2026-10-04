@@ -9,7 +9,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -75,7 +75,7 @@ const bootstrap = async () => {
       AccessRepository,
       AssetRepository,
       ConfigRepository,
-      ForkSchemaRepository,
+      AssetChecksumRepository,
       PhysicalFileRepository,
       UserRepository,
     ],

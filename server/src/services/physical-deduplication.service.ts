@@ -159,12 +159,6 @@ export class PhysicalDeduplicationService extends BaseService {
 
   @OnJob({ name: JobName.PhysicalDeduplicationMigrationDryRun, queue: QueueName.StorageTemplateMigration })
   async handleDryRun(job: JobOf<JobName.PhysicalDeduplicationMigrationDryRun>): Promise<JobStatus> {
-    const state = await this.forkSchemaRepository.getState();
-    if (state.phase === 'inactive' || state.phase === 'failed') {
-      this.logger.warn(`Physical deduplication skipped in fork-schema ${state.phase} phase`);
-      return JobStatus.Skipped;
-    }
-
     // universal storage retired the saved master account: a dry run names the account it retains in
     const masterUserId = job?.masterUserId;
     if (!masterUserId) {
@@ -364,8 +358,6 @@ export class PhysicalDeduplicationService extends BaseService {
     auth: AuthDto,
     dto: PhysicalDeduplicationReviewRequestDto,
   ): Promise<PreparedPhysicalDeduplicationPlan> {
-    await this.requireStorageHandoffAllowsDeduplication();
-
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
     if (!state) {
       throw new ConflictException('Prepare a plan before reviewing file changes.');
@@ -446,16 +438,6 @@ export class PhysicalDeduplicationService extends BaseService {
   }
 
   /** Whether the storage handoff lets physical files be shared at all right now. */
-  async canApplyPlans(): Promise<boolean> {
-    const state = await this.forkSchemaRepository.getState();
-    return state.phase !== 'inactive' && state.phase !== 'failed';
-  }
-
-  private async requireStorageHandoffAllowsDeduplication() {
-    if (!(await this.canApplyPlans())) {
-      throw new BadRequestException('Physical deduplication is unavailable while the storage handoff is not active.');
-    }
-  }
 
   /**
    * The evidence check `preparePlan` runs: every copy and retained original read again in one query,

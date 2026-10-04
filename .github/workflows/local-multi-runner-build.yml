@@ -114,7 +114,7 @@ jobs:
             push) echo "output=type=image,name=ghcr.io/frameleaf/${IMAGE},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::Unknown build mode $MODE"; exit 1 ;;
           esac
-      - name: Build certified source by digest
+      - name: Build verified source by digest
         id: build
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:

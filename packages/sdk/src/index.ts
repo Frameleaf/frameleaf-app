@@ -5,6 +5,7 @@ import { MalformedResponseError } from './fetch-errors.js';
 export * from './fetch-client.js';
 export { mergePersonLegacy as mergePerson } from './fetch-client.js';
 export * from './fetch-errors.js';
+export * from './job-runs.js';
 
 // Raw Blob operations do not get a content type from oazapfts. Keep this default
 // outside generated code, with the usual global-then-per-request header precedence.

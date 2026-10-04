@@ -13,7 +13,7 @@ import { EdgeStateService } from 'src/edge/edge-state.service.js';
 import { ImmichWorker } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -50,7 +50,7 @@ export const detectMediaLocation = (configRepository: ConfigRepository): string 
     LoggingRepository,
     DatabaseRepository,
     SystemMetadataRepository,
-    ForkSchemaRepository,
+    AssetChecksumRepository,
     InstanceIdentityRepository,
     FrameleafCloudRepository,
     UserRepository,

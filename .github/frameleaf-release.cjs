@@ -542,6 +542,7 @@ async function releaseEvidence(tag = "latest") {
   const manifest = await github(`releases/assets/${asset.id}`, {
     headers: { Accept: "application/octet-stream" },
   });
+  assert.equal(manifest.schemaVersion, 3, "Unsupported release manifest version");
   assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
   assert.equal(manifest.tag, record.tag_name, "Reuse release tag differs");
   assert.equal(
@@ -550,7 +551,7 @@ async function releaseEvidence(tag = "latest") {
     "Reuse release source differs",
   );
   const run = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
-    manifest.certifiedBuildRun,
+    manifest.buildRun,
   );
   assert(
     run &&
@@ -566,6 +567,7 @@ async function verifyReuse(
   manifest,
   checkInputs = identicalBuildInputs,
 ) {
+  assert.equal(manifest.schemaVersion, 3, "Unsupported release manifest version");
   assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
   assert(SHA.test(manifest.sourceCommit), "Invalid qualified source");
   checkInputs(spec, manifest.sourceCommit, sha);
@@ -577,7 +579,7 @@ async function verifyReuse(
   assert.equal(
     prior.sourceCommit,
     manifest.sourceCommit,
-    "Reuse image qualification differs",
+    "Reuse image source differs",
   );
   const built = prior.buildSourceCommit || prior.sourceCommit;
   const digest = prior.buildDigest || prior.digest;
@@ -601,7 +603,7 @@ async function candidateImage(
   checkInputs = identicalBuildInputs,
 ) {
   const index = await registry.read(spec.image, commitTag(sha, spec));
-  const tag = index.json.annotations?.["org.frameleaf.qualification.release"];
+  const tag = index.json.annotations?.["org.frameleaf.reuse.release"];
   if (!tag) return verifyImage(registry, spec, sha, index.digest);
   const image = await verifyReuse(
     registry,
@@ -611,9 +613,9 @@ async function candidateImage(
     checkInputs,
   );
   assert.equal(
-    index.json.annotations["org.frameleaf.qualification.revision"],
+    index.json.annotations["org.frameleaf.reuse.revision"],
     sha,
-    "Wrong qualification revision",
+    "Wrong reuse revision",
   );
   assert.equal(
     index.json.annotations["org.frameleaf.build.digest"],
@@ -681,7 +683,7 @@ async function planReuse(env = process.env, registry = new Registry(env)) {
 }
 // `imagetools create` writes a new index and does not carry the source index's own annotations, so
 // the reused tag restates the ones validateIndex requires (as mergeCandidate does) besides the
-// qualification record; the revision stays the commit the image was built from.
+// reuse record; the revision stays the commit the image was built from.
 function reuseAnnotations(spec, image, env) {
   return [
     "--annotation",
@@ -691,9 +693,9 @@ function reuseAnnotations(spec, image, env) {
     "--annotation",
     `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
     "--annotation",
-    `index:org.frameleaf.qualification.revision=${env.GITHUB_SHA}`,
+    `index:org.frameleaf.reuse.revision=${env.GITHUB_SHA}`,
     "--annotation",
-    `index:org.frameleaf.qualification.release=${env.REUSE_RELEASE}`,
+    `index:org.frameleaf.reuse.release=${env.REUSE_RELEASE}`,
     "--annotation",
     `index:org.frameleaf.build.digest=${image.buildDigest}`,
   ];
@@ -909,7 +911,7 @@ async function deployTestImages(
   console.log(lines.filter((line) => !line.includes("ARCHIVE")).join("\n"));
 }
 
-// FL-146 "Deploy production": the qualified candidate a dispatch names, by its exact fork/main commit or
+// FL-146 "Deploy production": the verified candidate a dispatch names, by its exact fork/main commit or
 // by the digest of its frameleaf-server candidate. Only the current fork/main head with a successful
 // same-SHA Deploy run qualifies (the release rules below); rolling tags are never evidence.
 async function resolveCandidate(
@@ -923,14 +925,14 @@ async function resolveCandidate(
   if (DIGEST.test(input)) {
     const index = await registry.read(server.image, input);
     sha =
-      index.json.annotations?.["org.frameleaf.qualification.revision"] ||
+      index.json.annotations?.["org.frameleaf.reuse.revision"] ||
       index.json.annotations?.["org.opencontainers.image.revision"];
     assert(SHA.test(sha || ""), "The digest names no source revision");
     const tagged = await registry.read(server.image, commitTag(sha, server));
     assert.equal(
       tagged.digest,
       input,
-      "The digest is not the qualified server candidate of its commit",
+      "The digest is not the verified server candidate of its commit",
     );
   }
   assert(
@@ -942,7 +944,7 @@ async function resolveCandidate(
     `actions/workflows/docker.yml/runs?head_sha=${sha}&status=success&per_page=100`,
   );
   const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
-  assert(run, "No successful same-SHA Deploy run qualifies this commit");
+  assert(run, "No successful same-SHA build run exists for this commit");
   const images = [];
   for (const spec of VARIANTS)
     images.push(await candidateImage(registry, spec, sha));
@@ -971,7 +973,7 @@ async function resolveCandidate(
 // both are verified against the committed public key before anything is promoted.
 const COSIGN_PUBLIC_KEY = "cosign.pub";
 const ATTESTATION_TYPE =
-  "https://frameleaf.app/attestations/release-manifest/v2";
+  "https://frameleaf.app/attestations/release-manifest/v3";
 function cosign(args, run = execFileSync) {
   return run("cosign", args, {
     stdio: ["ignore", "pipe", "inherit"],
@@ -1065,7 +1067,7 @@ function parsePercent(value) {
 }
 
 // Deploy production's rollout and withdraw actions. Withdraw marks the release withdrawn and a
-// prerelease (servers stop offering it), and restores an earlier published release: its qualified image
+// prerelease (servers stop offering it), and restores an earlier published release: its verified image
 // digests are re-verified from its manifest, signed if they predate signing, and become `release` and
 // `latest` again; the GitHub release is marked latest. Nothing is rebuilt or deleted.
 async function releaseFlags(
@@ -1215,11 +1217,6 @@ async function createBundle(
     await fs.writeFile(path.join(directory, name), body);
     files.push(name);
   }
-  await fs.copyFile(
-    path.join(root, "server/src/fork-schema/supported-versions.json"),
-    path.join(directory, "supported-versions.json"),
-  );
-  files.push("supported-versions.json");
   const compose = await fs.readFile(
     path.join(directory, "docker-compose.yml"),
     "utf8",
@@ -1250,24 +1247,13 @@ async function createBundle(
   );
   assert(
     server && ml && DIGEST.test(server.digest) && DIGEST.test(ml.digest),
-    "Missing certified NAS images",
-  );
-  const migration = JSON.parse(
-    await fs.readFile(
-      path.join(root, "packaging/nas/certified-sources.json"),
-      "utf8",
-    ),
-  );
-  assert(
-    Array.isArray(migration.officialImmich) &&
-      Array.isArray(migration.priorFrameleaf),
-    "Invalid NAS migration sources",
+    "Missing NAS images",
   );
   const nas = {
-    schemaVersion: 1,
+    schemaVersion: 3,
     tag,
     sourceCommit: manifest.sourceCommit,
-    certifiedBuildRun: manifest.certifiedBuildRun,
+    buildRun: manifest.buildRun,
     images: {
       server: `${server.image}@${server.digest}`,
       machineLearning: `${ml.image}@${ml.digest}`,
@@ -1280,7 +1266,6 @@ async function createBundle(
           ]),
       ),
       postgres: dependency("database"),
-      valkey: dependency("redis"),
     },
     platforms: server.platforms.filter((platform) =>
       ml.platforms.includes(platform),
@@ -1290,14 +1275,13 @@ async function createBundle(
       truenas: "24.10.2.2",
       unraid: "7.0",
     },
-    migration,
   };
   await fs.writeFile(
     path.join(directory, "nas-manifest.json"),
     JSON.stringify(nas, null, 2) + "\n",
   );
   files.push("nas-manifest.json");
-  // The image attestation authenticates these hashes, including NAS qualification records.
+  // The image attestation authenticates these hashes, including NAS image references.
   manifest.assets = Object.fromEntries(
     await Promise.all(
       files.map(async (name) => [
@@ -1363,10 +1347,10 @@ async function reserveAndStage({
 async function release(env = process.env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert(SHA.test(env.SOURCE_SHA));
-  assert(/^\d+$/.test(env.CERTIFIED_RUN_ID), "Missing certified build run");
+  assert(/^\d+$/.test(env.BUILD_RUN_ID), "Missing build run");
   assert(
     trustedRun(
-      await github(`actions/runs/${env.CERTIFIED_RUN_ID}`),
+      await github(`actions/runs/${env.BUILD_RUN_ID}`),
       env.SOURCE_SHA,
     ),
     "Build run is not trusted",
@@ -1394,18 +1378,16 @@ async function release(env = process.env) {
       "Release tag targets another commit",
     );
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     repository: REPOSITORY,
     sourceCommit: env.SOURCE_SHA,
     tag,
-    certifiedBuildRun: `${SOURCE}/actions/runs/${env.CERTIFIED_RUN_ID}`,
+    buildRun: `${SOURCE}/actions/runs/${env.BUILD_RUN_ID}`,
     images,
     dependencies: [...dependencies].map(([reference, digest]) => ({
       reference,
       digest,
     })),
-    certification:
-      "Integration and all three official-container roundtrip lanes passed in the referenced build run; Deploy production's deployment test of this exact candidate passed before promotion.",
     provenance:
       env.SIGN === "1"
         ? `Image/index revision labels and SHA-256 content verified; every image digest is signed with the Frameleaf cosign key (${COSIGN_PUBLIC_KEY}) and carries this manifest as a ${ATTESTATION_TYPE} attestation.`
@@ -1433,7 +1415,7 @@ async function release(env = process.env) {
         draft: true,
         generate_release_notes: true,
         body: releaseFlagsBody(
-          `Certified source: ${env.SOURCE_SHA}\n\nBuild and compatibility evidence: ${manifest.certifiedBuildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>`,
+          `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>`,
           { rolloutPercent },
         ),
       };

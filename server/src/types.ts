@@ -1,7 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
-import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
@@ -291,13 +290,6 @@ export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
   scopeUserId?: string;
 }
 
-export interface IForkSchemaBackfillJob {
-  kind: BackfillKind;
-  batchSize: number;
-  /** FL-289: wait (ms) before running, used to retry once an orphaned claim's lease has expired. */
-  delay?: number;
-}
-
 export interface IDelayedJob extends IBaseJob {
   /** The minimum time to wait to execute this job, in milliseconds. */
   delay?: number;
@@ -518,8 +510,6 @@ export interface JobCounts {
 
 export type JobItem =
   | { name: JobName.ICloudSync; data: IEntityJob }
-  // Fork schema migration
-  | { name: JobName.ForkSchemaBackfill; data: IForkSchemaBackfillJob }
 
   // Audit
   | { name: JobName.AuditTableCleanup; data?: IBaseJob }
@@ -590,6 +580,7 @@ export type JobItem =
   // Smart Search
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }
   | { name: JobName.SmartSearch; data: IEntityJob }
+  | { name: JobName.SmartSearchPostprocess; data: IEntityJob }
   | { name: JobName.AssetEmptyTrash; data?: IBaseJob }
 
   // Duplicate Detection

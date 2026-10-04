@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
-import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -14,15 +14,12 @@ import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.ta
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
-
 export type AlbumPermissionId = {
   albumId: string;
   userId: string;
 };
-
 /** The most recipient groups one person may keep (FL-55). */
 export const RECIPIENT_GROUP_LIMIT = 100;
-
 /**
  * A named recipient shortcut (FL-55): the owner's own saved list of people to invite together.
  * It grants nothing and is never shown to anyone but its owner.
@@ -35,7 +32,6 @@ export type RecipientGroup = {
   createdAt: Date;
   updatedAt: Date;
 };
-
 /** A pending invitation to a shared space. It grants nothing until accepted. */
 export type SharedSpaceInvite = {
   albumId: string;
@@ -44,7 +40,6 @@ export type SharedSpaceInvite = {
   invitedById: string | null;
   createdAt: Date;
 };
-
 /** One album a member pointed at from a shared space. The album itself is untouched. */
 export type SharedSpaceAlbumLink = {
   albumId: string;
@@ -54,14 +49,12 @@ export type SharedSpaceAlbumLink = {
   linkedById: string | null;
   createdAt: Date;
 };
-
 /** How much of a linked album is actually in the space, for the viewer. */
 export type SharedSpaceLinkedAlbumCount = {
   albumId: string;
   assetCount: number;
   thumbnailAssetId: string | null;
 };
-
 /**
  * One person a member linked into a shared space. `personOwnerId` and
  * `personGroupId` say whose person it is and are never sent to a client;
@@ -76,7 +69,6 @@ export type SharedSpacePersonLink = {
   coverAssetId: string | null;
   createdAt: Date;
 };
-
 /** A person of the viewer's own, seen on assets that are in the space. */
 export type SharedSpacePersonCandidate = {
   personGroupId: string;
@@ -89,14 +81,12 @@ export type SharedSpacePersonCandidate = {
   updatedAt: Date;
   assetCount: number;
 };
-
 /** One member's last-seen marker for one shared space. */
 export type SharedSpaceVisit = {
   albumId: string;
   userId: string;
   lastSeenAt: Date;
 };
-
 /**
  * One stored feed event, as read back. `activityAssetId` and `activityComment`
  * come from the joined `activity` row of a comment or like event and are null
@@ -115,80 +105,82 @@ export type SharedSpaceEvent = {
   activityAssetId: string | null;
   activityComment: string | null;
 };
-
 /** A member named in a comment. */
 export type SharedSpaceMention = {
   activityId: string;
   userId: string;
 };
-
 /** A reply, and the top-level comment it answers. */
 export type SharedSpaceCommentThread = {
   activityId: string;
   parentActivityId: string;
 };
-
 @Injectable()
 export class AlbumUserRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** FL-55: one owner's named recipient shortcuts, by name. */
   @GenerateSql({ params: [DummyValue.UUID] })
   async getRecipientGroups(ownerId: string): Promise<RecipientGroup[]> {
     const { rows } = await sql<RecipientGroup>`
       SELECT id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
-      FROM immich_fork.recipient_group
+      FROM public.recipient_group
       WHERE "ownerId" = ${ownerId}::uuid
       ORDER BY lower(name), id
     `.execute(this.db);
     return rows;
   }
-
   /** FL-55: a shortcut, only when `ownerId` owns it — anyone else's reads as not found. */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async getRecipientGroup(ownerId: string, id: string): Promise<RecipientGroup | undefined> {
     const { rows } = await sql<RecipientGroup>`
       SELECT id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
-      FROM immich_fork.recipient_group
+      FROM public.recipient_group
       WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /**
    * FL-55: saves a named shortcut. Writes only the shortcut itself — never an album user, an
    * invitation or any other grant — through the fork-writer guard like every fork-owned table.
    */
   async createRecipientGroup(ownerId: string, name: string, userIds: string[]): Promise<RecipientGroup> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
       // One owner's groups are counted under a per-owner lock, so two saves cannot both pass the cap.
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`recipient_group:${ownerId}`}, 0))`.execute(tx);
-      const { rows: counted } = await sql<{ count: number }>`
-        SELECT count(*)::int AS count FROM immich_fork.recipient_group WHERE "ownerId" = ${ownerId}::uuid
+      const { rows: counted } = await sql<{
+        count: number;
+      }>`
+        SELECT count(*)::int AS count FROM public.recipient_group WHERE "ownerId" = ${ownerId}::uuid
       `.execute(tx);
       if ((counted[0]?.count ?? 0) >= RECIPIENT_GROUP_LIMIT) {
         throw new BadRequestException(`You can keep up to ${RECIPIENT_GROUP_LIMIT} recipient groups`);
       }
       const { rows } = await sql<RecipientGroup>`
-        INSERT INTO immich_fork.recipient_group ("ownerId", name, "userIds")
+        INSERT INTO public.recipient_group ("ownerId", name, "userIds")
         VALUES (${ownerId}::uuid, ${name}, ${userIds}::uuid[])
         RETURNING id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
       `.execute(tx);
       return rows[0];
     });
   }
-
   /** FL-55: renames or re-lists an owner's shortcut; undefined when it is not theirs. */
   async updateRecipientGroup(
     ownerId: string,
     id: string,
-    { name, userIds }: { name?: string; userIds?: string[] },
+    {
+      name,
+      userIds,
+    }: {
+      name?: string;
+      userIds?: string[];
+    },
   ): Promise<RecipientGroup | undefined> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
       const { rows } = await sql<RecipientGroup>`
-        UPDATE immich_fork.recipient_group
+        UPDATE public.recipient_group
         SET name = coalesce(${name ?? null}::text, name),
             "userIds" = coalesce(${userIds ?? null}::uuid[], "userIds"),
             "updatedAt" = clock_timestamp()
@@ -198,7 +190,6 @@ export class AlbumUserRepository {
       return rows[0];
     });
   }
-
   /**
    * FL-55: a deleted account leaves no recipient data behind — its own groups go, and it is taken
    * out of everyone else's. Skipped (never blocking the delete) while the fork schema is not
@@ -206,29 +197,23 @@ export class AlbumUserRepository {
    */
   async forgetRecipient(userId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return;
-      }
-      await sql`DELETE FROM immich_fork.recipient_group WHERE "ownerId" = ${userId}::uuid`.execute(tx);
+      await sql`DELETE FROM public.recipient_group WHERE "ownerId" = ${userId}::uuid`.execute(tx);
       await sql`
-        UPDATE immich_fork.recipient_group
+        UPDATE public.recipient_group
         SET "userIds" = array_remove("userIds", ${userId}::uuid), "updatedAt" = clock_timestamp()
         WHERE ${userId}::uuid = ANY("userIds")
       `.execute(tx);
     });
   }
-
   /** FL-55: deletes an owner's shortcut; false when it is not theirs. Nobody's access changes. */
   async deleteRecipientGroup(ownerId: string, id: string): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
       const { numAffectedRows } = await sql`
-        DELETE FROM immich_fork.recipient_group WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
+        DELETE FROM public.recipient_group WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
       `.execute(tx);
       return (numAffectedRows ?? 0n) > 0n;
     });
   }
-
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
   create(albumUser: Insertable<AlbumUserTable>) {
     return this.db
@@ -237,7 +222,6 @@ export class AlbumUserRepository {
       .returning(['userId', 'albumId', 'role'])
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }, { role: AlbumUserRole.Viewer }] })
   async update({ userId, albumId }: AlbumPermissionId, dto: Updateable<AlbumUserTable>) {
     await this.db
@@ -247,12 +231,10 @@ export class AlbumUserRepository {
       .where('albumId', '=', albumId)
       .execute();
   }
-
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
   async delete({ userId, albumId }: AlbumPermissionId): Promise<void> {
     await this.db.deleteFrom('album_user').where('userId', '=', userId).where('albumId', '=', albumId).execute();
   }
-
   /* ------------------------------------------------------------------ */
   /* Shared space invitations (FL-55)                                    */
   /*                                                                     */
@@ -261,7 +243,6 @@ export class AlbumUserRepository {
   /* check, listing, sync feed or activity rule can reach the space      */
   /* through it. Accepting is the only thing that creates membership.    */
   /* ------------------------------------------------------------------ */
-
   /** Create or replace the pending invitation for one person. */
   async createInvite(invite: Insertable<SharedSpaceInviteTable>): Promise<SharedSpaceInvite> {
     return this.db
@@ -276,7 +257,6 @@ export class AlbumUserRepository {
       .returning(['albumId', 'userId', 'role', 'invitedById', 'createdAt'])
       .executeTakeFirstOrThrow();
   }
-
   async getInvite({ albumId, userId }: AlbumPermissionId): Promise<SharedSpaceInvite | undefined> {
     return this.db
       .selectFrom('shared_space_invite')
@@ -285,7 +265,6 @@ export class AlbumUserRepository {
       .where('userId', '=', userId)
       .executeTakeFirst();
   }
-
   /** Every space this person has been invited to and has not answered. */
   async getInvitesForUser(userId: string): Promise<SharedSpaceInvite[]> {
     return this.db
@@ -295,7 +274,6 @@ export class AlbumUserRepository {
       .orderBy('createdAt', 'desc')
       .execute();
   }
-
   /** Who has been invited to a space and has not answered, for the owner's member list. */
   async getInvitesForAlbum(albumId: string): Promise<SharedSpaceInvite[]> {
     return this.db
@@ -305,7 +283,6 @@ export class AlbumUserRepository {
       .orderBy('createdAt', 'asc')
       .execute();
   }
-
   async deleteInvite({ albumId, userId }: AlbumPermissionId): Promise<void> {
     await this.db
       .deleteFrom('shared_space_invite')
@@ -313,7 +290,6 @@ export class AlbumUserRepository {
       .where('userId', '=', userId)
       .execute();
   }
-
   /* ------------------------------------------------------------------ */
   /* Shared space panels (FL-55)                                         */
   /*                                                                     */
@@ -326,7 +302,6 @@ export class AlbumUserRepository {
   /* marked sensitive (`excludeNsfw`) excluded before anything is        */
   /* counted, named or shown.                                            */
   /* ------------------------------------------------------------------ */
-
   /** The albums linked into one space, with just enough of each album to name it. */
   async getLinkedAlbums(spaceId: string, forSync = false): Promise<SharedSpaceAlbumLink[]> {
     return this.db
@@ -352,7 +327,6 @@ export class AlbumUserRepository {
       .orderBy('album.albumName', 'asc')
       .execute();
   }
-
   async getLinkedAlbum(albumId: string, linkedAlbumId: string): Promise<SharedSpaceAlbumLink | undefined> {
     return this.db
       .selectFrom('shared_space_album as link')
@@ -369,7 +343,6 @@ export class AlbumUserRepository {
       ])
       .executeTakeFirst();
   }
-
   /** Link an album into a space. Re-linking is a no-op, never a second row. */
   async createLinkedAlbum(link: Insertable<SharedSpaceAlbumTable>): Promise<void> {
     await this.db
@@ -378,7 +351,6 @@ export class AlbumUserRepository {
       .onConflict((oc) => oc.columns(['albumId', 'linkedAlbumId']).doNothing())
       .execute();
   }
-
   /** Remove the reference. No asset, album, member or grant changes. */
   async deleteLinkedAlbum(albumId: string, linkedAlbumId: string): Promise<void> {
     await this.db
@@ -387,7 +359,6 @@ export class AlbumUserRepository {
       .where('linkedAlbumId', '=', linkedAlbumId)
       .execute();
   }
-
   /**
    * How many of the space's assets are also in each linked album, and which of
    * them to show as the tile's picture.
@@ -406,7 +377,6 @@ export class AlbumUserRepository {
     if (linkedAlbumIds.length === 0) {
       return [];
     }
-
     return this.db
       .selectFrom('asset')
       .$call(withDefaultVisibility)
@@ -424,7 +394,6 @@ export class AlbumUserRepository {
       .groupBy('linked_asset.albumId')
       .execute();
   }
-
   /**
    * The people linked into one space.
    *
@@ -481,7 +450,6 @@ export class AlbumUserRepository {
       .orderBy('link.createdAt', 'asc')
       .execute();
   }
-
   async getLinkedPerson(id: string): Promise<SharedSpacePersonLink | undefined> {
     return this.db
       .selectFrom('shared_space_person')
@@ -489,7 +457,6 @@ export class AlbumUserRepository {
       .where('id', '=', id)
       .executeTakeFirst();
   }
-
   /** Link a person into a space, or rename the link this member already has. */
   async createLinkedPerson(link: Insertable<SharedSpacePersonTable>): Promise<SharedSpacePersonLink> {
     return this.db
@@ -504,22 +471,24 @@ export class AlbumUserRepository {
       .returning(['id', 'albumId', 'personOwnerId', 'personGroupId', 'name', 'coverAssetId', 'createdAt'])
       .executeTakeFirstOrThrow();
   }
-
   /** Remove the link and only the link: the person, their faces and the space stay as they are. */
   async deleteLinkedPerson(id: string): Promise<void> {
     await this.db.deleteFrom('shared_space_person').where('id', '=', id).execute();
   }
-
   /** How many of the space's visible assets show each linked person. */
   async getLinkedPersonCounts(
     spaceId: string,
     personGroupIds: string[],
     options: HiddenContentQueryOptions = {},
-  ): Promise<{ personGroupId: string; assetCount: number }[]> {
+  ): Promise<
+    {
+      personGroupId: string;
+      assetCount: number;
+    }[]
+  > {
     if (personGroupIds.length === 0) {
       return [];
     }
-
     return this.db
       .selectFrom('asset')
       .$call(withDefaultVisibility)
@@ -536,7 +505,6 @@ export class AlbumUserRepository {
       .groupBy('asset_face.personGroupId')
       .execute();
   }
-
   /**
    * The picture the space shows for a person it has just been given: the most
    * recent asset that is already in the space and shows them. Never the
@@ -562,10 +530,8 @@ export class AlbumUserRepository {
       .orderBy('asset.fileCreatedAt', 'desc')
       .limit(1)
       .executeTakeFirst();
-
     return row?.id ?? null;
   }
-
   /**
    * The people the viewer could offer to link: their OWN people, seen on assets
    * that are in the space.
@@ -620,7 +586,6 @@ export class AlbumUserRepository {
       .orderBy('person.name', 'asc')
       .execute() as Promise<SharedSpacePersonCandidate[]>;
   }
-
   async getSpaceVisit({ albumId, userId }: AlbumPermissionId): Promise<SharedSpaceVisit | undefined> {
     return this.db
       .selectFrom('shared_space_visit')
@@ -629,7 +594,6 @@ export class AlbumUserRepository {
       .where('userId', '=', userId)
       .executeTakeFirst();
   }
-
   /** Move this member's marker forward. Nobody else's marker changes. */
   async setSpaceVisit({ albumId, userId }: AlbumPermissionId, lastSeenAt: Date): Promise<void> {
     await this.db
@@ -638,7 +602,6 @@ export class AlbumUserRepository {
       .onConflict((oc) => oc.columns(['albumId', 'userId']).doUpdateSet({ lastSeenAt }))
       .execute();
   }
-
   /**
    * What has arrived in the space since a moment, for one member.
    *
@@ -649,7 +612,13 @@ export class AlbumUserRepository {
    */
   private spaceNewAssetsQuery(
     spaceId: string,
-    { since, viewerId }: { since?: Date; viewerId: string },
+    {
+      since,
+      viewerId,
+    }: {
+      since?: Date;
+      viewerId: string;
+    },
     options: HiddenContentQueryOptions = {},
   ) {
     return this.db
@@ -662,22 +631,26 @@ export class AlbumUserRepository {
       .where('asset.ownerId', '!=', viewerId)
       .$if(since !== undefined, (qb) => qb.where('album_asset.createdAt', '>', since!));
   }
-
   async getSpaceNewAssetCount(
     spaceId: string,
-    args: { since?: Date; viewerId: string },
+    args: {
+      since?: Date;
+      viewerId: string;
+    },
     options: HiddenContentQueryOptions = {},
   ): Promise<number> {
     const row = await this.spaceNewAssetsQuery(spaceId, args, options)
       .select((eb) => sql<number>`count(distinct ${eb.ref('asset.id')})::int`.as('assetCount'))
       .executeTakeFirst();
-
     return row?.assetCount ?? 0;
   }
-
   async getSpaceNewAssetIds(
     spaceId: string,
-    args: { since?: Date; viewerId: string; take: number },
+    args: {
+      since?: Date;
+      viewerId: string;
+      take: number;
+    },
     options: HiddenContentQueryOptions = {},
   ): Promise<string[]> {
     const rows = await this.spaceNewAssetsQuery(spaceId, args, options)
@@ -686,14 +659,11 @@ export class AlbumUserRepository {
       .orderBy('asset.id', 'asc')
       .limit(args.take)
       .execute();
-
     return rows.map(({ id }) => id);
   }
-
   /* ------------------------------------------------------------------ */
   /* Activity feed and mentions (FL-55)                                  */
   /* ------------------------------------------------------------------ */
-
   /**
    * Record that something happened in a space.
    *
@@ -705,11 +675,18 @@ export class AlbumUserRepository {
   async createSpaceEvent(event: Insertable<SharedSpaceEventTable>): Promise<void> {
     await this.db.insertInto('shared_space_event').values(event).execute();
   }
-
   /** The space's events, newest first, joined to the comment or like they announce. */
   async getSpaceEvents(
     spaceId: string,
-    { before, since, take }: { before?: Date; since?: Date; take: number },
+    {
+      before,
+      since,
+      take,
+    }: {
+      before?: Date;
+      since?: Date;
+      take: number;
+    },
   ): Promise<SharedSpaceEvent[]> {
     return this.db
       .selectFrom('shared_space_event as event')
@@ -735,7 +712,6 @@ export class AlbumUserRepository {
       .limit(take)
       .execute();
   }
-
   /**
    * Of these asset ids, the ones a viewer may see.
    *
@@ -750,12 +726,15 @@ export class AlbumUserRepository {
     spaceId: string,
     assetIds: string[],
     options: HiddenContentQueryOptions,
-    { inSpace }: { inSpace: boolean },
+    {
+      inSpace,
+    }: {
+      inSpace: boolean;
+    },
   ): Promise<Set<string>> {
     if (assetIds.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .$call(withDefaultVisibility)
@@ -775,10 +754,8 @@ export class AlbumUserRepository {
         ),
       )
       .execute();
-
     return new Set(rows.map(({ id }) => id));
   }
-
   async createMentions(activityId: string, userIds: string[]): Promise<void> {
     if (userIds.length === 0) {
       return;
@@ -789,11 +766,9 @@ export class AlbumUserRepository {
       .onConflict((oc) => oc.doNothing())
       .execute();
   }
-
   async deleteMentions(activityId: string): Promise<void> {
     await this.db.deleteFrom('shared_space_mention').where('activityId', '=', activityId).execute();
   }
-
   async getMentions(activityIds: string[]): Promise<SharedSpaceMention[]> {
     if (activityIds.length === 0) {
       return [];
@@ -804,16 +779,13 @@ export class AlbumUserRepository {
       .where('activityId', 'in', activityIds)
       .execute();
   }
-
   /* ------------------------------------------------------------------ */
   /* Threaded replies (FL-55)                                            */
   /* ------------------------------------------------------------------ */
-
   /** Record that a comment is a reply. The parent is always a top-level comment. */
   async createCommentThread(thread: Insertable<SharedSpaceCommentThreadTable>): Promise<void> {
     await this.db.insertInto('shared_space_comment_thread').values(thread).execute();
   }
-
   /** Of these comments, the ones that are replies, with the comment each answers. */
   async getCommentParents(activityIds: string[]): Promise<SharedSpaceCommentThread[]> {
     if (activityIds.length === 0) {
@@ -825,7 +797,6 @@ export class AlbumUserRepository {
       .where('activityId', 'in', activityIds)
       .execute();
   }
-
   /** The replies under these top-level comments. */
   async getCommentReplies(parentActivityIds: string[]): Promise<SharedSpaceCommentThread[]> {
     if (parentActivityIds.length === 0) {
@@ -837,7 +808,6 @@ export class AlbumUserRepository {
       .where('parentActivityId', 'in', parentActivityIds)
       .execute();
   }
-
   /**
    * Delete a comment and every reply under it, in one statement.
    *

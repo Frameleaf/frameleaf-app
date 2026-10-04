@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -14,7 +14,6 @@ import {
   metadataAgrees,
 } from 'src/utils/icloud-identity.js';
 import { decodedName } from 'src/utils/icloud-records.js';
-
 /** FL-296: one identity on record, with the asset it names. */
 export type ICloudIdentityRow = {
   id: string;
@@ -32,7 +31,6 @@ export type ICloudIdentityRow = {
   lastAuditResult: 'match' | 'mismatch' | null;
   matchStrength: MatchStrength | null;
 };
-
 /** FL-296: a lease on one logical Apple item (all its roles), held by a device or a sync run. */
 export type ICloudClaimRow = {
   id: string;
@@ -41,10 +39,8 @@ export type ICloudClaimRow = {
   expiresAt: Date;
   createdAt: Date;
 };
-
 /** Longest a claim lives, renewals included (a long video). */
 export const ICLOUD_CLAIM_MAX_SEC = 4 * 3600;
-
 /** FL-296: a connection as the coverage probe and lookup describe it. */
 export type ICloudCoverageConnection = {
   id: string;
@@ -54,10 +50,13 @@ export type ICloudCoverageConnection = {
   accountHint: string | null;
   unhealthySince: Date | null;
   nextRunAt: Date | null;
-  config: { libraries?: string[]; albums?: string[]; includeEdits?: boolean };
+  config: {
+    libraries?: string[];
+    albums?: string[];
+    includeEdits?: boolean;
+  };
   lastCompleteInventoryAt: Date | null;
 };
-
 /** FL-296: what the sync's inventory knows about one Apple item. */
 export type ICloudInventoryItem = {
   connectionId: string;
@@ -75,29 +74,26 @@ export type ICloudInventoryItem = {
   /** Since when the oldest of those has waited. */
   pendingSince: Date | null;
 };
-
 /** The sync's resource role, as an identity role (`r` is an `icloud_resource`). */
 const identityRoleSql = sql`CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion'
   WHEN 'raw' THEN 'raw-alternate' ELSE 'edit-render' END`;
-
 /** A resource the sync will still import: the same rule as the worker's own `hasPending`. */
 const pendingResourceSql = sql`r."auditRequestId" IS NULL AND r.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
   AND (r.status = 'committed' OR coalesce((r.source->>'current')::boolean, true))`;
-
 /**
  * The sync's resources, as identities: `icloud-sync:<connection>` delivered them, the record names
  * come from its own inventory (so the match is exact), and an edit render's version is the CPLAsset
  * adjustment time and the render's fingerprint.
  */
 const syncIdentities = (where: ReturnType<typeof sql>) => sql`
-  INSERT INTO immich_fork.icloud_source_identity ("ownerId", "assetId", "libraryKey", library, "cplAssetRecordName",
+  INSERT INTO public.icloud_source_identity ("ownerId", "assetId", "libraryKey", library, "cplAssetRecordName",
     "cplMasterRecordName", role, "editVersion", sha256, "cloudChecksum", "deliveredBy", "matchStrength")
   SELECT r."ownerId", r."assetId", r."libraryKey", r.library, upper(r."sourceAssetId"), r.source->>'sourceMasterId',
     ${identityRoleSql},
     CASE WHEN r.role IN ('edited-image', 'edited-video')
       THEN coalesce(r.source->'assetFields'->'adjustmentTimestamp'->>'value', '') || ':' || r.fingerprint ELSE '' END,
     r.sha256, r.source->'resource'->>'fileChecksum', 'icloud-sync:' || r."connectionId", 'exact'
-  FROM immich_fork.icloud_resource r
+  FROM public.icloud_resource r
   WHERE r."auditRequestId" IS NULL AND r."assetId" IS NOT NULL AND r.sha256 IS NOT NULL AND r.status IN ('committed', 'finalized', 'reused')
     AND r.role IN ('original', 'motion', 'raw', 'edited-image', 'edited-video') AND ${where}
   ON CONFLICT ("ownerId", "cplAssetRecordName", role, "editVersion", "assetId") DO UPDATE
@@ -111,24 +107,22 @@ const syncIdentities = (where: ReturnType<typeof sql>) => sql`
       "appleFingerprint" = CASE WHEN icloud_source_identity.sha256 = excluded.sha256
         THEN icloud_source_identity."appleFingerprint" END
 `;
-
 /** The identity of one resource the sync just committed or reused (inside its transaction). */
 export const recordSyncIdentity = async (db: Kysely<DB>, resourceId: string): Promise<void> => {
   await syncIdentities(sql`r.id = ${resourceId}::uuid`).execute(db);
 };
-
 /**
  * The sync finished one resource of an item: its claim on the item goes once none of the item's
  * resources in this connection are still open (inside the finalize transaction).
  */
 export const releaseSyncClaim = async (db: Kysely<DB>, resourceId: string): Promise<void> => {
   await sql`
-    DELETE FROM immich_fork.icloud_claim c
-    USING immich_fork.icloud_resource r
+    DELETE FROM public.icloud_claim c
+    USING public.icloud_resource r
     WHERE r.id = ${resourceId}::uuid AND r."auditRequestId" IS NULL AND c."ownerId" = r."ownerId" AND c."cplAssetRecordName" = upper(r."sourceAssetId")
       AND c.holder = 'icloud-sync:' || r."connectionId"
       AND NOT EXISTS (
-        SELECT 1 FROM immich_fork.icloud_resource o
+        SELECT 1 FROM public.icloud_resource o
         WHERE o."auditRequestId" IS NULL AND o."connectionId" = r."connectionId" AND o."libraryKey" = r."libraryKey"
           AND o."sourceAssetId" = r."sourceAssetId" AND o.id <> r.id
           AND o.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
@@ -136,27 +130,25 @@ export const releaseSyncClaim = async (db: Kysely<DB>, resourceId: string): Prom
       )
   `.execute(db);
 };
-
 /** How long the sync's claim on an item lives; every resource it transfers renews it. */
 export const ICLOUD_SYNC_CLAIM_SEC = 1800;
-
 @Injectable()
 export class ICloudIdentityRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** Every past sync import, so the identities cover what was imported before they existed. */
   async backfill(): Promise<number> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud identities cannot be recorded while the server is being handed over');
       const result = await syncIdentities(
         // per asset and Apple item: one asset reused by two Apple items (duplicates in iCloud) needs both
-        sql`NOT EXISTS (SELECT 1 FROM immich_fork.icloud_source_identity i
+        sql`NOT EXISTS (SELECT 1 FROM public.icloud_source_identity i
           WHERE i."assetId" = r."assetId" AND i."cplAssetRecordName" = upper(r."sourceAssetId"))`,
       ).execute(tx);
       return Number(result.numAffectedRows ?? 0);
     });
   }
-
   /** The identities of these Apple items, for this owner, with assets that still exist. */
   async identities(ownerId: string, names: string[]): Promise<ICloudIdentityRow[]> {
     if (names.length === 0) {
@@ -166,27 +158,25 @@ export class ICloudIdentityRepository {
       SELECT i.id, i."assetId", i."libraryKey", i."cplAssetRecordName", i."cplMasterRecordName", i.role,
         i."editVersion", i.sha256, i."appleFingerprint", i."deliveredBy", i."deliveredAt", i."lastVerifiedAt",
         i."lastAuditResult", i."matchStrength"
-      FROM immich_fork.icloud_source_identity i
+      FROM public.icloud_source_identity i
       JOIN public.asset a ON a.id = i."assetId" AND a."ownerId" = i."ownerId" AND a."deletedAt" IS NULL
       WHERE i."ownerId" = ${ownerId}::uuid AND i."cplAssetRecordName" = ANY(${names}::text[])
       ORDER BY i."deliveredAt"
     `.execute(this.db);
     return rows;
   }
-
   /** The owner's connections, with what the coverage probe reports about each. */
   async connections(ownerId: string): Promise<ICloudCoverageConnection[]> {
     const { rows } = await sql<ICloudCoverageConnection>`
       SELECT c.id, c.label, c.state, c."lastError", c."accountHint", c."unhealthySince", c."nextRunAt", c.config,
-        (SELECT k."updatedAt" FROM immich_fork.icloud_checkpoint k
+        (SELECT k."updatedAt" FROM public.icloud_checkpoint k
           WHERE k."connectionId" = c.id AND k.scope = 'inventory-complete' AND k.complete) AS "lastCompleteInventoryAt"
-      FROM immich_fork.icloud_connection c
+      FROM public.icloud_connection c
       WHERE c."ownerId" = ${ownerId}::uuid AND c.state <> 'disconnected'
       ORDER BY c."createdAt"
     `.execute(this.db);
     return rows;
   }
-
   /** What the owner's sync inventories know about these Apple items (every record in scope or not). */
   async inventory(ownerId: string, names: string[]): Promise<ICloudInventoryItem[]> {
     if (names.length === 0) {
@@ -195,24 +185,23 @@ export class ICloudIdentityRepository {
     const { rows } = await sql<ICloudInventoryItem>`
       SELECT a."connectionId", upper(a."recordId") AS "cplAssetRecordName", a."masterId" AS "cplMasterRecordName",
         a.fields AS "assetFields", m.fields AS "masterFields",
-        EXISTS (SELECT 1 FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId" = a."connectionId"
+        EXISTS (SELECT 1 FROM public.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId" = a."connectionId"
           AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId") AS "inScope",
-        coalesce((SELECT array_agg(DISTINCT ${identityRoleSql}) FROM immich_fork.icloud_resource r
+        coalesce((SELECT array_agg(DISTINCT ${identityRoleSql}) FROM public.icloud_resource r
           WHERE r."connectionId" = a."connectionId" AND r."libraryKey" = a."libraryKey"
             AND r."sourceAssetId" = a."recordId" AND ${pendingResourceSql}), '{}') AS "pendingRoles",
-        (SELECT min(r."createdAt") FROM immich_fork.icloud_resource r WHERE r."connectionId" = a."connectionId"
+        (SELECT min(r."createdAt") FROM public.icloud_resource r WHERE r."connectionId" = a."connectionId"
           AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId"
           AND ${pendingResourceSql}) AS "pendingSince"
-      FROM immich_fork.icloud_record a
-      JOIN immich_fork.icloud_connection c ON c.id = a."connectionId" AND c."ownerId" = ${ownerId}::uuid
+      FROM public.icloud_record a
+      JOIN public.icloud_connection c ON c.id = a."connectionId" AND c."ownerId" = ${ownerId}::uuid
         AND c.state <> 'disconnected'
-      LEFT JOIN immich_fork.icloud_record m ON m."connectionId" = a."connectionId" AND m."libraryKey" = a."libraryKey"
+      LEFT JOIN public.icloud_record m ON m."connectionId" = a."connectionId" AND m."libraryKey" = a."libraryKey"
         AND m."recordId" = a."masterId" AND NOT m.deleted
       WHERE a."recordType" = 'CPLAsset' AND NOT a.deleted AND upper(a."recordId") = ANY(${names}::text[])
     `.execute(this.db);
     return rows;
   }
-
   /**
    * Claim these items for `holder` for `ttlSec`: granted where nobody else holds a live claim (a
    * holder's own claim is extended, keeping its id). Answers every item's current claim.
@@ -222,9 +211,8 @@ export class ICloudIdentityRepository {
       return [];
     }
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud items cannot be claimed while the server is being handed over');
       await sql`
-        INSERT INTO immich_fork.icloud_claim ("ownerId", "cplAssetRecordName", holder, "expiresAt")
+        INSERT INTO public.icloud_claim ("ownerId", "cplAssetRecordName", holder, "expiresAt")
         SELECT ${ownerId}::uuid, name, ${holder}, clock_timestamp() + make_interval(secs => ${ttlSec})
         FROM unnest(${names}::text[]) AS name
         -- one lock order for every caller: two devices claiming overlapping items cannot deadlock
@@ -242,13 +230,12 @@ export class ICloudIdentityRepository {
           WHERE icloud_claim."expiresAt" <= clock_timestamp() OR icloud_claim.holder = excluded.holder
       `.execute(tx);
       const { rows } = await sql<ICloudClaimRow>`
-        SELECT id, "cplAssetRecordName", holder, "expiresAt", "createdAt" FROM immich_fork.icloud_claim
+        SELECT id, "cplAssetRecordName", holder, "expiresAt", "createdAt" FROM public.icloud_claim
         WHERE "ownerId" = ${ownerId}::uuid AND "cplAssetRecordName" = ANY(${names}::text[])
       `.execute(tx);
       return rows;
     });
   }
-
   /**
    * The sync's claim on the item a resource belongs to, before it downloads anything: null when it
    * holds the claim, else when the device holding it lets go at the latest.
@@ -258,13 +245,11 @@ export class ICloudIdentityRepository {
     const [claim] = await this.claim(ownerId, [sourceAssetId.toUpperCase()], holder, ICLOUD_SYNC_CLAIM_SEC);
     return !claim || claim.holder === holder ? null : new Date(claim.expiresAt);
   }
-
   /** Extend live claims of `holder`, never past four hours from when each was taken. */
   async renew(ownerId: string, ids: string[], holder: string, ttlSec: number): Promise<ICloudClaimRow[]> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud claims cannot be renewed while the server is being handed over');
       const { rows } = await sql<ICloudClaimRow>`
-        UPDATE immich_fork.icloud_claim
+        UPDATE public.icloud_claim
         SET "expiresAt" = least("createdAt" + interval '4 hours', clock_timestamp() + make_interval(secs => ${ttlSec}))
         WHERE "ownerId" = ${ownerId}::uuid AND id = ANY(${ids}::uuid[]) AND holder = ${holder}
           AND "expiresAt" > clock_timestamp()
@@ -273,33 +258,31 @@ export class ICloudIdentityRepository {
       return rows;
     });
   }
-
   /** Give up claims of `holder`; answers the ids released. */
   async release(ownerId: string, ids: string[], holder: string): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud claims cannot be released while the server is being handed over');
-      const { rows } = await sql<{ id: string }>`
-        DELETE FROM immich_fork.icloud_claim
+      const { rows } = await sql<{
+        id: string;
+      }>`
+        DELETE FROM public.icloud_claim
         WHERE "ownerId" = ${ownerId}::uuid AND id = ANY(${ids}::uuid[]) AND holder = ${holder}
         RETURNING id
       `.execute(tx);
       return rows.map(({ id }) => id);
     });
   }
-
   /** Live claims on these items. */
   async claims(ownerId: string, names: string[]): Promise<ICloudClaimRow[]> {
     if (names.length === 0) {
       return [];
     }
     const { rows } = await sql<ICloudClaimRow>`
-      SELECT id, "cplAssetRecordName", holder, "expiresAt", "createdAt" FROM immich_fork.icloud_claim
+      SELECT id, "cplAssetRecordName", holder, "expiresAt", "createdAt" FROM public.icloud_claim
       WHERE "ownerId" = ${ownerId}::uuid AND "cplAssetRecordName" = ANY(${names}::text[])
         AND "expiresAt" > clock_timestamp()
     `.execute(this.db);
     return rows;
   }
-
   /**
    * A device uploaded this iCloud item and its digest checked out: record which item the asset is,
    * delivered by the claim's holder (or the device), with how well the device's identifier matches
@@ -334,18 +317,19 @@ export class ICloudIdentityRepository {
       metadataAgrees: agrees,
     });
     const write = async (tx: Transaction<DB>) => {
-      await lockForkWrites(tx, 'iCloud identities cannot be recorded while the server is being handed over');
       // the claim stays: it covers the whole item (its other roles may still be on the way), and the
       // device releases it, or it runs out, when the item is done
       const { rows } = input.claimId
-        ? await sql<{ holder: string }>`
-            SELECT holder FROM immich_fork.icloud_claim
+        ? await sql<{
+            holder: string;
+          }>`
+            SELECT holder FROM public.icloud_claim
             WHERE id = ${input.claimId}::uuid AND "ownerId" = ${input.ownerId}::uuid AND "cplAssetRecordName" = ${name}
           `.execute(tx)
         : { rows: [] };
       const deliveredBy = rows[0]?.holder ?? `device:${input.deviceKey ?? 'unknown'}`;
       await sql`
-        INSERT INTO immich_fork.icloud_source_identity ("ownerId", "assetId", "libraryKey", "cplAssetRecordName",
+        INSERT INTO public.icloud_source_identity ("ownerId", "assetId", "libraryKey", "cplAssetRecordName",
           "cplMasterRecordName", role, "editVersion", sha256, "deliveredBy", "cloudIdentifier", "matchStrength")
         VALUES (${input.ownerId}::uuid, ${input.assetId}::uuid, ${known?.libraryKey ?? null}, ${name},
           ${input.parsed.cplMasterRecordName}, ${input.role}, ${input.editVersion}, ${input.sha256}, ${deliveredBy},
@@ -359,11 +343,9 @@ export class ICloudIdentityRepository {
       await this.db.transaction().execute(write);
     }
   }
-
   /** Validate and hold the current owned original until its identity has been recorded. */
   async attachDevice(auth: AuthDto, input: Parameters<ICloudIdentityRepository['recordDevice']>[0]): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud identities cannot be attached while the server is being handed over');
       const asset = await new IntegrityRepository(tx)
         .getSafetyQuery(auth, [input.sha256.toString('hex')])
         .where('asset.id', '=', input.assetId)
@@ -375,8 +357,10 @@ export class ICloudIdentityRepository {
       }
       await new ICloudIdentityRepository(tx).recordDevice(input);
       // A repeated key keeps its existing proof; changed originals cannot claim that proof as attached.
-      const { rows } = await sql<{ sha256: Buffer }>`
-        SELECT sha256 FROM immich_fork.icloud_source_identity
+      const { rows } = await sql<{
+        sha256: Buffer;
+      }>`
+        SELECT sha256 FROM public.icloud_source_identity
         WHERE "ownerId" = ${input.ownerId}::uuid AND "assetId" = ${input.assetId}::uuid
           AND "cplAssetRecordName" = ${input.parsed.cplAssetRecordName}
           AND role = ${input.role} AND "editVersion" = ${input.editVersion}
@@ -385,7 +369,6 @@ export class ICloudIdentityRepository {
       return rows[0]?.sha256.equals(input.sha256) ?? false;
     });
   }
-
   /** Whether `deviceKey` is one of the owner's registered backup devices. */
   async ownsDevice(ownerId: string, deviceKey: string): Promise<boolean> {
     const { rows } = await sql`
@@ -394,13 +377,11 @@ export class ICloudIdentityRepository {
     `.execute(this.db);
     return rows.length > 0;
   }
-
   /** Identities whose asset is gone (deleted for good); the nightly cleanup removes them. */
   async removeOrphans(): Promise<number> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'iCloud identities cannot be cleaned up while the server is being handed over');
       const result = await sql`
-        DELETE FROM immich_fork.icloud_source_identity i
+        DELETE FROM public.icloud_source_identity i
         WHERE NOT EXISTS (SELECT 1 FROM public.asset a WHERE a.id = i."assetId" AND a."ownerId" = i."ownerId")
       `.execute(tx);
       return Number(result.numAffectedRows ?? 0);

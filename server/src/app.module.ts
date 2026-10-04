@@ -1,4 +1,4 @@
-import { BullModule } from '@nestjs/bullmq';
+import { DatabaseService } from 'src/services/database.service.js';
 import { Inject, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
@@ -9,7 +9,6 @@ import { commandsAndQuestions } from 'src/commands/index.js';
 import { IWorker } from 'src/constants.js';
 import { controllers } from 'src/controllers/index.js';
 import { ImmichWorker } from 'src/enum.js';
-import { FirstLaunchWorkerService } from 'src/maintenance/first-launch-worker.service.js';
 import { MaintenanceAuthGuard } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
@@ -66,11 +65,9 @@ const apiMiddleware = [
 ];
 
 const configRepository = new ConfigRepository();
-const { bull, cls, database } = configRepository.getEnv();
+const { cls, database } = configRepository.getEnv();
 
 const commonImports = [ClsModule.forRoot(cls.config), KyselyModule.forRoot(getKyselyConfig(database.config))];
-
-const bullImports = [BullModule.forRoot(bull.config), BullModule.registerQueue(...bull.queues)];
 
 // eslint-disable-next-line unicorn/no-top-level-side-effects
 configureUserAgent();
@@ -108,7 +105,7 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
 }
 
 @Module({
-  imports: [...bullImports, ...commonImports, ScheduleModule.forRoot()],
+  imports: [...commonImports, ScheduleModule.forRoot()],
   controllers: [...controllers],
   providers: [...common, ...apiMiddleware, { provide: IWorker, useValue: ImmichWorker.Api }],
 })
@@ -152,60 +149,28 @@ export class MaintenanceModule {
   }
 }
 
-/**
- * FL-295: the "Getting Ready…" worker: no controllers, no queues and nothing that writes to the
- * database. It only takes the safety copy and serves the "Getting Ready…" screen.
- */
 @Module({
   imports: [...commonImports],
-  providers: [
-    ConfigRepository,
-    LoggingRepository,
-    StorageRepository,
-    ProcessRepository,
-    DatabaseRepository,
-    UserRepository,
-    SystemMetadataRepository,
-    AppRepository,
-    DatabaseBackupService,
-    FirstLaunchWorkerService,
-    ...commonMiddleware,
-    { provide: IWorker, useValue: ImmichWorker.FirstLaunch },
-  ],
-})
-export class FirstLaunchModule {
-  constructor(
-    @Inject(IWorker) private worker: ImmichWorker,
-    logger: LoggingRepository,
-    private firstLaunchWorkerService: FirstLaunchWorkerService,
-  ) {
-    logger.setAppName(this.worker);
-  }
-
-  onModuleInit() {
-    // not awaited: the screen is served while the copy is made
-    void this.firstLaunchWorkerService.prepare();
-  }
-}
-
-@Module({
-  imports: [...bullImports, ...commonImports],
   providers: [...common, { provide: IWorker, useValue: ImmichWorker.Microservices }, SchedulerRegistry],
 })
 export class MicroservicesModule extends BaseModule {}
 
 @Module({
-  imports: [...bullImports, ...commonImports],
+  imports: [...commonImports],
   providers: [...common, ...commandsAndQuestions, SchedulerRegistry],
 })
 export class ImmichAdminModule implements OnModuleInit, OnModuleDestroy {
   constructor(
     private service: CliService,
+    private databaseService: DatabaseService,
     private jobRepository: JobRepository,
     private storageService: StorageService,
   ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
+    if (process.argv.includes('import-immich')) {
+      await this.databaseService.initialize({ allowInactiveImport: true });
+    }
     this.storageService.initializeMediaLocation();
     this.jobRepository.setup(services);
   }

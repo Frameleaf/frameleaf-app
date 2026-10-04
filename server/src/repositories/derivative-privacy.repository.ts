@@ -2,12 +2,11 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
-import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
+
 import { DB } from 'src/schema/index.js';
 import { DerivativeSourceEvidence, strongestLockReason } from 'src/utils/derivative-privacy.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
-
 /** One library source as publication found it, locked for the rest of the transaction. */
 export type LockedSourceRow = DerivativeSourceEvidence & {
   deleted: boolean;
@@ -16,7 +15,6 @@ export type LockedSourceRow = DerivativeSourceEvidence & {
   checksum: string;
   visibility: AssetVisibility;
 };
-
 /**
  * Privacy evidence for derived media (FL-106, `STU-404`).
  *
@@ -27,8 +25,10 @@ export type LockedSourceRow = DerivativeSourceEvidence & {
  */
 @Injectable()
 export class DerivativePrivacyRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /**
    * Read, and share-lock, every library source a result is made from.
    *
@@ -40,7 +40,6 @@ export class DerivativePrivacyRepository {
     if (assetIds.length === 0) {
       return new Map();
     }
-
     const { rows } = await sql<{
       id: string;
       ownerId: string;
@@ -56,12 +55,13 @@ export class DerivativePrivacyRepository {
       ORDER BY asset.id
       FOR SHARE OF asset
     `.execute(tx);
-
     const sensitive = await this.sensitiveIds(tx, assetIds);
-
     // Read after the row locks are held, including a still linked after it was locked: its hidden
     // motion may have no lock record of its own, but library access already treats it as Locked.
-    const locks = await sql<{ assetId: string; reason: AssetLockReason }>`
+    const locks = await sql<{
+      assetId: string;
+      reason: AssetLockReason;
+    }>`
       SELECT source.id AS "assetId", asset_lock.reason
       FROM asset source
       JOIN asset locked ON locked.id = source.id
@@ -74,7 +74,6 @@ export class DerivativePrivacyRepository {
       reasons.set(row.assetId, strongestLockReason([reasons.get(row.assetId) ?? null, row.reason]));
     }
     const requested = new Set(assetIds);
-
     return new Map(
       // An item share's still grants its motion access. Lock both in the same order as lock writers,
       // but only the requested sources contribute publication evidence.
@@ -95,25 +94,19 @@ export class DerivativePrivacyRepository {
         ]),
     );
   }
-
   /**
    * Which of these assets carry sensitive evidence, from the store the fork schema phase makes
    * authoritative: `asset.is_nsfw` until the cutover, the privacy sidecar once it is `active` (the
    * same rule as `getUnlockedDetectionIds`). Only positive evidence counts.
    */
   private async sensitiveIds(tx: Kysely<DB>, assetIds: readonly string[]): Promise<Set<string>> {
-    const phase = await getForkSchemaPhase(tx);
-    const { rows } = readsForkSidecar(phase)
-      ? await sql<{ id: string }>`
-          SELECT "assetId" AS id FROM immich_fork.asset_privacy
-          WHERE "assetId" = ANY(${[...assetIds]}::uuid[]) AND "isNsfw" = true
-        `.execute(tx)
-      : await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
           SELECT id FROM asset WHERE id = ANY(${[...assetIds]}::uuid[]) AND is_nsfw = true
         `.execute(tx);
     return new Set(rows.map((row) => row.id));
   }
-
   /**
    * Which of these sources — all owned by somebody other than `userId` — `userId` can still reach
    * right now, share-locking the rows that grant it.
@@ -131,8 +124,9 @@ export class DerivativePrivacyRepository {
       return new Set();
     }
     const ids = candidates.map((source) => source.assetId);
-
-    const albums = await sql<{ assetId: string }>`
+    const albums = await sql<{
+      assetId: string;
+    }>`
       SELECT album_asset."assetId"
       FROM album_asset
       JOIN album ON album.id = album_asset."albumId" AND album."deletedAt" IS NULL
@@ -141,16 +135,18 @@ export class DerivativePrivacyRepository {
       ORDER BY album.id
       FOR SHARE OF album, album_asset, album_user
     `.execute(tx);
-
     const reachable = new Set(albums.rows.map((row) => row.assetId));
     const remaining = ids.filter((id) => !reachable.has(id));
     if (remaining.length === 0) {
       return reachable;
     }
-
-    const { rows: items } = await sql<{ assetId: string; sharedAssetId: string; ownerId: string }>`
+    const { rows: items } = await sql<{
+      assetId: string;
+      sharedAssetId: string;
+      ownerId: string;
+    }>`
       SELECT source.id AS "assetId", asset.id AS "sharedAssetId", asset."ownerId"
-      FROM immich_fork.asset_user_share share
+      FROM public.asset_user_share share
       JOIN asset ON asset.id = share."assetId" AND asset."ownerId" = share."ownerId"
         AND asset."deletedAt" IS NULL
       JOIN "user" owner ON owner.id = asset."ownerId" AND owner."deletedAt" IS NULL
@@ -163,7 +159,6 @@ export class DerivativePrivacyRepository {
       ORDER BY asset.id, share.id
       FOR SHARE OF share, asset, owner
     `.execute(tx);
-
     // Match preference writers' per-account lock, including when no preferences row exists yet.
     for (const ownerId of [...new Set(items.map((item) => item.ownerId))].toSorted()) {
       await sql`SELECT pg_advisory_xact_lock_shared(-2, hashtext(${ownerId})::int)`.execute(tx);
@@ -196,7 +191,6 @@ export class DerivativePrivacyRepository {
     }
     return reachable;
   }
-
   /**
    * Install inherited privacy on a result created in this transaction. A lock is an `asset_lock`
    * record, never a stored visibility; `lockedBy` is null because nobody chose it, and it is marked
@@ -205,7 +199,10 @@ export class DerivativePrivacyRepository {
   async install(
     tx: Kysely<DB>,
     assetId: string,
-    privacy: { lockReason: AssetLockReason | null; sensitive: boolean },
+    privacy: {
+      lockReason: AssetLockReason | null;
+      sensitive: boolean;
+    },
   ): Promise<void> {
     if (privacy.sensitive) {
       // The legacy projection first; the caller mirrors it into the privacy sidecar afterwards.
@@ -219,13 +216,20 @@ export class DerivativePrivacyRepository {
       `.execute(tx);
     }
   }
-
   /** The privacy an existing asset carries now, for a result whose bytes it already holds. */
   async getEvidence(
     tx: Kysely<DB>,
     assetId: string,
-  ): Promise<{ lockReason: AssetLockReason | null; sensitive: boolean } | undefined> {
-    const { rows } = await sql<{ reason: AssetLockReason | null }>`
+  ): Promise<
+    | {
+        lockReason: AssetLockReason | null;
+        sensitive: boolean;
+      }
+    | undefined
+  > {
+    const { rows } = await sql<{
+      reason: AssetLockReason | null;
+    }>`
       SELECT asset_lock.reason
       FROM asset
       LEFT JOIN asset_lock ON asset_lock."assetId" = asset.id
@@ -238,7 +242,6 @@ export class DerivativePrivacyRepository {
     const sensitive = await this.sensitiveIds(tx, [assetId]);
     return { lockReason: row.reason ?? null, sensitive: sensitive.has(assetId) };
   }
-
   /** For tests and diagnostics: the privacy an asset carries, outside any transaction. */
   get(assetId: string) {
     return this.getEvidence(this.db, assetId);

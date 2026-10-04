@@ -32,7 +32,7 @@ import {
   AnalyticsScopeTargets,
 } from 'src/repositories/analytics.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -142,7 +142,7 @@ export class AnalyticsService {
     private jobRepository: JobRepository,
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
-    private forkSchemaRepository: ForkSchemaRepository,
+    private forkSchemaRepository: AssetChecksumRepository,
   ) {
     this.logger.setContext(AnalyticsService.name);
   }
@@ -158,7 +158,6 @@ export class AnalyticsService {
         configRepo: this.configRepository,
         metadataRepo: this.systemMetadataRepository,
         logger: this.logger,
-        forkSchemaRepo: this.forkSchemaRepository,
       },
       { withCache: true },
     );

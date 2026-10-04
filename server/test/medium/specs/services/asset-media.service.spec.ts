@@ -8,7 +8,7 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -33,7 +33,7 @@ const setup = (db?: Kysely<DB>) => {
       ConfigRepository,
       SystemMetadataRepository,
       PhysicalFileRepository,
-      ForkSchemaRepository,
+      AssetChecksumRepository,
       AccessRepository,
       AlbumRepository,
       AssetRepository,

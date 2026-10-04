@@ -74,6 +74,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [{ force: false, fullsizeEnabled: true }], stream: true })
   streamForThumbnailJob(options: { force: boolean | undefined; fullsizeEnabled: boolean }) {
+    return this.selectionForThumbnailJob(options).stream();
+  }
+
+  selectionForThumbnailJob(options: { force: boolean | undefined; fullsizeEnabled: boolean }) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id', 'asset.isEdited'])
@@ -111,8 +115,7 @@ export class AssetJobRepository {
 
             return or(conditions);
           }),
-      )
-      .stream();
+      );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -461,6 +464,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForVideoConversion(force?: boolean) {
+    return this.selectionForVideoConversion(force).stream();
+  }
+
+  selectionForVideoConversion(force?: boolean) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -480,8 +487,7 @@ export class AssetJobRepository {
           )
           .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
       )
-      .where('asset.deletedAt', 'is', null)
-      .stream();
+      .where('asset.deletedAt', 'is', null);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

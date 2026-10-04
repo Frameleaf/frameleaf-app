@@ -16,7 +16,7 @@ import {
 } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
@@ -72,7 +72,7 @@ export class StorageMigrationService {
   constructor(
     private logger: LoggingRepository,
     private databaseRepository: DatabaseRepository,
-    private forkSchemaRepository: ForkSchemaRepository,
+    private forkSchemaRepository: AssetChecksumRepository,
     private jobRepository: JobRepository,
     private mediaHealthRepository: MediaHealthRepository,
     private physicalFileRepository: PhysicalFileRepository,
@@ -139,13 +139,6 @@ export class StorageMigrationService {
 
   @OnJob({ name: JobName.UniversalStorageMigration, queue: QueueName.StorageTemplateMigration })
   async handleBatch(): Promise<JobStatus> {
-    const { phase } = await this.forkSchemaRepository.getState();
-    if (phase === 'dual-write') {
-      // The fork-schema backfill normalizes storage too: wait for it before touching files.
-      await this.queueNext(STORAGE_MIGRATION_BACKFILL_WAIT_MS);
-      return JobStatus.Skipped;
-    }
-
     let state: StorageMigrationState;
     try {
       state = await this.databaseRepository.withLock(DatabaseLock.UniversalStorageMigration, () => this.runBatch());

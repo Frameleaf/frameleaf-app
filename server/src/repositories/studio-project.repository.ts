@@ -5,12 +5,7 @@ import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
 import { AlbumKind } from 'src/enum.js';
-import {
-  canWriteFork,
-  lockForkWrites,
-  lockPublicForkWrites,
-  withPublicForkWrites,
-} from 'src/repositories/fork-write-guard.js';
+
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -21,14 +16,12 @@ import {
 } from 'src/schema/tables/studio-project.table.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
-
 export type StudioGeneratedResource = StudioDeclaredGenerated & {
   projectId: string;
   ownerId: string;
   sourceRevision: number;
   checksum: string;
 };
-
 /** FL-103 / FL-105: a file uploaded into a project, as stored. */
 export type StudioProjectImport = {
   projectId: string;
@@ -42,24 +35,18 @@ export type StudioProjectImport = {
   externalReferences: number | null;
   createdAt: Date;
 };
-
 export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'>;
-
-const studioImportColumns = sql.raw(
-  `item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
-   item.path, item."fileName", item."externalReferences", item."createdAt"`,
-);
-
+const studioImportColumns =
+  sql.raw(`item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
+   item.path, item."fileName", item."externalReferences", item."createdAt"`);
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const STUDIO_PROJECT_HANDOFF_REFUSAL = 'Studio projects are unavailable during database handoff';
-
 export type StudioProject = Selectable<StudioProjectTable>;
 export type StudioProjectRevision = Selectable<StudioProjectRevisionTable>;
 /** A history row: everything about a revision except the document itself. */
 export type StudioProjectRevisionSummary = Omit<StudioProjectRevision, 'envelope'>;
 export type StudioProjectComment = Selectable<StudioProjectCommentTable>;
 export type StudioBundleUpload = Selectable<StudioBundleUploadTable>;
-
 export type StudioBundleUploadCreate = {
   ownerId: string;
   path: string;
@@ -69,7 +56,6 @@ export type StudioBundleUploadCreate = {
   manifest: Record<string, unknown>;
   expiresAt: Date;
 };
-
 /**
  * A project created with its first revision already in place: a duplicate of another project's
  * head, or a project read out of a portable bundle (FL-91).
@@ -91,13 +77,11 @@ export type StudioProjectSeed = {
     requestKey: string | null;
   };
 };
-
 export type StudioProjectCreate = {
   ownerId: string;
   name: string;
   spaceId?: string | null;
 };
-
 export type StudioProjectPatch = {
   name?: string;
   spaceId?: string | null;
@@ -107,25 +91,23 @@ export type StudioProjectPatch = {
   duplicatedFromId?: string | null;
   importedFromDigest?: string | null;
 };
-
-export type StudioPage = { take: number; skip: number };
-
+export type StudioPage = {
+  take: number;
+  skip: number;
+};
 /**
  * Which shelf of the project library a list shows (FL-91). `active` is the default and the only
  * one a reviewer ever sees; the archive and the trash are the owner's alone.
  */
 export type StudioProjectState = 'active' | 'archived' | 'trashed';
-
 /** `recent` orders by the last time the project was opened in an editor, then by change. */
 export type StudioProjectSort = 'updated' | 'recent' | 'name';
-
 export type StudioProjectListOptions = StudioPage & {
   state?: StudioProjectState;
   /** Case-insensitive substring of the name. */
   query?: string | null;
   sort?: StudioProjectSort;
 };
-
 export type StudioRevisionAppend = {
   projectId: string;
   /** The head the client saved against. The append is refused when the head has moved. */
@@ -142,14 +124,19 @@ export type StudioRevisionAppend = {
   requestKey: string | null;
   restoredFromRevision: number | null;
 };
-
 export type StudioRevisionAppendResult =
-  | { status: 'appended'; revision: StudioProjectRevision }
+  | {
+      status: 'appended';
+      revision: StudioProjectRevision;
+    }
   /** The head moved or the lease is not this client's. The caller re-reads to say which. */
-  | { status: 'rejected' }
+  | {
+      status: 'rejected';
+    }
   /** `(projectId, requestKey)` already exists: a concurrent retry got there first. */
-  | { status: 'duplicate-key' };
-
+  | {
+      status: 'duplicate-key';
+    };
 export type StudioLeaseAcquire = {
   userId: string;
   clientId: string;
@@ -157,7 +144,6 @@ export type StudioLeaseAcquire = {
   /** Take a live lease away from another client. The service allows it for the owner only. */
   takeover: boolean;
 };
-
 export type StudioCommentCreate = {
   projectId: string;
   authorId: string;
@@ -167,22 +153,25 @@ export type StudioCommentCreate = {
   text: string;
   requestKey: string | null;
 };
-
 export type StudioCommentPatch = {
   text?: string;
   /** `null` clears the resolution; a user id records who resolved it. */
   resolvedById?: string | null;
 };
-
 /** A shared space row, as much of it as the project needs to decide whether it may be linked. */
-export type StudioSpace = { id: string; kind: string; deletedAt: Date | null };
-
+export type StudioSpace = {
+  id: string;
+  kind: string;
+  deletedAt: Date | null;
+};
 class DuplicateRequestKey extends Error {}
-
-const isUniqueViolation = (error: unknown): boolean => (error as { code?: string } | null)?.code === '23505';
-
+const isUniqueViolation = (error: unknown): boolean =>
+  (
+    error as {
+      code?: string;
+    } | null
+  )?.code === '23505';
 const leaseExpiry = (leaseMs: number) => sql<Date>`now() + ${sql.lit(leaseMs)} * interval '1 millisecond'`;
-
 /**
  * Studio projects, revisions, leases and review comments (FL-89, `STU-202`).
  *
@@ -193,17 +182,17 @@ const leaseExpiry = (leaseMs: number) => sql<Date>`now() + ${sql.lit(leaseMs)} *
  */
 @Injectable()
 export class StudioProjectRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-    return withPublicForkWrites(this.db, query, STUDIO_PROJECT_HANDOFF_REFUSAL);
+    return this.db.transaction().execute(query);
   }
-
   /* ------------------------------------------------------------------ */
   /* Projects                                                            */
   /* ------------------------------------------------------------------ */
-
   async create(project: StudioProjectCreate): Promise<StudioProject> {
     return this.write((db) =>
       db
@@ -213,7 +202,6 @@ export class StudioProjectRepository {
         .executeTakeFirstOrThrow(),
     ) as unknown as Promise<StudioProject>;
   }
-
   /**
    * Create a project whose revision 1 is already written, in one transaction (FL-91).
    *
@@ -222,17 +210,18 @@ export class StudioProjectRepository {
    * retried job finds that id already taken, the first attempt's project is returned instead of a
    * second one being made.
    */
-  async createWithRevision(seed: StudioProjectSeed): Promise<{ project: StudioProject; created: boolean }> {
+  async createWithRevision(seed: StudioProjectSeed): Promise<{
+    project: StudioProject;
+    created: boolean;
+  }> {
     if (seed.importOperationId) {
       const existing = await this.getByImportOperation(seed.importOperationId);
       if (existing) {
         return { project: existing, created: false };
       }
     }
-
     try {
       const project = await this.db.transaction().execute(async (trx) => {
-        await lockPublicForkWrites(trx, STUDIO_PROJECT_HANDOFF_REFUSAL);
         const row = await trx
           .insertInto('studio_project')
           .values({
@@ -246,7 +235,6 @@ export class StudioProjectRepository {
           })
           .returningAll()
           .executeTakeFirstOrThrow();
-
         await trx
           .insertInto('studio_project_revision')
           .values({
@@ -261,7 +249,6 @@ export class StudioProjectRepository {
             restoredFromRevision: null,
           })
           .execute();
-
         return row as unknown as StudioProject;
       });
       return { project, created: true };
@@ -275,7 +262,6 @@ export class StudioProjectRepository {
       throw error;
     }
   }
-
   async getByImportOperation(operationId: string): Promise<StudioProject | undefined> {
     return this.db
       .selectFrom('studio_project')
@@ -283,7 +269,6 @@ export class StudioProjectRepository {
       .where('importOperationId', '=', operationId)
       .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
   }
-
   /** Unscoped read. The service decides access from `ownerId` and `spaceId`; nothing else may. */
   getById(id: string): Promise<StudioProject | undefined> {
     return this.db
@@ -292,7 +277,6 @@ export class StudioProjectRepository {
       .where('id', '=', id)
       .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
   }
-
   /**
    * Projects this account owns plus projects shared into a space this account belongs to. The
    * membership test is the same `album_user` row the album access checks use, re-read here on
@@ -301,10 +285,12 @@ export class StudioProjectRepository {
   async listVisible(
     userId: string,
     page: StudioProjectListOptions,
-  ): Promise<{ items: StudioProject[]; total: number }> {
+  ): Promise<{
+    items: StudioProject[];
+    total: number;
+  }> {
     const state = page.state ?? 'active';
     let query = this.db.selectFrom('studio_project');
-
     if (state === 'active') {
       query = query
         .where('studio_project.deletedAt', 'is', null)
@@ -332,12 +318,10 @@ export class StudioProjectRepository {
     } else {
       query = query.where('studio_project.ownerId', '=', userId).where('studio_project.deletedAt', 'is not', null);
     }
-
     const term = page.query?.trim();
     if (term) {
       query = query.where('studio_project.name', 'ilike', `%${term.replaceAll(/[%_\\]/g, String.raw`\$&`)}%`);
     }
-
     const sort = page.sort ?? 'updated';
     const ordered = (() => {
       const selected = query.selectAll();
@@ -353,7 +337,6 @@ export class StudioProjectRepository {
         }
       }
     })();
-
     const [items, total] = await Promise.all([
       ordered.orderBy('studio_project.id', 'desc').limit(page.take).offset(page.skip).execute(),
       query
@@ -361,10 +344,8 @@ export class StudioProjectRepository {
         .executeTakeFirst()
         .then((row) => Number(row?.count ?? 0)),
     ]);
-
     return { items: items as unknown as StudioProject[], total };
   }
-
   async update(id: string, patch: StudioProjectPatch): Promise<StudioProject | undefined> {
     const values: Partial<
       Pick<
@@ -393,12 +374,10 @@ export class StudioProjectRepository {
     if (Object.keys(values).length === 0) {
       return this.getById(id);
     }
-
     return this.write((db) =>
       db.updateTable('studio_project').set(values).where('id', '=', id).returningAll().executeTakeFirst(),
     ) as unknown as Promise<StudioProject | undefined>;
   }
-
   /**
    * Permanent deletion. Revisions and comments cascade. Media operations keep their `projectId`
    * string for lineage, and no asset row is touched: a project references media, it never owns it.
@@ -406,11 +385,9 @@ export class StudioProjectRepository {
   async delete(id: string): Promise<void> {
     await this.write((db) => db.deleteFrom('studio_project').where('id', '=', id).execute());
   }
-
   /* ------------------------------------------------------------------ */
   /* Lifecycle (FL-91)                                                   */
   /* ------------------------------------------------------------------ */
-
   /**
    * Move a project to the trash. Idempotent: a project already in the trash keeps its original
    * deadline rather than having the clock restarted. The lease is dropped so no editor keeps
@@ -432,7 +409,6 @@ export class StudioProjectRepository {
         .executeTakeFirst(),
     ) as unknown as Promise<StudioProject | undefined>;
   }
-
   async untrash(id: string): Promise<StudioProject | undefined> {
     return this.write((db) =>
       db
@@ -444,7 +420,6 @@ export class StudioProjectRepository {
         .executeTakeFirst(),
     ) as unknown as Promise<StudioProject | undefined>;
   }
-
   /** Every trashed project of one owner, gone for good. Returns how many. */
   async emptyTrash(ownerId: string): Promise<number> {
     const result = await this.write((db) =>
@@ -456,7 +431,6 @@ export class StudioProjectRepository {
     );
     return Number(result.numDeletedRows);
   }
-
   /**
    * FL-90: the projects whose current revision names any of these assets. The graph is opaque
    * jsonb, so the id is matched as text; only well-formed UUIDs are searched, so a match is the
@@ -487,7 +461,7 @@ export class StudioProjectRepository {
       .where(
         sql<boolean>`lower("studio_project_revision"."envelope"::text) like any(array[${sql.join(patterns)}]::text[])
           OR EXISTS (
-            SELECT 1 FROM immich_fork.studio_generated_resource resource
+            SELECT 1 FROM public.studio_generated_resource resource
             WHERE resource."projectId" = "studio_project".id
               AND resource."ownerId" = "studio_project"."ownerId"
               AND lower(resource."derivedFrom"::text) like any(array[${sql.join(patterns)}]::text[])
@@ -496,7 +470,6 @@ export class StudioProjectRepository {
       .execute();
     return rows.map((row) => row.id);
   }
-
   /**
    * Owner decision (FL-146, 2026-09-25): when a project's owner leaves or is removed from its
    * shared space, the project is kept and becomes the owner's private project again. Space sharing
@@ -518,13 +491,11 @@ export class StudioProjectRepository {
       .execute();
     return rows.map((row) => row.id);
   }
-
   /** FL-90: the projects placed in an album or shared space. */
   async getIdsInSpace(spaceId: string): Promise<string[]> {
     const rows = await this.db.selectFrom('studio_project').select('id').where('spaceId', '=', spaceId).execute();
     return rows.map((row) => row.id);
   }
-
   /**
    * Internal publication primitive. The caller must first check the output bytes, current source
    * authorization and worker claim. Request graphs never reach this method. One id permanently
@@ -550,7 +521,6 @@ export class StudioProjectRepository {
       throw new BadRequestException('Invalid generated media declaration');
     }
     const register = async (tx: Transaction<DB>) => {
-      await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
       const project = await tx
         .selectFrom('studio_project')
         .select('id')
@@ -605,14 +575,14 @@ export class StudioProjectRepository {
       // Bind serialized JSON as text so the postgres driver does not JSON-encode the string again.
       const lineage = JSON.stringify(derivedFrom);
       await sql`
-        INSERT INTO immich_fork.studio_generated_resource
+        INSERT INTO public.studio_generated_resource
           ("projectId", id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom")
         VALUES (${resource.projectId}::uuid, ${resource.id}, ${resource.ownerId}::uuid,
           ${resource.sourceRevision}, ${resource.producer}, ${resource.checksum}, ${resource.path}, ${lineage}::text::jsonb)
         ON CONFLICT ("projectId", id) DO NOTHING
       `.execute(tx);
       const { rows } = await sql`
-        SELECT 1 FROM immich_fork.studio_generated_resource
+        SELECT 1 FROM public.studio_generated_resource
         WHERE "projectId" = ${resource.projectId}::uuid AND id = ${resource.id}
           AND "ownerId" = ${resource.ownerId}::uuid AND "sourceRevision" = ${resource.sourceRevision}
           AND producer = ${resource.producer} AND checksum = ${resource.checksum} AND path = ${resource.path}
@@ -624,12 +594,11 @@ export class StudioProjectRepository {
     };
     await (executor ? register(executor) : this.db.transaction().execute(register));
   }
-
   /** Server-side declarations only; source ACLs are still rechecked by StudioResourceService. */
   async listGeneratedResources(projectId: string): Promise<StudioDeclaredGenerated[]> {
     const { rows } = await sql<StudioDeclaredGenerated>`
       SELECT resource.id, resource.producer, resource.checksum, resource.path, resource."derivedFrom"
-      FROM immich_fork.studio_generated_resource resource
+      FROM public.studio_generated_resource resource
       JOIN studio_project project ON project.id = resource."projectId" AND project."ownerId" = resource."ownerId"
       WHERE project.id = ${projectId}::uuid AND project."deletedAt" IS NULL
       ORDER BY resource.id LIMIT ${STUDIO_MAX_REFERENCES + 1}
@@ -640,7 +609,6 @@ export class StudioProjectRepository {
     }
     return rows;
   }
-
   /**
    * FL-103 / FL-105: record a file uploaded into a project. The caller has already written the
    * bytes to an owner-private path, checked their type and hashed them. The project row is locked
@@ -669,7 +637,6 @@ export class StudioProjectRepository {
       throw new BadRequestException('Invalid project import declaration');
     }
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
       const project = await tx
         .selectFrom('studio_project')
         .select('id')
@@ -682,11 +649,13 @@ export class StudioProjectRepository {
       if (!project) {
         throw new ConflictException('The project is unavailable for imports');
       }
-      const { rows: counted } = await sql<{ count: number }>`
-        SELECT count(*)::int AS count FROM immich_fork.studio_project_import WHERE "projectId" = ${item.projectId}::uuid
+      const { rows: counted } = await sql<{
+        count: number;
+      }>`
+        SELECT count(*)::int AS count FROM public.studio_project_import WHERE "projectId" = ${item.projectId}::uuid
       `.execute(tx);
       await sql`
-        INSERT INTO immich_fork.studio_project_import
+        INSERT INTO public.studio_project_import
           ("projectId", id, "ownerId", "contentType", checksum, "sizeBytes", path, "fileName", "externalReferences")
         SELECT ${item.projectId}::uuid, ${item.id}::uuid, ${item.ownerId}::uuid, ${item.contentType}, ${item.checksum},
           ${item.sizeBytes}::bigint, ${item.path}, ${item.fileName}, ${item.externalReferences}::int
@@ -708,12 +677,11 @@ export class StudioProjectRepository {
       return stored;
     });
   }
-
   /** The imports of a live project, as the FL-90 resolver declares them. */
   async listImports(projectId: string): Promise<StudioProjectImport[]> {
     const { rows } = await sql<StudioProjectImport>`
       SELECT ${studioImportColumns}
-      FROM immich_fork.studio_project_import item
+      FROM public.studio_project_import item
       JOIN studio_project project ON project.id = item."projectId" AND project."ownerId" = item."ownerId"
       WHERE project.id = ${projectId}::uuid AND project."deletedAt" IS NULL
       ORDER BY item.id LIMIT ${STUDIO_IMPORT_MAX_PER_PROJECT + 1}
@@ -723,7 +691,6 @@ export class StudioProjectRepository {
     }
     return rows;
   }
-
   /** The imports of a live project in the shape the FL-90 resolver declares them. */
   async listImportDeclarations(projectId: string): Promise<StudioDeclaredImport[]> {
     return (await this.listImports(projectId)).map((item) => ({
@@ -735,41 +702,45 @@ export class StudioProjectRepository {
       ...(item.externalReferences !== null && { externalReferences: item.externalReferences }),
     }));
   }
-
   /** Bytes an account keeps as project imports, for its storage quota. */
   async getImportBytes(ownerId: string): Promise<number> {
-    const { rows } = await sql<{ bytes: number }>`
-      SELECT coalesce(sum("sizeBytes"), 0)::float8 AS bytes FROM immich_fork.studio_project_import
+    const { rows } = await sql<{
+      bytes: number;
+    }>`
+      SELECT coalesce(sum("sizeBytes"), 0)::float8 AS bytes FROM public.studio_project_import
       WHERE "ownerId" = ${ownerId}::uuid
     `.execute(this.db);
     return rows[0]?.bytes ?? 0;
   }
-
   /**
    * Projects that no longer exist (deleted for good, emptied from the trash or purged by the
    * lifecycle sweep) whose imports are still recorded, with their owner, for the caller to remove
    * the files before {@link deleteImports} forgets them.
    */
-  async listOrphanImportProjects(limit = 100): Promise<Array<{ projectId: string; ownerId: string }>> {
-    const { rows } = await sql<{ projectId: string; ownerId: string }>`
-      SELECT DISTINCT orphan."projectId", orphan."ownerId" FROM immich_fork.studio_project_import orphan
+  async listOrphanImportProjects(limit = 100): Promise<
+    Array<{
+      projectId: string;
+      ownerId: string;
+    }>
+  > {
+    const { rows } = await sql<{
+      projectId: string;
+      ownerId: string;
+    }>`
+      SELECT DISTINCT orphan."projectId", orphan."ownerId" FROM public.studio_project_import orphan
       WHERE NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = orphan."projectId")
       ORDER BY orphan."projectId" LIMIT ${limit}
     `.execute(this.db);
     return rows;
   }
-
   /** Orphan rows remain the retry intent until their exact registered files can be removed. */
   async deleteImports(
     projectId: string,
     ownerId: string,
     unlink: (item: StudioProjectImport) => Promise<void>,
   ): Promise<void> {
-    if (!(await canWriteFork(this.db))) {
-      return;
-    }
     const { rows } = await sql<StudioProjectImport>`
-      SELECT ${studioImportColumns} FROM immich_fork.studio_project_import item
+      SELECT ${studioImportColumns} FROM public.studio_project_import item
       WHERE item."projectId" = ${projectId}::uuid AND item."ownerId" = ${ownerId}::uuid
         AND NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = item."projectId")
       ORDER BY item.path, item.id
@@ -785,7 +756,6 @@ export class StudioProjectRepository {
     }
     if (failures.length > 0) throw new AggregateError(failures, 'Some Studio import cleanup is waiting for retry');
   }
-
   /** One import of a live project, or undefined. */
   async getImport(projectId: string, id: string): Promise<StudioProjectImport | undefined> {
     if (!isStudioUuid(projectId) || !isStudioUuid(id)) {
@@ -793,7 +763,6 @@ export class StudioProjectRepository {
     }
     return this.readImport(this.db, projectId, id, true);
   }
-
   private async readImport(
     executor: Kysely<DB> | Transaction<DB>,
     projectId: string,
@@ -802,36 +771,46 @@ export class StudioProjectRepository {
   ): Promise<StudioProjectImport | undefined> {
     const { rows } = await sql<StudioProjectImport>`
       SELECT ${studioImportColumns}
-      FROM immich_fork.studio_project_import item
+      FROM public.studio_project_import item
       JOIN studio_project project ON project.id = item."projectId" AND project."ownerId" = item."ownerId"
       WHERE item."projectId" = ${projectId}::uuid AND item.id = ${id}::uuid
         ${liveProject ? sql`AND project."deletedAt" IS NULL` : sql``}
     `.execute(executor);
     return rows[0];
   }
-
   /** FL-91: an account's stored workspace layout, from `immich_fork`. */
-  async getWorkspace(
-    userId: string,
-  ): Promise<{ layout: Record<string, unknown>; engineRevision: string; savedAt: Date } | undefined> {
-    const { rows } = await sql<{ layout: Record<string, unknown>; engineRevision: string; savedAt: Date }>`
-      SELECT layout, "engineRevision", "savedAt" FROM immich_fork.studio_workspace_layout WHERE "userId" = ${userId}::uuid
+  async getWorkspace(userId: string): Promise<
+    | {
+        layout: Record<string, unknown>;
+        engineRevision: string;
+        savedAt: Date;
+      }
+    | undefined
+  > {
+    const { rows } = await sql<{
+      layout: Record<string, unknown>;
+      engineRevision: string;
+      savedAt: Date;
+    }>`
+      SELECT layout, "engineRevision", "savedAt" FROM public.studio_workspace_layout WHERE "userId" = ${userId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /** FL-91: store (replace) an account's workspace layout. */
   async saveWorkspace(
     userId: string,
     layout: Record<string, unknown>,
     engineRevision: string,
-  ): Promise<{ savedAt: Date } | undefined> {
-    // Not written while the fork schema is being handed off or returned (like every fork table).
-    if (!(await canWriteFork(this.db))) {
-      return undefined;
-    }
-    const { rows } = await sql<{ savedAt: Date }>`
-      INSERT INTO immich_fork.studio_workspace_layout ("userId", layout, "engineRevision")
+  ): Promise<
+    | {
+        savedAt: Date;
+      }
+    | undefined
+  > {
+    const { rows } = await sql<{
+      savedAt: Date;
+    }>`
+      INSERT INTO public.studio_workspace_layout ("userId", layout, "engineRevision")
       VALUES (${userId}::uuid, ${JSON.stringify(layout)}::text::jsonb, ${engineRevision})
       ON CONFLICT ("userId") DO UPDATE
         SET layout = excluded.layout, "engineRevision" = excluded."engineRevision", "savedAt" = clock_timestamp()
@@ -839,15 +818,10 @@ export class StudioProjectRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   /** FL-91: an account's layout goes with the account. */
   async deleteWorkspace(userId: string): Promise<void> {
-    if (!(await canWriteFork(this.db))) {
-      return;
-    }
-    await sql`DELETE FROM immich_fork.studio_workspace_layout WHERE "userId" = ${userId}::uuid`.execute(this.db);
+    await sql`DELETE FROM public.studio_workspace_layout WHERE "userId" = ${userId}::uuid`.execute(this.db);
   }
-
   /** The retention sweep: trashed projects whose deadline has passed. Returns the ids removed. */
   async deletePurgeable(now: Date, limit = 500): Promise<string[]> {
     const rows = await this.write((db) =>
@@ -869,7 +843,6 @@ export class StudioProjectRepository {
     );
     return rows.map((row) => row.id);
   }
-
   /** Drop whoever holds the lease. Used when a project is archived or trashed under an editor. */
   async clearLease(id: string): Promise<void> {
     await this.write((db) =>
@@ -880,14 +853,15 @@ export class StudioProjectRepository {
         .execute(),
     );
   }
-
   /**
    * FL-97: whether `spaceId` is, right now, a live shared space that `userId` still belongs to and
    * that someone else belongs to as well. A project's `spaceId` is checked only when it is set, so a
    * space deleted, left or never shared since does not count.
    */
   async isLiveSharedSpaceOf(spaceId: string, userId: string): Promise<boolean> {
-    const { rows } = await sql<{ shared: boolean }>`
+    const { rows } = await sql<{
+      shared: boolean;
+    }>`
       WITH members AS (
         -- the owner is an album_user row too (role 'owner')
         SELECT member."userId" FROM public.album_user member
@@ -899,7 +873,6 @@ export class StudioProjectRepository {
     `.execute(this.db);
     return rows[0]?.shared ?? false;
   }
-
   async getSpace(spaceId: string): Promise<StudioSpace | undefined> {
     return this.db
       .selectFrom('album')
@@ -907,11 +880,9 @@ export class StudioProjectRepository {
       .where('id', '=', spaceId)
       .executeTakeFirst() as unknown as Promise<StudioSpace | undefined>;
   }
-
   /* ------------------------------------------------------------------ */
   /* Lease                                                               */
   /* ------------------------------------------------------------------ */
-
   /**
    * Take or renew the writer lease, atomically.
    *
@@ -933,7 +904,6 @@ export class StudioProjectRepository {
         })
         .where('id', '=', projectId)
         .where('ownerId', '=', options.userId);
-
       if (!options.takeover) {
         query = query.where((eb) =>
           eb.or([
@@ -943,11 +913,9 @@ export class StudioProjectRepository {
           ]),
         );
       }
-
       return query.returningAll().executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
     });
   }
-
   /** Give the lease back. Only the holder can; anybody else's call changes nothing. */
   async releaseLease(projectId: string, userId: string, clientId: string): Promise<boolean> {
     const result = await this.write((db) =>
@@ -959,14 +927,11 @@ export class StudioProjectRepository {
         .where('leaseClientId', '=', clientId)
         .executeTakeFirst(),
     );
-
     return Number(result.numUpdatedRows) === 1;
   }
-
   /* ------------------------------------------------------------------ */
   /* Revisions                                                           */
   /* ------------------------------------------------------------------ */
-
   /**
    * Append one revision and move the head, in one transaction.
    *
@@ -980,7 +945,6 @@ export class StudioProjectRepository {
   async appendRevision(append: StudioRevisionAppend): Promise<StudioRevisionAppendResult> {
     try {
       return await this.db.transaction().execute(async (trx) => {
-        await lockPublicForkWrites(trx, STUDIO_PROJECT_HANDOFF_REFUSAL);
         const head = await trx
           .updateTable('studio_project')
           .set({
@@ -994,11 +958,9 @@ export class StudioProjectRepository {
           .where('leaseExpiresAt', '>', sql<Date>`now()`)
           .returning('currentRevision')
           .executeTakeFirst();
-
         if (!head) {
           return { status: 'rejected' as const };
         }
-
         try {
           const revision = await trx
             .insertInto('studio_project_revision')
@@ -1015,7 +977,6 @@ export class StudioProjectRepository {
             })
             .returningAll()
             .executeTakeFirstOrThrow();
-
           return { status: 'appended' as const, revision: revision as unknown as StudioProjectRevision };
         } catch (error) {
           if (isUniqueViolation(error)) {
@@ -1032,7 +993,6 @@ export class StudioProjectRepository {
       throw error;
     }
   }
-
   async getRevision(projectId: string, revision: number): Promise<StudioProjectRevision | undefined> {
     return this.db
       .selectFrom('studio_project_revision')
@@ -1041,7 +1001,6 @@ export class StudioProjectRepository {
       .where('revision', '=', revision)
       .executeTakeFirst() as unknown as Promise<StudioProjectRevision | undefined>;
   }
-
   async getRevisionByRequestKey(projectId: string, requestKey: string): Promise<StudioProjectRevision | undefined> {
     return this.db
       .selectFrom('studio_project_revision')
@@ -1050,14 +1009,15 @@ export class StudioProjectRepository {
       .where('requestKey', '=', requestKey)
       .executeTakeFirst() as unknown as Promise<StudioProjectRevision | undefined>;
   }
-
   /** Newest first, without the documents: the history list is metadata, the detail is a graph. */
   async listRevisions(
     projectId: string,
     page: StudioPage,
-  ): Promise<{ items: StudioProjectRevisionSummary[]; total: number }> {
+  ): Promise<{
+    items: StudioProjectRevisionSummary[];
+    total: number;
+  }> {
     const query = this.db.selectFrom('studio_project_revision').where('projectId', '=', projectId);
-
     const [items, total] = await Promise.all([
       query
         .select([
@@ -1081,10 +1041,8 @@ export class StudioProjectRepository {
         .executeTakeFirst()
         .then((row) => Number(row?.count ?? 0)),
     ]);
-
     return { items: items as unknown as StudioProjectRevisionSummary[], total };
   }
-
   /** Summaries of the revisions in `(fromExclusive, toInclusive]`, oldest first, for a diff. */
   async listRevisionSummariesBetween(
     projectId: string,
@@ -1113,11 +1071,9 @@ export class StudioProjectRepository {
       .limit(limit)
       .execute() as unknown as Promise<StudioProjectRevisionSummary[]>;
   }
-
   /* ------------------------------------------------------------------ */
   /* Bundle uploads (FL-91)                                              */
   /* ------------------------------------------------------------------ */
-
   async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
     return this.write((db) =>
       db
@@ -1135,7 +1091,6 @@ export class StudioProjectRepository {
         .executeTakeFirstOrThrow(),
     ) as unknown as Promise<StudioBundleUpload>;
   }
-
   /** Owner-scoped. Somebody else's upload and an upload that never existed look the same. */
   async getUpload(id: string, ownerId: string): Promise<StudioBundleUpload | undefined> {
     return this.db
@@ -1145,7 +1100,6 @@ export class StudioProjectRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst() as unknown as Promise<StudioBundleUpload | undefined>;
   }
-
   async markUploadConsumed(id: string): Promise<void> {
     await this.write((db) =>
       db
@@ -1155,7 +1109,6 @@ export class StudioProjectRepository {
         .execute(),
     );
   }
-
   /** Owner-scoped delete. Returns the row so the caller can remove its file. */
   async deleteUpload(id: string, ownerId: string): Promise<StudioBundleUpload | undefined> {
     return this.write((db) =>
@@ -1167,9 +1120,16 @@ export class StudioProjectRepository {
         .executeTakeFirst(),
     ) as unknown as Promise<StudioBundleUpload | undefined>;
   }
-
   /** The sweep: uploads past their expiry, oldest first. Their files go with them. */
-  async deleteExpiredUploads(now: Date, limit = 200): Promise<Array<{ id: string; path: string }>> {
+  async deleteExpiredUploads(
+    now: Date,
+    limit = 200,
+  ): Promise<
+    Array<{
+      id: string;
+      path: string;
+    }>
+  > {
     return this.write((db) =>
       db
         .deleteFrom('studio_bundle_upload')
@@ -1185,11 +1145,9 @@ export class StudioProjectRepository {
         .execute(),
     );
   }
-
   /* ------------------------------------------------------------------ */
   /* Review comments                                                     */
   /* ------------------------------------------------------------------ */
-
   /** Returns `undefined` when `(projectId, requestKey)` already exists; the caller re-reads it. */
   async createComment(comment: StudioCommentCreate): Promise<StudioProjectComment | undefined> {
     try {
@@ -1215,7 +1173,6 @@ export class StudioProjectRepository {
       throw error;
     }
   }
-
   async getComment(projectId: string, id: string): Promise<StudioProjectComment | undefined> {
     return this.db
       .selectFrom('studio_project_comment')
@@ -1224,7 +1181,6 @@ export class StudioProjectRepository {
       .where('id', '=', id)
       .executeTakeFirst() as unknown as Promise<StudioProjectComment | undefined>;
   }
-
   async getCommentByRequestKey(projectId: string, requestKey: string): Promise<StudioProjectComment | undefined> {
     return this.db
       .selectFrom('studio_project_comment')
@@ -1233,10 +1189,14 @@ export class StudioProjectRepository {
       .where('requestKey', '=', requestKey)
       .executeTakeFirst() as unknown as Promise<StudioProjectComment | undefined>;
   }
-
-  async listComments(projectId: string, page: StudioPage): Promise<{ items: StudioProjectComment[]; total: number }> {
+  async listComments(
+    projectId: string,
+    page: StudioPage,
+  ): Promise<{
+    items: StudioProjectComment[];
+    total: number;
+  }> {
     const query = this.db.selectFrom('studio_project_comment').where('projectId', '=', projectId);
-
     const [items, total] = await Promise.all([
       query.selectAll().orderBy('createdAt', 'asc').orderBy('id', 'asc').limit(page.take).offset(page.skip).execute(),
       query
@@ -1244,16 +1204,18 @@ export class StudioProjectRepository {
         .executeTakeFirst()
         .then((row) => Number(row?.count ?? 0)),
     ]);
-
     return { items: items as unknown as StudioProjectComment[], total };
   }
-
   async updateComment(
     projectId: string,
     id: string,
     patch: StudioCommentPatch,
   ): Promise<StudioProjectComment | undefined> {
-    const values: { text?: string; resolvedById?: string | null; resolvedAt?: RawBuilder<Date> | null } = {};
+    const values: {
+      text?: string;
+      resolvedById?: string | null;
+      resolvedAt?: RawBuilder<Date> | null;
+    } = {};
     if (patch.text !== undefined) {
       values.text = patch.text;
     }
@@ -1264,7 +1226,6 @@ export class StudioProjectRepository {
     if (Object.keys(values).length === 0) {
       return this.getComment(projectId, id);
     }
-
     return this.write((db) =>
       db
         .updateTable('studio_project_comment')
@@ -1275,7 +1236,6 @@ export class StudioProjectRepository {
         .executeTakeFirst(),
     ) as unknown as Promise<StudioProjectComment | undefined>;
   }
-
   async deleteComment(projectId: string, id: string): Promise<boolean> {
     const result = await this.write((db) =>
       db
@@ -1284,7 +1244,6 @@ export class StudioProjectRepository {
         .where('id', '=', id)
         .executeTakeFirst(),
     );
-
     return Number(result.numDeletedRows) === 1;
   }
 }

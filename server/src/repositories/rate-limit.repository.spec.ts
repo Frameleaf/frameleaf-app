@@ -1,152 +1,70 @@
-import {
-  RELEASE_SCRIPT,
-  RELEASE_UPLOAD_STREAM_SCRIPT,
-  RateLimitRepository,
-} from 'src/repositories/rate-limit.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 
-const redis = vi.hoisted(() => {
-  const exec = vi.fn();
-  const multi = { incr: vi.fn(), ttl: vi.fn(), exec };
-  multi.incr.mockReturnValue(multi);
-  multi.ttl.mockReturnValue(multi);
-  return {
-    multi,
-    exec,
-    created: vi.fn(),
-    client: {
-      status: 'ready',
-      multi: vi.fn(() => multi),
-      expire: vi.fn(),
-      eval: vi.fn(),
-      set: vi.fn(),
-      get: vi.fn(),
-      on: vi.fn(),
-      quit: vi.fn(),
-      disconnect: vi.fn(),
-    },
-  };
-});
-
-vi.mock('ioredis', () => ({
-  Redis: vi.fn(function (options: unknown) {
-    redis.created(options);
-    return redis.client;
-  }),
+const fixture = vi.hoisted(() => ({ query: vi.fn(), close: vi.fn(), create: vi.fn() }));
+vi.mock('src/utils/shared-service-pool.js', () => ({
+  createSharedServicePool: fixture.create,
+  closeSharedServicePool: fixture.close,
+  trackPoolClients: () => new Set(),
 }));
 
 describe(RateLimitRepository.name, () => {
   let sut: RateLimitRepository;
-
   beforeEach(() => {
-    vi.clearAllMocks();
-    redis.multi.incr.mockReturnValue(redis.multi);
-    redis.multi.ttl.mockReturnValue(redis.multi);
-    redis.client.multi.mockReturnValue(redis.multi);
-    redis.client.quit.mockResolvedValue('OK');
+    vi.resetAllMocks();
+    fixture.create.mockReturnValue({ query: fixture.query });
+    fixture.query.mockResolvedValue({ rows: [], rowCount: 0 });
     sut = new RateLimitRepository(newConfigRepositoryMock() as never);
   });
+  afterEach(async () => sut.onModuleDestroy());
 
-  it('connects when the API starts, with commands that fail at once instead of queueing', async () => {
-    expect(redis.created).not.toHaveBeenCalled();
+  it('uses a single bounded pool for the lifetime of the repository', async () => {
     sut.onModuleInit();
-    expect(redis.created).toHaveBeenCalledTimes(1);
-    expect(redis.created).toHaveBeenCalledWith(
-      expect.objectContaining({ enableOfflineQueue: false, maxRetriesPerRequest: 1, commandTimeout: 2000 }),
-    );
-    expect(redis.client.on).toHaveBeenCalledWith('error', expect.any(Function));
-
-    redis.exec.mockResolvedValue([
-      [null, 3],
-      [null, 42],
-    ]);
-    await sut.hit('frameleaf:rate-limit:login:ip:198.51.100.7', 600);
-    expect(redis.created).toHaveBeenCalledTimes(1);
-  });
-
-  it('admits one namespaced upload token atomically and gives it longer than the body timeout', async () => {
-    redis.client.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
-    await expect(sut.claimUploadStream('resource', 'first-token')).resolves.toBe(true);
-    await expect(sut.claimUploadStream('resource', 'second-token')).resolves.toBe(false);
-    expect(redis.client.set).toHaveBeenCalledWith('frameleaf:upload-stream:resource', 'first-token', 'EX', 900, 'NX');
-  });
-
-  it('does not mistake a replacement token for current admission and releases with exact token comparison', async () => {
-    redis.client.get.mockResolvedValue('replacement');
-    await expect(sut.isUploadStreamCurrent('resource', 'old-token')).resolves.toBe(false);
-    await sut.releaseUploadStream('resource', 'old-token');
-    expect(redis.client.eval).toHaveBeenCalledWith(
-      RELEASE_UPLOAD_STREAM_SCRIPT,
-      1,
-      'frameleaf:upload-stream:resource',
-      'old-token',
-    );
-    expect(RELEASE_UPLOAD_STREAM_SCRIPT).toContain("redis.call('GET', KEYS[1]) == ARGV[1]");
-  });
-
-  it('gives an attempt back with one atomic script that never recreates or leaves a spent counter', async () => {
-    redis.client.eval.mockResolvedValueOnce(3);
-    await sut.release('key');
-    expect(redis.client.eval).toHaveBeenCalledWith(RELEASE_SCRIPT, 1, 'key');
-    expect(RELEASE_SCRIPT).toContain(`redis.call('EXISTS', KEYS[1]) == 0`);
-    expect(RELEASE_SCRIPT).toContain(`redis.call('DECR', KEYS[1])`);
-    expect(RELEASE_SCRIPT).toContain(`redis.call('DEL', KEYS[1])`);
-  });
-
-  it('counts with INCR and reports the time left in the window', async () => {
-    redis.exec.mockResolvedValue([
-      [null, 3],
-      [null, 42],
-    ]);
-
+    fixture.query.mockResolvedValue({ rows: [{ count: 3, resetSeconds: 42 }] });
     await expect(sut.hit('key', 600)).resolves.toEqual({ count: 3, resetSeconds: 42 });
-    expect(redis.multi.incr).toHaveBeenCalledWith('key');
-    expect(redis.multi.ttl).toHaveBeenCalledWith('key');
-    expect(redis.client.expire).not.toHaveBeenCalled();
+    await sut.isUploadStreamCurrent('resource', 'token');
+    expect(fixture.create).toHaveBeenCalledOnce();
+    expect(fixture.create).toHaveBeenCalledWith(expect.anything(), 'admission');
   });
 
-  it('starts the window with EXPIRE on a counter that has none', async () => {
-    redis.exec.mockResolvedValue([
-      [null, 1],
-      [null, -1],
+  it('passes opaque keys and tokens as parameters and preserves the fifteen-minute upload lease', async () => {
+    fixture.query.mockResolvedValueOnce({ rowCount: 1 });
+    await expect(sut.claimUploadStream('resource', 'token')).resolves.toBe(true);
+    expect(fixture.query).toHaveBeenCalledWith(expect.stringContaining("interval '900 seconds'"), [
+      'resource',
+      'token',
     ]);
-
-    await expect(sut.hit('key', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
-    expect(redis.client.expire).toHaveBeenCalledWith('key', 600);
+    fixture.query.mockResolvedValue({ rowCount: 0 });
+    await expect(sut.claimUploadStream('resource', 'replacement')).resolves.toBe(false);
+    await expect(sut.isUploadStreamCurrent('resource', 'replacement')).resolves.toBe(false);
+    await sut.releaseUploadStream('resource', 'old-token');
+    expect(fixture.query).toHaveBeenLastCalledWith(expect.stringContaining('key = $1 AND token = $2'), [
+      'resource',
+      'old-token',
+    ]);
   });
 
-  it('never reports less than a second left', async () => {
-    redis.exec.mockResolvedValue([
-      [null, 9],
-      [null, 0],
-    ]);
-
-    await expect(sut.hit('key', 60)).resolves.toEqual({ count: 9, resetSeconds: 1 });
+  it('does not hide failed admission queries', async () => {
+    fixture.query.mockRejectedValueOnce(new Error('query timeout'));
+    await expect(sut.hit('key', 60)).rejects.toThrow('query timeout');
+    fixture.query.mockRejectedValueOnce(new Error('database unavailable'));
+    await expect(sut.claimUploadStream('resource', 'token')).rejects.toThrow('database unavailable');
   });
 
-  it('fails when Redis refuses a command or discards the transaction', async () => {
-    redis.exec.mockResolvedValueOnce([
-      [new Error('READONLY'), null],
-      [null, 10],
-    ]);
-    await expect(sut.hit('key', 60)).rejects.toThrow('READONLY');
-
-    redis.exec.mockResolvedValueOnce(null);
-    await expect(sut.hit('key', 60)).rejects.toThrow('discarded');
-
-    redis.exec.mockRejectedValueOnce(new Error('Connection is closed.'));
-    await expect(sut.hit('key', 60)).rejects.toThrow('Connection is closed.');
+  it('rejects invalid window lengths before issuing SQL', async () => {
+    for (const seconds of [0, -1, 1.5, Number.NaN]) {
+      await expect(sut.hit('key', seconds)).rejects.toThrow('positive integer');
+    }
+    expect(fixture.query).not.toHaveBeenCalled();
   });
 
-  it('closes its connection on shutdown', async () => {
-    redis.exec.mockResolvedValue([
-      [null, 1],
-      [null, 5],
-    ]);
+  it('bounds cleanup to one pass per minute and closes the pool', async () => {
+    fixture.query.mockResolvedValue({ rows: [{ count: 1, resetSeconds: 60 }], rowCount: 1 });
     await sut.hit('key', 60);
-
+    await sut.hit('key', 60);
     await sut.onModuleDestroy();
-
-    expect(redis.client.quit).toHaveBeenCalledTimes(1);
+    const cleanup = fixture.query.mock.calls.filter(([query]) => query.includes('LIMIT 256'));
+    expect(cleanup).toHaveLength(2);
+    expect(fixture.close).toHaveBeenCalledOnce();
   });
 });

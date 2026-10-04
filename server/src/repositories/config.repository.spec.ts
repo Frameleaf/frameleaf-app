@@ -32,14 +32,6 @@ const resetEnv = () => {
     'DB_SKIP_MIGRATIONS',
     'DB_VECTOR_EXTENSION',
 
-    'REDIS_HOSTNAME',
-    'REDIS_PORT',
-    'REDIS_DBINDEX',
-    'REDIS_USERNAME',
-    'REDIS_PASSWORD',
-    'REDIS_SOCKET',
-    'REDIS_URL',
-
     'NO_COLOR',
 
     'FRAMELEAF_CLOUD_URL',
@@ -60,24 +52,6 @@ const resetEnv = () => {
     delete process.env[legacy];
     delete process.env[current];
   }
-};
-
-const sentinelConfig = {
-  sentinels: [
-    {
-      host: 'redis-sentinel-node-0',
-      port: 26_379,
-    },
-    {
-      host: 'redis-sentinel-node-1',
-      port: 26_379,
-    },
-    {
-      host: 'redis-sentinel-node-2',
-      port: 26_379,
-    },
-  ],
-  name: 'redis-sentinel',
 };
 
 describe('getEnv', () => {
@@ -295,7 +269,7 @@ describe('getEnv', () => {
           connectionType: 'parts',
           host: 'database',
           port: 5432,
-          database: 'immich',
+          database: 'frameleaf',
           username: 'postgres',
           password: 'postgres',
         },
@@ -328,34 +302,6 @@ describe('getEnv', () => {
         connectionType: 'url',
         url: 'postgres://postgres1:postgres2@database1:54320/immich',
       });
-    });
-  });
-
-  describe('redis', () => {
-    it('should use defaults', () => {
-      const { redis } = getEnv();
-      expect(redis).toEqual({
-        host: 'redis',
-        port: 6379,
-        db: 0,
-        username: undefined,
-        password: undefined,
-        path: undefined,
-      });
-    });
-
-    it('should parse base64 encoded config, ignore other env', () => {
-      process.env.REDIS_URL = `ioredis://${Buffer.from(JSON.stringify(sentinelConfig)).toString('base64')}`;
-      process.env.REDIS_HOSTNAME = 'redis-host';
-      process.env.REDIS_USERNAME = 'redis-user';
-      process.env.REDIS_PASSWORD = 'redis-password';
-      const { redis } = getEnv();
-      expect(redis).toEqual(sentinelConfig);
-    });
-
-    it('should reject invalid json', () => {
-      process.env.REDIS_URL = `ioredis://${Buffer.from('{ "invalid json"').toString('base64')}`;
-      expect(() => getEnv()).toThrowError('Failed to decode redis options');
     });
   });
 

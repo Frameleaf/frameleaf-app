@@ -33,13 +33,7 @@ import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
-import { ForkConfigRepository } from 'src/repositories/fork-config.repository.js';
-import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
@@ -164,13 +158,7 @@ export const repositories = [
   DuplicateRepository,
   EmailRepository,
   EventRepository,
-  ForkAlbumMetadataRepository,
-  ForkConfigRepository,
-  ForkCutoverVerificationRepository,
-  ForkEnrichmentRepository,
-  ForkHandoffRepository,
-  ForkPrivacyRepository,
-  ForkSchemaRepository,
+  AssetChecksumRepository,
   IntegrityRepository,
   JobRepository,
   LibraryRepository,

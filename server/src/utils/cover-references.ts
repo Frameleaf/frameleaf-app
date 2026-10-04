@@ -3,11 +3,10 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { PersonRepository } from 'src/repositories/person.repository.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import { AlbumKind, AlbumUserRole, AssetVisibility, JobName, PetObservationState } from 'src/enum.js';
-import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
+
 import { DB } from 'src/schema/index.js';
 import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
-
 /**
  * Locked photos are never covers (owner decisions, September 22, 2026, FL-53).
  *
@@ -46,22 +45,16 @@ export const releaseLockedCoverReferences = async (db: Kysely<DB>, assetIds: str
   if (assetIds.length === 0) {
     return;
   }
-
   const scores = await getBestPhotoScoreTable(db);
   await releaseAlbumCovers(db, assetIds, scores);
   await releaseSharedSpacePersonCovers(db, assetIds, scores);
   await releasePersonFaces(db, assetIds, scores);
   await releasePetFeaturedPhotos(db, assetIds, scores);
 };
-
 /** Where Best Photos scores are read from: the fork's own schema once it is authoritative. */
-export type BestPhotoScoreTable = 'public.asset_best_photo_score' | 'immich_fork.asset_best_photo_score';
-
+export type BestPhotoScoreTable = 'public.asset_best_photo_score';
 export const getBestPhotoScoreTable = async (db: Kysely<DB>): Promise<BestPhotoScoreTable> =>
-  readsForkSidecar(await getForkSchemaPhase(db))
-    ? 'immich_fork.asset_best_photo_score'
-    : 'public.asset_best_photo_score';
-
+  'public.asset_best_photo_score';
 /**
  * SQL sort key, descending: a photo marked as a Best Photo sorts by its score, before every photo that
  * is not (-1). Mirrors `BestPhotosRepository.getBestPhotos` with the Explore threshold.
@@ -72,13 +65,10 @@ export const bestPhotoRank = (scores: BestPhotoScoreTable, assetId: Expression<u
     where best_photo."assetId" = ${assetId}
       and best_photo.score >= ${sql.lit(BEST_PHOTOS_MIN_SCORE)}
   ), -1)`;
-
 /** SQL sort key, ascending: photos that are not sensitive first. */
 const sensitiveLast = (assetId: Expression<unknown>) => sql<boolean>`${nsfwAssetIdExists(assetId)}`;
-
 /** SQL: the photo is not sensitive, so every member of a shared context may see it. */
 const isNotSensitive = (assetId: Expression<unknown>) => sql<boolean>`not ${nsfwAssetIdExists(assetId)}`;
-
 /**
  * SQL: someone besides its owner sees this album row and so its cover: a shared space, an album with
  * members, one linked into a shared space, or one with a shared link.
@@ -103,7 +93,6 @@ const isSharedAlbum = (eb: ExpressionBuilder<DB, 'album'>) =>
       eb.selectFrom('shared_link').select(sql.lit(1).as('shared')).whereRef('shared_link.albumId', '=', 'album.id'),
     ),
   ]);
-
 /**
  * The cover an album, collection or shared space takes in place of one that became Locked: one of its
  * own items, neither Locked nor trashed, and not sensitive when it is shared; Best Photos first, then
@@ -122,7 +111,6 @@ export const albumCoverReplacement = (eb: ExpressionBuilder<DB, 'album'>, scores
     .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
     .orderBy('asset.fileCreatedAt', 'desc')
     .limit(sql.lit(1));
-
 /**
  * The cover of an album whose cover follows its newest item (FL-83, AL-13): the item taken last
  * (`fileCreatedAt`, the date the album timeline orders items by), under the same rules as any
@@ -142,7 +130,6 @@ export const albumNewestCover = (eb: ExpressionBuilder<DB, 'album'>) =>
     .orderBy('asset.fileCreatedAt', 'desc')
     .orderBy('asset.id', 'desc')
     .limit(sql.lit(1));
-
 const releaseAlbumCovers = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('album')
@@ -151,7 +138,6 @@ const releaseAlbumCovers = async (db: Kysely<DB>, assetIds: string[], scores: Be
     .where(isLockedAssetId(sql.ref('album.albumThumbnailAssetId')))
     .execute();
 };
-
 /**
  * The picture a shared space shows for a linked person in place of one that became Locked: an item
  * already in the space that shows them and that every member may see (Timeline or Archive, not
@@ -175,7 +161,6 @@ export const sharedSpacePersonCover = (eb: ExpressionBuilder<DB, 'shared_space_p
     .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
     .orderBy('asset.fileCreatedAt', 'desc')
     .limit(sql.lit(1));
-
 const releaseSharedSpacePersonCovers = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('shared_space_person')
@@ -184,7 +169,6 @@ const releaseSharedSpacePersonCovers = async (db: Kysely<DB>, assetIds: string[]
     .where(isLockedAssetId(sql.ref('shared_space_person.coverAssetId')))
     .execute();
 };
-
 /**
  * The face that stands in for a person once their featured face is on a Locked photo: another of
  * their visible faces on a photo neither Locked nor trashed; faces on photos that are not sensitive
@@ -205,7 +189,6 @@ export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: Best
     .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
     .orderBy('asset.fileCreatedAt', 'desc')
     .limit(sql.lit(1));
-
 const releasePersonFaces = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('person')
@@ -219,7 +202,6 @@ const releasePersonFaces = async (db: Kysely<DB>, assetIds: string[], scores: Be
     )
     .execute();
 };
-
 /**
  * The featured photo a pet takes in place of one that became Locked (owner decision 1): the photo of
  * one of its confirmed observations, the pet owner's own and neither Locked nor trashed; photos that
@@ -239,7 +221,6 @@ export const petFeaturedReplacement = (eb: ExpressionBuilder<DB, 'pet'>, scores:
     .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
     .orderBy('asset.fileCreatedAt', 'desc')
     .limit(sql.lit(1));
-
 const releasePetFeaturedPhotos = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('pet')
@@ -248,7 +229,6 @@ const releasePetFeaturedPhotos = async (db: Kysely<DB>, assetIds: string[], scor
     .where(isLockedAssetId(sql.ref('pet.featuredAssetId')))
     .execute();
 };
-
 /**
  * Queues a new thumbnail for every person whose featured face `releaseLockedCoverReferences` moved off
  * `assetIds`, or off another photo of their stacks that became Locked with them (FL-53). Call it once
@@ -264,13 +244,11 @@ export const queueReleasedPersonThumbnails = async (
   if (assetIds.length === 0) {
     return;
   }
-
   const people = await repositories.person.getMissingThumbnailsForAssets(assetIds);
   const unique = new Map(people.map((person) => [`${person.ownerId}:${person.personGroupId}`, person]));
   if (unique.size === 0) {
     return;
   }
-
   await repositories.job.queueAll(
     unique
       .values()

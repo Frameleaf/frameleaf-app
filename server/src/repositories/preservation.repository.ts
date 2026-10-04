@@ -3,7 +3,7 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import { AlbumKind, AlbumUserRole, AssetStatus, MediaOperationKind, SourceType, VideoMomentSource } from 'src/enum.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -14,18 +14,17 @@ import {
 } from 'src/schema/tables/preservation.table.js';
 import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
-
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const PRESERVATION_HANDOFF_REFUSAL = 'Preservation packages are unavailable during database handoff';
-
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
 export type PreservationRestore = Selectable<PreservationRestoreTable>;
 export type PreservationRestoreItem = Selectable<PreservationRestoreItemTable>;
-
 /** What an export may select: a structured filter, or items chosen one by one. Never both. */
-export type PreservationSelection = { filter?: SearchFilter; assetIds?: string[] };
-
+export type PreservationSelection = {
+  filter?: SearchFilter;
+  assetIds?: string[];
+};
 /** A package's items by state, how many are Locked, and the bytes of what was copied. */
 export type PreservationItemCounts = {
   states: Record<string, number>;
@@ -38,22 +37,18 @@ export type PreservationItemCounts = {
    */
   unavailable: number;
 };
-
 export type PreservationPreviewCounts = {
   items: number;
   bytes: number;
   lockedItems: number;
   lockedBytes: number;
 };
-
 /**
  * A jsonb value, serialized exactly once. The driver JSON-encodes a parameter it is told is jsonb, so
  * the already-serialized text is cast through `text`; a bare `::jsonb` would store a JSON string.
  */
 const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::text::jsonb`;
-
 const toNumber = (value: unknown) => Number(value ?? 0);
-
 /**
  * A package item is Locked when it was written Locked or its original has been locked in the library
  * since. Background work reads every item; an ordinary (not unlocked) session is never told such an
@@ -62,7 +57,6 @@ const toNumber = (value: unknown) => Number(value ?? 0);
 const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
   select 1 from asset_lock where asset_lock."assetId" = preservation_item."assetId"
 ))`;
-
 /**
  * A restoration item is Locked when the package says so or the original it matched in the library is
  * Locked there: its current values would otherwise reach an ordinary session as a conflict.
@@ -70,7 +64,6 @@ const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
 const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exists (
   select 1 from asset_lock where asset_lock."assetId" = preservation_restore_item."assetId"
 ))`;
-
 /**
  * The database side of preservation packages (FL-74).
  *
@@ -80,17 +73,17 @@ const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exis
  */
 @Injectable()
 export class PreservationRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-    return withPublicForkWrites(this.db, query, PRESERVATION_HANDOFF_REFUSAL);
+    return this.db.transaction().execute(query);
   }
-
   /* ---------------------------------------------------------------- */
   /* Selection                                                         */
   /* ---------------------------------------------------------------- */
-
   /**
    * The owner's own originals a selection matches: never a partner's, a shared album's or a shared
    * space's, never one in the trash, and Locked ones only when `includeLocked` says so.
@@ -111,7 +104,6 @@ export class PreservationRepository {
       .where('asset.status', '=', AssetStatus.Active)
       .$if(!includeLocked, (qb) => qb.where(isNotLocked('asset')));
   }
-
   /** How many items a selection holds and how large they are, split by whether they are Locked. */
   async previewSelection(ownerId: string, selection: PreservationSelection): Promise<PreservationPreviewCounts> {
     const matched = this.selection(this.db, ownerId, selection, true).select([
@@ -135,7 +127,6 @@ export class PreservationRepository {
       lockedBytes: toNumber(row?.lockedBytes),
     };
   }
-
   /**
    * Create an export package and freeze its selection as items, in one transaction. The Live Photo
    * video of every selected still comes with it. Returns null, and writes nothing, when the
@@ -147,11 +138,13 @@ export class PreservationRepository {
     selection: PreservationSelection,
     includeLocked: boolean,
     maxItems: number,
-  ): Promise<{ package: PreservationPackage; items: number } | null> {
+  ): Promise<{
+    package: PreservationPackage;
+    items: number;
+  } | null> {
     return this.db
       .transaction()
       .execute(async (tx) => {
-        await lockPublicForkWrites(tx, PRESERVATION_HANDOFF_REFUSAL);
         const inserted = await tx
           .insertInto('preservation_package')
           .values({ ...input, path: '' })
@@ -164,7 +157,6 @@ export class PreservationRepository {
           .where('id', '=', inserted.id)
           .returningAll()
           .executeTakeFirstOrThrow();
-
         const chosen = this.selection(tx, input.ownerId, selection, includeLocked).select((eb) => [
           sql<string>`${created.id}::uuid`.as('packageId'),
           eb.ref('asset.id').as('sourceAssetId'),
@@ -177,7 +169,6 @@ export class PreservationRepository {
           .expression(chosen)
           .onConflict((oc) => oc.doNothing())
           .execute();
-
         // The video half of a selected Live Photo, when it is the owner's and allowed in this package.
         await sql`
         insert into preservation_item ("packageId", "sourceAssetId", "assetId", "locked")
@@ -191,7 +182,6 @@ export class PreservationRepository {
           and (${includeLocked} or not ${isLocked('motion')})
         on conflict do nothing
       `.execute(tx);
-
         const counted = await tx
           .selectFrom('preservation_item')
           .select((eb) => eb.fn.countAll<string>().as('count'))
@@ -211,17 +201,14 @@ export class PreservationRepository {
         throw error;
       });
   }
-
   /* ---------------------------------------------------------------- */
   /* Packages                                                          */
   /* ---------------------------------------------------------------- */
-
   async createPackage(input: Insertable<PreservationPackageTable>): Promise<PreservationPackage> {
     return this.write((db) =>
       db.insertInto('preservation_package').values(input).returningAll().executeTakeFirstOrThrow(),
     );
   }
-
   getPackage(id: string, ownerId: string): Promise<PreservationPackage | undefined> {
     return this.db
       .selectFrom('preservation_package')
@@ -230,12 +217,10 @@ export class PreservationRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst();
   }
-
   /** For the worker, which acts for the owner named on the job. */
   getPackageById(id: string): Promise<PreservationPackage | undefined> {
     return this.db.selectFrom('preservation_package').selectAll().where('id', '=', id).executeTakeFirst();
   }
-
   listPackages(ownerId: string, take = 100): Promise<PreservationPackage[]> {
     return this.db
       .selectFrom('preservation_package')
@@ -246,7 +231,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   async updatePackage(
     id: string,
     patch: {
@@ -275,7 +259,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Uploaded packages past their expiry whose files are still on disk. */
   listExpiredUploads(now: Date, limit = 100): Promise<PreservationPackage[]> {
     return this.db
@@ -288,14 +271,15 @@ export class PreservationRepository {
       .limit(limit)
       .execute();
   }
-
   /**
    * Item counts by state, and how many are Locked, for each package. `excludeLocked` leaves Locked
    * items out of every count, for a session that has not unlocked.
    */
   async countItems(
     packageIds: string[],
-    options: { excludeLocked?: boolean } = {},
+    options: {
+      excludeLocked?: boolean;
+    } = {},
   ): Promise<Map<string, PreservationItemCounts>> {
     const counts = new Map<string, PreservationItemCounts>();
     if (packageIds.length === 0) {
@@ -327,7 +311,6 @@ export class PreservationRepository {
     }
     return counts;
   }
-
   /** Verification results for a package, by result. */
   async countVerified(packageId: string): Promise<Record<string, number>> {
     const rows = await this.db
@@ -339,7 +322,6 @@ export class PreservationRepository {
       .execute();
     return Object.fromEntries(rows.map((row) => [row.verifyState ?? 'unchecked', Number(row.count)]));
   }
-
   /** The newest job for each package or restoration, keyed by the id its snapshot names. */
   async latestOperations(
     ownerId: string,
@@ -350,7 +332,11 @@ export class PreservationRepository {
     if (ids.length === 0) {
       return latest;
     }
-    const rows = await sql<MediaOperation & { subject: string }>`
+    const rows = await sql<
+      MediaOperation & {
+        subject: string;
+      }
+    >`
       select distinct on (subject) *
       from (
         select media_operation.*, media_operation."snapshot"->>${key} as subject
@@ -371,7 +357,6 @@ export class PreservationRepository {
     }
     return latest;
   }
-
   /** A job on this package or restoration that has not finished, if any. */
   async activeOperation(
     ownerId: string,
@@ -388,7 +373,6 @@ export class PreservationRepository {
     `.execute(this.db);
     return rows[0];
   }
-
   /** Another job on the same package or restoration that a worker holds right now. */
   async otherClaimedOperation(
     ownerId: string,
@@ -396,7 +380,9 @@ export class PreservationRepository {
     id: string,
     selfId: string,
   ): Promise<boolean> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       select id from media_operation
       where "ownerId" = ${ownerId}::uuid
         and "snapshot"->>${key} = ${id}
@@ -407,15 +393,22 @@ export class PreservationRepository {
     `.execute(this.db);
     return rows.length > 0;
   }
-
   /* ---------------------------------------------------------------- */
   /* Items                                                             */
   /* ---------------------------------------------------------------- */
-
   async listItems(
     packageId: string,
-    options: { state?: string; verifyState?: string; take: number; skip: number; excludeLocked?: boolean },
-  ): Promise<{ items: PreservationItem[]; total: number }> {
+    options: {
+      state?: string;
+      verifyState?: string;
+      take: number;
+      skip: number;
+      excludeLocked?: boolean;
+    },
+  ): Promise<{
+    items: PreservationItem[];
+    total: number;
+  }> {
     let query = this.db.selectFrom('preservation_item').where('packageId', '=', packageId);
     if (options.excludeLocked) {
       query = query.where(sql<boolean>`not ${lockedPackageItem}`);
@@ -435,7 +428,6 @@ export class PreservationRepository {
     ]);
     return { items, total };
   }
-
   /** The next export items still to do: never tried, or failed with their automatic retry left. */
   exportWork(
     packageId: string,
@@ -455,7 +447,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   async countExportWork(packageId: string, maxAttempts: number): Promise<number> {
     const row = await this.db
       .selectFrom('preservation_item')
@@ -467,7 +458,6 @@ export class PreservationRepository {
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
-
   /** Record an attempt at an item before it is made, so a crash still counts it. */
   async beginItemAttempt(id: string): Promise<void> {
     await this.write((db) =>
@@ -478,7 +468,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   async finishItem(
     id: string,
     patch: {
@@ -504,7 +493,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** A manual retry: every failed item gets its attempts, and its automatic retry, back. */
   async resetFailedItems(packageId: string): Promise<number> {
     const result = await this.write((db) =>
@@ -517,7 +505,6 @@ export class PreservationRepository {
     );
     return Number(result.numUpdatedRows);
   }
-
   /** Items in the package, in index order, a page at a time. */
   listedItems(packageId: string, afterSourceId: string | null, take: number): Promise<PreservationItem[]> {
     return this.db
@@ -531,14 +518,17 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   /**
    * Record the index of a package this server did not write. An item is added once; reading the
    * index again replaces its entry but never its identity.
    */
   async upsertListedItems(
     packageId: string,
-    entries: Array<{ sourceAssetId: string; locked: boolean; entry: Record<string, unknown> }>,
+    entries: Array<{
+      sourceAssetId: string;
+      locked: boolean;
+      entry: Record<string, unknown>;
+    }>,
   ) {
     if (entries.length === 0) {
       return;
@@ -565,7 +555,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Items whose export entry the index does not match, found while reading it back. */
   async itemIdsBySource(packageId: string, sourceAssetIds: string[]): Promise<Map<string, PreservationItem>> {
     if (sourceAssetIds.length === 0) {
@@ -579,7 +568,6 @@ export class PreservationRepository {
       .execute();
     return new Map(rows.map((row) => [row.sourceAssetId, row]));
   }
-
   /** Start a verification: every listed item is unchecked again. */
   async resetVerification(packageId: string): Promise<void> {
     await this.write((db) =>
@@ -591,7 +579,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   verificationWork(packageId: string, afterId: string | null, take: number): Promise<PreservationItem[]> {
     return this.db
       .selectFrom('preservation_item')
@@ -605,13 +592,11 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   async setVerifyState(id: string, verifyState: string, reasonKey: string | null): Promise<void> {
     await this.write((db) =>
       db.updateTable('preservation_item').set({ verifyState, reasonKey }).where('id', '=', id).execute(),
     );
   }
-
   /** Items the index lists that a verification marked unexpected: listed but not in the package's own journal. */
   async markUnlisted(packageId: string, sourceAssetIds: string[]): Promise<void> {
     if (sourceAssetIds.length === 0) {
@@ -626,7 +611,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Whether any item of the package is Locked in the library now, or was when it was written. */
   async hasLockedItems(packageId: string): Promise<boolean> {
     const row = await this.db
@@ -645,7 +629,6 @@ export class PreservationRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** Which of these package items are Locked now or were when written: withheld from an ordinary session. */
   async lockedItemIds(items: Array<Pick<PreservationItem, 'id' | 'assetId' | 'locked'>>): Promise<Set<string>> {
     const hidden = new Set(items.filter((item) => item.locked).map((item) => item.id));
@@ -665,11 +648,9 @@ export class PreservationRepository {
     }
     return hidden;
   }
-
   /* ---------------------------------------------------------------- */
   /* Export reads: one original and what the library knows about it    */
   /* ---------------------------------------------------------------- */
-
   getExportAsset(id: string) {
     return this.db
       .selectFrom('asset')
@@ -719,7 +700,6 @@ export class PreservationRepository {
       .where('asset.id', '=', id)
       .executeTakeFirst();
   }
-
   getLock(assetId: string) {
     return this.db
       .selectFrom('asset_lock')
@@ -727,7 +707,6 @@ export class PreservationRepository {
       .where('assetId', '=', assetId)
       .executeTakeFirst();
   }
-
   async getTagValues(assetId: string, ownerId: string): Promise<string[]> {
     const rows = await this.db
       .selectFrom('tag_asset')
@@ -739,7 +718,6 @@ export class PreservationRepository {
       .execute();
     return rows.map((row) => row.value);
   }
-
   /** Albums and collections the owner owns that hold this asset. Shared spaces are sharing, not included. */
   async getOwnedAlbumIds(assetId: string, ownerId: string): Promise<string[]> {
     const rows = await this.db
@@ -759,7 +737,6 @@ export class PreservationRepository {
       .execute();
     return rows.map((row) => row.id);
   }
-
   /** The owner's named people in this asset, with the face regions they were named in. */
   getNamedFaces(assetId: string, ownerId: string) {
     return this.db
@@ -783,7 +760,6 @@ export class PreservationRepository {
       .where('person.name', '!=', '')
       .execute();
   }
-
   getEditRecipe(assetId: string) {
     return this.db
       .selectFrom('asset_edit')
@@ -792,7 +768,6 @@ export class PreservationRepository {
       .orderBy('sequence')
       .execute();
   }
-
   getDocumentEdits(assetId: string) {
     return this.db
       .selectFrom('asset_document_edit')
@@ -801,7 +776,6 @@ export class PreservationRepository {
       .orderBy('key')
       .execute();
   }
-
   getMoments(assetId: string) {
     return this.db
       .selectFrom('video_moment')
@@ -811,11 +785,9 @@ export class PreservationRepository {
       .orderBy('id')
       .execute();
   }
-
   getStackPrimary(stackId: string) {
     return this.db.selectFrom('stack').select(['id', 'primaryAssetId']).where('id', '=', stackId).executeTakeFirst();
   }
-
   getEnrichmentMetadata(assetId: string) {
     return this.db
       .selectFrom('asset_metadata')
@@ -824,7 +796,6 @@ export class PreservationRepository {
       .where('key', '=', 'ml-enrichment')
       .executeTakeFirst();
   }
-
   /** The owner's albums the copied items belong to, with the collections that hold them. */
   async getPackageAlbums(packageId: string, ownerId: string) {
     const { rows } = await sql<{
@@ -855,7 +826,6 @@ export class PreservationRepository {
     `.execute(this.db);
     return rows;
   }
-
   /** The owner's named people with a face in a copied item. */
   async getPackagePeople(packageId: string, ownerId: string) {
     const { rows } = await sql<{
@@ -874,10 +844,12 @@ export class PreservationRepository {
     `.execute(this.db);
     return rows;
   }
-
   /** The owner's tags on copied items. */
   async getPackageTags(packageId: string, ownerId: string) {
-    const { rows } = await sql<{ value: string; color: string | null }>`
+    const { rows } = await sql<{
+      value: string;
+      color: string | null;
+    }>`
       select distinct tag.value, tag.color
       from preservation_item item
       inner join tag_asset on tag_asset."assetId" = item."assetId"
@@ -887,11 +859,9 @@ export class PreservationRepository {
     `.execute(this.db);
     return rows;
   }
-
   /* ---------------------------------------------------------------- */
   /* Restorations                                                      */
   /* ---------------------------------------------------------------- */
-
   createRestore(input: Insertable<PreservationRestoreTable>): Promise<PreservationRestore> {
     return this.write((db) =>
       db
@@ -901,7 +871,6 @@ export class PreservationRepository {
         .executeTakeFirstOrThrow(),
     );
   }
-
   getRestore(id: string, ownerId: string): Promise<PreservationRestore | undefined> {
     return this.db
       .selectFrom('preservation_restore')
@@ -910,11 +879,9 @@ export class PreservationRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst();
   }
-
   getRestoreById(id: string): Promise<PreservationRestore | undefined> {
     return this.db.selectFrom('preservation_restore').selectAll().where('id', '=', id).executeTakeFirst();
   }
-
   listRestores(ownerId: string, take = 50): Promise<PreservationRestore[]> {
     return this.db
       .selectFrom('preservation_restore')
@@ -924,7 +891,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   async updateRestore(
     id: string,
     patch: {
@@ -947,11 +913,14 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Record the package's index as restoration items; reading it again adds nothing twice. */
   async addRestoreItems(
     restoreId: string,
-    entries: Array<{ sourceAssetId: string; locked: boolean; entry: Record<string, unknown> }>,
+    entries: Array<{
+      sourceAssetId: string;
+      locked: boolean;
+      entry: Record<string, unknown>;
+    }>,
   ): Promise<void> {
     if (entries.length === 0) {
       return;
@@ -972,7 +941,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   reviewWork(restoreId: string, afterId: string | null, take: number): Promise<PreservationRestoreItem[]> {
     return this.db
       .selectFrom('preservation_restore_item')
@@ -984,7 +952,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   /** Items the restore still has to apply: reviewed, not applied, with their automatic retry left. */
   restoreWork(
     restoreId: string,
@@ -1009,7 +976,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   async countRestoreWork(restoreId: string, maxAttempts: number): Promise<number> {
     const row = await this.db
       .selectFrom('preservation_restore_item')
@@ -1026,7 +992,6 @@ export class PreservationRepository {
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
-
   /** Applied items, a page at a time, for the relationship pass. */
   appliedItems(restoreId: string, afterId: string | null, take: number): Promise<PreservationRestoreItem[]> {
     return this.db
@@ -1040,7 +1005,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   /** Restored items carrying a finding, a page at a time. */
   restoreItemsWithFinding(
     restoreId: string,
@@ -1058,7 +1022,6 @@ export class PreservationRepository {
       .limit(take)
       .execute();
   }
-
   getRestoreItemBySource(restoreId: string, sourceAssetId: string): Promise<PreservationRestoreItem | undefined> {
     return this.db
       .selectFrom('preservation_restore_item')
@@ -1067,7 +1030,6 @@ export class PreservationRepository {
       .where('sourceAssetId', '=', sourceAssetId)
       .executeTakeFirst();
   }
-
   async updateRestoreItem(
     id: string,
     patch: {
@@ -1106,7 +1068,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   async listRestoreItems(
     restoreId: string,
     options: {
@@ -1116,7 +1077,10 @@ export class PreservationRepository {
       skip: number;
       excludeLocked?: boolean;
     },
-  ): Promise<{ items: PreservationRestoreItem[]; total: number }> {
+  ): Promise<{
+    items: PreservationRestoreItem[];
+    total: number;
+  }> {
     let query = this.db.selectFrom('preservation_restore_item').where('restoreId', '=', restoreId);
     if (options.excludeLocked) {
       query = query.where(sql<boolean>`not ${lockedRestoreItem}`);
@@ -1127,17 +1091,14 @@ export class PreservationRepository {
     switch (options.filter) {
       case 'conflicts': {
         query = query.where(sql<boolean>`jsonb_array_length(coalesce("conflicts", '[]'::jsonb)) > 0`);
-
         break;
       }
       case 'failed': {
         query = query.where('state', '=', 'failed');
-
         break;
       }
       case 'findings': {
         query = query.where(sql<boolean>`jsonb_array_length(coalesce("findings", '[]'::jsonb)) > 0`);
-
         break;
       }
       // No default
@@ -1151,12 +1112,16 @@ export class PreservationRepository {
     ]);
     return { items, total };
   }
-
   /**
    * Counts for a restoration: by state, by what the review matched, conflicts and findings.
    * `excludeLocked` leaves Locked items out of every count, for a session that has not unlocked.
    */
-  async countRestoreItems(restoreId: string, options: { excludeLocked?: boolean } = {}) {
+  async countRestoreItems(
+    restoreId: string,
+    options: {
+      excludeLocked?: boolean;
+    } = {},
+  ) {
     const row = await this.db
       .selectFrom('preservation_restore_item')
       .select([
@@ -1194,7 +1159,6 @@ export class PreservationRepository {
       findings: count(row?.findings),
     };
   }
-
   /**
    * Asking to restore again gives the items that failed after a good review their automatic retry
    * back. Items the review could not verify stay failed: their files are what is wrong.
@@ -1212,7 +1176,6 @@ export class PreservationRepository {
     );
     return Number(result.numUpdatedRows);
   }
-
   /** Which of these restoration items are Locked, in the package or in the library. */
   async lockedRestoreItemIds(restoreId: string, ids: string[]): Promise<string[]> {
     if (ids.length === 0) {
@@ -1227,11 +1190,13 @@ export class PreservationRepository {
       .execute();
     return rows.map((row) => row.id);
   }
-
   /** The owner's choices for items not yet applied. Applied items keep what was done with them. */
   async setDecisions(
     restoreId: string,
-    items: Array<{ id: string; decisions: Record<string, unknown> }>,
+    items: Array<{
+      id: string;
+      decisions: Record<string, unknown>;
+    }>,
   ): Promise<number> {
     let updated = 0;
     for (const item of items) {
@@ -1248,11 +1213,9 @@ export class PreservationRepository {
     }
     return updated;
   }
-
   /* ---------------------------------------------------------------- */
   /* Restore: the library side                                         */
   /* ---------------------------------------------------------------- */
-
   /**
    * The owner's assets with these bytes: the SHA-256 of new uploads and the SHA-1 of older rows and
    * external libraries. The trash counts, so a restore never adds a second copy of something the
@@ -1271,7 +1234,6 @@ export class PreservationRepository {
         .execute()
     );
   }
-
   getOwnedAsset(id: string, ownerId: string) {
     return this.db
       .selectFrom('asset')
@@ -1280,7 +1242,6 @@ export class PreservationRepository {
       .where('asset.ownerId', '=', ownerId)
       .executeTakeFirst();
   }
-
   /** What the library holds for an original, to compare with a package. */
   async getLibraryState(assetId: string) {
     const row = await this.db
@@ -1317,7 +1278,6 @@ export class PreservationRepository {
       })),
     };
   }
-
   /** Keep the reason a restored lock had in the package; the lock itself was made by the asset service. */
   async setLockReason(assetId: string, reason: string): Promise<void> {
     await this.write((db) =>
@@ -1328,7 +1288,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** An album the owner owns, by id. */
   getOwnedAlbum(ownerId: string, albumId: string) {
     return this.db
@@ -1344,12 +1303,10 @@ export class PreservationRepository {
       .where('album.deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   /** Whether an album id is taken by anybody, owned or not, trashed or not. */
   async albumExists(albumId: string): Promise<boolean> {
     return !!(await this.db.selectFrom('album').select('id').where('id', '=', albumId).executeTakeFirst());
   }
-
   /** The owner's albums with exactly this name, kind and parent: a match only when there is one. */
   findOwnedAlbumsByName(ownerId: string, name: string, kind: string, parentId: string | null) {
     return this.db
@@ -1369,7 +1326,6 @@ export class PreservationRepository {
       .limit(2)
       .execute();
   }
-
   /** A person of the owner's, by person id. */
   getOwnedPerson(ownerId: string, personGroupId: string) {
     return this.db
@@ -1379,7 +1335,6 @@ export class PreservationRepository {
       .where('personGroupId', '=', personGroupId)
       .executeTakeFirst();
   }
-
   findPeopleByName(ownerId: string, name: string) {
     return this.db
       .selectFrom('person')
@@ -1389,7 +1344,6 @@ export class PreservationRepository {
       .limit(2)
       .execute();
   }
-
   /**
    * A person for the owner with a given id, in the owner's cluster group, like `PersonService.create`
    * makes one. Creating the same id twice is harmless: the second does nothing.
@@ -1397,10 +1351,15 @@ export class PreservationRepository {
   async createPerson(
     ownerId: string,
     personGroupId: string,
-    person: { name: string; birthDate: string | null; isHidden: boolean; isFavorite: boolean; color: string | null },
+    person: {
+      name: string;
+      birthDate: string | null;
+      isHidden: boolean;
+      isFavorite: boolean;
+      color: string | null;
+    },
   ): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, PRESERVATION_HANDOFF_REFUSAL);
       await sql`
         insert into person_group (id, "clusterGroupId")
         select ${personGroupId}::uuid, "user"."clusterGroupId" from "user" where "user".id = ${ownerId}::uuid
@@ -1421,7 +1380,6 @@ export class PreservationRepository {
         .execute();
     });
   }
-
   getFaces(assetId: string) {
     return this.db
       .selectFrom('asset_face')
@@ -1439,7 +1397,6 @@ export class PreservationRepository {
       .where('deletedAt', 'is', null)
       .execute();
   }
-
   async addFace(face: {
     assetId: string;
     personGroupId: string;
@@ -1468,7 +1425,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Name a face nobody has named yet; a face somebody named keeps its person. */
   async nameFace(faceId: string, personGroupId: string): Promise<void> {
     await this.write((db) =>
@@ -1480,7 +1436,6 @@ export class PreservationRepository {
         .execute(),
     );
   }
-
   /** Add a document decision the owner made, unless one is already recorded for the same thing. */
   async addDocumentEdit(
     assetId: string,
@@ -1489,7 +1444,16 @@ export class PreservationRepository {
       key: string;
       action: string;
       value: string | null;
-      region: { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number; x4: number; y4: number } | null;
+      region: {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+        x3: number;
+        y3: number;
+        x4: number;
+        y4: number;
+      } | null;
     },
   ): Promise<boolean> {
     const result = await this.write((db) =>
@@ -1509,12 +1473,16 @@ export class PreservationRepository {
     );
     return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
   }
-
   /** Add a moment note the owner wrote, unless the same note is already there. */
   async addManualMoment(
     assetId: string,
     ownerId: string,
-    moment: { timestampMs: number; endMs: number | null; caption: string | null; transcript: string | null },
+    moment: {
+      timestampMs: number;
+      endMs: number | null;
+      caption: string | null;
+      transcript: string | null;
+    },
   ): Promise<boolean> {
     const existing = await this.db
       .selectFrom('video_moment')
@@ -1543,7 +1511,6 @@ export class PreservationRepository {
     );
     return true;
   }
-
   /** Deleting an account removes its rows by cascade; this lists what it leaves on disk first. */
   listOwnedPackagePaths(ownerId: string) {
     return this.db
@@ -1554,7 +1521,6 @@ export class PreservationRepository {
       .execute();
   }
 }
-
 /** Thrown inside `createExport` to roll back a selection that is too large. */
 class SelectionTooLargeError extends Error {
   constructor(readonly items: number) {

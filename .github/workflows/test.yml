@@ -349,7 +349,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        run: bash scripts/checkout-test-assets.sh
       - name: Setup Mise
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
         with:
@@ -381,7 +382,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
@@ -522,7 +524,7 @@ jobs:
         working-directory: ./server
         env:
           FL225_API_URL: http://127.0.0.1:2285
-          FL225_PG_URL: postgres://postgres:postgres@127.0.0.1:5435/immich
+          FL225_PG_URL: postgres://postgres:postgres@127.0.0.1:5435/frameleaf
           FL225_CLOUD_URL: http://host.docker.internal:30185
           FL225_EDGE_SECRET: fl225-local-transport-only-secret
         run: pnpm exec vitest run --config test/vitest.config.transport.mjs
@@ -530,7 +532,7 @@ jobs:
       - name: Capture upload transport Docker logs
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml logs --no-color > docker-upload-transport-logs.txt
-      # FL-310: two real app/PG/Redis stacks, with only the coordinator and edge enrollment substituted.
+      # FL-310: two real app/PG stacks, with only the coordinator and edge enrollment substituted.
       # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
       - name: Prepare disposable Buddy TLS and storage
         id: buddy-prepare
@@ -661,7 +663,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
@@ -773,9 +776,15 @@ jobs:
     runs-on: ubuntu-24.04
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') && always() }}
     steps:
-      - uses: immich-app/devtools/actions/success-check@81113db03f6d743efee81e0058c0b43f6cd6f36d
-        with:
-          needs: ${{ toJSON(needs) }}
+      - name: Verify required E2E jobs succeeded
+        env:
+          REQUIRED_JOBS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          const jobs = JSON.parse(process.env.REQUIRED_JOBS);
+          const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success');
+          if (failed.length) throw new Error('Required E2E jobs failed: ' + failed.map(([name, job]) => name + '=' + job.result).join(', '));
+          JS
     timeout-minutes: 60
   ml-unit-tests:
     name: Unit Test ML
@@ -903,21 +912,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      # Frameleaf's own Postgres image (docker/postgres), built here rather than pulled. VectorChord is the
-      # only preloaded extension and the search path is the default, matching the schema baseline.
+      # Frameleaf's own Postgres image (docker/postgres), built here rather than pulled. pgvector is the
+      # only vector extension and the search path is the default, matching the schema baseline.
       - name: Start Frameleaf Postgres
         run: |-
           set -euo pipefail
           docker build -t frameleaf-postgres:ci docker/postgres
           docker run -d --name postgres -p 5432:5432 \
-            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=immich \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=frameleaf \
             frameleaf-postgres:ci \
-            postgres -c config_file=/etc/postgresql/postgresql.conf \
-            -c shared_preload_libraries=vchord.so -c 'search_path="$user", public'
+            postgres
           for _ in $(seq 1 60); do
             logs=$(docker logs postgres 2>&1 || true)
             if [[ "$logs" == *'PostgreSQL init process complete'* ]] &&
-              docker exec postgres pg_isready -U postgres -d immich > /dev/null 2>&1; then
+              docker exec postgres pg_isready -U postgres -d frameleaf > /dev/null 2>&1; then
               exit 0
             fi
             sleep 2
@@ -939,15 +947,15 @@ jobs:
         run: mise run //server:build
       - name: Run existing migrations
         run: pnpm --filter immich migrations:run
-      - name: Capture exact fork catalog for reconciliation
-        run: pnpm --filter immich exec tsx scripts/snapshot-fork-schema-catalog.ts /tmp/fork-v2-catalog.json
+      - name: Capture exact canonical catalog for reconciliation
+        run: pnpm --filter immich exec tsx scripts/snapshot-frameleaf-schema-catalog.ts /tmp/frameleaf-catalog.json
         env:
-          DB_URL: postgres://postgres:postgres@localhost:5432/immich
-      - name: Archive exact fork catalog
+          DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
+      - name: Archive exact canonical catalog
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: frameleaf-fork-catalog-diagnostic
-          path: /tmp/fork-v2-catalog.json
+          name: frameleaf-catalog-diagnostic
+          path: /tmp/frameleaf-catalog.json
           retention-days: 7
       - name: Test npm run schema:reset command works
         run: pnpm --filter immich schema:reset
@@ -980,7 +988,7 @@ jobs:
       - name: Run SQL generation
         run: mise run //:sql
         env:
-          DB_URL: postgres://postgres:postgres@localhost:5432/immich
+          DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
       - name: Find file changes
         uses: tj-actions/verify-changed-files@a1c6acee9df209257a246f2cc6ae8cb6581c1edf
         id: verify-changed-sql-files
@@ -1005,4 +1013,4 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
     env:
-      DB_URL: postgres://postgres:postgres@localhost:5432/immich
+      DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf

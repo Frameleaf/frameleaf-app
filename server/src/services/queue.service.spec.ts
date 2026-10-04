@@ -398,19 +398,15 @@ describe(QueueService.name, () => {
     });
   });
 
-  describe('retryFailedJobs (FL-71)', () => {
-    it('retries the failed jobs and reports how many there were', async () => {
-      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ failed: 3 }));
-
+  describe('retryFailedJobs', () => {
+    it('reports actual admitted retries rather than the number of failed and needs-attention rows', async () => {
+      mocks.job.retryFailed.mockResolvedValue(3);
       await expect(sut.retryFailedJobs(factory.auth(), QueueName.SmartSearch)).resolves.toEqual({ count: 3 });
       expect(mocks.job.retryFailed).toHaveBeenCalledWith(QueueName.SmartSearch);
     });
-
-    it('does nothing when no job has failed', async () => {
-      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ failed: 0 }));
-
+    it('reports zero when no failed work can be safely replayed', async () => {
+      mocks.job.retryFailed.mockResolvedValue(0);
       await expect(sut.retryFailedJobs(factory.auth(), QueueName.SmartSearch)).resolves.toEqual({ count: 0 });
-      expect(mocks.job.retryFailed).not.toHaveBeenCalled();
     });
   });
 
