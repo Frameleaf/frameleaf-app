@@ -206,7 +206,7 @@ export class UserAdminPinCodeStateResponseDto extends createZodDto(UserAdminPinC
 export class UserAdminHistoryEventResponseDto extends createZodDto(UserAdminHistoryEventResponseSchema) {}
 export class UserAdminHistoryResponseDto extends createZodDto(UserAdminHistoryResponseSchema) {}
 
-const UserAdminResponseSchema = UserResponseSchema.extend({
+export const UserAdminResponseSchema = UserResponseSchema.extend({
   clusterGroupId: z
     .uuidv4()
     .describe('Cluster group the user is a member of')

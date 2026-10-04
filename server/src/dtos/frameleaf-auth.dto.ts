@@ -1,5 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { OAuthCallbackSchema } from 'src/dtos/auth.dto.js';
+import { UserAdminResponseSchema } from 'src/dtos/user.dto.js';
 
 /** Sign in with Frameleaf (FL-158): a person's own Frameleaf account link and the sign-in handoff. */
 
@@ -100,3 +102,40 @@ export class FrameleafHandoffCreateDto extends createZodDto(FrameleafHandoffCrea
 export class FrameleafHandoffRedeemDto extends createZodDto(FrameleafHandoffRedeemSchema) {}
 export class FrameleafTokenExchangeDto extends createZodDto(FrameleafTokenExchangeSchema) {}
 export class FrameleafTokenExchangeErrorDto extends createZodDto(FrameleafTokenExchangeErrorSchema) {}
+
+/**
+ * FL-218 (owner decision 2026-10-03): a cloud admin share makes the linked account an administrator here, and
+ * linking says so. `preview` exchanges the sign-in and reports what linking would change without linking; the
+ * returned `confirmToken` then links through `POST oauth/frameleaf/link/confirm`.
+ */
+export enum FrameleafLinkRoleChange {
+  None = 'none',
+  GrantedAdmin = 'granted-admin',
+}
+
+const FrameleafLinkSchema = OAuthCallbackSchema.extend({
+  preview: z
+    .boolean()
+    .optional()
+    .describe('Report what linking would change (for example becoming an administrator) without linking yet'),
+}).meta({ id: 'FrameleafLinkDto' });
+
+const FrameleafLinkConfirmSchema = z
+  .object({ confirmToken: z.string().min(1).max(4096).describe('The token a preview returned') })
+  .meta({ id: 'FrameleafLinkConfirmDto' });
+
+const FrameleafLinkResponseSchema = UserAdminResponseSchema.extend({
+  linked: z.boolean().describe('Whether the Frameleaf account is now linked (false for a preview)'),
+  roleChange: z
+    .enum(FrameleafLinkRoleChange)
+    .describe(
+      'granted-admin: the Frameleaf account holds an admin share of this server on Frameleaf Cloud, so linking makes (or made) you an administrator here',
+    )
+    .meta({ id: 'FrameleafLinkRoleChange' }),
+  confirmToken: z.string().nullable().describe('For a preview: confirms the link through link/confirm'),
+  confirmExpiresAt: z.string().nullable().describe('For a preview: when the confirm token expires'),
+}).meta({ id: 'FrameleafLinkResponseDto' });
+
+export class FrameleafLinkDto extends createZodDto(FrameleafLinkSchema) {}
+export class FrameleafLinkConfirmDto extends createZodDto(FrameleafLinkConfirmSchema) {}
+export class FrameleafLinkResponseDto extends createZodDto(FrameleafLinkResponseSchema) {}

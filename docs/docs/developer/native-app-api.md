@@ -35,6 +35,31 @@ server only on its home network, for browsing and for backup.
   missing value means not entitled); otherwise show "Available on your home network. Remote access needs Frameleaf
   Cloud."
 
+## Deleting media never syncs
+
+Owner rule, 2026-10-03, permanent: a deletion on a phone, in iCloud or in any other source never deletes,
+trashes or hides a Frameleaf asset. Sync may only add media and album memberships, and may only take back album
+memberships it added itself (album source links, FL-331). An audit of the server on 2026-10-03 found no path that
+propagates a device deletion: removing a backup device only marks the device record deleted, and an iCloud
+sync counts media deleted in iCloud as `source_removed` and keeps it (FL-68). The planned FL-296 "device-deletion
+mirror" option is void.
+
+## Cloud admin share and server administration
+
+Owner decision, 2026-10-03: a Frameleaf Cloud admin share keeps granting server administration (`frameleaf_role`
+`admin`), and the promotion is made visible:
+
+- `linkFrameleafAccount` (`POST /oauth/frameleaf/link`) applies a promotion at once, not at the next sign-in, and
+  returns `FrameleafLinkResponseDto`: the account plus `linked`, `roleChange` (`none` | `granted-admin`),
+  `confirmToken` and `confirmExpiresAt`.
+- With `preview: true` nothing is linked. The response reports the role change and a `confirmToken`, valid for 10
+  minutes and for this session only, which `confirmFrameleafAccountLink` (`POST /oauth/frameleaf/link/confirm`)
+  redeems. Apps can show "Linking this Frameleaf account makes you an administrator of this server." before
+  confirming.
+- Every promotion from Frameleaf Cloud (link or sign-in) notifies the other administrators with a `SystemMessage`
+  notification ("<name> became an administrator through Frameleaf Cloud"), besides the `admin-granted` audit row.
+- Demotions are unchanged: applied at sign-in, never to the last administrator.
+
 ## Gaps
 
 Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-app#176](https://github.com/Frameleaf/frameleaf-app/pull/176); cloud changes through [Frameleaf/frameleaf-cloud#291](https://github.com/Frameleaf/frameleaf-cloud/pull/291).

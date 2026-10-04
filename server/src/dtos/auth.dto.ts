@@ -129,7 +129,7 @@ const ValidateAccessTokenResponseSchema = z
   })
   .meta({ id: 'ValidateAccessTokenResponseDto' });
 
-const OAuthCallbackSchema = z
+export const OAuthCallbackSchema = z
   .object({
     url: z.string().min(1).describe('OAuth callback URL'),
     rememberMe: z
