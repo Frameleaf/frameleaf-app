@@ -840,28 +840,34 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     }
     for (const [index, app] of apps.entries()) {
       const prior = pending.get(app.side)!;
-      await until('Unavailable peer settled under its durable claim', async () => {
-        const state = await status(app);
-        const [operation] = await app.db<{ status: string; claimToken: string | null; retryAt: Date | null; task: string }[]>`
+      await until(
+        'Unavailable peer settled under its durable claim',
+        async () => {
+          const state = await status(app);
+          const [operation] = await app.db<
+            { status: string; claimToken: string | null; retryAt: Date | null; task: string }[]
+          >`
           select status, "claimToken", "retryAt", snapshot->>'task' as task
           from public.media_operation where id=${prior.id}
         `;
-        expect(operation.task).toBe('verify');
-        expect(state.settings?.pausedSending).toBe(false);
-        expect(state.lastVerifiedAt).toBe(prior.verifiedAt);
-        expect(state.lastCompleteAt).toBe(prior.completedAt);
-        if (['failed', 'cancelled', 'completed'].includes(operation.status)) {
-          throw new Error(`Server ${app.side}: pending verification did not preserve the peer outage`);
-        }
-        return (
-          operation.status === 'queued' &&
-          operation.claimToken === null &&
-          operation.retryAt !== null &&
-          state.run?.id === prior.id &&
-          state.run.state === 'waiting-peer' &&
-          transports[1 - index].outages.some((outage) => outage.category === 'handshake')
-        );
-      }, Boolean);
+          expect(operation.task).toBe('verify');
+          expect(state.settings?.pausedSending).toBe(false);
+          expect(state.lastVerifiedAt).toBe(prior.verifiedAt);
+          expect(state.lastCompleteAt).toBe(prior.completedAt);
+          if (['failed', 'cancelled', 'completed'].includes(operation.status)) {
+            throw new Error(`Server ${app.side}: pending verification did not preserve the peer outage`);
+          }
+          return (
+            operation.status === 'queued' &&
+            operation.claimToken === null &&
+            operation.retryAt !== null &&
+            state.run?.id === prior.id &&
+            state.run.state === 'waiting-peer' &&
+            transports[1 - index].outages.some((outage) => outage.category === 'handshake')
+          );
+        },
+        Boolean,
+      );
       lifecycle.push({
         timestamp: new Date().toISOString(),
         event: 'unpaused-verification-waiting-peer',
@@ -870,15 +876,19 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     }
     await docker('docker', ['compose', '-f', compose, 'restart', 'buddy-a', 'buddy-b'], { timeout: 60_000 });
     for (const app of apps) {
-      await until('Unpaused restarted API', async () => {
-        try {
-          const ping = await response(app, '/server/ping');
-          await ping.body?.cancel();
-          return ping.status === 200;
-        } catch {
-          return false;
-        }
-      }, Boolean);
+      await until(
+        'Unpaused restarted API',
+        async () => {
+          try {
+            const ping = await response(app, '/server/ping');
+            await ping.body?.cancel();
+            return ping.status === 200;
+          } catch {
+            return false;
+          }
+        },
+        Boolean,
+      );
       await unlock(app);
       const state = await status(app);
       const prior = pending.get(app.side)!;
@@ -891,28 +901,33 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     for (const transport of transports) transport.setUnavailable(false);
     for (const app of apps) {
       const prior = pending.get(app.side)!;
-      await until('Same pending verification recovered automatically', async () => {
-        const state = await status(app);
-        const [operation] = await app.db<{ status: string; claimToken: string | null; task: string }[]>`
+      await until(
+        'Same pending verification recovered automatically',
+        async () => {
+          const state = await status(app);
+          const [operation] = await app.db<{ status: string; claimToken: string | null; task: string }[]>`
           select status, "claimToken", snapshot->>'task' as task
           from public.media_operation where id=${prior.id}
         `;
-        expect(operation.task).toBe('verify');
-        expect(state.settings?.pausedSending).toBe(false);
-        expect(state.lastCompleteAt).toBe(prior.completedAt);
-        if (['failed', 'cancelled'].includes(operation.status)) {
-          throw new Error(`Server ${app.side}: durable unpaused verification failed`);
-        }
-        return (
-          operation.status === 'completed' &&
-          operation.claimToken === null &&
-          state.run?.id === prior.id &&
-          state.run.state === 'complete' &&
-          state.lastVerifiedAt !== null &&
-          Date.parse(state.lastVerifiedAt) >= peerAvailableAt &&
-          (await absent(join(root, app.side, 'identity', 'buddy', 'verification', prior.id)))
-        );
-      }, Boolean, 180_000);
+          expect(operation.task).toBe('verify');
+          expect(state.settings?.pausedSending).toBe(false);
+          expect(state.lastCompleteAt).toBe(prior.completedAt);
+          if (['failed', 'cancelled'].includes(operation.status)) {
+            throw new Error(`Server ${app.side}: durable unpaused verification failed`);
+          }
+          return (
+            operation.status === 'completed' &&
+            operation.claimToken === null &&
+            state.run?.id === prior.id &&
+            state.run.state === 'complete' &&
+            state.lastVerifiedAt !== null &&
+            Date.parse(state.lastVerifiedAt) >= peerAvailableAt &&
+            (await absent(join(root, app.side, 'identity', 'buddy', 'verification', prior.id)))
+          );
+        },
+        Boolean,
+        180_000,
+      );
       const index = apps.indexOf(app);
       await original(app, items[index].current);
       await original(app, items[index].missing);

@@ -15,14 +15,8 @@ it('holds the requeued operation row through Buddy waiting-state publication', a
   const operations = new MediaOperationRepository(db);
   const buddy = new BuddyBackupRepository(db, undefined as never);
   vi.spyOn(buddy, 'root').mockReturnValue(directory);
-  let releasePublication!: () => void;
-  let enteredPublication!: () => void;
-  const barrier = new Promise<void>((resolve) => {
-    releasePublication = resolve;
-  });
-  const entered = new Promise<void>((resolve) => {
-    enteredPublication = resolve;
-  });
+  const { promise: barrier, resolve: releasePublication } = Promise.withResolvers<void>();
+  const { promise: entered, resolve: enteredPublication } = Promise.withResolvers<void>();
   let settlement: Promise<boolean> | undefined;
   try {
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
@@ -53,18 +47,23 @@ it('holds the requeued operation row through Buddy waiting-state publication', a
       operations.claimNext({ kinds: [MediaOperationKind.BuddyBackup], workerId: 'replacement', leaseMs: 300_000 });
     const first = await claim();
     expect(first!.operation.id).toBe(operation.id);
-    settlement = operations.requeue(operation.id, first!.claimToken, { delayMs: 0, returnAttempt: true }, async (trx) => {
-      // The UPDATE succeeded in this transaction, but must not be claimable yet.
-      const row = await trx
-        .selectFrom('media_operation')
-        .select(['status', 'claimToken'])
-        .where('id', '=', operation.id)
-        .executeTakeFirstOrThrow();
-      expect(row).toMatchObject({ status: MediaOperationStatus.Queued, claimToken: null });
-      enteredPublication();
-      await barrier;
-      await buddy.update((state) => ({ ...state, run: { ...state.run!, state: 'waiting-peer' } }), trx);
-    });
+    settlement = operations.requeue(
+      operation.id,
+      first!.claimToken,
+      { delayMs: 0, returnAttempt: true },
+      async (trx) => {
+        // The UPDATE succeeded in this transaction, but must not be claimable yet.
+        const row = await trx
+          .selectFrom('media_operation')
+          .select(['status', 'claimToken'])
+          .where('id', '=', operation.id)
+          .executeTakeFirstOrThrow();
+        expect(row).toMatchObject({ status: MediaOperationStatus.Queued, claimToken: null });
+        enteredPublication();
+        await barrier;
+        await buddy.update((state) => ({ ...state, run: { ...state.run!, state: 'waiting-peer' } }), trx);
+      },
+    );
     await Promise.race([
       entered,
       settlement.then(() => {
