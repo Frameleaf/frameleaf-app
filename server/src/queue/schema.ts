@@ -63,6 +63,7 @@ export async function createQueueSchema(db: Kysely<any>) {
     create index job_claim on job(queue, "availableAt", "createdAt") where state in ('pending','waiting');
     create index job_lease on job("leaseExpiresAt") where state = 'active';
     create index job_parent on job("parentId") where "parentId" is not null;
+    create index job_worker_reference on job("workerId") where "workerId" is not null;
     create index job_dependency_pending on job("parentId") where "parentId" is not null and state in ('pending','waiting');
     create index job_retention on job("finishedAt", id)
       where state in ('completed','failed','cancelled','blocked') and "latestPending" is null;
@@ -72,6 +73,7 @@ export async function createQueueSchema(db: Kysely<any>) {
       "startedAt" timestamptz not null default now(), "finishedAt" timestamptz,
       outcome text, error text, primary key ("jobId", attempt)
     );
+    create index job_attempt_worker_reference on job_attempt("workerId");
   `;
   for (const statement of statements.split(';')) {
     if (!statement.trim()) continue;
