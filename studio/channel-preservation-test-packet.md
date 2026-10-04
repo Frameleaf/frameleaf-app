@@ -45,3 +45,20 @@ hosted source recovery receipt. The digest gate must be reconciled before a
 subsequent hosted execution can establish behavioral red. A prepare digest
 failure is not the TDD red. No production implementation is authorized until the
 test fails for the intended channel preservation assertion in hosted Actions.
+
+## Approved hosted source receipt import
+
+The independently reviewed source recovery artifact from run `37172422150`,
+artifact `11292415099`, exact reviewed head
+`b1de9ae5557ad7c34f78c906a647dcb2d8d8ae3e`, approves observed adapted-source
+inventory digest `b482ca96155e835cafe9bbbaeb0f27a14ecb7b128e2cddc8d2ecc6e872cf3762`.
+The review verified all 65 input hashes and 54 patch bindings. The receipt is
+`/tmp/fl103-b1-source-recovery.json`; its downloaded ZIP is
+`/tmp/fl103-b1-source-recovery.zip`, SHA-256
+`42a836e160ab397ae80f2acb6a4232e18d5df714fc0b2c92f3f368f42e1adcb8`.
+The corresponding engine job log is `/tmp/fl103-b1-engine.log`.
+
+This import updates only the admitted source digest and this provenance record.
+It supersedes the pending-digest state above. No local preparation, runtime or
+adapted-source digest generation was performed. `runtimeQualified: false`:
+the receipt establishes source identity, not behavioral red or channel fidelity.
