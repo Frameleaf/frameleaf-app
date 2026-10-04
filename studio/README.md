@@ -271,18 +271,23 @@ revision: adding or changing a file invalidates the existing approval until the 
 the changed row. Root `sha256` remains null. `verifyResourceBytes` first resolves the URL through
 the existing overlapping-row admission rule, then checks that file's URL, row digest, revision and
 byte hash; a model ID, unknown filename, branch, URL alias or blocked voice cannot borrow a hash.
-It copies bytes before awaiting the digest and returns that verified copy. The current Whisper
-model row still has `files: []`, so its production byte acceptance remains blocked. This source
-capability does not activate loader transport or fetch production model bytes.
+It copies bytes before awaiting the digest and returns that verified copy. The Whisper model row now names the exact seven observed path/SHA256 pairs in their original
+inventory order. The owner approved that changed row on 2026-10-03 ("Approve this exact seven-file
+inventory"); its renewed canonical row digest in `rights-approval.json` is
+`80e61764717ea2f274fa12ab2e9a9b0bb4fc0e8cb1f41ba9a32ef67279cfc3f5`. This permits
+URL-specific byte admission after genuine policy generation; it does not activate loader transport
+or establish production inference. The manifest change requires fresh hosted engine source recovery;
+the expected canonical engine source digest remains unchanged.
 
 `qualification-evidence/whisper-37164769288-diagnostic.json` retains the genuine hosted isolated
 fixture-inference report from commit `1b8a544824d533f3a5eef5105c1f1c21bf194114`, run
 `37164769288`, SHA256 `63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153`.
 The accompanying `whisper-37164769288-candidates.json` records seven distinct payloads from eight
-observations, with exact origin/revision/size and observed hashes. Both are unsigned diagnostic
-evidence, and all candidate hashes remain **UNAPPROVED**. Neither file is consumed as policy or
-owner authority. The next approval gate is owner review of the candidate bytes/provenance and
-exact file inventory, followed by explicit re-approval of the changed manifest row. Transport
+observations, with exact origin/revision/size and observed hashes. Both remain byte-identical unsigned **UNAPPROVED observation snapshots**, including their historical
+acceptance fields. Neither file is consumed as policy or owner authority. Current authority is the
+renewed manifest-bound row in `rights-approval.json`, recording the actual 2026-10-03 owner approval
+and this run/revision/report provenance. Future timing diagnostics say production transport remains
+unqualified rather than repeating the now-resolved missing-inventory gate. Transport
 integration with approved bytes, real browser-worker inference, all other pinned/supplemental
 models, progress/cancellation, artifact/relink/bundle and privacy workflows remain separate gates.
 
