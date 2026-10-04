@@ -21,10 +21,6 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    if (force) {
-      await this.ocrRepository.deleteAll();
-    }
-
     await this.jobRepository.queueSelection(JobName.Ocr, this.assetJobRepository.selectionForOcrJob(force));
 
     return JobStatus.Success;

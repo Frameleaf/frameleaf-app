@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-
 import { AlbumUserRole } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
+
 @Injectable()
 export class SmartAlbumRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
   /**
    * Idempotent: for each (ownerId, kind) pair that doesn't already have a
    * smart_album row, create the backing album + album_user (owner) + smart_album

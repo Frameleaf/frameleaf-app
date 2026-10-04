@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -49,8 +49,6 @@ import {
 
 /** How many of an owner's most similar photos a newly confirmed pet photo sends through recognition. */
 export const PET_NEAREST_ASSET_LIMIT = 200;
-
-const QUEUE_BATCH = 1000;
 
 type PromptEmbeddings = {
   species: Array<{ species: (typeof PET_SPECIES_PROMPTS)[number]['species']; embedding: Float32Array }>;
@@ -176,30 +174,6 @@ export class PetRecognitionService {
     return this.petRepository.cancelRun(ownerId);
   }
 
-  /**
-   * A run write from a job during a database handoff: the run table is fork-owned and refuses
-   * (ConflictException); the job logs it and leaves the run as it is instead of failing. The owner's
-   * own start and cancel answer 409 instead.
-   */
-  private async duringForkWrites<T>(what: string, write: () => Promise<T>): Promise<T | undefined> {
-    try {
-      return await write();
-    } catch (error) {
-      if (!(error instanceof ConflictException)) {
-        throw error;
-      }
-      this.logger.warn(`Did not ${what} during a database handoff`);
-      return undefined;
-    }
-  }
-
-  // ------------------------------------------------------------------------------- jobs
-
-  /**
-   * An owner's run (`userId`), or the administrator's run over every owner who has confirmed a pet
-   * (Job manager "Pet recognition"). Each owner's photos with a CLIP embedding are queued with the
-   * owner's run id, so a cancel reaches the jobs still waiting.
-   */
   @OnJob({ name: JobName.PetRecognitionQueueAll, queue: QueueName.PetRecognition })
   async handleQueueAll({ userId }: JobOf<JobName.PetRecognitionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.config(false);
@@ -208,31 +182,26 @@ export class PetRecognitionService {
       return JobStatus.Skipped;
     }
 
-    const owners = userId ? [userId] : await this.petRepository.getOwnersWithConfirmedPets();
-    for (const ownerId of owners) {
-      const run = userId
-        ? await this.petRepository.getRun(ownerId)
-        : await this.duringForkWrites('start a pet recognition run', () => this.petRepository.startRun(ownerId, null));
-      if (!run || !(await this.petRepository.isRunActive(run.id))) {
-        continue;
+    const runs = await this.jobRepository.prepareCheckpoint('pet-runs', async () => {
+      const owners = userId ? [userId] : await this.petRepository.getOwnersWithConfirmedPets();
+      const prepared: Array<{ ownerId: string; id: string }> = [];
+      for (const ownerId of owners) {
+        const run = userId
+          ? await this.petRepository.getRun(ownerId)
+          : await this.petRepository.startRun(ownerId, null);
+        if (run && (await this.petRepository.isRunActive(run.id))) prepared.push({ ownerId, id: run.id });
       }
-
-      const assetIds = await this.petRepository.getRecognizableAssetIds(ownerId);
-      const counted = await this.duringForkWrites('count a pet recognition run', async () => {
-        await this.petRepository.setRunAssets(run.id, assetIds.length);
-        return true;
+      return prepared;
+    });
+    await this.jobRepository.queueSelection(
+      JobName.PetRecognition,
+      this.petRepository.selectionForPetRecognition(runs),
+    );
+    const queueRunId = queueExecution.getStore()?.claim.runId;
+    if (queueRunId)
+      await publishJobResult(async () => {
+        for (const run of runs) await this.petRepository.setSelectedRunAssets(run.id, queueRunId);
       });
-      if (!counted) {
-        continue;
-      }
-      for (let index = 0; index < assetIds.length; index += QUEUE_BATCH) {
-        await this.jobRepository.queueAll(
-          assetIds
-            .slice(index, index + QUEUE_BATCH)
-            .map((id) => ({ name: JobName.PetRecognition, data: { id, runId: run.id } })),
-        );
-      }
-    }
 
     return JobStatus.Success;
   }
@@ -247,7 +216,9 @@ export class PetRecognitionService {
     }
 
     const ids = await this.petRepository.getNearestAssetIds(asset.ownerId, assetId, PET_NEAREST_ASSET_LIMIT);
-    await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.PetRecognition, data: { id } })));
+    await this.jobRepository.collectFollowups(() =>
+      this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.PetRecognition, data: { id } }))),
+    );
     return JobStatus.Success;
   }
 
@@ -425,6 +396,7 @@ export class PetRecognitionService {
   }
 
   private getPromptEmbeddings(selection: MlSelection, modelName: string): Promise<PromptEmbeddings> {
+    if (queueExecution.getStore()) return this.encodePrompts(selection, modelName);
     const cached = PROMPT_CACHE.get(modelName);
     if (cached) {
       return cached;

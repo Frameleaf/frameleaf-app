@@ -64,6 +64,7 @@ describe(OcrService.name, () => {
         mocks.assetJob.selectionForOcrJob.mock.results[0].value,
       );
       expect(mocks.assetJob.selectionForOcrJob).toHaveBeenCalledWith(true);
+      expect(mocks.ocr.deleteAll).not.toHaveBeenCalled();
     });
   });
 

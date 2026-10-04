@@ -6,6 +6,9 @@ import {
   ClassificationRuleAction,
   MediaOperationItemStatus,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { QueueExecution } from 'src/queue/types.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -226,6 +229,30 @@ describe(ClassificationService.name, () => {
   });
 
   describe('evaluateAsset', () => {
+    it('defers queued classification and rejects a rule changed during preparation', async () => {
+      const rule = ruleOf();
+      mocks.classification.getEnabledRules.mockResolvedValue([rule]);
+      const context: QueueExecution = {
+        claim: {} as never,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      await queueExecution.run(context, () => sut.evaluateAsset('asset', rule.ownerId));
+      expect(mocks.classification.apply).not.toHaveBeenCalled();
+      expect(context.adoptions).toHaveLength(1);
+      mocks.classification.getEnabledRules.mockResolvedValue([{ ...rule, enabled: false }]);
+      await expect(
+        queueExecution.run(context, () =>
+          publicationTransaction.run({} as never, () => context.adoptions[0]({} as never)),
+        ),
+      ).rejects.toThrow('rule changed');
+      expect(mocks.classification.apply).not.toHaveBeenCalled();
+    });
+
     it('never throws, and keeps going after a rule fails', async () => {
       const first = ruleOf();
       const second = ruleOf();

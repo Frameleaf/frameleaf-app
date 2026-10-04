@@ -34,6 +34,7 @@ import {
   MlWorkload,
   Permission,
 } from 'src/enum.js';
+import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BULK_MAX_ITEMS, type BulkOperationItem } from 'src/utils/bulk-operation.js';
@@ -389,13 +390,35 @@ export class ClassificationService extends BaseService {
     try {
       rules = (await this.classificationRepository.getEnabledRules(ownerId)) ?? [];
     } catch (error) {
+      if (queueExecution.getStore()) throw error;
       this.logger.warn(`Classification rules unavailable for asset ${assetId}: ${String(error)}`);
       return;
     }
     for (const rule of rules) {
       try {
-        await this.applyToAssets(rule, [assetId]);
+        if (!queueExecution.getStore()) {
+          await this.applyToAssets(rule, [assetId]);
+          continue;
+        }
+        const vectors = await this.encodePhrases(rule.visualQueries);
+        if (!vectors) continue;
+        await publishJobResult(async () => {
+          // A changed or disabled rule must never publish decisions prepared from an older revision.
+          const current = (await this.classificationRepository.getEnabledRules(ownerId)).find(
+            ({ id }) => id === rule.id,
+          );
+          if (!current || JSON.stringify(current) !== JSON.stringify(rule))
+            throw new Error('Classification rule changed before publication');
+          const matches = await this.classificationRepository.findMatches(current, vectors, { assetIds: [assetId] });
+          const outcome = await this.classificationRepository.apply(
+            current,
+            [assetId],
+            new Map(matches.map(({ assetId, score }) => [assetId, score])),
+          );
+          await afterJobCommit(() => this.emitTagEvents(ownerId, outcome));
+        });
       } catch (error) {
+        if (queueExecution.getStore()) throw error;
         this.logger.warn(
           `Classification rule ${rule.id} failed for asset ${assetId}: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -448,12 +471,18 @@ export class ClassificationService extends BaseService {
     try {
       return await Promise.all(phrases.map((phrase) => this.encodePhrase(machineLearning.clip.modelName, phrase)));
     } catch (error) {
+      if (queueExecution.getStore()) throw error;
       this.logger.warn(`Visual category phrases could not be encoded: ${String(error)}`);
       return undefined;
     }
   }
 
   private encodePhrase(modelName: string, phrase: string): Promise<string> {
+    if (queueExecution.getStore()) {
+      return this.selectRoutedMlDestination({ workload: MlWorkload.Clip }).then((selection) =>
+        this.machineLearningRepository.encodeText(selection, phrase, { modelName }),
+      );
+    }
     const key = `${modelName}\u{0}${phrase}`;
     const cached = phraseCache.get(key);
     if (cached) {

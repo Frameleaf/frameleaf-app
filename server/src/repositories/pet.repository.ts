@@ -14,6 +14,7 @@ import {
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
   isLockedAsset,
+  isNotLockedAsset,
   lockedOwnerScope,
 } from 'src/utils/database.js';
 
@@ -729,6 +730,34 @@ export class PetRepository {
       .execute();
     return rows.map(({ ownerId }) => ownerId);
   }
+  selectionForPetRecognition(runs: Array<{ ownerId: string; id: string }>) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
+      .innerJoin(
+        sql<{
+          ownerId: string;
+          id: string;
+        }>`(select * from jsonb_to_recordset(${JSON.stringify(runs)}::jsonb) as selected_runs("ownerId" uuid, id uuid))`.as(
+          'r',
+        ),
+        (join) => join.onRef('r.ownerId', '=', 'asset.ownerId'),
+      )
+      .select(['asset.id', sql<Record<string, unknown>>`jsonb_build_object('runId', r.id)`.as('data')])
+      .where('asset.deletedAt', 'is', null)
+      .where((eb) => isNotLockedAsset(eb));
+  }
+
+  async setSelectedRunAssets(runId: string, queueRunId: string) {
+    const {
+      rows: [count],
+    } = await sql<{ count: number }>`select count(*)::int count from job_run_item
+      where "runId" = ${queueRunId}::uuid and selection->>'runId' = ${runId} and "selectionId" is not null`.execute(
+      this.db,
+    );
+    await this.setRunAssets(runId, count.count);
+  }
+
   /** Every asset of one owner that has a CLIP embedding and is not in the trash. */
   getRecognizableAssetIds(ownerId: string): Promise<string[]> {
     return this.db

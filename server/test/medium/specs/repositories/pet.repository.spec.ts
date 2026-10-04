@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { AssetVisibility, PetObservationSource, PetObservationState, PetRecognitionRunStatus } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -250,38 +251,26 @@ describe(PetRepository.name, () => {
       await expect(sut.getRun(user.id)).resolves.toMatchObject({ processedCount: 0, proposalCount: 0 });
     });
 
-    // the run table is fork-owned: its writes take the fork-state lock and refuse during a handoff
-    it('refuses every run write during a database handoff and changes nothing', async () => {
+    it('rolls back canonical run setup and counters with the caller transaction', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const run = await sut.startRun(user.id, 'local');
       await sut.setRunAssets(run.id, 3);
-
-      const { id: auditId } = (await ctx.database
-        .withSchema('immich_fork')
-        .insertInto('migration_audit' as never)
-        .values({ name: 'official-handoff-preparation', phase: 'legacy', status: 'running' } as never)
-        .returning('id' as never)
-        .executeTakeFirstOrThrow()) as { id: string };
-      try {
-        await expect(sut.startRun(user.id, 'lan')).rejects.toMatchObject(refused);
-        await expect(sut.setRunAssets(run.id, 9)).rejects.toMatchObject(refused);
-        await expect(sut.recordRunProgress(run.id, 1)).rejects.toMatchObject(refused);
-        await expect(sut.failRun(run.id, 'offline')).rejects.toMatchObject(refused);
-        await expect(sut.cancelRun(user.id)).rejects.toMatchObject(refused);
-      } finally {
-        await ctx.database
-          .withSchema('immich_fork')
-          .deleteFrom('migration_audit' as never)
-          .where('id' as never, '=', auditId as never)
-          .execute();
-      }
-
+      await expect(
+        defaultDatabase.transaction().execute((tx) =>
+          publicationTransaction.run(tx, async () => {
+            const writer = new PetRepository(tx, LoggingRepository.create());
+            const replacement = await writer.startRun(user.id, 'lan');
+            await writer.setRunAssets(replacement.id, 9);
+            throw new Error('setup interrupted');
+          }),
+        ),
+      ).rejects.toThrow('setup interrupted');
       await expect(sut.getRun(user.id)).resolves.toMatchObject({
         id: run.id,
-        status: PetRecognitionRunStatus.Running,
         assetCount: 3,
         processedCount: 0,
+        status: PetRecognitionRunStatus.Running,
       });
     });
   });

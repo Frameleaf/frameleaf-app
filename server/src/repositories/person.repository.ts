@@ -373,6 +373,37 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true);
   }
+  selectionForThumbnails(force: boolean) {
+    return this.db
+      .selectFrom('person')
+      .innerJoinLateral(
+        (eb) =>
+          eb
+            .selectFrom('asset_face')
+            .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+            .select(['asset_face.id', 'asset_face.assetId'])
+            .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+            .where('asset_face.deletedAt', 'is', null)
+            .where('asset_face.isVisible', '=', true)
+            .where((eb) => isNotLockedAsset(eb))
+            .orderBy(sql`(asset_face.id = person."faceAssetId") desc nulls last`)
+            .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
+            .orderBy('asset_face.id')
+            .limit(1)
+            .as('face'),
+        (join) => join.onTrue(),
+      )
+      .select([
+        sql<string>`person."ownerId"::text || '/' || person."personGroupId"::text`.as('id'),
+        'face.assetId as rootItemKey',
+        sql<
+          Record<string, unknown>
+        >`jsonb_build_object('ownerId', person."ownerId", 'personGroupId', person."personGroupId", 'selectionFaceId', face.id)`.as(
+          'data',
+        ),
+      ])
+      .$if(!force, (qb) => qb.where('person.thumbnailPath', '=', ''));
+  }
   getAll(options: GetAllPeopleOptions = {}) {
     return this.db
       .selectFrom('person')
@@ -593,10 +624,14 @@ export class PersonRepository {
       .executeTakeFirst();
   }
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
-  getDataForThumbnailGenerationJob({ ownerId, personGroupId }: PersonId) {
+  getDataForThumbnailGenerationJob({ ownerId, personGroupId }: PersonId, selectedFaceId?: string) {
     return this.db
       .selectFrom('person')
-      .innerJoin('asset_face', 'asset_face.id', 'person.faceAssetId')
+      .innerJoin('asset_face', (join) =>
+        selectedFaceId
+          ? join.on('asset_face.id', '=', selectedFaceId)
+          : join.onRef('asset_face.id', '=', 'person.faceAssetId'),
+      )
       .innerJoin('asset', 'asset_face.assetId', 'asset.id')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
@@ -615,6 +650,9 @@ export class PersonRepository {
       .where('person.ownerId', '=', ownerId)
       .where('person.personGroupId', '=', personGroupId)
       .where('asset_face.deletedAt', 'is', null)
+      .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+      .where('asset_face.isVisible', '=', true)
+      .where((eb) => isNotLockedAsset(eb))
       .executeTakeFirst();
   }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })

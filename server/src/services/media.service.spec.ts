@@ -66,29 +66,29 @@ describe(MediaService.name, () => {
         const query = { where: vi.fn() };
         query.where.mockReturnValue(query);
         mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
-        mocks.person.getAll.mockReturnValue(makeStream());
+        mocks.person.selectionForThumbnails.mockReturnValue(query as never);
         await sut.handleQueueGenerateThumbnails({ force });
         expect(mocks.assetJob.selectionForThumbnailJob).toHaveBeenCalledWith({ force, fullsizeEnabled: false });
         expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetGenerateThumbnails, query);
         expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEditThumbnailGeneration, query);
         expect(mocks.assetJob.streamForThumbnailJob).not.toHaveBeenCalled();
-        expect(mocks.person.getAll).toHaveBeenCalledWith(force ? undefined : { thumbnailPath: '' });
+        expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(force);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.PersonGenerateThumbnail, query);
+        expect(mocks.person.getAll).not.toHaveBeenCalled();
       },
     );
 
-    it('retains person thumbnail repair alongside the asset selection', async () => {
+    it('keeps profile repair as an explicit durable cleanup stage without running it in enumeration', async () => {
       const query = { where: vi.fn() };
       query.where.mockReturnValue(query);
       mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
-      const person = PersonFactory.create({ faceAssetId: newUuid() });
-      mocks.person.getAll.mockReturnValue(makeStream([person]));
+      mocks.person.selectionForThumbnails.mockReturnValue(query as never);
+      mocks.job.collectFollowups.mockImplementation(async (collect) => {
+        await collect();
+      });
       await sut.handleQueueGenerateThumbnails({ force: true });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.PersonGenerateThumbnail,
-          data: { ownerId: person.ownerId, personGroupId: person.personGroupId },
-        },
-      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.ProfileImageRepair, data: {} });
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
   });
 
@@ -2000,10 +2000,13 @@ describe(MediaService.name, () => {
         sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
       ).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith({
-        ownerId: person.ownerId,
-        personGroupId: person.personGroupId,
-      });
+      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith(
+        {
+          ownerId: person.ownerId,
+          personGroupId: person.personGroupId,
+        },
+        undefined,
+      );
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.any(String));
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(personThumbnailStub.newThumbnailMiddle.originalPath, {
         colorspace: Colorspace.P3,
@@ -2054,10 +2057,13 @@ describe(MediaService.name, () => {
         sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
       ).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith({
-        ownerId: person.ownerId,
-        personGroupId: person.personGroupId,
-      });
+      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith(
+        {
+          ownerId: person.ownerId,
+          personGroupId: person.personGroupId,
+        },
+        undefined,
+      );
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.any(String));
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(expect.any(String), {
         colorspace: Colorspace.P3,

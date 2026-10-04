@@ -4,6 +4,7 @@ import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
@@ -93,10 +94,12 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    if (force) {
-      const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
-      // in addition to deleting embeddings, update the dimension size in case it failed earlier
-      await this.databaseRepository.setDimensionSize(dimSize);
+    // Configuration initialization owns dimensional DDL. A rerun must retain working vectors
+    // until each accepted replacement is ready, rather than clearing the entire index.
+    const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
+    if ((await this.databaseRepository.getDimensionSize('smart_search')) !== dimSize) {
+      deferJobUntilDependency('destination-configuration');
+      return JobStatus.Failed;
     }
 
     await this.jobRepository.queueSelection(JobName.SmartSearch, this.assetJobRepository.selectionForEncodeClip(force));
@@ -157,11 +160,17 @@ export class SmartInfoService extends BaseService {
 
   @OnJob({ name: JobName.SmartSearchPostprocess, queue: QueueName.SmartSearch })
   async handlePostprocessClip({ id }: JobOf<JobName.SmartSearchPostprocess>): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     const persisted = await this.searchRepository.getEmbedding(id);
     if (!asset || !persisted || asset.visibility === AssetVisibility.Hidden) {
       return JobStatus.Skipped;
     }
+    deferJobAdoption(async () => {
+      if ((await this.searchRepository.getEmbedding(id))?.embedding !== persisted.embedding) {
+        throw new Error('CLIP embedding changed before postprocessing publication');
+      }
+    });
     await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding);
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     return JobStatus.Success;
