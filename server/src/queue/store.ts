@@ -11,6 +11,12 @@ import {
   withSelectionSharing,
 } from 'src/queue/manifest.js';
 import { listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
+import {
+  LineageItemIdentity,
+  mirrorSelectionLineage,
+  recordSelectionLineage,
+  supersedeSelectionLineage,
+} from 'src/queue/selection-lineage.js';
 import { unfinishedQueueItems, unfinishedRunItems } from 'src/queue/selection-state.js';
 import {
   JobDependencyReason,
@@ -77,26 +83,30 @@ export class SqlQueueStore {
         `.execute(db);
         if (existing) {
           if (intent.options?.deduplication?.keepLastIfActive) {
+            const deferred = existing.state === 'active' || existing.ownsProducerState;
+            const previous = existing.latestPending;
+            const superseded = await supersedeSelectionLineage(
+              db,
+              deferred
+                ? {
+                    items:
+                      previous?.runId && previous.itemKey
+                        ? [
+                            { runId: previous.runId, itemKey: previous.itemKey, stage: previous.name },
+                            ...(previous.memberships ?? []).map((member) => ({ ...member, stage: previous.name })),
+                          ]
+                        : [],
+                  }
+                : { jobIds: [existing.id] },
+              intent,
+            );
             // A stopped producer may still own a durable snapshot/checkpoint. Rewriting it would
             // orphan its original run and retry state; let it settle before scheduling the latest.
-            if (existing.state === 'active' || existing.ownsProducerState) {
-              // Replaced requests did not execute; they cannot inherit the predecessor's success.
-              const previous = existing.latestPending;
-              let superseded: Array<{ runId: string; rootItemKey: string | null }> = [];
-              if (
-                previous?.runId &&
-                previous.itemKey &&
-                (previous.runId !== intent.runId || previous.itemKey !== intent.itemKey)
-              ) {
-                const { rows } = await sql<{ runId: string; rootItemKey: string | null }>`
-                  update job_run_item set state = 'cancelled'
-                  where "runId" = ${previous.runId}::uuid and "itemKey" = ${previous.itemKey} and stage = ${previous.name}
-                  and "jobId" is null returning "runId", "rootItemKey"`.execute(db);
-                superseded = rows;
-              }
+            if (deferred) {
               if (intent.runId && intent.itemKey) {
                 await this.insertRunItem(intent, db);
               }
+              await this.adoptIntentMemberships(intent, db);
               await sql`update job set "latestPending" = ${JSON.stringify(intent)}::text::jsonb where id = ${existing.id}::uuid`.execute(
                 db,
               );
@@ -109,11 +119,6 @@ export class SqlQueueStore {
             }
             // Pending replacement transfers ownership to the newest run. Older requests
             // are cancelled explicitly instead of inheriting an output they never requested.
-            const { rows: superseded } = await sql<{ runId: string; rootItemKey: string | null }>`
-              update job_run_item set state = 'cancelled', "jobId" = null
-                where "jobId" = ${existing.id}::uuid and not
-                  ("runId" is not distinct from ${intent.runId ?? null}::uuid and "itemKey" is not distinct from ${intent.itemKey ?? null})
-                returning "runId", "rootItemKey"`.execute(db);
             if (intent.runId && intent.itemKey) {
               await this.insertRunItem(intent, db);
             }
@@ -137,6 +142,7 @@ export class SqlQueueStore {
             );
             if (!intent.rootItemKey) await attachSelectionMemberships(db, existing.id);
           }
+          await this.adoptIntentMemberships(intent, db, { id: existing.id, state: existing.state });
           // Durable headers make late sharing recoverable even after the producer becomes terminal.
           continue;
         }
@@ -158,6 +164,15 @@ export class SqlQueueStore {
           where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
           db,
         );
+        if (intent.memberships?.length) {
+          const {
+            rows: [accepted],
+          } = await sql<{ id: string; state: QueueState }>`select id, state from job
+            where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and name = ${intent.name}`.execute(
+            db,
+          );
+          await this.adoptIntentMemberships(intent, db, accepted);
+        }
       }
     }
     // Notifications only reduce latency; the independent five-second scan remains authoritative.
@@ -187,6 +202,28 @@ export class SqlQueueStore {
     await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
       values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::text::jsonb, ${state})
       on conflict do nothing`.execute(db);
+  }
+
+  /** Adopt accounting only. A deferred latest request carries these identities until its one enqueue. */
+  private async adoptIntentMemberships(
+    intent: QueueIntent,
+    db: Executor,
+    accepted?: { id: string; state: QueueState },
+  ) {
+    const memberships = intent.memberships ?? [];
+    for (let offset = 0; offset < memberships.length; offset += QUEUE_BATCH) {
+      await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state, "jobId")
+        select member."runId", member."itemKey", member."rootItemKey", ${intent.name}, ${intent.queue},
+          ${JSON.stringify(intent.sensitive ? {} : intent.data)}::text::jsonb, ${accepted?.state ?? 'pending'}, ${accepted?.id ?? null}::uuid
+        from jsonb_to_recordset(${JSON.stringify(memberships.slice(offset, offset + QUEUE_BATCH))}::text::jsonb)
+          as member("runId" uuid, "itemKey" text, "rootItemKey" text)
+        on conflict ("runId", "itemKey", stage) ${
+          accepted ? sql`do update set "jobId" = excluded."jobId", state = excluded.state` : sql`do nothing`
+        }`.execute(db);
+    }
+    if (accepted && memberships.some((member) => member.rootItemKey === null)) {
+      await attachSelectionMemberships(db, accepted.id);
+    }
   }
 
   async createRun(kind: string, selection: Record<string, unknown>) {
@@ -349,11 +386,12 @@ export class SqlQueueStore {
           rootItemKey: string | null;
         }>`select "runId", "itemKey", "rootItemKey" from job_run_item
         where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
-        const inherited = followups.flatMap((intent) => {
+        const lineageChildren: QueueIntent[] = [];
+        const inherited = followups.map((intent) => {
           if (lineage.length === 0 || (intent.runId && intent.runId !== claim.runId)) {
-            return [intent];
+            return intent;
           }
-          return lineage.map((parent) => ({
+          const children = lineage.map((parent) => ({
             ...intent,
             runId: parent.runId,
             rootItemKey: parent.rootItemKey,
@@ -367,8 +405,17 @@ export class SqlQueueStore {
                       createHash('sha256').update(JSON.stringify(intent.data)).digest('hex'),
                   )),
           }));
+          lineageChildren.push(...children);
+          const owner = children.find((child) => child.runId === claim.runId) ?? children[0];
+          return {
+            ...owner,
+            memberships: children
+              .filter((child) => child !== owner)
+              .map(({ runId, itemKey, rootItemKey }) => ({ runId, itemKey, rootItemKey })),
+          };
         });
         await this.enqueue(inherited, tx);
+        await recordSelectionLineage(tx, claim.id, lineageChildren);
         const latest = await this.scheduleLatest(claim.id, job.latestPending, tx);
         await finishSelections(tx, claim.id, true);
         await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
@@ -484,10 +531,19 @@ export class SqlQueueStore {
           await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
           const latest = rows[0].latestPending;
           if (unconfirmedStop && latest) {
-            await sql`update job_run_item set state = 'needs_attention'
-            where "jobId" is null and "runId" = ${latest.runId ?? null}::uuid
-              and "itemKey" = ${latest.itemKey ?? null} and stage = ${latest.name}`.execute(tx);
-            if (latest.runId) affectedRuns.push(latest.runId);
+            // Discard the one deferred intent only after every positively identified obligation
+            // is terminal. A later history copy may not appear in its original membership list.
+            const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];
+            const { rows: stopped } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
+              update job_run_item i set state = 'needs_attention'
+              where i."jobId" is null and i.state in ('pending','waiting') and i.stage = ${latest.name}
+                and exists (select 1 from jsonb_to_recordset(${JSON.stringify(identities)}::text::jsonb)
+                  as member("runId" uuid, "itemKey" text)
+                  where (member."runId", member."itemKey") = (i."runId", i."itemKey"))
+              returning i."runId", i."itemKey", i.stage, i."rootItemKey"`.execute(tx);
+            stopped.push(...(await mirrorSelectionLineage(tx, { items: stopped })));
+            await this.finishSupersededProducers(stopped, tx);
+            affectedRuns.push(...stopped.map((item) => item.runId));
           } else {
             const scheduled = await this.scheduleLatest(claim.id, latest, tx, false);
             affectedRuns.push(...scheduled.runIds);
@@ -521,10 +577,20 @@ export class SqlQueueStore {
       where id = ${previousId}::uuid and "runId" = ${latest.runId ?? null}::uuid
       and "itemKey" = ${latest.itemKey ?? null} and name = ${latest.name} returning id`.execute(tx);
     if (rows.length > 0) {
+      await this.adoptIntentMemberships(latest, tx, { id: previousId, state: 'pending' });
       affected.runIds.push(...(await this.syncItem(previousId, tx)));
     } else {
       // A fresh safe request is not a dependency on the predecessor's success.
       await this.enqueue([{ ...latest, parentId: latest.parentId === previousId ? undefined : latest.parentId }], tx);
+      if (latest.runId && latest.itemKey) {
+        const mirrored = await mirrorSelectionLineage(tx, {
+          items: [
+            { runId: latest.runId, itemKey: latest.itemKey, stage: latest.name },
+            ...(latest.memberships ?? []).map((member) => ({ ...member, stage: latest.name })),
+          ],
+        });
+        affected.runIds.push(...mirrored.map((item) => item.runId));
+      }
     }
     if (!predecessorSucceeded && !latest.safeToRetry) {
       // An ambiguous external effect cannot be replayed via the latest-request back door.
@@ -576,7 +642,8 @@ export class SqlQueueStore {
   private async syncItem(jobId: string, tx: Executor) {
     const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
       where j.id = ${jobId}::uuid and i."jobId" = j.id returning i."runId"`.execute(tx);
-    return rows.map((item) => item.runId);
+    const mirrored = await mirrorSelectionLineage(tx, { jobIds: [jobId] });
+    return [...rows, ...mirrored].map((item) => item.runId);
   }
 
   private async settleDependencies(tx: Executor, parentIds: string[]) {
@@ -674,11 +741,15 @@ export class SqlQueueStore {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
-      const { rows: cancelledLatest } = await sql<{ runId: string; rootItemKey: string | null }>`
+      const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
-        and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
-        and j."latestPending" ->> 'name' = i.stage) returning i."runId", i."rootItemKey"`.execute(tx);
+        and j."latestPending" ->> 'name' = i.stage and (
+          (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
+          or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
+            as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
+          returning i."runId", i."rootItemKey", i."itemKey", i.stage`.execute(tx);
+      cancelledLatest.push(...(await mirrorSelectionLineage(tx, { items: cancelledLatest })));
       const affectedRuns = cancelledLatest.map((item) => item.runId);
       if (states.includes('pending') || states.includes('waiting')) {
         const { rows: cancelled } = await sql<{
@@ -741,24 +812,32 @@ export class SqlQueueStore {
  * Operation-owned jobs are never resumed here; the media-operation dispatcher owns their retry.
  */
 export async function resetQueueAfterRestore(db: Executor) {
-  await sql`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
+  const { rows: deferred } =
+    await sql<LineageItemIdentity>`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
     select 1 from job j where (j.state = 'active' or (not j."safeToRetry" and j.state in ('pending','waiting')))
-    and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
-    and j."latestPending" ->> 'name' = i.stage)`.execute(db);
+    and j."latestPending" ->> 'name' = i.stage and (
+      (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
+      or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
+        as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
+    returning i."runId", i."itemKey", i.stage`.execute(db);
   await sql`update job_attempt a set outcome = case when j."safeToRetry" and not (j.data ? 'operationId')
       and j.attempt < j."retryBaseAttempt" + 2 then 'restored_retry' else 'restored_needs_attention' end,
       "finishedAt" = now() from job j where a."jobId" = j.id and a."finishedAt" is null`.execute(db);
-  await sql`update job set state = case when "safeToRetry" and not (data ? 'operationId')
+  const { rows: restored } = await sql<{
+    id: string;
+  }>`update job set state = case when "safeToRetry" and not (data ? 'operationId')
         and attempt < "retryBaseAttempt" + 2 then 'pending' else 'needs_attention' end,
     token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null,
     "availableAt" = now() + interval '30 seconds', "latestPending" = null,
     "finishedAt" = case when "safeToRetry" and not (data ? 'operationId') and attempt < "retryBaseAttempt" + 2 then null else now() end,
     error = 'Restore revoked the previous execution claim',
     data = case when sensitive then '{}'::jsonb else data end
-    where state = 'active' or ((not "safeToRetry" or data ? 'operationId') and state in ('pending','waiting'))`.execute(
+    where state = 'active' or ((not "safeToRetry" or data ? 'operationId') and state in ('pending','waiting')) returning id`.execute(
     db,
   );
   await sql`update job_run_item i set state = j.state from job j where i."jobId" = j.id`.execute(db);
+  await mirrorSelectionLineage(db, { items: deferred });
+  await mirrorSelectionLineage(db, { jobIds: restored.map(({ id }) => id) });
   const { rows: stoppedProducers } = await sql<{
     producerId: string;
   }>`select distinct s."producerId" from job_selection s
