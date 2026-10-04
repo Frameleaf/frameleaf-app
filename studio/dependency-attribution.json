@@ -632,7 +632,36 @@
           "url": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/README.md"
         }
       ],
-      "files": [],
+      "files": [
+        {
+          "path": "config.json",
+          "sha256": "46aeea0a406afbeb563fc8e59ca10609203df4299af6a83f73752fef369efd2d"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce"
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d"
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "f5c67e5a4f7102f8cb4d058bc95da276bbc19eeec997267c3bb0f25ef68facd1"
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566"
+        },
+        {
+          "path": "onnx/encoder_model.onnx",
+          "sha256": "8944ec04111e040305cdb07ac97f50363024255bf0bdc67ab93ecb76645f31ae"
+        },
+        {
+          "path": "onnx/decoder_model_merged_q4.onnx",
+          "sha256": "a3308674834b99123b32c33e3577b09b6547df8c3cea16b5f1d0c36ebbd02b1f"
+        }
+      ],
       "id": "model:onnx-community/whisper-tiny_timestamped",
       "kind": "model",
       "licenseDeclared": null,
