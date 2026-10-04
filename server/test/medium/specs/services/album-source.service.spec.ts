@@ -15,6 +15,12 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AlbumService } from 'src/services/album.service.js';
+import { BaseService } from 'src/services/base.service.js';
+import {
+  up as addMembershipGeneration,
+  down as removeMembershipGeneration,
+} from 'src/fork-schema/migrations/0000000000223-AlbumSourceMembershipGeneration.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -65,6 +71,21 @@ const membersOf = async (db: Kysely<DB>, albumId: string) =>
   (await db.selectFrom('album_asset').select('assetId').where('albumId', '=', albumId).execute())
     .map(({ assetId }) => assetId)
     .toSorted();
+
+const barrier = () => {
+  let open!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { reached, open };
+};
+
+const claimsOf = async (db: Kysely<DB>, linkId: string) =>
+  (
+    await sql<{ assetId: string; membershipUpdateId: string | null }>`
+      SELECT "assetId", "membershipUpdateId" FROM immich_fork.album_source_asset WHERE "linkId" = ${linkId}::uuid
+    `.execute(db)
+  ).rows;
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
@@ -192,6 +213,254 @@ describe(AlbumSourceService.name, () => {
       expect(assets.every(({ deletedAt }) => deletedAt === null)).toBe(true);
     });
 
+    it('ordinary remove and manual re-add end the source claim', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('ordinary-readd', 'Manual again')] })).links[0];
+      const albums = BaseService.create(AlbumService, sut);
+      await sut.addAssets(auth, link.id, { ids: [asset.id] });
+      await expect(albums.removeAssets(auth, link.albumId, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: true },
+      ]);
+      expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+      await albums.addAssets(auth, link.albumId, { ids: [asset.id] });
+      await expect(sut.addAssets(auth, link.id, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: false, error: 'duplicate' },
+      ]);
+      await expect(sut.removeAssets(auth, link.id, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: false, error: 'not_found' },
+      ]);
+      expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
+    });
+
+    it('does not adopt a replacement made by a writer that bypasses ordinary album service', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('direct-replace', 'Generation')] })).links[0];
+      await sut.addAssets(auth, link.id, { ids: [asset.id] });
+      const [claim] = await claimsOf(defaultDatabase, link.id);
+      // Smart-album/classification writers use this direct public membership seam.
+      await defaultDatabase.transaction().execute(async (tx) => {
+        await tx
+          .deleteFrom('album_asset')
+          .where('albumId', '=', link.albumId)
+          .where('assetId', '=', asset.id)
+          .execute();
+        await tx.insertInto('album_asset').values({ albumId: link.albumId, assetId: asset.id }).execute();
+      });
+      const current = await defaultDatabase
+        .selectFrom('album_asset')
+        .select('updateId')
+        .where('albumId', '=', link.albumId)
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(current.updateId).not.toBe(claim.membershipUpdateId);
+      await expect(sut.addAssets(auth, link.id, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: false, error: 'duplicate' },
+      ]);
+      await sut.removeAssets(auth, link.id, { ids: [asset.id] });
+      expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
+      expect((await claimsOf(defaultDatabase, link.id))[0].membershipUpdateId).toBe(claim.membershipUpdateId);
+    });
+
+    it('rolls back actual membership and provenance when recording fails, without emitting committed events', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('record-rollback', 'Rollback')] })).links[0];
+      const repository = ctx.get(AlbumSourceRepository);
+      const record = repository.record.bind(repository);
+      const injected = vi.spyOn(repository, 'record').mockImplementationOnce(async (tx, linkId, ids) => {
+        await record(tx, linkId, ids);
+        throw new Error('injected provenance failure after write');
+      });
+      ctx.getMock(EventRepository).emit.mockClear();
+      ctx.getMock(JobRepository).queue.mockClear();
+      try {
+        await expect(sut.addAssets(auth, link.id, { ids: [asset.id] })).rejects.toThrow('injected provenance failure');
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+        expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+      } finally {
+        injected.mockRestore();
+      }
+    });
+
+    it('serializes unlink behind an in-flight add and rolls the entire failed add back', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('unlink-rollback', 'Unlink rollback')] })).links[0];
+      const recording = barrier();
+      const release = barrier();
+      const unlinkEntered = barrier();
+      const repository = ctx.get(AlbumSourceRepository);
+      const record = repository.record.bind(repository);
+      const injected = vi.spyOn(repository, 'record').mockImplementationOnce(async (tx, linkId, ids) => {
+        await record(tx, linkId, ids);
+        recording.open();
+        await release.reached;
+        throw new Error('barrier provenance failure');
+      });
+      const albums = ctx.get(AlbumRepository);
+      const write = albums.withMembershipWrite.bind(albums);
+      let calls = 0;
+      const observed = vi.spyOn(albums, 'withMembershipWrite').mockImplementation((ids, fn) => {
+        if (++calls === 2) {
+          unlinkEntered.open();
+        }
+        return write(ids, fn);
+      });
+      const adding = sut.addAssets(auth, link.id, { ids: [asset.id] });
+      const rejection = expect(adding).rejects.toThrow('barrier provenance failure');
+      let unlinking: Promise<void> | undefined;
+      try {
+        await recording.reached;
+        let unlinked = false;
+        unlinking = sut.delete(auth, link.id).then(() => {
+          unlinked = true;
+        });
+        await unlinkEntered.reached;
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([]);
+        expect(unlinked).toBe(false);
+        release.open();
+        await rejection;
+        await unlinking;
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+        await expect(sut.getAll(auth)).resolves.toEqual([]);
+        const persisted = await defaultDatabase
+          .selectFrom('asset')
+          .select('deletedAt')
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        expect(persisted).toMatchObject({ deletedAt: null });
+      } finally {
+        release.open();
+        await Promise.allSettled([adding, ...(unlinking ? [unlinking] : [])]);
+        injected.mockRestore();
+        observed.mockRestore();
+      }
+    });
+
+    it('refuses an add whose link was unlinked after its initial read but before the membership fence', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('unlink-first', 'Fresh link')] })).links[0];
+      const entered = barrier();
+      const release = barrier();
+      const albums = ctx.get(AlbumRepository);
+      const write = albums.withMembershipWrite.bind(albums);
+      const paused = vi.spyOn(albums, 'withMembershipWrite').mockImplementationOnce(async (ids, fn) => {
+        entered.open();
+        await release.reached;
+        return write(ids, fn);
+      });
+      const adding = sut.addAssets(auth, link.id, { ids: [asset.id] });
+      const rejection = expect(adding).rejects.toBeInstanceOf(NotFoundException);
+      try {
+        await entered.reached;
+        await sut.delete(auth, link.id);
+        release.open();
+        await rejection;
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+      } finally {
+        release.open();
+        await Promise.allSettled([adding]);
+        paused.mockRestore();
+      }
+    });
+
+    it('holds the actual membership row against a direct concurrent delete and manual replacement', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('row-fence', 'Row fence')] })).links[0];
+      await sut.addAssets(auth, link.id, { ids: [asset.id] });
+      const locked = barrier();
+      const release = barrier();
+      const replacing = barrier();
+      const repository = ctx.get(AlbumSourceRepository);
+      const getRecorded = repository.getRecordedAssetIds.bind(repository);
+      const paused = vi
+        .spyOn(repository, 'getRecordedAssetIds')
+        .mockImplementationOnce(async (tx, albumId, ids, linkId) => {
+          const result = await getRecorded(tx, albumId, ids, linkId);
+          locked.open();
+          await release.reached;
+          return result;
+        });
+      const removing = sut.removeAssets(auth, link.id, { ids: [asset.id] });
+      let replacement: Promise<void> | undefined;
+      try {
+        await locked.reached;
+        let replaced = false;
+        replacement = defaultDatabase.transaction().execute(async (tx) => {
+          replacing.open();
+          await tx
+          .deleteFrom('album_asset')
+          .where('albumId', '=', link.albumId)
+          .where('assetId', '=', asset.id)
+          .execute();
+          await tx.insertInto('album_asset').values({ albumId: link.albumId, assetId: asset.id }).execute();
+          replaced = true;
+        });
+        await replacing.reached;
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
+        expect(replaced).toBe(false);
+        release.open();
+        await expect(removing).resolves.toEqual([
+          { id: asset.id, success: true },
+        ]);
+        await replacement;
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+      } finally {
+        release.open();
+        await Promise.allSettled([removing, ...(replacement ? [replacement] : [])]);
+        paused.mockRestore();
+      }
+    });
+
+    it('rolls back actual removal and the source claim when the membership delete fails after writing', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('remove-rollback', 'Remove rollback')] })).links[0];
+      await sut.addAssets(auth, link.id, { ids: [asset.id] });
+      const before = await claimsOf(defaultDatabase, link.id);
+      const remove = AlbumRepository.prototype.removeAssetIds;
+      const injected = vi
+        .spyOn(AlbumRepository.prototype, 'removeAssetIds')
+        .mockImplementationOnce(async function (this: AlbumRepository, albumId, ids) {
+          await remove.call(this, albumId, ids);
+          throw new Error('injected membership deletion failure');
+        });
+      ctx.getMock(EventRepository).emit.mockClear();
+      try {
+        await expect(sut.removeAssets(auth, link.id, { ids: [asset.id] })).rejects.toThrow(
+          'injected membership deletion failure',
+        );
+        expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual(before);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      } finally {
+        injected.mockRestore();
+      }
+    });
+
     it('keeps a membership another link still records', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -236,6 +505,63 @@ describe(AlbumSourceService.name, () => {
       });
     });
 
+    it('preserves an ordinary manual rename committed between initial link read and the phone fence', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const link = (await sut.resolve(auth, { sources: [source('rename-barrier', 'Before barrier')] })).links[0];
+      const entered = barrier();
+      const release = barrier();
+      const repository = ctx.get(AlbumSourceRepository);
+      const withLocks = repository.withLocks.bind(repository);
+      const paused = vi.spyOn(repository, 'withLocks').mockImplementationOnce(async (keys, write) => {
+        entered.open();
+        await release.reached;
+        return withLocks(keys, write);
+      });
+      const updating = sut.update(auth, link.id, { name: 'Phone name' });
+      try {
+        await entered.reached;
+        await BaseService.create(AlbumService, sut).update(auth, link.albumId, { albumName: 'Manual name' });
+        release.open();
+        await expect(updating).resolves.toMatchObject({
+          renamed: false,
+          albumName: 'Manual name',
+          lastSourceName: 'Phone name',
+        });
+        expect((await albumsOf(defaultDatabase, user.id)).find(({ id }) => id === link.albumId)?.albumName).toBe(
+          'Manual name',
+        );
+      } finally {
+        release.open();
+        await Promise.allSettled([updating]);
+        paused.mockRestore();
+      }
+    });
+
+    it('rolls a followed album rename back when the source link write fails', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const link = (await sut.resolve(auth, { sources: [source('rename-rollback', 'Before rollback')] })).links[0];
+      const repository = ctx.get(AlbumSourceRepository);
+      const update = repository.update.bind(repository);
+      const injected = vi.spyOn(repository, 'update').mockImplementationOnce(async (tx, id, values) => {
+        await update(tx, id, values);
+        throw new Error('injected source name failure');
+      });
+      ctx.getMock(EventRepository).emit.mockClear();
+      try {
+        await expect(sut.update(auth, link.id, { name: 'Phone name' })).rejects.toThrow('injected source name failure');
+        await expect(sut.getAll(auth)).resolves.toEqual([
+          expect.objectContaining({ albumName: 'Before rollback', lastSourceName: 'Before rollback' }),
+        ]);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      } finally {
+        injected.mockRestore();
+      }
+    });
+
     it('re-keys a link, refusing a source another link holds', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -259,6 +585,31 @@ describe(AlbumSourceService.name, () => {
       );
       const again = await sut.resolve(auth, { sources: [folder('3:DCIM/New', 'New')] });
       expect(again.links[0]).toMatchObject({ outcome: 'existing', id: links[0].id });
+    });
+  });
+
+  describe('migration 223', () => {
+    it('retains unknown migration-222 claims without inventing authority over current memberships', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const link = (await sut.resolve(auth, { sources: [source('legacy-claim', 'Legacy claim')] })).links[0];
+      await BaseService.create(AlbumService, sut).addAssets(auth, link.albumId, { ids: [asset.id] });
+      await defaultDatabase.transaction().execute(async (tx) => {
+        await removeMembershipGeneration(tx);
+        await sql`
+          INSERT INTO immich_fork.album_source_asset ("linkId", "assetId") VALUES (${link.id}::uuid, ${asset.id}::uuid)
+        `.execute(tx);
+        await addMembershipGeneration(tx);
+        const repository = new AlbumSourceRepository(tx);
+        expect(await claimsOf(tx, link.id)).toEqual([{ assetId: asset.id, membershipUpdateId: null }]);
+        expect(await repository.getRecordedAssetIds(tx, link.albumId, [asset.id], link.id)).toEqual(new Set());
+      });
+      await expect(sut.removeAssets(auth, link.id, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: false, error: 'not_found' },
+      ]);
+      expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
     });
   });
 

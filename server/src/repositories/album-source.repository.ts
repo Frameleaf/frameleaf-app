@@ -150,11 +150,15 @@ export class AlbumSourceRepository {
       return new Set();
     }
     const { rows } = await sql<{ assetId: string }>`
-      SELECT DISTINCT provenance."assetId"
+      SELECT provenance."assetId"
       FROM immich_fork.album_source_asset provenance
       JOIN immich_fork.album_source_link link ON link.id = provenance."linkId"
+      JOIN public.album_asset member ON member."albumId" = link."albumId"
+        AND member."assetId" = provenance."assetId" AND member."updateId" = provenance."membershipUpdateId"
       WHERE link."albumId" = ${albumId}::uuid AND provenance."assetId" = ANY(${assetIds}::uuid[])
         ${linkId ? sql`AND provenance."linkId" = ${linkId}::uuid` : sql``}
+      ORDER BY member."assetId"
+      FOR UPDATE OF member
     `.execute(db ?? this.db);
     return new Set(rows.map(({ assetId }) => assetId));
   }
@@ -164,9 +168,15 @@ export class AlbumSourceRepository {
       return;
     }
     await sql`
-      INSERT INTO immich_fork.album_source_asset ("linkId", "assetId")
-      SELECT ${linkId}::uuid, unnest(${assetIds}::uuid[])
-      ON CONFLICT ("linkId", "assetId") DO NOTHING
+      INSERT INTO immich_fork.album_source_asset ("linkId", "assetId", "membershipUpdateId")
+      SELECT link.id, member."assetId", member."updateId"
+      FROM immich_fork.album_source_link link
+      JOIN public.album_asset member ON member."albumId" = link."albumId"
+      WHERE link.id = ${linkId}::uuid AND member."assetId" = ANY(${assetIds}::uuid[])
+      ORDER BY member."assetId"
+      FOR UPDATE OF member
+      ON CONFLICT ("linkId", "assetId") DO UPDATE
+        SET "membershipUpdateId" = excluded."membershipUpdateId", "addedAt" = clock_timestamp()
     `.execute(db ?? this.db);
   }
 
