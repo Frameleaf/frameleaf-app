@@ -638,10 +638,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
     case AdminAuditRepository:
-    case AlbumRepository:
     case AlbumUserRepository:
-    case AssetRepository:
-    case AssetJobRepository:
     case ConfigRepository:
     case CryptoRepository:
     case AssetChecksumRepository:
@@ -649,19 +646,29 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case MemoryRepository:
     case IntegrityRepository:
     case NotificationRepository:
-    case OcrRepository:
     case PartnerRepository:
     case PartnerOriginRepository:
-    case PersonRepository:
     case SessionRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
-    case SystemMetadataRepository:
-    case UserRepository:
     case VersionHistoryRepository:
-    case TagRepository:
     case WorkflowRepository: {
       return automock(key);
+    }
+
+    // Supply inert connection objects only to constructors that wrap their database dependency.
+    case AlbumRepository:
+    case AssetRepository:
+    case AssetJobRepository:
+    case OcrRepository:
+    case PersonRepository:
+    case SystemMetadataRepository:
+    case UserRepository: {
+      return automock(key, { args: [{}] });
+    }
+
+    case TagRepository: {
+      return automock(TagRepository, { args: [{}, { setContext: () => {} }] });
     }
 
     case MapRepository: {
@@ -670,7 +677,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case DatabaseRepository: {
       return automock(DatabaseRepository, {
-        args: [undefined, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
+        args: [{}, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
       });
     }
 

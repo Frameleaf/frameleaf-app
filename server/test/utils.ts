@@ -349,8 +349,9 @@ export const getMocks = () => {
   const loggerMock = { setContext: () => {} };
   const configMock = { getEnv: () => ({}) };
 
-  // eslint-disable-next-line no-sparse-arrays
-  const databaseMock = automock(DatabaseRepository, { args: [, loggerMock], strict: false });
+  // Constructors may wrap the connection, but mocked methods must never execute database work.
+  const database = {};
+  const databaseMock = automock(DatabaseRepository, { args: [database, loggerMock, configMock], strict: false });
 
   databaseMock.withLock.mockImplementation((_type, fn) => fn());
   databaseMock.isSchemaReady.mockResolvedValue(true);
@@ -372,21 +373,21 @@ export const getMocks = () => {
     activity: automock(ActivityRepository),
     // recording an administrator's change is incidental to most tests (FL-76)
     adminAudit: automock(AdminAuditRepository, { strict: false }),
-    album: automock(AlbumRepository, { strict: false }),
+    album: automock(AlbumRepository, { args: [database], strict: false }),
     albumUser: automock(AlbumUserRepository),
     asset: newAssetRepositoryMock(),
-    assetDevelop: automock(AssetDevelopRepository, { strict: false }),
-    assetEdit: automock(AssetEditRepository),
+    assetDevelop: automock(AssetDevelopRepository, { args: [database], strict: false }),
+    assetEdit: automock(AssetEditRepository, { args: [database] }),
     assetFile: automock(AssetFileRepository),
-    assetJob: automock(AssetJobRepository),
+    assetJob: automock(AssetJobRepository, { args: [database] }),
     assetRestoration: automock(AssetRestorationRepository),
-    classification: automock(ClassificationRepository, { strict: false }),
+    classification: automock(ClassificationRepository, { args: [database], strict: false }),
     clusterGroup: automock(ClusterGroupRepository),
     app: automock(AppRepository, { strict: false }),
     config: newConfigRepositoryMock(),
     database: databaseMock,
     downloadRepository: automock(DownloadRepository, { strict: false }),
-    duplicateRepository: automock(DuplicateRepository),
+    duplicateRepository: automock(DuplicateRepository, { args: [database] }),
     email: automock(EmailRepository, { args: [loggerMock] }),
     // eslint-disable-next-line no-sparse-arrays
     event: automock(EventRepository, { args: [, , loggerMock], strict: false }),
@@ -404,11 +405,11 @@ export const getMocks = () => {
     mlDestination: automock(MlDestinationRepository),
     move: automock(MoveRepository, { strict: false }),
     notification: automock(NotificationRepository),
-    ocr: automock(OcrRepository, { strict: false }),
+    ocr: automock(OcrRepository, { args: [database], strict: false }),
     oauth: automock(OAuthRepository, { args: [loggerMock] }),
     partner: automock(PartnerRepository, { strict: false }),
     partnerOrigin: automock(PartnerOriginRepository, { strict: false }),
-    person: automock(PersonRepository, { strict: false }),
+    person: automock(PersonRepository, { args: [database], strict: false }),
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
     physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),
     plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
@@ -421,10 +422,10 @@ export const getMocks = () => {
     frameleafAccount: automock(FrameleafAccountRepository, { strict: false }),
     hardwareProbe: automock(HardwareProbeRepository, { strict: false }),
     instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
-    search: automock(SearchRepository, { strict: false }),
+    search: automock(SearchRepository, { args: [database], strict: false }),
     // eslint-disable-next-line no-sparse-arrays
     serverInfo: automock(ServerInfoRepository, { args: [, loggerMock], strict: false }),
-    smartAlbum: automock(SmartAlbumRepository, { strict: false }),
+    smartAlbum: automock(SmartAlbumRepository, { args: [database], strict: false }),
     session: automock(SessionRepository),
     sharedLink: automock(SharedLinkRepository),
     sharedLinkAsset: automock(SharedLinkAssetRepository),
@@ -436,10 +437,9 @@ export const getMocks = () => {
     syncCheckpoint: automock(SyncCheckpointRepository),
     systemMetadata: newSystemMetadataRepositoryMock(),
     // systemMetadata: automock(SystemMetadataRepository, { strict: false }),
-    // eslint-disable-next-line no-sparse-arrays
-    tag: automock(TagRepository, { args: [, loggerMock], strict: false }),
+    tag: automock(TagRepository, { args: [database, loggerMock], strict: false }),
     trash: automock(TrashRepository),
-    user: automock(UserRepository, { strict: false }),
+    user: automock(UserRepository, { args: [database], strict: false }),
     versionHistory: automock(VersionHistoryRepository),
     videoStream: automock(VideoStreamRepository, { strict: false }),
     view: automock(ViewRepository),
