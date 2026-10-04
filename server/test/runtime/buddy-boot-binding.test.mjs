@@ -73,20 +73,25 @@ const runStartup = async (root, identityDir, binding, port, options = {}) => {
     FRAMELEAF_BOOT_TEST_UNDECLARED: undeclared,
     FRAMELEAF_BOOT_TEST_RESULT_FILE: resultFile,
     FRAMELEAF_BOOT_TEST_CONFIG_URL: pathToFileURL(join(server, 'dist/repositories/config.repository.js')).href,
-    FRAMELEAF_BOOT_TEST_EXPECTED: JSON.stringify({ port, identityDir, edgeSecret, redisPassword, undeclared, dbPasswordFile, redisPasswordFile, docs: options.docs }),
+    FRAMELEAF_BOOT_TEST_EXPECTED: JSON.stringify({
+      port,
+      identityDir,
+      edgeSecret,
+      redisPassword,
+      undeclared,
+      dbPasswordFile,
+      redisPasswordFile,
+      docs: options.docs,
+    }),
     ...(binding ? { FRAMELEAF_BUDDY_BOOT_BINDING_FILE: binding } : {}),
     ...options.env,
   };
-  const child = spawn(
-    process.execPath,
-    ['--import', join(root, 'observer.mjs'), join(server, 'dist/main.js')],
-    {
-      cwd: server,
-      env,
-      // Never forward application errors, configuration values or private paths.
-      stdio: 'ignore',
-    },
-  );
+  const child = spawn(process.execPath, ['--import', join(root, 'observer.mjs'), join(server, 'dist/main.js')], {
+    cwd: server,
+    env,
+    // Never forward application errors, configuration values or private paths.
+    stdio: 'ignore',
+  });
   const outcome = await new Promise((resolve) => {
     const timeout = setTimeout(() => {
       child.kill('SIGKILL');
@@ -147,11 +152,9 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     for (const directory of [identityDir, join(root, 'media'), recoveryDirectory, join(recoveryDirectory, 'objects')])
       await mkdir(directory, { recursive: true, mode: 0o700 });
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    await writeFile(
-      join(identityDir, 'instance-key.pem'),
-      privateKey.export({ type: 'pkcs8', format: 'pem' }),
-      { mode: 0o600 },
-    );
+    await writeFile(join(identityDir, 'instance-key.pem'), privateKey.export({ type: 'pkcs8', format: 'pem' }), {
+      mode: 0o600,
+    });
     const jwk = publicKey.export({ format: 'jwk' });
     const replacementIdentity = createHash('sha256')
       .update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x }))
@@ -247,7 +250,8 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     await runStartup(root, identityDir, binding, 2391);
     const originalBinding = await readFile(binding);
     const originalArtifact = await readFile(join(recoveryDirectory, 'boot-configuration.json'));
-    const writeBinding = async (changes) => writeFile(binding, JSON.stringify({ ...JSON.parse(originalBinding), ...changes }), { mode: 0o600 });
+    const writeBinding = async (changes) =>
+      writeFile(binding, JSON.stringify({ ...JSON.parse(originalBinding), ...changes }), { mode: 0o600 });
     for (const changes of [
       { replacementIdentity: 'A'.repeat(43) },
       { snapshotId: randomUUID() },
@@ -280,7 +284,10 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     await chmod(binding, 0o644);
     await runStartup(root, identityDir, binding, 2391, { refuse: true });
     await chmod(binding, 0o600);
-    await writeFile(join(recoveryDirectory, 'boot-configuration.json'), Buffer.concat([originalArtifact, Buffer.from(' ')]));
+    await writeFile(
+      join(recoveryDirectory, 'boot-configuration.json'),
+      Buffer.concat([originalArtifact, Buffer.from(' ')]),
+    );
     await runStartup(root, identityDir, binding, 2391, { refuse: true });
     await rm(join(recoveryDirectory, 'boot-configuration.json'));
     const foreignArtifact = join(root, 'foreign-artifact.json');
@@ -293,13 +300,23 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     const markerDirectory = join(identityDir, 'buddy');
     await mkdir(markerDirectory, { mode: 0o700 });
     const marker = join(markerDirectory, 'recovery-active.json');
-    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }), { mode: 0o600 });
+    await writeFile(
+      marker,
+      JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }),
+      { mode: 0o600 },
+    );
     await runStartup(root, identityDir, binding, 2283);
-    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: randomUUID() } }));
+    await writeFile(
+      marker,
+      JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: randomUUID() } }),
+    );
     await runStartup(root, identityDir, binding, 2391, { refuse: true });
     await writeFile(marker, '{');
     await runStartup(root, identityDir, binding, 2391, { refuse: true });
-    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }));
+    await writeFile(
+      marker,
+      JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }),
+    );
 
     // Real durable request finalization, including complete retry and lost fence.
     const { finalizeBuddyBootBinding } = await import('../../dist/utils/buddy-boot-binding.js');
@@ -314,21 +331,31 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
       await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {}));
       assert.equal(JSON.parse(await readFile(binding)).state, 'request');
       await files.state('complete');
-      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => { throw new Error('synthetic fence lost'); }));
+      await assert.rejects(
+        finalizeBuddyBootBinding(root, recoveryId, async () => {
+          throw new Error('synthetic fence lost');
+        }),
+      );
       assert.equal(JSON.parse(await readFile(binding)).state, 'request');
       let beforeRename = 0;
-      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {
-        if (++beforeRename === 3) throw new Error('synthetic fence lost before durable readiness');
-      }));
+      await assert.rejects(
+        finalizeBuddyBootBinding(root, recoveryId, async () => {
+          if (++beforeRename === 3) throw new Error('synthetic fence lost before durable readiness');
+        }),
+      );
       assert.equal(JSON.parse(await readFile(binding)).state, 'request');
       let finalizationFences = 0;
-      await finalizeBuddyBootBinding(root, recoveryId, async () => { finalizationFences++; });
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {
+        finalizationFences++;
+      });
       assert(finalizationFences >= 3, 'Durable readiness must assert its live maintenance fence');
       await writeBinding({ state: 'request' });
       let afterRename = 0;
-      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {
-        if (++afterRename === 4) throw new Error('synthetic fence lost after durable readiness');
-      }));
+      await assert.rejects(
+        finalizeBuddyBootBinding(root, recoveryId, async () => {
+          if (++afterRename === 4) throw new Error('synthetic fence lost after durable readiness');
+        }),
+      );
       assert.equal(JSON.parse(await readFile(binding)).state, 'ready');
       await runStartup(root, identityDir, binding, 2283);
       const ready = await readFile(binding);
@@ -354,7 +381,12 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
       await files.publish(await readBuddyRecovery(root, recoveryId), [], [file.path]);
       await files.verify(plan, [], [file.path]);
       await files.state('complete');
-      await writeBinding({ mode, environmentKeys, artifactDigest: digest(await readFile(join(recoveryDirectory, 'boot-configuration.json'))), preparedDigest: digest(bytes) });
+      await writeBinding({
+        mode,
+        environmentKeys,
+        artifactDigest: digest(await readFile(join(recoveryDirectory, 'boot-configuration.json'))),
+        preparedDigest: digest(bytes),
+      });
     };
     await updateBootFixture('keep', configuration.entries);
     await runStartup(root, identityDir, binding, 2283);
@@ -362,18 +394,36 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     await runStartup(root, identityDir, binding, 2391, { env: { FRAMELEAF_PORT: undefined } });
     await updateBootFixture('replace', configuration.entries);
     await runStartup(root, identityDir, binding, 2391, { env: { FRAMELEAF_PORT: undefined, IMMICH_PORT: '2284' } });
-    await runStartup(root, identityDir, binding, 2391, { refuse: true, env: { FRAMELEAF_PORT: '2283', IMMICH_PORT: '2284' } });
-    await updateBootFixture('replace', [{ key: 'FRAMELEAF_PORT', state: 'unset' }, ...configuration.entries.filter((entry) => entry.key !== 'FRAMELEAF_PORT')]);
+    await runStartup(root, identityDir, binding, 2391, {
+      refuse: true,
+      env: { FRAMELEAF_PORT: '2283', IMMICH_PORT: '2284' },
+    });
+    await updateBootFixture('replace', [
+      { key: 'FRAMELEAF_PORT', state: 'unset' },
+      ...configuration.entries.filter((entry) => entry.key !== 'FRAMELEAF_PORT'),
+    ]);
     await runStartup(root, identityDir, binding, 2283, { env: { FRAMELEAF_PORT: undefined, IMMICH_PORT: '2284' } });
     const restoredDocs = 'https://restored.example.test/docs';
     const localDocs = 'https://replacement.example.test/docs';
     const helpEntries = [...configuration.entries, { key: 'FRAMELEAF_DOCS_URL', state: 'value', value: restoredDocs }];
     await updateBootFixture('keep', helpEntries, ['FRAMELEAF_PORT', 'FRAMELEAF_DOCS_URL']);
-    await runStartup(root, identityDir, binding, 2283, { docs: localDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs } });
-    await runStartup(root, identityDir, binding, 2283, { docs: restoredDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'invalid-legacy-url' } });
-    await runStartup(root, identityDir, binding, 2283, { docs: localDocs, env: { FRAMELEAF_DOCS_URL: localDocs, IMMICH_THIRD_PARTY_DOCUMENTATION_URL: restoredDocs } });
+    await runStartup(root, identityDir, binding, 2283, {
+      docs: localDocs,
+      env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs },
+    });
+    await runStartup(root, identityDir, binding, 2283, {
+      docs: restoredDocs,
+      env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'invalid-legacy-url' },
+    });
+    await runStartup(root, identityDir, binding, 2283, {
+      docs: localDocs,
+      env: { FRAMELEAF_DOCS_URL: localDocs, IMMICH_THIRD_PARTY_DOCUMENTATION_URL: restoredDocs },
+    });
     await updateBootFixture('replace', helpEntries, ['FRAMELEAF_PORT', 'FRAMELEAF_DOCS_URL']);
-    await runStartup(root, identityDir, binding, 2391, { docs: restoredDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs } });
+    await runStartup(root, identityDir, binding, 2391, {
+      docs: restoredDocs,
+      env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs },
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

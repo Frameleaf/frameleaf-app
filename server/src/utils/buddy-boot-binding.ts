@@ -16,9 +16,17 @@ import { parseHelpLinks } from './app-releases.ts';
 // identity/link/entitlement, mounts, feature enabling and dependency service inputs
 // need their own explicit replacement-local adapter and are never inferred here.
 const applicationKeys = new Set([
-  'FRAMELEAF_PORT', 'FRAMELEAF_HOST', 'FRAMELEAF_LOG_LEVEL', 'FRAMELEAF_LOG_FORMAT',
-  'FRAMELEAF_SHUTDOWN_GRACE_SECONDS', 'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
-  'FRAMELEAF_DOCS_URL', 'FRAMELEAF_SUPPORT_URL', 'FRAMELEAF_BUG_FEATURE_URL', 'FRAMELEAF_SOURCE_URL', 'NO_COLOR',
+  'FRAMELEAF_PORT',
+  'FRAMELEAF_HOST',
+  'FRAMELEAF_LOG_LEVEL',
+  'FRAMELEAF_LOG_FORMAT',
+  'FRAMELEAF_SHUTDOWN_GRACE_SECONDS',
+  'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
+  'FRAMELEAF_DOCS_URL',
+  'FRAMELEAF_SUPPORT_URL',
+  'FRAMELEAF_BUG_FEATURE_URL',
+  'FRAMELEAF_SOURCE_URL',
+  'NO_COLOR',
 ]);
 const bindingSchema = z.strictObject({
   version: z.literal(1),
@@ -29,7 +37,9 @@ const bindingSchema = z.strictObject({
   replacementIdentity: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   scope: z.enum(['server', 'settings']),
   mode: z.enum(['keep', 'replace']),
-  environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys.refine((keys) => keys.every((key) => applicationKeys.has(key))),
+  environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys.refine((keys) =>
+    keys.every((key) => applicationKeys.has(key)),
+  ),
   recoveryDirectory: z.string(),
   artifactDigest: z.string().regex(/^[\da-f]{64}$/),
   preparedDigest: z.string().regex(/^[\da-f]{64}$/),
@@ -44,16 +54,29 @@ const readPrivateBootFile = async (path: string, limit = 1024 * 1024): Promise<B
   for (let ancestor = dirname(path); ; ancestor = dirname(ancestor)) {
     const metadata = await lstat(ancestor);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw refusal();
-    if (ancestor === dirname(path) && ((metadata.mode & 0o777) !== 0o700 || metadata.uid !== process.getuid?.())) throw refusal();
+    if (ancestor === dirname(path) && ((metadata.mode & 0o777) !== 0o700 || metadata.uid !== process.getuid?.()))
+      throw refusal();
     if (dirname(ancestor) === ancestor) break;
   }
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || (before.mode & 0o777n) !== 0o600n || before.uid !== BigInt(process.getuid?.() ?? -1) || before.size > BigInt(limit)) throw refusal();
+    if (
+      !before.isFile() ||
+      (before.mode & 0o777n) !== 0o600n ||
+      before.uid !== BigInt(process.getuid?.() ?? -1) ||
+      before.size > BigInt(limit)
+    )
+      throw refusal();
     const bytes = await file.readFile();
     const after = await file.stat({ bigint: true });
-    if (before.ino !== after.ino || before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw refusal();
+    if (
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    )
+      throw refusal();
     return bytes;
   } finally {
     await file.close();
@@ -61,10 +84,14 @@ const readPrivateBootFile = async (path: string, limit = 1024 * 1024): Promise<B
 };
 
 const readBootBinding = async (path: string, bytes?: Buffer): Promise<BootBinding> => {
-  const result = bindingSchema.safeParse(JSON.parse((bytes ?? await readPrivateBootFile(path)).toString()));
+  const result = bindingSchema.safeParse(JSON.parse((bytes ?? (await readPrivateBootFile(path))).toString()));
   if (!result.success) throw refusal();
   const binding = result.data;
-  if (basename(binding.recoveryDirectory) !== binding.recoveryId || basename(dirname(binding.recoveryDirectory)) !== 'recovery') throw refusal();
+  if (
+    basename(binding.recoveryDirectory) !== binding.recoveryId ||
+    basename(dirname(binding.recoveryDirectory)) !== 'recovery'
+  )
+    throw refusal();
   return binding;
 };
 
@@ -72,19 +99,29 @@ const replacementBootIdentity = async (bindingFile: string, env: NodeJS.ProcessE
   const { env: local } = resolveEnvAliases(env);
   const directories = local.FRAMELEAF_IDENTITY_DIR
     ? [local.FRAMELEAF_IDENTITY_DIR]
-    : (local.FRAMELEAF_MEDIA_LOCATION ? [local.FRAMELEAF_MEDIA_LOCATION] : ['/data', '/usr/src/app/upload'])
-        .map((root) => join(root, 'frameleaf', 'identity'));
+    : (local.FRAMELEAF_MEDIA_LOCATION ? [local.FRAMELEAF_MEDIA_LOCATION] : ['/data', '/usr/src/app/upload']).map(
+        (root) => join(root, 'frameleaf', 'identity'),
+      );
   const directory = dirname(bindingFile);
   if (!directories.includes(directory)) throw refusal();
   const privateKey = createPrivateKey(await readPrivateBootFile(join(directory, 'instance-key.pem'), 16_384));
   const jwk = createPublicKey(privateKey).export({ format: 'jwk' });
   if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') throw refusal();
-  const identity = createHash('sha256').update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x })).digest('base64url');
+  const identity = createHash('sha256')
+    .update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x }))
+    .digest('base64url');
   let marker: { action?: { buddyRecoveryId?: string } } | null = null;
   for (const candidate of directories) {
     try {
-      const value = JSON.parse((await readPrivateBootFile(join(candidate, 'buddy', 'recovery-active.json'), 8192)).toString());
-      if (value.isMaintenanceMode !== true || typeof value.secret !== 'string' || !BUDDY_UUID.test(value.action?.buddyRecoveryId)) throw refusal();
+      const value = JSON.parse(
+        (await readPrivateBootFile(join(candidate, 'buddy', 'recovery-active.json'), 8192)).toString(),
+      );
+      if (
+        value.isMaintenanceMode !== true ||
+        typeof value.secret !== 'string' ||
+        !BUDDY_UUID.test(value.action?.buddyRecoveryId)
+      )
+        throw refusal();
       if (marker || candidate !== directory) throw refusal();
       marker = value;
     } catch (error) {
@@ -101,31 +138,47 @@ const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) =
   const plan = await readBuddyRecovery(dirname(dirname(binding.recoveryDirectory)), binding.recoveryId);
   // readBuddyRecovery must refer to the same private bytes, even across a raced replacement.
   if (JSON.stringify(plan) !== JSON.stringify(JSON.parse(prepared.toString()))) throw refusal();
-  if (plan.scope !== binding.scope || plan.mode !== binding.mode || plan.manifest.snapshotId !== binding.snapshotId || plan.manifest.vaultId !== binding.vaultId) throw refusal();
+  if (
+    plan.scope !== binding.scope ||
+    plan.mode !== binding.mode ||
+    plan.manifest.snapshotId !== binding.snapshotId ||
+    plan.manifest.vaultId !== binding.vaultId
+  )
+    throw refusal();
   if (binding.scope === 'server' && !plan.manifest.library.database) throw refusal();
   const staged = JSON.parse(artifact.toString());
   if (staged.snapshotId !== binding.snapshotId) throw refusal();
   const { snapshotId: _snapshotId, ...input } = staged;
   const configuration = readBuddyBootConfiguration(input);
-  if (JSON.stringify(configuration) !== JSON.stringify(readBuddyBootConfiguration(plan.manifest.bootConfiguration))) throw refusal();
+  if (JSON.stringify(configuration) !== JSON.stringify(readBuddyBootConfiguration(plan.manifest.bootConfiguration)))
+    throw refusal();
   if (binding.environmentKeys.some((key) => !configuration.entries.some((entry) => entry.key === key))) throw refusal();
   if (requireComplete) {
-    const journal = JSON.parse((await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))).toString());
-    if (!z.strictObject({ version: z.literal(2), state: z.literal('complete') }).safeParse(journal).success) throw refusal();
+    const journal = JSON.parse(
+      (await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))).toString(),
+    );
+    if (!z.strictObject({ version: z.literal(2), state: z.literal('complete') }).safeParse(journal).success)
+      throw refusal();
   }
   return configuration;
 };
 
 /** Validate the entire prospective environment before changing a single selected input. */
-const bootEnvironmentOverlay = (binding: BootBinding, configuration: ReturnType<typeof readBuddyBootConfiguration>, env: NodeJS.ProcessEnv) => {
+const bootEnvironmentOverlay = (
+  binding: BootBinding,
+  configuration: ReturnType<typeof readBuddyBootConfiguration>,
+  env: NodeJS.ProcessEnv,
+) => {
   const prospective = { ...env };
   const current = resolveEnvAliases(env).env;
   const parsed = EnvSchema.safeParse(current);
   if (!parsed.success) throw refusal();
   const helpLinks = parseHelpLinks(parsed.data);
   const helpValues: Record<string, string | undefined> = {
-    FRAMELEAF_DOCS_URL: helpLinks.documentationUrl, FRAMELEAF_SUPPORT_URL: helpLinks.supportUrl,
-    FRAMELEAF_BUG_FEATURE_URL: helpLinks.bugFeatureUrl, FRAMELEAF_SOURCE_URL: helpLinks.sourceUrl,
+    FRAMELEAF_DOCS_URL: helpLinks.documentationUrl,
+    FRAMELEAF_SUPPORT_URL: helpLinks.supportUrl,
+    FRAMELEAF_BUG_FEATURE_URL: helpLinks.bugFeatureUrl,
+    FRAMELEAF_SOURCE_URL: helpLinks.sourceUrl,
   };
   for (const key of binding.environmentKeys) {
     const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
@@ -133,7 +186,8 @@ const bootEnvironmentOverlay = (binding: BootBinding, configuration: ReturnType<
     if (binding.mode === 'keep' && existing) continue;
     const entry = configuration.entries.find((entry) => entry.key === key)!;
     for (const name of [key, ...aliases]) delete prospective[name];
-    if (entry.state === 'value') prospective[key] = Array.isArray(entry.value) ? entry.value.join(',') : String(entry.value);
+    if (entry.state === 'value')
+      prospective[key] = Array.isArray(entry.value) ? entry.value.join(',') : String(entry.value);
   }
   const checked = EnvSchema.safeParse(resolveEnvAliases(prospective).env);
   if (!checked.success) throw refusal();
@@ -148,13 +202,18 @@ export const loadBuddyBootBinding = async () => {
     const original = await readPrivateBootFile(path);
     const binding = await readBootBinding(path, original);
     const local = await replacementBootIdentity(path, process.env);
-    if (local.identity !== binding.replacementIdentity || (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)) throw refusal();
+    if (
+      local.identity !== binding.replacementIdentity ||
+      (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
+    )
+      throw refusal();
     const configuration = await bindingEvidence(binding, binding.state === 'ready');
     if (local.marker) return; // Resume maintenance on replacement inputs, never historical inputs.
     if (binding.state !== 'ready') throw refusal();
     const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
     const current = await replacementBootIdentity(path, process.env);
-    if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original)) throw refusal();
+    if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original))
+      throw refusal();
     if (current.marker) {
       if (current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
       return;
