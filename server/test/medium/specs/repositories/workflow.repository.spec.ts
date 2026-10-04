@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { AssetMetadataKey, AssetVisibility, WorkflowType } from 'src/enum.js';
+import { AssetMetadataKey, AssetVisibility, WorkflowResult, WorkflowType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
@@ -44,6 +44,35 @@ beforeAll(async () => {
 });
 
 describe(WorkflowRepository.name, () => {
+  it('persists and reads workflow logs with generated defaults and ownership constraints after fresh migrations', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const workflowId = randomUUID();
+    await sql`
+      INSERT INTO public.workflow (id, "ownerId", trigger, name, "updateId")
+      VALUES (${workflowId}::uuid, ${user.id}::uuid, 'asset.uploaded', 'Log preservation', ${randomUUID()}::uuid)
+    `.execute(ctx.database);
+    const entry = {
+      workflowId,
+      workflowStepId: null,
+      triggerDataId: randomUUID(),
+      runId: randomUUID(),
+      result: WorkflowResult.Completed,
+      attempt: 0,
+    };
+    const id = await sut.log(entry);
+    expect(id).toMatch(/^[a-f\d-]{36}$/u);
+    const logs = await sut.getLogs(workflowId, { limit: 10 });
+    expect(logs).toEqual([{ ...entry, id, createdAt: expect.any(Date), errorCode: null, error: null, step: null }]);
+    await expect(sut.log({ ...entry, workflowStepId: randomUUID() })).rejects.toThrow();
+    expect(await sut.getLogs(workflowId, { limit: 10 })).toHaveLength(1);
+    await ctx.database.deleteFrom('workflow').where('id', '=', workflowId).execute();
+    expect(await sut.getLogs(workflowId, { limit: 10 })).toEqual([]);
+    expect(await ctx.database.selectFrom('workflow_log_detail').selectAll().where('logId', '=', id).execute()).toEqual(
+      [],
+    );
+  });
+
   it('upserts plugin methods with canonical allowed hosts', async () => {
     const database = await getKyselyDB();
     const sut = new PluginRepository(database, { setContext: vi.fn() } as never);

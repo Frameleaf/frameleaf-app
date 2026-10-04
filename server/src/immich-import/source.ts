@@ -34,8 +34,10 @@ export class ImmichSource {
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND (
         has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
         OR pg_has_role(current_user,c.relowner,'MEMBER')) LIMIT 1`);
+    // An unprivileged reader sees other roles' sessions but PostgreSQL hides their backend_type.
+    // Unknown session metadata cannot prove that every writer has stopped.
     const others = await this.db.query(`SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
-      AND pid <> pg_backend_pid() AND backend_type = 'client backend' LIMIT 1`);
+      AND pid <> pg_backend_pid() AND (backend_type = 'client backend' OR backend_type IS NULL) LIMIT 1`);
     if (elevated.length > 0 || writable.length > 0 || others.length > 0) {
       throw new ImportRefused('SOURCE_WRITERS_OR_WRITE_AUTHORITY_PRESENT');
     }

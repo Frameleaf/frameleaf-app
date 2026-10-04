@@ -401,6 +401,18 @@ describe(AssetRepository.name, () => {
           .where('assetId', '=', asset.id)
           .executeTakeFirstOrThrow(),
       ).toEqual(keyframeRow(asset.id, 1));
+
+      // These paths run against the fresh baseline plus ORDER-listed migrations. All three
+      // metadata tables must retain their ownership foreign keys and cascade with the asset.
+      await ctx.database.deleteFrom('asset').where('id', '=', asset.id).execute();
+      for (const table of ['asset_audio', 'asset_video', 'asset_keyframe'] as const) {
+        expect(await ctx.database.selectFrom(table).selectAll().where('assetId', '=', asset.id).execute()).toEqual([]);
+      }
+      await expect(ctx.database.insertInto('asset_audio').values(audioRow(asset.id, 1)).execute()).rejects.toThrow();
+      await expect(ctx.database.insertInto('asset_video').values(videoRow(asset.id, 1)).execute()).rejects.toThrow();
+      await expect(
+        ctx.database.insertInto('asset_keyframe').values(keyframeRow(asset.id, 1)).execute(),
+      ).rejects.toThrow();
     });
 
     it('rejects stale evidence when an EXIF row was inserted after the empty snapshot', async () => {
