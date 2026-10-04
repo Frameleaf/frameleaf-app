@@ -7,6 +7,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrameleafCloudBackup } from 'src/types.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
+import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -278,9 +279,9 @@ export class BuddyBackupCaptureService {
 
     await this.repository.db.connection().execute(async (connection) => {
       // ponytail: one short global barrier during inventory/pinning; copying and network transfer never hold it.
-      await sql`SELECT pg_advisory_lock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection);
       let barrier = true;
       try {
+        await sql`SELECT pg_advisory_lock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection);
         await this.repository.db
           .transaction()
           .setIsolationLevel('repeatable read')
@@ -345,7 +346,9 @@ export class BuddyBackupCaptureService {
               await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
             SELECT ${options.runId}::uuid, path FROM unnest(${paths.slice(offset, offset + 1000)}::text[]) AS path
             ON CONFLICT DO NOTHING`.execute(connection);
-            await sql`SELECT pg_advisory_unlock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection);
+            await withDatabaseCleanup(() =>
+              sql`SELECT pg_advisory_unlock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection),
+            );
             barrier = false;
             const index = new CloudBackupIndexRepository(trx);
             const fidelity = new BuddyBackupFidelityRepository(trx);

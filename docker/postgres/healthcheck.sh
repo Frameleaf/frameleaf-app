@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -eo pipefail
 
 # set-env.sh is installed beside this script in the image (/usr/local/bin); CI lints without -x.
 # shellcheck source=/dev/null

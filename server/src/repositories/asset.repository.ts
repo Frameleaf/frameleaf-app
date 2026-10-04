@@ -2769,14 +2769,10 @@ export class AssetRepository {
     `.execute(this.db);
     return rows[0]?.fingerprint;
   }
-  /** FL-97: whether Studio HDR intermediates can be recorded now (the fork schema is writable). */
-  canRecordStudioHdrIntermediates(): Promise<boolean> {
-    return true;
-  }
   /**
    * FL-97: record what became of the original with `sourceFingerprint`: a ready intermediate at
    * `path`, or a refusal (`ineligible`, `failed`) so it is not made again on every project read.
-   * Refused (false) when the fork schema is not writable, or the asset is gone, trashed or changed
+   * Refused (false) when the asset is gone, trashed or changed
    * meanwhile. Returns the path of an intermediate it replaced, for the caller to delete.
    */
   async recordStudioHdrIntermediate(entry: {

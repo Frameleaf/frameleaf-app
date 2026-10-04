@@ -173,7 +173,7 @@ export class ICloudAlbumRepository {
       await sql<DestinationAlbum>`SELECT a.id,a."albumName",a."parentId",a.icon,a."sortOrder",a.kind FROM album a
       JOIN album_user u ON u."albumId"=a.id WHERE a.id=${id}::uuid AND a."deletedAt" IS NULL
         AND u."userId"=${ownerId}::uuid AND u.role='owner' FOR UPDATE OF a`.execute(db);
-    return await rows.then((items) => items[0]);
+    return rows[0];
   }
   private async container(db: Kysely<DB>, connectionId: string, ownerId: string, label: string) {
     await sql`INSERT INTO public.icloud_album ("connectionId","libraryKey","sourceId",name)
