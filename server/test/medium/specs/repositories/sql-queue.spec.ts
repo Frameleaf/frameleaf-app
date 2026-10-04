@@ -7,18 +7,19 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { MessageChannel } from 'node:worker_threads';
-import { Worker } from 'node:worker_threads';
+import { MessageChannel, Worker } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { JobItem } from 'src/types.js';
 import {
+  JobName,
+  JobStatus,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
   MlAdmissionRefusal,
   MlWorkload,
+  QueueName,
 } from 'src/enum.js';
-import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
@@ -30,8 +31,8 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
+import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -98,8 +99,7 @@ describe('PostgreSQL queue', () => {
     const table = `queue_diagnostic_${randomUUID().replaceAll('-', '')}`;
     await sql`create table ${sql.id(table)} (attempt integer not null, kind text not null)`.execute(db);
     try {
-      let executor: JobRepository;
-      executor = new JobRepository(
+      const executor: JobRepository = new JobRepository(
         {} as never,
         {} as never,
         {
@@ -244,15 +244,14 @@ describe('PostgreSQL queue', () => {
       ffmpeg.kill('SIGKILL');
       await worker.terminate();
     }
-  }, 15000);
+  }, 15_000);
 
   it('rejects prepared media when its original path changes before acceptance', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
-    let executor: JobRepository;
     const adopted = vi.fn();
-    executor = new JobRepository(
+    const executor: JobRepository = new JobRepository(
       {} as never,
       {} as never,
       {
@@ -263,8 +262,9 @@ describe('PostgreSQL queue', () => {
             .set({ originalPath: `${asset.originalPath}.replaced` })
             .where('id', '=', asset.id)
             .execute();
-          await publishJobResult(async () => {
+          await publishJobResult(() => {
             adopted();
+            return Promise.resolve();
           });
         },
       } as never,
@@ -324,20 +324,15 @@ describe('PostgreSQL queue', () => {
     } = await sql<{ name: string }>`select current_database() name`.execute(db);
     const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
     url.pathname = `/${database.name}`;
-    const listener = postgres(url.toString(), { max: 1, connect_timeout: 5 });
-    let wake!: () => void;
-    let awakened = new Promise<void>((resolve) => {
-      wake = resolve;
-    });
-    const notifications = queueNotifications(listener, () => wake());
+    const listener = postgres(url.href, { max: 1, connect_timeout: 5 });
+    let wake = Promise.withResolvers<void>();
+    const notifications = queueNotifications(listener, () => wake.resolve());
     notifications.connect();
     try {
-      await awakened; // initial LISTEN acknowledgement
-      awakened = new Promise<void>((resolve) => {
-        wake = resolve;
-      });
+      await wake.promise; // initial LISTEN acknowledgement
+      wake = Promise.withResolvers<void>();
       await store.enqueue([intent()]);
-      await awakened; // transaction's real pg_notify
+      await wake.promise; // transaction's real pg_notify
       const [claim] = await store.claim(queue, workerA);
       expect(await store.complete(claim, [])).toBe(true);
       await notifications.close();
@@ -346,7 +341,7 @@ describe('PostgreSQL queue', () => {
     } finally {
       await notifications.close();
     }
-  }, 15000);
+  }, 15_000);
 
   it('defers caught ML admission failures without spending retries or completing selected items', async () => {
     const runId = await store.createRun('unavailable-fixture', {});
@@ -354,10 +349,9 @@ describe('PostgreSQL queue', () => {
     await store.enqueue([intent({ name: JobName.SmartSearch, runId, itemKey: id, rootItemKey: id })]);
     let unavailable = true;
     let genuineFailures = 0;
-    let executor: JobRepository;
     const adopted = vi.fn();
     const diagnosed = vi.fn();
-    executor = new JobRepository(
+    const executor: JobRepository = new JobRepository(
       {} as never,
       {} as never,
       { emit: async (_event: string, _queue: string, item: JobItem) => executor.run(item) } as never,
@@ -367,8 +361,9 @@ describe('PostgreSQL queue', () => {
     executor['handlers'][JobName.SmartSearch] = {
       queueName: queue as QueueName,
       handler: async () => {
-        await publishJobResult(async () => {
+        await publishJobResult(() => {
           adopted();
+          return Promise.resolve();
         });
         if (unavailable) {
           try {
@@ -379,8 +374,9 @@ describe('PostgreSQL queue', () => {
               'fixture',
             );
           } catch {
-            await publishJobDiagnostic(async () => {
+            await publishJobDiagnostic(() => {
               diagnosed();
+              return Promise.resolve();
             });
             return JobStatus.Failed;
           }
@@ -618,12 +614,12 @@ describe('PostgreSQL queue', () => {
     } = await sql<{ name: string }>`select current_database() name`.execute(db);
     const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
     url.pathname = `/${database.name}`;
-    const executionClient = postgres(url.toString(), {
+    const executionClient = postgres(url.href, {
       max: 2,
       connect_timeout: 3,
       connection: { statement_timeout: 2000 },
     });
-    const coordinatorClient = postgres(url.toString(), {
+    const coordinatorClient = postgres(url.href, {
       max: 1,
       connect_timeout: 3,
       connection: { statement_timeout: 2000, lock_timeout: 1000 },
@@ -679,7 +675,7 @@ describe('PostgreSQL queue', () => {
       expect(await coordinator.counts(queue)).toMatchObject({ active: 0, completed: 2, delayed: 0 });
     } finally {
       for (const connection of reservations) connection.release();
-      await queuedQuery?.catch(() => undefined);
+      await queuedQuery?.catch(() => {});
       await executionDb.destroy();
       await coordinatorDb.destroy();
     }
@@ -715,7 +711,7 @@ describe('PostgreSQL queue', () => {
             activeClaims.filter((claim) => claim.workerId === workerB),
           ),
         ])
-          .then(() => undefined)
+          .then(() => {})
           .catch((error) => {
             heartbeatError = error;
           })

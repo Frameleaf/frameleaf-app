@@ -122,10 +122,15 @@ jobs:
           if [[ ! -f server/src/schema/catalog/baseline.sql ]]; then
             pnpm --dir server exec tsx scripts/freeze-frameleaf-schema.ts \
               "$RUNNER_TEMP/frameleaf-development/generated" "$RUNNER_TEMP/frameleaf-development/generated/catalog"
-            mkdir -p server/src/schema/catalog server/dist/schema/catalog
-            cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/src/schema/catalog/
-            cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/dist/schema/catalog/
+          else
+            mkdir "$RUNNER_TEMP/frameleaf-development/generated/catalog"
+            cp server/src/schema/catalog/* "$RUNNER_TEMP/frameleaf-development/generated/catalog/"
+            pnpm --dir server exec tsx scripts/freeze-frameleaf-schema.ts \
+              "$RUNNER_TEMP/frameleaf-development/generated" "$RUNNER_TEMP/frameleaf-development/generated/catalog" --desired-only
           fi
+          mkdir -p server/src/schema/catalog server/dist/schema/catalog
+          cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/src/schema/catalog/
+          cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/dist/schema/catalog/
           pnpm --dir server exec tsx scripts/verify-frameleaf-schema.ts
       - name: Generate OpenAPI
         timeout-minutes: 5

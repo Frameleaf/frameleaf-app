@@ -42,8 +42,8 @@ export const verifyRawCatalog = (catalog: DatabaseSchema, raw: RawCatalog): void
         throw new Error(`Raw ${kind} differs from catalog: ${key}`);
       expected.delete(key);
     }
-    if (notNullColumns.size)
+    if (notNullColumns.size > 0)
       throw new Error(`Raw NOT NULL capture is incomplete: ${notNullColumns.values().next().value}`);
-    if (expected.size) throw new Error(`Raw ${kind} capture is incomplete: ${expected.keys().next().value}`);
+    if (expected.size > 0) throw new Error(`Raw ${kind} capture is incomplete: ${expected.keys().next().value}`);
   }
 };
