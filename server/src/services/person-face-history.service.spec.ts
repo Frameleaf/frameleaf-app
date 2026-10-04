@@ -489,9 +489,7 @@ describe('PersonService face history (FL-57)', () => {
 
       expect(mocks.person.setFacePerson).toHaveBeenCalledWith(detected.id, entry.toPersonId);
       expect(mocks.person.reanchorFaceCorrections).toHaveBeenCalledWith(entry.faceId, detected.id);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.FacialRecognitionQueueAll, data: { force: false } },
-      ]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
 
     it('does not re-apply a decision about a replaced original', async () => {
@@ -513,10 +511,7 @@ describe('PersonService face history (FL-57)', () => {
       await sut.handleDetectFaces({ id: asset.id });
 
       expect(mocks.person.setFacePerson).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.FacialRecognitionQueueAll, data: { force: false } },
-        { name: JobName.FacialRecognition, data: { id: detected.id } },
-      ]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.FacialRecognition, data: { id: detected.id } }]);
     });
 
     it('never lets recognition assign a face a person decided belongs to no one', async () => {
@@ -542,12 +537,16 @@ describe('PersonService face history (FL-57)', () => {
       mocks.person.getByGroupId.mockResolvedValue(person);
       mocks.person.reassignFaces.mockResolvedValue(0);
 
-      await expect(sut.handleRecognizeFaces({ id: face.id })).resolves.toBe(JobStatus.Skipped);
+      await expect(sut.handleRecognizeFaces({ id: face.id })).rejects.toThrow(
+        'Face decision changed before recognition publication',
+      );
       expect(mocks.person.reassignFaces).toHaveBeenCalledWith({
         faceIds: [face.id],
         newPersonGroupId: person.personGroupId,
         onlyUndecided: true,
       });
+      expect(mocks.person.create).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 });
