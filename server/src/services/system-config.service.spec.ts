@@ -1816,7 +1816,11 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({
+        queued: true,
+        cloudBatches: false,
+        runId: 'test-run',
+      });
 
       expect(mocks.job.queue).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1870,6 +1874,7 @@ describe(SystemConfigService.name, () => {
       await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false, cloudBatches: false });
 
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
 
     it('queues nothing and says so while descriptions are routed to Frameleaf Cloud (FL-163)', async () => {
@@ -1885,6 +1890,7 @@ describe(SystemConfigService.name, () => {
 
       expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
 
     it('claims no batches for Frameleaf Cloud while its processing is off (FL-163)', async () => {
@@ -1902,7 +1908,22 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({
+        queued: true,
+        cloudBatches: false,
+        runId: 'test-run',
+      });
+    });
+
+    it('does not clear the deferred marker or return a run when admission fails', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { enabled: true, pendingRequeueAt: '2026-10-01T00:00:00.000Z' } },
+      });
+      mocks.job.getJobCounts.mockResolvedValue({ active: 0, waiting: 0 } as never);
+      mocks.job.createRun.mockRejectedValue(new Error('admission rolled back'));
+
+      await expect(sut.triggerDescriptionRequeue()).rejects.toThrow('admission rolled back');
+      expect(configWrites()).toEqual([]);
     });
 
     it('should throw BadRequestException when image description is disabled', async () => {
@@ -1912,6 +1933,7 @@ describe(SystemConfigService.name, () => {
 
       await expect(sut.triggerDescriptionRequeue()).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when global machine learning is disabled', async () => {
@@ -1921,6 +1943,7 @@ describe(SystemConfigService.name, () => {
 
       await expect(sut.triggerDescriptionRequeue()).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
   });
 
@@ -1977,7 +2000,7 @@ describe(SystemConfigService.name, () => {
 
       const result = await sut.triggerSmartAlbumReevaluate();
 
-      expect(result).toEqual({ queued: true });
+      expect(result).toEqual({ queued: true, runId: 'test-run' });
       expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: 'SmartAlbumReevaluateAll' }));
     });
 
@@ -1991,6 +2014,7 @@ describe(SystemConfigService.name, () => {
 
       expect(result).toEqual({ queued: false });
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
 
     it('should enqueue with kind-scoped dedup when a kind is provided', async () => {
@@ -1999,11 +2023,18 @@ describe(SystemConfigService.name, () => {
 
       const result = await sut.triggerSmartAlbumReevaluate({ kind: 'food' });
 
-      expect(result).toEqual({ queued: true });
+      expect(result).toEqual({ queued: true, runId: 'test-run' });
       expect(mocks.job.hasDedupJob).toHaveBeenCalledWith(QueueName.BackgroundTask, 'SmartAlbumReevaluateAll:food');
       expect(mocks.job.queue).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'SmartAlbumReevaluateAll', data: { kind: 'food' } }),
       );
+    });
+
+    it('propagates failed admission without returning a run identity', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ smartAlbums: { enabled: true } });
+      mocks.job.hasDedupJob.mockResolvedValue(false);
+      mocks.job.createRun.mockRejectedValue(new Error('admission rolled back'));
+      await expect(sut.triggerSmartAlbumReevaluate()).rejects.toThrow('admission rolled back');
     });
 
     it('should reject an unknown kind', async () => {
@@ -2013,6 +2044,7 @@ describe(SystemConfigService.name, () => {
         BadRequestException,
       );
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when smartAlbums is disabled', async () => {
@@ -2022,6 +2054,7 @@ describe(SystemConfigService.name, () => {
 
       await expect(sut.triggerSmartAlbumReevaluate()).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.createRun).not.toHaveBeenCalled();
     });
   });
 });

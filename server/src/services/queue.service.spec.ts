@@ -165,7 +165,14 @@ describe(QueueService.name, () => {
       mocks.job.isActive.mockResolvedValue(false);
       mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
 
-      await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Start, force: false });
+      await expect(
+        sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Start, force: false }),
+      ).resolves.toMatchObject({ runId: 'test-run' });
+      expect(mocks.job.createRun).toHaveBeenCalledWith(
+        QueueName.VideoConversion,
+        { force: false },
+        expect.any(Function),
+      );
 
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetEncodeVideoQueueAll, data: { force: false } });
     });
