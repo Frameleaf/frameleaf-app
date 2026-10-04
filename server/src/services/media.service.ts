@@ -60,6 +60,7 @@ import {
 } from 'src/queue/context.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
@@ -724,6 +725,7 @@ export class MediaService extends BaseService {
     await this.mediaRepository.generateThumbnail(decodedImage, thumbnailOptions, thumbnailPath);
     if (
       !deferJobAdoption(async (tx) => {
+        await lockFilePath(tx, thumbnailPath);
         await tx
           .selectFrom('person')
           .select('personGroupId')
@@ -749,6 +751,10 @@ export class MediaService extends BaseService {
           .where('ownerId', '=', ownerId)
           .where('personGroupId', '=', personGroupId)
           .execute();
+        const oldPath = currentPerson?.thumbnailPath;
+        if (oldPath && oldPath !== thumbnailPath) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
+        }
       })
     ) {
       await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });

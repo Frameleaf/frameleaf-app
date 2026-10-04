@@ -29,8 +29,10 @@ describe('bounded PostgreSQL queue history', () => {
       "runId", "itemKey", "rootItemKey", "finishedAt")
       select "jobId", queue, stage, selection, state, true, 600000, 1, "runId", "itemKey", "rootItemKey", now() - interval '40 days'
       from job_run_item where "runId" = ${runId}::uuid`.execute(db);
-    await sql`insert into job_attempt("jobId", attempt, token, "workerId", outcome)
-      select id, 1, gen_random_uuid(), ${worker}::uuid, 'completed' from job where queue = ${queue}`.execute(db);
+    await sql`insert into job_attempt("jobId", attempt, token, "workerId", outcome, "finishedAt")
+      select id, 1, gen_random_uuid(), ${worker}::uuid, 'completed', now() - interval '40 days' from job where queue = ${queue}`.execute(
+      db,
+    );
     await store.finishEnumeration(runId);
 
     expect(await pruneQueueHistory(db)).toBe(250);
