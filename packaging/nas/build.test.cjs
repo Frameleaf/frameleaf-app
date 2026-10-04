@@ -3,7 +3,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { build } = require('./build.cjs');
 const { NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cjs');
 const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
@@ -44,7 +44,7 @@ test('TrueNAS rendering rejects missing, empty, changed and symlinked libraries 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-test('authenticated release packaging, negative trust cases, and Synology worker timing', async () => {
+test('authenticated release packaging, negative trust cases, and Synology worker timing', async (t) => {
   if (process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER === 'true') {
     assert(process.env.TRUENAS_LIBRARY, 'Mandatory hosted TrueNAS rendering requires TRUENAS_LIBRARY');
   }
@@ -306,9 +306,119 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert.equal(fs.readFileSync(path.join(state, 'frameleaf.env'), 'utf8'), configured);
     fs.mkdirSync(staging);
     execFileSync('tar', ['-xzf', path.join(unpack, 'package.tgz'), '-C', staging]);
-    execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
+    execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
     assert.equal(fs.readFileSync(path.join(staging, 'project/.env'), 'utf8'), configured);
     assert.equal(fs.readFileSync(path.join(target, 'project/.env'), 'utf8'), configured);
+    // FL-199: upgrade must validate retained configuration before staging it.
+    // Use the same production-hook fixture adapter as the successful install:
+    // only its /volumeN prefix policy is mapped to this temporary fixture root.
+    // Native DSM path policy/platform behavior remain unqualified. Never source
+    // or evaluate retained dotenv. The successful upgrade is the readable control.
+    const retainedConfig = path.join(state, 'frameleaf.env');
+    const stagedConfig = path.join(staging, 'project/.env');
+    const installedConfig = fs.readFileSync(path.join(target, 'project/.env'));
+    const mediaSentinel = path.join(localVolume, 'library/retained-media.bin');
+    const databaseSentinel = path.join(databasePath, 'retained-database.bin');
+    const sentinelBytes = Buffer.from([0, 255, 7, 19, 83]);
+    fs.writeFileSync(mediaSentinel, sentinelBytes);
+    fs.writeFileSync(databaseSentinel, sentinelBytes);
+    const nestedMedia = path.join(databasePath, 'media');
+    fs.mkdirSync(nestedMedia);
+    const clusterVersion = fs.readFileSync(path.join(databasePath, 'PG_VERSION'));
+    await t.test('Synology upgrade preserves valid literal quoted retained dotenv and password bytes', () => {
+      const quoted = '# Retained fixture with literal quotes and CRLF\r\n' + configured.trimEnd().split('\n').map((line, index) => {
+        const equal = line.indexOf('=');
+        const quote = index % 2 ? '"' : "'";
+        return `export ${line.slice(0, equal)} = ${quote}${line.slice(equal + 1)}${quote} # literal fixture`;
+      }).join('\r\n') + '\r\n';
+      const bytes = Buffer.from(quoted);
+      fs.writeFileSync(retainedConfig, bytes);
+      fs.unlinkSync(stagedConfig);
+      try {
+        execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' }, stdio: 'pipe' });
+        const rendered = JSON.parse(execFileSync('docker', [
+          'compose', '--env-file', stagedConfig, '-f', path.join(target, 'project/compose.yaml'), 'config', '--format', 'json',
+        ], { env, stdio: 'pipe' }).toString());
+        assert.deepEqual({
+          retainedUnchanged: fs.readFileSync(retainedConfig).equals(bytes),
+          stagedUnchanged: fs.readFileSync(stagedConfig).equals(bytes),
+          installedUnchanged: fs.readFileSync(path.join(target, 'project/.env')).equals(installedConfig),
+          mediaUnchanged: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
+          databaseUnchanged: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
+          portMatches: rendered.services.server.ports[0].published === '3456',
+          mlMatches: rendered.services.server.environment.FRAMELEAF_MACHINE_LEARNING_ENABLED === 'false',
+          passwordMatches: rendered.services.server.environment.DB_PASSWORD === env.wizard_database_password,
+        }, {
+          retainedUnchanged: true, stagedUnchanged: true, installedUnchanged: true,
+          mediaUnchanged: true, databaseUnchanged: true, portMatches: true, mlMatches: true, passwordMatches: true,
+        });
+      } finally {
+        fs.writeFileSync(retainedConfig, configured);
+        fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+      }
+    });
+    const commandSentinel = path.join(root, 'retained-command-executed');
+    for (const [name, changes, alter] of [
+      ['port below allowed range', { WEB_PORT: '1' }],
+      ['port above allowed range', { WEB_PORT: '65536' }],
+      ['nonnumeric port', { WEB_PORT: 'not-a-port' }],
+      ['invalid ML boolean', { ENABLE_ML: 'perhaps' }],
+      ['media traversal', { UPLOAD_LOCATION: `${localVolume}/library/../library` }],
+      ['database path containing spaces', { DB_DATA_LOCATION: `${localVolume}/unsafe database` }],
+      ['symlinked media path', { UPLOAD_LOCATION: path.join(localVolume, 'media-link') }],
+      ['equal media and database paths', { DB_DATA_LOCATION: path.join(localVolume, 'library') }],
+      ['database nested in media', { DB_DATA_LOCATION: path.join(localVolume, 'library/postgres') }],
+      ['media nested in database', { UPLOAD_LOCATION: nestedMedia }],
+      ['duplicate port assignment', { WEB_PORT: '3456\nWEB_PORT=4567' }],
+      ['unterminated quoted value', { WEB_PORT: '"3456' }],
+      ['password outside installer grammar', { DB_PASSWORD: 'Fixture!Only123456' }],
+      ['missing required port', {}, (value) => value.replace(/^WEB_PORT=.*\n/m, '')],
+      ['command substitution in media path', { UPLOAD_LOCATION: `$(touch ${commandSentinel})` }],
+      ['inconsistent ML profile', { COMPOSE_PROFILES: 'ml' }],
+    ]) {
+      await t.test(`Synology upgrade refuses retained ${name} before staging`, () => {
+        let invalid = alter ? alter(configured) : configured;
+        for (const [key, value] of Object.entries(changes)) {
+          const original = invalid;
+          invalid = invalid.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`);
+          assert.notEqual(invalid, original, 'Fixture must change a declared retained field');
+        }
+        assert.notEqual(invalid, configured, 'Fixture must change retained configuration');
+        const retainedBytes = Buffer.from(invalid);
+        fs.writeFileSync(retainedConfig, retainedBytes);
+        fs.unlinkSync(stagedConfig);
+        try {
+          const result = spawnSync('sh', [localScript], {
+            env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' }, stdio: 'pipe',
+          });
+          assert.ifError(result.error);
+          // Report only outcome flags, never retained configuration/passwords.
+          assert.deepEqual({
+            refused: result.status !== null && result.status !== 0 && result.signal === null,
+            staged: fs.existsSync(stagedConfig),
+            stagedTemporary: fs.existsSync(`${stagedConfig}.tmp`),
+            retainedUnchanged: fs.readFileSync(retainedConfig).equals(retainedBytes),
+            installedUnchanged: fs.readFileSync(path.join(target, 'project/.env')).equals(installedConfig),
+            mediaUnchanged: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
+            databaseUnchanged: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
+            clusterVersionUnchanged: fs.readFileSync(path.join(databasePath, 'PG_VERSION')).equals(clusterVersion),
+            shellCommandExecuted: fs.existsSync(commandSentinel),
+          }, {
+            refused: true, staged: false, stagedTemporary: false,
+            retainedUnchanged: true, installedUnchanged: true, mediaUnchanged: true,
+            databaseUnchanged: true, clusterVersionUnchanged: true,
+            shellCommandExecuted: false,
+          });
+        } finally {
+          fs.writeFileSync(retainedConfig, configured);
+          // Restore only disposable fixture staging so independent cases run.
+          fs.rmSync(stagedConfig, { force: true });
+          fs.rmSync(`${stagedConfig}.tmp`, { force: true });
+          fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+          fs.rmSync(commandSentinel, { force: true });
+        }
+      });
+    }
     assert.throws(() => execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
