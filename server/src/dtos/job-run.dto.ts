@@ -44,6 +44,7 @@ export const JobRunReasonSchema = z.enum([
   'destination-consent',
   'destination-budget',
   'source-unavailable',
+  'local-capacity',
 ]);
 const counts = z.object({
   total: z.int().min(0),

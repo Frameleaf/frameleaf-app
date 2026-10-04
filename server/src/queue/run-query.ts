@@ -43,7 +43,8 @@ export type RunReason =
   | 'destination-configuration'
   | 'destination-consent'
   | 'destination-budget'
-  | 'source-unavailable';
+  | 'source-unavailable'
+  | 'local-capacity';
 const DEPENDENCY_REASONS = [
   'workload-disabled',
   'destination-unavailable',
@@ -51,6 +52,7 @@ const DEPENDENCY_REASONS = [
   'destination-consent',
   'destination-budget',
   'source-unavailable',
+  'local-capacity',
 ] as const;
 export type RunRead = RunCounts & {
   id: string;

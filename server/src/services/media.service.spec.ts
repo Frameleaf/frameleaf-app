@@ -1,4 +1,7 @@
 import { ShallowDehydrateObject } from 'kysely';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { OutputInfo } from 'sharp';
 import type { QueueExecution } from 'src/queue/types.js';
 import { Exif } from 'src/database.js';
@@ -22,10 +25,14 @@ import {
   TranscodePolicy,
   VideoCodec,
 } from 'src/enum.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { queueExecution } from 'src/queue/context.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { operationExecution } from 'src/utils/execution-signal.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -1240,7 +1247,7 @@ describe(MediaService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       mocks.media.decodeImage.mockRejectedValue(
-        new Error(
+        new SharpOperationError(
           `Input file has corrupt header: magickload: Magick: Unsupported file format or not RAW file '${asset.originalPath}'`,
         ),
       );
@@ -1260,7 +1267,7 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
     });
 
     it.each([
@@ -1299,7 +1306,7 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(renderRawWithLibRaw).toHaveBeenCalledWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledWith(asset.originalPath, undefined);
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
@@ -1315,7 +1322,7 @@ describe(MediaService.name, () => {
       });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
-      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, expect.any(Object));
       expect(mocks.media.decodeImage).not.toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
       expect(mocks.media.generateThumbnail).toHaveBeenCalled();
@@ -1372,7 +1379,7 @@ describe(MediaService.name, () => {
         mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format });
         mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
         await sut.handleGenerateThumbnails({ id: asset.id });
-        expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+        expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
         expect(mocks.media.extract).not.toHaveBeenCalled();
         expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
           renderedRawBuffer,
@@ -1409,15 +1416,124 @@ describe(MediaService.name, () => {
       expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
     });
 
+    it.each(['metadata', 'decode'] as const)(
+      'preserves %s pool control failures without starting LibRaw',
+      async (stage) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        for (const error of [
+          new JobDependencyUnavailable('local-capacity'),
+          new SharpResourceLimitError('input is too large'),
+          new Error('Sharp child closed (SIGKILL)'),
+          new Error('spawn node ENOENT'),
+        ]) {
+          mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+          if (stage === 'metadata') {
+            mocks.media.getImageMetadata.mockRejectedValueOnce(error);
+          } else {
+            mocks.media.decodeImage.mockRejectedValueOnce(error);
+          }
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+          expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+          expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+          expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+          expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it.each(['metadata', 'decode'] as const)(
+      'does not start LibRaw after an operation cancellation during %s',
+      async (stage) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+        const abort = new AbortController();
+        const error = new Error('operation cancelled');
+        const failed = () => {
+          abort.abort(error);
+          return Promise.reject(new SharpOperationError('bad embedded JPEG'));
+        };
+        if (stage === 'metadata') {
+          mocks.media.getImageMetadata.mockImplementationOnce(failed);
+        } else {
+          mocks.media.decodeImage.mockImplementationOnce(failed);
+        }
+        await operationExecution.run(
+          {
+            signal: abort.signal,
+            progress: vi.fn(),
+            settle: () => Promise.resolve(),
+            settled: false,
+            completed: new Map(),
+          },
+          async () => {
+            await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+          },
+        );
+        expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+        expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+      },
+    );
+
+    it('leaves an original RAW file unchanged after a Sharp resource refusal', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'raw-control-'));
+      const originalPath = join(directory, 'original.dng');
+      const original = Buffer.from('immutable sensor original fixture');
+      try {
+        await writeFile(originalPath, original);
+        const asset = AssetFactory.from({ originalPath, originalFileName: 'original.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        const error = new SharpResourceLimitError('pixel ceiling');
+        mocks.media.getImageMetadata.mockRejectedValueOnce(error);
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+        expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(await readFile(originalPath)).toEqual(original);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('falls back for a damaged embedded header using the current operation signal', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockRejectedValueOnce(new SharpOperationError('bad embedded header'));
+      const abort = new AbortController();
+      await operationExecution.run(
+        {
+          signal: abort.signal,
+          progress: vi.fn(),
+          settle: () => Promise.resolve(),
+          settled: false,
+          completed: new Map(),
+        },
+        async () => {
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        },
+      );
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, abort.signal);
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
     it('falls back once from a failed embedded preview decode to the sensor', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
       mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
       mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-      mocks.media.decodeImage.mockRejectedValueOnce(new Error('bad embedded JPEG'));
+      mocks.media.decodeImage.mockRejectedValueOnce(new SharpOperationError('bad embedded JPEG'));
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
-      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
       expect(mocks.media.decodeImage).toHaveBeenNthCalledWith(
         1,
         extractedBuffer,
@@ -1442,7 +1558,7 @@ describe(MediaService.name, () => {
       };
       const result = await sut['extractOriginalImage'](asset, image, true);
       expect(result.convertFullsize).toBe(true);
-      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
       expect(mocks.media.extract).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
         renderedRawBuffer,

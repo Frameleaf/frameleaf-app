@@ -57,6 +57,7 @@ import {
   publishJobResult,
   queueExecution,
 } from 'src/queue/context.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
@@ -66,6 +67,7 @@ import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -445,6 +447,7 @@ export class MediaService extends BaseService {
       try {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
+        executionSignal()?.throwIfAborted();
         if (this.shouldSkipThumbnailDecodeError(error, asset.originalFileName)) {
           this.logger.warn(`Skipping thumbnail generation for asset ${id}: ${error}`);
           return JobStatus.Skipped;
@@ -484,7 +487,9 @@ export class MediaService extends BaseService {
   }
 
   private async renderRawImage(originalPath: string) {
-    return { buffer: await renderRawWithLibRaw(originalPath), format: RawExtractedFormat.Tiff };
+    const signal = executionSignal();
+    signal?.throwIfAborted();
+    return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
   }
 
   private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
@@ -505,7 +510,10 @@ export class MediaService extends BaseService {
     if (error instanceof RawRenderError) {
       return error.reason === 'unsupported';
     }
-    const message = error instanceof Error ? error.message : String(error);
+    if (!(error instanceof SharpOperationError)) {
+      return false;
+    }
+    const message = error.message;
     return (
       isUnsupportedRawDecodeError(error) ||
       (mimeTypes.isRaw(fileName) &&
@@ -526,7 +534,13 @@ export class MediaService extends BaseService {
     // Embedded camera images are fast previews only. Fullsize and edit input always comes from the sensor.
     let extracted =
       isRaw && image.extractEmbedded && !generateFullsize
-        ? await this.extractImage(asset.originalPath, image.preview.size).catch(() => null)
+        ? await this.extractImage(asset.originalPath, image.preview.size).catch((error: unknown) => {
+            executionSignal()?.throwIfAborted();
+            if (!(error instanceof SharpOperationError)) {
+              throw error;
+            }
+            return null;
+          })
         : null;
     let sensorRendered = false;
     if (isRaw && !extracted) {
@@ -547,7 +561,8 @@ export class MediaService extends BaseService {
     try {
       decoded = await decodeSource();
     } catch (error) {
-      if (!isRaw || sensorRendered) {
+      executionSignal()?.throwIfAborted();
+      if (!(error instanceof SharpOperationError) || !isRaw || sensorRendered) {
         throw error;
       }
       // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
@@ -599,11 +614,11 @@ export class MediaService extends BaseService {
     const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
-    const promises = [
-      this.mediaRepository.generateThumbhash(data, baseOptions),
-      this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path),
-      this.mediaRepository.generateThumbnail(data, previewOptions, previewFile.path),
-    ];
+    // One native task per attempt at a time. This also makes zero-pending pools usable and
+    // ensures failure/deferral cannot return while a sibling still writes an attempt output.
+    const thumbhash = await this.mediaRepository.generateThumbhash(data, baseOptions);
+    await this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path);
+    await this.mediaRepository.generateThumbnail(data, previewOptions, previewFile.path);
 
     let fullsizeFile: UpsertFileOptions | undefined;
     if (convertFullsize) {
@@ -624,10 +639,8 @@ export class MediaService extends BaseService {
         progressive: image.fullsize.progressive,
       };
       assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: fullsizeFile.path });
-      promises.push(this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path));
+      await this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path);
     }
-
-    const outputs = await Promise.all(promises);
 
     if (asset.exifInfo.projectionType === 'EQUIRECTANGULAR') {
       const promises = [
@@ -644,7 +657,7 @@ export class MediaService extends BaseService {
 
     return {
       files: fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile],
-      thumbhash: outputs[0] as Buffer,
+      thumbhash,
       fullsizeDimensions,
     };
   }

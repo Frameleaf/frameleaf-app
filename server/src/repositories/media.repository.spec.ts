@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import { SharpOperations } from 'src/queue/sharp-operations.js';
+import { sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -89,6 +91,8 @@ const buildTestQuadImage = async () => {
 describe(MediaRepository.name, () => {
   let sut: MediaRepository;
 
+  afterAll(() => sharpProcessPool.close());
+
   beforeEach(() => {
     // eslint-disable-next-line no-sparse-arrays
     sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
@@ -96,7 +100,7 @@ describe(MediaRepository.name, () => {
 
   describe('applyEdits (single actions)', () => {
     it('should apply crop edit correctly', async () => {
-      const result = sut['applyEdits'](
+      const result = new SharpOperations().applyEdits(
         sharp({
           create: {
             width: 1000,
@@ -123,7 +127,7 @@ describe(MediaRepository.name, () => {
       expect(metadata.height).toBe(300);
     });
     it('should apply rotate edit correctly', async () => {
-      const result = sut['applyEdits'](
+      const result = new SharpOperations().applyEdits(
         sharp({
           create: {
             width: 500,
@@ -148,7 +152,7 @@ describe(MediaRepository.name, () => {
     });
 
     it('should apply mirror edit correctly', async () => {
-      const resultHorizontal = sut['applyEdits'](sharp(await buildTestQuadImage()), [
+      const resultHorizontal = new SharpOperations().applyEdits(sharp(await buildTestQuadImage()), [
         {
           action: AssetEditAction.Mirror,
           parameters: {
@@ -167,7 +171,7 @@ describe(MediaRepository.name, () => {
       expect(await getPixelColor(bufferHorizontal, 10, 990)).toEqual({ r: 255, g: 255, b: 0 });
       expect(await getPixelColor(bufferHorizontal, 990, 990)).toEqual({ r: 0, g: 0, b: 255 });
 
-      const resultVertical = sut['applyEdits'](sharp(await buildTestQuadImage()), [
+      const resultVertical = new SharpOperations().applyEdits(sharp(await buildTestQuadImage()), [
         {
           action: AssetEditAction.Mirror,
           parameters: {
@@ -195,7 +199,7 @@ describe(MediaRepository.name, () => {
   describe('applyEdits (multiple sequential edits)', () => {
     it('should apply horizontal mirror then vertical mirror (equivalent to 180° rotation)', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Vertical } },
       ]);
@@ -213,7 +217,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply rotate 90° then horizontal mirror', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
       ]);
@@ -231,7 +235,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply 180° rotation', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Rotate, parameters: { angle: 180 } },
       ]);
 
@@ -248,7 +252,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply 270° rotations', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Rotate, parameters: { angle: 270 } },
       ]);
 
@@ -265,7 +269,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply crop then rotate 90°', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 500 } },
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
       ]);
@@ -281,7 +285,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply rotate 90° then crop', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 500, height: 1000 } },
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
       ]);
@@ -297,7 +301,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply vertical mirror then horizontal mirror then rotate 90°', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Vertical } },
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
@@ -316,7 +320,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply crop to single quadrant then mirror', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 500, height: 500 } },
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
       ]);
@@ -334,7 +338,7 @@ describe(MediaRepository.name, () => {
 
     it('should apply all operations: crop, rotate, mirror', async () => {
       const imageBuffer = await buildTestQuadImage();
-      const result = sut['applyEdits'](sharp(imageBuffer), [
+      const result = new SharpOperations().applyEdits(sharp(imageBuffer), [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 500, height: 1000 } },
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
         { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
@@ -482,6 +486,32 @@ describe(MediaRepository.name, () => {
         expect(statSync(file).blksize).toBeGreaterThan(0);
       } finally {
         rmSync(dirPath, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('isolated image orientation', () => {
+    it('applies EXIF orientation in the child, strips metadata and leaves the original bytes intact', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'sharp-orientation-'));
+      try {
+        const input = join(directory, 'original.jpg');
+        const output = join(directory, 'derived.png');
+        await sharp({ create: { width: 12, height: 8, channels: 3, background: '#c02020' } })
+          .withMetadata({ orientation: 6 })
+          .withIccProfile('p3')
+          .jpeg()
+          .toFile(input);
+        const original = readFileSync(input);
+        expect(await sut.getOrientedSize(input)).toEqual({ width: 8, height: 12 });
+        await sut.writeStrippedStill(input, output, 'png');
+        const metadata = await sharp(output).metadata();
+        expect(metadata).toMatchObject({ width: 8, height: 12, format: 'png' });
+        expect(metadata.icc).toBeDefined();
+        expect(metadata.exif).toBeUndefined();
+        expect(metadata.orientation).toBeUndefined();
+        expect(readFileSync(input)).toEqual(original);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
       }
     });
   });
