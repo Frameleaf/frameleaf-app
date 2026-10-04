@@ -15,6 +15,7 @@ import {
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
+import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
 import { anyUuid, asUuid } from 'src/utils/database.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
@@ -81,6 +82,10 @@ export const countPathReferences = async (
     WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
       OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
 
+    UNION ALL SELECT 1 FROM public.asset_develop_revision r
+    WHERE r."masterPath"=${path} OR r."previewPath"=${path}
+    UNION ALL SELECT 1 FROM public.asset_file f
+    WHERE f."isEdited" AND f.type='encoded_video' AND f.path || '.lineage.json'=${path}
   ) retained`.execute(trx);
   // Outputs served by Frameleaf features and retained Buddy snapshots are live file owners.
   // Their references are released only when the owning rows are removed or cleared.
@@ -88,6 +93,22 @@ export const countPathReferences = async (
     count: string;
   }>`SELECT count(*) FROM (
     SELECT 1 FROM public.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
+    UNION ALL SELECT 1 FROM public.person person WHERE person."thumbnailPath"=${path}
+    UNION ALL SELECT 1 FROM public."user" owner WHERE owner."profileImagePath"=${path}
+    UNION ALL SELECT 1 FROM public.asset_video_duplicate_frame frame WHERE frame.path=${path}
+    UNION ALL SELECT 1 FROM public.video_moment_frame frame WHERE frame.path=${path}
+    UNION ALL SELECT 1 FROM public.photography_workflow workflow
+    WHERE workflow.value->'published'->>'logoPath'=${path}
+      OR workflow.value->'publication'->>'logoPath'=${path}
+      OR EXISTS (SELECT 1 FROM jsonb_array_elements(
+        COALESCE(workflow.value->'published'->'photos','[]'::jsonb) ||
+        COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
+        WHERE photo->>'previewPath'=${path} OR photo->>'thumbnailPath'=${path})
+      OR EXISTS (SELECT 1 FROM jsonb_array_elements(workflow.value->'orders') orders,
+        jsonb_array_elements(orders->'items') item
+        WHERE item->>'finalPath'=${path} OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
+          WHERE output->>'approvalPreviewPath'=${path} OR output->>'finalPath'=${path}))
     UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
     UNION ALL SELECT 1 FROM public.studio_project_import imported WHERE imported.path = ${path}
     UNION ALL SELECT 1 FROM public.studio_generated_resource generated WHERE generated.path = ${path}
@@ -173,6 +194,23 @@ export class PhysicalFileRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
+  /** Job -> Buddy barrier -> path is the same order as claim-fenced publication. */
+  async sweepAttempts(roots: string[]) {
+    return sweepAttemptOutputs(this.db, roots, async (trx, path, unlink) => {
+      await lockFilePath(trx, path);
+      const physical = await trx
+        .selectFrom('physical_file')
+        .select(['id', 'type'])
+        .where('path', '=', path)
+        .executeTakeFirst();
+      // An unexpected registered original is never disposable generated output.
+      if (physical?.type === PhysicalFileType.Original || (await countPathReferences(trx, path, physical?.id)) > 0)
+        return false;
+      if (!(await unlink())) return false;
+      if (physical) await trx.deleteFrom('physical_file').where('id', '=', physical.id).execute();
+      return true;
+    });
+  }
   /**
    * The ordering is load-bearing: when the master account holds several copies
    * of the same file, an unordered limit lets upload-time dedup and the dedup

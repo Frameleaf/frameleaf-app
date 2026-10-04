@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { OutputInfo } from 'sharp';
+import type { QueueExecution } from 'src/queue/types.js';
 import { Exif } from 'src/database.js';
 import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction, VideoTrimMode } from 'src/dtos/editing.dto.js';
@@ -21,9 +22,9 @@ import {
   TranscodePolicy,
   VideoCodec,
 } from 'src/enum.js';
-import { MediaService } from 'src/services/media.service.js';
 import { queueExecution } from 'src/queue/context.js';
-import type { QueueExecution } from 'src/queue/types.js';
+import * as physicalFiles from 'src/repositories/physical-file.repository.js';
+import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -1990,6 +1991,58 @@ describe(MediaService.name, () => {
   });
 
   describe('handleGeneratePersonThumbnail', () => {
+    it('releases the superseded path only after successful claim adoption, retaining it when the face changes', async () => {
+      const person = PersonFactory.create({ faceAssetId: newUuid(), thumbnailPath: '/old-person.jpeg' });
+      mocks.person.getByGroupId.mockResolvedValue(person as never);
+      mocks.person.getFaceById.mockResolvedValue({ assetId: newUuid() } as never);
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 1000, height: 1000 } as OutputInfo,
+      });
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.PersonGenerateThumbnail },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      await queueExecution.run(context, () =>
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      );
+      expect(context.adoptions).toHaveLength(1);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      const query = {
+        select: vi.fn(),
+        where: vi.fn(),
+        forUpdate: vi.fn(),
+        set: vi.fn(),
+        execute: vi.fn().mockResolvedValue([]),
+      };
+      for (const name of ['select', 'where', 'forUpdate', 'set'] as const) query[name].mockReturnValue(query);
+      const tx = { selectFrom: vi.fn().mockReturnValue(query), updateTable: vi.fn().mockReturnValue(query) };
+      const lock = vi.spyOn(physicalFiles, 'lockFilePath').mockResolvedValue();
+      try {
+        await context.adoptions[0](tx as never);
+        expect(lock).toHaveBeenCalledWith(tx, expect.stringContaining('.attempts'));
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: ['/old-person.jpeg'] },
+        });
+        expect(query.set.mock.invocationCallOrder[0]).toBeLessThan(mocks.job.queue.mock.invocationCallOrder[0]);
+        mocks.job.queue.mockClear();
+        tx.updateTable.mockClear();
+        mocks.person.getByGroupId.mockResolvedValue({ ...person, faceAssetId: newUuid() } as never);
+        await expect(context.adoptions[0](tx as never)).rejects.toThrow('Person thumbnail source changed');
+        expect(tx.updateTable).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      } finally {
+        lock.mockRestore();
+      }
+    });
+
     it('should generate a thumbnail even if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
       mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
