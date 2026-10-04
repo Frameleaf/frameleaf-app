@@ -109,3 +109,78 @@ test("every allowlist entry gives its reason and a pattern", () => {
   }
   assert.ok(LEGACY_VARIABLE.global && LEGACY_COMMAND.global);
 });
+
+test("the importer journal identifier is internal and allowed only in its defining file", () => {
+  const file = "server/src/immich-import/state.ts";
+  assert.deepEqual(
+    scanLegacyText(
+      "export const IMMICH_IMPORT_SCHEMA_SQL = `CREATE TABLE public.frameleaf_immich_import`",
+      { file },
+    ),
+    [],
+  );
+  assert.deepEqual(
+    scanLegacyText("IMMICH_IMPORT_SCHEMA_SQL IMMICH_IMPORT_DATABASE_URL", {
+      file,
+    }).map(({ match }) => match),
+    ["IMMICH_IMPORT_DATABASE_URL"],
+  );
+  for (const other of [
+    "server/src/immich-import/importer.ts",
+    "docs/docs/administration/import-immich.md",
+  ]) {
+    assert.equal(
+      scanLegacyText("IMMICH_IMPORT_SCHEMA_SQL", { file: other }).length,
+      1,
+    );
+  }
+  assert.equal(
+    scanLegacyText("process.env.IMMICH_MEDIA_LOCATION", {
+      file: "server/src/schema/migrations/1752759108283-ConvertToAbsolutePaths.ts",
+    }).length,
+    1,
+  );
+});
+
+test("the offline import alias allowance does not excuse other commands, variables or documentation", () => {
+  const file = "docs/docs/administration/import-immich.md";
+  for (const command of [
+    "immich-admin import-immich preflight --config /path/config.json",
+    "immich-admin import-immich run --config /path/config.json",
+    "immich-admin import-immich status",
+    "immich-admin import-immich resume --config /path/config.json",
+    "immich-admin import-immich verify --config /path/config.json",
+  ]) {
+    assert.deepEqual(scanLegacyText(command, { file }), []);
+    assert.equal(
+      scanLegacyText(command, { file: "docs/docs/example.md" }).length,
+      1,
+    );
+  }
+  for (const command of [
+    "immich-admin reset-admin-password",
+    "immich-admin import-immich delete",
+    "immich-admin import-immich status && immich-admin list-users",
+    "IMMICH_PORT=2283 immich-admin import-immich status",
+  ]) {
+    assert.ok(scanLegacyText(command, { file }).length > 0, command);
+  }
+  const alias =
+    "`frameleaf-admin import-immich` (also available through the current `immich-admin` alias)";
+  assert.deepEqual(
+    scanLegacyText(alias, {
+      file: "docs/docs/administration/server-commands.md",
+    }),
+    [],
+  );
+  assert.equal(
+    scanLegacyText(alias, { file: "docs/docs/example.md" }).length,
+    1,
+  );
+  assert.equal(
+    scanLegacyText(`${alias} IMMICH_PORT=2283`, {
+      file: "docs/docs/administration/server-commands.md",
+    }).length,
+    1,
+  );
+});

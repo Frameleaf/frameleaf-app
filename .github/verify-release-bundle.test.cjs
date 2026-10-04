@@ -46,7 +46,13 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
       tag,
       sourceCommit,
       buildRun: "https://github.com/Frameleaf/frameleaf-app/actions/runs/123",
-      dependencies: [{ reference: "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7", digest: `sha256:${"c".repeat(64)}` }],
+      dependencies: [
+        {
+          reference:
+            "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7",
+          digest: `sha256:${"c".repeat(64)}`,
+        },
+      ],
       images: VARIANTS.map((spec) => ({
         image: `ghcr.io/frameleaf/${spec.image}`,
         suffix: spec.suffix,
@@ -60,12 +66,20 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
     const sumsFile = path.join(bundle, "SHA256SUMS");
     const originalSums = await fs.readFile(sumsFile, "utf8");
     assert.equal(manifest.schemaVersion, 3);
-    const generatedNas = JSON.parse(await fs.readFile(path.join(bundle, "nas-manifest.json"), "utf8"));
+    const generatedNas = JSON.parse(
+      await fs.readFile(path.join(bundle, "nas-manifest.json"), "utf8"),
+    );
     assert.equal(generatedNas.schemaVersion, 3);
     assert.equal(generatedNas.buildRun, manifest.buildRun);
     assert.equal(generatedNas.migration, undefined);
     assert.equal(generatedNas.images.valkey, undefined);
-    assert.equal(await fs.stat(path.join(bundle, "supported-versions.json")).then(() => true, () => false), false);
+    assert.equal(
+      await fs.stat(path.join(bundle, "supported-versions.json")).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
     const refreshSums = async () => {
       const lines = await Promise.all(
         originalSums

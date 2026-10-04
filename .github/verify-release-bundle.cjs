@@ -100,9 +100,7 @@ async function verifyBundle(
   for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
     const compose = await fs.readFile(path.join(directory, name), "utf8");
     const services = load(compose)?.services;
-    for (const [service, image] of [
-      ["database", "postgres"],
-    ])
+    for (const [service, image] of [["database", "postgres"]])
       assert.equal(
         services?.[service]?.image,
         nas.images[image],
@@ -186,12 +184,26 @@ function verifyNasManifest(nas, release) {
   for (const image of release.images) {
     const expected = image.image.endsWith("/frameleaf-server")
       ? nas.images.server
-      : image.suffix ? nas.images.machineLearningVariants?.[image.suffix.slice(1)] : nas.images.machineLearning;
-    assert.equal(expected, `${image.image}@${image.digest}`, "NAS release image differs");
+      : image.suffix
+        ? nas.images.machineLearningVariants?.[image.suffix.slice(1)]
+        : nas.images.machineLearning;
+    assert.equal(
+      expected,
+      `${image.image}@${image.digest}`,
+      "NAS release image differs",
+    );
   }
-  assert.match(nas.images.postgres, /^ghcr\.io\/frameleaf\/frameleaf-postgres:19beta4-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/);
-  assert(release.dependencies?.some(({ reference, digest }) =>
-    `${reference.split("@")[0]}@${digest}` === nas.images.postgres), "NAS database was not verified for this release");
+  assert.match(
+    nas.images.postgres,
+    /^ghcr\.io\/frameleaf\/frameleaf-postgres:19beta4-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/,
+  );
+  assert(
+    release.dependencies?.some(
+      ({ reference, digest }) =>
+        `${reference.split("@")[0]}@${digest}` === nas.images.postgres,
+    ),
+    "NAS database was not verified for this release",
+  );
 }
 
 module.exports = { verifyBundle, verifyNasManifest };
