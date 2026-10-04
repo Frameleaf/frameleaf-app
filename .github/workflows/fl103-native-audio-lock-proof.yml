@@ -1,0 +1,66 @@
+name: FL103 hosted native audio dependency resolution
+'on':
+  push:
+    branches: [aj/fl103-native-audio-lock-proof]
+permissions:
+  contents: read
+jobs:
+  lock-resolution:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Pin resolver version
+        run: npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+      - name: Resolve reviewed package-only inputs
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.21.0
+          test "$(npm --version)" = 11.8.0
+          resolve="$RUNNER_TEMP/fl103-native-audio-lock"
+          mkdir "$resolve"
+          curl --fail --location --silent --show-error \
+            https://codeload.github.com/walterlow/freecut/tar.gz/4d62e8082c5eb387a96275bcbd323d28f6e41a62 \
+            -o "$resolve/upstream.tar.gz"
+          printf '%s  %s\n' \
+            b4224e5c219a6302586cbe2242e9e6d299dfd1878f1fcd0f2d77ea3db12a5d32 \
+            "$resolve/upstream.tar.gz" | sha256sum --check
+          tar -xOf "$resolve/upstream.tar.gz" \
+            freecut-4d62e8082c5eb387a96275bcbd323d28f6e41a62/package.json \
+            > "$resolve/package.json"
+          cp studio/engine-package-lock.json "$resolve/package-lock.json"
+          (
+            cd "$resolve"
+            git apply --include=package.json "$GITHUB_WORKSPACE/studio/patches/0001-isolated-package.patch"
+            git apply --include=package.json "$GITHUB_WORKSPACE/studio/patches/0059-native-webaudio-highrate-browser-harness.patch"
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          )
+          git rev-parse HEAD HEAD^{tree} HEAD^ > "$resolve/producer.txt"
+          printf '%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" >> "$resolve/producer.txt"
+          node --version >> "$resolve/producer.txt"
+          npm --version >> "$resolve/producer.txt"
+          sha256sum \
+            studio/engine-build.json \
+            studio/patches/0001-isolated-package.patch \
+            studio/patches/0059-native-webaudio-highrate-browser-harness.patch \
+            studio/engine-package-lock.json \
+            "$resolve/upstream.tar.gz" \
+            "$resolve/package.json" "$resolve/package-lock.json" > "$resolve/inputs-and-output.sha256"
+      - name: Retain actual resolver output and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl103-native-audio-lock
+          path: |
+            ${{ runner.temp }}/fl103-native-audio-lock/package.json
+            ${{ runner.temp }}/fl103-native-audio-lock/package-lock.json
+            ${{ runner.temp }}/fl103-native-audio-lock/producer.txt
+            ${{ runner.temp }}/fl103-native-audio-lock/inputs-and-output.sha256
+          if-no-files-found: error
+          retention-days: 7
