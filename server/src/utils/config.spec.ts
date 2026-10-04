@@ -1,7 +1,9 @@
 import { cloneDeep } from 'lodash-es';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
-import { getConfigRevision } from 'src/utils/config.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import { clearConfigCache, getConfig, getConfigRevision, readConfig, updateConfig } from 'src/utils/config.js';
+import { getMocks } from 'test/utils.js';
 
 describe('getConfigRevision (FL-66 settings revision)', () => {
   it('is the same for equal settings whatever their key order', () => {
@@ -52,5 +54,86 @@ describe('getConfigRevision (FL-66 settings revision)', () => {
 
   it('is short, opaque text', () => {
     expect(getConfigRevision(defaults)).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe('canonical system configuration storage', () => {
+  let mocks: ReturnType<typeof getMocks>;
+  let metadata: Map<SystemMetadataKey, unknown>;
+
+  const repos = () => ({
+    configRepo: mocks.config as never,
+    metadataRepo: mocks.systemMetadata as never,
+    logger: mocks.logger as never,
+  });
+
+  beforeEach(() => {
+    mocks = getMocks();
+    metadata = new Map();
+    clearConfigCache();
+    mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve(cloneDeep(metadata.get(key)) as never));
+    mocks.systemMetadata.set.mockImplementation((key, value) => {
+      metadata.set(key, cloneDeep(value));
+      return Promise.resolve();
+    });
+  });
+
+  it('loads Frameleaf settings and ordinary settings from the same canonical document', async () => {
+    metadata.set(SystemMetadataKey.SystemConfig, {
+      smartAlbums: { enabled: true },
+      frameleafCloud: { signIn: { buttonText: 'Sign in to the family library' } },
+      trash: { days: defaults.trash.days + 1 },
+    });
+
+    const config = await getConfig(repos(), { withCache: false });
+
+    expect(config.smartAlbums.enabled).toBe(true);
+    expect(config.smartAlbums.builtIn).toEqual(defaults.smartAlbums.builtIn);
+    expect(config.frameleafCloud.signIn.buttonText).toBe('Sign in to the family library');
+    expect(config.frameleafCloud.remoteAccess).toEqual(defaults.frameleafCloud.remoteAccess);
+    expect(config.trash.days).toBe(defaults.trash.days + 1);
+    expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig);
+  });
+
+  it('round-trips a canonical save while keeping unrelated metadata and write-only credentials', async () => {
+    const history = { entries: [{ id: 'history-is-separate' }] };
+    metadata.set(SystemMetadataKey.SystemConfigHistory, history);
+    const draft = cloneDeep(defaults);
+    draft.smartAlbums.enabled = true;
+    draft.frameleafCloud.signIn.buttonText = 'Sign in to the family library';
+    draft.oauth.clientSecret = 'saved-oauth-secret';
+
+    const saved = await updateConfig(repos(), draft);
+
+    expect(saved).toEqual(draft);
+    expect(metadata.get(SystemMetadataKey.SystemConfig)).toEqual({
+      smartAlbums: { enabled: true },
+      frameleafCloud: { signIn: { buttonText: 'Sign in to the family library' } },
+      oauth: { clientSecret: 'saved-oauth-secret' },
+    });
+    expect(metadata.get(SystemMetadataKey.SystemConfigHistory)).toEqual(history);
+    expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(1);
+    expect(getConfigRevision(saved)).toBe(getConfigRevision(draft));
+  });
+
+  it('restores defaults and invalidates cached settings when the canonical save clears overrides', async () => {
+    metadata.set(SystemMetadataKey.SystemConfig, { smartAlbums: { enabled: true } });
+    expect((await getConfig(repos(), { withCache: true })).smartAlbums.enabled).toBe(true);
+
+    await updateConfig(repos(), cloneDeep(defaults));
+
+    expect(metadata.get(SystemMetadataKey.SystemConfig)).toEqual({});
+    expect(await getConfig(repos(), { withCache: true })).toEqual(defaults);
+  });
+
+  it('fresh revision reads observe another writer while an ordinary cached read remains cached', async () => {
+    const cached = await getConfig(repos(), { withCache: true });
+    metadata.set(SystemMetadataKey.SystemConfig, { trash: { days: defaults.trash.days + 1 } });
+
+    const current = await readConfig(repos());
+
+    expect(current.trash.days).toBe(defaults.trash.days + 1);
+    expect(getConfigRevision(current)).not.toBe(getConfigRevision(cached));
+    expect((await getConfig(repos(), { withCache: true })).trash.days).toBe(defaults.trash.days);
   });
 });

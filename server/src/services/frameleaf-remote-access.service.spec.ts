@@ -76,10 +76,6 @@ describe(FrameleafRemoteAccessService.name, () => {
       metadata.set(key, value);
       return Promise.resolve();
     });
-    mocks.forkSchema.persistConfig.mockImplementation((partial) => {
-      metadata.set(SystemMetadataKey.SystemConfig, partial);
-      return Promise.resolve();
-    });
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: INSTANCE_ID, kid: 'kid-1' } as never);
     mocks.instanceIdentity.currentSigner.mockReturnValue({ kid: 'kid-1' } as never);
     mocks.frameleafCloud.discovery.mockResolvedValue({
