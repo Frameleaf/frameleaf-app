@@ -121,7 +121,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
         Object.fromEntries(Object.entries(row).filter(([column]) => shape.columns.includes(column))),
       );
       const remaining = after ? rows.filter((row) => String(row[shape.key[0]]) > after[0]) : rows;
-      if (remaining.length) {
+      if (remaining.length > 0) {
         yield remaining.map((row) => ({ row, cursor: shape.key.map((key) => String(row[key])) }));
       }
       if (table === 'user' && interruptAfterCopy) {
@@ -164,7 +164,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
         type: 'IMAGE',
         originalPath: sourcePath,
         originalFileName: 'original.jpg',
-        checksum: `\\x${checksum}`,
+        checksum: String.raw`\x${checksum}`,
         checksumAlgorithm: 'sha256',
         fileCreatedAt: date,
         fileModifiedAt: date,
@@ -187,7 +187,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
         id: 'b1f005b7-8bdc-4ee0-a4d9-dff24eac5f5e',
         userId: owner1,
         albumId,
-        key: '\\x0123456789abcdef',
+        key: String.raw`\x0123456789abcdef`,
         type: 'ALBUM',
         allowUpload: false,
         allowDownload: false,
