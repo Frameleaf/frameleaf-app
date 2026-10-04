@@ -156,10 +156,11 @@ export class JobRepository {
       throw new Error('Job execution requires the supervised microservices worker');
     }
     const { port1, port2 } = new MessageChannel();
-    parentPort.postMessage({ type: 'queue-watchdog-port', port: port1 }, [port1]);
+    const workerId = randomUUID();
+    parentPort.postMessage({ type: 'queue-watchdog-port', workerId, port: port1 }, [port1]);
     this.coordinator = new Worker(new URL('../workers/queue-coordinator.js', import.meta.url), {
       workerData: {
-        workerId: randomUUID(),
+        workerId,
         queues: Object.values(QueueName),
         connection: this.configRepository.getEnv().database.config,
         supervisor: port2,
