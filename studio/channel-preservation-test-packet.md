@@ -62,3 +62,41 @@ This import updates only the admitted source digest and this provenance record.
 It supersedes the pending-digest state above. No local preparation, runtime or
 adapted-source digest generation was performed. `runtimeQualified: false`:
 the receipt establishes source identity, not behavioral red or channel fidelity.
+
+## Hosted behavioral red and gain-only production candidate
+
+The root owner confirmed genuine hosted behavioral red at exact head
+`46ef355c656e8b89982e9295de1040ae962fe742`, Studio run `37173095254`, engine job
+`111350253936`, retained log `/tmp/fl103-46ef-engine.log`. Of the eight new
+tests, six failed on actual channel counts: full/windowed mono returned 2 rather
+than 1, six-plane returned 2 rather than 6, and eight-plane returned 2 rather than
+8. Both stereo positive controls passed. These were preservation assertions,
+without fixture/type/format blockers, rather than a source-digest gate failure.
+
+Patch 0055 is the narrow production candidate for that red. Full mixing allocates
+the output on its first processed source; normal-speed gain edits keep decoded
+planes in their existing order. Every source must match the first source's count,
+and every processed source must match the allocated output count. Windowed mixing
+reads one decoded sample from every active source before yielding to establish a
+single matching plane count, then allocates that many planes for every window.
+Each later decoded window must retain that count. Source decoders remain pooled,
+per-channel gain/fades and sample offsets remain in their original pipeline, and
+leading silence uses the admitted plane count. Mismatched counts fail explicitly
+instead of choosing a largest count or guessing a new remapping/downmix.
+
+Matching plane counts still cannot establish matching speaker layouts: the current
+API carries no semantic layout labels. Distinct layouts with equal counts remain
+unqualified. This candidate does not certify encoded tags or container fidelity.
+Prior patch 0011's explicit SoundTouch stereo downmix for multichannel speed/pitch
+processing and its existing regression are retained; multichannel retiming
+preservation and SoundTouch latency require their own later packet. The full
+FL-103 acceptance, including automation, recording/device behavior, removals,
+captions, and independent render/codec evidence, remains open.
+
+GitNexus upstream impacts for both mixers, their window helpers, and the new
+count guard could not resolve indexed targets; caller/process coverage remains
+UNKNOWN. No local engine reconstruction, adaptation application, preparation,
+runtime/test/build/index/formatter/install action was performed. `sourceSha256`
+remains the prior genuine `b482ca96155e835cafe9bbbaeb0f27a14ecb7b128e2cddc8d2ecc6e872cf3762`
+pending a new independently reviewed hosted receipt for patch 0055. Production
+green and channel fidelity are not yet established. `runtimeQualified: false`.
