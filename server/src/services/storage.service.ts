@@ -7,6 +7,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
+  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -14,6 +15,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
@@ -21,6 +23,42 @@ const docsMessage = `Please see https://help.frameleaf.app/administration/system
 
 @Injectable()
 export class StorageService extends BaseService {
+  private attemptSweepTimer?: NodeJS.Timeout;
+  private attemptSweepActive?: Promise<void>;
+
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  startAttemptSweep() {
+    this.attemptSweepTimer ??= setInterval(() => void this.sweepAttemptOutputs(), 60_000);
+    this.attemptSweepTimer.unref();
+    void this.sweepAttemptOutputs();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async stopAttemptSweep() {
+    clearInterval(this.attemptSweepTimer);
+    this.attemptSweepTimer = undefined;
+    await this.attemptSweepActive;
+    await closeAttemptSweep();
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  sweepAttemptOutputs(): Promise<void> {
+    return (this.attemptSweepActive ??= this.physicalFileRepository
+      .sweepAttempts([
+        StorageCore.getBaseFolder(StorageFolder.Thumbnails),
+        StorageCore.getBaseFolder(StorageFolder.EncodedVideo),
+      ])
+      .then((result) => {
+        if (result?.deleted) this.logger.log(`Attempt output cleanup: ${result.deleted} files removed`);
+      })
+      .catch((error) => {
+        this.logger.warn(`Attempt output cleanup deferred: ${error}`);
+      })
+      .finally(() => {
+        this.attemptSweepActive = undefined;
+      }));
+  }
+
   private detectMediaLocation(): string {
     const envData = this.configRepository.getEnv();
     if (envData.storage.mediaLocation) {

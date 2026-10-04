@@ -5,7 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { MessageChannel, parentPort, Worker } from 'node:worker_threads';
+import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
@@ -29,7 +29,8 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
-import { getKeyByValue, getMethodNames, ImmichStartupError } from 'src/utils/misc.js';
+import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
+import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -193,9 +194,19 @@ export class JobRepository {
       progress: (units) => this.coordinator?.postMessage({ type: 'progress', id: claim.id, units }),
     };
     try {
-      await queueExecution.run(context, () =>
-        this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
-      );
+      try {
+        await queueExecution.run(context, () =>
+          this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
+        );
+      } finally {
+        // Handler/native work has returned; lease expiry alone cannot attest this.
+        // Keep this before durable completion, while the watchdog still owns the claim.
+        try {
+          await recordStoppedAttempt(this.store.db, claim.id, claim.token);
+        } catch {
+          this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
+        }
+      }
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
         await this.store.defer(claim, context.dependencyReason);
