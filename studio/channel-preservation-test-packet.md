@@ -100,3 +100,26 @@ runtime/test/build/index/formatter/install action was performed. `sourceSha256`
 remains the prior genuine `b482ca96155e835cafe9bbbaeb0f27a14ecb7b128e2cddc8d2ecc6e872cf3762`
 pending a new independently reviewed hosted receipt for patch 0055. Production
 green and channel fidelity are not yet established. `runtimeQualified: false`.
+
+## Hosted patch-context failure and bounded repair
+
+At head `6125b5c1c2371f1921acf97d5ba3aa26d4222082`, run `37173715523`, engine
+job `111352159875`, hosted preparation rejected patch 0055 at its allocation
+hunk (`canvas-audio.ts:2730`), before source inventory recovery or test execution.
+The retained log is `/tmp/fl103-6125-engine.log`; lifecycle passed. This was a
+patch-context failure and supplies no mixer behavior result or adapted digest.
+
+The allocation hunk originally ended at its replacement and lacked trailing
+context. The repair adds the exact blank line, active-segment loop and
+cancellation check shown by preceding patch 0006 after it removes
+`processedSegmentCount`. The immutable pinned source contains the same lines
+with that now-removed counter. No preceding patch changes those surviving lines.
+The hunk now has trailing context and correctly counts six old / seven new rows;
+all production additions/deletions remain unchanged. The registered patch digest
+is `8c177c21b6e3cb41aa2420e39988ea71ff914ce042a597226838eb90b5146143`.
+
+Only static source/patch reads and patch-text parsing were used. No patch was
+applied locally, no adapted source was reconstructed, and Git validation was not
+relaxed. Hosted application remains unverified. The prior genuine `b482...3762`
+source digest is retained until a new genuine hosted receipt; runtime remains
+unqualified. GitNexus could not resolve `processAudio`; impact coverage is UNKNOWN.
