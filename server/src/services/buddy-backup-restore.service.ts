@@ -1617,6 +1617,10 @@ export class BuddyBackupRestoreService {
       if (!manifest.library.database) throw new Error('Buddy snapshot has no verified database dump');
       await reader.download(manifest, manifest.library.database.sha256, join(directory, 'database.sql.gz'));
     }
+    if (manifest.bootConfiguration !== undefined) {
+      const { stageBuddyBootConfiguration } = await import('../utils/buddy-boot-configuration.ts');
+      await stageBuddyBootConfiguration(directory, manifest.snapshotId, manifest.bootConfiguration, checkpoint);
+    }
     await writeBuddyFile(
       join(directory, 'prepared.json'),
       JSON.stringify({ version: 1, scope: job.request.scope, mode: job.request.mode, manifest, files }),
