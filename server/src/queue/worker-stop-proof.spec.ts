@@ -1,0 +1,78 @@
+import { Pool } from 'pg';
+import { WorkerStopProofRecorder, WORKER_PROOF_TIMEOUT_MS } from 'src/queue/worker-stop-proof.js';
+import type { ConfigRepository } from 'src/repositories/config.repository.js';
+
+vi.mock('pg', () => ({ Pool: vi.fn() }));
+const config = {
+  getEnv: () => ({ database: { config: { connectionType: 'url', url: 'postgres://localhost/frameleaf' } } }),
+} as unknown as ConfigRepository;
+const proof = { workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12345 };
+
+describe('supervisor stop proof recorder', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('uses one separate bounded connection and retries failed metadata without replaying work', async () => {
+    const release = vi.fn();
+    const query = vi.fn().mockRejectedValueOnce(new Error('database unavailable')).mockResolvedValue({});
+    const connect = vi.fn().mockResolvedValue({ query, release });
+    vi.mocked(Pool).mockImplementation(function () {
+      return { connect, on: vi.fn(), end: vi.fn().mockResolvedValue(undefined) } as unknown as Pool;
+    });
+    const diagnostic = vi.fn();
+    const recorder = new WorkerStopProofRecorder(config, { retryMs: 50, diagnostic });
+    try {
+      await recorder.record(proof);
+      expect(Pool).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          max: 1,
+          connectionTimeoutMillis: WORKER_PROOF_TIMEOUT_MS,
+          query_timeout: WORKER_PROOF_TIMEOUT_MS,
+          statement_timeout: WORKER_PROOF_TIMEOUT_MS,
+          lock_timeout: WORKER_PROOF_TIMEOUT_MS,
+        }),
+      );
+      expect(release).toHaveBeenCalledWith(true);
+      expect(diagnostic).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(51);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query.mock.calls[0][1]).toEqual([JSON.stringify([proof])]);
+      expect(query.mock.calls[1][1]).toEqual(query.mock.calls[0][1]);
+      expect(query.mock.calls[1][0]).toContain('public.system_metadata');
+      expect(release).toHaveBeenLastCalledWith(false);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(query).toHaveBeenCalledTimes(2);
+    } finally {
+      await recorder.close();
+    }
+  });
+
+  it('does not return a concurrently arriving proof before its first write attempt', async () => {
+    let finish!: () => void;
+    const first = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const query = vi.fn().mockReturnValueOnce(first).mockResolvedValue({});
+    const connect = vi.fn().mockResolvedValue({ query, release: vi.fn() });
+    vi.mocked(Pool).mockImplementation(function () {
+      return { connect, on: vi.fn(), end: vi.fn().mockResolvedValue(undefined) } as unknown as Pool;
+    });
+    const recorder = new WorkerStopProofRecorder(config);
+    const other = { workerId: '05781a21-0a8f-428d-be97-08fc7f219146', stoppedAt: 12346 };
+    try {
+      const initial = recorder.record(proof);
+      await Promise.resolve();
+      const second = recorder.record(other);
+      finish();
+      await Promise.all([initial, second]);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query.mock.calls[1][1]).toEqual([JSON.stringify([other])]);
+    } finally {
+      finish();
+      await recorder.close();
+    }
+  });
+});

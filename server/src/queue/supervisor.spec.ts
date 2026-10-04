@@ -1,10 +1,105 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { EventEmitter, once } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
+import type { WorkerStoppedProof } from 'src/queue/worker-stop-proof.js';
+import { SupervisorStop } from 'src/utils/shutdown.js';
 
 /** Real worker threads and child processes; fake clocks cannot prove event-loop isolation. */
 describe('queue execution supervisor', () => {
+  it('writes stop proof only after the real executor and registered child are gone, then waits for persistence', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+    await once(child, 'spawn');
+    const childClosed = once(child, 'close');
+    const workerId = randomUUID();
+    const worker = new Worker(
+      `const {parentPort,MessageChannel,workerData}=require('node:worker_threads');
+      const {port1,port2}=new MessageChannel();
+      parentPort.postMessage({type:'queue-watchdog-port',workerId:workerData.workerId,port:port1},[port1]);
+      parentPort.postMessage({type:'queue-child',pid:workerData.pid,active:true});
+      parentPort.postMessage({type:'ready'}); setInterval(()=>{},1000);`,
+      { eval: true, workerData: { workerId, pid: child.pid } },
+    );
+    let persisted!: () => void;
+    const write = new Promise<void>((resolve) => {
+      persisted = resolve;
+    });
+    let called!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      called = resolve;
+    });
+    const recordStopped = vi.fn(async (proof: WorkerStoppedProof) => {
+      expect(proof.workerId).toBe(workerId);
+      expect(proof.stoppedAt).toEqual(expect.any(Number));
+      expect(worker.threadId).toBe(-1);
+      expect(() => process.kill(child.pid!, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+      called();
+      await write;
+    });
+    const { stopped } = superviseQueueWorker(worker, undefined, undefined, { recordStopped });
+    const exit = vi.fn();
+    const shutdown = new SupervisorStop({ exit, deadlineMs: 9000 });
+    shutdown.begin(() => [
+      {
+        stop: () => {},
+        kill: () => {
+          void worker.terminate();
+        },
+      },
+    ]);
+    void stopped.then(() => shutdown.workerExited(0));
+    let settled = false;
+    void stopped.then(() => {
+      settled = true;
+    });
+    try {
+      await new Promise<void>((resolve) =>
+        worker.on('message', (message) => {
+          if (message.type === 'ready') resolve();
+        }),
+      );
+      expect(recordStopped).not.toHaveBeenCalled();
+      await worker.terminate();
+      await childClosed;
+      await writing;
+      expect(settled).toBe(false);
+      expect(exit).not.toHaveBeenCalled();
+      persisted();
+      await stopped;
+      expect(recordStopped).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(true);
+      expect(exit).toHaveBeenCalledWith(0);
+    } finally {
+      persisted();
+      child.kill('SIGKILL');
+      await worker.terminate();
+    }
+  }, 10_000);
+
+  it('refuses proof when kill requests and a reported close cannot establish child absence', async () => {
+    const worker = Object.assign(new EventEmitter(), { terminate: vi.fn().mockResolvedValue(0) });
+    const recordStopped = vi.fn();
+    const diagnostic = vi.fn();
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    try {
+      const { stopped } = superviseQueueWorker(worker as unknown as Worker, undefined, undefined, {
+        recordStopped,
+        diagnostic,
+        stopWaitMs: 20,
+        childScanMs: 5,
+      });
+      worker.emit('message', { type: 'queue-child', pid: 99999999, active: true });
+      worker.emit('message', { type: 'queue-child', pid: 99999999, active: false });
+      worker.emit('exit', 1);
+      await stopped;
+      expect(recordStopped).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('native children remain unconfirmed'));
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
   it('terminates an executor stuck in synchronous JavaScript on an independent watchdog signal', async () => {
     const worker = new Worker(
       `const {parentPort,MessageChannel}=require('node:worker_threads');

@@ -7,6 +7,7 @@ import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
 import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
+import { WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
@@ -44,6 +45,7 @@ class Workers {
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<ImmichWorker>();
+  private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
 
   private stopper = new SupervisorStop({
     exit: (code) => process.exit(code),
@@ -181,6 +183,7 @@ class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
     let stop: () => void;
+    let stopped: Promise<void> | undefined;
 
     // FL-165: the edge worker is a process of its own like the API: it holds the remote access
     // certificate keys and every remote socket, apart from the workers that run jobs
@@ -199,7 +202,10 @@ class Workers {
     } else {
       const worker = new Worker(workerFile);
       if (name === ImmichWorker.Microservices) {
-        superviseQueueWorker(worker);
+        stopped = superviseQueueWorker(worker, undefined, undefined, {
+          recordStopped: (proof) => this.workerStopProofs.record(proof),
+          diagnostic: (message) => console.error(message),
+        }).stopped;
       }
 
       kill = async () => void (await worker.terminate());
@@ -214,7 +220,11 @@ class Workers {
       }
     });
     anyWorker.on('error', (error) => this.onError(name, error));
-    anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
+    anyWorker.on('exit', (exitCode) => {
+      // Keep this worker in the shutdown count until stop confirmation and the first bounded write finish.
+      if (stopped) void stopped.then(() => this.onExit(name, exitCode));
+      else this.onExit(name, exitCode);
+    });
 
     this.workers[name] = { kill, stop };
     if (name === ImmichWorker.Edge) {
