@@ -2595,6 +2595,8 @@ export enum SyncRequestType {
   AssetFacesV3 = 'AssetFacesV3',
   UserMetadataV1 = 'UserMetadataV1',
   PinnedCollectionsV1 = 'PinnedCollectionsV1',
+  /** FL-331: phone album and folder links to server albums */
+  AlbumSourceLinksV1 = 'AlbumSourceLinksV1',
 }
 
 export const SyncRequestTypeSchema = z
@@ -2623,6 +2625,8 @@ export enum SyncEntityType {
   SharedSpacePersonDeleteV1 = 'SharedSpacePersonDeleteV1',
   PetV1 = 'PetV1',
   PetDeleteV1 = 'PetDeleteV1',
+  AlbumSourceLinkV1 = 'AlbumSourceLinkV1',
+  AlbumSourceLinkDeleteV1 = 'AlbumSourceLinkDeleteV1',
   PetObservationV1 = 'PetObservationV1',
   PetObservationDeleteV1 = 'PetObservationDeleteV1',
   TagV1 = 'TagV1',
@@ -3116,6 +3120,7 @@ export enum ConfigVisibility {
 export enum ApiTag {
   Activities = 'Activities',
   Albums = 'Albums',
+  AlbumSources = 'Album sources',
   Analytics = 'Analytics',
   ApiKeys = 'API keys',
   Authentication = 'Authentication',

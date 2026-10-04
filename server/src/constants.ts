@@ -238,6 +238,8 @@ export const ORIENTATION_TO_SHARP_ROTATION: Record<ExifOrientation, SharpRotatio
 export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Activities]: 'An activity is a like or a comment made by a user on an asset or album.',
   [ApiTag.Albums]: 'An album is a collection of assets that can be shared with other users or via shared links.',
+  [ApiTag.AlbumSources]:
+    'Album source links map phone albums and folders to server albums, so the native apps sync phone albums without duplicates.',
   [ApiTag.Analytics]:
     'Library analytics: counts, sizes, dated history and processing outcomes for the whole server, one account or one external library. Everything is computed and kept on this server; nothing is sent elsewhere.',
   [ApiTag.ApiKeys]: 'An api key can be used to programmatically access the Frameleaf API.',
