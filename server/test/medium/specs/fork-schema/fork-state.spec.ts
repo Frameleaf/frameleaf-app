@@ -66,6 +66,34 @@ describe(ForkSchemaRepository.name, () => {
     });
   });
 
+  it('reports storage steady only outside a backfill, handoff or return', async () => {
+    const audit = (name: string, phase: string, status: string) =>
+      sql`INSERT INTO immich_fork.migration_audit (name, phase, status, details) VALUES (${name}, ${phase}, ${status}, '{}'::jsonb)`.execute(
+        db,
+      );
+    await sql`DELETE FROM immich_fork.migration_audit`.execute(db);
+
+    await expect(repository.isStorageSteady()).resolves.toBe(false); // inactive
+    await repository.setPhase('dual-write');
+    await expect(repository.isStorageSteady()).resolves.toBe(false);
+    await repository.setPhase('ready');
+    await expect(repository.isStorageSteady()).resolves.toBe(true);
+
+    await audit('official-handoff-preparation', 'ready', 'running');
+    await expect(repository.isStorageSteady()).resolves.toBe(false);
+    await sql`UPDATE immich_fork.migration_audit SET status = 'applied', "completedAt" = now()`.execute(db);
+    // Prepared, awaiting the cutover: shared originals are split and must stay split.
+    await expect(repository.isStorageSteady()).resolves.toBe(false);
+
+    // Back on the fork after the return, the old applied preparation no longer holds anything.
+    await sql`UPDATE immich_fork.state SET active = true, phase = 'active' WHERE id = 1`.execute(db);
+    await expect(repository.isStorageSteady()).resolves.toBe(true);
+    await audit('fork-return-reconciliation', 'inactive', 'running');
+    await expect(repository.isStorageSteady()).resolves.toBe(false);
+
+    await sql`DELETE FROM immich_fork.migration_audit`.execute(db);
+  });
+
   it('rejects phase changes when singleton state is missing', async () => {
     await sql`DELETE FROM immich_fork.state WHERE id = 1`.execute(db);
 

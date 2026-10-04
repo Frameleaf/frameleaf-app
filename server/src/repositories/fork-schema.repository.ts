@@ -185,6 +185,34 @@ export class ForkSchemaRepository {
     return state;
   }
 
+  /**
+   * Whether background work may rewrite where originals live: the backfill is finished (ready or active)
+   * and no official handoff or return is under way. A prepared handoff (ready phase, newest preparation
+   * applied) counts as under way until the cutover: it has split every shared original back into its own
+   * file, and linking one again would leave the cutover's physical mapping unsafe.
+   * ponytail: an abandoned prepared handoff holds storage rewrites until the operator prepares again or cuts over.
+   */
+  async isStorageSteady(): Promise<boolean> {
+    const { rows } = await sql<{ steady: boolean }>`
+      SELECT state.phase IN ('ready', 'active')
+        AND NOT EXISTS (
+          SELECT 1 FROM immich_fork.migration_audit
+          WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
+        )
+        AND NOT (
+          state.phase = 'ready'
+          AND coalesce((
+            SELECT status FROM immich_fork.migration_audit
+            WHERE name = 'official-handoff-preparation'
+            ORDER BY id DESC LIMIT 1
+          ), '') = 'applied'
+        ) AS steady
+      FROM immich_fork.state state
+      WHERE id = 1
+    `.execute(this.db);
+    return rows[0]?.steady ?? false;
+  }
+
   async getProgress(): Promise<BackfillProgress[]> {
     const result = await sql<BackfillProgress>`
       SELECT

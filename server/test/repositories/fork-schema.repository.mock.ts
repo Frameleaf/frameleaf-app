@@ -13,6 +13,7 @@ export const newForkSchemaRepositoryMock = (): Mocked<RepositoryInterface<ForkSc
   mirrorConfig: vitest.fn(),
   persistConfig: vitest.fn(),
   getState: vitest.fn(),
+  isStorageSteady: vitest.fn().mockResolvedValue(true),
   getProgress: vitest.fn(),
   setPhase: vitest.fn(),
   transitionPhase: vitest.fn(),
