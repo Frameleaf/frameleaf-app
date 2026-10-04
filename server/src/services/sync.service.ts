@@ -117,6 +117,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AlbumsV3,
   SyncRequestType.AlbumUsersV1,
   SyncRequestType.AlbumToAssetsV1,
+  SyncRequestType.AlbumSourceLinksV1,
   SyncRequestType.AssetExifsV1,
   SyncRequestType.AlbumAssetExifsV1,
   SyncRequestType.AssetOcrV1,
@@ -199,6 +200,8 @@ export class SyncService extends BaseService {
           SyncEntityType.SharedSpacePersonDeleteV1,
           SyncEntityType.PetV1,
           SyncEntityType.PetDeleteV1,
+          SyncEntityType.AlbumSourceLinkV1,
+          SyncEntityType.AlbumSourceLinkDeleteV1,
           SyncEntityType.PetObservationV1,
           SyncEntityType.PetObservationDeleteV1,
           SyncEntityType.TagV1,
@@ -289,6 +292,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.SharedSpaceAlbumsV1]: () => this.syncTags(auth, response, 'spaceAlbum'),
       [SyncRequestType.SharedSpacePeopleV1]: () => this.syncTags(auth, response, 'spacePerson'),
       [SyncRequestType.PetsV1]: () => this.syncTags(auth, response, 'pet'),
+      [SyncRequestType.AlbumSourceLinksV1]: () => this.syncTags(auth, response, 'albumSourceLink'),
       [SyncRequestType.PetObservationsV1]: () => this.syncTags(auth, response, 'petObservation'),
       [SyncRequestType.TagsV1]: () => this.syncTags(auth, response, 'tag'),
       [SyncRequestType.AssetTagsV1]: () => this.syncTags(auth, response, 'assetTag'),
@@ -918,6 +922,7 @@ export class SyncService extends BaseService {
       | 'assetTag'
       | 'pet'
       | 'petObservation'
+      | 'albumSourceLink'
       | 'space'
       | 'spaceMember'
       | 'duplicate'

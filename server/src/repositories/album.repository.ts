@@ -19,7 +19,7 @@ import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
-import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, lockForkWrites, lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -110,6 +110,26 @@ export class AlbumRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.forkMetadata = new ForkAlbumMetadataRepository(db);
     this.smartAlbums = new SmartAlbumRepository(db);
+  }
+
+  /** Serialize album membership decisions with source sync, while preserving transaction ownership. */
+  async withMembershipWrite<T>(
+    albumIds: string[],
+    write: (tx: Kysely<DB>, album: AlbumRepository) => Promise<T>,
+    refusal?: string,
+  ): Promise<T> {
+    const execute = async (tx: Kysely<DB>) => {
+      await lockPublicForkWrites(tx as Transaction<DB>, refusal);
+      await tx
+        .selectFrom('album')
+        .select('id')
+        .where('id', 'in', [...new Set(albumIds)].toSorted())
+        .orderBy('id')
+        .forNoKeyUpdate()
+        .execute();
+      return write(tx, new AlbumRepository(tx));
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { withAssets: true }, DummyValue.UUID] })
@@ -328,7 +348,22 @@ export class AlbumRepository {
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @Chunked()
   async removeAssetsFromAll(assetIds: string[]): Promise<void> {
-    await this.db.deleteFrom('album_asset').where('album_asset.assetId', 'in', assetIds).execute();
+    if (assetIds.length === 0) {
+      return;
+    }
+    const execute = async (tx: Kysely<DB>) => {
+      const albums = await tx.selectFrom('album_asset').select('albumId').where('assetId', 'in', assetIds).execute();
+      const repository = new AlbumRepository(tx);
+      await repository.withMembershipWrite(albums.map(({ albumId }) => albumId), async () => {
+        const removed = await tx
+          .deleteFrom('album_asset')
+          .where('assetId', 'in', assetIds)
+          .returning(['albumId', 'assetId'])
+          .execute();
+        await repository.invalidateSourceMemberships(removed);
+      });
+    };
+    await (this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute));
   }
 
   @Chunked({ paramIndex: 1 })
@@ -337,11 +372,34 @@ export class AlbumRepository {
       return;
     }
 
-    await this.db
-      .deleteFrom('album_asset')
-      .where('album_asset.albumId', '=', albumId)
-      .where('album_asset.assetId', 'in', assetIds)
-      .execute();
+    await this.withMembershipWrite([albumId], async (tx) => {
+      const removed = await tx
+        .deleteFrom('album_asset')
+        .where('albumId', '=', albumId)
+        .where('assetId', 'in', assetIds)
+        .returning('assetId')
+        .execute();
+      await new AlbumRepository(tx).invalidateSourceMemberships(removed.map(({ assetId }) => ({ albumId, assetId })));
+    });
+  }
+
+  /** Only actual removals end source ownership. A future manual re-add is a new membership. */
+  private async invalidateSourceMemberships(removed: { albumId: string; assetId: string }[]): Promise<void> {
+    if (removed.length === 0) {
+      return;
+    }
+    const exists = await sql<{ table: string | null }>`
+      SELECT to_regclass('immich_fork.album_source_asset')::text AS table
+    `.execute(this.db);
+    if (!exists.rows[0]?.table) {
+      return;
+    }
+    await sql`DELETE FROM immich_fork.album_source_asset provenance
+      USING immich_fork.album_source_link link,
+        unnest(${removed.map(({ albumId }) => albumId)}::uuid[], ${removed.map(({ assetId }) => assetId)}::uuid[])
+          AS removed("albumId", "assetId")
+      WHERE provenance."linkId" = link.id AND link."albumId" = removed."albumId"
+        AND provenance."assetId" = removed."assetId"`.execute(this.db);
   }
 
   /**
@@ -369,17 +427,25 @@ export class AlbumRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   async addAssetIds(albumId: string, assetIds: string[]): Promise<void> {
+    await this.addAssetIdsReturning(albumId, assetIds);
+  }
+
+  /** Return only memberships this insertion actually created, including their exact generations. */
+  async addAssetIdsReturning(albumId: string, assetIds: string[]): Promise<{ assetId: string; updateId: string }[]> {
     if (assetIds.length === 0) {
-      return;
+      return [];
     }
 
-    await this.db
-      .insertInto('album_asset')
-      .expression((eb) =>
-        eb.selectFrom(dummy).select([asUuid(albumId).as('albumId'), sql`unnest(${assetIds}::uuid[])`.as('assetId')]),
-      )
-      .onConflict((oc) => oc.doNothing())
-      .execute();
+    return this.withMembershipWrite([albumId], async (tx) =>
+      tx
+        .insertInto('album_asset')
+        .expression((eb) =>
+          eb.selectFrom(dummy).select([asUuid(albumId).as('albumId'), sql`unnest(${assetIds}::uuid[])`.as('assetId')]),
+        )
+        .onConflict((oc) => oc.doNothing())
+        .returning(['assetId', 'updateId'])
+        .execute(),
+    );
   }
 
   @GenerateSql({
@@ -475,6 +541,23 @@ export class AlbumRepository {
       await this.forkMetadata.mirrorFromLegacy([id], tx);
       return result;
     });
+  }
+
+  /** Caller holds the album row fence; a source name can only replace the last followed name. */
+  async updateSourceName(id: string, expectedName: string, albumName: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('album')
+      .set({ albumName })
+      .where('id', '=', id)
+      .where('albumName', '=', expectedName)
+      .where('deletedAt', 'is', null)
+      .returning('id')
+      .executeTakeFirst();
+    if (!result) {
+      return false;
+    }
+    await this.forkMetadata.mirrorFromLegacy([id], this.db);
+    return true;
   }
 
   async delete(id: string): Promise<void> {
@@ -741,12 +824,14 @@ export class AlbumRepository {
     if (values.length === 0) {
       return;
     }
-    await this.db
-      .insertInto('album_asset')
-      .values(values)
-      // Allow idempotent album sync without failing on existing album memberships.
-      .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
-      .execute();
+    await this.withMembershipWrite(values.map(({ albumId }) => albumId), async (tx) => {
+      await tx
+        .insertInto('album_asset')
+        .values(values)
+        // Allow idempotent album sync without failing on existing album memberships.
+        .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
+        .execute();
+    });
   }
 
   /**
