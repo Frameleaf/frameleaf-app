@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
+import { Mocked } from 'vitest';
+import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
 import { inVerifySlice } from 'src/utils/cloud-backup-retention.js';
 import { executionDelay } from 'src/utils/execution-signal.js';
@@ -59,7 +60,7 @@ const nightlyBucket = (nights: number) => {
 
 describe(CloudBackupMaintenance.name, () => {
   let objects: Map<string, Buffer>;
-  let store: Record<string, ReturnType<typeof vi.fn>>;
+  let store: Mocked<Pick<CloudBackupStoreRepository, 'listAll' | 'get' | 'delete' | 'head' | 'hashObject'>>;
   let index: Record<string, ReturnType<typeof vi.fn>>;
   let sut: CloudBackupMaintenance;
   const carryOn = () => Promise.resolve(true);

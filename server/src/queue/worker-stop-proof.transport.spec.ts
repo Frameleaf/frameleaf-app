@@ -78,11 +78,29 @@ it('destroys a timed-out query connection and retries the same proof after proto
         const type = String.fromCodePoint(packet[0]);
         if (type === 'B') submitted.push(packet.toString('base64'));
         if (!healthy) continue;
-        if (type === 'P') socket.write(frame('1', Buffer.alloc(0)));
-        else if (type === 'B') socket.write(frame('2', Buffer.alloc(0)));
-        else if (type === 'D') socket.write(frame('n', Buffer.alloc(0)));
-        else if (type === 'E') socket.write(frame('C', Buffer.from('INSERT 0 1\0')));
-        else if (type === 'S') socket.write(frame('Z', Buffer.from('I')));
+        switch (type) {
+          case 'P': {
+            socket.write(frame('1', Buffer.alloc(0)));
+            break;
+          }
+          case 'B': {
+            socket.write(frame('2', Buffer.alloc(0)));
+            break;
+          }
+          case 'D': {
+            socket.write(frame('n', Buffer.alloc(0)));
+            break;
+          }
+          case 'E': {
+            socket.write(frame('C', Buffer.from('INSERT 0 1\0')));
+            break;
+          }
+          case 'S': {
+            socket.write(frame('Z', Buffer.from('I')));
+            // No default
+            break;
+          }
+        }
       }
     });
   });

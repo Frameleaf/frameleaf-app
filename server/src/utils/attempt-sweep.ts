@@ -55,7 +55,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     await windows.close();
     windowsPass = state.pass.id;
   }
-  const withLease = <T,>(work: (tx: Transaction<DB>) => Promise<T>) =>
+  const withLease = <T>(work: (tx: Transaction<DB>) => Promise<T>) =>
     db.transaction().execute(async (tx) => {
       await sql`SET LOCAL lock_timeout='1s'`.execute(tx);
       await sql`SET LOCAL statement_timeout='3s'`.execute(tx);
