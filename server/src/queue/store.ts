@@ -85,7 +85,7 @@ export class SqlQueueStore {
             }
             await sql`update job set data = ${JSON.stringify(intent.data)}::jsonb,
                 "safeToRetry" = ${intent.safeToRetry}, sensitive = ${intent.sensitive}, "deadlineMs" = ${intent.deadlineMs},
-                "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null},
+                "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null}, "rootItemKey" = ${intent.rootItemKey ?? null},
                 "availableAt" = now() + ${intent.options.delay ?? 0} * interval '1 millisecond'
                 where id = ${existing.id}::uuid`.execute(db);
             await this.settleRuns(db);
@@ -106,11 +106,11 @@ export class SqlQueueStore {
       }
       const id = randomUUID();
       await sql`insert into job(id, queue, name, data, "dedupKey", "externalId", "safeToRetry", sensitive,
-        "deadlineMs", "availableAt", "runId", "itemKey", "parentId")
+        "deadlineMs", "availableAt", "runId", "itemKey", "rootItemKey", "parentId")
         values (${id}::uuid, ${intent.queue}, ${intent.name}, ${JSON.stringify(intent.data)}::jsonb,
         ${key}, ${intent.options?.jobId ?? null}, ${intent.safeToRetry}, ${intent.sensitive}, ${intent.deadlineMs},
         now() + ${intent.options?.delay ?? 0} * interval '1 millisecond', ${intent.runId ?? null}::uuid,
-        ${intent.itemKey ?? null}, ${intent.parentId ?? null}::uuid)
+        ${intent.itemKey ?? null}, ${intent.rootItemKey ?? null}, ${intent.parentId ?? null}::uuid)
         on conflict do nothing`.execute(db);
       if (intent.runId && intent.itemKey) {
         await sql`update job_run_item set "jobId" = (select id from job where "runId" = ${intent.runId}::uuid
@@ -125,8 +125,8 @@ export class SqlQueueStore {
   }
 
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {
-    await sql`insert into job_run_item("runId", "itemKey", stage, selection, state)
-      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.name}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
+    await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, selection, state)
+      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
       on conflict do nothing`.execute(db);
   }
 
@@ -185,7 +185,7 @@ export class SqlQueueStore {
         where id in (
           select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
           order by "createdAt", id limit ${capacity} for update skip locked
-        ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "deadlineMs", "startedAt"
+        ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt"
       `.execute(tx);
       for (const claim of rows) {
         await sql`insert into job_attempt("jobId", attempt, token, "workerId")
@@ -249,7 +249,8 @@ export class SqlQueueStore {
       const { rows: lineage } = await sql<{
         runId: string;
         itemKey: string;
-      }>`select "runId", "itemKey" from job_run_item
+        rootItemKey: string | null;
+      }>`select "runId", "itemKey", "rootItemKey" from job_run_item
         where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
       const inherited = followups.flatMap((intent) => {
         if (lineage.length === 0 || (intent.runId && intent.runId !== claim.runId)) {
@@ -258,6 +259,7 @@ export class SqlQueueStore {
         return lineage.map((parent) => ({
           ...intent,
           runId: parent.runId,
+          rootItemKey: parent.rootItemKey,
           itemKey:
             intent.itemKey === claim.itemKey
               ? parent.itemKey
@@ -271,14 +273,30 @@ export class SqlQueueStore {
       });
       await this.enqueue(inherited, tx);
       await this.scheduleLatest(claim.id, job.latestPending, tx);
+      await sql`update job_run r set "enumerationDone" = true where r.id in
+        (select "runId" from job_run_item where "jobId" = ${claim.id}::uuid and "rootItemKey" is null)
+        and not exists(select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
+          and i.state in ('pending','waiting','active'))`.execute(tx);
       await this.settleRuns(tx);
       return true;
     });
   }
 
-  async fail(claim: QueueClaim, reason: string) {
+  async fail(claim: QueueClaim, reason: string, diagnostic?: (tx: Transaction<any>) => Promise<void>) {
     return this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
+      if (diagnostic) {
+        const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+          and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+          tx,
+        );
+        if (rows.length === 0) return false;
+        await diagnostic(tx);
+        const { rows: valid } =
+          await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+          and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null`.execute(tx);
+        if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
+      }
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', token = null, "leaseExpiresAt" = null,
@@ -314,7 +332,7 @@ export class SqlQueueStore {
     }
     // A repeated item/stage in one run retains its ledger row and monotonic attempt audit.
     const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::jsonb,
-      "safeToRetry" = ${latest.safeToRetry}, sensitive = ${latest.sensitive}, "deadlineMs" = ${latest.deadlineMs},
+      "rootItemKey" = ${latest.rootItemKey ?? null}, "safeToRetry" = ${latest.safeToRetry}, sensitive = ${latest.sensitive}, "deadlineMs" = ${latest.deadlineMs},
       "availableAt" = now() + ${latest.options?.delay ?? 0} * interval '1 millisecond',
       "retryBaseAttempt" = attempt, "finishedAt" = null, "cancelRequestedAt" = null, error = null,
       "workerId" = null, "latestPending" = null

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import type { IntegrityCheckRun, SystemMetadata } from 'src/types.js';
 import { GenerateSql } from 'src/decorators.js';
 import { IntegrityReport, SystemMetadataKey } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
 
@@ -12,7 +13,9 @@ type Upsert = Insertable<SystemMetadataTable>;
 
 @Injectable()
 export class SystemMetadataRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   @GenerateSql({ params: ['metadata_key'] })
   async get<T extends keyof SystemMetadata>(key: T): Promise<SystemMetadata[T] | null> {

@@ -7,13 +7,14 @@ import { columns } from 'src/database.js';
 import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { TableVerification } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
+
 // Maximum number of candidate duplicates to return from vector search
 const DUPLICATE_SEARCH_LIMIT = 64;
 interface DuplicateSearch {
@@ -47,7 +48,9 @@ export class DuplicateRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(db);
+  }
   /** Read-only owner projection using the same eligibility predicates as getAll. */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getSyncGroups(userId: string, options: DuplicatePrivacyOptions = {}, groupId?: string) {

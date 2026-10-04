@@ -18,18 +18,19 @@ export async function createQueueSchema(db: Kysely<any>) {
       "createdAt" timestamptz not null default now(), "finishedAt" timestamptz
     );
     create table job_run_item (
-      "runId" uuid not null references job_run(id), "itemKey" text not null, stage text not null,
+      "runId" uuid not null references job_run(id), "itemKey" text not null, "rootItemKey" text, stage text not null,
       selection jsonb not null, "jobId" uuid, state text not null default 'pending',
       primary key ("runId", "itemKey", stage),
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked'))
     );
+    create index job_run_root_item on job_run_item("runId", "rootItemKey");
     create table job (
       id uuid primary key, queue text not null references job_queue(name), name text not null,
       data jsonb not null, state text not null default 'pending',
       "dedupKey" text, "externalId" text, "latestPending" jsonb,
       "safeToRetry" boolean not null, sensitive boolean not null default false,
       "deadlineMs" integer not null, attempt integer not null default 0, "retryBaseAttempt" integer not null default 0,
-      "runId" uuid references job_run(id), "itemKey" text,
+      "runId" uuid references job_run(id), "itemKey" text, "rootItemKey" text,
       "parentId" uuid references job(id), token uuid, "workerId" uuid references job_worker(id),
       "availableAt" timestamptz not null default now(), "createdAt" timestamptz not null default now(),
       "startedAt" timestamptz, "finishedAt" timestamptz, "leaseExpiresAt" timestamptz,

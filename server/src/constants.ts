@@ -39,9 +39,6 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
   // the insert has happened when the event and follow-up jobs throw, so a retry only fails on the
   // unique path; the next library scan picks up whatever was not imported
   JobName.LibrarySyncFiles,
-  // a partial run leaves a person or group behind and a retry creates another; the next recognition
-  // run queues the faces that are still unassigned
-  JobName.FacialRecognition,
   // FL-179: a run has its own automatic retry and a Retry in run history (a full re-run). A replay of a
   // stalled run skips the steps it completed, but only while those are kept; a failed record retried
   // from the Job manager later would run completed steps again
