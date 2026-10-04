@@ -1,5 +1,5 @@
 {
-  "baselineCommit": "7cfa62336f394189c0450533c30618c66366d868",
+  "baselineCommit": "08c4ff24ef96b6045c3773041f9c8199282a0cf6",
   "dirtyOnlyEvidence": [
     "/classification",
     "/culling",
@@ -65,6 +65,8 @@
     "/people/manage",
     "/pets",
     "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+    "/photography",
+    "/photography/gallery/[id]",
     "/photos/[[assetId=id]]",
     "/places",
     "/recently-added/[[assetId=id]]",
@@ -78,6 +80,7 @@
     "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
     "/sharing/sharedlinks",
     "/studio",
+    "/studio/[id]",
     "/studio/projects",
     "/suppressed/[[photos=photos]]/[[assetId=id]]",
     "/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
