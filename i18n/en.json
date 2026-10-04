@@ -5674,6 +5674,7 @@
   "frameleaf_job_runs_reason_queue_paused": "A queue is paused.",
   "frameleaf_job_runs_reason_retry_backoff": "A retry is waiting to be dispatched.",
   "frameleaf_job_runs_reason_scheduled_delay": "Work is scheduled for later.",
+  "frameleaf_job_runs_reason_local-capacity": "Waiting for local image processing capacity.",
   "frameleaf_job_runs_reason_source-unavailable": "The source required for processing is unavailable.",
   "frameleaf_job_runs_reason_stage_failed": "Some stages failed. Other work may still be running.",
   "frameleaf_job_runs_reason_worker_unavailable": "No worker is available. Pending work is retained.",

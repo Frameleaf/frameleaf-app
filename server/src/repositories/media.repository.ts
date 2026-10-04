@@ -7,7 +7,6 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
-import sharp, { Sharp } from 'sharp';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -20,16 +19,13 @@ import type {
   VideoPacketInfo,
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
-import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
 import { Exif } from 'src/database.js';
-import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   AacProfile,
   Av1Profile,
   ColorMatrix,
   ColorPrimaries,
   ColorTransfer,
-  Colorspace,
   DvProfile,
   DvSignalCompatibility,
   H264Profile,
@@ -40,6 +36,7 @@ import {
 } from 'src/enum.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
+import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
@@ -47,7 +44,6 @@ import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
-import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> => {
   executionSignal()?.throwIfAborted();
@@ -113,10 +109,10 @@ export type ExtractResult = {
 export class MediaRepository {
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(MediaRepository.name);
-    // eslint-disable-next-line import-x/no-named-as-default-member
-    sharp.concurrency(0);
-    // eslint-disable-next-line import-x/no-named-as-default-member
-    sharp.cache({ files: 0 });
+  }
+
+  async onModuleDestroy() {
+    await sharpProcessPool.close();
   }
 
   /**
@@ -214,235 +210,50 @@ export class MediaRepository {
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
     try {
-      return await this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+      return await sharpProcessPool.run('decodeImage', [input, options]);
     } catch (error) {
-      if (typeof input !== 'string' || options.raw || !mimeTypes.isRaw(input)) {
+      executionSignal()?.throwIfAborted();
+      if (
+        !(error instanceof SharpOperationError) ||
+        typeof input !== 'string' ||
+        options.raw ||
+        !mimeTypes.isRaw(input)
+      ) {
         throw error;
       }
-      const rendered = await renderRawWithLibRaw(input);
-      // LibRaw already applies sensor orientation; preserve size, colour conversion and edits.
-      return this.getImageDecodingPipeline(rendered, { ...options, orientation: undefined })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+      const rendered = await renderRawWithLibRaw(input, executionSignal());
+      // LibRaw applies sensor orientation. Keep colour, size and edit semantics.
+      return sharpProcessPool.run('decodeImage', [rendered, { ...options, orientation: undefined }]);
     }
-  }
-
-  private applyEdits(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
-    const crop = edits.find((edit) => edit.action === 'crop');
-    if (crop) {
-      pipeline = pipeline.extract({
-        left: Math.round(crop.parameters.x),
-        top: Math.round(crop.parameters.y),
-        width: Math.round(crop.parameters.width),
-        height: Math.round(crop.parameters.height),
-      });
-    }
-
-    const affineEditOperations = edits.filter((edit) => edit.action !== 'crop');
-    if (affineEditOperations.length > 0) {
-      const { a, b, c, d } = createAffineMatrix(affineEditOperations);
-      pipeline = pipeline.affine([
-        [a, b],
-        [c, d],
-      ]);
-    }
-
-    return pipeline;
   }
 
   async generateThumbnail(input: string | Buffer, options: GenerateThumbnailOptions, output: string): Promise<void> {
-    await this.getImageDecodingPipeline(input, options)
-      .toFormat(options.format, {
-        quality: options.quality,
-        // this is default in libvips (except the threshold is 90), but we need to set it manually in sharp
-        chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
-        progressive: options.progressive,
-      })
-      .toFile(output);
+    return sharpProcessPool.run('generateThumbnail', [input, options, output]);
   }
 
-  /**
-   * FL-163: the copy of a photo that may leave this server for Frameleaf Cloud. The preview is decoded and
-   * written again as a JPEG; sharp keeps no EXIF, XMP or IPTC unless asked to (`keepExif`,
-   * `withMetadata`), so the capture location, camera, dates and every other tag stay here. Colours are
-   * converted to sRGB and only the sRGB profile is embedded: the preview's own ICC profile is not kept,
-   * because it could identify the device and a description model reads sRGB anyway.
-   */
   async writeCloudUpload(input: string, output: string): Promise<void> {
-    await sharp(input, { failOn: 'error', limitInputPixels: false })
-      .rotate()
-      .withIccProfile('srgb')
-      .jpeg({ quality: 90, chromaSubsampling: '4:4:4', progressive: false })
-      .toFile(output);
+    return sharpProcessPool.run('writeCloudUpload', [input, output]);
   }
 
-  /**
-   * FL-162: a full-resolution copy of a still for work that runs on another machine (Frameleaf Cloud,
-   * a restoration worker): the pixels as they are displayed (EXIF orientation applied) with the
-   * original ICC colour profile kept, and no EXIF, XMP, IPTC or GPS at all. A JPEG stays a JPEG at
-   * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
-   */
   async writeStrippedStill(input: string, output: string, format: 'jpeg' | 'png'): Promise<void> {
-    const image = sharp(input, { failOn: 'error', limitInputPixels: false }).rotate().keepIccProfile();
-    const encoded = format === 'jpeg' ? image.jpeg({ quality: 98, chromaSubsampling: '4:4:4' }) : image.png();
-    await encoded.toFile(output);
+    return sharpProcessPool.run('writeStrippedStill', [input, output, format]);
   }
 
-  /**
-   * Compose a set of input images into a single JPEG grid (left-to-right,
-   * top-to-bottom). Cells are letterboxed to a fixed size on a black canvas
-   * to keep aspect ratios intact. Used to feed multiple video frames through
-   * the single-image describeImage() ML endpoint.
-   */
   async composeImageGrid(
     inputs: string[],
     options: { cols: number; rows: number; cellSize: number; output: string },
   ): Promise<void> {
-    const { cols, rows, cellSize, output } = options;
-    const canvasWidth = cols * cellSize;
-    const canvasHeight = rows * cellSize;
-
-    const cells = await Promise.all(
-      inputs.slice(0, cols * rows).map((path) =>
-        sharp(path, { limitInputPixels: false })
-          .rotate()
-          .resize(cellSize, cellSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
-          .toFormat('jpeg')
-          .toBuffer(),
-      ),
-    );
-
-    const composites = cells.map((buffer, index) => ({
-      input: buffer,
-      left: (index % cols) * cellSize,
-      top: Math.floor(index / cols) * cellSize,
-    }));
-
-    await sharp({
-      create: { width: canvasWidth, height: canvasHeight, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    })
-      .composite(composites)
-      .jpeg({ quality: 85, chromaSubsampling: '4:2:0', progressive: false })
-      .toFile(output);
+    return sharpProcessPool.run('composeImageGrid', [inputs, options]);
   }
 
-  private getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {
-    let pipeline = sharp(input, {
-      // some invalid images can still be processed by sharp, but we want to fail on them by default to avoid crashes
-      failOn: options.processInvalidImages ? 'none' : 'error',
-      limitInputChannels: false,
-      limitInputPixels: false,
-      raw: options.raw,
-      unlimited: true,
-    })
-      .pipelineColorspace(options.colorspace === Colorspace.Srgb ? 'srgb' : 'rgb16')
-      .withIccProfile(options.colorspace);
-
-    if (!options.raw) {
-      const { angle, flip, flop } = options.orientation ? ORIENTATION_TO_SHARP_ROTATION[options.orientation] : {};
-      pipeline = pipeline.rotate(angle);
-      if (flip) {
-        pipeline = pipeline.flip();
-      }
-
-      if (flop) {
-        pipeline = pipeline.flop();
-      }
-    }
-
-    if (options.edits && options.edits.length > 0) {
-      pipeline = this.applyEdits(pipeline, options.edits);
-    }
-
-    if (options.size !== undefined) {
-      pipeline = pipeline.resize(options.size, options.size, { fit: 'outside', withoutEnlargement: true });
-    }
-    return pipeline;
-  }
-
-  /**
-   * Still-image develop geometry (FL-113): quarter turns and flips, then an arbitrary
-   * straighten with the frame scaled back to cover its own bounds, then the recipe crop.
-   * Runs as staged pipelines because sharp allows one rotation and two extracts per pipeline.
-   * Input and output are 8-bit interleaved raw buffers; the original file is only ever read.
-   */
   async renderDevelopGeometry(
     input: Buffer,
     raw: RawImageInfo,
     plan: DevelopGeometryPlan,
   ): Promise<{ data: Buffer; info: RawImageInfo }> {
-    // The recipe turns first and mirrors the turned frame (the editor's preview, the protocol and the
-    // mask mapping all do). sharp mirrors before it rotates, whatever the call order, so after a
-    // quarter turn the mirror axes swap: mirroring the turned frame left to right is mirroring the
-    // original top to bottom.
-    const quarter = plan.rotation === 90 || plan.rotation === 270;
-    let current = await sharp(input, { raw, limitInputPixels: false, unlimited: true })
-      .rotate(plan.rotation)
-      .flop(quarter ? plan.flipVertical : plan.flipHorizontal)
-      .flip(quarter ? plan.flipHorizontal : plan.flipVertical)
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const { width, height } = plan.oriented;
-    if (plan.straighten !== 0) {
-      const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
-      const cos = Math.cos(theta);
-      const sin = Math.sin(theta);
-      // The rotated bitmap grows to these bounds; the centre window of the original size divided
-      // by the cover scale, resized back up, is the straightened frame the client previews.
-      const scale = Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height);
-      const windowWidth = Math.max(1, Math.round(width / scale));
-      const windowHeight = Math.max(1, Math.round(height / scale));
-      const rotated = await sharp(current.data, {
-        raw: this.toRawInfo(current.info),
-        limitInputPixels: false,
-        unlimited: true,
-      })
-        .rotate(plan.straighten, { background: { r: 0, g: 0, b: 0, alpha: 1 } })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      current = await sharp(rotated.data, {
-        raw: this.toRawInfo(rotated.info),
-        limitInputPixels: false,
-        unlimited: true,
-      })
-        .extract({
-          left: Math.max(0, Math.round((rotated.info.width - windowWidth) / 2)),
-          top: Math.max(0, Math.round((rotated.info.height - windowHeight) / 2)),
-          width: Math.min(windowWidth, rotated.info.width),
-          height: Math.min(windowHeight, rotated.info.height),
-        })
-        .resize(width, height, { fit: 'fill' })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-    }
-
-    const { extract } = plan;
-    if (extract.left !== 0 || extract.top !== 0 || extract.width !== width || extract.height !== height) {
-      current = await sharp(current.data, {
-        raw: this.toRawInfo(current.info),
-        limitInputPixels: false,
-        unlimited: true,
-      })
-        .extract({
-          left: Math.min(extract.left, Math.max(0, current.info.width - 1)),
-          top: Math.min(extract.top, Math.max(0, current.info.height - 1)),
-          width: Math.min(extract.width, current.info.width - extract.left),
-          height: Math.min(extract.height, current.info.height - extract.top),
-        })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-    }
-
-    return { data: current.data, info: this.toRawInfo(current.info) };
+    return sharpProcessPool.run('renderDevelopGeometry', [input, raw, plan]);
   }
 
-  /**
-   * Detail stages after the tone pass (noise reduction, clarity, sharpening) and encoding of
-   * one develop output. `size` bounds the longest edge for a preview and is omitted for the
-   * edited master, which keeps the source resolution. Writes to `output` when given, otherwise
-   * returns the encoded bytes.
-   */
   async encodeDevelopOutput(
     input: Buffer,
     raw: RawImageInfo,
@@ -456,60 +267,11 @@ export class MediaRepository {
     },
     output?: string,
   ): Promise<Buffer | undefined> {
-    let data = input;
-    let info = raw;
-    const open = () => sharp(data, { raw: info, limitInputPixels: false, unlimited: true });
-    const { detail } = options;
-    if (detail.median > 0 || detail.clarity) {
-      let pipeline = open();
-      if (detail.median > 0) {
-        pipeline = pipeline.median(detail.median);
-      }
-      if (detail.clarity) {
-        pipeline = pipeline.sharpen(detail.clarity);
-      }
-      const result = await pipeline.raw().toBuffer({ resolveWithObject: true });
-      data = result.data;
-      info = this.toRawInfo(result.info);
-    }
-    let pipeline = open();
-    if (detail.sharpen) {
-      pipeline = pipeline.sharpen(detail.sharpen);
-    }
-    if (options.size !== undefined) {
-      pipeline = pipeline.resize(options.size, options.size, { fit: 'inside', withoutEnlargement: true });
-    }
-    pipeline = pipeline.withIccProfile(options.colorspace).toFormat(options.format, {
-      quality: options.quality,
-      chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
-      progressive: options.progressive ?? false,
-    });
-    if (output) {
-      await pipeline.toFile(output);
-      return;
-    }
-    return pipeline.toBuffer();
-  }
-
-  private toRawInfo(info: { width: number; height: number; channels: number }): RawImageInfo {
-    return { width: info.width, height: info.height, channels: info.channels as RawImageInfo['channels'] };
+    return sharpProcessPool.run('encodeDevelopOutput', [input, raw, options, output]);
   }
 
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {
-    const { rgbaToThumbHash } = await import('thumbhash');
-
-    const { data, info } = await this.getImageDecodingPipeline(input, {
-      colorspace: options.colorspace,
-      processInvalidImages: options.processInvalidImages,
-      raw: options.raw,
-      edits: options.edits,
-    })
-      .resize(100, 100, { fit: 'inside', withoutEnlargement: true })
-      .raw()
-      .ensureAlpha()
-      .toBuffer({ resolveWithObject: true });
-
-    return Buffer.from(rgbaToThumbHash(info.width, info.height, data));
+    return sharpProcessPool.run('generateThumbhash', [input, options]);
   }
 
   async probe(input: string, options?: ProbeOptions): Promise<VideoInfo> {
@@ -764,67 +526,30 @@ export class MediaRepository {
     }
   }
 
-  /**
-   * FL-233: a develop artifact stored the same way every time: EXIF orientation applied, metadata
-   * dropped, 8-bit PNG, greyscale for a mask and RGBA for a fill. The PNG's SHA-256 is its id.
-   */
   async normalizeDevelopArtifact(
     input: string,
     kind: 'mask' | 'fill',
   ): Promise<{ data: Buffer; width: number; height: number }> {
-    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).rotate();
-    pipeline = kind === 'mask' ? pipeline.greyscale().removeAlpha().toColourspace('b-w') : pipeline.ensureAlpha();
-    const { data, info } = await pipeline
-      .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
-      .toBuffer({ resolveWithObject: true });
-    return { data, width: info.width, height: info.height };
+    return sharpProcessPool.run('normalizeDevelopArtifact', [input, kind]);
   }
 
-  /** FL-233: a stored develop artifact as raw pixels: 1 channel for a mask, 4 for a fill. */
   async decodeDevelopArtifact(
     input: string,
     kind: 'mask' | 'fill',
   ): Promise<{ data: Buffer; width: number; height: number; channels: 1 | 4 }> {
-    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 });
-    pipeline = kind === 'mask' ? pipeline.extractChannel(0) : pipeline.ensureAlpha();
-    const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
-    return { data, width: info.width, height: info.height, channels: kind === 'mask' ? 1 : 4 };
+    return sharpProcessPool.run('decodeDevelopArtifact', [input, kind]);
   }
 
   async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {
-    const { width = 0, height = 0, hasAlpha = false } = await sharp(input, { unlimited: true }).metadata();
-    return { width, height, isTransparent: hasAlpha };
+    return sharpProcessPool.run('getImageMetadata', [input]);
   }
 
-  /** Width and height as the image is displayed, after its EXIF orientation (FL-64 imported versions). */
   async getOrientedSize(input: string): Promise<ImageDimensions> {
-    const { width = 0, height = 0, orientation } = await sharp(input, { unlimited: true }).metadata();
-    return orientation && orientation >= 5 ? { width: height, height: width } : { width, height };
+    return sharpProcessPool.run('getOrientedSize', [input]);
   }
 
   async scoreThumbnailCandidate(input: string): Promise<number> {
-    const stats = await sharp(input).stats();
-    const channels = stats.channels.slice(0, 3);
-    const mean = channels.reduce((sum, channel) => sum + channel.mean, 0) / channels.length;
-    const contrast = channels.reduce((sum, channel) => sum + channel.stdev, 0) / channels.length;
-    const { entropy = 0, sharpness = 0 } = stats as typeof stats & { entropy?: number; sharpness?: number };
-
-    const exposureScore = 40 - Math.abs(mean - 128) / 4;
-    const blackFramePenalty = mean < 18 ? (18 - mean) * 12 : 0;
-    const blownFramePenalty = mean > 245 ? (mean - 245) * 6 : 0;
-    const flatFramePenalty = contrast < 4 ? (4 - contrast) * 12 : 0;
-    const logoLikePenalty = entropy < 1.2 && contrast < 12 ? 35 : 0;
-
-    return (
-      exposureScore +
-      contrast * 1.5 +
-      entropy * 14 +
-      sharpness * 0.1 -
-      blackFramePenalty -
-      blownFramePenalty -
-      flatFramePenalty -
-      logoLikePenalty
-    );
+    return sharpProcessPool.run('scoreThumbnailCandidate', [input]);
   }
 
   private configureFfmpegCall(input: string, output: string | Writable, options: TranscodeCommand) {
