@@ -1151,7 +1151,8 @@ describe('iCloud exact identity adoption', () => {
         const name = `weekly_adoption_retire_${randomUUID().replaceAll('-', '')}`;
         const retire =
           kind === 'generation'
-            ? sql`UPDATE immich_fork.icloud_weekly_grant SET enabled=false,generation=generation+1
+            ? sql`UPDATE immich_fork.icloud_weekly_grant SET enabled=false,"includeProtected"=false,
+              "pinBinding"=NULL,generation=generation+1,"revokedAt"=clock_timestamp()
             WHERE "connectionId"=NEW."connectionId" AND "ownerId"=NEW."ownerId"`
             : sql`UPDATE immich_fork.icloud_connection SET config=config||'{"concurrency":2}'::jsonb
             WHERE id=NEW."connectionId" AND "ownerId"=NEW."ownerId"`;
@@ -2520,8 +2521,8 @@ describe('iCloud exact identity adoption', () => {
             unavailable: string;
             cancelled: string;
           }>`SELECT status,
-            "matchCount" AS match,"mismatchCount" AS mismatch,"performedCount" AS performed,"unavailableCount" AS unavailable,
-            "cancelledCount" AS cancelled FROM immich_fork.icloud_weekly_cohort WHERE id=${fixture.cohort.id}::uuid`.execute(
+            "matchCount"::text AS match,"mismatchCount"::text AS mismatch,"performedCount"::text AS performed,"unavailableCount"::text AS unavailable,
+            "cancelledCount"::text AS cancelled FROM immich_fork.icloud_weekly_cohort WHERE id=${fixture.cohort.id}::uuid`.execute(
             db,
           );
           const request = await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id);
