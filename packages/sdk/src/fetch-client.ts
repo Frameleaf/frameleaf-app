@@ -13336,11 +13336,16 @@ export type SyncAckDeleteDto = {
 export type SyncAckDto = {
     /** Acknowledgment ID */
     ack: string;
-    "type": SyncEntityType;
+    "type": Type23;
 };
 export type SyncAckSetDto = {
     /** Acknowledgment IDs (max 1000) */
     acks: string[];
+};
+export type SyncAckV2Dto = {
+    /** Acknowledgment ID */
+    ack: string;
+    "type": SyncEntityType;
 };
 export type SyncStreamDto = {
     /** Reset sync state */
@@ -25519,6 +25524,17 @@ export function sendSyncAck({ syncAckSetDto }: {
     })));
 }
 /**
+ * Retrieve all acknowledgements
+ */
+export function getSyncAckV2(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SyncAckV2Dto[];
+    }>("/sync/ack/v2", {
+        ...opts
+    }));
+}
+/**
  * Stream sync changes
  */
 export function getSyncStream({ syncStreamDto }: {
@@ -30015,6 +30031,102 @@ export enum SyncEntityType {
     PetDeleteV1 = "PetDeleteV1",
     AlbumSourceLinkV1 = "AlbumSourceLinkV1",
     AlbumSourceLinkDeleteV1 = "AlbumSourceLinkDeleteV1",
+    PetObservationV1 = "PetObservationV1",
+    PetObservationDeleteV1 = "PetObservationDeleteV1",
+    TagV1 = "TagV1",
+    TagDeleteV1 = "TagDeleteV1",
+    AssetTagV1 = "AssetTagV1",
+    AssetTagDeleteV1 = "AssetTagDeleteV1",
+    AuthUserV1 = "AuthUserV1",
+    AuthUserV2 = "AuthUserV2",
+    UserV1 = "UserV1",
+    UserDeleteV1 = "UserDeleteV1",
+    AssetV1 = "AssetV1",
+    AssetV2 = "AssetV2",
+    AssetV3 = "AssetV3",
+    AssetBootstrapV1 = "AssetBootstrapV1",
+    AssetDeleteV2 = "AssetDeleteV2",
+    AssetDeleteV1 = "AssetDeleteV1",
+    AssetExifV1 = "AssetExifV1",
+    AssetEditV1 = "AssetEditV1",
+    AssetEditDeleteV1 = "AssetEditDeleteV1",
+    AssetMetadataV1 = "AssetMetadataV1",
+    AssetMetadataDeleteV1 = "AssetMetadataDeleteV1",
+    AssetOcrV1 = "AssetOcrV1",
+    AssetOcrDeleteV1 = "AssetOcrDeleteV1",
+    PartnerV1 = "PartnerV1",
+    PartnerDeleteV1 = "PartnerDeleteV1",
+    PartnerAssetV1 = "PartnerAssetV1",
+    PartnerAssetV2 = "PartnerAssetV2",
+    PartnerAssetBackfillV1 = "PartnerAssetBackfillV1",
+    PartnerAssetBackfillV2 = "PartnerAssetBackfillV2",
+    PartnerAssetDeleteV1 = "PartnerAssetDeleteV1",
+    PartnerAssetExifV1 = "PartnerAssetExifV1",
+    PartnerAssetExifBackfillV1 = "PartnerAssetExifBackfillV1",
+    PartnerStackBackfillV1 = "PartnerStackBackfillV1",
+    PartnerStackDeleteV1 = "PartnerStackDeleteV1",
+    PartnerStackV1 = "PartnerStackV1",
+    AlbumV1 = "AlbumV1",
+    AlbumV2 = "AlbumV2",
+    AlbumV3 = "AlbumV3",
+    AlbumBootstrapV1 = "AlbumBootstrapV1",
+    AlbumDeleteV2 = "AlbumDeleteV2",
+    AlbumDeleteV1 = "AlbumDeleteV1",
+    AlbumUserV1 = "AlbumUserV1",
+    AlbumUserBackfillV1 = "AlbumUserBackfillV1",
+    AlbumUserDeleteV1 = "AlbumUserDeleteV1",
+    AlbumAssetCreateV1 = "AlbumAssetCreateV1",
+    AlbumAssetCreateV2 = "AlbumAssetCreateV2",
+    AlbumAssetUpdateV1 = "AlbumAssetUpdateV1",
+    AlbumAssetUpdateV2 = "AlbumAssetUpdateV2",
+    AlbumAssetBackfillV1 = "AlbumAssetBackfillV1",
+    AlbumAssetBackfillV2 = "AlbumAssetBackfillV2",
+    AlbumAssetExifCreateV1 = "AlbumAssetExifCreateV1",
+    AlbumAssetExifUpdateV1 = "AlbumAssetExifUpdateV1",
+    AlbumAssetExifBackfillV1 = "AlbumAssetExifBackfillV1",
+    AlbumToAssetV1 = "AlbumToAssetV1",
+    AlbumToAssetDeleteV1 = "AlbumToAssetDeleteV1",
+    AlbumToAssetBackfillV1 = "AlbumToAssetBackfillV1",
+    MemoryV1 = "MemoryV1",
+    MemoryDeleteV1 = "MemoryDeleteV1",
+    MemoryToAssetV1 = "MemoryToAssetV1",
+    MemoryToAssetDeleteV1 = "MemoryToAssetDeleteV1",
+    StackV1 = "StackV1",
+    StackDeleteV1 = "StackDeleteV1",
+    PersonV1 = "PersonV1",
+    PersonDeleteV1 = "PersonDeleteV1",
+    AssetFaceV1 = "AssetFaceV1",
+    AssetFaceV2 = "AssetFaceV2",
+    AssetFaceV3 = "AssetFaceV3",
+    AssetFaceDeleteV1 = "AssetFaceDeleteV1",
+    UserMetadataV1 = "UserMetadataV1",
+    PinnedCollectionsV1 = "PinnedCollectionsV1",
+    UserMetadataDeleteV1 = "UserMetadataDeleteV1",
+    SyncAckV1 = "SyncAckV1",
+    SyncResetV1 = "SyncResetV1",
+    SyncCompleteV1 = "SyncCompleteV1"
+}
+export enum Type23 {
+    AlbumAssetAccessV1 = "AlbumAssetAccessV1",
+    AlbumAssetAccessDeleteV1 = "AlbumAssetAccessDeleteV1",
+    PartnerAssetAccessV1 = "PartnerAssetAccessV1",
+    PartnerAssetAccessDeleteV1 = "PartnerAssetAccessDeleteV1",
+    PinnedCollectionV1 = "PinnedCollectionV1",
+    PinnedCollectionDeleteV1 = "PinnedCollectionDeleteV1",
+    AssetTrashStateV1 = "AssetTrashStateV1",
+    AssetTrashStateDeleteV1 = "AssetTrashStateDeleteV1",
+    DuplicateGroupV1 = "DuplicateGroupV1",
+    DuplicateGroupDeleteV1 = "DuplicateGroupDeleteV1",
+    SharedSpaceV1 = "SharedSpaceV1",
+    SharedSpaceDeleteV1 = "SharedSpaceDeleteV1",
+    SharedSpaceMemberV1 = "SharedSpaceMemberV1",
+    SharedSpaceMemberDeleteV1 = "SharedSpaceMemberDeleteV1",
+    SharedSpaceAlbumV1 = "SharedSpaceAlbumV1",
+    SharedSpaceAlbumDeleteV1 = "SharedSpaceAlbumDeleteV1",
+    SharedSpacePersonV1 = "SharedSpacePersonV1",
+    SharedSpacePersonDeleteV1 = "SharedSpacePersonDeleteV1",
+    PetV1 = "PetV1",
+    PetDeleteV1 = "PetDeleteV1",
     PetObservationV1 = "PetObservationV1",
     PetObservationDeleteV1 = "PetObservationDeleteV1",
     TagV1 = "TagV1",
