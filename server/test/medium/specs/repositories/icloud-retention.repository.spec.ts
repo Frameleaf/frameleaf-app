@@ -179,7 +179,11 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
         "leaseExpiresAt"=now()+interval '1 hour' WHERE id=${lease.id}::uuid`.execute(db);
     }
     if (scope === 'global') {
-      connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({ concurrency: 4 })))!;
+      connection = (await repository.create(
+        randomUUID(),
+        'Other photos',
+        ICloudConfigSchema.parse({ concurrency: 4 }),
+      ))!;
       await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     }
     const candidate = await resource('new', { role: 'original' });
@@ -203,7 +207,10 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     }
     await resource('new', { role: 'original' });
     expect(await repository.claim(connection.id, scope === 'local' ? 95 : 1000)).toBeUndefined();
-    expect(await repository.get(connection.id)).toMatchObject({ state: 'error', lastError: 'staging_retained_capacity' });
+    expect(await repository.get(connection.id)).toMatchObject({
+      state: 'error',
+      lastError: 'staging_retained_capacity',
+    });
     expect(await repository.resource(retained.id)).toMatchObject({ reservedBytes: 90 });
   });
 
@@ -227,7 +234,10 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
         ORDER BY indexname`
         .execute(db)
         .then(({ rows }) => rows.map(({ name }) => name));
-    expect(await indexes()).toEqual(['icloud_resource_claim_order_idx', 'icloud_resource_reservation_contributors_idx']);
+    expect(await indexes()).toEqual([
+      'icloud_resource_claim_order_idx',
+      'icloud_resource_reservation_contributors_idx',
+    ]);
     try {
       await claimAccessPaths.down(db);
       expect(await indexes()).toEqual([]);
