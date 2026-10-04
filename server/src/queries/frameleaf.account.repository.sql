@@ -4,7 +4,7 @@
 SELECT
   *
 FROM
-  immich_fork.frameleaf_account_link
+  public.frameleaf_account_link
 WHERE
   "userId" = $1::uuid
 
@@ -12,7 +12,7 @@ WHERE
 SELECT
   *
 FROM
-  immich_fork.frameleaf_account_link
+  public.frameleaf_account_link
 WHERE
   sub = $1
 
@@ -20,12 +20,12 @@ WHERE
 SELECT
   count(*)::text AS count
 FROM
-  immich_fork.frameleaf_account_link
+  public.frameleaf_account_link
 
 -- FrameleafAccountRepository.getSession
 SELECT
   *
 FROM
-  immich_fork.frameleaf_session
+  public.frameleaf_session
 WHERE
   "sessionId" = $1::uuid

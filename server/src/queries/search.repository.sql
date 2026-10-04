@@ -209,7 +209,7 @@ limit
 -- SearchRepository.searchSmart
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 select
   "asset".*,
   exists (
@@ -271,7 +271,7 @@ where
 -- SearchRepository.searchFaces
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 with
   "cte" as (
     select
@@ -2911,7 +2911,7 @@ limit
 -- SearchRepository.searchSmartV3 (baseline)
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 select
   "asset"."id",
   "asset"."updateId",
@@ -3005,7 +3005,7 @@ commit
 -- SearchRepository.searchSmartV3 (with-filter)
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 select
   "asset"."id",
   "asset"."updateId",
@@ -3102,7 +3102,7 @@ commit
 -- SearchRepository.searchSmartV3 (cursor-offset)
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 select
   "asset"."id",
   "asset"."updateId",

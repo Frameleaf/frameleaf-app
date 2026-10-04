@@ -4,7 +4,7 @@
 SELECT
   *
 FROM
-  immich_fork.frameleaf_consent
+  public.frameleaf_consent
 WHERE
   "destinationId" = $1::uuid
   AND "revokedAt" IS NULL
@@ -18,7 +18,7 @@ LIMIT
 SELECT
   *
 FROM
-  immich_fork.frameleaf_consent
+  public.frameleaf_consent
 WHERE
   "destinationId" = $1::uuid
 ORDER BY

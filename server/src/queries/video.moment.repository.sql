@@ -14,7 +14,7 @@ where
 -- VideoMomentRepository.searchFrames
 begin
 set
-  local vchordrq.probes = 1
+  local hnsw.ef_search = 100
 select
   "video_moment_frame"."assetId",
   "video_moment_frame"."id" as "frameId",
@@ -46,45 +46,15 @@ where
     or "asset"."ownerId" = $8::uuid
   )
   and not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
   and "video_moment_frame_embedding"."frameId" != $9::uuid
 order by
@@ -121,45 +91,15 @@ where
     or "asset"."ownerId" = $5::uuid
   )
   and not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
   and (
     "video_moment"."caption" ilike $6

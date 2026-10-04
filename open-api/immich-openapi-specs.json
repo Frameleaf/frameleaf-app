@@ -20770,6 +20770,154 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/jobs/runs": {
+      "get": {
+        "operationId": "getJobRuns",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRunPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List durable job runs",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/jobs/runs/{id}/items": {
+      "get": {
+        "operationId": "getJobRunItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRunItemPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Inspect selected job run items",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/jobs/{name}": {
       "put": {
         "deprecated": true,
@@ -36812,87 +36960,6 @@
         "x-immich-state": "Stable"
       }
     },
-    "/server/storage-migration": {
-      "get": {
-        "description": "The progress of the one-time universal storage migration that combines duplicate files, as counts only. Public, like the Getting Ready screen that shows it before anyone signs in.",
-        "operationId": "getStorageMigrationStatus",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "summary": "Get storage migration status",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.1",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.1",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-state": "Alpha"
-      }
-    },
-    "/server/storage-migration/background": {
-      "post": {
-        "description": "Stop the Getting Ready screen waiting for the storage migration. It carries on in the background and its progress shows in Library Care; extra copies are not freed until it finishes.",
-        "operationId": "runStorageMigrationInBackground",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Run the storage migration in the background",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v3.2.1",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.1",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "systemMetadata.update",
-        "x-immich-state": "Alpha"
-      }
-    },
     "/server/version": {
       "get": {
         "description": "Retrieve the current server version in semantic versioning (semver) format.",
@@ -43248,7 +43315,7 @@
     },
     "/system-config/smart-albums/reevaluate": {
       "post": {
-        "description": "Enqueues a bulk re-evaluation of all described image assets against the smart-album tag rules. Pass an optional `kind` body field to scope the re-evaluation to a single built-in kind. Idempotent via BullMQ deduplication (kind-scoped dispatches use their own dedup namespace).",
+        "description": "Enqueues a bulk re-evaluation of all described image assets against the smart-album tag rules. Pass an optional `kind` body field to scope the re-evaluation to a single built-in kind. Idempotent via durable job deduplication (kind-scoped dispatches use their own dedup namespace).",
         "operationId": "triggerSmartAlbumReevaluate",
         "parameters": [],
         "requestBody": {
@@ -72892,7 +72959,6 @@
         "enum": [
           "ICloudSync",
           "AnalyticsCollect",
-          "ForkSchemaBackfill",
           "AssetDelete",
           "AssetDeleteCheck",
           "AssetDetectFacesQueueAll",
@@ -72947,6 +73013,7 @@
           "UserSyncUsage",
           "PersonCleanup",
           "PersonFileMigration",
+          "profile-image-repair",
           "PersonGenerateThumbnail",
           "PersonIdentityRefresh",
           "SessionCleanup",
@@ -72956,11 +73023,13 @@
           "SidecarWrite",
           "SmartSearchQueueAll",
           "SmartSearch",
+          "SmartSearchPostprocess",
+          "AssetMetadataPostprocess",
+          "ImageEnrichmentPostprocess",
           "StorageTemplateMigration",
           "StorageTemplateMigrationSingle",
           "PhysicalDeduplicationMigrationDryRun",
           "PhysicalDeduplicationMigrationApply",
-          "UniversalStorageMigration",
           "TagCleanup",
           "VersionCheck",
           "FrameleafHeartbeat",
@@ -72998,6 +73067,414 @@
           "IntegrityDeleteReports"
         ],
         "type": "string"
+      },
+      "JobRunItemPageDto": {
+        "properties": {
+          "hasNextPage": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobRunItemResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "items"
+        ],
+        "type": "object"
+      },
+      "JobRunItemResponseDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lastProgressAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "lastStage": {
+            "nullable": true,
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "completed",
+              "failed",
+              "needsAttention",
+              "cancelled",
+              "active",
+              "retrying",
+              "delayed",
+              "paused",
+              "waiting",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "worker_unavailable",
+                "no_dispatch_backlog",
+                "dependency_unavailable",
+                "dependency_wait",
+                "dependency_failed",
+                "retry_backoff",
+                "scheduled_delay",
+                "queue_paused",
+                "needs_attention",
+                "stage_failed",
+                "enumerating",
+                "workload-disabled",
+                "destination-unavailable",
+                "destination-configuration",
+                "destination-consent",
+                "destination-budget",
+                "source-unavailable"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stageTotals": {
+            "properties": {
+              "active": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "blocked": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "cancelled": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "completed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "delayed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "needsAttention": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paused": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "retrying": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "waiting": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "completed",
+              "failed",
+              "needsAttention",
+              "cancelled",
+              "active",
+              "retrying",
+              "delayed",
+              "paused",
+              "waiting",
+              "blocked"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "lastProgressAt",
+          "lastStage",
+          "outcome",
+          "reasons",
+          "stageTotals"
+        ],
+        "type": "object"
+      },
+      "JobRunPageDto": {
+        "properties": {
+          "hasNextPage": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobRunResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "items"
+        ],
+        "type": "object"
+      },
+      "JobRunResponseDto": {
+        "properties": {
+          "active": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blocked": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cancelled": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "delayed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enumerationDone": {
+            "type": "boolean"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastProgressAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "lastStage": {
+            "nullable": true,
+            "type": "string"
+          },
+          "needsAttention": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "noDispatchBacklog": {
+            "type": "boolean"
+          },
+          "paused": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "worker_unavailable",
+                "no_dispatch_backlog",
+                "dependency_unavailable",
+                "dependency_wait",
+                "dependency_failed",
+                "retry_backoff",
+                "scheduled_delay",
+                "queue_paused",
+                "needs_attention",
+                "stage_failed",
+                "enumerating",
+                "workload-disabled",
+                "destination-unavailable",
+                "destination-configuration",
+                "destination-consent",
+                "destination-budget",
+                "source-unavailable"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "retrying": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stageTotals": {
+            "properties": {
+              "active": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "blocked": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "cancelled": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "completed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "delayed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "needsAttention": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paused": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "retrying": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "waiting": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "completed",
+              "failed",
+              "needsAttention",
+              "cancelled",
+              "active",
+              "retrying",
+              "delayed",
+              "paused",
+              "waiting",
+              "blocked"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "retrying",
+              "delayed",
+              "paused",
+              "waiting",
+              "blocked",
+              "unavailable",
+              "needs_attention",
+              "completed",
+              "completed_with_errors",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "waiting": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "blocked",
+          "cancelled",
+          "completed",
+          "createdAt",
+          "delayed",
+          "enumerationDone",
+          "failed",
+          "finishedAt",
+          "id",
+          "kind",
+          "lastProgressAt",
+          "lastStage",
+          "needsAttention",
+          "noDispatchBacklog",
+          "paused",
+          "reasons",
+          "retrying",
+          "stageTotals",
+          "state",
+          "total",
+          "waiting"
+        ],
+        "type": "object"
       },
       "KnownAssetDevelopCrop": {
         "properties": {
@@ -98356,6 +98833,12 @@
           },
           "queueStatus": {
             "$ref": "#/components/schemas/QueueStatusLegacyDto"
+          },
+          "runId": {
+            "description": "Durable run created by a batch start",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           }
         },
         "required": [
@@ -98394,8 +98877,17 @@
             "description": "Whether the queue is paused",
             "type": "boolean"
           },
+          "lastProgressAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
           "name": {
             "$ref": "#/components/schemas/QueueName"
+          },
+          "noDispatchBacklog": {
+            "type": "boolean"
           },
           "processed": {
             "description": "Jobs finished, completed or failed, since this run started",
@@ -98409,11 +98901,31 @@
             "nullable": true,
             "type": "string"
           },
+          "state": {
+            "enum": [
+              "running",
+              "retrying",
+              "delayed",
+              "paused",
+              "waiting",
+              "blocked",
+              "unavailable",
+              "needs_attention",
+              "completed",
+              "completed_with_errors",
+              "cancelled"
+            ],
+            "type": "string"
+          },
           "total": {
             "description": "processed + active + waiting",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "unavailable": {
+            "description": "Status could not be read; zero counts are unknown, not idle",
+            "type": "boolean"
           },
           "waiting": {
             "description": "Jobs waiting to start, including those held by a paused queue",
@@ -101671,6 +102183,19 @@
         "properties": {
           "canManageQueues": {
             "description": "Whether the viewer may see and pause the server job queues",
+            "type": "boolean"
+          },
+          "canReadJobRuns": {
+            "type": "boolean"
+          },
+          "durableRuns": {
+            "description": "Operational summaries; JobRead administrators only",
+            "items": {
+              "$ref": "#/components/schemas/JobRunResponseDto"
+            },
+            "type": "array"
+          },
+          "durableRunsUnavailable": {
             "type": "boolean"
           },
           "memoryExports": {
@@ -107182,138 +107707,6 @@
           "exports"
         ],
         "type": "string"
-      },
-      "StorageMigrationStage": {
-        "description": "Current stage; pending until the server has started the migration",
-        "enum": [
-          "pending",
-          "checking",
-          "relinking",
-          "linking",
-          "trashing",
-          "done"
-        ],
-        "type": "string"
-      },
-      "StorageMigrationStageProgressDto": {
-        "properties": {
-          "done": {
-            "description": "Items finished in this stage",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "total": {
-            "description": "Items this stage covers",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "done",
-          "total"
-        ],
-        "type": "object"
-      },
-      "StorageMigrationStatusResponseDto": {
-        "properties": {
-          "background": {
-            "description": "An administrator chose to let it finish in the background",
-            "type": "boolean"
-          },
-          "bytesFreed": {
-            "description": "Bytes of extra copies moved to the file trash",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "estimatedSecondsLeft": {
-            "description": "Estimated time left, from the measured rate",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
-          },
-          "finishedAt": {
-            "description": "When the migration finished",
-            "nullable": true,
-            "type": "string"
-          },
-          "relinked": {
-            "description": "Missing originals relinked automatically",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "required": {
-            "description": "False when the library had nothing to combine (a fresh install)",
-            "type": "boolean"
-          },
-          "showInGettingReady": {
-            "description": "Whether the Getting Ready screen waits for it",
-            "type": "boolean"
-          },
-          "skipped": {
-            "description": "Files that could not be read or verified, skipped",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "stage": {
-            "$ref": "#/components/schemas/StorageMigrationStage"
-          },
-          "stages": {
-            "description": "Progress of each stage",
-            "properties": {
-              "checking": {
-                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
-              },
-              "linking": {
-                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
-              },
-              "relinking": {
-                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
-              },
-              "trashing": {
-                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
-              }
-            },
-            "required": [
-              "checking",
-              "relinking",
-              "linking",
-              "trashing"
-            ],
-            "type": "object"
-          },
-          "startedAt": {
-            "description": "When the migration started",
-            "nullable": true,
-            "type": "string"
-          },
-          "toReview": {
-            "description": "Missing originals left for review in Library Care",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "background",
-          "bytesFreed",
-          "estimatedSecondsLeft",
-          "finishedAt",
-          "relinked",
-          "required",
-          "showInGettingReady",
-          "skipped",
-          "stage",
-          "stages",
-          "startedAt",
-          "toReview"
-        ],
-        "type": "object"
       },
       "StraightenParameters": {
         "properties": {

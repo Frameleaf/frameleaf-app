@@ -4,7 +4,7 @@
 SELECT
   *
 FROM
-  immich_fork.frameleaf_user_license
+  public.frameleaf_user_license
 WHERE
   "userId" = $1::uuid
 
@@ -12,6 +12,6 @@ WHERE
 SELECT
   *
 FROM
-  immich_fork.frameleaf_user_license
+  public.frameleaf_user_license
 WHERE
   "keySha256" = $1
