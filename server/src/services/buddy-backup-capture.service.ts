@@ -80,7 +80,26 @@ export type BuddyManifest = {
     buddy?: BuddySettingsSnapshot;
   };
 };
-export type BuddyCapture = { manifest: BuddyManifest; manifestBlocks: string[]; objects: BuddyReceipt[] };
+export type BuddyCapture = {
+  manifest: BuddyManifest;
+  manifestBlocks: string[];
+  objects: BuddyReceipt[];
+  /** Complete canonical derived-path inventory, absent on older interrupted captures. */
+  derivedInventoryVersion?: 1;
+};
+
+type DerivedBackupPath = { path: string; role: string; assetId: string | null };
+
+/** Read from the same exported snapshot as the dump, never from directory names or temporary-file globs. */
+const derivedPaths = sql<DerivedBackupPath>`
+  SELECT p."thumbnailPath" AS path, 'person-thumbnail'::text AS role, NULL::uuid AS "assetId"
+  FROM public.person p WHERE p."thumbnailPath" <> ''
+  UNION ALL SELECT f.path, 'video-duplicate-frame'::text, f."assetId"
+  FROM public.asset_video_duplicate_frame f JOIN public.asset a ON a.id = f."assetId"
+  WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
+  UNION ALL SELECT f.path, 'video-moment-frame'::text, f."assetId"
+  FROM public.video_moment_frame f JOIN public.asset a ON a.id = f."assetId"
+  WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`;
 
 const inside = (directory: string, path: string) => {
   const child = relative(resolve(directory), resolve(path));
@@ -177,7 +196,11 @@ export class BuddyBackupCaptureService {
     checkpoint: () => Promise<void>;
   }): Promise<BuddyCapture> {
     const previousCapture = await this.readCapture(options.runId);
-    if (previousCapture) return previousCapture;
+    if (previousCapture) {
+      if (options.settings.includeDerived && previousCapture.derivedInventoryVersion !== 1)
+        throw new Error('This interrupted Buddy capture predates complete derived-file inventory. Start a new backup.');
+      return previousCapture;
+    }
     const { ring, settings } = options;
     const started = Date.now();
     const objects = new Map<string, BuddyReceipt>();
@@ -310,6 +333,15 @@ export class BuddyBackupCaptureService {
             )
               throw new Error('Stored Cloud Backup recovery key is missing');
             const dependencies = (await dependencyPaths.execute(trx)).rows;
+            const derived = settings.includeDerived ? (await derivedPaths.execute(trx)).rows : [];
+            const derivedByAsset = new Map<string, DerivedBackupPath[]>();
+            const derivedRoleByPath = new Map(derived.map((entry) => [entry.path, entry.role]));
+            for (const entry of derived) {
+              if (!entry.assetId) continue;
+              const entries = derivedByAsset.get(entry.assetId) ?? [];
+              entries.push(entry);
+              derivedByAsset.set(entry.assetId, entries);
+            }
             const lineageCandidates = await sql<{
               path: string;
             }>`SELECT "masterPath" AS path FROM public.video_edit_version
@@ -337,10 +369,16 @@ export class BuddyBackupCaptureService {
               trx,
             );
             for (const path of new Set([
-              ...[...required.rows, ...dependencies].map((entry) => entry.path).filter(Boolean),
+              ...[...required.rows, ...dependencies, ...derived].map((entry) => entry.path).filter(Boolean),
               ...configurationPaths,
             ])) {
-              const canonical = await realpath(path);
+              const canonical = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+                if (error.code === 'ENOENT' && derivedRoleByPath.has(path))
+                  throw new Error(
+                    `A selected Buddy derived file is missing (${derivedRoleByPath.get(path)}). Regenerate the cache or remove its stale reference before retrying the backup.`,
+                  );
+                throw error;
+              });
               if (inside(hostRoot, canonical) || inside(sourceRoot, canonical))
                 throw new Error('A backup contains a Buddy vault or server identity files');
               pinnedPaths.set(path, canonical);
@@ -423,6 +461,9 @@ export class BuddyBackupCaptureService {
                     }),
                   ];
                   for (const file of asset.files) files.push(await captureFile(file.path, file.type));
+                  for (const file of derivedByAsset.get(asset.id) ?? [])
+                    if (files.every((entry) => entry.path !== file.path))
+                      files.push(await captureFile(file.path, file.role));
                   // Edited outputs and recorded version files are non-regenerable dependencies even with caches disabled.
                   const edited = await trx
                     .selectFrom('asset_file')
@@ -474,6 +515,10 @@ export class BuddyBackupCaptureService {
               manifest.metadata = await new BuddyBackupMetadataRepository(trx).capture(people.values().toArray());
               for (const profile of await index.listProfileImages())
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
+              // Person groups can be shared across owners. Their thumbnails belong only to the
+              // whole-server archive, never to an asset selected through that shared group.
+              for (const entry of derived.filter((entry) => entry.assetId === null))
+                manifest.dependencies.push(await captureFile(entry.path, entry.role));
               for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))
                 manifest.dependencies.push(await captureFile(path, 'project'));
               const inventory = new Map(
@@ -507,7 +552,12 @@ export class BuddyBackupCaptureService {
       objects.set(receipt.id, receipt);
       manifestBlocks.push(receipt.id);
     }
-    const capture = { manifest, manifestBlocks, objects: objects.values().toArray() };
+    const capture: BuddyCapture = {
+      manifest,
+      manifestBlocks,
+      objects: objects.values().toArray(),
+      ...(settings.includeDerived && { derivedInventoryVersion: 1 as const }),
+    };
     await writeBuddyFile(join(this.runDirectory(options.runId), 'capture.json'), JSON.stringify(capture), true);
     return capture;
   }
