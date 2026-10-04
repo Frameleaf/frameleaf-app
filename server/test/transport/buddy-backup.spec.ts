@@ -16,7 +16,8 @@ import { buddyForwardingDiagnostic, startBuddyTransport } from 'test/fixtures/bu
 
 // Fails if app capture/pg_dump/crypto/commit/restore stops working, crosses an owner, or indexes hosted media.
 // This is direct HTTPS with a fixture coordinator/enrollment; it does not qualify real Cloud/relay/NAT.
-// Restart is controlled with normal sending pause; simultaneous unpaused restart recovery remains unqualified.
+// Includes paused restart and durable unpaused recovery through explicit peer backpressure.
+// Simultaneous uncontrolled restart on real Cloud/relay/two networks remains unqualified.
 const compose = fileURLToPath(new URL('../../../e2e/docker-compose.buddy.yml', import.meta.url));
 const docker = promisify(execFile);
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -200,6 +201,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     source: process.env.GITHUB_SHA,
     scope: 'two-real-apps/direct-fixture-coordinator-and-enrollment',
     restartMode: 'controlled-paused-restart',
+    unpausedRecoveryMode: 'durable-pending-verification/explicit-peer-unavailability',
     phase: 'setup',
     passed: false,
   };
@@ -811,6 +813,132 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       await original(app, items[index].current);
       await original(app, items[index].missing);
     }
+    // Unlike the earlier paused restart, pending verification must survive without a
+    // sending pause or a new start/resume command. Explicit peer backpressure (429) is
+    // a prerequisite wait until both owned APIs are ready. Transport errors and 503s
+    // consume the bounded execution retry, covered by the Buddy worker regression tests;
+    // every accidental forwarding failure here still fails this conformance run.
+    report.phase = 'awaiting-both-peer-apis';
+    for (const transport of transports) transport.setUnavailable(true, 429);
+    const pending = new Map<BuddySide, { id: string; verifiedAt: string | null; completedAt: string | null }>();
+    for (const app of apps) {
+      await unlock(app);
+      const before = await status(app);
+      expect(before.settings?.pausedSending).toBe(false);
+      const verification = await json<BuddyStatusDto>(
+        app,
+        `${adminRoute}/control`,
+        'POST',
+        app.admin.token,
+        { action: 'verify' },
+        201,
+      );
+      expect(verification.run?.id).toBeTruthy();
+      pending.set(app.side, {
+        id: verification.run!.id,
+        verifiedAt: before.lastVerifiedAt,
+        completedAt: before.lastCompleteAt,
+      });
+    }
+    for (const [index, app] of apps.entries()) {
+      const prior = pending.get(app.side)!;
+      await until(
+        'Unavailable peer settled under its durable claim',
+        async () => {
+          const state = await status(app);
+          const [operation] = await app.db<
+            { status: string; claimToken: string | null; retryAt: Date | null; task: string }[]
+          >`
+          select status, "claimToken", "retryAt", snapshot->>'task' as task
+          from public.media_operation where id=${prior.id}
+        `;
+          expect(operation.task).toBe('verify');
+          expect(state.settings?.pausedSending).toBe(false);
+          expect(state.lastVerifiedAt).toBe(prior.verifiedAt);
+          expect(state.lastCompleteAt).toBe(prior.completedAt);
+          if (['failed', 'cancelled', 'completed'].includes(operation.status)) {
+            throw new Error(`Server ${app.side}: pending verification did not preserve the peer outage`);
+          }
+          return (
+            operation.status === 'queued' &&
+            operation.claimToken === null &&
+            operation.retryAt !== null &&
+            state.run?.id === prior.id &&
+            state.run.state === 'waiting-peer' &&
+            transports[1 - index].outages.some((outage) => outage.category === 'handshake' && outage.status === 429)
+          );
+        },
+        Boolean,
+      );
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'unpaused-verification-waiting-peer',
+        side: app.side,
+      });
+    }
+    await docker('docker', ['compose', '-f', compose, 'restart', 'buddy-a', 'buddy-b'], { timeout: 60_000 });
+    for (const app of apps) {
+      await until(
+        'Unpaused restarted API',
+        async () => {
+          try {
+            const ping = await response(app, '/server/ping');
+            await ping.body?.cancel();
+            return ping.status === 200;
+          } catch {
+            return false;
+          }
+        },
+        Boolean,
+      );
+      await unlock(app);
+      const state = await status(app);
+      const prior = pending.get(app.side)!;
+      expect(state.settings?.pausedSending).toBe(false);
+      expect(state.run?.id).toBe(prior.id);
+      expect(state.lastVerifiedAt).toBe(prior.verifiedAt);
+      expect(state.lastCompleteAt).toBe(prior.completedAt);
+    }
+    const peerAvailableAt = Date.now();
+    for (const transport of transports) transport.setUnavailable(false);
+    for (const app of apps) {
+      const prior = pending.get(app.side)!;
+      await until(
+        'Same pending verification recovered automatically',
+        async () => {
+          const state = await status(app);
+          const [operation] = await app.db<{ status: string; claimToken: string | null; task: string }[]>`
+          select status, "claimToken", snapshot->>'task' as task
+          from public.media_operation where id=${prior.id}
+        `;
+          expect(operation.task).toBe('verify');
+          expect(state.settings?.pausedSending).toBe(false);
+          expect(state.lastCompleteAt).toBe(prior.completedAt);
+          if (['failed', 'cancelled'].includes(operation.status)) {
+            throw new Error(`Server ${app.side}: durable unpaused verification failed`);
+          }
+          return (
+            operation.status === 'completed' &&
+            operation.claimToken === null &&
+            state.run?.id === prior.id &&
+            state.run.state === 'complete' &&
+            state.lastVerifiedAt !== null &&
+            Date.parse(state.lastVerifiedAt) >= peerAvailableAt &&
+            (await absent(join(root, app.side, 'identity', 'buddy', 'verification', prior.id)))
+          );
+        },
+        Boolean,
+        180_000,
+      );
+      const index = apps.indexOf(app);
+      await original(app, items[index].current);
+      await original(app, items[index].missing);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'unpaused-verification-recovered-and-settled',
+        side: app.side,
+      });
+    }
     expect(coordinator.errors).toEqual([]);
     const paths = new Set([...coordinator.cloud.routes.keys(), 'GET /.well-known/frameleaf-services']);
     for (const request of coordinator.cloud.requests) {
@@ -835,6 +963,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       ...transport.metrics,
       failures: [...transport.failures],
       diagnostics: [...transport.diagnostics],
+      deliberateOutages: [...transport.outages],
     }));
     report.durationMs = Date.now() - started;
     try {

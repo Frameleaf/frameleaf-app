@@ -2477,6 +2477,8 @@ export enum DatabaseLock {
   /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
+  /** FL-218: Cloud authority replacement/revocation and account-link confirmation cannot overlap. */
+  FrameleafLinkAuthority = 974,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two

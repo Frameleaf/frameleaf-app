@@ -57,7 +57,7 @@ Owner decision, 2026-10-03: a Frameleaf Cloud admin share keeps granting server 
   redeems. Apps can show "Linking this Frameleaf account makes you an administrator of this server." before
   confirming.
 - Every promotion from Frameleaf Cloud (link or sign-in) notifies the other administrators with a `SystemMessage`
-  notification (`<name> became an administrator through Frameleaf Cloud`), besides the `admin-granted` audit row.
+  notification (`"<name> became an administrator through Frameleaf Cloud"`), besides the `admin-granted` audit row.
 - Demotions are unchanged: applied at sign-in, never to the last administrator.
 
 ## Gaps
@@ -72,6 +72,21 @@ Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-
 | android-live via live-stack (FL-218)                | Discovery: a linked server with remote access off reported `endpoints: []`, so `GET /v1/instances` listed no connection and the app could not reach it even on the same Wi-Fi                                  | Existing heartbeat, behaviour fixed (owner decision 2026-10-03)                                       | none (heartbeat `endpoints`, cloud `connections[]`)                                                                                                                                                                           | The heartbeat carries the plain-HTTP `local` fallback whenever the edge worker reports no `local` candidate, gated on `server.lanDiscovery`                                                                                                                                                                   |
 | ios-albums / android-albums (FL-331, owner request) | Phone albums and folders sync to server albums without duplicates                                                                                                                                              | New (separate PR, [Frameleaf/frameleaf-app#178](https://github.com/Frameleaf/frameleaf-app/pull/178)) | `getAlbumSourceLinks`, `resolveAlbumSources`, `addAlbumSourceAssets`, `removeAlbumSourceAssets`, `updateAlbumSourceLink`, `deleteAlbumSourceLink`; sync `AlbumSourceLinksV1` (`AlbumSourceLinkV1`, `AlbumSourceLinkDeleteV1`) | Fork migration 0000000000222. Resolve: existing link, else merge into the oldest owned album with the same name, else create; locks give one album per source and per new name across devices. Removal only undoes the sync's own memberships; unlink keeps the album. PATCH re-keys an Android folder rename |
 
+### Album source-link synchronization acknowledgements
+
+Clients requesting `AlbumSourceLinksV1` through `POST /sync/stream` must use `getSyncAckV2`
+(`GET /sync/ack/v2`) to retrieve their complete session checkpoint view, including
+`AlbumSourceLinkV1` and `AlbumSourceLinkDeleteV1`. The existing `getSyncAck` (`GET /sync/ack`)
+retains its legacy response enum and omits these new families so installed typed clients can
+continue decoding it. Both GET routes require `SyncCheckpointRead` and a session; checkpoints
+belong to that session, including when one owner has multiple devices.
+
+Send stream ACK strings unchanged to the existing `POST /sync/ack`. They are opaque cursors,
+not source IDs. The existing `DELETE /sync/ack` accepts both source-link families for a selective
+reset. The legacy response view does not delete or narrow stored checkpoints: source-link
+stream resume still uses the full ACK and tag state. No native app changes are part of this
+server API repair.
+
 ## Server issues found by the live tests
 
 ### FL-330: default smart-search model missing from the model mirror
@@ -82,8 +97,8 @@ Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-
   `ViT-B-32__openai`, so the ML service could not download the default model.
 - **Decision:** keep the default and publish the model on the mirror. The owner approved Apache-2.0 redistribution on
   2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`, Frameleaf/frameleaf-cloud#291, merged) and
-  the mirror now serves the model. Verified on the live stack on 2026-10-03: back on the default model, 263 of 263 items re-embedded at
-  768 dimensions with no failures.
+  the operator reports that the mirror now serves the model. The operator's 2026-10-03 live-stack report records 263 of 263 items
+  re-embedded on the default model at 768 dimensions with no failures; this qualification branch has not independently verified that run.
 - **Guard:** `server/test/model-mirror/default-models.spec.ts` (`pnpm test:model-mirror` in `server/`, workflow
   `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
   It runs on pull requests that touch the ML defaults or model source, and weekly.

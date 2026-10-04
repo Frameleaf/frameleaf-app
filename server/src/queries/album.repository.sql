@@ -336,9 +336,20 @@ order by
   "album"."createdAt" desc
 
 -- AlbumRepository.removeAssetsFromAll
+begin
+select
+  "albumId"
+from
+  "album_asset"
+where
+  "assetId" in ($1)
 delete from "album_asset"
 where
-  "album_asset"."assetId" in ($1)
+  "assetId" in ($1)
+returning
+  "albumId",
+  "assetId"
+commit
 
 -- AlbumRepository.getAssetIds
 select
@@ -350,6 +361,16 @@ where
   and "album_asset"."assetId" in ($2)
 
 -- AlbumRepository.addAssetIds
+begin
+select
+  "id"
+from
+  "album"
+where
+  "id" in ($1)
+order by
+  "id"
+for no key update
 insert into
   "album_asset"
 select
@@ -361,6 +382,10 @@ from
       1
   ) as "dummy"
 on conflict do nothing
+returning
+  "assetId",
+  "updateId"
+rollback
 
 -- AlbumRepository.create
 begin

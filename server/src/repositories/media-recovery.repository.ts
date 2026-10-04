@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Injectable, Optional } from '@nestjs/common';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
+import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
+import type { MediaIntegrityIdentity, MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import {
   AssetLockReason,
   AssetStatus,
@@ -15,10 +16,20 @@ import {
   PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
-import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
+import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import {
+  WeeklyIdentityAdoptionContext,
+  guardWeeklyIdentityAdoption,
+  lockIdentityAdoptionMetadata,
+  weeklyIdentityAdoptionFence,
+} from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type VerifiedMedia = Extract<
   MediaIntegrityResult,
@@ -52,6 +63,7 @@ export type RecoveryResource = {
   expectedTarget: RecoveryTarget | null;
   sha1: Buffer | null;
   sha256: Buffer | null;
+  verification: Record<string, unknown> | null;
 };
 export type RecoveryCandidate = {
   id: string;
@@ -97,7 +109,10 @@ export type RecoveryAuthority = {
   leaseToken: string;
   ownerId: string;
   includeHidden: boolean;
-  audit?: AuditAuthority;
+  audit?: AuditExecutionAuthority;
+  scheduled?: ScheduledPublicationFiles;
+  /** Captured internally before decoding a genuine 0217 mapped reuse; never scheduled/session authority. */
+  weeklyReuse?: WeeklyIdentityAdoptionContext;
 };
 export type RecoveryReservation = {
   target: RecoveryTarget;
@@ -106,10 +121,105 @@ export type RecoveryReservation = {
 @Injectable()
 export class MediaRecoveryRepository {
   constructor(
-    @InjectKysely()
-    private db: Kysely<DB>,
+    @InjectKysely() private db: Kysely<DB>,
+    @Optional() private scheduledStaging?: ICloudScheduledStagingRepository,
   ) {}
+
+  async identityReuseAuthority(
+    input: RecoveryAuthority,
+    db?: Transaction<DB>,
+  ): Promise<{
+    required: boolean;
+    context?: WeeklyIdentityAdoptionContext;
+    fileIdentity?: MediaIntegrityIdentity;
+  }> {
+    if (input.audit) {
+      return { required: false };
+    }
+    if (!db) {
+      return this.db.transaction().execute(async (trx) => {
+        await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(trx);
+        return this.identityReuseAuthority(input, trx);
+      });
+    }
+    // A real immutable receipt selects this branch; a verification JSON label cannot create consent authority.
+    const { rows } = await sql<{
+      connectionId: string;
+      valid: boolean;
+      fileIdentity: MediaIntegrityIdentity;
+      config: string;
+    }>`SELECT r."connectionId",
+      reuse.snapshot->'fileIdentity' AS "fileIdentity",reuse.snapshot->>'config' AS config,
+      (r."assetId"=reuse."assetId" AND r.sha256=reuse."expectedSha256" AND i."assetId"=reuse."assetId"
+        AND r."libraryKey" IS NOT DISTINCT FROM reuse."libraryKey" AND upper(r."sourceAssetId")=reuse."cplAssetRecordName"
+        AND r.source->>'sourceMasterId'=reuse."cplMasterRecordName"
+        AND reuse.role=CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion' WHEN 'raw' THEN 'raw-alternate' END
+        AND i.sha256=reuse."expectedSha256" AND i."deliveredBy" LIKE 'device:%' AND i."editVersion"=''
+        AND i."lastAuditResult" IS DISTINCT FROM 'mismatch' AND i.role=reuse.role
+        AND i."cplAssetRecordName"=reuse."cplAssetRecordName" AND i."cplMasterRecordName"=reuse."cplMasterRecordName"
+        AND r."resourceKey"=reuse.snapshot->>'resourceKey' AND r.fingerprint=reuse.snapshot->>'fingerprint'
+        AND asset.revision=reuse.snapshot->>'sourceRevision' AND master.revision=reuse.snapshot->>'masterRevision'
+        AND NOT asset.deleted AND NOT master.deleted AND a."originalPath"=reuse.snapshot->>'originalPath'
+        AND a."updateId"::text=reuse.snapshot->>'updateId' AND encode(a.checksum,'hex')=reuse.snapshot->>'checksum'
+        AND a."checksumAlgorithm"::text=reuse.snapshot->>'algorithm'
+        AND (to_jsonb(a)->>'physicalOriginalFileId') IS NOT DISTINCT FROM reuse.snapshot->>'physicalId'
+        AND (a."physicalOriginalFileId" IS NULL OR p.path=a."originalPath")) AS valid
+      FROM public.icloud_identity_reuse reuse
+      JOIN public.icloud_resource r ON r.id=reuse."sourceResourceId" AND r."ownerId"=reuse."ownerId"
+        AND r."connectionId"=reuse."connectionId"
+      LEFT JOIN public.icloud_source_identity i ON i.id=reuse."identityId" AND i."ownerId"=reuse."ownerId"
+      LEFT JOIN public.asset a ON a.id=reuse."assetId" AND a."ownerId"=reuse."ownerId"
+      LEFT JOIN public.physical_file p ON p.id=a."physicalOriginalFileId"
+      LEFT JOIN public.icloud_record asset ON asset."connectionId"=r."connectionId" AND asset."libraryKey"=r."libraryKey"
+        AND asset."recordId"=r."sourceAssetId"
+      LEFT JOIN public.icloud_record master ON master."connectionId"=r."connectionId" AND master."libraryKey"=r."libraryKey"
+        AND master."recordId"=r.source->>'sourceMasterId'
+      WHERE reuse."sourceResourceId"=${input.resourceId}::uuid AND reuse."ownerId"=${input.ownerId}::uuid`.execute(db);
+    if (rows.length === 0) {
+      return { required: !!input.weeklyReuse };
+    }
+    if (rows.length !== 1 || !rows[0].valid) {
+      return { required: true };
+    }
+    const context = await guardWeeklyIdentityAdoption(db, input.ownerId, rows[0].connectionId, input.weeklyReuse);
+    if (!context || canonicalJson(context.config) !== rows[0].config) {
+      return { required: true };
+    }
+    const hidden = await this.hiddenFilter(db, input.ownerId);
+    const eligible = await sql`SELECT 1 FROM public.asset a
+      JOIN public.icloud_identity_reuse reuse ON reuse."assetId"=a.id AND reuse."ownerId"=a."ownerId"
+      WHERE reuse."sourceResourceId"=${input.resourceId}::uuid AND a."ownerId"=${input.ownerId}::uuid
+        AND a."deletedAt" IS NULL AND a.status=${AssetStatus.Active} AND NOT a."isExternal" AND NOT a."isOffline"
+        AND (reuse.role='live-motion' OR a.visibility<>${AssetVisibility.Hidden}) AND NOT ${hidden}
+        AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
+        AND NOT EXISTS (SELECT 1 FROM public.asset still JOIN public.asset_lock l ON l."assetId"=still.id
+          WHERE still."livePhotoVideoId"=a.id)`.execute(db);
+    if (eligible.rows.length !== 1) {
+      return { required: true };
+    }
+    return { required: true, context, fileIdentity: rows[0].fileIdentity };
+  }
+
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return this.db.transaction().execute(async (db) => {
+        if (
+          !(await guardAuditAuthority(db, input.audit!, input.ownerId, true, {
+            id: input.resourceId,
+            leaseToken: input.leaseToken,
+          }))
+        ) {
+          return;
+        }
+        // Read admission only; every recovery mutator still refuses scheduled execution.
+        return (
+          await sql<RecoveryResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
+          FROM public.icloud_resource WHERE id=${input.resourceId}::uuid AND "ownerId"=${input.ownerId}::uuid
+            AND "auditRequestId"=${input.audit!.auditRequestId}::uuid AND "leaseToken"=${input.leaseToken}::uuid
+            AND "leaseExpiresAt">clock_timestamp() AND status NOT IN ('removed','finalized')`.execute(db)
+        ).rows[0];
+      });
+    }
     if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
       return;
     }
@@ -172,8 +282,19 @@ export class MediaRecoveryRepository {
       verifyFinal: () => Promise<MediaIntegrityResult>;
     },
   ): Promise<RecoveryResult> {
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return { outcome: 'retry', reason: 'mapping_changed' };
+    }
     return this.db.transaction().execute(async (trx) => {
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
+      const reuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
+      if (reuse.required && (!input.weeklyReuse || !reuse.context)) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
+      // The real classification writer's metadata protocol precedes lockTarget's asset row lock.
+      if (reuse.required && !(await lockIdentityAdoptionMetadata(trx as Transaction<DB>, input.candidate.id))) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
       const resource = await this.lockResource(trx, input);
       if (
         !resource ||
@@ -198,6 +319,12 @@ export class MediaRecoveryRepository {
       if (!candidate || candidate.damaged || candidate.isOffline) {
         return { outcome: 'retry', reason: 'target_changed' };
       }
+      if (
+        reuse.required &&
+        (candidate.hidden || canonicalJson(input.verified.identity) !== canonicalJson(reuse.fileIdentity))
+      ) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
       const final = await input.verifyFinal();
       if (
         final.status !== 'healthy' ||
@@ -209,10 +336,25 @@ export class MediaRecoveryRepository {
       if (!(await this.lockResource(trx, input))) {
         return { outcome: 'retry', reason: 'lease_expired' };
       }
-      await sql`UPDATE public.icloud_resource SET
+      const finalReuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
+      if (
+        finalReuse.required !== reuse.required ||
+        (finalReuse.required &&
+          (!finalReuse.context || canonicalJson(final.identity) !== canonicalJson(finalReuse.fileIdentity)))
+      ) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
+      const updated = await sql`UPDATE public.icloud_resource SET
         status = 'committed',
-        path = ${candidate.originalPath}, verification = ${{ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
-        "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
+        path = ${candidate.originalPath}, verification = (CASE WHEN ${reuse.required} THEN coalesce(verification,'{}'::jsonb)
+          ELSE '{}'::jsonb END) || ${JSON.stringify({ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes })}::text::jsonb,
+        "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid
+          AND ${finalReuse.context ? weeklyIdentityAdoptionFence(finalReuse.context) : sql<boolean>`true`}
+          AND (NOT ${reuse.required} OR ("leaseToken"=${input.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()))
+          RETURNING id`.execute(trx);
+      if (updated.rows.length !== 1) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
       return { outcome: 'reused', assetId: candidate.id };
     });
   }
@@ -226,13 +368,30 @@ export class MediaRecoveryRepository {
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      if (input.audit?.purpose === 'scheduled-weekly' && input.outcome !== 'reused') {
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(trx);
+      }
+      if (
+        input.audit?.purpose === 'scheduled-weekly' &&
+        !(await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: input.candidate ? [input.candidate.id] : [],
+          managedPaths: [input.proposedPath, ...(input.candidate ? [input.candidate.originalPath] : [])],
+          recoveryChecksum: input.verified.sha256,
+        }))
+      ) {
+        return;
+      }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);
       if (!resource || ['committed', 'finalized'].includes(resource.status)) {
         return;
       }
       if (input.audit) {
-        const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+        const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+          id: input.resourceId,
+          leaseToken: input.leaseToken,
+        });
         if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) {
           return;
         }
@@ -279,6 +438,22 @@ export class MediaRecoveryRepository {
       await sql`UPDATE public.icloud_resource SET "expectedTarget" = ${target}::jsonb,
         "promotedPath" = ${promotedPath}, sha1 = ${input.verified.sha1}, sha256 = ${input.verified.sha256},
         "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
+      if (
+        input.audit?.purpose === 'scheduled-weekly' &&
+        target.outcome !== 'reused' &&
+        (!this.scheduledStaging ||
+          !(await this.scheduledStaging.planPrivateCopy(
+            trx as Transaction<DB>,
+            {
+              authority: input.audit,
+              ownerId: input.ownerId,
+              resource: { id: input.resourceId, leaseToken: input.leaseToken },
+            },
+            promotedPath,
+          )))
+      ) {
+        throw new Error('scheduled_private_copy_reservation_unavailable');
+      }
       return { target, promotedPath };
     });
   }
@@ -293,7 +468,56 @@ export class MediaRecoveryRepository {
       verifyFinal: () => Promise<MediaIntegrityResult>;
     },
   ): Promise<RecoveryResult> {
+    const scheduledAuthority = input.audit?.purpose === 'scheduled-weekly' ? input.audit : undefined;
+    let scheduledFinal: MediaIntegrityResult | undefined;
+    if (scheduledAuthority) {
+      if (
+        !input.scheduled ||
+        !this.scheduledStaging ||
+        !(await this.scheduledStaging.authenticateReceipt(
+          {
+            authority: scheduledAuthority,
+            ownerId: input.ownerId,
+            resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          },
+          input.scheduled.receipt,
+        ))
+      ) {
+        return { outcome: 'retry', reason: 'scheduled_fresh_receipt_invalid' };
+      }
+      scheduledFinal = await input.verifyFinal(); // Copy/hash/decode and true settlement, outside all DB locks.
+      if (
+        !(await this.scheduledStaging.authenticateDeepValidation(
+          {
+            authority: scheduledAuthority,
+            ownerId: input.ownerId,
+            resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          },
+          input.scheduled.validation,
+        ))
+      ) {
+        return { outcome: 'retry', reason: 'scheduled_deep_receipt_invalid' };
+      }
+      if (scheduledFinal.status !== 'healthy') {
+        return { outcome: 'retry', reason: 'final_verification_failed' };
+      }
+    }
     return this.db.transaction().execute(async (trx) => {
+      if (
+        scheduledAuthority &&
+        !(await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: [input.reservation.target.assetId],
+          managedPaths: [
+            input.reservation.promotedPath,
+            ...(input.reservation.target.originalPath ? [input.reservation.target.originalPath] : []),
+            ...(input.scheduled?.paths ?? []),
+          ],
+          recoveryChecksum: input.verified.sha256,
+        }))
+      ) {
+        return { outcome: 'retry', reason: 'scheduled_authority_changed' };
+      }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);
       const { target, promotedPath } = input.reservation;
@@ -324,7 +548,7 @@ export class MediaRecoveryRepository {
         if (candidate.damaged || current.isOffline || current.originalPath !== promotedPath) {
           return { outcome: 'retry', reason: 'target_changed' };
         }
-        const final = await input.verifyFinal();
+        const final = scheduledFinal ?? (await input.verifyFinal());
         if (
           final.status !== 'healthy' ||
           !final.sha256.equals(input.verified.sha256) ||
@@ -350,7 +574,7 @@ export class MediaRecoveryRepository {
       if (!target.updateId && (await this.hasManagedMatch(trx, input.ownerId, input.verified))) {
         return { outcome: 'retry', reason: 'matching_asset_created' };
       }
-      const final = await input.verifyFinal();
+      const final = scheduledFinal ?? (await input.verifyFinal());
       if (
         final.status !== 'healthy' ||
         !final.sha256.equals(input.verified.sha256) ||
@@ -388,7 +612,12 @@ export class MediaRecoveryRepository {
             : undefined;
           // The worker's preliminary sourceHidden is not publication authority. Tags,
           // suppression and elevation may have changed before this transaction began.
-          const audit = input.audit ? await guardAudit(trx, input.audit, input.ownerId, true) : undefined;
+          const audit = input.audit
+            ? await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+                id: input.resourceId,
+                leaseToken: input.leaseToken,
+              })
+            : undefined;
           if (input.audit && !audit) {
             throw new Error('audit_authority_changed');
           }
@@ -489,25 +718,46 @@ export class MediaRecoveryRepository {
             { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
       await sql`UPDATE public.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
-        path = ${promotedPath}, verification = ${{
-          outcome: target.outcome,
-          identity: final.identity,
-          sizeInBytes: final.sizeInBytes,
-          ...(input.audit && {
-            auditStaging: {
-              resourceId: input.resourceId,
-              requestId: input.audit.auditRequestId,
-              ownerId: input.ownerId,
-              stagingPath: resource.stagingPath,
-              sha256: final.sha256.toString('hex'),
-              sizeInBytes: final.sizeInBytes,
-            },
-          }),
-          ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
-        }}::jsonb,
-        "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
+        path = ${promotedPath}, verification = ${JSON.stringify(scheduledAuthority ? { ...resource.verification, auditFreshDownload: input.scheduled!.receipt } : {})}::text::jsonb || ${JSON.stringify(
+          {
+            outcome: target.outcome,
+            identity: final.identity,
+            sizeInBytes: final.sizeInBytes,
+            ...(input.audit && {
+              auditStaging: {
+                resourceId: input.resourceId,
+                requestId: input.audit.auditRequestId,
+                ownerId: input.ownerId,
+                stagingPath: resource.stagingPath,
+                sha256: final.sha256.toString('hex'),
+                sizeInBytes: final.sizeInBytes,
+              },
+            }),
+            ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
+          },
+        )}::text::jsonb,
+        "pendingJobs" = ${JSON.stringify(pendingJobs)}::text::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
-      if (input.audit) {
+      if (scheduledAuthority) {
+        const guarded = await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: [assetId],
+          managedPaths: input.scheduled?.paths,
+          recoveryChecksum: input.verified.sha256,
+        });
+        if (!guarded || !input.scheduled || !input.scheduled.paths.includes(promotedPath)) {
+          throw new Error('scheduled_audit_authority_changed');
+        }
+        await publishScheduledAudit(
+          trx as Transaction<DB>,
+          scheduledAuthority,
+          guarded,
+          { id: input.resourceId, leaseToken: input.leaseToken },
+          input.scheduled,
+          'mismatch',
+          assetId,
+        );
+      } else if (input.audit) {
         await publishAudit(
           trx,
           input.audit,
@@ -597,7 +847,13 @@ export class MediaRecoveryRepository {
     await trx.selectFrom('user').select('id').where('id', '=', ownerId).forUpdate().executeTakeFirstOrThrow();
   }
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
-    if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
+    if (
+      input.audit &&
+      !(await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+        id: input.resourceId,
+        leaseToken: input.leaseToken,
+      }))
+    ) {
       return;
     }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
@@ -647,7 +903,10 @@ export class MediaRecoveryRepository {
       return;
     }
     if (input.audit) {
-      const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+      const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+        id: input.resourceId,
+        leaseToken: input.leaseToken,
+      });
       if (!audit || (audit.private && !candidate.hidden)) {
         return;
       }

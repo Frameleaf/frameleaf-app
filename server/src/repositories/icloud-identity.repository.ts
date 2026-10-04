@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -211,10 +211,11 @@ export class ICloudIdentityRepository {
       return [];
     }
     return this.db.transaction().execute(async (tx) => {
+      const canonical = await lockICloudItemClaims(tx, ownerId, names);
       await sql`
         INSERT INTO public.icloud_claim ("ownerId", "cplAssetRecordName", holder, "expiresAt")
         SELECT ${ownerId}::uuid, name, ${holder}, clock_timestamp() + make_interval(secs => ${ttlSec})
-        FROM unnest(${names}::text[]) AS name
+        FROM unnest(${canonical}::text[]) AS name
         -- one lock order for every caller: two devices claiming overlapping items cannot deadlock
         ORDER BY name
         ON CONFLICT ("ownerId", "cplAssetRecordName") DO UPDATE
@@ -231,7 +232,7 @@ export class ICloudIdentityRepository {
       `.execute(tx);
       const { rows } = await sql<ICloudClaimRow>`
         SELECT id, "cplAssetRecordName", holder, "expiresAt", "createdAt" FROM public.icloud_claim
-        WHERE "ownerId" = ${ownerId}::uuid AND "cplAssetRecordName" = ANY(${names}::text[])
+        WHERE "ownerId" = ${ownerId}::uuid AND "cplAssetRecordName" = ANY(${canonical}::text[])
       `.execute(tx);
       return rows;
     });
