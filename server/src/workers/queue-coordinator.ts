@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
-import { QueueWatchdog } from 'src/queue/watchdog.js';
+import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 
 type CoordinatorData = {
   workerId: string;
@@ -55,16 +55,12 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   });
 
   // This timer never awaits PostgreSQL. A failed or saturated pool cannot silence cancellation.
-  const timer = setInterval(() => {
-    supervisor.postMessage({ type: 'alive' });
-    const result = watchdog.inspect(performance.now(), lastHeartbeat);
-    for (const id of result.cancel) {
-      parentPort!.postMessage({ type: 'cancel', id });
-    }
-    if (result.terminate) {
-      supervisor.postMessage({ type: 'terminate' });
-    }
-  }, 1000);
+  const stopWatchdog = monitorQueueProgress(watchdog, {
+    alive: () => supervisor.postMessage({ type: 'alive' }),
+    cancel: (id) => parentPort!.postMessage({ type: 'cancel', id }),
+    terminate: () => supervisor.postMessage({ type: 'terminate' }),
+    lastHeartbeat: () => lastHeartbeat,
+  });
 
   const tick = async () => {
     if (busy) {
@@ -123,7 +119,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   };
   const scan = setInterval(() => void tick(), QUEUE_TIMING.scan);
   parentPort!.on('close', () => {
-    clearInterval(timer);
+    stopWatchdog();
     clearInterval(scan);
     void client.end({ timeout: 1 });
   });

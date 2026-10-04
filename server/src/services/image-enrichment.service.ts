@@ -41,6 +41,7 @@ import {
   afterJobCommit,
   attemptOutputPath,
   deferJobAdoption,
+  publishJobDiagnostic,
   publishJobResult,
   queueExecution,
 } from 'src/queue/context.js';
@@ -780,8 +781,9 @@ export class ImageEnrichmentService extends BaseService {
         machineLearning.nsfwDetection,
       );
     } catch (error) {
-      await publishJobResult(() =>
+      await publishJobDiagnostic(() =>
         this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+          if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
           const m = await this.getEnrichmentMetadata(id, trx);
           m.nsfwDetection = {
             status: 'failed',
@@ -1066,8 +1068,9 @@ export class ImageEnrichmentService extends BaseService {
       } catch (error) {
         // NSFW failure is non-fatal for description; persist the failed
         // detection status alongside whatever description result we get.
-        await publishJobResult(() =>
+        await publishJobDiagnostic(() =>
           this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+            if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
             const m = await this.getEnrichmentMetadata(id, trx);
             m.nsfwDetection = {
               status: 'failed',
@@ -1107,8 +1110,9 @@ export class ImageEnrichmentService extends BaseService {
         prompt,
       );
     } catch (error) {
-      await publishJobResult(() =>
+      await publishJobDiagnostic(() =>
         this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+          if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
           const m = await this.getEnrichmentMetadata(id, trx);
           m.description = {
             status: 'failed',
@@ -1566,7 +1570,7 @@ export class ImageEnrichmentService extends BaseService {
     if (!cloudMl.enabled || !cloudRouteAllows(cloudMl, MlWorkload.Enrichment)) {
       const error =
         'Descriptions are routed to Frameleaf Cloud, but Frameleaf Cloud processing is turned off or Where each job runs keeps descriptions on this server. Nothing was sent.';
-      await publishJobResult(() =>
+      await publishJobDiagnostic(() =>
         this.databaseRepository.withAssetMetadataLock(asset.id, async (trx) => {
           const m = await this.getEnrichmentMetadata(asset.id, trx);
           m.description = { status: 'failed', modelName, updatedAt: new Date().toISOString(), error };
@@ -2276,7 +2280,7 @@ const chooseGridLayout = (
   }
   return { cols: 3, rows: 3 };
 };
-const subsampleFrames = <T>(frames: T[], target: number): T[] => {
+const subsampleFrames = <T,>(frames: T[], target: number): T[] => {
   if (frames.length <= target) {
     return frames;
   }

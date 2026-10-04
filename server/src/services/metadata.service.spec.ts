@@ -1263,6 +1263,7 @@ describe(MetadataService.name, () => {
       });
       mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
       mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       const video = randomBytes(512);
       mocks.storage.readFile.mockResolvedValue(video);
       mocks.storage.checkFileExists.mockResolvedValue(true);
@@ -1273,6 +1274,22 @@ describe(MetadataService.name, () => {
       // The still asset gets saved by handleMetadataExtraction, but not the video
       expect(mocks.asset.update).toHaveBeenCalledTimes(1);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('fails explicitly when a matching motion video original is missing without creating or queueing it', async () => {
+      const motionAsset = AssetFactory.create({ type: AssetType.Video });
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Directory: 'foo/bar/', MotionPhoto: 1, MicroVideo: 1, MicroVideoOffset: 1 });
+      mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
+      mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.readFile.mockResolvedValue(randomBytes(512));
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toThrow('motion video original is missing');
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should link and hide motion video asset to still asset if the hash of the extracted video matches an existing asset', async () => {
@@ -1287,6 +1304,7 @@ describe(MetadataService.name, () => {
       });
       mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
       mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       const video = randomBytes(512);
       mocks.storage.readFile.mockResolvedValue(video);
 

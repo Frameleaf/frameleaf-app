@@ -5,7 +5,7 @@ import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
@@ -102,6 +102,7 @@ export class PetRepository {
     private db: Kysely<DB>,
     private logger: LoggingRepository,
   ) {
+    this.db = publicationDatabase(db);
     this.logger.setContext(PetRepository.name);
   }
   // ---------------------------------------------------------------- durable: identity

@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
+import type { JobRepository } from 'src/repositories/job.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { JobName } from 'src/enum.js';
 import { AssetStatus, AssetVisibility, StorageFolder, TranscodeTarget } from 'src/enum.js';
+import { attemptOutputPath, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -36,6 +40,7 @@ export type VideoFrameDeps = {
   storage: StorageRepository;
   moments: VideoMomentRepository;
   logger: LoggingRepository;
+  jobs?: JobRepository;
 };
 
 export type FrameCutOutcome =
@@ -87,6 +92,7 @@ export const cutFrames = async (
       const { width, height } = await deps.media.getImageMetadata(path).catch(() => ({ width: 0, height: 0 }));
       cut.push({ frameIndex, timestampMs, path, width: width || null, height: height || null, score });
     } catch (error) {
+      jobSignal()?.throwIfAborted();
       deps.logger.warn(
         `Could not cut moment frame ${frameIndex} of video ${source.id} at ${timestampMs} ms: ${errorMessage(error)}`,
       );
@@ -138,14 +144,41 @@ const cutAndPublish = async (
   // removed only once the new ones are published.
   const nonce = Date.now().toString(36);
   const frames = await cutFrames(deps, source, config, (frameIndex) =>
-    StorageCore.getNestedPath(
-      StorageFolder.Thumbnails,
-      source.ownerId,
-      `${source.id}_moment_${nonce}_${frameIndex}.jpeg`,
+    attemptOutputPath(
+      StorageCore.getNestedPath(
+        StorageFolder.Thumbnails,
+        source.ownerId,
+        `${source.id}_moment_${nonce}_${frameIndex}.jpeg`,
+      ),
     ),
   );
   if (frames.length === 0) {
     return { status: 'failed', message: 'No frame could be cut from this video' };
+  }
+
+  if (queueExecution.getStore()) {
+    if (!deps.jobs) throw new Error('Queued frame publication requires durable cleanup intents');
+    const prepared: VideoMomentFrame[] = frames.map((frame) => ({
+      ...frame,
+      id: randomUUID(),
+      assetId,
+      width: frame.width ?? null,
+      height: frame.height ?? null,
+      score: frame.score,
+      rank: frame.rank,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      updateId: randomUUID(),
+    }));
+    deferJobAdoption(async () => {
+      const published = await deps.moments.replaceFrames(assetId, fingerprint, prepared, {
+        extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION,
+      });
+      if (published.status === 'source-changed') throw new Error('Video frame source changed before publication');
+      if (published.stalePaths.length)
+        await deps.jobs!.queue({ name: JobName.FileDelete, data: { files: published.stalePaths } });
+    });
+    return { status: 'cut', frames: prepared };
   }
 
   const published = await deps.moments.replaceFrames(assetId, fingerprint, frames, {
@@ -176,13 +209,15 @@ export const ensureVideoFrames = (
   options: { force?: boolean } = {},
 ): Promise<FrameCutOutcome> =>
   // Whoever gets the lock second finds the frames the first one cut and uses them as they are.
-  deps.moments.withFrameLock(assetId, () => cutAndPublish(deps, assetId, config, options));
+  queueExecution.getStore()
+    ? cutAndPublish(deps, assetId, config, options)
+    : deps.moments.withFrameLock(assetId, () => cutAndPublish(deps, assetId, config, options));
 
 /**
  * Cut frames into a temporary folder for a preview, without touching the library: nothing is
  * written to the database and the folder is removed when `use` returns.
  */
-export const withTemporaryFrames = async <T>(
+export const withTemporaryFrames = async <T,>(
   deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger' | 'moments'>,
   assetId: string,
   config: Pick<SystemConfig, 'ffmpeg' | 'image'>,

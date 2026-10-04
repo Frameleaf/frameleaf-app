@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import {
   AssetStatus,
@@ -10,6 +11,7 @@ import {
   MlDestinationKind,
   VideoMomentSource,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
@@ -106,6 +108,81 @@ describe(VideoMomentIndexService.name, () => {
       mocks.systemMetadata as never,
       mocks.job as never,
     );
+  });
+
+  it('prepares immutable frame files before adopting any reusable frame rows or cleanup intents', async () => {
+    const execution: QueueExecution = {
+      claim: {
+        id: 'fixture',
+        queue: 'fixture',
+        name: 'fixture',
+        data: {},
+        token: 'fixture',
+        workerId: 'fixture',
+        attempt: 1,
+        runId: null,
+        itemKey: null,
+        deadlineMs: 600000,
+        startedAt: new Date(),
+      },
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    moments.getIndex.mockResolvedValue(undefined);
+    mocks.media.scoreThumbnailCandidate.mockResolvedValue(50);
+    mocks.media.getImageMetadata.mockResolvedValue({ width: 1280, height: 720, isTransparent: false });
+    moments.replaceFrames.mockResolvedValue({ status: 'replaced', stalePaths: ['/old/frame.jpeg'], frames });
+    await queueExecution.run(execution, () => sut.runFramesStage(assetId));
+    expect(moments.withFrameLock).not.toHaveBeenCalled();
+    expect(moments.replaceFrames).not.toHaveBeenCalled();
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    expect(mocks.media.transcode).toHaveBeenCalledTimes(6);
+    for (const call of mocks.media.transcode.mock.calls) expect(call[1]).toContain('/.attempts/fixture/fixture/');
+    await execution.adoptions[0]({} as never);
+    expect(moments.replaceFrames).toHaveBeenCalledWith(
+      assetId,
+      fingerprint,
+      expect.arrayContaining([
+        expect.objectContaining({ id: expect.any(String), path: expect.stringContaining('/.attempts/') }),
+      ]),
+      { extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION },
+    );
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/old/frame.jpeg'] } });
+  });
+
+  it('rejects a prepared frame embedding when its accepted frame identity is no longer current', async () => {
+    const execution: QueueExecution = {
+      claim: {
+        id: 'fixture',
+        queue: 'fixture',
+        name: 'fixture',
+        data: {},
+        token: 'fixture',
+        workerId: 'fixture',
+        attempt: 1,
+        runId: null,
+        itemKey: null,
+        deadlineMs: 600000,
+        startedAt: new Date(),
+      },
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    mocks.machineLearning.encodeImage.mockResolvedValue('[0.1,0.2]');
+    await queueExecution.run(execution, () =>
+      sut.runIndexStage(assetId, { destinationId: mlDestinationStub.local.id }),
+    );
+    expect(moments.publishIndex).not.toHaveBeenCalled();
+    moments.publishIndex.mockResolvedValue(0);
+    await expect(execution.adoptions[0]({} as never)).rejects.toThrow('Video index source changed');
   });
 
   describe('runFramesStage', () => {

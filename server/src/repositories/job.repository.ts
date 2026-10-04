@@ -11,9 +11,9 @@ import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
-import { queueExecution } from 'src/queue/context.js';
+import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { publicationTransaction } from 'src/queue/transaction.js';
+import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
   QUEUE_TIMING,
   QueueClaim,
@@ -50,6 +50,16 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.BestPhotosScore,
   JobName.AssetExtractMetadata,
   JobName.AssetDetectFaces,
+  JobName.FacialRecognition,
+  JobName.FacialRecognitionQueueAll,
+  JobName.PersonGenerateThumbnail,
+  JobName.AssetDetectFacesQueueAll,
+  JobName.AssetDetectDuplicates,
+  JobName.AssetGenerateVideoDuplicateFrames,
+  JobName.AssetDetectDuplicatesQueueAll,
+  JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+  JobName.PetRecognition,
+  JobName.VideoMomentCaptions,
   JobName.ImageDescription,
   JobName.NsfwDetection,
   JobName.AssetEncodeVideoQueueAll,
@@ -207,7 +217,16 @@ export class JobRepository {
       }
     } catch (error) {
       try {
-        await this.store.fail(claim, error instanceof Error ? error.message : 'Job failed');
+        await this.store.fail(
+          claim,
+          error instanceof Error ? error.message : 'Job failed',
+          context.failureDiagnostics?.length
+            ? async (tx) =>
+                publicationTransaction.run(tx, async () => {
+                  for (const publish of context.failureDiagnostics!) await publish(tx);
+                })
+            : undefined,
+        );
       } catch {
         // No successful database outcome was observed. Lease recovery owns this claim.
         this.logger.error('Could not persist job outcome; lease recovery is pending');
@@ -331,7 +350,14 @@ export class JobRepository {
   async createRun(kind: string, selection: Record<string, unknown>, enqueue: () => Promise<void>) {
     const id = await this.store.createRun(kind, selection);
     await runSubmission.run(id, enqueue);
-    await this.store.finishEnumeration(id);
+    // Direct selections have no coordinating job. Queued producers finish enumeration on acceptance.
+    const {
+      rows: [pending],
+    } = await sql<{ count: number }>`select count(*)::int count from job_run_item
+      where "runId" = ${id}::uuid and "rootItemKey" is null and state in ('pending','waiting','active')`.execute(
+      this.store.db,
+    );
+    if (!pending.count) await this.store.finishEnumeration(id);
     return id;
   }
 
@@ -368,8 +394,10 @@ export class JobRepository {
       deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
       runId,
       itemKey: runId
-        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'))
+        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex')) +
+          (item.name === JobName.FacialRecognition && data.deferred ? '/deferred' : '')
         : undefined,
+      rootItemKey: context?.claim.rootItemKey ?? null,
       parentId: context?.buffering ? context.claim.id : undefined,
     };
   }
@@ -402,25 +430,79 @@ export class JobRepository {
       }>`select coalesce((selection -> '_materializedStages') ? ${name}, false) materialized
         from job_run where id = ${runId}::uuid for update`.execute(tx);
       if (!run.materialized) {
-        await sql`insert into job_run_item("runId", "itemKey", stage, selection)
-          select ${runId}::uuid, selected.id::text, ${name}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
+        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, selection)
+          select ${runId}::uuid, selected.id::text, selected.id::text, ${name}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
           from (${selection}) selected on conflict do nothing`.execute(tx);
         // A producer restart must not enumerate a moving library a second time.
         await sql`update job_run set selection = jsonb_set(selection, '{_materializedStages}',
           coalesce(selection -> '_materializedStages', '{}'::jsonb) || jsonb_build_object(${name}::text, true))
           where id = ${runId}::uuid`.execute(tx);
       }
-      await sql`with added as (
-        insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey")
-        select gen_random_uuid(), ${intent.queue}, ${name}, selection, ${intent.safeToRetry}, ${intent.sensitive},
-          ${intent.deadlineMs}, "runId", "itemKey" from job_run_item where "runId" = ${runId}::uuid and stage = ${name}
-        on conflict do nothing returning id, "runId", "itemKey", name
-      ) update job_run_item i set "jobId" = a.id from added a
-        where i."runId" = a."runId" and i."itemKey" = a."itemKey" and i.stage = a.name`.execute(tx);
     });
+    // The immutable ledger itself is the durable cursor. Each small scheduling transaction
+    // fills only rows without a job; a producer restart resumes these rows without reselection.
+    let scheduled: number;
+    do {
+      scheduled = await this.store.db.transaction().execute(async (tx) => {
+        await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
+        if (context) {
+          const claim = context.claim;
+          const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+            and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+            tx,
+          );
+          if (!rows.length) throw new Error('Selection producer lost its claim');
+        }
+        const { rows } = await sql`with selected as (
+          select * from job_run_item where "runId" = ${runId}::uuid and stage = ${name} and "jobId" is null
+            and state = 'pending' order by "itemKey" limit 250 for update
+        ), added as (
+          insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey", "rootItemKey")
+          select gen_random_uuid(), ${intent.queue}, ${name}, selection, ${intent.safeToRetry}, ${intent.sensitive},
+            ${intent.deadlineMs}, "runId", "itemKey", "rootItemKey" from selected
+          on conflict do nothing returning id, "runId", "itemKey", name
+        ) update job_run_item i set "jobId" = a.id from added a
+          where i."runId" = a."runId" and i."itemKey" = a."itemKey" and i.stage = a.name returning i."jobId"`.execute(
+          tx,
+        );
+        return rows.length;
+      });
+      if (scheduled) context?.progress((context.progressUnits += scheduled));
+    } while (scheduled > 0);
     if (!context?.claim.runId && !runSubmission.getStore()) {
       await this.store.finishEnumeration(runId);
     }
+  }
+
+  /** Snapshot source identity before I/O, then recheck it under the accepted publication lock. */
+  async guardAssetSource(assetId: string) {
+    if (!queueExecution.getStore()) {
+      return;
+    }
+    const read = async () => {
+      const {
+        rows: [row],
+      } = await sql<{ checksum: Buffer; revision: unknown }>`select a.checksum,
+        jsonb_build_object('originalPath', a."originalPath", 'modifiedAt', a."fileModifiedAt", 'ownerId', a."ownerId",
+          'visibility', a.visibility, 'deletedAt', a."deletedAt",
+          'files', (select jsonb_agg(jsonb_build_array(f.id, f.path, f.type, f."isEdited") order by f.id)
+            from asset_file f where f."assetId" = a.id),
+          'edits', (select jsonb_agg(jsonb_build_array(e.sequence, e.action, e.parameters) order by e.sequence, e.id)
+            from asset_edit e where e."assetId" = a.id)) revision
+        from asset a where a.id = ${assetId}::uuid`.execute(publicationTransaction.getStore() ?? this.store.db);
+      return row;
+    };
+    const source = await read();
+    if (!source) {
+      return;
+    }
+    deferJobAdoption(async () => {
+      await assertPublicationSource(assetId, source.checksum);
+      const current = await read();
+      if (!current || JSON.stringify(current.revision) !== JSON.stringify(source.revision)) {
+        throw new Error('Asset inputs changed before publication');
+      }
+    });
   }
 
   /** Persist before admission. A retry keeps its original destination even if routing changes. */

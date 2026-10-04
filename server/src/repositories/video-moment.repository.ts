@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
   VideoMomentFrameTable,
@@ -23,7 +23,7 @@ export type VideoMoment = Selectable<VideoMomentTable>;
 export type VideoMomentFrameInsert = Pick<
   Insertable<VideoMomentFrameTable>,
   'frameIndex' | 'timestampMs' | 'path' | 'width' | 'height' | 'score' | 'rank'
->;
+> & { id?: string };
 
 export type VideoMomentIndexPatch = Omit<Updateable<VideoMomentIndexTable>, 'assetId' | 'createdAt' | 'updatedAt'>;
 
@@ -70,7 +70,9 @@ export type VideoMomentSearchScope = {
  */
 @Injectable()
 export class VideoMomentRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(db);
+  }
 
   /** A video with the stream and format the frame cutter needs, and the columns its fingerprint uses. */
   getVideoSource(assetId: string, db: Kysely<DB> = this.db) {

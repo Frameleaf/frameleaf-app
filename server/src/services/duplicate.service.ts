@@ -19,6 +19,8 @@ import {
   StorageFolder,
   TranscodeTarget,
 } from 'src/enum.js';
+import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
@@ -433,6 +435,7 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
     if (!asset) {
       this.logger.error(`Asset ${id} not found`);
@@ -447,16 +450,20 @@ export class DuplicateService extends BaseService {
     const timestamps = this.getVideoDuplicateFrameTimestamps(enhancedVideo.frameCount, asset.format);
     if (timestamps.length < VIDEO_DUPLICATE_FRAME_MIN_COUNT) {
       this.logger.debug(`Asset ${id} is too short for enhanced video duplicate detection`);
-      await this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() });
+      await publishJobResult(() =>
+        this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() }),
+      );
       return JobStatus.Skipped;
     }
 
     const frames = [];
     for (const [frameIndex, timestamp] of timestamps.entries()) {
-      const path = StorageCore.getNestedPath(
-        StorageFolder.Thumbnails,
-        asset.ownerId,
-        `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
+      const path = attemptOutputPath(
+        StorageCore.getNestedPath(
+          StorageFolder.Thumbnails,
+          asset.ownerId,
+          `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
+        ),
       );
       this.storageCore.ensureFolders(path);
 
@@ -482,6 +489,7 @@ export class DuplicateService extends BaseService {
           embedding,
         });
       } catch (error: any) {
+        jobSignal()?.throwIfAborted();
         // A single frame can fail to extract when its sampled start_time lands in
         // the sparse-keyframe dead zone near EOF (ffmpeg writes no packets and
         // exits non-zero). Skip just that frame instead of failing the whole job.
@@ -508,10 +516,12 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
-    if (stalePaths.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
-    }
+    await publishJobResult(async () => {
+      const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
+      if (stalePaths.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
+      }
+    });
 
     return JobStatus.Success;
   }
@@ -523,63 +533,86 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
-    if (!asset) {
-      this.logger.error(`Asset ${id} not found`);
-      return JobStatus.Failed;
-    }
+    const publish = async (): Promise<JobStatus> => {
+      const tx = publicationTransaction.getStore();
+      if (tx) {
+        // Group merges can touch siblings not returned by the nearest-neighbour query.
+        // Lock this owner's rows in stable order before reading matching/manual resolution state.
+        const owner = await tx.selectFrom('asset').select('ownerId').where('id', '=', id).executeTakeFirst();
+        if (owner)
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('ownerId', '=', owner.ownerId)
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+      }
+      const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
+      if (!asset) {
+        this.logger.error(`Asset ${id} not found`);
+        return JobStatus.Failed;
+      }
 
-    if (asset.stackId) {
-      this.logger.debug(`Asset ${id} is part of a stack, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.stackId) {
+        this.logger.debug(`Asset ${id} is part of a stack, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (asset.visibility === AssetVisibility.Hidden) {
-      this.logger.debug(`Asset ${id} is not visible, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.visibility === AssetVisibility.Hidden) {
+        this.logger.debug(`Asset ${id} is not visible, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (asset.visibility === AssetVisibility.Locked) {
-      this.logger.debug(`Asset ${id} is locked, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.visibility === AssetVisibility.Locked) {
+        this.logger.debug(`Asset ${id} is locked, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (!asset.embedding) {
-      this.logger.debug(`Asset ${id} is missing embedding`);
-      return JobStatus.Failed;
-    }
+      if (!asset.embedding) {
+        this.logger.debug(`Asset ${id} is missing embedding`);
+        return JobStatus.Failed;
+      }
 
-    let duplicateAssets = await this.duplicateRepository.search({
-      assetId: asset.id,
-      embedding: asset.embedding,
-      maxDistance: machineLearning.duplicateDetection.maxDistance,
-      type: asset.type,
-      userIds: [asset.ownerId],
-    });
+      let duplicateAssets = await this.duplicateRepository.search({
+        assetId: asset.id,
+        embedding: asset.embedding,
+        maxDistance: machineLearning.duplicateDetection.maxDistance,
+        type: asset.type,
+        userIds: [asset.ownerId],
+      });
 
-    if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
-      duplicateAssets = await this.filterConfirmedVideoDuplicates(
-        asset,
-        duplicateAssets,
-        machineLearning.duplicateDetection,
-      );
-    }
+      if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
+        duplicateAssets = await this.filterConfirmedVideoDuplicates(
+          asset,
+          duplicateAssets,
+          machineLearning.duplicateDetection,
+        );
+      }
 
-    let assetIds = [asset.id];
-    if (duplicateAssets.length > 0) {
-      this.logger.debug(
-        `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
-      );
-      assetIds = await this.updateDuplicates(asset, duplicateAssets);
-    } else if (asset.duplicateId) {
-      this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
-      await this.assetRepository.update({ id: asset.id, duplicateId: null });
-    }
+      let assetIds = [asset.id];
+      if (duplicateAssets.length > 0) {
+        this.logger.debug(
+          `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
+        );
+        assetIds = await this.updateDuplicates(asset, duplicateAssets);
+      } else if (asset.duplicateId) {
+        this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
+        await this.assetRepository.update({ id: asset.id, duplicateId: null });
+      }
 
-    const duplicatesDetectedAt = new Date();
-    await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
+      const duplicatesDetectedAt = new Date();
+      await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
 
-    return JobStatus.Success;
+      return JobStatus.Success;
+    };
+    if (
+      deferJobAdoption(async () => {
+        if ((await publish()) === JobStatus.Failed) throw new Error('Duplicate matching could not be published');
+      })
+    )
+      return JobStatus.Success;
+    return publish();
   }
 
   private getVideoDuplicateFrameTimestamps(frameCount: number, format: { duration: number }): number[] {

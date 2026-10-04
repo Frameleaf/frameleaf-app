@@ -62,8 +62,8 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
-import { publishJobResult } from 'src/queue/context.js';
-import { assertPublicationSource } from 'src/queue/transaction.js';
+import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
+import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
@@ -103,12 +103,7 @@ const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>([
 ]);
 
 type CorrectionConflictReason =
-  | 'already-undone'
-  | 'not-undoable'
-  | 'source-changed'
-  | 'face-gone'
-  | 'face-changed'
-  | 'person-gone';
+  'already-undone' | 'not-undoable' | 'source-changed' | 'face-gone' | 'face-changed' | 'person-gone';
 
 /** A 409 whose body names why a correction could not be undone (FL-57). */
 const correctionConflict = (reason: CorrectionConflictReason, message: string) =>
@@ -898,12 +893,7 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    if (force) {
-      await this.personRepository.deleteFaces({ sourceType: SourceType.MachineLearning });
-      await this.handlePersonCleanup();
-      await this.personRepository.vacuum({ reindexVectors: true });
-    }
-
+    // Per-asset publication refreshes ML faces while retaining explicit decisions.
     await this.jobRepository.queueSelection(
       JobName.AssetDetectFaces,
       this.assetJobRepository.selectionForDetectFacesJob(force),
@@ -956,20 +946,20 @@ export class PersonService extends BaseService {
         throw new Error('Face source changed before publication');
       }
       // Recompute matches against current owner decisions under the accepted transaction.
-      const asset = latest;
+      const currentAsset = latest;
       const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
       const embeddings: FaceSearchTable[] = [];
       const mlFaceIds = new Set<string>();
-      const decided = await this.getDecidedFaceIds(asset);
+      const decided = await this.getDecidedFaceIds(currentAsset);
 
-      for (const face of asset.faces) {
+      for (const face of currentAsset.faces) {
         if (face.sourceType === SourceType.MachineLearning) {
           mlFaceIds.add(face.id);
         }
       }
 
-      const heightScale = imageHeight / (asset.faces[0]?.imageHeight || 1);
-      const widthScale = imageWidth / (asset.faces[0]?.imageWidth || 1);
+      const heightScale = imageHeight / (currentAsset.faces[0]?.imageHeight || 1);
+      const widthScale = imageWidth / (currentAsset.faces[0]?.imageWidth || 1);
       for (const { boundingBox, embedding } of faces) {
         const scaledBox = {
           x1: boundingBox.x1 * widthScale,
@@ -977,7 +967,7 @@ export class PersonService extends BaseService {
           x2: boundingBox.x2 * widthScale,
           y2: boundingBox.y2 * heightScale,
         };
-        const match = asset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
+        const match = currentAsset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
 
         // FL-57: a face kept for its explicit decision takes the new embedding too
         if (match && (!mlFaceIds.delete(match.id) || decided.has(match.id))) {
@@ -986,7 +976,7 @@ export class PersonService extends BaseService {
           const faceId = this.cryptoRepository.randomUUID();
           facesToAdd.push({
             id: faceId,
-            assetId: asset.id,
+            assetId: currentAsset.id,
             imageHeight,
             imageWidth,
             boundingBoxX1: boundingBox.x1,
@@ -1004,7 +994,8 @@ export class PersonService extends BaseService {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
       }
 
-      const reapplied = facesToAdd.length > 0 ? await this.reapplyFaceDecisions(asset, facesToAdd) : new Set<string>();
+      const reapplied =
+        facesToAdd.length > 0 ? await this.reapplyFaceDecisions(currentAsset, facesToAdd) : new Set<string>();
 
       if (faceIdsToRemove.length > 0) {
         this.logger.log(`Removed ${faceIdsToRemove.length} faces below detection threshold in asset ${id}`);
@@ -1016,15 +1007,12 @@ export class PersonService extends BaseService {
         const jobs = facesToAdd
           .filter((face) => !reapplied.has(face.id))
           .map((face) => ({ name: JobName.FacialRecognition, data: { id: face.id } }) as const);
-        await this.jobRepository.queueAll([
-          { name: JobName.FacialRecognitionQueueAll, data: { force: false } },
-          ...jobs,
-        ]);
+        await this.jobRepository.queueAll(jobs);
       } else if (embeddings.length > 0) {
         this.logger.log(`Added ${embeddings.length} face embeddings for asset ${id}`);
       }
 
-      await this.assetRepository.upsertJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
+      await this.assetRepository.upsertJobStatus({ assetId: currentAsset.id, facesRecognizedAt: new Date() });
     });
     return JobStatus.Success;
   }
@@ -1141,158 +1129,179 @@ export class PersonService extends BaseService {
       }
     }
 
-    const { waiting } = await this.jobRepository.getJobCounts(QueueName.FacialRecognition);
-
-    if (force) {
-      await this.personRepository.unassignFaces({ clusterGroupId, sourceType: SourceType.MachineLearning });
-      await this.handlePersonCleanup();
-      await this.personRepository.vacuum({ reindexVectors: false });
-    } else if (waiting) {
-      this.logger.debug(
-        `Skipping facial recognition queueing because ${waiting} job${waiting > 1 ? 's are' : ' is'} already queued`,
-      );
-      return JobStatus.Skipped;
-    }
-
     await this.databaseRepository.prewarm(VectorIndex.Face);
 
     const lastRun = new Date().toISOString();
 
     const faces = this.personRepository.selectionForFaces(
       force
-        ? { clusterGroupId, sourceType: clusterGroupId ? SourceType.MachineLearning : undefined }
+        ? { clusterGroupId, sourceType: SourceType.MachineLearning }
         : { personGroupId: null, clusterGroupId, sourceType: SourceType.MachineLearning },
     );
     await this.jobRepository.queueSelection(JobName.FacialRecognition, faces.clearSelect().select('asset_face.id'), {
       deferred: false,
+      force: !!force,
     });
 
-    await this.systemMetadataRepository.set(SystemMetadataKey.FacialRecognitionState, { lastRun });
+    await publishJobResult(async () => {
+      await this.systemMetadataRepository.set(SystemMetadataKey.FacialRecognitionState, { lastRun });
+    });
 
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.FacialRecognition, queue: QueueName.FacialRecognition })
-  async handleRecognizeFaces({ id, deferred }: JobOf<JobName.FacialRecognition>): Promise<JobStatus> {
+  async handleRecognizeFaces({ id, deferred, force }: JobOf<JobName.FacialRecognition>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
 
-    const face = await this.personRepository.getFaceForFacialRecognitionJob(id);
-    if (!face || !face.asset) {
-      this.logger.warn(`Face ${id} not found`);
-      return JobStatus.Failed;
-    }
+    const recognize = async (): Promise<JobStatus> => {
+      let face = await this.personRepository.getFaceForFacialRecognitionJob(id);
+      if (!face || !face.asset) {
+        this.logger.warn(`Face ${id} not found`);
+        return JobStatus.Failed;
+      }
 
-    if (face.sourceType !== SourceType.MachineLearning) {
-      this.logger.warn(`Skipping face ${id} due to source ${face.sourceType}`);
-      return JobStatus.Skipped;
-    }
-
-    if (!face.faceSearch?.embedding) {
-      this.logger.warn(`Face ${id} does not have an embedding`);
-      return JobStatus.Failed;
-    }
-
-    if (face.personGroupId) {
-      this.logger.debug(`Face ${id} already has a person assigned`);
-      return JobStatus.Skipped;
-    }
-
-    // FL-38/FL-57: a face its owner corrected (for example unassigned on purpose) keeps that
-    // answer; recognition never overrides an explicit decision
-    if (face.correctedAt) {
-      this.logger.debug(`Face ${id} carries an explicit decision, skipping`);
-      return JobStatus.Skipped;
-    }
-
-    const { ownerId, clusterGroupId } = face.asset;
-    const matches = await this.searchRepository.searchFaces({
-      clusterGroupId,
-      embedding: face.faceSearch.embedding,
-      maxDistance: machineLearning.facialRecognition.maxDistance,
-      numResults: machineLearning.facialRecognition.minFaces,
-      minBirthDate: new Date(face.asset.fileCreatedAt),
-    });
-
-    // `matches` also includes the face itself
-    if (machineLearning.facialRecognition.minFaces > 1 && matches.length <= 1) {
-      this.logger.debug(`Face ${id} only matched the face itself, skipping`);
-      return JobStatus.Skipped;
-    }
-
-    this.logger.debug(`Face ${id} has ${matches.length} matches`);
-
-    const isCore =
-      matches.length >= machineLearning.facialRecognition.minFaces &&
-      face.asset.visibility === AssetVisibility.Timeline;
-    if (!isCore && !deferred) {
-      this.logger.debug(`Deferring non-core face ${id} for later processing`);
-      await this.jobRepository.queue({ name: JobName.FacialRecognition, data: { id, deferred: true } });
-      return JobStatus.Skipped;
-    }
-
-    let personGroupId = matches.find((match) => match.personGroupId)?.personGroupId;
-    if (!personGroupId) {
-      const [matchWithPerson] = await this.searchRepository.searchFaces({
-        clusterGroupId,
-        embedding: face.faceSearch.embedding,
-        maxDistance: machineLearning.facialRecognition.maxDistance,
-        numResults: 1,
-        hasPerson: true,
-        minBirthDate: new Date(face.asset.fileCreatedAt),
-      });
-
-      personGroupId = matchWithPerson?.personGroupId ?? undefined;
-    }
-
-    if (!personGroupId && isCore) {
-      const group = await this.personRepository.createGroup(ownerId);
-      personGroupId = group.id;
-      this.logger.log(`Created person group ${personGroupId} for face ${id}`);
-    }
-
-    if (personGroupId) {
-      // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
-      // face of theirs once this one is assigned, or none.
-      const isLocked = isLockedAssetRow(face.asset);
-      const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
-      if (person) {
-        this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
-      } else {
-        await this.personRepository.create({ ownerId, faceAssetId: isLocked ? null : face.id, personGroupId });
-        this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
-        if (!isLocked) {
-          await this.jobRepository.queue({
-            name: JobName.PersonGenerateThumbnail,
-            data: { ownerId, personGroupId },
-          });
+      const tx = publicationTransaction.getStore();
+      if (tx) {
+        // The row locks close the manual-correction race before group/person creation.
+        await tx.selectFrom('asset').select('id').where('id', '=', face.assetId).forUpdate().executeTakeFirstOrThrow();
+        await tx.selectFrom('asset_face').select('id').where('id', '=', id).forUpdate().executeTakeFirstOrThrow();
+        face = await this.personRepository.getFaceForFacialRecognitionJob(id);
+        if (!face?.asset) {
+          return JobStatus.Skipped;
         }
       }
 
-      this.logger.debug(`Assigning face ${id} to person group ${personGroupId}`);
-      // FL-57: only while the face is still undecided, so a correction made meanwhile stands
-      const assigned = await this.personRepository.reassignFaces({
-        faceIds: [id],
-        newPersonGroupId: personGroupId,
-        onlyUndecided: true,
-      });
-      if (assigned === 0) {
-        this.logger.debug(`Face ${id} was decided meanwhile, keeping that decision`);
+      if (face.sourceType !== SourceType.MachineLearning) {
+        this.logger.warn(`Skipping face ${id} due to source ${face.sourceType}`);
         return JobStatus.Skipped;
       }
-      // FL-57: a named person now shows in this photo, so its generated text may name the wrong people
-      if (person?.name) {
-        await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
+
+      if (!face.faceSearch?.embedding) {
+        this.logger.warn(`Face ${id} does not have an embedding`);
+        return JobStatus.Failed;
       }
 
-      if (!person && isLocked) {
-        await this.createNewFeaturePhoto([{ ownerId, personGroupId }]);
+      if (face.personGroupId && !force) {
+        this.logger.debug(`Face ${id} already has a person assigned`);
+        return JobStatus.Skipped;
       }
+
+      // FL-38/FL-57: a face its owner corrected (for example unassigned on purpose) keeps that
+      // answer; recognition never overrides an explicit decision
+      if (face.correctedAt) {
+        this.logger.debug(`Face ${id} carries an explicit decision, skipping`);
+        return JobStatus.Skipped;
+      }
+
+      if (force && face.personGroupId) {
+        await this.personRepository.setFacePerson(id, null);
+        face.personGroupId = null;
+      }
+
+      const { ownerId, clusterGroupId } = face.asset;
+      const matches = await this.searchRepository.searchFaces({
+        clusterGroupId,
+        embedding: face.faceSearch.embedding,
+        maxDistance: machineLearning.facialRecognition.maxDistance,
+        numResults: machineLearning.facialRecognition.minFaces,
+        minBirthDate: new Date(face.asset.fileCreatedAt),
+      });
+
+      // `matches` also includes the face itself
+      if (machineLearning.facialRecognition.minFaces > 1 && matches.length <= 1) {
+        this.logger.debug(`Face ${id} only matched the face itself, skipping`);
+        return JobStatus.Skipped;
+      }
+
+      this.logger.debug(`Face ${id} has ${matches.length} matches`);
+
+      const isCore =
+        matches.length >= machineLearning.facialRecognition.minFaces &&
+        face.asset.visibility === AssetVisibility.Timeline;
+      if (!isCore && !deferred) {
+        this.logger.debug(`Deferring non-core face ${id} for later processing`);
+        await this.jobRepository.queue({
+          name: JobName.FacialRecognition,
+          data: { id, deferred: true, ...(force === undefined ? {} : { force }) },
+        });
+        return JobStatus.Skipped;
+      }
+
+      let personGroupId = matches.find((match) => match.personGroupId)?.personGroupId;
+      if (!personGroupId) {
+        const [matchWithPerson] = await this.searchRepository.searchFaces({
+          clusterGroupId,
+          embedding: face.faceSearch.embedding,
+          maxDistance: machineLearning.facialRecognition.maxDistance,
+          numResults: 1,
+          hasPerson: true,
+          minBirthDate: new Date(face.asset.fileCreatedAt),
+        });
+
+        personGroupId = matchWithPerson?.personGroupId ?? undefined;
+      }
+
+      if (!personGroupId && isCore) {
+        const group = await this.personRepository.createGroup(ownerId);
+        personGroupId = group.id;
+        this.logger.log(`Created person group ${personGroupId} for face ${id}`);
+      }
+
+      if (personGroupId) {
+        // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
+        // face of theirs once this one is assigned, or none.
+        const isLocked = isLockedAssetRow(face.asset);
+        const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
+        if (person) {
+          this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
+        } else {
+          await this.personRepository.create({ ownerId, faceAssetId: isLocked ? null : face.id, personGroupId });
+          this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
+          if (!isLocked) {
+            await this.jobRepository.queue({
+              name: JobName.PersonGenerateThumbnail,
+              data: { ownerId, personGroupId },
+            });
+          }
+        }
+
+        this.logger.debug(`Assigning face ${id} to person group ${personGroupId}`);
+        // FL-57: only while the face is still undecided, so a correction made meanwhile stands
+        const assigned = await this.personRepository.reassignFaces({
+          faceIds: [id],
+          newPersonGroupId: personGroupId,
+          onlyUndecided: true,
+        });
+        if (assigned === 0) {
+          this.logger.debug(`Face ${id} was decided meanwhile, keeping that decision`);
+          throw new Error('Face decision changed before recognition publication');
+        }
+        // FL-57: a named person now shows in this photo, so its generated text may name the wrong people
+        if (person?.name) {
+          await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
+        }
+
+        if (!person && isLocked) {
+          await this.createNewFeaturePhoto([{ ownerId, personGroupId }]);
+        }
+      }
+
+      return JobStatus.Success;
+    };
+    if (
+      deferJobAdoption(async () => {
+        if ((await recognize()) === JobStatus.Failed) {
+          throw new Error('Face recognition could not publish');
+        }
+      })
+    ) {
+      return JobStatus.Success;
     }
-
-    return JobStatus.Success;
+    return recognize();
   }
 
   @OnJob({ name: JobName.PersonFileMigration, queue: QueueName.Migration })

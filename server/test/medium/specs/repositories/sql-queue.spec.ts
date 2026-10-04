@@ -1,17 +1,25 @@
 import { Kysely, sql } from 'kysely';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { MessageChannel } from 'node:worker_threads';
 import { Worker } from 'node:worker_threads';
 import type { JobItem } from 'src/types.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
-import { publishJobResult, queueExecution } from 'src/queue/context.js';
+import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
+import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
+import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /** Real PostgreSQL races and rollback tests. Runs in the hosted medium suite, never on the operator Mac. */
@@ -71,6 +79,229 @@ describe('PostgreSQL queue', () => {
     expect(retry.attempt).toBe(2);
     await store.fail(retry, 'exhausted');
     expect(await store.claim(queue, workerB)).toEqual([]);
+  });
+
+  it('commits failure diagnostics with the failed attempt, discarding successful effects and stale diagnostics', async () => {
+    const table = `queue_diagnostic_${randomUUID().replaceAll('-', '')}`;
+    await sql`create table ${sql.id(table)} (attempt integer not null, kind text not null)`.execute(db);
+    try {
+      let executor: JobRepository;
+      executor = new JobRepository(
+        {} as never,
+        {} as never,
+        {
+          emit: async () => {
+            await publishJobResult(async () => {
+              await sql`insert into ${sql.id(table)} values (99, 'success')`.execute(
+                publicationTransaction.getStore()!,
+              );
+            });
+            const attempt = queueExecution.getStore()!.claim.attempt;
+            await publishJobDiagnostic(async () => {
+              await sql`insert into ${sql.id(table)} values (${attempt}, 'failed')`.execute(
+                publicationTransaction.getStore()!,
+              );
+            });
+            await executor.collectFollowups(() =>
+              executor.queue({ name: JobName.SmartSearch, data: { id: randomUUID() } }),
+            );
+            throw new Error('provider fixture refused');
+          },
+        } as never,
+        { setContext: vi.fn(), error: vi.fn() } as never,
+        db,
+      );
+      executor['handlers'][JobName.SmartSearch] = { queueName: queue as QueueName } as never;
+      await store.enqueue([intent()]);
+      const [first] = await store.claim(queue, workerA);
+      await executor['execute'](first, new AbortController());
+      const stale = vi.fn();
+      expect(await store.fail(first, 'late error', stale)).toBe(false);
+      expect(stale).not.toHaveBeenCalled();
+      await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
+      const [second] = await store.claim(queue, workerB);
+      await executor['execute'](second, new AbortController());
+      expect((await sql`select * from ${sql.id(table)} order by attempt`.execute(db)).rows).toEqual([
+        { attempt: 1, kind: 'failed' },
+        { attempt: 2, kind: 'failed' },
+      ]);
+      expect((await store.counts(queue)).failed).toBe(1);
+      expect((await sql`select id from job where queue = ${queue}`.execute(db)).rows).toHaveLength(1);
+    } finally {
+      await sql`drop table ${sql.id(table)}`.execute(db);
+    }
+  });
+
+  it.skipIf(spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0)(
+    'detects a real FFmpeg progress stall, terminates its executor, then accepts exactly one replacement',
+    async () => {
+      await store.enqueue([intent()]);
+      const [claim] = await store.claim(queue, workerA);
+      const ffmpeg = spawn(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-re',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=size=16x16:rate=10',
+          '-progress',
+          'pipe:1',
+          '-stats_period',
+          '0.05',
+          '-f',
+          'null',
+          '-',
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      const childExit = once(ffmpeg, 'exit');
+      await once(ffmpeg, 'spawn');
+      const worker = new Worker(
+        `const {parentPort,workerData}=require('node:worker_threads');
+        parentPort.postMessage({type:'queue-child',pid:workerData,active:true});
+        parentPort.on('message', ({port})=>{parentPort.postMessage({type:'queue-watchdog-port',port},[port]);
+        parentPort.postMessage({type:'ready'}); while(true) {} });`,
+        { eval: true, workerData: ffmpeg.pid },
+      );
+      superviseQueueWorker(worker);
+      const workerExit = once(worker, 'exit');
+      const { port1, port2 } = new MessageChannel();
+      const ready = new Promise<void>((resolve) =>
+        worker.on('message', (m) => {
+          if (m.type === 'ready') resolve();
+        }),
+      );
+      worker.postMessage({ port: port1 }, [port1]);
+      await ready;
+      const watchdog = new QueueWatchdog({ noProgressDeadline: 150, cancelGrace: 100, lease: 5000 });
+      watchdog.add(claim.id, performance.now(), 3000);
+      let units = 0;
+      let cancelled = false;
+      const progress = new Promise<void>((resolve) =>
+        ffmpeg.stdout!.on('data', (chunk) => {
+          const match = /out_time_us=(\d+)/.exec(String(chunk));
+          if (match && Number(match[1]) > units) {
+            units = Number(match[1]);
+            watchdog.progress(claim.id, units, performance.now());
+            resolve();
+          }
+        }),
+      );
+      const stop = monitorQueueProgress(
+        watchdog,
+        {
+          alive: () => port2.postMessage({ type: 'alive' }),
+          cancel: (id) => {
+            expect(id).toBe(claim.id);
+            cancelled = true;
+            worker.postMessage({ type: 'cancel', id });
+          },
+          terminate: () => port2.postMessage({ type: 'terminate' }),
+          lastHeartbeat: () => performance.now(),
+        },
+        20,
+      );
+      try {
+        await progress;
+        process.kill(ffmpeg.pid!, 'SIGSTOP');
+        expect((await workerExit)[0]).toBe(1);
+        expect((await childExit)[1]).toBe('SIGKILL');
+        expect(cancelled).toBe(true);
+        // Advance only database lease/retry time after real process death. No terminal states are injected.
+        await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
+          db,
+        );
+        await store.recoverExpired();
+        expect(await store.complete(claim, [])).toBe(false);
+        await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+        const replacements = await store.claim(queue, workerB);
+        expect(replacements).toHaveLength(1);
+        expect(replacements[0].attempt).toBe(2);
+        expect(await store.complete(replacements[0], [])).toBe(true);
+        expect(await store.claim(queue, workerA)).toEqual([]);
+      } finally {
+        stop();
+        port2.close();
+        ffmpeg.kill('SIGKILL');
+        await worker.terminate();
+      }
+    },
+    15000,
+  );
+
+  it('rejects prepared media when its original path changes before acceptance', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    let executor: JobRepository;
+    const adopted = vi.fn();
+    executor = new JobRepository(
+      {} as never,
+      {} as never,
+      {
+        emit: async () => {
+          await executor.guardAssetSource(asset.id);
+          await db
+            .updateTable('asset')
+            .set({ originalPath: `${asset.originalPath}.replaced` })
+            .where('id', '=', asset.id)
+            .execute();
+          await publishJobResult(async () => {
+            adopted();
+          });
+        },
+      } as never,
+      { setContext: vi.fn(), error: vi.fn() } as never,
+      db,
+    );
+    await store.enqueue([intent({ data: { id: asset.id } })]);
+    const [claim] = await store.claim(queue, workerA);
+    await executor['execute'](claim, new AbortController());
+    expect(adopted).not.toHaveBeenCalled();
+    expect((await store.counts(queue)).delayed).toBe(1);
+  });
+
+  it('keeps face sub-stages distinct while all descendants count toward their selected asset', async () => {
+    const runId = await store.createRun('face-fixture', {});
+    const root = randomUUID();
+    await store.enqueue([intent({ runId, itemKey: root, rootItemKey: root })]);
+    const [claim] = await store.claim(queue, workerA);
+    const face = randomUUID();
+    expect(
+      await store.complete(claim, [
+        intent({ name: JobName.FacialRecognition, data: { id: face }, runId, itemKey: face, rootItemKey: root }),
+      ]),
+    ).toBe(true);
+    const [recognition] = await store.claim(queue, workerB);
+    const executor = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    executor['handlers'][JobName.FacialRecognition] = { queueName: queue as QueueName } as never;
+    const next = queueExecution.run(
+      {
+        claim: recognition,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: true,
+      },
+      () => executor['intent']({ name: JobName.FacialRecognition, data: { id: face, deferred: true } }),
+    );
+    expect(next.itemKey).toBe(`${face}/deferred`);
+    expect(next.rootItemKey).toBe(root);
+    expect(await store.complete(recognition, [next])).toBe(true);
+    const [deferred] = await store.claim(queue, workerA);
+    expect(deferred.itemKey).toBe(`${face}/deferred`);
+    expect(deferred.rootItemKey).toBe(root);
+    expect(await store.complete(deferred, [])).toBe(true);
+    const {
+      rows: [counts],
+    } = await sql<{ items: number; stages: number }>`select count(distinct "rootItemKey")::int items,
+      count(*)::int stages from job_run_item where "runId" = ${runId}::uuid`.execute(db);
+    expect(counts).toEqual({ items: 1, stages: 3 });
   });
 
   it('claims at most concurrency one across competing workers, without holding the connection during work', async () => {
@@ -238,7 +469,13 @@ describe('PostgreSQL queue', () => {
       } = await sql<{ count: number }>`select count(*)::int count from ${sql.id(table)}`.execute(db);
       expect(artifactsCount.count).toBe(29_970);
       const final = (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
-      expect(final).toMatchObject({ total: 29_985, completed: 29_970, failed: 15, state: 'failed' });
+      expect(final.state).toBe('failed');
+      const {
+        rows: [roots],
+      } = await sql<{
+        count: number;
+      }>`select count(distinct "rootItemKey")::int count from job_run_item where "runId" = ${runId}::uuid`.execute(db);
+      expect(roots.count).toBe(15_000);
       expect(final.finishedAt).not.toBeNull();
       const {
         rows: [attempts],

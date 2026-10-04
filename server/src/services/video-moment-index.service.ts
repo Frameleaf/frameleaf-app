@@ -31,6 +31,7 @@ import {
   VideoMomentMatch,
   VideoMomentSource,
 } from 'src/enum.js';
+import { deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -160,6 +161,7 @@ export class VideoMomentIndexService {
 
   /** The frames stage: cut the reusable frames when the video has none, or its original changed. */
   async runFramesStage(assetId: string): Promise<MomentStageOutcome> {
+    await this.jobs.guardAssetSource(assetId);
     return this.fromFrameOutcome(await ensureVideoFrames(this.frameDeps, assetId, await this.config()));
   }
 
@@ -201,10 +203,18 @@ export class VideoMomentIndexService {
           }),
         });
       }
-      const written = await this.moments.publishIndex(assetId, embeddings, {
-        embeddingModel: modelName,
-        embeddingDestinationId: selection.destinationId,
-      });
+      const publish = () =>
+        this.moments.publishIndex(assetId, embeddings, {
+          embeddingModel: modelName,
+          embeddingDestinationId: selection.destinationId,
+        });
+      if (
+        deferJobAdoption(async () => {
+          if ((await publish()) !== embeddings.length) throw new Error('Video index source changed before publication');
+        })
+      )
+        return { state: EnrichmentItemState.Completed };
+      const written = await publish();
       return written === 0
         ? { state: EnrichmentItemState.Failed, reasonKey: 'source-changed' }
         : { state: EnrichmentItemState.Completed };
@@ -284,12 +294,13 @@ export class VideoMomentIndexService {
           captions.push({ frameId: frame.id, caption });
         }
       } catch (error) {
+        jobSignal()?.throwIfAborted();
         failure = errorMessage(error);
       }
     }
 
     // What was captioned is kept even when a frame failed; the retry only asks for the rest.
-    const written =
+    const publish = async () =>
       captions.length > 0
         ? await this.moments.publishCaptions(
             assetId,
@@ -312,6 +323,17 @@ export class VideoMomentIndexService {
               identityHash((await this.knownPersons(assetId, frames.ownerId)).map(({ name }) => name)) === names,
           )
         : 0;
+
+    if (queueExecution.getStore()) {
+      if (claimLost) return CLAIM_LOST;
+      if (failure) return { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure };
+      deferJobAdoption(async () => {
+        const written = await publish();
+        if (written !== captions.length) throw new Error('Video caption source or names changed before publication');
+      });
+      return { state: EnrichmentItemState.Completed };
+    }
+    const written = await publish();
 
     if (claimLost) {
       return CLAIM_LOST;
@@ -341,7 +363,13 @@ export class VideoMomentIndexService {
     if (!machineLearning.imageDescription.videoMomentCaptions) {
       return JobStatus.Skipped;
     }
-    if (await cloudDescriptionDestination(this.mlDestinations, null)) {
+    const destinationId = queueExecution.getStore()
+      ? await this.jobs.pinDestination(
+          MlWorkload.Enrichment,
+          await routedMlDestinationId(this.mlDestinations, MlWorkload.Enrichment),
+        )
+      : null;
+    if (await cloudDescriptionDestination(this.mlDestinations, destinationId)) {
       return JobStatus.Skipped;
     }
 
@@ -610,7 +638,7 @@ export class VideoMomentIndexService {
   /* ------------------------------------------------------------------ */
 
   private get frameDeps(): VideoFrameDeps {
-    return { media: this.media, storage: this.storage, moments: this.moments, logger: this.logger };
+    return { media: this.media, storage: this.storage, moments: this.moments, logger: this.logger, jobs: this.jobs };
   }
 
   private config() {
@@ -622,7 +650,10 @@ export class VideoMomentIndexService {
 
   /** Admit a request against the named destination, or the routed one. Never another (FL-110). */
   private async select(workload: MlWorkload, destinationId: string | null | undefined, jobId: string | null) {
-    const id = destinationId ?? (await routedMlDestinationId(this.mlDestinations, workload));
+    const id = await this.jobs.pinDestination(
+      workload,
+      destinationId ?? (await routedMlDestinationId(this.mlDestinations, workload)),
+    );
     return selectMlDestination(
       { mlDestinationRepository: this.mlDestinations, machineLearningRepository: this.machineLearning },
       { workload, destinationId: id, jobId, jobName: 'video-moment-index' },
@@ -658,6 +689,7 @@ export class VideoMomentIndexService {
     assetId: string,
     config: SystemConfig,
   ): Promise<MomentStageOutcome | { list: VideoMomentFrame[]; ownerId: string }> {
+    await this.jobs.guardAssetSource(assetId);
     const outcome = await ensureVideoFrames(this.frameDeps, assetId, config);
     if (outcome.status !== 'cut' && outcome.status !== 'current') {
       return this.fromFrameOutcome(outcome);

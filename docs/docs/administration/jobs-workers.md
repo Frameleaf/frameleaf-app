@@ -14,9 +14,22 @@ By default `edge` runs wherever `api` runs: a container started with `FRAMELEAF_
 
 ### Stopping the server
 
-When the container stops (`docker compose stop`, an image upgrade or a NAS package restart), each worker stops taking new work. Running jobs and in-flight requests get a grace period to finish, 5 seconds by default (`FRAMELEAF_SHUTDOWN_GRACE_SECONDS`). A job still running after that goes back to waiting, so it runs again as soon as the server is back. Jobs that could repeat a side effect if they ran twice, such as sending an email or a push notification, are recorded as failed instead. The server exits by its deadline, 9 seconds by default (`FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS`).
+When the container stops (`docker compose stop`, an image upgrade or a NAS package restart), each worker stops taking new work. Running jobs and in-flight requests get a grace period to finish, 5 seconds by default (`FRAMELEAF_SHUTDOWN_GRACE_SECONDS`). The server exits by its deadline, 9 seconds by default (`FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS`). Keep the container's stop timeout longer than that deadline; provided Compose and NAS configurations use 10 seconds.
 
-Docker kills the container when its stop timeout ends, so the server's `stop_grace_period` must be longer than the deadline. The provided Compose files and NAS packages give the server container `stop_grace_period: 10s` (Unraid: `--stop-timeout=10`), which fits the defaults. Some Docker engines kill a container sooner by default, so keep this setting if you write your own Compose file, and raise it if you raise `FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS`. If the server is killed or crashes, jobs that were running are picked up again about a minute after the next start.
+PostgreSQL stores claims, attempts, run manifests and completed stages. Recovery permits one automatic retry of safe, repeatable media work after 30 seconds. Unsafe work, remote submissions and exhausted retries require attention. An interrupted item stays visible in the run; independent items continue. Restarting a server does not reset the retry budget.
+
+### Execution deadlines
+
+The coordinator runs separately from media handlers. Claims last 60 seconds and renew every 15 seconds; reconciliation scans every 5 seconds and recovery sweeps every 30 seconds. Executor heartbeats prove responsiveness but do not count as media progress. Actual advancing bytes, frames or committed checkpoints extend the progress deadline. Repeated status messages do not.
+
+| Environment setting | Default | Accepted milliseconds |
+| --- | --- | --- |
+| `FRAMELEAF_JOB_DEADLINE_MS` | 600000 (10 minutes) | 1000–86400000 |
+| `FRAMELEAF_ML_DEADLINE_MS` | 1800000 (30 minutes, including response body) | 1000–86400000 |
+| `FRAMELEAF_JOB_IDLE_DEADLINE_MS` | 600000 (10 minutes without measurable progress) | 1000–86400000 |
+| `FRAMELEAF_JOB_CANCEL_GRACE_MS` | 10000 (10 seconds) | 1000–30000 |
+
+Use the same settings in all server containers. Invalid, infinite, fractional or out-of-range values stop startup with the setting's name. Existing tighter operation-specific limits still apply. A progressing video, hash or backup can run beyond the ordinary deadline. An opaque handler has a fixed deadline. When cancellation does not stop an executor within its grace period, the supervisor terminates it before replacement work can publish results.
 
 ## Split workers
 

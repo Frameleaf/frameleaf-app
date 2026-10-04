@@ -104,6 +104,7 @@ export class BestPhotosService {
 
   @OnJob({ name: JobName.BestPhotosScore, queue: QueueName.BackgroundTask })
   async handleScore({ id }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForBestPhotoScoring(id);
     if (!asset || !this.isEligible(asset)) {
       return JobStatus.Skipped;

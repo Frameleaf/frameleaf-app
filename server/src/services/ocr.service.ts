@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
-
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
-import { deferJobAdoption } from 'src/queue/context.js';
+import { publishJobResult } from 'src/queue/context.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -36,6 +35,7 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForOcr(id);
     if (!asset || !asset.previewFile) {
       return JobStatus.Failed;
@@ -51,21 +51,11 @@ export class OcrService extends BaseService {
       jobName: JobName.Ocr,
     });
     const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
-    const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
-    await this.ocrRepository.upsert(id, ocrDataList, searchText);
-
-    const status = { assetId: id, ocrAt: new Date() };
-    if (
-      !deferJobAdoption(async (tx) => {
-        await tx
-          .insertInto('asset_job_status')
-          .values(status)
-          .onConflict((oc) => oc.column('assetId').doUpdateSet(status))
-          .execute();
-      })
-    ) {
-      await this.assetRepository.upsertJobStatus(status);
-    }
+    await publishJobResult(async () => {
+      const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
+      await this.ocrRepository.upsert(id, ocrDataList, searchText);
+      await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
+    });
 
     this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
     return JobStatus.Success;

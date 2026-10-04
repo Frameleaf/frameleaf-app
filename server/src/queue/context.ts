@@ -63,3 +63,15 @@ export async function publishJobResult(publish: () => Promise<void>) {
     await publish();
   }
 }
+
+/** Diagnostic metadata only: accepted with either the success or failed claim, never child intents. */
+export async function publishJobDiagnostic(publish: () => Promise<void>) {
+  const context = queueExecution.getStore();
+  if (!context || publicationTransaction.getStore()) {
+    await publish();
+    return;
+  }
+  context.signal.throwIfAborted();
+  (context.failureDiagnostics ??= []).push(async () => publish());
+  context.adoptions.push(async () => publish());
+}

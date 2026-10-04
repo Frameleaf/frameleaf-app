@@ -13,6 +13,8 @@ import {
   PetRecognitionUnavailableReason,
   QueueName,
 } from 'src/enum.js';
+import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -253,11 +255,12 @@ export class PetRecognitionService {
       return JobStatus.Skipped;
     }
 
-    const { status, proposals } = await this.recognize(id, runId ?? null);
+    const result = await this.recognize(id, runId ?? null);
+    const { status } = result;
     if (runId && status !== JobStatus.Failed) {
-      await this.duringForkWrites('record pet recognition progress', () =>
-        this.petRepository.recordRunProgress(runId, proposals),
-      );
+      await publishJobResult(async () => {
+        await this.petRepository.recordRunProgress(runId, result.proposals);
+      });
     }
     return status;
   }
@@ -269,6 +272,7 @@ export class PetRecognitionService {
       return done(JobStatus.Skipped);
     }
 
+    await this.jobRepository.guardAssetSource(assetId);
     const asset = await this.petRepository.getRecognitionAsset(assetId);
     if (!asset || asset.deletedAt || asset.visibility === AssetVisibility.Hidden) {
       return done(JobStatus.Skipped);
@@ -276,15 +280,29 @@ export class PetRecognitionService {
 
     const references = await this.getReferences(asset.ownerId, asset.id);
     const run = petRecognitionRun(machineLearning.clip.modelName);
-    const existing = await this.petRepository.getDetectionsForAsset(asset.id);
-    const { allIds } = detectionsToReplace(existing, run);
-
+    const publish = async (write: (allIds: string[]) => Promise<number>, status = JobStatus.Success) => {
+      const result = done(status);
+      await publishJobResult(async () => {
+        const tx = publicationTransaction.getStore();
+        if (tx) {
+          await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
+          await tx.selectFrom('pet_detection').select('id').where('assetId', '=', asset.id).forUpdate().execute();
+        }
+        const current = await this.petRepository.getRecognitionAsset(asset.id);
+        if (!current || current.embedding !== asset.embedding)
+          throw new Error('Pet embedding changed before publication');
+        if (runId && !(await this.petRepository.isRunActive(runId)))
+          throw new Error('Pet recognition run was cancelled');
+        const { allIds } = detectionsToReplace(await this.petRepository.getDetectionsForAsset(asset.id), run);
+        result.proposals = await write(allIds);
+      });
+      return result;
+    };
     if (references.length === 0) {
-      // Nothing to recognise against: clear what an earlier revision proposed, send nothing anywhere.
-      if (allIds.length > 0) {
-        await this.petRepository.replaceDetections(asset.id, allIds, []);
-      }
-      return done(JobStatus.Skipped);
+      return publish(async (allIds) => {
+        if (allIds.length) await this.petRepository.replaceDetections(asset.id, allIds, []);
+        return 0;
+      }, JobStatus.Skipped);
     }
 
     const vector = parseEmbedding(asset.embedding);
@@ -295,7 +313,10 @@ export class PetRecognitionService {
 
     let selection: MlSelection;
     try {
-      const destinationId = await routedMlDestinationId(this.mlDestinationRepository, MlWorkload.PetRecognition);
+      const destinationId = await this.jobRepository.pinDestination(
+        MlWorkload.PetRecognition,
+        await routedMlDestinationId(this.mlDestinationRepository, MlWorkload.PetRecognition),
+      );
       selection = await selectMlDestination(
         {
           mlDestinationRepository: this.mlDestinationRepository,
@@ -307,9 +328,19 @@ export class PetRecognitionService {
       if (error instanceof MlDestinationRefusedError || error instanceof MlDestinationNotFoundError) {
         this.logger.warn(`Pet recognition for ${asset.id} refused: ${error.message}`);
         if (runId) {
-          await this.duringForkWrites('fail a pet recognition run', () =>
-            this.petRepository.failRun(runId, error.message),
-          );
+          const execution = queueExecution.getStore();
+          await publishJobDiagnostic(async () => {
+            if (execution) {
+              const tx = publicationTransaction.getStore()!;
+              const job = await tx
+                .selectFrom('job')
+                .select(['attempt', 'retryBaseAttempt', 'safeToRetry'])
+                .where('id', '=', execution.claim.id)
+                .executeTakeFirstOrThrow();
+              if (job.safeToRetry && job.attempt < job.retryBaseAttempt + 2) return;
+            }
+            await this.petRepository.failRun(runId, error.message);
+          });
         }
         return done(JobStatus.Failed);
       }
@@ -318,39 +349,41 @@ export class PetRecognitionService {
 
     const prompts = await this.getPromptEmbeddings(selection, machineLearning.clip.modelName);
     const reading = readSpecies(embedding, prompts.species, prompts.negatives);
-    if (reading.species === null) {
-      await this.petRepository.replaceDetections(asset.id, allIds, []);
-      return done(JobStatus.Success);
-    }
+    return publish(async (allIds) => {
+      if (reading.species === null) {
+        await this.petRepository.replaceDetections(asset.id, allIds, []);
+        return 0;
+      }
 
-    const answered = new Set(
-      (await this.petRepository.getDecisionsForAsset(asset.ownerId, asset.id)).map(({ petId }) => petId),
-    );
-    const matches = matchPets(embedding, reading, references, answered);
-    const width = asset.width ?? asset.exifImageWidth ?? 0;
-    const height = asset.height ?? asset.exifImageHeight ?? 0;
-    const [detection] = await this.petRepository.replaceDetections(asset.id, allIds, [
-      {
-        // CLIP reads the whole photo; it cannot place the animal (FL-145 carries per-region detection).
-        boundingBoxX1: 0,
-        boundingBoxY1: 0,
-        boundingBoxX2: width,
-        boundingBoxY2: height,
-        imageWidth: width,
-        imageHeight: height,
-        species: reading.species,
-        score: reading.animalProbability,
-        modelName: run.modelName,
-        modelRevision: run.modelRevision,
-      },
-    ]);
-
-    if (detection && matches.length > 0) {
-      await this.petRepository.upsertCandidates(
-        matches.map(({ petId, score }) => ({ detectionId: detection.id, petId, score })),
+      const answered = new Set(
+        (await this.petRepository.getDecisionsForAsset(asset.ownerId, asset.id)).map(({ petId }) => petId),
       );
-    }
-    return done(JobStatus.Success, matches.length);
+      const matches = matchPets(embedding, reading, await this.getReferences(asset.ownerId, asset.id), answered);
+      const width = asset.width ?? asset.exifImageWidth ?? 0;
+      const height = asset.height ?? asset.exifImageHeight ?? 0;
+      const [detection] = await this.petRepository.replaceDetections(asset.id, allIds, [
+        {
+          // CLIP reads the whole photo; it cannot place the animal (FL-145 carries per-region detection).
+          boundingBoxX1: 0,
+          boundingBoxY1: 0,
+          boundingBoxX2: width,
+          boundingBoxY2: height,
+          imageWidth: width,
+          imageHeight: height,
+          species: reading.species,
+          score: reading.animalProbability,
+          modelName: run.modelName,
+          modelRevision: run.modelRevision,
+        },
+      ]);
+
+      if (detection && matches.length > 0) {
+        await this.petRepository.upsertCandidates(
+          matches.map(({ petId, score }) => ({ detectionId: detection.id, petId, score })),
+        );
+      }
+      return matches.length;
+    });
   }
 
   // ---------------------------------------------------------------------------- events

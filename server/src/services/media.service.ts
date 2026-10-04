@@ -656,6 +656,11 @@ export class MediaService extends BaseService {
     personGroupId,
   }: JobOf<JobName.PersonGenerateThumbnail>): Promise<JobStatus> {
     const { image } = await this.getConfig({ withCache: true });
+    const person = queueExecution.getStore()
+      ? await this.personRepository.getByGroupId({ personGroupId, ownerId })
+      : undefined;
+    const sourceFace = person?.faceAssetId ? await this.personRepository.getFaceById(person.faceAssetId) : undefined;
+    if (sourceFace) await this.jobRepository.guardAssetSource(sourceFace.assetId);
     const data = await this.personRepository.getDataForThumbnailGenerationJob({ ownerId, personGroupId });
     if (!data) {
       this.logger.error(`Could not generate person thumbnail for ${personGroupId}: missing data`);
@@ -709,6 +714,22 @@ export class MediaService extends BaseService {
     await this.mediaRepository.generateThumbnail(decodedImage, thumbnailOptions, thumbnailPath);
     if (
       !deferJobAdoption(async (tx) => {
+        await tx
+          .selectFrom('person')
+          .select('personGroupId')
+          .where('ownerId', '=', ownerId)
+          .where('personGroupId', '=', personGroupId)
+          .forUpdate()
+          .execute();
+        const currentPerson = await this.personRepository.getByGroupId({ personGroupId, ownerId });
+        const current = await this.personRepository.getDataForThumbnailGenerationJob({ ownerId, personGroupId });
+        if (
+          !sourceFace ||
+          currentPerson?.faceAssetId !== person?.faceAssetId ||
+          JSON.stringify(current) !== JSON.stringify(data)
+        ) {
+          throw new Error('Person thumbnail source changed before publication');
+        }
         await tx
           .updateTable('person')
           .set({ thumbnailPath })
