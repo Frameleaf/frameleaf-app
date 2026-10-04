@@ -215,6 +215,28 @@ describe('/map', () => {
       await expect
         .poll(markers, { timeout: 20_000 })
         .toContainEqual(expect.objectContaining({ id: copyId, lat: 12.34, lon: 56.78 }));
+      const db = await utils.connectDatabase();
+      const origin = async () => {
+        const { rows } = await db.query(
+          `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin."rootOwnerId", origin.following
+           FROM public.asset_origin origin JOIN public.asset copy ON copy.id = origin."assetId"
+           WHERE origin."sourceAssetId" = $1 AND origin."ownerId" = $2`,
+          [partnerLocatedId, admin.userId],
+        );
+        return rows;
+      };
+      const expectedOrigin = {
+        id: copyId,
+        ownerId: admin.userId,
+        sourceAssetId: partnerLocatedId,
+        rootOwnerId: partner.userId,
+      };
+      expect(copyId).not.toBe(partnerLocatedId);
+      expect(await origin()).toEqual([{ ...expectedOrigin, following: true }]);
+      const { rows: receivedInventory } = await db.query(
+        'SELECT id FROM public.asset WHERE "ownerId" = $1 ORDER BY id',
+        [admin.userId],
+      );
       const expectOnlyOwn = async () => {
         const ids = await markerIds();
         expect(ids).not.toContain(partnerLocatedId);
@@ -237,6 +259,48 @@ describe('/map', () => {
         .delete(`/partners/${admin.userId}`)
         .set('Authorization', `Bearer ${partner.accessToken}`);
       expect(status).toBe(204);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
+      expect(await origin()).toEqual([{ ...expectedOrigin, following: false }]);
+      await expectOnlyOwn();
+
+      const later = await utils.createAsset(partner.accessToken);
+      expect(later.id).toEqual(expect.any(String));
+      const { rows: laterSource } = await db.query('SELECT id, "ownerId" FROM public.asset WHERE id = $1', [later.id]);
+      expect(laterSource).toEqual([{ id: later.id, ownerId: partner.userId }]);
+      // The postprocess job emits partner delivery. An empty active queue does not prove it ran.
+      await expect
+        .poll(
+          async () => {
+            const { rows: jobs } = await db.query<{ name: string; state: string }>(
+              `SELECT name, state FROM public.job
+               WHERE (name IN ('AssetExtractMetadata', 'AssetMetadataPostprocess') AND data->>'id' = $1)
+                  OR "dedupKey" = 'partner-copy/' || $1 || '/' || $2
+               ORDER BY name, id`,
+              [later.id, admin.userId],
+            );
+            return {
+              extracted: jobs.some(({ name, state }) => name === 'AssetExtractMetadata' && state === 'completed'),
+              postprocessed: jobs.some(
+                ({ name, state }) => name === 'AssetMetadataPostprocess' && state === 'completed',
+              ),
+              unfinished: jobs.filter(({ state }) => state !== 'completed'),
+            };
+          },
+          { timeout: 20_000 },
+        )
+        .toEqual({ extracted: true, postprocessed: true, unfinished: [] });
+      const { rows: laterOrigins } = await db.query(
+        'SELECT "assetId" FROM public.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+        [later.id, admin.userId],
+      );
+      expect(laterOrigins).toEqual([]);
+      const { rows: retainedInventory } = await db.query(
+        'SELECT id FROM public.asset WHERE "ownerId" = $1 ORDER BY id',
+        [admin.userId],
+      );
+      expect(retainedInventory).toEqual(receivedInventory);
+      expect(await origin()).toEqual([{ ...expectedOrigin, following: false }]);
+      await request(app).get(`/assets/${later.id}`).set('Authorization', `Bearer ${admin.accessToken}`).expect(400);
       await expectOnlyOwn();
     }, 90_000);
   });
