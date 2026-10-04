@@ -57,7 +57,7 @@ jobs:
           path: ${{ runner.temp }}/buddy-format.patch
           retention-days: 7
   github-format-repair:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event.before == 'b424675fb6669390bb2512c7991d8532bdab66ce' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
