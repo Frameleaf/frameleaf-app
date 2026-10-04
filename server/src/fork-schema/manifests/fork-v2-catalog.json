@@ -101,6 +101,10 @@
       "identity": "immich_fork.album_source_asset.linkId"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.album_source_asset.membershipUpdateId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.album_source_link.albumId"
     },
