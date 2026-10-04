@@ -1065,14 +1065,17 @@ describe(DatabaseBackupService.name, () => {
     it('runs the sole Frameleaf migration provider and resets execution leases before checking API health', async () => {
       const order: string[] = [];
       mocks.user.hasAdmin.mockResolvedValue(true);
-      mocks.database.runMigrations.mockImplementation(async () => {
+      mocks.database.runMigrations.mockImplementation(() => {
         order.push('migrations');
+        return Promise.resolve();
       });
-      mocks.database.resetTransientExecutionState.mockImplementation(async () => {
+      mocks.database.resetTransientExecutionState.mockImplementation(() => {
         order.push('leases');
+        return Promise.resolve();
       });
-      maintenanceHealthRepositoryMock.checkApiHealth.mockImplementation(async () => {
+      maintenanceHealthRepositoryMock.checkApiHealth.mockImplementation(() => {
         order.push('health');
+        return Promise.resolve();
       });
 
       await sut.restoreDatabaseBackup('candidate.sql');
@@ -1085,6 +1088,7 @@ describe(DatabaseBackupService.name, () => {
     it('reports a compressed source read error and stops before executing any SQL', async () => {
       const file = new Readable({
         read() {
+          // eslint-disable-next-line unicorn/no-this-outside-of-class -- Node Readable read callback is bound to the stream.
           this.destroy(new Error('backup disk read failed'));
         },
       });
@@ -1103,6 +1107,7 @@ describe(DatabaseBackupService.name, () => {
       const failure = new Error('restore disk read failed');
       const input = new Readable({
         read() {
+          // eslint-disable-next-line unicorn/no-this-outside-of-class -- Node Readable read callback is bound to the stream.
           this.destroy(failure);
         },
       });

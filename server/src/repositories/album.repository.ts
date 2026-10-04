@@ -125,8 +125,7 @@ export class AlbumRepository {
     if (!row) {
       return;
     }
-    const [result] = await [row];
-    return result;
+    return row;
   }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { excludeNsfw: true }] })
   async getByAssetId(ownerId: string, assetId: string, options: HiddenContentQueryOptions = {}) {
