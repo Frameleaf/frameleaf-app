@@ -16,7 +16,7 @@ describe(BestPhotosService.name, () => {
     getBestPhotos: vitest.fn(),
     upsertScore: vitest.fn(),
   };
-  const jobRepository = { queueSelection: vitest.fn() };
+  const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
   const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
   const configRepository = { getEnv: vitest.fn() };
   const systemMetadataRepository = { get: vitest.fn(), readFile: vitest.fn() };
@@ -25,6 +25,7 @@ describe(BestPhotosService.name, () => {
 
   beforeEach(() => {
     vitest.resetAllMocks();
+    jobRepository.guardAssetSource.mockResolvedValue(undefined);
     configRepository.getEnv.mockReturnValue({});
     sut = new BestPhotosService(
       logger as never,
@@ -48,6 +49,19 @@ describe(BestPhotosService.name, () => {
     });
   });
 
+  it('does not read or score an asset when its source guard rejects the run', async () => {
+    const sourceChanged = new Error('Asset inputs changed before publication');
+    jobRepository.guardAssetSource.mockRejectedValueOnce(sourceChanged);
+
+    await expect(sut.handleScore({ id: 'asset-1' })).rejects.toBe(sourceChanged);
+
+    expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith('asset-1');
+    expect(assetJobRepository.getForBestPhotoScoring).not.toHaveBeenCalled();
+    expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+    expect(mediaRepository.transcode).not.toHaveBeenCalled();
+    expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+  });
+
   it('should score good images higher than low-quality images', async () => {
     const asset = {
       id: 'asset-1',
@@ -66,6 +80,7 @@ describe(BestPhotosService.name, () => {
     mediaRepository.scoreThumbnailCandidate.mockResolvedValueOnce(150).mockResolvedValueOnce(-30);
 
     await expect(sut.handleScore({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id);
     const goodScore = bestPhotosRepository.upsertScore.mock.calls[0][0].score;
 
     assetJobRepository.getForBestPhotoScoring.mockResolvedValue({
