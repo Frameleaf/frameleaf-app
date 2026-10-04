@@ -283,8 +283,10 @@ export async function listRunItems(
   if (exists.length === 0) {
     return;
   }
-  const { rows } =
-    await sql<RunItemRead>`with stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid`)}), selected as (
+  const { rows } = await sql<RunItemRead>`with roots as materialized (
+      select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
+      order by "rootItemKey" limit ${take} offset ${skip}
+    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots)`)}), selected as (
     select s."rootItemKey", ${selectedOutcome} outcome, ${counts('s')} "stageTotals",
       max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
       array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
@@ -306,7 +308,7 @@ export async function listRunItems(
     from selected left join lateral (select stage from stages s where s."runId" = ${runId}::uuid
       and s."rootItemKey" = selected."rootItemKey" and s."meaningfulAt" is not null
       order by s."meaningfulAt" desc, stage limit 1) latest on true
-    order by selected."rootItemKey" limit ${take} offset ${skip}`.execute(db);
+    order by selected."rootItemKey"`.execute(db);
   return rows;
 }
 
