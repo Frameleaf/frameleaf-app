@@ -50,23 +50,36 @@ export class SqlQueueStore {
       if (key) {
         const {
           rows: [existing],
-        } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`
-          select id, state, "latestPending" from job where queue = ${intent.queue} and "dedupKey" = ${key}
-          and state in ('pending','waiting','active') for update
+        } = await sql<{
+          id: string;
+          state: QueueState;
+          latestPending: QueueIntent | null;
+          ownsProducerState: boolean;
+        }>`
+          select j.id, j.state, j."latestPending",
+            (j.data ? '_producerCheckpoints' or exists (
+              select 1 from job_selection s where s."producerId" = j.id)) as "ownsProducerState"
+          from job j where j.queue = ${intent.queue} and j."dedupKey" = ${key}
+          and j.state in ('pending','waiting','active') for update of j
         `.execute(db);
         if (existing) {
           if (intent.options?.deduplication?.keepLastIfActive) {
-            if (existing.state === 'active') {
+            // A stopped producer may still own a durable snapshot/checkpoint. Rewriting it would
+            // orphan its original run and retry state; let it settle before scheduling the latest.
+            if (existing.state === 'active' || existing.ownsProducerState) {
               // Replaced requests did not execute; they cannot inherit the predecessor's success.
               const previous = existing.latestPending;
+              let superseded: Array<{ runId: string; rootItemKey: string | null }> = [];
               if (
                 previous?.runId &&
                 previous.itemKey &&
                 (previous.runId !== intent.runId || previous.itemKey !== intent.itemKey)
               ) {
-                await sql`update job_run_item set state = 'cancelled'
+                const { rows } = await sql<{ runId: string; rootItemKey: string | null }>`
+                  update job_run_item set state = 'cancelled'
                   where "runId" = ${previous.runId}::uuid and "itemKey" = ${previous.itemKey} and stage = ${previous.name}
-                  and "jobId" is null`.execute(db);
+                  and "jobId" is null returning "runId", "rootItemKey"`.execute(db);
+                superseded = rows;
               }
               if (intent.runId && intent.itemKey) {
                 await this.insertRunItem(intent, db);
@@ -74,16 +87,17 @@ export class SqlQueueStore {
               await sql`update job set "latestPending" = ${JSON.stringify(intent)}::jsonb where id = ${existing.id}::uuid`.execute(
                 db,
               );
+              await this.finishSupersededProducers(superseded, db);
               await this.settleRuns(db);
               continue;
             }
             // Pending replacement transfers ownership to the newest run. Older requests
             // are cancelled explicitly instead of inheriting an output they never requested.
-            await sql`update job_run_item set state = 'cancelled', "jobId" = null
+            const { rows: superseded } = await sql<{ runId: string; rootItemKey: string | null }>`
+              update job_run_item set state = 'cancelled', "jobId" = null
                 where "jobId" = ${existing.id}::uuid and not
-                  ("runId" is not distinct from ${intent.runId ?? null}::uuid and "itemKey" is not distinct from ${intent.itemKey ?? null})`.execute(
-              db,
-            );
+                  ("runId" is not distinct from ${intent.runId ?? null}::uuid and "itemKey" is not distinct from ${intent.itemKey ?? null})
+                returning "runId", "rootItemKey"`.execute(db);
             if (intent.runId && intent.itemKey) {
               await this.insertRunItem(intent, db);
             }
@@ -92,6 +106,7 @@ export class SqlQueueStore {
                 "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null}, "rootItemKey" = ${intent.rootItemKey ?? null},
                 "availableAt" = now() + ${intent.options.delay ?? 0} * interval '1 millisecond'
                 where id = ${existing.id}::uuid`.execute(db);
+            await this.finishSupersededProducers(superseded, db);
             await this.settleRuns(db);
           }
           // Runs must never count a deduplicated selection as silently absent.
@@ -129,6 +144,26 @@ export class SqlQueueStore {
     await sql`select pg_notify('frameleaf_jobs', '')`.execute(db);
   }
 
+  /** A superseded producer cannot enumerate later; only close its positively identified retained run. */
+  private async finishSupersededProducers(
+    memberships: Array<{ runId: string; rootItemKey: string | null }>,
+    db: Executor,
+  ) {
+    const runIds = [...new Set(memberships.filter((item) => item.rootItemKey === null).map((item) => item.runId))];
+    if (runIds.length === 0) return;
+    await sql`update job_run r set "enumerationDone" = true
+      where r.id = any(${runIds}::uuid[]) and not r."enumerationDone"
+      and not exists (
+        select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
+          and i.state not in ('completed','failed','needs_attention','cancelled','blocked'))
+      and not exists (
+        select 1 from job_selection s where s.state = 'enumerating' and
+          (s."runId" = r.id or exists (
+            select 1 from job_run_item i where i."runId" = r.id and i."selectionId" = s.id)))`.execute(db);
+    // settleRuns separately requires every retained descendant stage to be terminal, including
+    // manifest items not yet admitted to job. Never infer completion from the live job table.
+  }
+
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {
     await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
       values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
@@ -141,6 +176,28 @@ export class SqlQueueStore {
       this.db,
     );
     return id;
+  }
+
+  /** Admit a prepared run and all initial intents inside one caller-owned, database-only transaction. */
+  async admitRun(
+    id: string,
+    kind: string,
+    selection: Record<string, unknown>,
+    intents: QueueIntent[],
+    tx: Transaction<any>,
+  ) {
+    // Lock every prepared destination before insertBatch can take any job/item locks.
+    for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
+      await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(tx);
+      await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+    }
+    await sql`insert into job_run(id, kind, selection)
+      values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::jsonb)`.execute(tx);
+    await this.enqueue(intents, tx);
+    await sql`update job_run set "enumerationDone" = true where id = ${id}::uuid and not exists (
+      select 1 from job_run_item where "runId" = ${id}::uuid and "rootItemKey" is null
+      and state in ('pending','waiting','active'))`.execute(tx);
+    await this.settleRuns(tx);
   }
 
   /** Enumeration uses keyset pages supplied by the producer, never a held SQL cursor. */
@@ -558,10 +615,11 @@ export class SqlQueueStore {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
-      await sql`update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
+      const { rows: cancelledLatest } = await sql<{ runId: string; rootItemKey: string | null }>`
+        update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
         and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
-        and j."latestPending" ->> 'name' = i.stage)`.execute(tx);
+        and j."latestPending" ->> 'name' = i.stage) returning i."runId", i."rootItemKey"`.execute(tx);
       if (states.includes('pending') || states.includes('waiting')) {
         await sql`update job_run_item set state = 'cancelled' where queue = ${queue}
           and "selectionId" is not null and "jobId" is null and state = 'pending'`.execute(tx);
@@ -574,6 +632,7 @@ export class SqlQueueStore {
         await finishSelections(tx, id, false);
       }
       await this.settleDependencies(tx);
+      await this.finishSupersededProducers(cancelledLatest, tx);
       await this.settleRuns(tx);
     });
   }

@@ -662,8 +662,11 @@ export class SystemConfigService extends BaseService {
     const counts = await this.jobRepository.getJobCounts(QueueName.ImageDescription);
     const alreadyInFlight = (counts.active ?? 0) + (counts.waiting ?? 0) > 0;
 
+    let runId: string | undefined;
     if (!alreadyInFlight) {
-      await this.jobRepository.queue({ name: JobName.ImageDescriptionQueueAll, data: { force: true } });
+      runId = await this.jobRepository.createRun(QueueName.ImageDescription, { force: true }, () =>
+        this.jobRepository.queue({ name: JobName.ImageDescriptionQueueAll, data: { force: true } }),
+      );
 
       // The deferred re-queue (if any) has now actually run. Clear the marker
       // so the persistent banner disappears. Direct metadata write — no event
@@ -674,7 +677,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    return { queued: !alreadyInFlight, cloudBatches: false };
+    return { queued: !alreadyInFlight, cloudBatches: false, ...(runId ? { runId } : {}) };
   }
 
   /**
@@ -743,10 +746,10 @@ export class SystemConfigService extends BaseService {
     const dedupId = kind ? `${JobName.SmartAlbumReevaluateAll}:${kind}` : JobName.SmartAlbumReevaluateAll;
     const alreadyInFlight = await this.jobRepository.hasDedupJob(QueueName.BackgroundTask, dedupId);
 
-    if (!alreadyInFlight) {
-      await this.jobRepository.queue({ name: JobName.SmartAlbumReevaluateAll, data: kind ? { kind } : undefined });
-    }
-
-    return { queued: !alreadyInFlight };
+    if (alreadyInFlight) return { queued: false };
+    const runId = await this.jobRepository.createRun(JobName.SmartAlbumReevaluateAll, kind ? { kind } : {}, () =>
+      this.jobRepository.queue({ name: JobName.SmartAlbumReevaluateAll, data: kind ? { kind } : undefined }),
+    );
+    return { queued: true, runId };
   }
 }

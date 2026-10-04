@@ -17,6 +17,7 @@ import { deliverJobObservers } from 'src/queue/observers.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
+  QUEUE_BATCH,
   QUEUE_TIMING,
   QueueClaim,
   QueueDispatch,
@@ -44,6 +45,7 @@ type JobMapItem = {
 };
 export type QueueRun = Awaited<ReturnType<SqlQueueStore['observeQueueRun']>>;
 const runSubmission = new AsyncLocalStorage<string>();
+const runAdmission = new AsyncLocalStorage<{ intents: QueueIntent[]; open: boolean }>();
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateThumbnails,
@@ -354,17 +356,46 @@ export class JobRepository {
     return this.store.observeQueueRun(name);
   }
 
+  /**
+   * Prepare queue()/queueAll() intents without holding a database transaction during validation or I/O.
+   * Only their admission is atomic; callbacks must not publish other effects or start detached work.
+   */
   async createRun(kind: string, selection: Record<string, unknown>, enqueue: () => Promise<void>) {
-    const id = await this.store.createRun(kind, selection);
-    await runSubmission.run(id, enqueue);
-    // Direct selections have no coordinating job. Queued producers finish enumeration on acceptance.
-    const {
-      rows: [pending],
-    } = await sql<{ count: number }>`select count(*)::int count from job_run_item
-      where "runId" = ${id}::uuid and "rootItemKey" is null and state in ('pending','waiting','active')`.execute(
-      this.store.db,
-    );
-    if (!pending.count) await this.store.finishEnumeration(id);
+    if (runAdmission.getStore()) throw new Error('Run admission cannot be nested');
+    const id = randomUUID();
+    const admission = { intents: [] as QueueIntent[], open: true };
+    try {
+      await runSubmission.run(id, () => runAdmission.run(admission, enqueue));
+    } finally {
+      admission.open = false;
+    }
+    const context = queueExecution.getStore();
+    context?.signal.throwIfAborted();
+    const admit = (tx: Transaction<any>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    if (context?.buffering) {
+      // The run and its parent-dependent intents become visible only with successful publication.
+      context.adoptions.push(admit);
+    } else {
+      await this.store.db.transaction().execute(async (tx) => {
+        // Keep the established queue -> parent job -> run/item lock order across every captured batch.
+        await sql`select name from job_queue order by name for update`.execute(tx);
+        if (context) {
+          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
+            and "cancelRequestedAt" is null for update`.execute(tx);
+          if (rows.length === 0) throw new Error('Producer lost its claim');
+        }
+        await admit(tx);
+        if (context) {
+          context.signal.throwIfAborted();
+          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
+            and "cancelRequestedAt" is null`.execute(tx);
+          if (rows.length === 0) throw new Error('Producer lost its claim during admission');
+          context.signal.throwIfAborted();
+        }
+      });
+    }
     return id;
   }
 
@@ -459,6 +490,7 @@ export class JobRepository {
     selection: SelectQueryBuilder<any, any, { id: string }>,
     data: Record<string, unknown> = {},
   ) {
+    if (runAdmission.getStore()) throw new Error('Run admission supports queue/queueAll, not queueSelection');
     await freezeSelection(
       this.store.db,
       this.intent({ name, data } as JobItem),
@@ -523,6 +555,7 @@ export class JobRepository {
 
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
   async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
+    if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
     if (queueExecution.getStore()) throw new Error('Queue-owned producers must use their completion transaction');
     const intent = runId ? runSubmission.run(runId, () => this.intent(item)) : this.intent(item);
     await this.store.enqueue([intent], tx);
@@ -532,6 +565,15 @@ export class JobRepository {
     const intents = items.map((item) => this.intent(item));
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
+    const admission = runAdmission.getStore();
+    if (admission) {
+      if (!admission.open) throw new Error('Run admission callback has already returned');
+      if (admission.intents.length + intents.length > QUEUE_BATCH) {
+        throw new Error('Run admission is limited to 250 initial intents; use a manifest for bulk selections');
+      }
+      admission.intents.push(...(JSON.parse(JSON.stringify(intents)) as QueueIntent[]));
+      return;
+    }
     if (context?.buffering) {
       context.followups.push(...intents);
       return;

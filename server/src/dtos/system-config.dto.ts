@@ -82,6 +82,10 @@ export class ImageDescriptionRequeueEstimateDto extends createZodDto(ImageDescri
 
 const ImageDescriptionRequeueResponseSchema = z
   .object({
+    runId: z
+      .uuid()
+      .optional()
+      .describe('Canonical run accepted by this request; absent when no local work was accepted'),
     queued: z.boolean().describe('Whether the queue-all job was newly enqueued (false = already in-flight)'),
     cloudBatches: z
       .boolean()
@@ -107,6 +111,10 @@ export class SmartAlbumReevaluateEstimateDto extends createZodDto(SmartAlbumReev
 
 const SmartAlbumReevaluateResponseSchema = z
   .object({
+    runId: z
+      .uuid()
+      .optional()
+      .describe('Canonical run accepted by this request; absent when no local work was accepted'),
     queued: z.boolean().describe('Whether the re-evaluate job was newly enqueued (false = already in-flight)'),
   })
   .meta({ id: 'SmartAlbumReevaluateResponseDto' });

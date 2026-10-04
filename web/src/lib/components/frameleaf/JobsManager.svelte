@@ -541,7 +541,9 @@
       return;
     }
     if (command === 'description-requeue') {
-      const { queued, cloudBatches } = await triggerImageDescriptionRequeue();
+      const started = await triggerImageDescriptionRequeue();
+      const { queued, cloudBatches } = started;
+      submittedRunId = (started as typeof started & { runId?: string }).runId ?? null;
       reminderDeferred = false;
       // FL-163: descriptions routed to Frameleaf Cloud go through batches, estimate first
       if (cloudBatches) {
@@ -555,7 +557,9 @@
       return;
     }
     if (command === 'smart-album') {
-      const { queued } = await triggerSmartAlbumReevaluate({ smartAlbumReevaluateRequestDto: kind ? { kind } : {} });
+      const started = await triggerSmartAlbumReevaluate({ smartAlbumReevaluateRequestDto: kind ? { kind } : {} });
+      const { queued } = started;
+      submittedRunId = (started as typeof started & { runId?: string }).runId ?? null;
       return queued ? undefined : $t('frameleaf_jobs_notice_smart_albums_already_queued');
     }
     if (!name) {
