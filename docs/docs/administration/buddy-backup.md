@@ -38,6 +38,50 @@ Restore points are retained for at least 30 days, with 12 monthly points and the
 
 ## Restore and recover
 
+### Replacement-local boot configuration
+
+Declared boot configuration is encrypted in snapshots and staged privately during
+recovery. A staged artifact does not change the running server. Legacy raw snapshot
+environment values are never replayed automatically.
+
+An installation can configure `FRAMELEAF_BUDDY_BOOT_BINDING_FILE` to a private
+local binding file directly inside its replacement identity directory. The binding
+and identity key must be regular files owned by the server process, mode 0600,
+inside mode-0700 directories with no symlink ancestors. The binding selects exact
+declared keys, keep/replace and a recovery directory; it binds the replacement's
+public-key identity, recovery/snapshot/vault identifiers, scope and private hashes
+of the staged artifact and prepared plan. It must not be supplied by a historical
+manifest or published through ordinary status responses.
+
+Version 1 local requests use `state: "request"`. Actual maintenance recovery
+finalizes that same file to `state: "ready"` only after verified publication has
+completed while the live maintenance fence is held. A complete-state retry verifies
+and finalizes it idempotently before maintenance can end. An extraction-only
+snapshot without a database cannot authorize full-server recovery. A valid active
+maintenance marker retains replacement boot values to resume recovery; malformed,
+foreign or incomplete authority blocks ordinary startup.
+
+On the next ordinary process start, the published `dist/main.js` validates this
+authority before importing the supervisor, caching configuration or constructing
+workers. Keep retains current effective canonical or legacy values and fills only
+missing selected values. Replace changes only selected permitted keys and removes
+their legacy aliases, including explicit unset, before validating the complete
+prospective environment. Undeclared environment and the replacement identity remain
+unchanged. Administrative commands retain their existing dispatch; offline Buddy
+commands load their existing utility without importing the supervisor.
+
+This bounded activation registry covers server port/host, logging, paired shutdown
+grace/deadline, help links and color output. All other declared canonical values
+remain privately recoverable but require further replacement-local activation
+adapters. Identity/link/entitlement, security and feature enabling inputs, historical
+mount/configuration paths and database credentials are not activated by this
+registry. Existing database credential-file sources remain unchanged; a matching
+local service adapter must establish and verify credential changes before those
+inputs can become effective. The owner-facing binding controls, deployment
+adapters, actual dependency connectivity, complete database replacement/restart and
+real two-network acceptance remain required. This source bridge does not establish
+full replacement readiness or enable Buddy Backup by default.
+
 Unlock with your PIN and choose a dated restore point. Owners can restore their own permitted images, videos and albums. Administrators can also restore the library, settings or a complete server. Preview the selection and conflicts before starting. The default fills missing items and preserves current changes; replacement keeps a rollback copy. Partial restoration does not reinstate historical sharing grants.
 
 Full recovery stages and verifies the files before entering maintenance mode. Restore the original storage mounts, verify version compatibility, then apply the database and files. Recovery preserves the replacement server's Cloud identity and invalidates restored sessions and transient jobs. Maintenance remains active if recovery fails.

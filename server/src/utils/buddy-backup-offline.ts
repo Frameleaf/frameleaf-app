@@ -85,6 +85,10 @@ export const buddyBackupCommand = async (args: string[]) => {
   const manifest = await reader.manifest();
   const database = manifest.library.database;
   const directory = database ? join(output, 'recovery', envelope.snapshot.id) : output;
+  if (manifest.bootConfiguration !== undefined) {
+    const { stageBuddyBootConfiguration } = await import('./buddy-boot-configuration.ts');
+    await stageBuddyBootConfiguration(directory, envelope.snapshot.id, manifest.bootConfiguration);
+  }
   // Untrusted original paths are metadata only; offline recovery writes to this empty directory.
   for (const [sha256, content] of Object.entries(manifest.contents)) {
     const target = join(directory, 'objects', sha256);

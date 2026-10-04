@@ -176,6 +176,35 @@ describe('Buddy recovery crash barriers', () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
+  it.each(['settings', 'server'] as const)(
+    'blocks completed %s recovery when local boot readiness cannot finalize',
+    async (scope) => {
+      plan.scope = scope;
+      await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+      await writeFile(join(directory, 'publication.json'), JSON.stringify({ version: 2, state: 'complete' }));
+      await writeFile(target, 'recovered');
+      const restore = vi.fn();
+      const maintenance = {
+        isMaintenanceMode: true,
+        action: { restoreBackupFilename: `buddy-restore-${id}-dump.sql.gz` },
+      } as never;
+      const recover = () =>
+        scope === 'settings' ? service.settings(id, assert) : service.restore(id, restore, maintenance, assert);
+      try {
+        // A real configured invalid pointer must block the caller before marker removal;
+        // the completed publication stays durable for a retry, with no second DB import.
+        vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', 'invalid-local-pointer');
+        await expect(recover()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+        expect(JSON.parse(await readFile(join(directory, 'publication.json'), 'utf8')).state).toBe('complete');
+        expect(await readFile(target, 'utf8')).toBe('recovered');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      await recover();
+      expect(restore).not.toHaveBeenCalled();
+    },
+  );
+
   it('refuses source identity files and aliases before any publication or settings mutation', async () => {
     const key = join(root, 'identity', 'instance-key.pem');
     await writeFile(key, 'replacement identity');

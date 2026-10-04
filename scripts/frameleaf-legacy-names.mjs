@@ -68,13 +68,13 @@ export const LEGACY_ALLOWLIST = [
     reason:
       "Help links: the IMMICH_THIRD_PARTY_* names keep their existing fallback behind FRAMELEAF_DOCS_URL and the other help-link variables",
     files:
-      /^(?:server\/src\/utils\/app-releases\.ts|server\/src\/dtos\/env\.dto\.ts|docs\/docs\/install\/environment-variables\.md)$/,
+      /^(?:server\/src\/utils\/app-releases\.ts|server\/src\/utils\/environment-schema\.ts|docs\/docs\/install\/environment-variables\.md)$/,
     allow: variables("THIRD_PARTY_[A-Z_]+"),
   },
   {
     reason:
       "The admin command accepts its deprecated name, and drops the old log-level name so it cannot conflict with the level it sets",
-    files: /^server\/src\/main\.ts$/,
+    files: /^server\/src\/(?:main|supervisor)\.ts$/,
     allow: /'immich-admin'|process\.env\.IMMICH_LOG_LEVEL/g,
   },
   {
