@@ -1334,7 +1334,10 @@ async function createBundle(
     manifest.cliQualification.publication.digest,
     "CLI dependency differs from bundle qualification",
   );
-  await fs.writeFile(path.join(directory, "cli-image.txt"), cliReference + "\n");
+  await fs.writeFile(
+    path.join(directory, "cli-image.txt"),
+    cliReference + "\n",
+  );
   files.push("cli-image.txt");
   for (const name of INSTALL_FILES) {
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");

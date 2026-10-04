@@ -51,7 +51,11 @@ function validateCliQualification(evidence, sha) {
   const receipt = evidence.publication;
   assert.equal(receipt?.image, CLI_IMAGE, "Wrong CLI publication image");
   assert.equal(receipt.sourceCommit, sha, "CLI publication source differs");
-  assert.equal(receipt.runId, String(evidence.runId), "CLI publication run differs");
+  assert.equal(
+    receipt.runId,
+    String(evidence.runId),
+    "CLI publication run differs",
+  );
   assert(DIGEST.test(receipt.digest), "Invalid CLI index digest");
   assert(
     Array.isArray(receipt.architectures) && receipt.architectures.length === 2,
@@ -70,7 +74,11 @@ function validateCliQualification(evidence, sha) {
   for (const native of receipt.architectures) {
     assert.equal(native.repository, REPOSITORY, "Wrong CLI receipt repository");
     assert.equal(native.sourceCommit, sha, "CLI native source differs");
-    assert.equal(native.runId, String(evidence.runId), "CLI native run differs");
+    assert.equal(
+      native.runId,
+      String(evidence.runId),
+      "CLI native run differs",
+    );
     assert.equal(
       native.runAttempt,
       String(evidence.attempt),
@@ -125,7 +133,8 @@ async function cliJobs(record, sha, request) {
         job.workflow_name === "CLI Build" &&
         job.status === "completed" &&
         job.conclusion === "success" &&
-        (job.run_attempt === undefined || job.run_attempt === record.run_attempt),
+        (job.run_attempt === undefined ||
+          job.run_attempt === record.run_attempt),
       "CLI job is not successful same-source attempt evidence",
     );
     return { id: job.id, name };
@@ -167,7 +176,11 @@ async function downloadCliPublication(
     }),
     1024 * 1024,
   );
-  assert.equal(hash(bytes), artifact.digest, "CLI artifact archive digest differs");
+  assert.equal(
+    hash(bytes),
+    artifact.digest,
+    "CLI artifact archive digest differs",
+  );
   const directory = await fs.mkdtemp(
     path.join(os.tmpdir(), "frameleaf-cli-publication-"),
   );
@@ -180,8 +193,14 @@ async function downloadCliPublication(
       stdio: ["ignore", "pipe", "pipe"],
     };
     const names = run("unzip", ["-Z1", archive], options).trim().split("\n");
-    assert.deepEqual(names, ["cli-publication.json"], "Unexpected CLI artifact entries");
-    return JSON.parse(run("unzip", ["-p", archive, "cli-publication.json"], options));
+    assert.deepEqual(
+      names,
+      ["cli-publication.json"],
+      "Unexpected CLI artifact entries",
+    );
+    return JSON.parse(
+      run("unzip", ["-p", archive, "cli-publication.json"], options),
+    );
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -262,7 +281,11 @@ async function verifyCliQualification(
       native.configDigest,
       "CLI immutable config differs",
     );
-    assert.equal(config.size, child.json.config.size, "CLI config size differs");
+    assert.equal(
+      config.size,
+      child.json.config.size,
+      "CLI config size differs",
+    );
     assert.equal(config.json.os, "linux", "Wrong CLI native OS");
     assert.equal(
       config.json.architecture,
@@ -347,7 +370,8 @@ async function verifyCliQualification(
         const certificate = result?.signature?.certificate;
         return (
           certificate?.subjectAlternativeName?.value === identity &&
-          certificate.issuer === "https://token.actions.githubusercontent.com" &&
+          certificate.issuer ===
+            "https://token.actions.githubusercontent.com" &&
           certificate.sourceRepositoryURI === SOURCE &&
           certificate.sourceRepositoryDigest === sha &&
           certificate.sourceRepositoryRef === "refs/heads/fork/main" &&
@@ -356,7 +380,8 @@ async function verifyCliQualification(
           certificate.runnerEnvironment === "github-hosted" &&
           certificate.runInvocationURI ===
             `${SOURCE}/actions/runs/${evidence.runId}/attempts/${evidence.attempt}` &&
-          result.statement?.predicateType === "https://slsa.dev/provenance/v1" &&
+          result.statement?.predicateType ===
+            "https://slsa.dev/provenance/v1" &&
           result.statement.subject?.some(
             (subject) =>
               subject.name === CLI_IMAGE &&
@@ -372,7 +397,11 @@ async function verifyCliQualification(
 async function requireCliQualification(
   registry,
   sha,
-  { request = github, run = execFileSync, download = downloadCliPublication } = {},
+  {
+    request = github,
+    run = execFileSync,
+    download = downloadCliPublication,
+  } = {},
   expected,
 ) {
   assert(SHA.test(sha), "Invalid CLI qualification source");
@@ -400,10 +429,13 @@ async function requireCliQualification(
     "Duplicate CLI run identity",
   );
   const record = [...runs].sort(
-    (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
+    (a, b) =>
+      Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
   )[0];
   const jobs = await cliJobs(record, sha, request);
-  const artifacts = await request(`actions/runs/${record.id}/artifacts?per_page=100`);
+  const artifacts = await request(
+    `actions/runs/${record.id}/artifacts?per_page=100`,
+  );
   assert(
     Array.isArray(artifacts.artifacts) &&
       Number.isSafeInteger(artifacts.total_count) &&
@@ -414,7 +446,11 @@ async function requireCliQualification(
   const matches = artifacts.artifacts.filter(
     (artifact) => artifact.name === "cli-publication",
   );
-  assert.equal(matches.length, 1, "Missing or duplicate CLI publication artifact");
+  assert.equal(
+    matches.length,
+    1,
+    "Missing or duplicate CLI publication artifact",
+  );
   const artifact = matches[0];
   assert(
     positive(artifact.id) &&

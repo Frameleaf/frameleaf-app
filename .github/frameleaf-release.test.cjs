@@ -21,7 +21,9 @@ const {
   Registry,
   reserveAndStage,
 } = require("./frameleaf-release.cjs");
-const { syntheticCliQualification } = require("./fixtures/cli-qualification.cjs");
+const {
+  syntheticCliQualification,
+} = require("./fixtures/cli-qualification.cjs");
 const {
   requireCliQualification,
   verifyCliQualification,
@@ -30,7 +32,11 @@ const {
   REQUIRED_CLI_JOBS,
 } = require("./frameleaf-cli-qualification.cjs");
 const verifyDependencyImages = (registry, root) =>
-  checkDependencyImages(registry, root, syntheticCliQualification(sha, digest(2)));
+  checkDependencyImages(
+    registry,
+    root,
+    syntheticCliQualification(sha, digest(2)),
+  );
 const sha = "a".repeat(40);
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
 const clone = (v) => structuredClone(v);
@@ -305,7 +311,8 @@ function testQualificationFixture() {
   const fixture = { run, runs: [run], jobs, finalRun: undefined };
   fixture.request = async (endpoint) => {
     if (
-      endpoint === `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`
+      endpoint ===
+      `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`
     )
       return { total_count: fixture.runs.length, workflow_runs: fixture.runs };
     if (endpoint === "actions/runs/42") return fixture.finalRun || fixture.run;
@@ -367,7 +374,9 @@ test("a green Test rollup cannot qualify missing, failed, skipped or wrong-SHA j
       const fixture = testQualificationFixture();
       const job = fixture.jobs.find((job) => job.name === name);
       if (defect === "missing")
-        fixture.jobs = fixture.jobs.filter((candidate) => candidate.name !== name);
+        fixture.jobs = fixture.jobs.filter(
+          (candidate) => candidate.name !== name,
+        );
       if (["failure", "skipped"].includes(defect)) job.conclusion = defect;
       if (defect === "wrong-sha") job.head_sha = "b".repeat(40);
       if (defect === "older-attempt") job.run_attempt = 1;
@@ -476,7 +485,9 @@ test("Test qualification rejects a truncated run list that could hide a newer fa
   await assert.rejects(
     requireTestQualification(sha, async (endpoint) => {
       const response = await fixture.request(endpoint);
-      return response.workflow_runs ? { ...response, total_count: 101 } : response;
+      return response.workflow_runs
+        ? { ...response, total_count: 101 }
+        : response;
     }),
     /Test qualification: incomplete runs response/,
   );
@@ -648,7 +659,20 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.equal(sums.length, 8);
+    assert.deepEqual(
+      sums.map((line) => line.split("  ")[1]).sort(),
+      [
+        "cli-image.txt",
+        "docker-compose.rootless.yml",
+        "docker-compose.yml",
+        "example.env",
+        "hwaccel.ml.yml",
+        "hwaccel.transcoding.yml",
+        "nas-manifest.json",
+        "release-manifest.json",
+        "supported-versions.json",
+      ],
+    );
     for (const line of sums) {
       const [expected, name] = line.split("  ");
       assert.equal(
@@ -1125,7 +1149,8 @@ const published = (entries) => ({
   read: async (image, reference) => {
     const found =
       entries[`${image}:${reference}`] ??
-      (image === "frameleaf-cli" && reference === entries["frameleaf-cli:latest"]
+      (image === "frameleaf-cli" &&
+      reference === entries["frameleaf-cli:latest"]
         ? reference
         : undefined);
     if (!found)
@@ -1317,7 +1342,11 @@ function cliHarness() {
   const entries = new Map();
   const put = (json) => {
     const bytes = JSON.stringify(json);
-    const record = { digest: hash(bytes), json, size: Buffer.byteLength(bytes) };
+    const record = {
+      digest: hash(bytes),
+      json,
+      size: Buffer.byteLength(bytes),
+    };
     entries.set(record.digest, record);
     return record;
   };
@@ -1476,11 +1505,24 @@ function cliHarness() {
 
 test("CLI qualification binds both native jobs, publication receipt, signed graph and exact GitHub attempt", async () => {
   const fixture = cliHarness();
-  const result = await requireCliQualification(fixture.registry, sha, fixture.options);
+  const result = await requireCliQualification(
+    fixture.registry,
+    sha,
+    fixture.options,
+  );
   assert.deepEqual(result, fixture.evidence);
-  assert.equal(fixture.calls.filter(([command]) => command === "cosign").length, 3);
-  const args = fixture.calls.find(([command, args]) => command === "gh" && args[0] === "attestation")[1];
-  assert(args.includes(`oci://${result.publication.image}@${result.publication.digest}`));
+  assert.equal(
+    fixture.calls.filter(([command]) => command === "cosign").length,
+    3,
+  );
+  const args = fixture.calls.find(
+    ([command, args]) => command === "gh" && args[0] === "attestation",
+  )[1];
+  assert(
+    args.includes(
+      `oci://${result.publication.image}@${result.publication.digest}`,
+    ),
+  );
   assert(
     args.includes("--cert-identity") &&
       args.includes("--source-digest") &&
@@ -1513,33 +1555,51 @@ test("an arbitrary published CLI latest cannot satisfy dependency admission", as
 });
 
 test("CLI required jobs and publisher guards are source-backed", async () => {
-  const workflow = await fs.readFile(path.join(__dirname, "workflows/cli.yml"), "utf8");
-  assert(workflow.includes("name: CLI container build (${{ matrix.architecture }})"));
-  for (const architecture of ["amd64", "arm64"]) assert(workflow.includes(`architecture: ${architecture}`));
-  assert(workflow.includes("name: CLI Publish") && workflow.includes("inputs.publish"));
+  const workflow = await fs.readFile(
+    path.join(__dirname, "workflows/cli.yml"),
+    "utf8",
+  );
+  assert(
+    workflow.includes("name: CLI container build (${{ matrix.architecture }})"),
+  );
+  for (const architecture of ["amd64", "arm64"])
+    assert(workflow.includes(`architecture: ${architecture}`));
+  assert(
+    workflow.includes("name: CLI Publish") &&
+      workflow.includes("inputs.publish"),
+  );
   assert(
     workflow.includes("environment: production") &&
       workflow.includes("FRAMELEAF_ENABLE_CLI_PUBLISH == 'true'"),
   );
-  assert(workflow.includes("runAttempt:$attempt") && workflow.includes('runAttempt==$attempt'));
+  assert(
+    workflow.includes("runAttempt:$attempt") &&
+      workflow.includes("runAttempt==$attempt"),
+  );
   assert.equal(REQUIRED_CLI_JOBS.length, 3);
 });
 
 for (const name of REQUIRED_CLI_JOBS) {
-  for (const mode of ["missing", "failure", "skipped", "wrong-sha", "old-attempt"]) {
+  for (const mode of [
+    "missing",
+    "failure",
+    "skipped",
+    "wrong-sha",
+    "old-attempt",
+  ]) {
     test(`CLI qualification rejects ${name}: ${mode}`, async () => {
       const fixture = cliHarness();
       const job = fixture.jobs.find((job) => job.name === name);
       if (mode === "missing") {
         fixture.jobs.splice(fixture.jobs.indexOf(job), 1);
-        fixture.responses.get(
-          "actions/runs/17/attempts/1/jobs?per_page=100",
-        ).total_count--;
-      }
-      else if (mode === "wrong-sha") job.head_sha = "b".repeat(40);
+        fixture.responses.get("actions/runs/17/attempts/1/jobs?per_page=100")
+          .total_count--;
+      } else if (mode === "wrong-sha") job.head_sha = "b".repeat(40);
       else if (mode === "old-attempt") job.run_attempt = 2;
       else job.conclusion = mode;
-      await assert.rejects(requireCliQualification(fixture.registry, sha, fixture.options));
+      await assert.rejects(
+        requireCliQualification(fixture.registry, sha, fixture.options),
+      );
     });
   }
 }
@@ -1589,19 +1649,25 @@ test("CLI qualification never falls back to old green, incomplete lists, or a ch
       f.artifact.workflow_run.head_repository_id = 100;
     },
     (f) => {
-      const response = f.responses.get("actions/runs/17/artifacts?per_page=100");
+      const response = f.responses.get(
+        "actions/runs/17/artifacts?per_page=100",
+      );
       response.artifacts.push({ ...f.artifact });
       response.total_count++;
     },
     (f) => {
-      const response = f.responses.get("actions/runs/17/artifacts?per_page=100");
+      const response = f.responses.get(
+        "actions/runs/17/artifacts?per_page=100",
+      );
       response.artifacts = [];
       response.total_count = 0;
     },
   ]) {
     const fixture = cliHarness();
     mutate(fixture);
-    await assert.rejects(requireCliQualification(fixture.registry, sha, fixture.options));
+    await assert.rejects(
+      requireCliQualification(fixture.registry, sha, fixture.options),
+    );
   }
   for (const endpoint of [
     `actions/workflows/cli.yml/runs?head_sha=${sha}&per_page=100`,
@@ -1611,7 +1677,9 @@ test("CLI qualification never falls back to old green, incomplete lists, or a ch
     for (const total of [undefined, "1", -1, 101]) {
       const fixture = cliHarness();
       fixture.responses.get(endpoint).total_count = total;
-      await assert.rejects(requireCliQualification(fixture.registry, sha, fixture.options));
+      await assert.rejects(
+        requireCliQualification(fixture.registry, sha, fixture.options),
+      );
     }
   }
 });
@@ -1644,18 +1712,20 @@ test("CLI graph, smoke receipt and GitHub certificate bindings fail closed", asy
     (f) => {
       f.entries.get(
         f.evidence.publication.architectures[0].configDigest,
-      ).json.config.Labels["org.opencontainers.image.revision"] = "b".repeat(40);
+      ).json.config.Labels["org.opencontainers.image.revision"] = "b".repeat(
+        40,
+      );
     },
     (f) => {
-      f.verification.signature.certificate.runInvocationURI =
-        `${SOURCE}/actions/runs/17/attempts/2`;
+      f.verification.signature.certificate.runInvocationURI = `${SOURCE}/actions/runs/17/attempts/2`;
     },
     (f) => {
       f.verification.signature.certificate.buildSignerURI += "-untrusted";
     },
     (f) => {
-      f.verification.signature.certificate.sourceRepositoryDigest =
-        "b".repeat(40);
+      f.verification.signature.certificate.sourceRepositoryDigest = "b".repeat(
+        40,
+      );
     },
     (f) => {
       f.verification.signature.certificate.sourceRepositoryRef =
@@ -1682,7 +1752,14 @@ test("CLI graph, smoke receipt and GitHub certificate bindings fail closed", asy
   ]) {
     const fixture = cliHarness();
     mutate(fixture);
-    await assert.rejects(verifyCliQualification(fixture.registry, sha, fixture.evidence, fixture.options));
+    await assert.rejects(
+      verifyCliQualification(
+        fixture.registry,
+        sha,
+        fixture.evidence,
+        fixture.options,
+      ),
+    );
   }
   const fixture = cliHarness();
   await assert.rejects(
@@ -1719,7 +1796,10 @@ test("CLI artifact download authenticates the archive and forwards no token to s
   });
   assert.equal(calls[1][1].headers, undefined);
   await assert.rejects(
-    downloadCliPublication({ ...artifact, digest: digest(1) }, { fetcher, run }),
+    downloadCliPublication(
+      { ...artifact, digest: digest(1) },
+      { fetcher, run },
+    ),
     /digest differs/,
   );
   await assert.rejects(

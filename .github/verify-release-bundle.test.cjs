@@ -14,7 +14,9 @@ const {
   LEGACY_ATTESTATION_TYPE,
 } = require("./frameleaf-release.cjs");
 const { verifyBundle } = require("./verify-release-bundle.cjs");
-const { syntheticCliQualification } = require("./fixtures/cli-qualification.cjs");
+const {
+  syntheticCliQualification,
+} = require("./fixtures/cli-qualification.cjs");
 
 test("NAS packaging verifies strict v3 and authenticated historical v2 contracts", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "frameleaf-bundle-"));
@@ -111,7 +113,10 @@ test("NAS packaging verifies strict v3 and authenticated historical v2 contracts
     );
     await fs.writeFile(cliFile, "ghcr.io/frameleaf/frameleaf-cli:latest\n");
     await refreshSums();
-    await assert.rejects(verifyBundle(bundle, tag), /CLI install image differs/);
+    await assert.rejects(
+      verifyBundle(bundle, tag),
+      /CLI install image differs/,
+    );
     await fs.writeFile(cliFile, cliImage);
     await refreshSums();
     const manifestFile = path.join(bundle, "release-manifest.json");
@@ -120,7 +125,10 @@ test("NAS packaging verifies strict v3 and authenticated historical v2 contracts
     changedManifest.dependencies[0].digest = `sha256:${"f".repeat(64)}`;
     await fs.writeFile(manifestFile, JSON.stringify(changedManifest));
     await refreshSums();
-    await assert.rejects(verifyBundle(bundle, tag), /CLI bundle dependency differs/);
+    await assert.rejects(
+      verifyBundle(bundle, tag),
+      /CLI bundle dependency differs/,
+    );
     await fs.writeFile(manifestFile, originalManifest);
     await refreshSums();
     await assert.rejects(
@@ -204,8 +212,9 @@ test("NAS packaging verifies strict v3 and authenticated historical v2 contracts
         JSON.stringify(value),
       );
       const sums = await Promise.all(
-        legacyNames.map(async (name) =>
-          `${hash(await fs.readFile(path.join(historical, name))).slice(7)}  ${name}`,
+        legacyNames.map(
+          async (name) =>
+            `${hash(await fs.readFile(path.join(historical, name))).slice(7)}  ${name}`,
         ),
       );
       await fs.writeFile(
@@ -264,10 +273,9 @@ test("NAS packaging verifies strict v3 and authenticated historical v2 contracts
       createBundle(path.join(root, "legacy-new-release"), root, tag, legacy),
       /New release bundles require the CLI-qualified v3 contract/,
     );
-    await assert.rejects(
-      fs.stat(path.join(root, "legacy-new-release")),
-      { code: "ENOENT" },
-    );
+    await assert.rejects(fs.stat(path.join(root, "legacy-new-release")), {
+      code: "ENOENT",
+    });
     await assert.rejects(
       verifyBundle(historical, tag, {
         ...options,
@@ -318,11 +326,11 @@ test("NAS packaging verifies strict v3 and authenticated historical v2 contracts
       verifyBundle(historical, tag, options),
       /checksum differs/,
     );
-    await fs.copyFile(
-      composeFile,
-      path.join(historical, "docker-compose.yml"),
-    );
-    await writeLegacy({ ...legacy, cliQualification: manifest.cliQualification });
+    await fs.copyFile(composeFile, path.join(historical, "docker-compose.yml"));
+    await writeLegacy({
+      ...legacy,
+      cliQualification: manifest.cliQualification,
+    });
     await assert.rejects(
       verifyBundle(historical, tag, options),
       /Historical v2 cannot claim CLI qualification/,
