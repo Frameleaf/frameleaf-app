@@ -2,12 +2,15 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const zlib = require("node:zlib");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   Api,
   checkInstallation,
   environmentFile,
   listeningOn,
   missingMigrations,
+  prepareTestDatabase,
   testImage,
   ADMIN,
 } = require("./frameleaf-deploy-test.cjs");
@@ -17,6 +20,7 @@ const {
   signImages,
   ATTESTATION_TYPE,
 } = require("./frameleaf-release.cjs");
+require("./frameleaf-install.test.cjs");
 
 const sha = "a".repeat(40);
 const example = [
@@ -37,6 +41,140 @@ test("the test installation's .env keeps the release example and sets only test 
     () => environmentFile("DB_PASSWORD=x", "A".repeat(32)),
     /UPLOAD_LOCATION/,
   );
+});
+
+test("the pinned release database is replaced only in disposable compose for archive and source validation", async () => {
+  const filename = path.join(__dirname, "../docker/docker-compose.yml");
+  const production = fs.readFileSync(filename, "utf8");
+  const reference =
+    /^\s*image:\s*(ghcr\.io\/frameleaf\/frameleaf-postgres:\S+)\s*$/m.exec(
+      production,
+    )[1];
+  assert.match(reference, /:19beta4-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/);
+  const compose = `# Original release dependency: ${reference}\n${production}`;
+  const archiveReference = `127.0.0.1:5000/deploy-test/database@sha256:${"a".repeat(64)}`;
+  for (const archive of [undefined, "/artifacts/postgres/image.tar"]) {
+    const calls = [];
+    const loaded = [];
+    const result = await prepareTestDatabase(
+      compose,
+      { root: "/source", workDir: "/test", archive },
+      {
+        execute: (command, args, options) => {
+          calls.push({ command, args, options });
+          return "sha256:local-image-id\n";
+        },
+        load: async (...args) => {
+          loaded.push(args);
+          return archiveReference;
+        },
+      },
+    );
+    assert.equal(
+      result.compose,
+      compose.replace(
+        `image: ${reference}`,
+        "image: frameleaf-postgres:deploy-test",
+      ),
+    );
+    assert.ok(
+      result.compose.includes(`# Original release dependency: ${reference}`),
+    );
+    assert.equal(result.image.releaseReference, reference);
+    if (archive) {
+      assert.deepEqual(loaded, [[archive, "database", "/test"]]);
+      assert.deepEqual(
+        calls.map(({ command, args }) => [command, ...args]),
+        [
+          ["docker", "tag", archiveReference, "frameleaf-postgres:deploy-test"],
+          [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{.Id}}",
+            archiveReference,
+          ],
+        ],
+      );
+      assert.equal(result.image.id, "sha256:local-image-id");
+    } else {
+      assert.deepEqual(loaded, []);
+      assert.deepEqual(calls, [
+        {
+          command: "docker",
+          args: [
+            "build",
+            "--quiet",
+            "--tag",
+            "frameleaf-postgres:deploy-test",
+            "/source/docker/postgres",
+          ],
+          options: { stdio: ["ignore", "pipe", "inherit"] },
+        },
+      ]);
+    }
+    assert.equal(
+      fs.readFileSync(filename, "utf8"),
+      production,
+      "Production digest must remain unchanged",
+    );
+  }
+});
+
+test("database validation rejects missing, ambiguous, foreign or malformed production pins before Docker", async () => {
+  const reference = `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:${"b".repeat(64)}`;
+  for (const images of [
+    [],
+    [reference, reference],
+    [reference.split("@")[0]],
+    [reference.replace(/sha256:.+$/, "sha256:short")],
+    [reference.replace("ghcr.io/frameleaf", "ghcr.io/another-owner")],
+  ]) {
+    const compose = images
+      .map((image, index) => `  database${index}:\n    image: ${image}`)
+      .join("\n");
+    for (const archive of [undefined, "/artifacts/database.tar"]) {
+      let calls = 0;
+      await assert.rejects(
+        prepareTestDatabase(
+          compose,
+          { root: "/source", workDir: "/test", archive },
+          {
+            execute: () => {
+              calls++;
+            },
+            load: async () => {
+              calls++;
+            },
+          },
+        ),
+        /exactly one|digest-pinned/,
+      );
+      assert.equal(calls, 0);
+    }
+  }
+});
+
+test("database preparation failure never returns a usable test stack", async () => {
+  const compose = `services:\n  database:\n    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:${"b".repeat(64)}\n`;
+  for (const archive of [undefined, "/artifacts/database.tar"]) {
+    await assert.rejects(
+      prepareTestDatabase(
+        compose,
+        { root: "/source", workDir: "/test", archive },
+        {
+          execute: () => {
+            throw new Error("Docker rejected test image");
+          },
+          load: async () => {
+            throw new Error("Archive unavailable");
+          },
+        },
+      ),
+      archive ? /Archive unavailable/ : /Docker rejected test image/,
+    );
+  }
 });
 
 test("the upload is a valid PNG that differs per seed", () => {
