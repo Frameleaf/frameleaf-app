@@ -906,7 +906,13 @@ export class FrameleafCloudService extends BaseService {
         revoked: { at: new Date().toISOString(), reason: reason ?? '' },
       }),
     };
-    await this.saveLink(next, 'link');
+    // Fence authority removal together with account/session cleanup. Confirmation uses this same
+    // lock through link, role, audit and notification writes, so none can arrive after cleanup.
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, next);
+      await this.endFrameleafSignIns();
+    });
+    await this.broadcast('link');
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
     // FL-185: an ML suspension belongs to the link that ended
     await this.forgetMlSuspension();
@@ -932,7 +938,6 @@ export class FrameleafCloudService extends BaseService {
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     }
-    await this.endFrameleafSignIns();
   }
 
   /**
@@ -2075,7 +2080,9 @@ export class FrameleafCloudService extends BaseService {
   }
 
   private async saveLink(link: FrameleafCloudLink, topic: FrameleafCloudTopic | null) {
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, link);
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, () =>
+      this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, link),
+    );
     if (topic) {
       await this.broadcast(topic);
     }
