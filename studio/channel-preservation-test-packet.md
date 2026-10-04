@@ -230,3 +230,118 @@ helpers, decoded-boundary classes or workflow; blast-radius coverage is UNKNOWN,
 with no HIGH/CRITICAL result. Only tracked patch bytes were hashed to register the
 new patch. No local adapted-source hash, prepare, engine reconstruction, runtime,
 test, build, formatter, install, index, CI, push or provider action was performed.
+
+## Observed retiming RED and shared multichannel production candidate (0057)
+
+Base `271f06ca5216532e6fc8ded3c8e278de0f831e79`, owner branch
+`aj/fl103-multichannel-retiming-forward`. Root supplied genuine hosted run
+`37179006071`, job `111367899980`, retained evidence
+`/Users/adamtaylor/.codex/handoffs/evidence/fl103-37179006071/engine.log`.
+The actual SoundTouch suite executed 12 tests: eight passed, four failed because
+full six/eight-plane retiming returned two channels. Stereo full-mix positives
+and all six windowed-refusal controls passed. The multichannel frequency,
+containment and companion assertions following those count failures were not
+reached. The peer authenticated the 56-patch, 2,705-file source receipt and
+`997f29cc7f987948877d5c07062868345c3d5c02ede0a86f0b7136a19406a3da`.
+This is behavioral RED, not a preparation/type/digest failure.
+
+Patch 0057 removes the export-only fold-down and carries input plane count through
+one actual SoundTouch processor: every FIFO indexes frames with the shared stride;
+the rate transposer keeps one resampling phase and per-plane previous samples;
+WSOLA keeps one fractional skip, search offset and overlap length, with an
+interleaved mid-buffer for every plane. Correlation sums each plane's own products
+before deterministic summation across planes. Opposite-phase related channels
+therefore reinforce their alignment instead of cancelling in a folded guide.
+The same selected offset and overlap weights apply to every plane, including
+silence; no independent stereo-pair stretchers or L/R duplication are used.
+Plane-order permutation cannot change the numerical search sum. Negative quick
+search offsets are skipped rather than reading outside the input buffer; the
+initial best score admits negative correlations as well as positive ones.
+
+The export processor receives its decoded sample rate. Existing preview callers
+retain the default two-plane/44.1-kHz constructor behavior and streaming filter
+mode. The finite export filter has an explicit expected output frame cap and
+one end-of-source state: after the last partial source read it pads the shared
+input with silence to drain buffered overlap/interpolation. Extraction stops at
+that cap; it cannot add an extra clip interval. This changes previously discarded
+finite tail behavior and needs actual hosted stereo/mono/reference qualification;
+bit-identical historical retimed PCM is not claimed. All source planes must have
+the same frame length; deinterleaving preserves their original order and common
+output length. Existing placement, gain, fades, companion-track mixing and matching
+plane-count guards remain in their real production pipeline. Windowed retiming
+remains refused. The older center-only 5.1 regression is reconciled with approved
+preservation: center is audible in plane 2 and the other five remain silent,
+instead of expecting stereo fold-down. The 12 tests in 0056 are unchanged.
+
+Eight added actual-DSP cases exercise six/eight planes at pitch ratios 0.5, 1 and
+2 with speed 1.5, plus mono/stereo short finite sources below the legacy 16,384-frame
+input threshold. Nonperiodic asymmetric impulse/transient signals share signed and
+scaled relationships across different former stereo pairs. Assertions check those
+relationships at every output sample, silent-plane isolation, input immutability,
+common finite length, nonzero late-source tails, exact extraction termination,
+chunk-size invariance (127 versus 4,096 frames), and plane permutations. Both rate
+routing orders and native mono are exercised. These are real TimeStretchProcessor
+and TimeStretchFilter tests with a PCM source boundary only. They do not establish
+absolute internal transient timestamps/latency or correctness against an external
+reference renderer; those acceptance gates remain explicit.
+
+The focused hosted workflow retains both existing gain/retiming suites and adds:
+
+```sh
+cd studio/engine
+./node_modules/.bin/vp test run src/infrastructure/audio/time-stretch-multichannel.test.ts src/features/export/utils/canvas-audio-highrate-retiming.test.ts
+```
+
+Root must obtain and independently review a new genuine hosted source recovery
+receipt for all 57 patches before importing its observed digest. This packet
+registers only the static tracked patch hash and deliberately retains the last
+authenticated `sourceSha256` `997f29cc7f987948877d5c07062868345c3d5c02ede0a86f0b7136a19406a3da`.
+No local adapted-source digest, engine tree, patch application or prepare was
+created. Hosted patch application, new regression execution, existing broad unit
+and preview behavior, build and audible fidelity remain unverified.
+
+Full windowed retiming, actual long-export fallback memory/latency, complete
+latency/tail/reference-transient behavior, real codec decode/mux with semantic
+layout tags, sample-accurate timestamps, automation/EQ/transitions, recording,
+removals/undo and caption acceptance remain required engineering for full FL-103.
+Matching decoded plane counts cannot certify speaker layouts. No new permission
+gate or reduced completion scope is introduced. `runtimeQualified: false`.
+
+The SoundTouch LGPL-2.1-or-later header and all attribution/notices remain intact;
+export integration retains Freecut MIT attribution. Feature activation/default-OFF
+controls are unchanged. GitNexus query/context and upstream impacts for the actual
+processor, modified methods, export helper and added tests were unmapped in the
+stale index: caller/process coverage remains UNKNOWN, with no HIGH/CRITICAL result.
+Only static source/patch/evidence reads and tracked patch hashing were used. No
+local runtime/tests/build/formatter/install/index/browser, CI observation, push,
+Jira, mobile, provider or infrastructure action was performed.
+
+
+### Pre-commit review correction: high-rate pipeline progress
+
+The same peer identified a synchronous nonprogress loop in the initial 0057
+candidate: FilterSupport still filled to a fixed 16,384 input frames, while
+192-kHz speed 1.5 / pitch ratio 2 gives effective WSOLA tempo 0.75 and a
+26,688-frame input requirement. That review finding is corrected in this staged
+candidate, not claimed resolved by a hosted run. The input target now uses the
+active SoundTouch pipeline's actual WSOLA frame requirement, adds startup overlap
+when its mid-buffer must first be consumed, accounts for intermediate buffered
+frames and rate conversion when the transposer runs first, and retains the old
+minimum batch size. A process iteration whose input/intermediate/output frame
+counts all remain unchanged throws a bounded invariant error rather than spinning.
+Supported high-rate inputs retain the same shared multichannel DSP path; no
+surround refusal or speed-only fallback is used to satisfy these regressions.
+
+Eight added actual-processor cases exercise 192 kHz / speed 1.5 / pitch ratio 2
+with 2,401-frame short partial inputs and 96,001-frame inputs across mono, stereo,
+six and eight planes. Exact finite lengths, signed/scaled plane timing, silence,
+termination and 127/4,096-frame chunk invariance are asserted. Eight separate
+actual processAudio export cases use decoded 192-kHz boundary fixtures with +12
+semitones and speed 1.5, one-frame and fifteen-frame clips, all four plane counts,
+48-kHz final output, finite PCM and exact timeline containment. Longer cases use
+an independent Fourier check for 2-kHz shifted pitch and reject the 1.5-kHz
+speed-only fallback. No actual SoundTouch, extraction, configuration or mixer
+helper is mocked. Existing 0056's twelve cases, mono/stereo defaults, attribution
+and the last authenticated 997f source digest remain unchanged. Only the tracked
+0057 patch hash is recomputed. Actual high-rate execution and the broader
+qualification gates still require the root-owned hosted run.

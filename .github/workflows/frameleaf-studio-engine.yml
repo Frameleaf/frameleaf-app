@@ -112,6 +112,9 @@ jobs:
       - name: Actual SoundTouch retiming channel preservation (FL-103)
         working-directory: studio/engine
         run: ./node_modules/.bin/vp test run src/features/export/utils/canvas-audio-retiming-preservation.test.ts
+      - name: Qualify shared multichannel retiming DSP
+        working-directory: studio/engine
+        run: ./node_modules/.bin/vp test run src/infrastructure/audio/time-stretch-multichannel.test.ts src/features/export/utils/canvas-audio-highrate-retiming.test.ts
       - name: Approved-fixture Whisper inference timing diagnostic (FL-103, FL-111)
         timeout-minutes: 12
         env:

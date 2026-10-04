@@ -1,0 +1,825 @@
+Subject: Preserve all decoded planes in one shared SoundTouch retiming pipeline
+
+Export integration is a Freecut MIT adaptation. time-stretch.ts remains SoundTouch
+JS v0.2.3, LGPL-2.1-or-later, with its original copyright and license header intact.
+The immutable vendor archive and notices are unchanged.
+
+diff --git a/src/infrastructure/audio/time-stretch.ts b/src/infrastructure/audio/time-stretch.ts
+--- a/src/infrastructure/audio/time-stretch.ts
++++ b/src/infrastructure/audio/time-stretch.ts
+@@ -22,7 +22,9 @@
+  */
+
+ class FifoSampleBuffer {
+-  constructor() {
++  constructor(channels = 2) {
++    if (!Number.isSafeInteger(channels) || channels < 1) throw new RangeError('Invalid audio plane count')
++    this.channels = channels
+     this._vector = new Float32Array()
+     this._position = 0
+     this._frameCount = 0
+@@ -34,13 +36,13 @@
+     return this._position
+   }
+   get startIndex() {
+-    return this._position * 2
++    return this._position * this.channels
+   }
+   get frameCount() {
+     return this._frameCount
+   }
+   get endIndex() {
+-    return (this._position + this._frameCount) * 2
++    return (this._position + this._frameCount) * this.channels
+   }
+   clear() {
+     this._vector.fill(0)
+@@ -52,11 +54,11 @@
+   }
+   putSamples(samples, position, numFrames = 0) {
+     position = position || 0
+-    const sourceOffset = position * 2
++    const sourceOffset = position * this.channels
+     if (!(numFrames >= 0)) {
+-      numFrames = (samples.length - sourceOffset) / 2
+-    }
+-    const numSamples = numFrames * 2
++      numFrames = (samples.length - sourceOffset) / this.channels
++    }
++    const numSamples = numFrames * this.channels
+     this.ensureCapacity(numFrames + this._frameCount)
+     const destOffset = this.endIndex
+     this.vector.set(samples.subarray(sourceOffset, sourceOffset + numSamples), destOffset)
+@@ -77,18 +79,18 @@
+     this._position += numFrames
+   }
+   receiveSamples(output, numFrames = 0) {
+-    const numSamples = numFrames * 2
++    const numSamples = numFrames * this.channels
+     const sourceOffset = this.startIndex
+     output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples))
+     this.receive(numFrames)
+   }
+   extract(output, position = 0, numFrames = 0) {
+-    const sourceOffset = this.startIndex + position * 2
+-    const numSamples = numFrames * 2
++    const sourceOffset = this.startIndex + position * this.channels
++    const numSamples = numFrames * this.channels
+     output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples))
+   }
+   ensureCapacity(numFrames = 0) {
+-    const minLength = parseInt(numFrames * 2)
++    const minLength = parseInt(numFrames * this.channels)
+     if (this._vector.length < minLength) {
+       const newVector = new Float32Array(minLength)
+       newVector.set(this._vector.subarray(this.startIndex, this.endIndex))
+@@ -110,10 +112,11 @@
+ }
+
+ class AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
++  constructor(createBuffers, channels = 2) {
++    this.channels = channels
+     if (createBuffers) {
+-      this._inputBuffer = new FifoSampleBuffer()
+-      this._outputBuffer = new FifoSampleBuffer()
++      this._inputBuffer = new FifoSampleBuffer(channels)
++      this._outputBuffer = new FifoSampleBuffer(channels)
+     } else {
+       this._inputBuffer = this._outputBuffer = null
+     }
+@@ -137,8 +140,8 @@
+ }
+
+ class RateTransposer extends AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
+-    super(createBuffers)
++  constructor(createBuffers, channels = 2) {
++    super(createBuffers, channels)
+     this.reset()
+     this._rate = 1
+   }
+@@ -147,15 +150,14 @@
+   }
+   reset() {
+     this.slopeCount = 0
+-    this.prevSampleL = 0
+-    this.prevSampleR = 0
++    this.prevSamples = new Float32Array(this.channels)
+   }
+   clear() {
+     super.clear()
+     this.reset()
+   }
+   clone() {
+-    const result = new RateTransposer()
++    const result = new RateTransposer(true, this.channels)
+     result.rate = this._rate
+     return result
+   }
+@@ -177,10 +179,10 @@
+     let used = 0
+     let i = 0
+     while (this.slopeCount < 1.0) {
+-      dest[destOffset + 2 * i] =
+-        (1.0 - this.slopeCount) * this.prevSampleL + this.slopeCount * src[srcOffset]
+-      dest[destOffset + 2 * i + 1] =
+-        (1.0 - this.slopeCount) * this.prevSampleR + this.slopeCount * src[srcOffset + 1]
++      for (let channel = 0; channel < this.channels; channel++) {
++        dest[destOffset + this.channels * i + channel] =
++          (1.0 - this.slopeCount) * this.prevSamples[channel] + this.slopeCount * src[srcOffset + channel]
++      }
+       i = i + 1
+       this.slopeCount += this._rate
+     }
+@@ -194,17 +196,19 @@
+             break out
+           }
+         }
+-        const srcIndex = srcOffset + 2 * used
+-        dest[destOffset + 2 * i] =
+-          (1.0 - this.slopeCount) * src[srcIndex] + this.slopeCount * src[srcIndex + 2]
+-        dest[destOffset + 2 * i + 1] =
+-          (1.0 - this.slopeCount) * src[srcIndex + 1] + this.slopeCount * src[srcIndex + 3]
++        const srcIndex = srcOffset + this.channels * used
++        for (let channel = 0; channel < this.channels; channel++) {
++          dest[destOffset + this.channels * i + channel] =
++            (1.0 - this.slopeCount) * src[srcIndex + channel] +
++            this.slopeCount * src[srcIndex + this.channels + channel]
++        }
+         i = i + 1
+         this.slopeCount += this._rate
+       }
+     }
+-    this.prevSampleL = src[srcOffset + 2 * numFrames - 2]
+-    this.prevSampleR = src[srcOffset + 2 * numFrames - 1]
++    for (let channel = 0; channel < this.channels; channel++) {
++      this.prevSamples[channel] = src[srcOffset + this.channels * (numFrames - 1) + channel]
++    }
+     return i
+   }
+ }
+@@ -228,10 +232,18 @@
+   fillOutputBuffer(numFrames = 0) {
+     while (this.outputBuffer.frameCount < numFrames) {
+-      const numInputFrames = 8192 * 2 - this.inputBuffer.frameCount
+-      this.fillInputBuffer(numInputFrames)
+-      if (this.inputBuffer.frameCount < 8192 * 2) {
+-        break
+-      }
++      // WSOLA requirements vary with sample rate and effective tempo. The
++      // active pipeline also owns buffered intermediate frames and startup
++      // overlap consumption; a fixed 16384-frame target can deadlock here.
++      const target = Math.max(8192 * 2, this._pipe.inputChunkSize)
++      this.fillInputBuffer(Math.max(0, target - this.inputBuffer.frameCount))
++      if (this.inputBuffer.frameCount < target) break
++      const beforeInput = this.inputBuffer.frameCount
++      const beforeIntermediate = this._pipe._intermediateBuffer.frameCount
++      const beforeOutput = this.outputBuffer.frameCount
+       this._pipe.process()
++      if (beforeInput === this.inputBuffer.frameCount &&
++          beforeIntermediate === this._pipe._intermediateBuffer.frameCount &&
++          beforeOutput === this.outputBuffer.frameCount)
++        throw new Error('Time-stretch pipeline made no frame progress')
+     }
+   }
+@@ -245,8 +257,12 @@
+ }
+
+ class SimpleFilter extends FilterSupport {
+-  constructor(sourceSound, pipe, callback = noop) {
++  constructor(sourceSound, pipe, callback = noop, outputFrames = Infinity) {
+     super(pipe)
++    if (outputFrames !== Infinity && (!Number.isSafeInteger(outputFrames) || outputFrames < 0))
++      throw new RangeError('Invalid finite audio output length')
++    this.outputFrames = outputFrames
++    this.endOfSource = false
+     this.callback = callback
+     this.sourceSound = sourceSound
+     this.historyBufferSize = 22050
+@@ -279,12 +295,19 @@
+     this.callback()
+   }
+   fillInputBuffer(numFrames = 0) {
+-    const samples = new Float32Array(numFrames * 2)
+-    const numFramesExtracted = this.sourceSound.extract(samples, numFrames, this._sourcePosition)
++    const samples = new Float32Array(numFrames * this.inputBuffer.channels)
++    const numFramesExtracted = this.endOfSource ? 0 : this.sourceSound.extract(samples, numFrames, this._sourcePosition)
++    if (!Number.isSafeInteger(numFramesExtracted) || numFramesExtracted < 0 || numFramesExtracted > numFrames)
++      throw new RangeError('Invalid source audio frame count')
++    if (numFramesExtracted < numFrames && this.outputFrames !== Infinity) this.endOfSource = true
+     this._sourcePosition += numFramesExtracted
+-    this.inputBuffer.putSamples(samples, 0, numFramesExtracted)
++    // Zero padding belongs to the same pipe/phase/overlap state. The explicit
++    // finite output cap stops extraction, so tail padding cannot extend the clip.
++    this.inputBuffer.putSamples(samples, 0, this.endOfSource ? numFrames : numFramesExtracted)
+   }
+   extract(target, numFrames = 0) {
++    numFrames = Math.min(numFrames, this.outputFrames - this._position)
++    if (numFrames <= 0) return 0
+     this.fillOutputBuffer(this.outputBufferPosition + numFrames)
+     const numFramesExtracted = Math.min(
+       numFrames,
+@@ -303,6 +326,7 @@
+   clear() {
+     super.clear()
+     this.outputBufferPosition = 0
++    this.endOfSource = false
+   }
+ }
+
+@@ -331,8 +355,8 @@
+ const AUTOSEEK_K = (AUTOSEEK_AT_MAX - AUTOSEEK_AT_MIN) / (AUTOSEQ_TEMPO_TOP - AUTOSEQ_TEMPO_LOW)
+ const AUTOSEEK_C = AUTOSEEK_AT_MIN - AUTOSEEK_K * AUTOSEQ_TEMPO_LOW
+ class Stretch extends AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
+-    super(createBuffers)
++  constructor(createBuffers, channels = 2) {
++    super(createBuffers, channels)
+     this._quickSeek = true
+     this.midBufferDirty = false
+     this.midBuffer = null
+@@ -401,8 +425,8 @@
+     newOvl = newOvl < 16 ? 16 : newOvl
+     newOvl -= newOvl % 8
+     this.overlapLength = newOvl
+-    this.refMidBuffer = new Float32Array(this.overlapLength * 2)
+-    this.midBuffer = new Float32Array(this.overlapLength * 2)
++    this.refMidBuffer = new Float32Array(this.overlapLength * this.channels)
++    this.midBuffer = new Float32Array(this.overlapLength * this.channels)
+   }
+   checkLimits(x, mi, ma) {
+     return x < mi ? mi : x > ma ? ma : x
+@@ -427,7 +451,7 @@
+     this._quickSeek = enable
+   }
+   clone() {
+-    const result = new Stretch()
++    const result = new Stretch(true, this.channels)
+     result.tempo = this._tempo
+     result.setParameters(this.sampleRate, this.sequenceMs, this.seekWindowMs, this.overlapMs)
+     return result
+@@ -444,9 +468,9 @@
+     let i = 0
+     this.preCalculateCorrelationReferenceStereo()
+     bestOffset = 0
+-    bestCorrelation = Number.MIN_VALUE
++    bestCorrelation = -Infinity
+     for (; i < this.seekLength; i = i + 1) {
+-      correlation = this.calculateCrossCorrelationStereo(2 * i, this.refMidBuffer)
++      correlation = this.calculateCrossCorrelationStereo(this.channels * i, this.refMidBuffer)
+       if (correlation > bestCorrelation) {
+         bestCorrelation = correlation
+         bestOffset = i
+@@ -462,7 +486,7 @@
+     let correlationOffset
+     let tempOffset
+     this.preCalculateCorrelationReferenceStereo()
+-    bestCorrelation = Number.MIN_VALUE
++    bestCorrelation = -Infinity
+     bestOffset = 0
+     correlationOffset = 0
+     tempOffset = 0
+@@ -470,10 +494,14 @@
+       let j = 0
+       while (_SCAN_OFFSETS[scanCount][j]) {
+         tempOffset = correlationOffset + _SCAN_OFFSETS[scanCount][j]
++        if (tempOffset < 0) {
++          j = j + 1
++          continue
++        }
+         if (tempOffset >= this.seekLength) {
+           break
+         }
+-        correlation = this.calculateCrossCorrelationStereo(2 * tempOffset, this.refMidBuffer)
++        correlation = this.calculateCrossCorrelationStereo(this.channels * tempOffset, this.refMidBuffer)
+         if (correlation > bestCorrelation) {
+           bestCorrelation = correlation
+           bestOffset = tempOffset
+@@ -490,26 +518,32 @@
+     let temp
+     for (; i < this.overlapLength; i = i + 1) {
+       temp = i * (this.overlapLength - i)
+-      context = i * 2
+-      this.refMidBuffer[context] = this.midBuffer[context] * temp
+-      this.refMidBuffer[context + 1] = this.midBuffer[context + 1] * temp
++      context = i * this.channels
++      for (let channel = 0; channel < this.channels; channel++) {
++        this.refMidBuffer[context + channel] = this.midBuffer[context + channel] * temp
++      }
+     }
+   }
+   calculateCrossCorrelationStereo(mixingPosition, compare) {
+     const mixing = this._inputBuffer.vector
+     mixingPosition += this._inputBuffer.startIndex
+     let correlation = 0
+-    let i = 2
+-    const calcLength = 2 * this.overlapLength
+-    let mixingOffset
+-    for (; i < calcLength; i = i + 2) {
+-      mixingOffset = i + mixingPosition
+-      correlation += mixing[mixingOffset] * compare[i] + mixing[mixingOffset + 1] * compare[i + 1]
++    // Sum products within each plane; opposite-phase related planes reinforce
++    // their own alignment instead of cancelling in a mono search guide.
++    const contributions = new Float64Array(this.channels)
++    for (let frame = 1; frame < this.overlapLength; frame++) {
++      const context = frame * this.channels
++      for (let channel = 0; channel < this.channels; channel++) {
++        contributions[channel] += mixing[mixingPosition + context + channel] * compare[context + channel]
++      }
+     }
++    // Stable summation makes the objective independent of plane order, even
++    // where candidate correlations differ only at floating-point precision.
++    for (const contribution of contributions.sort()) correlation += contribution
+     return correlation
+   }
+   overlap(overlapPosition) {
+-    this.overlapStereo(2 * overlapPosition)
++    this.overlapStereo(this.channels * overlapPosition)
+   }
+   overlapStereo(inputPosition) {
+     const input = this._inputBuffer.vector
+@@ -526,13 +560,13 @@
+     for (; i < this.overlapLength; i = i + 1) {
+       tempFrame = (this.overlapLength - i) * frameScale
+       fi = i * frameScale
+-      context = 2 * i
++      context = this.channels * i
+       inputOffset = context + inputPosition
+       outputOffset = context + outputPosition
+-      output[outputOffset + 0] =
+-        input[inputOffset + 0] * fi + this.midBuffer[context + 0] * tempFrame
+-      output[outputOffset + 1] =
+-        input[inputOffset + 1] * fi + this.midBuffer[context + 1] * tempFrame
++      for (let channel = 0; channel < this.channels; channel++) {
++        output[outputOffset + channel] =
++          input[inputOffset + channel] * fi + this.midBuffer[context + channel] * tempFrame
++      }
+     }
+   }
+   process() {
+@@ -543,7 +577,7 @@
+       if (this._inputBuffer.frameCount < this.overlapLength) {
+         return
+       }
+-      this.midBuffer = new Float32Array(this.overlapLength * 2)
++      this.midBuffer = new Float32Array(this.overlapLength * this.channels)
+       this._inputBuffer.receiveSamples(this.midBuffer, this.overlapLength)
+     }
+     while (this._inputBuffer.frameCount >= this.sampleReq) {
+@@ -556,8 +590,8 @@
+         this._outputBuffer.putBuffer(this._inputBuffer, offset + this.overlapLength, temp)
+       }
+       const start =
+-        this._inputBuffer.startIndex + 2 * (offset + this.seekWindowLength - this.overlapLength)
+-      this.midBuffer.set(this._inputBuffer.vector.subarray(start, start + 2 * this.overlapLength))
++        this._inputBuffer.startIndex + this.channels * (offset + this.seekWindowLength - this.overlapLength)
++      this.midBuffer.set(this._inputBuffer.vector.subarray(start, start + this.channels * this.overlapLength))
+       this.skipFract += this.nominalSkip
+       overlapSkip = Math.floor(this.skipFract)
+       this.skipFract -= overlapSkip
+@@ -571,12 +605,17 @@
+ }
+
+ class SoundTouch {
+-  constructor() {
+-    this.transposer = new RateTransposer(false)
+-    this.stretch = new Stretch(false)
+-    this._inputBuffer = new FifoSampleBuffer()
+-    this._intermediateBuffer = new FifoSampleBuffer()
+-    this._outputBuffer = new FifoSampleBuffer()
++  constructor(channels = 2, sampleRate = 44100) {
++    if (!Number.isSafeInteger(channels) || channels < 1 || !Number.isFinite(sampleRate) || sampleRate <= 0)
++      throw new RangeError('Invalid audio plane count or sample rate')
++    this.channels = channels
++    this.sampleRate = sampleRate
++    this.transposer = new RateTransposer(false, channels)
++    this.stretch = new Stretch(false, channels)
++    this.stretch.setParameters(sampleRate, DEFAULT_SEQUENCE_MS, DEFAULT_SEEKWINDOW_MS, DEFAULT_OVERLAP_MS)
++    this._inputBuffer = new FifoSampleBuffer(channels)
++    this._intermediateBuffer = new FifoSampleBuffer(channels)
++    this._outputBuffer = new FifoSampleBuffer(channels)
+     this._rate = 0
+     this._tempo = 0
+     this.virtualPitch = 1.0
+@@ -589,7 +628,7 @@
+     this.stretch.clear()
+   }
+   clone() {
+-    const result = new SoundTouch()
++    const result = new SoundTouch(this.channels, this.sampleRate)
+     result.rate = this.rate
+     result.tempo = this.tempo
+     return result
+@@ -631,4 +670,12 @@
+   get outputBuffer() {
+     return this._outputBuffer
+   }
++  get inputChunkSize() {
++    const required = this.stretch.inputChunkSize +
++      (this.stretch.midBuffer === null ? this.stretch.overlapLength : 0)
++    if (this._rate > 1.0) return required
++    // Transposer runs first: existing WSOLA input is already rate-adjusted.
++    // One extra raw frame covers its previous-sample interpolation boundary.
++    return Math.max(1, Math.ceil(Math.max(0, required - this._intermediateBuffer.frameCount) * this._rate) + 1)
++  }
+   calculateEffectiveRateAndTempo() {
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1802,10 +1802,10 @@
+  * WSOLA overlap windows are consistent across channels (prevents phase drift
+  * between L/R that causes a hollow sound).
+  *
+- * @param channels - Input audio channels (downmixed to stereo for this export)
++ * @param channels - Input audio planes, processed together without a layout remap
+  * @param speed - Playback rate (1.0 = normal, 2.0 = double speed, 0.5 = half speed)
+  * @param sampleRate - Sample rate for the audio
+- * @returns Processed mono or stereo channels
++ * @returns Processed planes in their original order with one common frame count
+  */
+ async function applySpeedAndPitch(
+   channels: Float32Array[],
+@@ -1818,11 +1818,10 @@
+   if (!requiresTimeStretch) return channels
+   if (channels.length === 0 || channels[0]!.length === 0) return channels
+
+-  // SoundTouch only accepts stereo; preserve every source channel in the
+-  // export mix before processing rather than replacing C/surround with L.
+-  if (channels.length > 2) channels = downmixToOutputChannels(channels, 2)
+   const numChannels = channels.length
+   const samplesPerChannel = channels[0]!.length
++  if (channels.some((plane) => plane.length !== samplesPerChannel))
++    throw new Error('Retimed audio planes must have one shared frame length')
+
+   log.debug('Applying speed/pitch change with time-stretch processor', {
+     speed,
+@@ -1833,74 +1832,49 @@
+
+   try {
+     const timeStretch = await import('@/infrastructure/audio/time-stretch')
+-    const st = new timeStretch.TimeStretchProcessor()
++    const st = new timeStretch.TimeStretchProcessor(numChannels, sampleRate)
+
+     st.tempo = speed
+     st.pitch = getAudioPitchRatioFromSemitones(pitchShiftSemitones)
+     st.rate = 1.0
+
+-    // The processor consumes interleaved stereo (duplicate mono input).
+-    const stereoInput = new Float32Array(samplesPerChannel * 2)
+-    const left = channels[0]!
+-    const right = numChannels >= 2 ? channels[1]! : left
+-    for (let i = 0; i < samplesPerChannel; i++) {
+-      stereoInput[i * 2] = left[i]!
+-      stereoInput[i * 2 + 1] = right[i]!
++    // One frame position/phase/WSOLA offset across all planes; no downmix or
++    // independent stereo-pair processors. Mono is a single plane too.
++    const interleavedInput = new Float32Array(samplesPerChannel * numChannels)
++    for (let frame = 0; frame < samplesPerChannel; frame++) {
++      for (let channel = 0; channel < numChannels; channel++)
++        interleavedInput[frame * numChannels + channel] = channels[channel]![frame]!
+     }
+-
+     let inputOffset = 0
+     const source = {
+       extract: (target: Float32Array, numFrames: number): number => {
+-        const samplesToRead = Math.min(numFrames * 2, stereoInput.length - inputOffset)
+-        if (samplesToRead <= 0) return 0
+-
+-        for (let i = 0; i < samplesToRead; i++) {
+-          target[i] = stereoInput[inputOffset + i]!
+-        }
+-        inputOffset += samplesToRead
+-        return samplesToRead / 2
++        const frames = Math.min(numFrames, samplesPerChannel - inputOffset)
++        target.set(interleavedInput.subarray(inputOffset * numChannels, (inputOffset + frames) * numChannels))
++        inputOffset += frames
++        return frames
+       },
+     }
+-
+-    const filter = new timeStretch.TimeStretchFilter(source, st)
+-
+     const expectedOutputLength = Math.floor(samplesPerChannel / speed)
+-    const stereoOutput = new Float32Array(expectedOutputLength * 2)
+-
++    const filter = new timeStretch.TimeStretchFilter(source, st, undefined, expectedOutputLength)
++    const interleavedOutput = new Float32Array(expectedOutputLength * numChannels)
+     let outputOffset = 0
+     const chunkSize = 4096
+-    const chunk = new Float32Array(chunkSize * 2)
+-
+-    while (outputOffset < stereoOutput.length) {
+-      const framesExtracted = filter.extract(chunk, chunkSize)
++    const chunk = new Float32Array(chunkSize * numChannels)
++    while (outputOffset < expectedOutputLength) {
++      const framesExtracted = filter.extract(chunk, Math.min(chunkSize, expectedOutputLength - outputOffset))
+       if (framesExtracted === 0) break
+-
+-      const samplesToWrite = Math.min(framesExtracted * 2, stereoOutput.length - outputOffset)
+-      for (let i = 0; i < samplesToWrite; i++) {
+-        stereoOutput[outputOffset + i] = chunk[i]!
+-      }
+-      outputOffset += framesExtracted * 2
++      interleavedOutput.set(chunk.subarray(0, framesExtracted * numChannels), outputOffset * numChannels)
++      outputOffset += framesExtracted
+     }
+
+-    // De-interleave back to separate channels
+-    const actualOutputLength = Math.floor(outputOffset / 2)
+-    const outputChannels: Float32Array[] = []
++    const actualOutputLength = outputOffset
++    const outputChannels = Array.from({ length: numChannels }, (_, channel) => {
++      const plane = new Float32Array(actualOutputLength)
++      for (let frame = 0; frame < actualOutputLength; frame++)
++        plane[frame] = interleavedOutput[frame * numChannels + channel]!
++      return plane
++    })
+
+-    // Always extract both L and R from the interleaved output
+-    const outLeft = new Float32Array(actualOutputLength)
+-    const outRight = new Float32Array(actualOutputLength)
+-    for (let i = 0; i < actualOutputLength; i++) {
+-      outLeft[i] = stereoOutput[i * 2]!
+-      outRight[i] = stereoOutput[i * 2 + 1]!
+-    }
+-
+-    if (numChannels >= 2) {
+-      outputChannels.push(outLeft, outRight)
+-    } else {
+-      // Mono source: return left channel only
+-      outputChannels.push(outLeft)
+-    }
+-
+     log.debug('Time-stretch processing complete', {
+       inputLength: samplesPerChannel,
+       outputLength: actualOutputLength,
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -961,9 +961,11 @@
+   it('keeps center-only 5.1 dialogue audible when speed changes', async () => {
+     const result = await processAudio(dspComposition({ src: 'blob:audio-center-51', speed: 2 }))
+     expect(result).not.toBeNull()
+-    expect(result!.channels).toBe(2)
+-    expect(result!.samples[0]![48_000]).toBeGreaterThan(0.05)
+-    expect(result!.samples[1]![48_000]).toBeGreaterThan(0.05)
++    expect(result!.channels).toBe(6)
++    expect(result!.samples[2]![48_000]).toBeGreaterThan(0.05)
++    for (const channel of [0, 1, 3, 4, 5]) {
++      expect(result!.samples[channel]![48_000]).toBe(0)
++    }
+   })
+
+   it('hasAudioContent: true for an audible clip, false when its track is muted', async () => {
+diff --git a/src/infrastructure/audio/time-stretch-multichannel.test.ts b/src/infrastructure/audio/time-stretch-multichannel.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/audio/time-stretch-multichannel.test.ts
+@@ -0,0 +1,151 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { TimeStretchFilter, TimeStretchProcessor } from './time-stretch'
++
++// Actual SoundTouch classes: no pair processors, source clock, correlation,
++// overlap, interpolation or extraction substitute. Input/output are PCM planes.
++function renderPlanes(planes: Float32Array[], speed: number, pitch: number, chunkFrames: number, sampleRate = 48_000) {
++  const channels = planes.length
++  const frames = planes[0]!.length
++  const outputFrames = Math.floor(frames / speed)
++  const processor = new TimeStretchProcessor(channels, sampleRate)
++  processor.tempo = speed
++  processor.pitch = pitch
++  processor.rate = 1
++  let sourceReads = 0
++  const source = {
++    extract(target: Float32Array, requested: number, position: number) {
++      sourceReads++
++      const count = Math.min(requested, frames - position)
++      for (let frame = 0; frame < count; frame++) {
++        for (let channel = 0; channel < channels; channel++)
++          target[frame * channels + channel] = planes[channel]![position + frame]!
++      }
++      return count
++    },
++  }
++  const filter = new TimeStretchFilter(source, processor, undefined, outputFrames)
++  const output = Array.from({ length: channels }, () => new Float32Array(outputFrames))
++  const chunk = new Float32Array(chunkFrames * channels)
++  let position = 0
++  while (position < outputFrames) {
++    const count = filter.extract(chunk, Math.min(chunkFrames, outputFrames - position))
++    expect(count).toBeGreaterThan(0)
++    for (let frame = 0; frame < count; frame++) {
++      for (let channel = 0; channel < channels; channel++)
++        output[channel]![position + frame] = chunk[frame * channels + channel]!
++    }
++    position += count
++  }
++  const readsBeforeEnd = sourceReads
++  expect(filter.extract(chunk, chunkFrames)).toBe(0)
++  expect(sourceReads).toBe(readsBeforeEnd)
++  expect(filter.position).toBe(outputFrames)
++  for (const plane of output) {
++    expect(plane).toHaveLength(outputFrames)
++    for (const sample of plane) {
++      if (!Number.isFinite(sample)) throw new Error('Nonfinite retimed PCM')
++    }
++  }
++  return output
++}
++
++function sharedFixture(channels: number) {
++  const a = new Float32Array(96_001)
++  const b = new Float32Array(a.length)
++  for (let frame = 0; frame < a.length; frame++) {
++    // Correlated impulses plus nonperiodic asymmetric transients. Two distinct
++    // guides ensure an independent pair stretcher cannot hide clock/seek drift.
++    if (frame % 4_093 < 23) a[frame] = 0.125 * (1 - (frame % 4_093) / 23)
++    if (frame % 6_137 < 71) b[frame] = -0.0625 * (1 - (frame % 6_137) / 71)
++    // A nonzero finite tail inside the last source buffer must be drained.
++    if (frame >= 80_000) {
++      a[frame] += 0.03125
++      b[frame] -= 0.015625
++    }
++  }
++  const choices = [a, b, a.map((sample) => -sample), new Float32Array(a.length),
++    a.map((sample) => sample * 0.5), b.map((sample) => -sample * 0.5),
++    b.map((sample) => sample * 2), a.map((sample) => -sample * 0.25)]
++  return choices.slice(0, channels)
++}
++
++describe('FL-103 shared multichannel SoundTouch timing and finite tail', () => {
++  for (const channels of [6, 8]) {
++    for (const pitch of [0.5, 1, 2]) {
++      it(`${channels} planes preserve signed impulses, asymmetric transients, silence and extraction clock at pitch ${pitch}`, () => {
++        const input = sharedFixture(channels)
++        const before = input.map((plane) => plane.slice())
++        const output = renderPlanes(input, 1.5, pitch, 4096)
++        const differentlyChunked = renderPlanes(input, 1.5, pitch, 127)
++        expect(input).toEqual(before)
++        expect(output).toEqual(differentlyChunked)
++        const relations = [[2, 0, -1], [4, 0, 0.5], [5, 1, -0.5],
++          ...(channels === 8 ? [[6, 1, 2], [7, 0, -0.25]] : [])]
++        for (let frame = 0; frame < output[0]!.length; frame++) {
++          if (output[3]![frame] !== 0) throw new Error(`Silent plane leaked at frame ${frame}`)
++          for (const [plane, reference, ratio] of relations) {
++            if (Math.abs(output[plane!]![frame]! - output[reference!]![frame]! * ratio!) > 1e-7)
++              throw new Error(`Plane ${plane} lost shared transient/phase timing at frame ${frame}`)
++          }
++        }
++        for (const channel of [0, 1, 2, 4, 5, ...(channels === 8 ? [6, 7] : [])]) {
++          const tail = output[channel]!.subarray(output[channel]!.length - 8_000)
++          expect(tail.some((sample) => Math.abs(sample) > 0.001), `plane ${channel} finite tail retained`).toBe(true)
++        }
++        // A source-plane permutation must permute output without changing the
++        // common search objective/clock. It exposes hard-coded L/R guide use.
++        const order = channels === 8 ? [7, 3, 5, 0, 6, 2, 1, 4] : [5, 3, 2, 0, 1, 4]
++        const reordered = renderPlanes(order.map((channel) => input[channel]!), 1.5, pitch, 4096)
++        for (const [plane, original] of order.entries()) {
++          for (let frame = 0; frame < output[0]!.length; frame++) {
++            if (Math.abs(reordered[plane]![frame]! - output[original]![frame]!) > 1e-7)
++              throw new Error(`Plane permutation changed shared timing at frame ${frame}`)
++          }
++        }
++      })
++    }
++  }
++
++  for (const channels of [1, 2]) {
++    it(`${channels}-plane short finite export drains below the legacy input threshold`, () => {
++      const source = Array.from({ length: channels }, (_, channel) => new Float32Array(2401).fill((channel + 1) / 16))
++      const output = renderPlanes(source, 1.25, 1, 113)
++      expect(output).toHaveLength(channels)
++      for (const [channel, plane] of output.entries()) {
++        expect(plane).toHaveLength(1920)
++        expect(plane.some((sample) => Math.abs(sample) > 0.01)).toBe(true)
++        if (channel === 1) {
++          for (let frame = 0; frame < plane.length; frame++)
++            expect(plane[frame]).toBe(output[0]![frame]! * 2)
++        }
++      }
++    })
++  }
++})
++
++describe('FL-103 high-rate pitch-up finite extraction', () => {
++  for (const channels of [1, 2, 6, 8]) {
++    for (const frames of [2401, 96001]) {
++      it(`${channels} planes at 192 kHz speed 1.5/pitch 2 drain ${frames} frames without stalling`, () => {
++        const input = Array.from({ length: channels }, (_, channel) => {
++          const plane = new Float32Array(frames)
++          for (let frame = 0; frame < frames; frame++)
++            plane[frame] = channel === 3 ? 0 : (channel + 1) * 0.015625
++          return plane
++        })
++        const output = renderPlanes(input, 1.5, 2, 4096, 192_000)
++        const smallChunks = renderPlanes(input, 1.5, 2, 127, 192_000)
++        expect(output).toEqual(smallChunks)
++        for (const [channel, plane] of output.entries()) {
++          expect(plane).toHaveLength(Math.floor(frames / 1.5))
++          if (channel === 3) expect(plane.every((sample) => sample === 0)).toBe(true)
++          else expect(plane.some((sample) => Math.abs(sample) > 0.001)).toBe(true)
++          for (let frame = 0; frame < plane.length; frame++) {
++            if (Math.abs(plane[frame]! - output[0]![frame]! * (channel === 3 ? 0 : channel + 1)) > 1e-7)
++              throw new Error(`High-rate plane ${channel} lost shared timing at ${frame}`)
++          }
++        }
++      })
++    }
++  }
++})
+diff --git a/src/features/export/utils/canvas-audio-highrate-retiming.test.ts b/src/features/export/utils/canvas-audio-highrate-retiming.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio-highrate-retiming.test.ts
+@@ -0,0 +1,90 @@
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { CompositionInputProps } from '@/types/export'
++
++vi.mock('mediabunny', () => {
++  class UrlSource { constructor(public readonly url: string) {} }
++  class Input {
++    constructor(private readonly params: { source: UrlSource }) {}
++    async getPrimaryAudioTrack() { return { src: this.params.source.url } }
++    async computeDuration() { return 1 }
++    dispose() {}
++  }
++  class AudioSampleSink {
++    constructor(private readonly track: { src: string }) {}
++    async *samples(startTime = 0, endTime = 1) {
++      const channels = Number(this.track.src.split('-').at(-1))
++      const frames = Math.round((endTime - startTime) * 192_000)
++      yield {
++        numberOfFrames: frames, numberOfChannels: channels, sampleRate: 192_000,
++        copyTo(destination: Float32Array, options: { planeIndex: number; format: string }) {
++          if (options.format !== 'f32-planar' || options.planeIndex >= channels)
++            throw new Error('Invalid high-rate decoded plane')
++          for (let frame = 0; frame < destination.length; frame++) {
++            const time = startTime + frame / 192_000
++            destination[frame] = options.planeIndex === 3 ? 0 :
++              (options.planeIndex + 1) * (0.015625 + 0.005 * Math.sin(2 * Math.PI * 1000 * time))
++          }
++        },
++        close() {},
++      }
++    }
++  }
++  return { ALL_FORMATS: [], Input, UrlSource, AudioSampleSink }
++})
++
++import { clearAudioDecodeCache, processAudio } from './canvas-audio'
++
++describe('FL-103 actual high-rate pitch-up export', () => {
++  afterEach(() => clearAudioDecodeCache())
++  for (const channels of [1, 2, 6, 8]) {
++    for (const clipFrames of [1, 15]) {
++      it(`${channels} decoded planes at 192 kHz speed 1.5/pitch +12 retain a ${clipFrames}-frame clip`, async () => {
++        const composition = {
++          fps: 30, durationInFrames: 30, width: 1920, height: 1080,
++          masterBusDb: 0, masterBusMuted: false, transitions: [], keyframes: [],
++          tracks: [{ id: 'retimed', name: 'retimed', kind: 'audio', order: 0, height: 80,
++            locked: false, visible: true, muted: false, solo: false, volume: 0,
++            items: [{ id: 'retimed', type: 'audio', trackId: 'retimed',
++              src: `blob:fl103-high-rate-${channels}`, label: 'high-rate', from: 3,
++              durationInFrames: clipFrames, sourceStart: 0, sourceEnd: clipFrames * 1.5,
++              sourceDuration: 30, sourceFps: 30, volume: 0, speed: 1.5, audioPitchSemitones: 12 }],
++          }],
++        } as CompositionInputProps
++        const before = structuredClone(composition)
++        const result = await processAudio(composition)
++        expect(result).not.toBeNull()
++        expect(result!.channels).toBe(channels)
++        expect(result!.sampleRate).toBe(48_000)
++        const start = 4_800
++        const end = start + clipFrames * 1_600
++        for (const [channel, plane] of result!.samples.entries()) {
++          expect(plane).toHaveLength(48_000)
++          for (let frame = 0; frame < plane.length; frame++) {
++            if (!Number.isFinite(plane[frame])) throw new Error('Nonfinite high-rate export PCM')
++            if ((frame < start || frame >= end || channel === 3) && plane[frame] !== 0)
++              throw new Error(`High-rate plane ${channel} escaped its clip or silent plane at ${frame}`)
++          }
++          if (channel !== 3) expect(plane.subarray(start, end).some((sample) => Math.abs(sample) > 0.001)).toBe(true)
++        }
++        if (clipFrames === 15) {
++          // Independent pitch measurement distinguishes actual +12-semitone
++          // DSP from the speed-only resampling fallback (1500 Hz).
++          const amplitude = (frequency: number) => {
++            let real = 0
++            let imaginary = 0
++            for (let frame = 0; frame < 4800; frame++) {
++              const angle = 2 * Math.PI * frequency * frame / 48_000
++              const sample = result!.samples[0]![start + 4800 + frame]!
++              real += sample * Math.cos(angle)
++              imaginary += sample * Math.sin(angle)
++            }
++            return 2 * Math.hypot(real, imaginary) / 4800
++          }
++          expect(amplitude(2000)).toBeGreaterThan(0.003)
++          expect(amplitude(1500)).toBeLessThan(0.001)
++        }
++        expect(composition).toEqual(before)
++      })
++    }
++  }
++})

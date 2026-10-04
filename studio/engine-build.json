@@ -284,6 +284,11 @@
       "path": "patches/0056-retiming-channel-preservation-tests.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "a6154b9204d1b9e200c3b8cdbee92fc6b9ca58bc81bb86998836051427e3da66"
+    },
+    {
+      "path": "patches/0057-shared-multichannel-retiming.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "701dc3175f1368bba075165d3f3951df14d2da9ad2cf17ac8dc65c222cc5bd42"
     }
   ],
   "sourceSha256": "997f29cc7f987948877d5c07062868345c3d5c02ede0a86f0b7136a19406a3da"
