@@ -214,10 +214,9 @@ class Workers {
     }
 
     anyWorker.on('message', (message: { type?: string }) => {
-      if (message?.type === 'database-unusable') {
-        this.databaseRestarts.add(name);
-        void kill('SIGKILL');
-      }
+      if (message?.type !== 'database-unusable') return;
+      this.databaseRestarts.add(name);
+      void kill('SIGKILL');
     });
     anyWorker.on('error', (error) => this.onError(name, error));
     anyWorker.on('exit', (exitCode) => {

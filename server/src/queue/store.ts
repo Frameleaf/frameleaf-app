@@ -1,4 +1,4 @@
-import { Kysely, sql, Transaction } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { feedManifest, finishSelections, resumeSelections, shareSelections } from 'src/queue/manifest.js';
 import { listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
@@ -298,7 +298,7 @@ export class SqlQueueStore {
         "availableAt" = clock_timestamp() + interval '30 seconds'
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
           and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null returning id`.execute(tx);
-      if (!rows.length) return false;
+      if (rows.length === 0) return false;
       await sql`update job_attempt set outcome = 'deferred', "finishedAt" = clock_timestamp(), error = ${reason}
         where token = ${claim.token}::uuid`.execute(tx);
       await this.syncItem(claim.id, tx);
