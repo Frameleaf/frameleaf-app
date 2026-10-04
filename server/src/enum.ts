@@ -1,6 +1,15 @@
 import { WorkflowTrigger } from '@immich/plugin-sdk';
 import z from 'zod';
 
+export {
+  ImmichEnvironment,
+  ImmichEnvironmentSchema,
+  LogFormat,
+  LogFormatSchema,
+  LogLevel,
+  LogLevelSchema,
+} from './utils/environment-values.ts';
+
 export enum AuthType {
   Password = 'password',
   OAuth = 'oauth',
@@ -1886,24 +1895,6 @@ export const RenderWorkerRefusalReasonSchema = z
   .describe('Render worker refusal reason')
   .meta({ id: 'RenderWorkerRefusalReason' });
 
-export enum LogLevel {
-  Verbose = 'verbose',
-  Debug = 'debug',
-  Log = 'log',
-  Warn = 'warn',
-  Error = 'error',
-  Fatal = 'fatal',
-}
-
-export const LogLevelSchema = z.enum(LogLevel).describe('Log level').meta({ id: 'LogLevel' });
-
-export enum LogFormat {
-  Console = 'console',
-  Json = 'json',
-}
-
-export const LogFormatSchema = z.enum(LogFormat).describe('Log format').meta({ id: 'LogFormat' });
-
 export enum ApiCustomExtension {
   Permission = 'x-immich-permission',
   AdminOnly = 'x-immich-admin-only',
@@ -1954,17 +1945,6 @@ export enum CacheControl {
   PrivateWithoutCache = 'private_without_cache',
   None = 'none',
 }
-
-export enum ImmichEnvironment {
-  Development = 'development',
-  Testing = 'testing',
-  Production = 'production',
-}
-
-export const ImmichEnvironmentSchema = z
-  .enum(ImmichEnvironment)
-  .describe('Frameleaf environment')
-  .meta({ id: 'ImmichEnvironment' });
 
 export enum ImmichWorker {
   Api = 'api',
