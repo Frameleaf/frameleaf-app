@@ -1874,6 +1874,9 @@ describe(CloudBackupService.name, () => {
       async (_field, offered, issued) => {
         metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
         metadata[SystemMetadataKey.SystemConfig] = {};
+        // This refusal fixture has an existing fixed identity. Seed its metadata
+        // so legitimate identity initialization is not mistaken for backup mutation.
+        metadata[SystemMetadataKey.FrameleafInstance] = structuredClone(instance);
         const before = structuredClone(metadata);
         cloudBackup.grant.mockResolvedValue(offered);
         cloudBackup.rotate.mockResolvedValue(issued);
