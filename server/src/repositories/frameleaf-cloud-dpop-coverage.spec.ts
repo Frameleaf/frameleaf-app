@@ -37,6 +37,8 @@ const filesMatching = (pattern: RegExp) =>
  * file here must send its cloud calls through `FrameleafCloudRepository` instead.
  */
 const RAW_FETCH = {
+  // Bounded request/body transport used only by the local and self-hosted ML prediction path below.
+  'queue/http.ts': 'ML worker deadline transport',
   // the one Frameleaf Cloud client: every api., id. and ml. call, DPoP-signed or a named public call
   'repositories/frameleaf-cloud.repository.ts': 'the Frameleaf Cloud client',
   // presigned job-storage addresses (no instance token), each checked by cloudAddressProblem
@@ -92,6 +94,13 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
   describe('source', () => {
     it('has no raw fetch outside the reviewed list', () => {
       expect(filesMatching(/\bfetch\(/)).toEqual(Object.keys(RAW_FETCH).toSorted());
+    });
+
+    it('restricts the deadline transport to the reviewed ML worker caller', () => {
+      expect(filesMatching(/\bfetchJobText\(/)).toEqual([
+        'queue/http.ts',
+        'repositories/machine-learning.repository.ts',
+      ]);
     });
 
     it('bounds the photography exception to studio-owned Stripe requests without media or client secrets (FL-283)', () => {
