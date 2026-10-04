@@ -123,3 +123,34 @@ applied locally, no adapted source was reconstructed, and Git validation was not
 relaxed. Hosted application remains unverified. The prior genuine `b482...3762`
 source digest is retained until a new genuine hosted receipt; runtime remains
 unqualified. GitNexus could not resolve `processAudio`; impact coverage is UNKNOWN.
+
+## Authenticated post-repair hosted source receipt
+
+Studio run `37174219286`, artifact `11292219018`, exact producer/reviewed head
+`3ad66aeed245f80a3c1357efa2a58adf83c48f8a`, tree
+`66043560ed6940bca9396516bd69ae978c4e2a93`, strictly applied patch 0055, then
+stopped at the adapted-source digest gate before behavioral execution.
+The downloaded ZIP `/tmp/fl103-3ad-source-recovery.zip` has SHA-256
+`dbfc02308f75ca6fad669d136b8e26a665760062c8af994d55c77a25ca8cb024`;
+its bytes match the extracted receipt
+`/tmp/fl103-3ad-source-recovery/frameleaf-studio-source-recovery.json`.
+
+All 66 input paths and hashes were authenticated against the exact producer Git
+blobs, including all 55 ordered patch bindings. Producer head/tree/parents,
+upstream archive/inventory, lockfile, and receipt inventory digest were validated.
+The prior `b482...3762` receipt was also checked against its own producer blobs.
+Its 2,704 inventory paths are unchanged; the sole adapted-file hash difference is
+`src/features/export/utils/canvas-audio.ts`, from
+`1ca00c4c138a090c92960a9fd6cab59d9153a3e94cf186e5ff477a7691cbf191` to
+`4e2bb3bd15c5c5998370e6fffc2188dd52cc2c3a0ea15158a5887229c91c7af3`.
+The only producer-input differences are the engine configuration and registered
+patch 0055; every prior patch binding remains identical.
+
+The imported actual hosted `sourceSha256` is
+`aaf508828b8881a3314e5b364da5326c6706dffe191fa6a63abe2dff67e4468c`.
+This supersedes the pending post-0055 digest state above. Receipt validation used
+artifact data and committed Git blobs only; no local adapted source, patch
+application, preparation or runtime was generated or executed.
+`enginePublishedAtObservation: false`; `runtimeQualified: false`. Strict patch
+application and source identity are confirmed; production behavioral green and
+FL-103 acceptance remain unqualified.
