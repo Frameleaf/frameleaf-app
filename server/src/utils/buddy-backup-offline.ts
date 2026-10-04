@@ -2,7 +2,7 @@
 import { copyFile, lstat, mkdir, open, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { BUDDY_UUID, parseBuddyKeyring } from './buddy-backup-crypto.ts';
+import { BUDDY_ID, BUDDY_UUID, parseBuddyKeyring } from './buddy-backup-crypto.ts';
 import { BuddyBackupReader } from './buddy-backup-reader.ts';
 import { buddyFileHash } from './buddy-backup-recovery.ts';
 import { BuddyVault, createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
@@ -83,13 +83,47 @@ export const buddyBackupCommand = async (args: string[]) => {
   const envelope = await vault.snapshot(values.snapshot ?? snapshots[0].id);
   const reader = new BuddyBackupReader(ring, envelope, (id) => vault.read(id));
   const manifest = await reader.manifest();
+  const database = manifest.library.database;
+  const directory = database ? join(output, 'recovery', envelope.snapshot.id) : output;
   // Untrusted original paths are metadata only; offline recovery writes to this empty directory.
   for (const [sha256, content] of Object.entries(manifest.contents)) {
-    const target = join(output, 'objects', sha256);
+    const target = join(directory, 'objects', sha256);
     await reader.download(manifest, sha256, target);
     const evidence = await buddyFileHash(target);
     if (evidence.sha256 !== sha256 || evidence.size !== content.bytes)
       throw new Error('Offline recovery failed verification');
+  }
+  if (database) {
+    const files = [
+      ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
+      ...Object.values(manifest.library.profiles),
+      ...manifest.dependencies,
+      ...manifest.configurationFiles,
+    ];
+    if (files.length > 1_000_000) throw new Error('Offline recovery file inventory exceeds its limit');
+    for (const file of files) {
+      if (
+        typeof file.path !== 'string' ||
+        !BUDDY_ID.test(file.sha256) ||
+        !Number.isSafeInteger(file.size) ||
+        file.size < 0
+      )
+        throw new Error('Invalid offline recovery file');
+      const evidence = await buddyFileHash(join(directory, 'objects', file.sha256));
+      if (evidence.sha256 !== file.sha256 || evidence.size !== file.size)
+        throw new Error('Offline recovery file failed verification');
+    }
+    const databasePath = join(directory, 'database.sql.gz');
+    await reader.download(manifest, database.sha256, databasePath);
+    const evidence = await buddyFileHash(databasePath);
+    if (evidence.sha256 !== database.sha256 || evidence.size !== database.size)
+      throw new Error('Offline recovery database failed verification');
+    // Staging grants no publication authority: maintenance still requires explicit mounts,
+    // configuration allowlists and a live fence, and keep mode preserves current content.
+    await writeBuddyFile(
+      join(directory, 'prepared.json'),
+      JSON.stringify({ version: 1, scope: 'server', mode: 'keep', manifest, files }),
+    );
   }
   await writeBuddyFile(join(output, 'manifest.json'), JSON.stringify(manifest));
   await writeBuddyFile(
