@@ -3,6 +3,8 @@ import { gzipSync } from 'node:zlib';
 import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
 import { inVerifySlice } from 'src/utils/cloud-backup-retention.js';
+import { executionDelay } from 'src/utils/execution-signal.js';
+import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 
 const hex = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -101,6 +103,89 @@ describe(CloudBackupMaintenance.name, () => {
     };
     const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
     sut = new CloudBackupMaintenance(store as never, index as never, logger as never);
+  });
+
+  describe('operation progress without response bodies', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('keeps full HEAD verification alive between batch checkpoints', async () => {
+      objects = nightlyBucket(2);
+      for (const key of objects.keys()) {
+        if (key.startsWith('o/')) objects.set(key, Buffer.alloc(10));
+      }
+      store.head.mockImplementation(async (_connection, key: string) => {
+        await executionDelay(60);
+        return { key, size: objects.get(key)!.length, etag: null };
+      });
+      const checkpoint = vi.fn().mockResolvedValue(true);
+      const renew = vi.fn().mockResolvedValue(true);
+      const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
+        sut.verify(bucket, emptyVerifyResult('full', new Date()), checkpoint, {
+          operationId: 'verify-1',
+          claimToken: 'claim-1',
+        }),
+      );
+      const completion = expect(task).resolves.toMatchObject({ done: true, checked: 5, missing: 0, mismatched: 0 });
+      await vi.advanceTimersByTimeAsync(301);
+      await completion;
+      expect(store.head).toHaveBeenCalledTimes(5);
+      expect(store.hashObject).not.toHaveBeenCalled();
+      expect(checkpoint).toHaveBeenCalledTimes(1);
+      expect(renew).toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('keeps bodyless manifest, object and dump deletions alive before their checkpoint', async () => {
+      objects = nightlyBucket(5);
+      for (let day = 10; day <= 13; day++) {
+        objects.set(`db/dump-202609${day}.sql.gz`, Buffer.from('old unreferenced dump'));
+      }
+      store.delete.mockImplementation(async (_connection, key: string) => {
+        await executionDelay(60);
+        objects.delete(key);
+      });
+      const checkpoint = vi.fn().mockResolvedValue(true);
+      const task = withOperationExecution({ renew: async () => true, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
+        sut.prune(bucket, { keepDaily: 3, keepWeekly: 0, keepMonthly: 0 }, false, checkpoint),
+      );
+      const completion = expect(task).resolves.toMatchObject({ done: true, deleted: 2, dumpsRemoved: 2 });
+      await vi.advanceTimersByTimeAsync(361);
+      await completion;
+      expect(store.delete).toHaveBeenCalledTimes(6);
+      expect(checkpoint).toHaveBeenCalledTimes(1);
+      expect(objects.has(`o/${hex('shared')}`)).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('times out a HEAD that completes no item despite successful heartbeats', async () => {
+      objects = nightlyBucket(1);
+      let stopped = false;
+      store.head.mockImplementation(async () => {
+        try {
+          await executionDelay(1000);
+        } finally {
+          stopped = true;
+        }
+      });
+      const renew = vi.fn().mockResolvedValue(true);
+      const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
+        sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+          operationId: 'verify-1',
+          claimToken: 'claim-1',
+        }),
+      );
+      const rejection = expect(task).rejects.toMatchObject({
+        name: 'AbortError',
+        cause: expect.any(OperationDeadlineError),
+      });
+      await vi.advanceTimersByTimeAsync(101);
+      await rejection;
+      expect(stopped).toBe(true);
+      expect(index.recordObjectVerification).not.toHaveBeenCalled();
+      expect(renew).toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   describe('prune', () => {

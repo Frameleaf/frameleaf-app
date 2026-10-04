@@ -1,4 +1,3 @@
-import { advanceExecutionProgress, assertExecutionActive } from 'src/utils/execution-signal.js';
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
@@ -20,10 +19,17 @@ export class BuddyBackupReader {
   readonly ring: BuddyKeyring;
   readonly envelope: BuddySignedSnapshot;
   private readBlock: (id: string) => Promise<Buffer>;
-  constructor(ring: BuddyKeyring, envelope: BuddySignedSnapshot, readBlock: (id: string) => Promise<Buffer>) {
+  private execution: { signal?: AbortSignal; progress?: (bytes: number) => void };
+  constructor(
+    ring: BuddyKeyring,
+    envelope: BuddySignedSnapshot,
+    readBlock: (id: string) => Promise<Buffer>,
+    execution: { signal?: AbortSignal; progress?: (bytes: number) => void } = {},
+  ) {
     this.ring = ring;
     this.envelope = envelope;
     this.readBlock = readBlock;
+    this.execution = execution;
     if (
       envelope.snapshot.version !== 1 ||
       envelope.snapshot.vaultId !== ring.vaultId ||
@@ -37,10 +43,12 @@ export class BuddyBackupReader {
   }
 
   async block(id: string, keyVersion: number) {
+    this.execution.signal?.throwIfAborted();
     const receipt = this.receipts.get(id);
     if (!receipt || !BUDDY_ID.test(id) || !this.ring.keys[keyVersion])
       throw new Error('Buddy recovery object or key unavailable');
     const bytes = await this.readBlock(id);
+    this.execution.signal?.throwIfAborted();
     if (bytes.length !== receipt.bytes || buddyDigest(bytes) !== receipt.digest)
       throw new Error('Buddy recovery ciphertext failed verification');
     return decryptBuddyBlock(
@@ -82,6 +90,7 @@ export class BuddyBackupReader {
 
   /** Whole-file SHA256 and byte count verify before an atomic publication; memory stays at one block. */
   async download(manifest: BuddyManifest, sha256: string, destination: string) {
+    this.execution.signal?.throwIfAborted();
     const content = manifest.contents[sha256];
     if (
       !BUDDY_ID.test(sha256) ||
@@ -100,21 +109,22 @@ export class BuddyBackupReader {
       let size = 0;
       try {
         for (const id of content.blocks) {
-          assertExecutionActive();
+          this.execution.signal?.throwIfAborted();
           const bytes = await this.block(id, content.keyVersion);
           size += bytes.length;
           if (size > content.bytes) throw new Error('Buddy file exceeds its declared size');
           hash.update(bytes);
-          assertExecutionActive();
+          this.execution.signal?.throwIfAborted();
           await file.writeFile(bytes);
-          advanceExecutionProgress(bytes.length);
+          this.execution.signal?.throwIfAborted();
+          this.execution.progress?.(bytes.length);
         }
         if (size !== content.bytes || hash.digest('hex') !== sha256) throw new Error('Buddy plaintext checksum failed');
         await file.sync();
       } finally {
         await file.close();
       }
-      assertExecutionActive();
+      this.execution.signal?.throwIfAborted();
       await rename(temporary, destination);
       await flushBuddyDirectory(dirname(destination));
       return { sha256, size };
