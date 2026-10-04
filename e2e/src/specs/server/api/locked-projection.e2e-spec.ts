@@ -701,10 +701,65 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         expect(status, name).toBeGreaterThanOrEqual(400);
       }
     }
+    await utils.waitForAllQueuesFinish(admin.accessToken);
+    const db = await utils.connectDatabase();
+    const sources = [plain.id, locked.id, detected.id, legacy.id, ruleMatch.id];
+    const { rows: copies } = await db.query<{
+      id: string;
+      ownerId: string;
+      sourceAssetId: string;
+      rootOwnerId: string;
+      reason: string | null;
+    }>(
+      `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin."rootOwnerId", lock.reason
+       FROM public.asset_origin origin JOIN public.asset copy ON copy.id = origin."assetId"
+       LEFT JOIN public.asset_lock lock ON lock."assetId" = copy.id
+       WHERE origin."ownerId" = $1 AND origin."sourceAssetId" = ANY($2::uuid[])`,
+      [partner.userId, sources],
+    );
+    expect(copies).toHaveLength(5);
+    expect(copies.map(({ sourceAssetId }) => sourceAssetId).toSorted(byId)).toEqual(sources.toSorted(byId));
+    for (const copy of copies) {
+      expect(copy.id).toBe(partnerCopyIds[copy.sourceAssetId]);
+      expect(copy.ownerId).toBe(partner.userId);
+      expect(copy.rootOwnerId).toBe(owner.userId);
+      expect(sources).not.toContain(copy.id);
+      if (copy.sourceAssetId === plain.id) {
+        expect(copy.reason).toBeNull();
+      } else {
+        expect(copy.reason).not.toBeNull();
+      }
+    }
+    // Rule-matched copies carry an explicit lock; the source rule still belongs to its owner.
+    const { rows: counted } = await db.query<{ id: string; ownerId: string }>(
+      `SELECT asset.id, asset."ownerId" FROM public.asset
+       LEFT JOIN public.asset_lock lock ON lock."assetId" = asset.id
+       WHERE asset."deletedAt" IS NULL AND asset.type = 'IMAGE'
+         AND asset.visibility NOT IN ('hidden', 'locked') AND lock."assetId" IS NULL ORDER BY asset.id`,
+    );
+    expect(counted).toEqual(
+      [
+        { id: plain.id, ownerId: owner.userId },
+        { id: ruleMatch.id, ownerId: owner.userId },
+        { id: partnerCopyIds[plain.id], ownerId: partner.userId },
+      ].toSorted((a, b) => a.id.localeCompare(b.id)),
+    );
+    const protectedCopies = copies.filter(({ sourceAssetId }) => sourceAssetId !== plain.id);
+    const copyAnswers = await readAll(
+      protectedCopies.flatMap(({ id }) => oneItemReads(id)),
+      bearer(admin.accessToken),
+    );
+    expectNoTrace(
+      copyAnswers,
+      protectedCopies.map(({ id }) => id),
+    );
+    for (const { status } of copyAnswers) {
+      expect(status).toBeGreaterThanOrEqual(400);
+    }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
     // the owner's two visible items and the partner's copy of the plain one; every other copy is locked
     expect(server.photos).toBe(3);
-  });
+  }, 90_000);
 });
 
 /**
