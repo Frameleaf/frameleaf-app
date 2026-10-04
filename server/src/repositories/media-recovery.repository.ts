@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
 import type { MediaIntegrityResult, MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
 import {
   AssetLockReason,
@@ -27,14 +28,18 @@ import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
-import { guardWeeklyIdentityAdoption, lockIdentityAdoptionMetadata, WeeklyIdentityAdoptionContext, weeklyIdentityAdoptionFence } from 'src/repositories/icloud-weekly-adoption-authority.js';
-import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import {
+  guardWeeklyIdentityAdoption,
+  lockIdentityAdoptionMetadata,
+  WeeklyIdentityAdoptionContext,
+  weeklyIdentityAdoptionFence,
+} from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
-import { canonicalJson } from 'src/utils/studio-project.js';
-import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type VerifiedMedia = Extract<MediaIntegrityResult, { status: 'healthy' }>;
 export type RecoveryOutcome =
@@ -181,14 +186,21 @@ export class MediaRecoveryRepository {
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
     if (input.audit?.purpose === 'scheduled-weekly') {
       return this.db.transaction().execute(async (db) => {
-        if (!(await guardAuditAuthority(db, input.audit!, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken }))) {
+        if (
+          !(await guardAuditAuthority(db, input.audit!, input.ownerId, true, {
+            id: input.resourceId,
+            leaseToken: input.leaseToken,
+          }))
+        ) {
           return;
         }
         // Read admission only; every recovery mutator still refuses scheduled execution.
-        return (await sql<RecoveryResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
+        return (
+          await sql<RecoveryResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
           FROM immich_fork.icloud_resource WHERE id=${input.resourceId}::uuid AND "ownerId"=${input.ownerId}::uuid
             AND "auditRequestId"=${input.audit!.auditRequestId}::uuid AND "leaseToken"=${input.leaseToken}::uuid
-            AND "leaseExpiresAt">clock_timestamp() AND status NOT IN ('removed','finalized')`.execute(db)).rows[0];
+            AND "leaseExpiresAt">clock_timestamp() AND status NOT IN ('removed','finalized')`.execute(db)
+        ).rows[0];
       });
     }
     if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
@@ -258,7 +270,9 @@ export class MediaRecoveryRepository {
       verifyFinal: () => Promise<MediaIntegrityResult>;
     },
   ): Promise<RecoveryResult> {
-    if (input.audit?.purpose === 'scheduled-weekly') { return { outcome: 'retry', reason: 'mapping_changed' }; }
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return { outcome: 'retry', reason: 'mapping_changed' };
+    }
     return this.db.transaction().execute(async (trx) => {
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const reuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
@@ -338,15 +352,26 @@ export class MediaRecoveryRepository {
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
-      if (input.audit?.purpose === 'scheduled-weekly' && !(await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId,
-        { resource: { id: input.resourceId, leaseToken: input.leaseToken }, candidateAssetIds: input.candidate ? [input.candidate.id] : [], recoveryChecksum: input.verified.sha256 }))) { return; }
+      if (
+        input.audit?.purpose === 'scheduled-weekly' &&
+        !(await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: input.candidate ? [input.candidate.id] : [],
+          recoveryChecksum: input.verified.sha256,
+        }))
+      ) {
+        return;
+      }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);
       if (!resource || ['committed', 'finalized'].includes(resource.status)) {
         return;
       }
       if (input.audit) {
-        const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken });
+        const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+          id: input.resourceId,
+          leaseToken: input.leaseToken,
+        });
         if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) {
           return;
         }
@@ -413,21 +438,48 @@ export class MediaRecoveryRepository {
     const scheduledAuthority = input.audit?.purpose === 'scheduled-weekly' ? input.audit : undefined;
     let scheduledFinal: MediaIntegrityResult | undefined;
     if (scheduledAuthority) {
-      if (!input.scheduled || !this.scheduledStaging || !(await this.scheduledStaging.authenticateReceipt({ authority: scheduledAuthority,
-        ownerId: input.ownerId, resource: { id: input.resourceId, leaseToken: input.leaseToken } }, input.scheduled.receipt))) {
+      if (
+        !input.scheduled ||
+        !this.scheduledStaging ||
+        !(await this.scheduledStaging.authenticateReceipt(
+          {
+            authority: scheduledAuthority,
+            ownerId: input.ownerId,
+            resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          },
+          input.scheduled.receipt,
+        ))
+      ) {
         return { outcome: 'retry', reason: 'scheduled_fresh_receipt_invalid' };
       }
       scheduledFinal = await input.verifyFinal(); // Copy/hash/decode and true settlement, outside all DB locks.
-      if (!(await this.scheduledStaging.authenticateDeepValidation({ authority: scheduledAuthority, ownerId: input.ownerId,
-        resource: { id: input.resourceId, leaseToken: input.leaseToken } }, input.scheduled.validation))) {
+      if (
+        !(await this.scheduledStaging.authenticateDeepValidation(
+          {
+            authority: scheduledAuthority,
+            ownerId: input.ownerId,
+            resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          },
+          input.scheduled.validation,
+        ))
+      ) {
         return { outcome: 'retry', reason: 'scheduled_deep_receipt_invalid' };
       }
-      if (scheduledFinal.status !== 'healthy') { return { outcome: 'retry', reason: 'final_verification_failed' }; }
+      if (scheduledFinal.status !== 'healthy') {
+        return { outcome: 'retry', reason: 'final_verification_failed' };
+      }
     }
     return this.db.transaction().execute(async (trx) => {
-      if (scheduledAuthority && !(await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId,
-        { resource: { id: input.resourceId, leaseToken: input.leaseToken }, candidateAssetIds: [input.reservation.target.assetId],
-          recoveryChecksum: input.verified.sha256 }))) { return { outcome: 'retry', reason: 'scheduled_authority_changed' }; }
+      if (
+        scheduledAuthority &&
+        !(await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: [input.reservation.target.assetId],
+          recoveryChecksum: input.verified.sha256,
+        }))
+      ) {
+        return { outcome: 'retry', reason: 'scheduled_authority_changed' };
+      }
       const phase = await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);
       const { target, promotedPath } = input.reservation;
@@ -458,7 +510,7 @@ export class MediaRecoveryRepository {
         if (candidate.damaged || current.isOffline || current.originalPath !== promotedPath) {
           return { outcome: 'retry', reason: 'target_changed' };
         }
-        const final = scheduledFinal ?? await input.verifyFinal();
+        const final = scheduledFinal ?? (await input.verifyFinal());
         if (
           final.status !== 'healthy' ||
           !final.sha256.equals(input.verified.sha256) ||
@@ -484,7 +536,7 @@ export class MediaRecoveryRepository {
       if (!target.updateId && (await this.hasManagedMatch(trx, input.ownerId, input.verified))) {
         return { outcome: 'retry', reason: 'matching_asset_created' };
       }
-      const final = scheduledFinal ?? await input.verifyFinal();
+      const final = scheduledFinal ?? (await input.verifyFinal());
       if (
         final.status !== 'healthy' ||
         !final.sha256.equals(input.verified.sha256) ||
@@ -522,7 +574,12 @@ export class MediaRecoveryRepository {
             : undefined;
           // The worker's preliminary sourceHidden is not publication authority. Tags,
           // suppression and elevation may have changed before this transaction began.
-          const audit = input.audit ? await guardAuditAuthority(trx, input.audit, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken }) : undefined;
+          const audit = input.audit
+            ? await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+                id: input.resourceId,
+                leaseToken: input.leaseToken,
+              })
+            : undefined;
           if (input.audit && !audit) {
             throw new Error('audit_authority_changed');
           }
@@ -667,12 +724,26 @@ export class MediaRecoveryRepository {
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
       if (scheduledAuthority) {
-        const guarded = await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId,
-          { resource: { id: input.resourceId, leaseToken: input.leaseToken }, candidateAssetIds: [assetId], recoveryChecksum: input.verified.sha256 });
-        if (!guarded || !input.scheduled || !input.scheduled.paths.includes(promotedPath)) { throw new Error('scheduled_audit_authority_changed'); }
-        for (const path of [...new Set(input.scheduled.paths)].sort()) { await lockFilePath(trx, path); }
-        await publishScheduledAudit(trx as Transaction<DB>, scheduledAuthority, guarded,
-          { id: input.resourceId, leaseToken: input.leaseToken }, input.scheduled, 'mismatch', assetId);
+        const guarded = await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {
+          resource: { id: input.resourceId, leaseToken: input.leaseToken },
+          candidateAssetIds: [assetId],
+          recoveryChecksum: input.verified.sha256,
+        });
+        if (!guarded || !input.scheduled || !input.scheduled.paths.includes(promotedPath)) {
+          throw new Error('scheduled_audit_authority_changed');
+        }
+        for (const path of [...new Set(input.scheduled.paths)].sort()) {
+          await lockFilePath(trx, path);
+        }
+        await publishScheduledAudit(
+          trx as Transaction<DB>,
+          scheduledAuthority,
+          guarded,
+          { id: input.resourceId, leaseToken: input.leaseToken },
+          input.scheduled,
+          'mismatch',
+          assetId,
+        );
       } else if (input.audit) {
         await publishAudit(
           trx,
@@ -771,7 +842,13 @@ export class MediaRecoveryRepository {
   }
 
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
-    if (input.audit && !(await guardAuditAuthority(trx, input.audit, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken }))) {
+    if (
+      input.audit &&
+      !(await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+        id: input.resourceId,
+        leaseToken: input.leaseToken,
+      }))
+    ) {
       return;
     }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
@@ -822,8 +899,12 @@ export class MediaRecoveryRepository {
     }>`SELECT "physicalFileId","upstreamPath" FROM immich_fork.asset_physical_file WHERE "assetId" = ${row.id}::uuid FOR UPDATE`.execute(
       trx,
     );
-    if ((mapping.rows[0]?.physicalFileId ?? null) !== target.forkPhysicalFileId ||
-      (input.audit?.purpose === 'scheduled-weekly' && mapping.rows[0]?.physicalFileId && mapping.rows[0].upstreamPath !== target.originalPath)) {
+    if (
+      (mapping.rows[0]?.physicalFileId ?? null) !== target.forkPhysicalFileId ||
+      (input.audit?.purpose === 'scheduled-weekly' &&
+        mapping.rows[0]?.physicalFileId &&
+        mapping.rows[0].upstreamPath !== target.originalPath)
+    ) {
       return;
     }
     const reservation =
@@ -839,7 +920,10 @@ export class MediaRecoveryRepository {
       return;
     }
     if (input.audit) {
-      const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken });
+      const audit = await guardAuditAuthority(trx, input.audit, input.ownerId, true, {
+        id: input.resourceId,
+        leaseToken: input.leaseToken,
+      });
       if (!audit || (audit.private && !candidate.hidden)) {
         return;
       }
