@@ -1,8 +1,8 @@
 import { Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { UserMetadataKey } from 'src/enum.js';
-import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudConnection } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -13,18 +13,28 @@ export const weeklyIdentityAdoptionActive = () =>
   process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true' && new ICloudTransportRepository().enabled();
 
 export type WeeklyIdentityAdoptionContext = {
-  ownerId: string; connectionId: string; grantId: string; generation: number;
-  configFingerprint: string; privacyFingerprint: string; includeProtected: boolean; pinBinding: string | null;
-  config: ICloudConnection['config']; privacy: unknown;
+  ownerId: string;
+  connectionId: string;
+  grantId: string;
+  generation: number;
+  configFingerprint: string;
+  privacyFingerprint: string;
+  includeProtected: boolean;
+  pinBinding: string | null;
+  config: ICloudConnection['config'];
+  privacy: unknown;
 };
 const fingerprint = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 
 /** Protect still/motion classification without taking an asset row before the managed path lock. */
 export async function lockIdentityAdoptionMetadata(db: Transaction<DB>, assetId: string) {
-  const related = async () => (await sql<{ id: string }>`SELECT id FROM public.asset
+  const related = async () =>
+    (
+      await sql<{ id: string }>`SELECT id FROM public.asset
     WHERE id=${assetId}::uuid OR "livePhotoVideoId"=${assetId}::uuid
       OR id IN (SELECT "livePhotoVideoId" FROM public.asset WHERE id=${assetId}::uuid)
-    ORDER BY id`.execute(db)).rows.map(({ id }) => id);
+    ORDER BY id`.execute(db)
+    ).rows.map(({ id }) => id);
   const ids = await related();
   for (const id of [...new Set([assetId, ...ids])].sort()) {
     await sql`SELECT pg_advisory_xact_lock(-1,hashtext(${id})::int)`.execute(db);
@@ -36,28 +46,77 @@ export async function lockIdentityAdoptionMetadata(db: Transaction<DB>, assetId:
  * This does not broaden original adoption eligibility or provide a user/provider session.
  */
 export async function guardWeeklyIdentityAdoption(
-  db: Transaction<DB>, ownerId: string, connectionId: string, expected?: WeeklyIdentityAdoptionContext,
+  db: Transaction<DB>,
+  ownerId: string,
+  connectionId: string,
+  expected?: WeeklyIdentityAdoptionContext,
 ): Promise<WeeklyIdentityAdoptionContext | undefined> {
-  if (!db.isTransaction || !weeklyIdentityAdoptionActive()) { return; }
-  const owner = await db.selectFrom('user').select(['pinCode', 'deletedAt'])
-    .where('id', '=', ownerId).forUpdate().executeTakeFirst();
-  if (!owner || owner.deletedAt) { return; }
-  const { rows: [metadata] } = await sql<{ privacy: unknown }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
-    FROM public.user_metadata WHERE "userId"=${ownerId}::uuid AND key=${UserMetadataKey.Preferences} FOR SHARE`.execute(db);
-  const { rows: [connection] } = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+  if (!db.isTransaction || !weeklyIdentityAdoptionActive()) {
+    return;
+  }
+  const owner = await db
+    .selectFrom('user')
+    .select(['pinCode', 'deletedAt'])
+    .where('id', '=', ownerId)
+    .forUpdate()
+    .executeTakeFirst();
+  if (!owner || owner.deletedAt) {
+    return;
+  }
+  const {
+    rows: [metadata],
+  } = await sql<{ privacy: unknown }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
+    FROM public.user_metadata WHERE "userId"=${ownerId}::uuid AND key=${UserMetadataKey.Preferences} FOR SHARE`.execute(
+    db,
+  );
+  const {
+    rows: [connection],
+  } = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
     WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid FOR SHARE`.execute(db);
-  if (!connection || connection.state !== 'connected' || !connection.encryptedSession || connection.lastError === 'owner_removed') { return; }
-  const { rows: [grant] } = await sql<{ id: string; generation: number; enabled: boolean; includeProtected: boolean;
-    configFingerprint: string; privacyFingerprint: string; pinBinding: string | null }>`SELECT * FROM immich_fork.icloud_weekly_grant
+  if (
+    !connection ||
+    connection.state !== 'connected' ||
+    !connection.encryptedSession ||
+    connection.lastError === 'owner_removed'
+  ) {
+    return;
+  }
+  const {
+    rows: [grant],
+  } = await sql<{
+    id: string;
+    generation: number;
+    enabled: boolean;
+    includeProtected: boolean;
+    configFingerprint: string;
+    privacyFingerprint: string;
+    pinBinding: string | null;
+  }>`SELECT * FROM immich_fork.icloud_weekly_grant
     WHERE "ownerId"=${ownerId}::uuid AND "connectionId"=${connectionId}::uuid FOR SHARE`.execute(db);
   const privacy = metadata?.privacy ?? {};
-  if (!grant?.enabled || grant.configFingerprint !== fingerprint(connection.config) ||
-    grant.privacyFingerprint !== fingerprint(privacy) || (grant.includeProtected &&
-      (!owner.pinCode || grant.pinBinding !== fingerprint(['weekly-pin-v1', owner.pinCode])))) { return; }
-  const context: WeeklyIdentityAdoptionContext = { ownerId, connectionId, grantId: grant.id, generation: grant.generation,
-    configFingerprint: grant.configFingerprint, privacyFingerprint: grant.privacyFingerprint,
-    includeProtected: grant.includeProtected, pinBinding: grant.pinBinding, config: connection.config, privacy };
-  if (expected && canonicalJson(context) !== canonicalJson(expected)) { return; }
+  if (
+    !grant?.enabled ||
+    grant.configFingerprint !== fingerprint(connection.config) ||
+    grant.privacyFingerprint !== fingerprint(privacy) ||
+    (grant.includeProtected && (!owner.pinCode || grant.pinBinding !== fingerprint(['weekly-pin-v1', owner.pinCode])))
+  ) {
+    return;
+  }
+  const context: WeeklyIdentityAdoptionContext = {
+    ownerId,
+    connectionId,
+    grantId: grant.id,
+    generation: grant.generation,
+    configFingerprint: grant.configFingerprint,
+    privacyFingerprint: grant.privacyFingerprint,
+    includeProtected: grant.includeProtected,
+    pinBinding: grant.pinBinding,
+    config: connection.config,
+    privacy,
+  };
+  if (expected && canonicalJson(context) !== canonicalJson(expected)) {
+    return;
+  }
   return weeklyIdentityAdoptionActive() ? context : undefined;
 }
 

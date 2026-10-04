@@ -11,8 +11,8 @@ import {
   IdentityAdoptionEvidence,
   IdentityAdoptionResult,
 } from 'src/repositories/icloud-identity-adoption.repository.js';
-import { identityMatchingEnabled } from 'src/services/icloud-identity.service.js';
 import { weeklyIdentityAdoptionActive } from 'src/repositories/icloud-weekly-adoption-authority.js';
+import { identityMatchingEnabled } from 'src/services/icloud-identity.service.js';
 import {
   MediaIntegrityIdentity,
   MediaIntegrityService,

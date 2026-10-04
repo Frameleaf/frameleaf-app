@@ -1094,11 +1094,11 @@ describe(FrameleafAuthService.name, () => {
             return Promise.reject(new Error('Reentrant authority lock would deadlock'));
           }
           const prior = tails.get(lock) ?? Promise.resolve();
-          let release!: () => void;
-          const finished = new Promise<void>((resolve) => {
-            release = resolve;
-          });
-          tails.set(lock, prior.then(() => finished));
+          const { promise: finished, resolve: release } = Promise.withResolvers<void>();
+          tails.set(
+            lock,
+            prior.then(() => finished),
+          );
           return prior.then(() => held.run([...locks, lock], callback)).finally(() => release()) as never;
         });
         const { sut: cloudService } = newTestService(FrameleafCloudService, mocks as unknown as ServiceOverrides);
@@ -1121,7 +1121,11 @@ describe(FrameleafAuthService.name, () => {
         mocks.frameleafAccount.deleteAllSessions.mockResolvedValue([]);
         const cloudAuthority = cloudService as unknown as {
           clearLink: (url: string, link: FrameleafCloudLink, status: 'unlinked' | 'revoked') => Promise<void>;
-          saveLink: (link: FrameleafCloudLink, topic: null, options?: { replaceAuthority: boolean }) => Promise<boolean>;
+          saveLink: (
+            link: FrameleafCloudLink,
+            topic: null,
+            options?: { replaceAuthority: boolean },
+          ) => Promise<boolean>;
           checkIn: (url: string, link: FrameleafCloudLink) => Promise<JobStatus>;
         };
         return { held, cloudAuthority, cloudService };
@@ -1271,18 +1275,12 @@ describe(FrameleafAuthService.name, () => {
           const { cloudAuthority } = shareAuthorityFence();
           idClaims.frameleaf_role = 'admin';
           const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
-          let lookupEntered!: () => void;
-          const entered = new Promise<void>((resolve) => {
-            lookupEntered = resolve;
-          });
-          let releaseLookup!: () => void;
-          const lookup = new Promise<void>((resolve) => {
-            releaseLookup = resolve;
-          });
+          const { promise: entered, resolve: lookupEntered } = Promise.withResolvers<void>();
+          const { promise: lookup, resolve: releaseLookup } = Promise.withResolvers<void>();
           mocks.frameleafAccount.getLinkBySub.mockImplementationOnce(async () => {
             lookupEntered();
             await lookup;
-            return undefined;
+            return;
           });
           const refused = expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow(
             'not available',
@@ -1310,18 +1308,12 @@ describe(FrameleafAuthService.name, () => {
         const { cloudAuthority } = shareAuthorityFence();
         idClaims.frameleaf_role = 'admin';
         const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
-        let lookupEntered!: () => void;
-        const entered = new Promise<void>((resolve) => {
-          lookupEntered = resolve;
-        });
-        let releaseLookup!: () => void;
-        const lookup = new Promise<void>((resolve) => {
-          releaseLookup = resolve;
-        });
+        const { promise: entered, resolve: lookupEntered } = Promise.withResolvers<void>();
+        const { promise: lookup, resolve: releaseLookup } = Promise.withResolvers<void>();
         mocks.frameleafAccount.getLinkBySub.mockImplementationOnce(async () => {
           lookupEntered();
           await lookup;
-          return undefined;
+          return;
         });
         const refused = expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow(
           'not valid any more',
@@ -1364,17 +1356,11 @@ describe(FrameleafAuthService.name, () => {
           });
           vi.spyOn(cloudService, 'buildHeartbeatPayload').mockResolvedValue({} as never);
           vi.spyOn(heartbeatService, 'removeRetiredKey').mockResolvedValue();
-          vi.spyOn(heartbeatService, 'rotateAfterDamagedKey').mockImplementation(
-            async (_url, _document, link) => link,
+          vi.spyOn(heartbeatService, 'rotateAfterDamagedKey').mockImplementation((_url, _document, link) =>
+            Promise.resolve(link),
           );
-          let remoteEntered!: () => void;
-          const entered = new Promise<void>((resolve) => {
-            remoteEntered = resolve;
-          });
-          let releaseRemote!: () => void;
-          const remote = new Promise<void>((resolve) => {
-            releaseRemote = resolve;
-          });
+          const { promise: entered, resolve: remoteEntered } = Promise.withResolvers<void>();
+          const { promise: remote, resolve: releaseRemote } = Promise.withResolvers<void>();
           mocks.frameleafCloud.requestJson.mockImplementationOnce(async () => {
             remoteEntered();
             await remote;
@@ -1482,7 +1468,7 @@ describe(FrameleafAuthService.name, () => {
         const { auth } = setup(false);
         idClaims.frameleaf_role = 'user';
         const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
-        const [payload, mac] = confirmToken!.split('.');
+        const [payload, mac] = confirmToken!.split('.', 2);
         const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
         const forged = `${Buffer.from(JSON.stringify({ ...claims, role: 'admin' })).toString('base64url')}.${mac}`;
 

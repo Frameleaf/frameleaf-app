@@ -802,15 +802,31 @@ export const validateFullClipMasterTiming = (
   const inputSpan = sourcePackets?.presentation;
   const outputSpan = outputPackets?.presentation;
   const values = [inputBase?.num, inputBase?.den, outputBase?.num, outputBase?.den];
-  if (!inputBase || !outputBase || !inputSpan || !outputSpan ||
+  if (
+    !inputBase ||
+    !outputBase ||
+    !inputSpan ||
+    !outputSpan ||
     values.some((value) => typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) ||
-    [inputSpan.startPts, inputSpan.endPts, outputSpan.startPts, outputSpan.endPts,
-      sourcePackets?.packetCount, outputPackets?.packetCount].some((value) => !Number.isSafeInteger(value)) ||
-    inputSpan.endPts <= inputSpan.startPts || outputSpan.endPts <= outputSpan.startPts ||
-    !sourcePackets || !outputPackets || sourcePackets.packetCount <= 0 ||
-    sourcePackets.packetCount !== outputPackets.packetCount) {
-    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed,
-      'Full-clip master packet count or presentation timing is unavailable or changed');
+    [
+      inputSpan.startPts,
+      inputSpan.endPts,
+      outputSpan.startPts,
+      outputSpan.endPts,
+      sourcePackets?.packetCount,
+      outputPackets?.packetCount,
+    ].some((value) => !Number.isSafeInteger(value)) ||
+    inputSpan.endPts <= inputSpan.startPts ||
+    outputSpan.endPts <= outputSpan.startPts ||
+    !sourcePackets ||
+    !outputPackets ||
+    sourcePackets.packetCount <= 0 ||
+    sourcePackets.packetCount !== outputPackets.packetCount
+  ) {
+    throw new MediaPolicyError(
+      MediaPolicyViolation.MasterValidationFailed,
+      'Full-clip master packet count or presentation timing is unavailable or changed',
+    );
   }
   const inputTicks = BigInt(inputSpan.endPts) - BigInt(inputSpan.startPts);
   const outputTicks = BigInt(outputSpan.endPts) - BigInt(outputSpan.startPts);
@@ -818,7 +834,10 @@ export const validateFullClipMasterTiming = (
   const outputScale = BigInt(outputBase.num) * BigInt(inputBase.den);
   const difference = inputTicks * inputScale - outputTicks * outputScale;
   if ((difference < 0n ? -difference : difference) > inputScale + outputScale) {
-    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed, 'Full-clip master presentation span changed');
+    throw new MediaPolicyError(
+      MediaPolicyViolation.MasterValidationFailed,
+      'Full-clip master presentation span changed',
+    );
   }
 };
 

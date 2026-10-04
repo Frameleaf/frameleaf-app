@@ -61,11 +61,22 @@ const rotate: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters
 
 describe('full-clip master timing admission', () => {
   const stream = { timeBaseRational: { num: 1, den: 90_000 } };
-  const packets = { presentation: { startPts: 90_000, endPts: 180_000 }, packetCount: 6,
-    totalDuration: 6_000, outputFrames: 6, keyframePts: [], keyframeAccDuration: [], keyframeOwnDuration: [] };
+  const packets = {
+    presentation: { startPts: 90_000, endPts: 180_000 },
+    packetCount: 6,
+    totalDuration: 6000,
+    outputFrames: 6,
+    keyframePts: [],
+    keyframeAccDuration: [],
+    keyframeOwnDuration: [],
+  };
   it('normalizes nonzero origins and compares rational clocks, not summed durations or fps', () => {
-    expect(() => validateFullClipMasterTiming(stream, { timeBaseRational: { num: 1, den: 30_000 } }, packets,
-      { ...packets, presentation: { startPts: 0, endPts: 30_000 } })).not.toThrow();
+    expect(() =>
+      validateFullClipMasterTiming(stream, { timeBaseRational: { num: 1, den: 30_000 } }, packets, {
+        ...packets,
+        presentation: { startPts: 0, endPts: 30_000 },
+      }),
+    ).not.toThrow();
   });
   it.each([
     null,

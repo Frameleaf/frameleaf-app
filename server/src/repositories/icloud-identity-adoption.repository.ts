@@ -5,7 +5,12 @@ import { createHash } from 'node:crypto';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
-import { guardWeeklyIdentityAdoption, lockIdentityAdoptionMetadata, weeklyIdentityAdoptionActive, weeklyIdentityAdoptionFence } from 'src/repositories/icloud-weekly-adoption-authority.js';
+import {
+  guardWeeklyIdentityAdoption,
+  lockIdentityAdoptionMetadata,
+  weeklyIdentityAdoptionActive,
+  weeklyIdentityAdoptionFence,
+} from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
@@ -97,7 +102,9 @@ export class ICloudIdentityAdoptionRepository {
           throw new Retired();
         }
         const weekly = await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId);
-        if (!weekly) { return 'miss'; }
+        if (!weekly) {
+          return 'miss';
+        }
         const source = await this.source(db, authority);
         if (!['original', 'motion', 'raw'].includes(source.resource.role) || source.resource.source.isHidden === true) {
           return 'miss';
@@ -149,7 +156,9 @@ export class ICloudIdentityAdoptionRepository {
         // Classification can write the active privacy sidecar without touching the asset row.
         // Match DatabaseRepository.withAssetMetadataLock BEFORE any asset row lock, and hold
         // its authority through every file await, mapping/receipt publication and replay.
-        if (!(await lockIdentityAdoptionMetadata(db, candidate.assetId))) { return 'retry'; }
+        if (!(await lockIdentityAdoptionMetadata(db, candidate.assetId))) {
+          return 'retry';
+        }
         await lockFilePath(db, candidate.originalPath);
         if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) {
           return 'miss';
@@ -173,9 +182,13 @@ export class ICloudIdentityAdoptionRepository {
           replay = receipt.rows[0];
         }
         // The captured owner/input/grant rows remain locked; activation can still stop new work.
-        if (!weeklyIdentityAdoptionActive()) { throw new WeeklyUnavailable(); }
+        if (!weeklyIdentityAdoptionActive()) {
+          throw new WeeklyUnavailable();
+        }
         const evidence = await verify(candidate);
-        if (!weeklyIdentityAdoptionActive()) { throw new WeeklyUnavailable(); }
+        if (!weeklyIdentityAdoptionActive()) {
+          throw new WeeklyUnavailable();
+        }
         if (evidence === 'miss') {
           return 'miss';
         }
@@ -252,7 +265,10 @@ export class ICloudIdentityAdoptionRepository {
               AND o."cancelRequestedAt" IS NULL AND o."pauseRequestedAt" IS NULL
               AND c."ownerId"=r."ownerId" AND c.holder=${`icloud-sync:${authority.connectionId}`}
               AND c."expiresAt">clock_timestamp() AND ${weeklyIdentityAdoptionFence(weekly)}`.execute(db);
-          if (live.rows.length !== 1 && !(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+          if (
+            live.rows.length !== 1 &&
+            !(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))
+          ) {
             throw new WeeklyUnavailable();
           }
           return live.rows.length === 1 && canonicalJson(replay.snapshot) === canonicalJson(snapshot)
@@ -286,12 +302,18 @@ export class ICloudIdentityAdoptionRepository {
             ${candidate.identityId}::uuid,${candidate.assetId}::uuid,${authority.operationId}::uuid,${source.itemClaimId}::uuid,
             'exact-identity',${source.resource.libraryKey},upper(${source.resource.sourceAssetId}),
             ${candidate.cplMasterRecordName},${identityRoleOf[source.resource.role]},${evidence.sha256},
-            ${evidence.appleFingerprint},${snapshot}::jsonb WHERE ${weeklyIdentityAdoptionFence(weekly)} RETURNING id`.execute(db);
-        if (receipt.rows.length !== 1) { throw new WeeklyUnavailable(); }
+            ${evidence.appleFingerprint},${snapshot}::jsonb WHERE ${weeklyIdentityAdoptionFence(weekly)} RETURNING id`.execute(
+          db,
+        );
+        if (receipt.rows.length !== 1) {
+          throw new WeeklyUnavailable();
+        }
         return 'adopted';
       });
     } catch (error) {
-      if (error instanceof WeeklyUnavailable) { return 'miss'; }
+      if (error instanceof WeeklyUnavailable) {
+        return 'miss';
+      }
       return 'retry';
     }
   }

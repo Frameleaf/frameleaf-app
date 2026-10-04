@@ -11,8 +11,8 @@ import {
   RecoveryResult,
   RecoveryTarget,
 } from 'src/repositories/media-recovery.repository.js';
-import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
 
 export type MediaRecoveryInput = RecoveryAuthority & {
   stagedPath: string;
@@ -84,7 +84,13 @@ export class MediaRecoveryService {
       if (verified.status !== 'healthy') {
         return { outcome: verified.status === 'unsupported' ? 'needs-review' : 'retry', reason: verified.reason };
       }
-      return await this.repository.commitVerifiedReuse({ ...input, weeklyReuse: reuse.context, candidate, verified, verifyFinal: validate });
+      return await this.repository.commitVerifiedReuse({
+        ...input,
+        weeklyReuse: reuse.context,
+        candidate,
+        verified,
+        verifyFinal: validate,
+      });
     } catch {
       return { outcome: 'retry', reason: 'reuse_not_committed' };
     }
@@ -222,9 +228,17 @@ export class MediaRecoveryService {
       if (reservation.target.outcome !== 'reused') {
         await step(() => mkdir(dirname(reservation.promotedPath), { recursive: true, mode: 0o700 }));
         if (input.audit?.purpose === 'scheduled-weekly') {
-          if (!this.scheduledStaging) { throw new Error('scheduled_private_copy_producer_unavailable'); }
-          await this.scheduledStaging.copyRecovery({ authority: input.audit, ownerId: input.ownerId,
-            resource: { id: input.resourceId, leaseToken: input.leaseToken } }, reservation.promotedPath);
+          if (!this.scheduledStaging) {
+            throw new Error('scheduled_private_copy_producer_unavailable');
+          }
+          await this.scheduledStaging.copyRecovery(
+            {
+              authority: input.audit,
+              ownerId: input.ownerId,
+              resource: { id: input.resourceId, leaseToken: input.leaseToken },
+            },
+            reservation.promotedPath,
+          );
         } else {
           const temporary = `${reservation.promotedPath}.${randomUUID()}.partial`;
           try {

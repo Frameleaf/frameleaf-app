@@ -1,10 +1,10 @@
-import { goto } from '$app/navigation';
-import { recordFrameleafRequest } from '$lib/frameleaf/frameleaf-sign-in';
-import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { toastManager } from '@immich/ui';
 import { render, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { goto } from '$app/navigation';
+import { recordFrameleafRequest } from '$lib/frameleaf/frameleaf-sign-in';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import en from '../../../../i18n/en.json';
 import Page from './+page.svelte';
 
