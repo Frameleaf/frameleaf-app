@@ -1,5 +1,5 @@
 import type { DatabaseSchema } from '@frameleaf/sql-tools';
-import { readCatalogArtifact } from 'src/schema/catalog-artifacts.js';
+import { readCatalogArtifact } from './catalog-artifacts.js';
 
 /** The complete captured catalog is the single evolving desired-schema authority. */
 export const getFrameleafSchema = (): DatabaseSchema => readCatalogArtifact('desired-schema');
@@ -11,7 +11,7 @@ export const getFrameleafBaselineSchema = (): DatabaseSchema => readCatalogArtif
 export const verifyFrameleafSchemaSources = async (): Promise<void> => {
   const { readFile } = await import('node:fs/promises');
   const { fileURLToPath } = await import('node:url');
-  const { verifyCatalogSources } = await import('src/schema/catalog-authority.js');
+  const { verifyCatalogSources } = await import('./catalog-authority.js');
   const provenance = JSON.parse(
     await readFile(new URL('catalog/desired-schema.provenance.json', import.meta.url), 'utf8'),
   );
