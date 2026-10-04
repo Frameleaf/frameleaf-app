@@ -166,6 +166,19 @@ const ORPHAN_FAMILIES = [
     `candidate."smartAlbumId"::text || ':' || candidate."assetId"::text`,
     'NOT EXISTS (SELECT 1 FROM immich_fork.smart_album_rule rule JOIN public.album album ON album.id = rule."albumId" WHERE rule.id = candidate."smartAlbumId") OR NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = candidate."assetId")',
   ],
+  // FL-331: a sync-added membership goes with its asset and with its link's album; a link goes with its album.
+  [
+    'album_source_asset',
+    'immich_fork.album_source_asset',
+    `candidate."linkId"::text || ':' || candidate."assetId"::text`,
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = candidate."assetId") OR NOT EXISTS (SELECT 1 FROM immich_fork.album_source_link link JOIN public.album album ON album.id = link."albumId" WHERE link.id = candidate."linkId")',
+  ],
+  [
+    'album_source_link',
+    'immich_fork.album_source_link',
+    'candidate.id::text',
+    'NOT EXISTS (SELECT 1 FROM public.album album WHERE album.id = candidate."albumId")',
+  ],
   [
     'smart_album_rule',
     'immich_fork.smart_album_rule',
