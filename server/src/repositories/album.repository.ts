@@ -263,7 +263,7 @@ export class AlbumRepository {
       .orderBy('album.sortOrder', sql`asc nulls last`)
       .orderBy('album.createdAt', 'desc')
       .execute();
-    const albums = await rows;
+    const albums = rows;
     return albums.sort((left, right) => {
       if (left.sortOrder === null && right.sortOrder !== null) {
         return 1;
@@ -695,7 +695,7 @@ export class AlbumRepository {
           .select(['album.id', 'album.icon', 'album.parentId', 'album.sortOrder', 'album.kind'])
           .modifyEnd(sql`FOR SHARE OF album`)
           .execute();
-        validate(await rows);
+        validate(rows);
       }
       await sql`
         INSERT INTO public.album_position ("userId", "albumId", position)

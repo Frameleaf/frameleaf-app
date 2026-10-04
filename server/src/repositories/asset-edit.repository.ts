@@ -314,17 +314,11 @@ export class AssetEditRepository {
     });
   }
   /**
-   * Reclaims versions whose asset no longer exists (FL-39): rows left behind while fork writes were
-   * disabled, and rows archived to `orphaned_records` by a handoff return. Returns every file they
-   * owned, for FileDelete to remove once nothing else references it. Does nothing, and returns
-   * nothing, while fork writes are disabled or a handoff is running.
+   * Reclaims versions whose asset no longer exists. Returns files for FileDelete to remove
+   * only after checking that nothing else references them.
    */
   async releaseOrphanedVideoVersions(): Promise<string[]> {
     return this.db.transaction().execute(async (db) => {
-      try {
-      } catch {
-        return [];
-      }
       // A selection shares its versions' asset and owner (composite foreign keys), so it goes first.
       await sql`DELETE FROM public.video_edit_selection s
         WHERE NOT EXISTS(SELECT 1 FROM public.asset a WHERE a.id=s."assetId" AND a."ownerId"=s."ownerId")`.execute(db);

@@ -28,7 +28,8 @@ const CLIP_TABLES = [
   'video_moment_frame_embedding',
 ] as const;
 
-export const getVectorExtension = async (_runner?: Kysely<DB>): Promise<VectorExtension> => DatabaseExtension.Vector;
+export const getVectorExtension = (_runner?: Kysely<DB>): Promise<VectorExtension> =>
+  Promise.resolve(DatabaseExtension.Vector);
 
 /** A session advisory lock held on its own reserved connection. */
 export type HeldLock = { backendPid: number; verify: () => Promise<boolean>; release: () => Promise<void> };

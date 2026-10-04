@@ -12,14 +12,11 @@ describe('bounded execution database reservations', () => {
 
   it('returns a reservation granted after acquisition timed out without ever running SQL', async () => {
     vi.useFakeTimers();
-    let grant!: (value: unknown) => void;
+    const { promise, resolve: grant } = Promise.withResolvers<unknown>();
     const release = vi.fn();
     const unsafe = vi.fn();
     const client = boundExecutionReservations({
-      reserve: () =>
-        new Promise((resolve) => {
-          grant = resolve;
-        }),
+      reserve: () => promise,
     } as unknown as ReturnType<typeof createPostgres>);
     const refused = expect(client.reserve()).rejects.toThrow('Database acquisition timed out');
     await vi.advanceTimersByTimeAsync(DATABASE_ACQUIRE_TIMEOUT_MS);
@@ -31,13 +28,10 @@ describe('bounded execution database reservations', () => {
   });
 
   it('aborts a queued reservation and releases its late connection', async () => {
-    let grant!: (value: unknown) => void;
+    const { promise, resolve: grant } = Promise.withResolvers<unknown>();
     const release = vi.fn();
     const client = boundExecutionReservations({
-      reserve: () =>
-        new Promise((resolve) => {
-          grant = resolve;
-        }),
+      reserve: () => promise,
     } as unknown as ReturnType<typeof createPostgres>);
     const abort = new AbortController();
     const reservation = queueExecution.run({ signal: abort.signal } as QueueExecution, () => client.reserve());
@@ -55,7 +49,7 @@ describe('bounded execution database reservations', () => {
     const unsafe = vi.fn(() => Promise.resolve([]));
     const client = boundExecutionReservations(
       {
-        reserve: async () => ({ release, unsafe }),
+        reserve: () => Promise.resolve({ release, unsafe }),
         end,
       } as unknown as ReturnType<typeof createPostgres>,
       restart,
@@ -81,7 +75,7 @@ describe('bounded execution database reservations', () => {
     const release = vi.fn();
     const client = boundExecutionReservations(
       {
-        reserve: async () => ({ release, unsafe: () => Promise.reject(new Error('Cleanup failed')) }),
+        reserve: () => Promise.resolve({ release, unsafe: () => Promise.reject(new Error('Cleanup failed')) }),
         end,
       } as unknown as ReturnType<typeof createPostgres>,
       restart,

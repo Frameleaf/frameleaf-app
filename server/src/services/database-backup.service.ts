@@ -408,24 +408,37 @@ export class DatabaseBackupService {
 
   private readDatabaseDump(filePath: string): Readable {
     const storage = this.storageRepository;
+    let file: Readable | undefined;
+    let decoded: Readable | undefined;
     // Opening is deferred until iteration, after the restore fence has been checked.
-    return Readable.from(
+    const output = Readable.from(
       (async function* () {
-        const file = storage.createPlainReadStream(filePath);
-        const decoded = filePath.endsWith('.gz') ? storage.createGunzip() : file;
+        const input = storage.createPlainReadStream(filePath);
+        const decoder = filePath.endsWith('.gz') ? storage.createGunzip() : undefined;
+        file = input;
+        decoded = decoder ?? input;
         try {
-          if (decoded !== file) {
+          if (decoder) {
             // Pipe does not forward disk errors to the decoder's async iterator.
-            file.on('error', (error) => decoded.destroy(error));
-            file.pipe(decoded);
+            input.on('error', (error) => decoder.destroy(error));
+            input.pipe(decoder);
           }
-          yield* decoded;
+          yield* decoder ?? input;
         } finally {
-          file.destroy();
-          decoded.destroy();
+          input.destroy();
+          decoder?.destroy();
         }
       })(),
     );
+    const destroy = output._destroy.bind(output);
+    output._destroy = (error, callback) => {
+      // Readable.from waits for generator.return(). Break a pending inner read first so
+      // cancellation never waits for a stalled disk stream to yield another chunk.
+      file?.destroy(error ?? undefined);
+      decoded?.destroy(error ?? undefined);
+      destroy(error, callback);
+    };
+    return output;
   }
 
   async uploadBackup(file: Express.Multer.File): Promise<void> {

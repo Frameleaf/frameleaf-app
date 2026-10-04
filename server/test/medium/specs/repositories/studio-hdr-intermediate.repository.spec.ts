@@ -126,20 +126,6 @@ it('goes with its asset, and its file is released with the asset', async () => {
   await expect(rows()).resolves.toEqual([]);
 });
 
-it('is left while fork writes are disabled and released by the nightly sweep afterwards', async () => {
-  const { asset, sut, path, record, rows } = await setup();
-  await record();
-
-  try {
-    const removed = await sut.remove({ id: asset.id });
-    expect(removed?.derivedPaths).not.toContain(path);
-    await expect(sut.releaseStudioHdrIntermediates()).resolves.toEqual([]);
-  } finally {
-  }
-  await expect(sut.releaseStudioHdrIntermediates()).resolves.toContain(path);
-  await expect(rows()).resolves.toEqual([]);
-});
-
 it('sweeps an intermediate whose original changed or that an edit now covers', async () => {
   const changed = await setup();
   await changed.record();

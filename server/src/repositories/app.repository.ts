@@ -63,7 +63,7 @@ export class AppRepository {
       }
     } finally {
       try {
-        server.sockets.adapter.close();
+        await server.sockets.adapter.close();
       } finally {
         await transport.close();
       }

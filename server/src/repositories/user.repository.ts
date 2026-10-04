@@ -610,8 +610,6 @@ export class UserRepository {
         .execute();
     };
     if (transaction) {
-      if (key === UserMetadataKey.Preferences) {
-      }
       await write(transaction);
     } else if (key === UserMetadataKey.Preferences) {
       await this.db.transaction().execute(write);

@@ -51,10 +51,10 @@ export const releaseLockedCoverReferences = async (db: Kysely<DB>, assetIds: str
   await releasePersonFaces(db, assetIds, scores);
   await releasePetFeaturedPhotos(db, assetIds, scores);
 };
-/** Where Best Photos scores are read from: the fork's own schema once it is authoritative. */
+/** The canonical Best Photos score table. */
 export type BestPhotoScoreTable = 'public.asset_best_photo_score';
-export const getBestPhotoScoreTable = async (db: Kysely<DB>): Promise<BestPhotoScoreTable> =>
-  'public.asset_best_photo_score';
+export const getBestPhotoScoreTable = (_db: Kysely<DB>): Promise<BestPhotoScoreTable> =>
+  Promise.resolve('public.asset_best_photo_score');
 /**
  * SQL sort key, descending: a photo marked as a Best Photo sorts by its score, before every photo that
  * is not (-1). Mirrors `BestPhotosRepository.getBestPhotos` with the Explore threshold.
