@@ -1825,7 +1825,9 @@ describe(CloudBackupService.name, () => {
       );
       const repository = new FrameleafCloudBackupRepository({ requestJson: transport } as never);
       cloudBackup.metadata = vi.fn<FrameleafCloudBackupRepository['metadata']>((target) => repository.metadata(target));
-      cloudBackup.locations = vi.fn<FrameleafCloudBackupRepository['locations']>((target) => repository.locations(target));
+      cloudBackup.locations = vi.fn<FrameleafCloudBackupRepository['locations']>((target) =>
+        repository.locations(target),
+      );
       cloudBackup.grant = vi.fn<FrameleafCloudBackupRepository['grant']>((target, id) => repository.grant(target, id));
       try {
         await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
