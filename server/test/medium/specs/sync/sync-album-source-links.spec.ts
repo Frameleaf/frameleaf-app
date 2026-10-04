@@ -43,9 +43,7 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
 
     try {
       const legacy = events(await ctx.syncStream(auth, [SyncRequestType.AuthUsersV1]));
-      expect(legacy).toEqual([
-        expect.objectContaining({ type: SyncEntityType.AuthUserV1, ack: expect.any(String) }),
-      ]);
+      expect(legacy).toEqual([expect.objectContaining({ type: SyncEntityType.AuthUserV1, ack: expect.any(String) })]);
       const legacyAck = { type: SyncEntityType.AuthUserV1, ack: legacy[0].ack };
       await ctx.syncAckAll(auth, legacy);
 
@@ -54,7 +52,10 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
         expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkV1, data: expect.objectContaining({ id }) }),
       ]);
       expect(events(await ctx.syncStream(otherAuth, types))).toEqual([]);
-      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [created[0].ack] }).expect(204);
+      await request(http.getHttpServer())
+        .post('/sync/ack')
+        .send({ acks: [created[0].ack] })
+        .expect(204);
       await ctx.assertSyncIsComplete(auth, types);
 
       await links.write((tx) => links.delete(tx, id));
@@ -62,7 +63,10 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
       expect(deleted).toEqual([
         expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkDeleteV1, data: { linkId: id } }),
       ]);
-      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [deleted[0].ack] }).expect(204);
+      await request(http.getHttpServer())
+        .post('/sync/ack')
+        .send({ acks: [deleted[0].ack] })
+        .expect(204);
       await ctx.assertSyncIsComplete(auth, types);
 
       const stored = await db
