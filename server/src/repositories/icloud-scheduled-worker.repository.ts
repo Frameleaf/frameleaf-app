@@ -2,28 +2,38 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { VerifiedMedia } from 'src/repositories/media-recovery.repository.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ICloudAuditRow } from 'src/repositories/icloud-audit.repository.js';
 import { ScheduledAuditAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
-import { ICloudScheduledStagingRepository, ScheduledStagingInput } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
-import { lockFilePath } from 'src/repositories/physical-file.repository.js';
-import type { VerifiedMedia } from 'src/repositories/media-recovery.repository.js';
+import {
+  ICloudScheduledStagingRepository,
+  ScheduledStagingInput,
+} from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 /** Member settlement is monotonic and counters are derived from a successful pending CAS only. */
-export async function settleScheduledMember(db: Transaction<DB>, request: ICloudAuditRow,
-  outcome: 'match' | 'mismatch' | 'unavailable' | 'cancelled') {
-  if (request.purpose !== 'scheduled-weekly') { throw new Error('scheduled_audit_binding_invalid'); }
+export async function settleScheduledMember(
+  db: Transaction<DB>,
+  request: ICloudAuditRow,
+  outcome: 'match' | 'mismatch' | 'unavailable' | 'cancelled',
+) {
+  if (request.purpose !== 'scheduled-weekly') {
+    throw new Error('scheduled_audit_binding_invalid');
+  }
   const changed = await sql`UPDATE immich_fork.icloud_weekly_member SET outcome=${outcome}
     WHERE "cohortId"=${request.cohortId}::uuid AND ordinal=${request.memberOrdinal}
       AND "ownerId"=${request.ownerId}::uuid AND "connectionId"=${request.connectionId}::uuid
       AND "auditRequestId"=${request.id}::uuid AND selected AND outcome='pending' RETURNING ordinal`.execute(db);
-  if (changed.rows.length !== 1) { throw new Error('scheduled_audit_already_settled'); }
+  if (changed.rows.length !== 1) {
+    throw new Error('scheduled_audit_already_settled');
+  }
   await sql`UPDATE immich_fork.icloud_weekly_cohort SET
     "performedCount"="performedCount"+${outcome === 'match' || outcome === 'mismatch' ? 1 : 0},
     "matchCount"="matchCount"+${outcome === 'match' ? 1 : 0},
@@ -36,7 +46,10 @@ export async function settleScheduledMember(db: Transaction<DB>, request: ICloud
 
 @Injectable()
 export class ICloudScheduledWorkerRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>, private staging: ICloudScheduledStagingRepository) {}
+  constructor(
+    @InjectKysely() private db: Kysely<DB>,
+    private staging: ICloudScheduledStagingRepository,
+  ) {}
 
   /** Persisted full batch, never a caller-supplied subset or discriminator. */
   async dispatch(operation: MediaOperation, claimToken: string) {
@@ -53,14 +66,23 @@ export class ICloudScheduledWorkerRepository {
         AND NOT EXISTS (SELECT 1 FROM immich_fork.icloud_identity_audit foreign_q WHERE foreign_q."operationId"=o.id
           AND (foreign_q.purpose<>'scheduled-weekly' OR foreign_q."ownerId"<>o."ownerId"))
       ORDER BY m.ordinal`.execute(this.db);
-    if (rows.length < 1 || rows.length > 100 || rows.length !== Number(operation.totalUnits) ||
-      operation.snapshot.task !== 'identity-audit-weekly' || operation.snapshot.purpose !== 'scheduled-weekly' ||
-      canonicalJson(rows.map(({ id }) => id)) !== canonicalJson(operation.snapshot.auditIds)) { return; }
+    if (
+      rows.length === 0 ||
+      rows.length > 100 ||
+      rows.length !== Number(operation.totalUnits) ||
+      operation.snapshot.task !== 'identity-audit-weekly' ||
+      operation.snapshot.purpose !== 'scheduled-weekly' ||
+      canonicalJson(rows.map(({ id }) => id)) !== canonicalJson(operation.snapshot.auditIds)
+    ) {
+      return;
+    }
     return rows;
   }
 
   async stopState(operationId: string, ownerId: string, claimToken: string) {
-    const { rows: [row] } = await sql<{ cancelRequestedAt: Date | null; pauseRequestedAt: Date | null; live: boolean }>`SELECT
+    const {
+      rows: [row],
+    } = await sql<{ cancelRequestedAt: Date | null; pauseRequestedAt: Date | null; live: boolean }>`SELECT
       "cancelRequestedAt","pauseRequestedAt",("claimToken"=${claimToken}::uuid AND "claimExpiresAt">clock_timestamp()) AS live
       FROM public.media_operation WHERE id=${operationId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(this.db);
     return row;
@@ -72,7 +94,9 @@ export class ICloudScheduledWorkerRepository {
       const changed = await sql`UPDATE public.media_operation SET "heartbeatAt"=clock_timestamp(),
         "claimExpiresAt"=clock_timestamp()+interval '30 minutes' WHERE id=${operationId}::uuid AND "ownerId"=${ownerId}::uuid
         AND "claimToken"=${claimToken}::uuid AND "claimExpiresAt">clock_timestamp()
-        AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL RETURNING id`.execute(db);
+        AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL RETURNING id`.execute(
+        db,
+      );
       return changed.rows.length === 1;
     });
   }
@@ -84,12 +108,16 @@ export class ICloudScheduledWorkerRepository {
   bindClaim(authority: ScheduledAuditAuthority, ownerId: string, claimId: string) {
     return this.db.transaction().execute(async (db) => {
       const guarded = await guardScheduledAudit(db, authority, ownerId, { requireClaim: false });
-      if (!guarded) { return false; }
+      if (!guarded) {
+        return false;
+      }
       const changed = await sql`UPDATE immich_fork.icloud_identity_audit SET "itemClaimId"=${claimId}::uuid
         WHERE id=${authority.auditRequestId}::uuid AND result IN ('queued','running')
           AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${claimId}::uuid AND "ownerId"=${ownerId}::uuid
             AND "cplAssetRecordName"=upper(${guarded.source.sourceAssetId})
-            AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp()) RETURNING id`.execute(db);
+            AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp()) RETURNING id`.execute(
+        db,
+      );
       return changed.rows.length === 1;
     });
   }
@@ -110,10 +138,14 @@ export class ICloudScheduledWorkerRepository {
       if (existing && ['committed', 'finalized', 'removed', 'failed', 'cancelled'].includes(existing.status)) {
         return;
       }
-      const timing = existing ? (await sql<{ held: boolean; waiting: boolean }>`SELECT
+      const timing = existing
+        ? (
+            await sql<{ held: boolean; waiting: boolean }>`SELECT
         coalesce("leaseExpiresAt">clock_timestamp(),false) AS held,
         coalesce("nextAttemptAt">clock_timestamp(),false) AS waiting
-        FROM immich_fork.icloud_resource WHERE id=${existing.id}::uuid`.execute(db)).rows[0] : undefined;
+        FROM immich_fork.icloud_resource WHERE id=${existing.id}::uuid`.execute(db)
+          ).rows[0]
+        : undefined;
       if (timing?.held) {
         return;
       }
@@ -168,21 +200,37 @@ export class ICloudScheduledWorkerRepository {
   }
 
   async publishMatch(input: ScheduledStagingInput, evidence: ScheduledPublicationFiles, verified: VerifiedMedia) {
-    if (!(await this.staging.authenticateDeepValidation(input, evidence.validation)) ||
+    if (
+      !(await this.staging.authenticateDeepValidation(input, evidence.validation)) ||
       verified.sha256.toString('hex') !== evidence.receipt.payload.sha256 ||
-      verified.sha1.toString('hex') !== evidence.receipt.payload.sha1 || verified.sizeInBytes !== evidence.receipt.payload.binding.sizeInBytes) {
+      verified.sha1.toString('hex') !== evidence.receipt.payload.sha1 ||
+      verified.sizeInBytes !== evidence.receipt.payload.binding.sizeInBytes
+    ) {
       return false;
     }
     return this.db.transaction().execute(async (db) => {
       const guarded = await guardScheduledAudit(db, input.authority, input.ownerId, { resource: input.resource });
-      if (!guarded || !guarded.request.expectedSha256.equals(verified.sha256) ||
-        canonicalJson([...evidence.paths].sort()) !== canonicalJson([evidence.receipt.payload.path, guarded.bindings.original.originalPath].sort())) { return false; }
-      for (const path of [...new Set(evidence.paths)].sort()) { await lockFilePath(db, path); }
+      if (
+        !guarded ||
+        !guarded.request.expectedSha256.equals(verified.sha256) ||
+        canonicalJson([...evidence.paths].sort()) !==
+          canonicalJson([evidence.receipt.payload.path, guarded.bindings.original.originalPath].sort())
+      ) {
+        return false;
+      }
+      for (const path of [...new Set(evidence.paths)].sort()) {
+        await lockFilePath(db, path);
+      }
       await publishScheduledAudit(db, input.authority, guarded, input.resource, evidence, 'match');
       await sql`UPDATE immich_fork.icloud_resource SET status='committed',verification=verification || ${{
-        kind: 'audit-match-staging', resourceId: input.resource.id, requestId: input.authority.auditRequestId,
-        ownerId: input.ownerId, stagingPath: evidence.receipt.payload.path, sha256: evidence.receipt.payload.sha256,
-        sizeInBytes: verified.sizeInBytes }}::jsonb,"pendingJobs"='[]'::jsonb WHERE id=${input.resource.id}::uuid`.execute(db);
+        kind: 'audit-match-staging',
+        resourceId: input.resource.id,
+        requestId: input.authority.auditRequestId,
+        ownerId: input.ownerId,
+        stagingPath: evidence.receipt.payload.path,
+        sha256: evidence.receipt.payload.sha256,
+        sizeInBytes: verified.sizeInBytes,
+      }}::jsonb,"pendingJobs"='[]'::jsonb WHERE id=${input.resource.id}::uuid`.execute(db);
       return true;
     });
   }
@@ -191,20 +239,39 @@ export class ICloudScheduledWorkerRepository {
     return this.db.transaction().execute(async (db) => {
       await lockPublicForkWrites(db);
       await db.selectFrom('user').select('id').where('id', '=', ownerId).forUpdate().executeTakeFirst();
-      const { rows: [hint] } = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
-        WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(db);
-      if (!hint || hint.purpose !== 'scheduled-weekly' || hint.operationId !== authority.operationId) { return false; }
-      const { rows: [cohort] } = await sql<{ id: string }>`SELECT id FROM immich_fork.icloud_weekly_cohort WHERE id=${hint.cohortId}::uuid
-        AND "ownerId"=${ownerId}::uuid AND "grantId"=${hint.grantId}::uuid AND "grantGeneration"=${hint.grantGeneration} FOR UPDATE`.execute(db);
-      if (!cohort) { return false; }
-      await sql`SELECT ordinal FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${hint.cohortId}::uuid ORDER BY ordinal FOR UPDATE`.execute(db);
-      const cancel = await sql`SELECT id FROM public.media_operation WHERE id=${authority.operationId}::uuid AND "ownerId"=${ownerId}::uuid
+      const {
+        rows: [hint],
+      } = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
+        WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(
+        db,
+      );
+      if (!hint || hint.purpose !== 'scheduled-weekly' || hint.operationId !== authority.operationId) {
+        return false;
+      }
+      const {
+        rows: [cohort],
+      } = await sql<{ id: string }>`SELECT id FROM immich_fork.icloud_weekly_cohort WHERE id=${hint.cohortId}::uuid
+        AND "ownerId"=${ownerId}::uuid AND "grantId"=${hint.grantId}::uuid AND "grantGeneration"=${hint.grantGeneration} FOR UPDATE`.execute(
+        db,
+      );
+      if (!cohort) {
+        return false;
+      }
+      await sql`SELECT ordinal FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${hint.cohortId}::uuid ORDER BY ordinal FOR UPDATE`.execute(
+        db,
+      );
+      const cancel =
+        await sql`SELECT id FROM public.media_operation WHERE id=${authority.operationId}::uuid AND "ownerId"=${ownerId}::uuid
         AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp() AND "cancelRequestedAt" IS NOT NULL
         AND snapshot->>'task'='identity-audit-weekly' AND snapshot->>'purpose'='scheduled-weekly'
         AND snapshot->>'cohortId'=${hint.cohortId} AND snapshot->>'grantId'=${hint.grantId}
         AND snapshot->>'grantGeneration'=${String(hint.grantGeneration)} FOR UPDATE`.execute(db);
-      if (cancel.rows.length !== 1) { return false; }
-      const { rows: [changed] } = await sql<{ count: number }>`WITH changed AS (
+      if (cancel.rows.length !== 1) {
+        return false;
+      }
+      const {
+        rows: [changed],
+      } = await sql<{ count: number }>`WITH changed AS (
         UPDATE immich_fork.icloud_weekly_member SET outcome='cancelled' WHERE "cohortId"=${hint.cohortId}::uuid
           AND selected AND outcome='pending' RETURNING ordinal)
         SELECT count(*)::int AS count FROM changed`.execute(db);
@@ -213,7 +280,9 @@ export class ICloudScheduledWorkerRepository {
         WHERE id=${hint.cohortId}::uuid`.execute(db);
       await sql`UPDATE immich_fork.icloud_identity_audit q SET result='cancelled',"verifiedAt"=NULL
         FROM immich_fork.icloud_weekly_member m WHERE m."cohortId"=${hint.cohortId}::uuid AND m.outcome='cancelled'
-          AND m."auditRequestId"=q.id AND q.purpose='scheduled-weekly' AND q.result IN ('queued','running')`.execute(db);
+          AND m."auditRequestId"=q.id AND q.purpose='scheduled-weekly' AND q.result IN ('queued','running')`.execute(
+        db,
+      );
       await sql`UPDATE immich_fork.icloud_resource r SET status='failed',"leaseToken"=NULL,"leaseExpiresAt"=NULL,"lastError"='scheduled_audit_cancelled'
         FROM immich_fork.icloud_identity_audit q WHERE q.id=r."auditRequestId" AND q."cohortId"=${hint.cohortId}::uuid
           AND q.result='cancelled' AND r.status NOT IN ('committed','finalized','removed')`.execute(db);
@@ -226,12 +295,22 @@ export class ICloudScheduledWorkerRepository {
     return this.db.transaction().execute(async (db) => {
       await lockPublicForkWrites(db);
       await db.selectFrom('user').select('id').where('id', '=', ownerId).forUpdate().executeTakeFirst();
-      const { rows: [hint] } = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
-        WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(db);
-      if (!hint || hint.purpose !== 'scheduled-weekly' || hint.operationId !== authority.operationId) { return false; }
+      const {
+        rows: [hint],
+      } = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
+        WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(
+        db,
+      );
+      if (!hint || hint.purpose !== 'scheduled-weekly' || hint.operationId !== authority.operationId) {
+        return false;
+      }
       await sql`SELECT id FROM immich_fork.icloud_weekly_cohort WHERE id=${hint.cohortId}::uuid FOR UPDATE`.execute(db);
-      await sql`SELECT ordinal FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${hint.cohortId}::uuid ORDER BY ordinal FOR UPDATE`.execute(db);
-      const { rows: [request] } = await sql<ICloudAuditRow>`SELECT q.* FROM immich_fork.icloud_identity_audit q
+      await sql`SELECT ordinal FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${hint.cohortId}::uuid ORDER BY ordinal FOR UPDATE`.execute(
+        db,
+      );
+      const {
+        rows: [request],
+      } = await sql<ICloudAuditRow>`SELECT q.* FROM immich_fork.icloud_identity_audit q
         JOIN public.media_operation o ON o.id=q."operationId" AND o."ownerId"=q."ownerId"
         WHERE q.id=${hint.id}::uuid AND q.purpose='scheduled-weekly' AND q."sessionId" IS NULL AND q.result IN ('queued','running')
           AND o.id=${authority.operationId}::uuid AND o."claimToken"=${authority.operationClaimToken}::uuid
@@ -242,7 +321,9 @@ export class ICloudScheduledWorkerRepository {
           AND q."grantId"::text=o.snapshot->>'grantId' AND q."grantGeneration"::text=o.snapshot->>'grantGeneration'
           AND q."cohortId"::text=o.snapshot->>'cohortId' AND q."connectionId"::text=o.snapshot->>'connectionId'
           AND q."batchOrdinal"::text=o.snapshot->>'batchOrdinal' FOR UPDATE OF q,o`.execute(db);
-      if (!request) { return false; }
+      if (!request) {
+        return false;
+      }
       await settleScheduledMember(db, request, outcome);
       await sql`UPDATE immich_fork.icloud_identity_audit SET result=${outcome === 'cancelled' ? 'cancelled' : 'failed'},
         "verifiedAt"=NULL WHERE id=${request.id}::uuid`.execute(db);

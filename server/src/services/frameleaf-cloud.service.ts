@@ -106,8 +106,8 @@ import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop
 import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import {
-  type RemoteHostname,
   MAX_CANDIDATES,
+  type RemoteHostname,
   detectHostAddresses,
   edgeStateCurrent,
   heartbeatEndpoints,

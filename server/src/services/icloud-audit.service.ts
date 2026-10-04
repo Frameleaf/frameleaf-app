@@ -67,13 +67,24 @@ export class ICloudAuditService {
     });
   }
 
-  isAuditOperation(operation: MediaOperation) { return this.repository.operationPurpose(operation.id, operation.ownerId); }
+  isAuditOperation(operation: MediaOperation) {
+    return this.repository.operationPurpose(operation.id, operation.ownerId);
+  }
 
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
     const purpose = await this.repository.operationPurpose(operation.id, operation.ownerId);
-    if (purpose === 'scheduled-weekly' && this.scheduled) { await this.scheduled.run(operation, claimToken); return; }
+    if (purpose === 'scheduled-weekly' && this.scheduled) {
+      await this.scheduled.run(operation, claimToken);
+      return;
+    }
     if (purpose && purpose !== 'manual-session') {
-      await this.operations.fail(operation.id, claimToken, { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' }, { retry: false }); return;
+      await this.operations.fail(
+        operation.id,
+        claimToken,
+        { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' },
+        { retry: false },
+      );
+      return;
     }
     const ids = operation.snapshot.auditIds;
     if (
