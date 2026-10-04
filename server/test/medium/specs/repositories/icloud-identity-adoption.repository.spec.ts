@@ -1707,10 +1707,8 @@ describe('iCloud exact identity adoption', () => {
             week: string;
           }>`SELECT date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date::text AS week`.execute(db)
         ).rows[0];
-        const week =
-          (cohort.weekStart as unknown) instanceof Date
-            ? (cohort.weekStart as unknown as Date).toISOString().slice(0, 10)
-            : cohort.weekStart.slice(0, 10);
+        expect(typeof cohort.weekStart).toBe('string');
+        const week = cohort.weekStart.slice(0, 10);
         expect(week).toBe(clock.week);
         const ranked = frozen
           .map((member) => ({
