@@ -8145,6 +8145,364 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/album-sources": {
+      "get": {
+        "description": "List your phone albums and folders linked to server albums.",
+        "operationId": "getAlbumSourceLinks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumSourceLinkResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List album source links",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/album-sources/resolve": {
+      "post": {
+        "description": "For each phone album or folder, return its linked server album; otherwise link it to your oldest album with the same trimmed, case-insensitive name, or create an album. Never creates two albums for one source, also with several devices resolving at once.",
+        "operationId": "resolveAlbumSources",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSourceResolveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumSourceResolveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resolve album sources",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/album-sources/{id}": {
+      "delete": {
+        "description": "Unlink the phone album or folder. The server album and its photos are kept.",
+        "operationId": "deleteAlbumSourceLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete an album source link",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "description": "Record the source’s new name on the phone, renaming the server album only while its name still equals the name it last followed. An optional sourceId re-keys the link (409 when another link holds it).",
+        "operationId": "updateAlbumSourceLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSourceUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumSourceUpdateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update an album source link",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/album-sources/{id}/assets": {
+      "delete": {
+        "description": "Take out only the album memberships this link's sync added. Assets are never deleted, trashed or hidden, and memberships added by hand or still recorded by another link stay.",
+        "operationId": "removeAlbumSourceAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove assets through an album source link",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumAsset.delete",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Add assets to the linked album and record that the sync added them. Idempotent; an asset already in the album by hand is reported as a duplicate and never recorded.",
+        "operationId": "addAlbumSourceAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add assets through an album source link",
+        "tags": [
+          "Album sources"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumAsset.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums": {
       "get": {
         "description": "Retrieve a list of albums available to the authenticated user.",
@@ -49334,6 +49692,10 @@
       "description": "An album is a collection of assets that can be shared with other users or via shared links."
     },
     {
+      "name": "Album sources",
+      "description": "Album source links map phone albums and folders to server albums, so the native apps sync phone albums without duplicates."
+    },
+    {
       "name": "Analytics",
       "description": "Library analytics: counts, sizes, dated history and processing outcomes for the whole server, one account or one external library. Everything is computed and kept on this server; nothing is sent elsewhere."
     },
@@ -52670,6 +53032,290 @@
           "parentId",
           "shared",
           "sortOrder",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceDto": {
+        "properties": {
+          "deviceKey": {
+            "description": "Set only when sourceId is device-local (an iOS localIdentifier, an Android bucket); null otherwise",
+            "maxLength": 256,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumSourceKind"
+          },
+          "name": {
+            "description": "The name of the album or folder on the phone",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The source on the phone: the iOS album PHCloudIdentifier when available, else its localIdentifier; on Android \"<bucketId>:<relativePath>\"",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "sourceId"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceKind": {
+        "description": "Where the source lives: an iOS Photos album or an Android folder",
+        "enum": [
+          "ios-photos",
+          "android-folder"
+        ],
+        "type": "string"
+      },
+      "AlbumSourceLinkResponseDto": {
+        "properties": {
+          "albumId": {
+            "description": "The server album the source is linked to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "albumName": {
+            "description": "The server album name",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the link was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceKey": {
+            "description": "The device the source id belongs to, when it is device-local",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Link ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumSourceKind"
+          },
+          "lastSourceName": {
+            "description": "The phone name the server album last followed (the rename guard)",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The source on the phone",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When the link last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "albumName",
+          "createdAt",
+          "deviceKey",
+          "id",
+          "kind",
+          "lastSourceName",
+          "sourceId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceOutcome": {
+        "description": "existing: the source was already linked; merged: linked to an existing album with the same name; created: a new album",
+        "enum": [
+          "existing",
+          "merged",
+          "created"
+        ],
+        "type": "string"
+      },
+      "AlbumSourceResolveDto": {
+        "properties": {
+          "sources": {
+            "description": "The phone albums or folders to resolve",
+            "items": {
+              "$ref": "#/components/schemas/AlbumSourceDto"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceResolveResponseDto": {
+        "properties": {
+          "links": {
+            "description": "One link per requested source, in request order",
+            "items": {
+              "$ref": "#/components/schemas/AlbumSourceResolvedDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceResolvedDto": {
+        "properties": {
+          "albumId": {
+            "description": "The server album the source is linked to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "albumName": {
+            "description": "The server album name",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the link was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceKey": {
+            "description": "The device the source id belongs to, when it is device-local",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Link ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumSourceKind"
+          },
+          "lastSourceName": {
+            "description": "The phone name the server album last followed (the rename guard)",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AlbumSourceOutcome"
+          },
+          "sourceId": {
+            "description": "The source on the phone",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When the link last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "albumName",
+          "createdAt",
+          "deviceKey",
+          "id",
+          "kind",
+          "lastSourceName",
+          "outcome",
+          "sourceId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceUpdateDto": {
+        "properties": {
+          "name": {
+            "description": "The new name of the album or folder on the phone",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "Re-key the link to a new source id with the same kind and device (an Android folder rename changes its bucket)",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "AlbumSourceUpdateResponseDto": {
+        "properties": {
+          "albumId": {
+            "description": "The server album the source is linked to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "albumName": {
+            "description": "The server album name",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the link was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceKey": {
+            "description": "The device the source id belongs to, when it is device-local",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Link ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumSourceKind"
+          },
+          "lastSourceName": {
+            "description": "The phone name the server album last followed (the rename guard)",
+            "type": "string"
+          },
+          "renamed": {
+            "description": "Whether the server album was renamed (only while its name still equalled lastSourceName)",
+            "type": "boolean"
+          },
+          "sourceId": {
+            "description": "The source on the phone",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When the link last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "albumName",
+          "createdAt",
+          "deviceKey",
+          "id",
+          "kind",
+          "lastSourceName",
+          "renamed",
+          "sourceId",
           "updatedAt"
         ],
         "type": "object"
@@ -109874,6 +110520,72 @@
         ],
         "type": "object"
       },
+      "SyncAlbumSourceLinkDeleteV1": {
+        "properties": {
+          "linkId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linkId"
+        ],
+        "type": "object"
+      },
+      "SyncAlbumSourceLinkV1": {
+        "properties": {
+          "albumId": {
+            "description": "The server album the source is linked to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the link was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceKey": {
+            "description": "The device the source id belongs to, when it is device-local",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Link ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumSourceKind"
+          },
+          "lastSourceName": {
+            "description": "The phone name the server album last followed (the rename guard)",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The source on the phone",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When the link last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "createdAt",
+          "deviceKey",
+          "id",
+          "kind",
+          "lastSourceName",
+          "sourceId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "SyncAlbumToAssetDeleteV1": {
         "properties": {
           "albumId": {
@@ -111345,6 +112057,8 @@
           "SharedSpacePersonDeleteV1",
           "PetV1",
           "PetDeleteV1",
+          "AlbumSourceLinkV1",
+          "AlbumSourceLinkDeleteV1",
           "PetObservationV1",
           "PetObservationDeleteV1",
           "TagV1",
@@ -111949,7 +112663,8 @@
           "AssetFacesV2",
           "AssetFacesV3",
           "UserMetadataV1",
-          "PinnedCollectionsV1"
+          "PinnedCollectionsV1",
+          "AlbumSourceLinksV1"
         ],
         "type": "string"
       },
