@@ -69,7 +69,7 @@ describe(JobService.name, () => {
           name: JobName.AssetVideoEditGeneration,
           data: { id: asset.id, versionId },
         }),
-      ).rejects.toThrow('Handler returned Failed');
+      ).resolves.toBeUndefined();
 
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_update', asset.ownerId, mapAsset(asset));
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AssetEditReadyV2', asset.ownerId, expect.anything());
@@ -99,18 +99,20 @@ describe(JobService.name, () => {
       },
     );
 
-    it('notifies only fork history views when a video version render fails', async () => {
+    it('reports a failed video render and sends only the failure event', async () => {
       const asset = getForAsset(AssetFactory.create({ type: AssetType.Video }));
       const versionId = newUuid();
       mocks.job.run.mockResolvedValue(JobStatus.Failed);
       mocks.asset.getById.mockResolvedValue(asset);
 
-      await sut.onJobRun(QueueName.VideoConversion, {
-        name: JobName.AssetVideoEditGeneration,
-        data: { id: asset.id, versionId },
-      });
+      await expect(
+        sut.onJobRun(QueueName.VideoConversion, {
+          name: JobName.AssetVideoEditGeneration,
+          data: { id: asset.id, versionId },
+        }),
+      ).rejects.toThrow('Handler returned Failed');
 
-      // Official clients read AssetEditReadyV2 as a published edit, so a failure never sends it.
+      // Clients read AssetEditReadyV2 as a published edit, so a failure never sends it.
       expect(mocks.websocket.clientSend).toHaveBeenCalledExactlyOnceWith('VideoEditVersionFailedV1', asset.ownerId, {
         assetId: asset.id,
         versionId,
