@@ -111,7 +111,7 @@ it('keeps pending work distinct from delayed retries, pauses and dependency wait
   const delayed = await stage(id, 'delayed', 'Delay', 'pending');
   await job(id, delayed, 'Delay', { delay: true });
   const retry = await stage(id, 'retry', 'Retry', 'waiting');
-  await job(id, retry, 'Retry', { retry: true });
+  await job(id, retry, 'Retry', { retry: true, delay: true });
   const dependency = await stage(id, 'dependency', 'Dependency', 'pending');
   await job(id, dependency, 'Dependency', { dependency: true, delay: true, retry: true });
   await stage(id, 'prerequisite-failed', 'Dependent', 'blocked');
@@ -119,8 +119,23 @@ it('keeps pending work distinct from delayed retries, pauses and dependency wait
   expect(summary).toMatchObject({ total: 6, paused: 1, waiting: 1, delayed: 1, retrying: 1, blocked: 1, failed: 1 });
   expect(summary.reasons).toContain('dependency_unavailable');
   expect(summary.reasons).toContain('destination-unavailable');
+  expect(summary.reasons).toContain('retry_backoff');
   expect(RUN_OUTCOMES.reduce((sum, outcome) => sum + summary[outcome], 0)).toBe(summary.total);
   expect(summary.state).not.toMatch(/completed|cancelled/);
+});
+
+it('shows retry backoff as retrying without a false no-dispatch warning before it is eligible', async () => {
+  const id = await run();
+  const key = await stage(id, 'retry', 'Retry', 'pending');
+  await job(id, key, 'Retry', { retry: true, delay: true });
+  await sql`delete from job_worker`.execute(db);
+  const [summary] = await listRuns(db, 25, 0);
+  expect(summary).toMatchObject({ state: 'retrying', retrying: 1, delayed: 0, noDispatchBacklog: false });
+  expect(summary.reasons).toContain('retry_backoff');
+  expect((await listRunItems(db, id, 25, 0))![0]).toMatchObject({ outcome: 'retrying' });
+  expect(await observeQueueRun(db, 'test')).toMatchObject({ retrying: 1, delayed: 0, noDispatchBacklog: false });
+  await sql`update job set "availableAt" = now() - interval '1 minute'`.execute(db);
+  expect((await listRuns(db, 25, 0))[0]).toMatchObject({ state: 'unavailable', retrying: 1, noDispatchBacklog: true });
 });
 
 it('warns only for dispatchable old backlog and preserves delayed or paused reasons without a worker', async () => {
