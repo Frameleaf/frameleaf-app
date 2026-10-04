@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "unsigned-unapproved-observed-payload-inventory",
+  "approval": "UNAPPROVED",
+  "signature": null,
+  "productionAcceptance": "blocked-missing-owner-approved-file-row",
+  "source": {
+    "run": "37164769288",
+    "sourceCommit": "1b8a544824d533f3a5eef5105c1f1c21bf194114",
+    "report": "whisper-37164769288-diagnostic.json",
+    "reportSha256": "63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153",
+    "kind": "diagnostic-whisper-timing",
+    "status": "passed",
+    "observationCount": 8,
+    "distinctPayloadCount": 7
+  },
+  "resourceId": "model:onnx-community/whisper-tiny_timestamped",
+  "existingApprovalRowSha256": "7ec15caa875a55edadb70b32d1d88274464a69d0f0433aa6c7d89b13de6d1d75",
+  "locator": "onnx-community/whisper-tiny_timestamped",
+  "revision": "517244293732ee2d58139af5814231b7e6830a0d",
+  "notice": "Observed bytes only. These digests are not owner approval, signing evidence, production worker qualification, or permission to download. Adding files changes approvalRowDigest and requires explicit owner review and re-approval. This inventory is never read by the policy generator or runtime.",
+  "candidates": [
+    {
+      "path": "config.json",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/config.json",
+      "responseOrigin": "https://huggingface.co",
+      "bytes": 2243,
+      "observations": 1,
+      "observedSha256": "46aeea0a406afbeb563fc8e59ca10609203df4299af6a83f73752fef369efd2d",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "tokenizer_config.json",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/tokenizer_config.json",
+      "responseOrigin": "https://huggingface.co",
+      "bytes": 282683,
+      "observations": 1,
+      "observedSha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "preprocessor_config.json",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/preprocessor_config.json",
+      "responseOrigin": "https://huggingface.co",
+      "bytes": 339,
+      "observations": 1,
+      "observedSha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "generation_config.json",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/generation_config.json",
+      "responseOrigin": "https://huggingface.co",
+      "bytes": 3772,
+      "observations": 1,
+      "observedSha256": "f5c67e5a4f7102f8cb4d058bc95da276bbc19eeec997267c3bb0f25ef68facd1",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "tokenizer.json",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/tokenizer.json",
+      "responseOrigin": "https://huggingface.co",
+      "bytes": 2480466,
+      "observations": 2,
+      "observedSha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "onnx/encoder_model.onnx",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/onnx/encoder_model.onnx",
+      "responseOrigin": "https://us.aws.cdn.hf.co",
+      "bytes": 32894434,
+      "observations": 1,
+      "observedSha256": "8944ec04111e040305cdb07ac97f50363024255bf0bdc67ab93ecb76645f31ae",
+      "approvedPayloadDigest": null
+    },
+    {
+      "path": "onnx/decoder_model_merged_q4.onnx",
+      "origin": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/resolve/517244293732ee2d58139af5814231b7e6830a0d/onnx/decoder_model_merged_q4.onnx",
+      "responseOrigin": "https://us.aws.cdn.hf.co",
+      "bytes": 86804581,
+      "observations": 1,
+      "observedSha256": "a3308674834b99123b32c33e3577b09b6547df8c3cea16b5f1d0c36ebbd02b1f",
+      "approvedPayloadDigest": null
+    }
+  ]
+}
