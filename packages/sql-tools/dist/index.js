@@ -1,5 +1,6 @@
 import { parse } from "pg-connection-string";
 import { sequenceDiff, sequenceDiffSql } from "./catalog-sequences.js";
+import { normalizeIndexSql } from "./catalog-index-sql.js";
 import postgres from "postgres";
 import { Graph, depthFirstSearch, hasCycle } from "graph-data-structure";
 import { createHash } from "node:crypto";
@@ -1235,7 +1236,7 @@ var compareIndexes = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
-		if (source.definition !== undefined && source.definition !== target.definition) return [
+		if (source.definition !== undefined && normalizeIndexSql(source.definition) !== normalizeIndexSql(target.definition)) return [
 			{ type: "IndexDrop", object: target, reason: "index definition changed" },
 			{ type: "IndexCreate", object: source, reason: "index definition changed" }
 		];
@@ -1245,8 +1246,8 @@ var compareIndexes = () => ({
 		if (!haveEqualColumns(source.columnNames, target.columnNames)) reason = `columns are different (${source.columnNames} vs ${target.columnNames})`;
 		else if (source.unique !== target.unique) reason = `uniqueness is different (${source.unique} vs ${target.unique})`;
 		else if (sourceUsing !== targetUsing) reason = `using method is different (${source.using} vs ${target.using})`;
-		else if (source.where !== target.where) reason = `where clause is different (${source.where} vs ${target.where})`;
-		else if (source.expression !== target.expression) reason = `expression is different (${source.expression} vs ${target.expression})`;
+		else if (normalizeIndexSql(source.where) !== normalizeIndexSql(target.where)) reason = `where clause is different (${source.where} vs ${target.where})`;
+		else if (normalizeIndexSql(source.expression) !== normalizeIndexSql(target.expression)) reason = `expression is different (${source.expression} vs ${target.expression})`;
 		if (reason) return [{
 			type: "IndexDrop",
 			object: target,
