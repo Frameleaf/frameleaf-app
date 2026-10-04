@@ -21,6 +21,7 @@ import {
   QueueName,
   UserStatus,
 } from 'src/enum.js';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -37,6 +38,7 @@ import {
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { bulkErrorMessage } from 'src/utils/bulk-operation.js';
+import { withExecutionCleanup } from 'src/utils/execution-signal.js';
 import {
   checkImportPathFormat,
   checkImportPathOnDisk,
@@ -72,8 +74,8 @@ export const LIBRARY_SCAN_BATCH = 1000;
 
 /**
  * A scan the server refuses to finish, with a stable code for the library page. Refusals are
- * failures, so they get the one automatic retry: a folder that was briefly unmounted scans fine
- * thirty seconds later.
+ * failures requiring attention. Library scans are not automatically replayable until asset and
+ * processing-intent admission is atomic.
  */
 export class LibraryScanRefusal extends Error {
   constructor(
@@ -91,7 +93,7 @@ type LibraryRow = NonNullable<Awaited<ReturnType<LibraryRepository['get']>>>;
  *
  * A scan is a durable `media_operation` of kind `library_scan`, one per library at a time: it shows
  * in Activity and the notifications panel with its progress, can be paused, resumed and cancelled,
- * survives restarts through the claim lease, and gets the one automatic retry every job gets.
+ * records interrupted claims for recovery, and requires attention instead of unsafe automatic replay.
  *
  * It runs inside a `LibraryScanRun` job on the library queue, so pausing that queue holds new scans
  * and "waiting for the library queue" still means "waiting for scans". A tick wakes the queue for
@@ -356,20 +358,16 @@ export class LibraryScanService {
     return JobStatus.Success;
   }
 
-  /** Lapsed claims are recovered by `MediaOperationSweepService`, for every kind, not here. */
+  /** One domain operation per wake; tick wakes remaining claimable scans without chaining attempts. */
   async drain(): Promise<void> {
-    while (!this.stopping) {
-      const claim = await this.operations.claimNext({
-        kinds: [KIND],
-        workerId: this.workerId,
-        leaseMs: LIBRARY_SCAN_LEASE_MS,
-      });
-      if (!claim) {
-        return;
-      }
-
-      await this.run(claim.operation, claim.claimToken);
-    }
+    if (this.stopping || jobSignal()?.aborted) return;
+    const claim = await this.operations.claimNext({
+      kinds: [KIND],
+      workerId: this.workerId,
+      leaseMs: LIBRARY_SCAN_LEASE_MS,
+    });
+    if (!claim) return;
+    await this.run(claim.operation, claim.claimToken);
   }
 
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -385,6 +383,8 @@ export class LibraryScanService {
     }
 
     const controller = new AbortController();
+    const parentSignal = jobSignal();
+    const signal = parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal;
     const keepAlive = setInterval(() => {
       void this.operations
         .heartbeat(operation.id, claimToken, LIBRARY_SCAN_LEASE_MS)
@@ -395,8 +395,10 @@ export class LibraryScanService {
     }, LIBRARY_SCAN_LEASE_MS / 4);
 
     try {
-      await this.scan(operation, claimToken, snapshot, controller.signal);
+      signal.throwIfAborted();
+      await this.scan(operation, claimToken, snapshot, signal);
     } catch (error) {
+      if (signal.aborted) return;
       const refusal = error instanceof LibraryScanRefusal ? error : undefined;
       const message = bulkErrorMessage(error);
       this.logger.warn(`Scan ${operation.id} of library ${snapshot.libraryId} failed: ${message}`);
@@ -406,6 +408,21 @@ export class LibraryScanService {
       });
     } finally {
       clearInterval(keepAlive);
+      if (parentSignal?.aborted) {
+        // Scan work and its source iterator have stopped. Give only this claim-fenced terminal
+        // write a separate bounded SQL lifetime; ordinary writes retain the cancelled signal.
+        await withExecutionCleanup(() =>
+          this.operations.fail(
+            operation.id,
+            claimToken,
+            {
+              error: 'The library queue attempt was interrupted',
+              errorCode: 'library_scan_interrupted',
+            },
+            { retry: false },
+          ),
+        );
+      }
     }
   }
 
@@ -415,6 +432,7 @@ export class LibraryScanService {
     snapshot: LibraryScanSnapshot,
     signal: AbortSignal,
   ) {
+    signal.throwIfAborted();
     const { id } = operation;
     const library = await this.libraryRepository.get(snapshot.libraryId);
     if (!library) {
@@ -440,7 +458,8 @@ export class LibraryScanService {
     result = { ...result, fingerprint };
 
     const roots = [...new Set(library.importPaths.map((importPath) => normalizeImportPath(importPath)))];
-    await this.requireSources(roots);
+    await this.requireSources(roots, signal);
+    signal.throwIfAborted();
 
     if (!(await this.start(id, claimToken, result))) {
       // cancelled between the claim and this write, or the claim is gone
@@ -466,7 +485,7 @@ export class LibraryScanService {
 
     if (
       signal.aborted ||
-      !(await this.applyBatch(operation, claimToken, library, result, (_assets, repository) =>
+      !(await this.applyBatch(operation, claimToken, library, result, signal, (_assets, repository) =>
         repository.update(library.id, { refreshedAt: new Date() }),
       ))
     ) {
@@ -513,11 +532,12 @@ export class LibraryScanService {
     };
     const found = new Map(roots.map((root) => [root, 0]));
 
-    const batches = this.storageRepository.walk({
+    const batches = this.storageRepository.walkLibrary({
       pathsToCrawl: roots,
       includeHidden: false,
       exclusionPatterns: library.exclusionPatterns,
       take: LIBRARY_SCAN_BATCH,
+      signal,
     });
 
     for await (const batch of batches) {
@@ -534,18 +554,18 @@ export class LibraryScanService {
         }
       }
 
-      const added = await this.importFiles(operation, claimToken, library, batch, result);
+      const added = await this.importFiles(operation, claimToken, library, batch, result, signal);
       if (added === undefined) return;
       result = { ...result, crawled: result.crawled + batch.length, added: result.added + added };
-      if (!(await this.write(operation, claimToken, result))) {
+      if (!(await this.write(operation, claimToken, result, signal, batch.length))) {
         return;
       }
     }
 
-    await this.requireNonemptySources(library, roots, found);
+    await this.requireNonemptySources(library, roots, signal, found);
     if (signal.aborted) return;
     // Only the current claim for these exact settings may mark excluded items offline.
-    const excluded = await this.applyBatch(operation, claimToken, library, result, (assets) =>
+    const excluded = await this.applyBatch(operation, claimToken, library, result, signal, (assets) =>
       assets.detectOfflineExternalAssets(library.id, library.importPaths, library.exclusionPatterns),
     );
     if (!excluded) return;
@@ -558,7 +578,7 @@ export class LibraryScanService {
       checked: 0,
       total: await this.assetRepository.getLibraryAssetCount(library.id),
     };
-    return (await this.write(operation, claimToken, result)) ? result : undefined;
+    return (await this.write(operation, claimToken, result, signal)) ? result : undefined;
   }
 
   /** Check every indexed item against its file, a page at a time from the recorded cursor. */
@@ -580,13 +600,14 @@ export class LibraryScanService {
       }
 
       const page = await this.libraryRepository.getAssetIdPage(library.id, result.cursor, LIBRARY_SCAN_BATCH);
+      signal.throwIfAborted();
       if (page.length === 0) {
         return result;
       }
 
       // The folders are checked again before every page: a share can drop mid-scan, and an item is
       // only missing when its folder is demonstrably there.
-      await this.requireSources(roots);
+      await this.requireSources(roots, signal);
 
       const counts = await this.checkAssets(
         operation,
@@ -606,7 +627,7 @@ export class LibraryScanService {
         offlined: result.offlined + counts.offlined,
         onlined: result.onlined + counts.onlined,
       };
-      if (!(await this.write(operation, claimToken, result))) {
+      if (!(await this.write(operation, claimToken, result, signal, page.length))) {
         return;
       }
     }
@@ -622,9 +643,11 @@ export class LibraryScanService {
     signal: AbortSignal,
   ) {
     const assets = await this.assetJobRepository.getForSyncAssets(assetIds);
+    signal.throwIfAborted();
     const stats = await Promise.all(
       assets.map((asset) => this.storageRepository.stat(asset.originalPath).catch(() => null)),
     );
+    signal.throwIfAborted();
 
     const toOffline: string[] = [];
     const trashedToOffline: string[] = [];
@@ -657,10 +680,10 @@ export class LibraryScanService {
     }
 
     // stat may have waited on a share that disconnected. Recheck before any offline/online write.
-    await this.requireSources(roots);
-    await this.requireNonemptySources(library, roots);
+    await this.requireSources(roots, signal);
+    await this.requireNonemptySources(library, roots, signal);
     if (signal.aborted) return;
-    const counts = await this.applyBatch(operation, claimToken, library, result, async (assets) => {
+    const counts = await this.applyBatch(operation, claimToken, library, result, signal, async (assets) => {
       const now = new Date();
       if (toOffline.length > 0) await assets.updateAll(toOffline, { isOffline: true, deletedAt: now });
       if (trashedToOffline.length > 0) await assets.updateAll(trashedToOffline, { isOffline: true });
@@ -682,6 +705,7 @@ export class LibraryScanService {
     library: LibraryRow,
     paths: string[],
     result: LibraryScanResult,
+    signal: AbortSignal,
   ): Promise<number | undefined> {
     if (paths.length === 0) {
       return 0;
@@ -689,13 +713,16 @@ export class LibraryScanService {
 
     const rows: ReturnType<typeof libraryAssetFromFile>[] = [];
     for (const filePath of paths) {
+      signal.throwIfAborted();
       const assetPath = path.normalize(filePath);
       try {
         if (await resolvesIntoMediaStorage(this.storageRepository, assetPath)) {
           this.logger.warn(`Skipping ${assetPath} for library ${library.id}: it links into the media storage`);
           continue;
         }
+        signal.throwIfAborted();
         const stat = await this.storageRepository.stat(assetPath);
+        signal.throwIfAborted();
         rows.push(
           libraryAssetFromFile(
             { path: assetPath, mtime: stat.mtime },
@@ -705,11 +732,13 @@ export class LibraryScanService {
           ),
         );
       } catch (error) {
+        signal.throwIfAborted();
         this.logger.error(`Error processing ${assetPath} for library ${library.id}: ${error}`);
       }
     }
 
-    const assetIds = await this.applyBatch(operation, claimToken, library, result, async (assets) => {
+    signal.throwIfAborted();
+    const assetIds = await this.applyBatch(operation, claimToken, library, result, signal, async (assets) => {
       const fresh = new Set(
         await assets.filterNewExternalAssetPaths(
           library.id,
@@ -720,11 +749,13 @@ export class LibraryScanService {
     });
     if (!assetIds) return;
     if (assetIds.length === 0) return 0;
+    signal.throwIfAborted();
     await Promise.all(
       assetIds.map((assetId) =>
         this.eventRepository.emit('AssetCreate', { asset: { id: assetId, ownerId: library.ownerId } }),
       ),
     );
+    signal.throwIfAborted();
     await this.queuePostSyncJobs(assetIds);
     return assetIds.length;
   }
@@ -737,12 +768,15 @@ export class LibraryScanService {
   }
 
   /** Every folder must be a readable directory now, or the scan fails naming the ones that are not. */
-  private async requireSources(roots: string[]) {
+  private async requireSources(roots: string[], signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const checks = await Promise.all(
-      roots.map(
-        async (root) => checkImportPathFormat(root) ?? (await checkImportPathOnDisk(this.storageRepository, root)),
-      ),
+      roots.map(async (root) => {
+        signal?.throwIfAborted();
+        return checkImportPathFormat(root) ?? (await checkImportPathOnDisk(this.storageRepository, root));
+      }),
     );
+    signal?.throwIfAborted();
     const unavailable = checks.filter((check) => !check.isValid);
     if (unavailable.length > 0) {
       throw new LibraryScanRefusal(
@@ -753,15 +787,22 @@ export class LibraryScanService {
   }
 
   /** An empty readable mount point is unavailable when it still has indexed online items. */
-  private async requireNonemptySources(library: LibraryRow, roots: string[], found?: Map<string, number>) {
+  private async requireNonemptySources(
+    library: LibraryRow,
+    roots: string[],
+    signal: AbortSignal,
+    found?: Map<string, number>,
+  ) {
     for (const root of roots) {
+      signal.throwIfAborted();
       let count = found?.get(root) ?? 0;
       if (count === 0) {
-        for await (const batch of this.storageRepository.walk({
+        for await (const batch of this.storageRepository.walkLibrary({
           pathsToCrawl: [root],
           includeHidden: false,
           exclusionPatterns: [],
           take: 1,
+          signal,
         })) {
           if (batch.length > 0) {
             count = batch.length;
@@ -784,14 +825,23 @@ export class LibraryScanService {
     claimToken: string,
     library: LibraryRow,
     result: LibraryScanResult,
+    signal: AbortSignal,
     mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
   ): Promise<T | undefined> {
+    signal.throwIfAborted();
     const outcome = await this.libraryRepository.withScanClaim(
       { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
-      mutate,
+      async (assets, repository) => {
+        // Locks may have waited after the preflight check. Abort before and after mutation so
+        // withScanClaim rolls back a cancelled in-flight transaction.
+        signal.throwIfAborted();
+        const value = await mutate(assets, repository);
+        signal.throwIfAborted();
+        return value;
+      },
     );
     if (!outcome) {
-      await this.write(operation, claimToken, result);
+      await this.write(operation, claimToken, result, signal);
       return;
     }
     if ('stopReason' in outcome) {
@@ -820,7 +870,14 @@ export class LibraryScanService {
   }
 
   /** Record progress, then carry on unless the scan was cancelled, paused or lost. */
-  private async write(operation: MediaOperation, claimToken: string, result: LibraryScanResult): Promise<boolean> {
+  private async write(
+    operation: MediaOperation,
+    claimToken: string,
+    result: LibraryScanResult,
+    signal: AbortSignal,
+    committedUnits = 0,
+  ): Promise<boolean> {
+    signal.throwIfAborted();
     const units = libraryScanUnits(result);
     const written = await this.operations.setBulkResult(operation.id, claimToken, {
       result: result as unknown as Record<string, unknown>,
@@ -829,6 +886,8 @@ export class LibraryScanService {
       progress: libraryScanProgress(result),
       leaseMs: LIBRARY_SCAN_LEASE_MS,
     });
+    // Status/phase/heartbeat writes pass zero. Only durable newly examined pages advance the queue.
+    if (written && !signal.aborted) advanceJobProgress(committedUnits);
     return this.proceed(operation, claimToken, written, result);
   }
 

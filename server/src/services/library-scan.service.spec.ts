@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Stats } from 'node:fs';
+import type { createPostgres } from '@frameleaf/sql-tools';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AdminAuditAction,
@@ -10,6 +12,8 @@ import {
   MediaOperationStatus,
   UserStatus,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { QueueWatchdog } from 'src/queue/watchdog.js';
 import { AssetSyncResult } from 'src/repositories/library.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
@@ -19,6 +23,8 @@ import {
   checkExistingAsset,
   mapLibraryScan,
 } from 'src/services/library-scan.service.js';
+import { boundExecutionReservations } from 'src/utils/execution-database.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { emptyLibraryScanResult, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -110,7 +116,7 @@ describe(LibraryScanService.name, () => {
     mocks.storage.stat.mockImplementation((path: string) =>
       Promise.resolve(path === '/mnt/photos' ? directory : file()),
     );
-    mocks.storage.walk.mockImplementation(() => walkOf());
+    mocks.storage.walkLibrary.mockImplementation(() => walkOf());
     mocks.asset.getLibraryAssetCount.mockResolvedValue(0);
     mocks.asset.filterNewExternalAssetPaths.mockImplementation((_id: string, paths: string[]) =>
       Promise.resolve(paths),
@@ -249,9 +255,256 @@ describe(LibraryScanService.name, () => {
   });
 
   describe('run', () => {
+    it('bounds interrupted settlement acquisition and releases a late SQL grant without executing it', async () => {
+      vi.useFakeTimers();
+      const grant = Promise.withResolvers<unknown>();
+      const unsafe = vi.fn();
+      const release = vi.fn();
+      const client = boundExecutionReservations({ reserve: () => grant.promise } as unknown as ReturnType<
+        typeof createPostgres
+      >);
+      const controller = new AbortController();
+      controller.abort();
+      const context = { signal: controller.signal } as QueueExecution;
+      const deadline = vi.spyOn(AbortSignal, 'timeout');
+      operations.fail = vi.fn<MediaOperationRepository['fail']>(async () => {
+        const connection = await client.reserve();
+        await connection.unsafe('must not execute');
+        return 'failed';
+      });
+      try {
+        const outcome = expect(queueExecution.run(context, () => sut.run(operationOf(), 'token'))).rejects.toThrow(
+          'Database acquisition timed out',
+        );
+        await vi.advanceTimersByTimeAsync(5000);
+        await outcome;
+        expect(deadline).toHaveBeenCalledWith(5000);
+        grant.resolve({ unsafe, release });
+        await Promise.resolve();
+        expect(release).toHaveBeenCalledOnce();
+        expect(unsafe).not.toHaveBeenCalled();
+        expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
+      } finally {
+        deadline.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('settles interruption through the production SQL reservation guard after the source has closed', async () => {
+      const waiting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      const stopped = new Error('Stopped queue attempt');
+      const context = { signal: controller.signal, progressUnits: 0, progress: vi.fn() } as unknown as QueueExecution;
+      let closed = false;
+      const unsafe = vi.fn(() => Promise.resolve([]));
+      const returnConnection = vi.fn();
+      const client = boundExecutionReservations({
+        reserve: () => Promise.resolve({ unsafe, release: returnConnection }),
+      } as unknown as ReturnType<typeof createPostgres>);
+      operations.fail = vi.fn<MediaOperationRepository['fail']>(async (_id, token, _failure, options) => {
+        expect(closed).toBe(true);
+        expect(token).toBe('token');
+        expect(queueExecution.getStore()?.signal).toBe(controller.signal);
+        const connection = await client.reserve();
+        expect(options?.retry).toBe(false);
+        expect(executionSignal()?.aborted).toBe(false);
+        try {
+          await connection.unsafe('terminal claim-fenced update');
+        } finally {
+          connection.release();
+        }
+        return 'failed';
+      });
+      mocks.storage.walkLibrary.mockImplementationOnce(async function* () {
+        try {
+          waiting.resolve();
+          await release.promise;
+          yield ['/mnt/photos/late.jpg'];
+        } finally {
+          closed = true;
+        }
+      });
+      await queueExecution.run(context, async () => {
+        const run = sut.run(operationOf(), 'token');
+        await waiting.promise;
+        controller.abort(stopped);
+        // Negative control: the same actual reservation guard refuses ordinary SQL in this queue context.
+        await expect(client.reserve()).rejects.toThrow(stopped);
+        release.resolve();
+        await run;
+        await expect(client.reserve()).rejects.toThrow(stopped);
+      });
+      expect(unsafe).toHaveBeenCalledOnce();
+      expect(returnConnection).toHaveBeenCalledOnce();
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+      expect(context.progress).not.toHaveBeenCalled();
+    });
+
+    it.each(['crawl', 'check'])('observes queue cancellation during delayed %s reads', async (phase) => {
+      const waiting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      const progress = vi.fn();
+      const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+      const result = { ...emptyLibraryScanResult(), phase, fingerprint: libraryPathsFingerprint(library) };
+      if (phase === 'crawl') {
+        mocks.storage.walkLibrary.mockImplementationOnce(async function* () {
+          waiting.resolve();
+          await release.promise;
+          yield ['/mnt/photos/late.jpg'];
+        });
+      } else {
+        mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
+        mocks.assetJob.getForSyncAssets.mockResolvedValue([
+          {
+            id: 'asset-1',
+            originalPath: '/mnt/photos/unchanged.jpg',
+            isOffline: false,
+            status: AssetStatus.Active,
+            fileModifiedAt: new Date('2024-01-01'),
+          },
+        ] as never);
+        mocks.storage.stat.mockImplementation(async (path: string) => {
+          if (path === '/mnt/photos') return directory;
+          waiting.resolve();
+          await release.promise;
+          return file();
+        });
+      }
+      const run = queueExecution.run(context, () => sut.run(operationOf({ result: result as never }), 'token'));
+      await waiting.promise;
+      controller.abort();
+      release.resolve();
+      await run;
+      expect(mocks.library.withScanClaim).not.toHaveBeenCalled();
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(progress).not.toHaveBeenCalled();
+    });
+
+    it('advances the watchdog only after committed pages, not repeated status writes', async () => {
+      const controller = new AbortController();
+      const watchdog = new QueueWatchdog({ noProgressDeadline: 100, lease: 1000, cancelGrace: 20 });
+      watchdog.add('scan', 0, 100);
+      const progress = vi.fn((units: number) => watchdog.progress('scan', units, 80));
+      const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+      await queueExecution.run(context, () => sut.run(operationOf(), 'token'));
+      expect(progress.mock.calls).toEqual([[1], [2]]);
+      expect(watchdog.inspect(150, 150).cancel).toEqual([]);
+      watchdog.progress('scan', 2, 170);
+      expect(watchdog.inspect(180, 180).cancel).toEqual(['scan']);
+    });
+
+    it('reports unchanged-file check progress only after the page checkpoint commits', async () => {
+      const controller = new AbortController();
+      const progress = vi.fn();
+      const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+      const result = { ...emptyLibraryScanResult(), phase: 'check', fingerprint: libraryPathsFingerprint(library) };
+      mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockResolvedValue([
+        {
+          id: 'asset-1',
+          originalPath: '/mnt/photos/unchanged.jpg',
+          isOffline: false,
+          status: AssetStatus.Active,
+          fileModifiedAt: new Date('2024-01-01'),
+        },
+      ] as never);
+      operations.setBulkResult.mockImplementation((_id, _token, update) => {
+        if (update.result.phase === 'check') expect(progress).not.toHaveBeenCalled();
+        return running;
+      });
+      await queueExecution.run(context, () => sut.run(operationOf({ result: result as never }), 'token'));
+      expect(progress.mock.calls).toEqual([[1]]);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('does not advance queue progress when a checkpoint loses its claim', async () => {
+      const controller = new AbortController();
+      const progress = vi.fn();
+      const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg']));
+      operations.setBulkResult.mockResolvedValue(undefined);
+      await queueExecution.run(context, () => sut.run(operationOf(), 'token'));
+      expect(progress).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('checks queue cancellation again after acquiring the domain batch fence', async () => {
+      const controller = new AbortController();
+      const progress = vi.fn();
+      const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg']));
+      mocks.library.withScanClaim.mockImplementation(async (_claim, mutate) => {
+        controller.abort();
+        return { value: await mutate(mocks.asset as never, mocks.library as never) };
+      });
+      await queueExecution.run(context, () => sut.run(operationOf(), 'token'));
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).not.toHaveBeenCalled();
+      expect(progress).not.toHaveBeenCalled();
+    });
+
+    it('does not claim another domain scan after the queue signal is aborted', async () => {
+      const controller = new AbortController();
+      const context = { signal: controller.signal, progressUnits: 0, progress: vi.fn() } as unknown as QueueExecution;
+      operations.claimNext.mockImplementationOnce(() => {
+        controller.abort();
+        return { operation: operationOf(), claimToken: 'token' };
+      });
+      await queueExecution.run(context, () => sut.drain());
+      expect(operations.claimNext).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        expect.objectContaining({ errorCode: 'library_scan_interrupted' }),
+        { retry: false },
+      );
+    });
+
+    it('handles only one domain operation per queue wake even when more are claimable', async () => {
+      operations.claimNext.mockResolvedValue({ operation: operationOf(), claimToken: 'token' });
+      await sut.drain();
+      expect(operations.claimNext).toHaveBeenCalledTimes(1);
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a held domain heartbeat from advancing stalled queue work', async () => {
+      vi.useFakeTimers();
+      try {
+        const waiting = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const controller = new AbortController();
+        const progress = vi.fn();
+        const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+        mocks.storage.walkLibrary.mockImplementationOnce(async function* () {
+          waiting.resolve();
+          await release.promise;
+          yield ['/mnt/photos/late.jpg'];
+        });
+        const run = queueExecution.run(context, () => sut.run(operationOf(), 'token'));
+        await waiting.promise;
+        await vi.advanceTimersByTimeAsync(LIBRARY_SCAN_LEASE_MS / 2);
+        expect(operations.heartbeat).toHaveBeenCalledTimes(2);
+        expect(progress).not.toHaveBeenCalled();
+        controller.abort();
+        release.resolve();
+        await run;
+        expect(progress).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('imports new files, checks existing items and completes', async () => {
       const existing = { id: 'asset-1', isOffline: false, libraryId: library.id, status: AssetStatus.Active };
-      mocks.storage.walk.mockImplementation(() => walkOf(['/mnt/photos/new.jpg', '/mnt/photos/old.jpg']));
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/new.jpg', '/mnt/photos/old.jpg']));
       mocks.asset.filterNewExternalAssetPaths.mockResolvedValue(['/mnt/photos/new.jpg']);
       mocks.asset.getLibraryAssetCount.mockResolvedValue(2);
       mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
@@ -289,7 +542,9 @@ describe(LibraryScanService.name, () => {
     });
 
     it('skips a file whose real path is in the media storage', async () => {
-      mocks.storage.walk.mockImplementation(() => walkOf(['/mnt/photos/mine.jpg', '/mnt/photos/linked/theirs.jpg']));
+      mocks.storage.walkLibrary.mockImplementation(() =>
+        walkOf(['/mnt/photos/mine.jpg', '/mnt/photos/linked/theirs.jpg']),
+      );
       mocks.storage.realpath.mockImplementation((path: string) =>
         Promise.resolve(
           path.includes('/linked/') ? `${StorageCore.getMediaLocation()}/upload/someone/theirs.jpg` : path,
@@ -312,7 +567,7 @@ describe(LibraryScanService.name, () => {
         error: expect.stringContaining('/mnt/photos: Path does not exist'),
         errorCode: 'library_source_unavailable',
       });
-      expect(mocks.storage.walk).not.toHaveBeenCalled();
+      expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
       expect(mocks.asset.detectOfflineExternalAssets).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
@@ -331,7 +586,7 @@ describe(LibraryScanService.name, () => {
     });
 
     it('fails instead of marking everything missing when a folder comes back empty', async () => {
-      mocks.storage.walk.mockImplementation(() => walkOf([]));
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf([]));
       mocks.library.countOnlineAssetsUnder.mockResolvedValue(120);
       mocks.library.getAssetIdPage.mockResolvedValue([{ id: 'asset-1' }]);
 
@@ -380,7 +635,7 @@ describe(LibraryScanService.name, () => {
 
       await sut.run(operationOf({ result: result as never }), 'token');
 
-      expect(mocks.storage.walk).not.toHaveBeenCalled();
+      expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
       expect(mocks.library.getAssetIdPage).toHaveBeenCalledWith(library.id, 'asset-9', LIBRARY_SCAN_BATCH);
       expect(operations.complete).toHaveBeenCalled();
     });
@@ -393,7 +648,7 @@ describe(LibraryScanService.name, () => {
       ] as never);
       mocks.library.countOnlineAssetsUnder.mockResolvedValue(12);
       let disconnected = when === 'resume';
-      mocks.storage.walk.mockImplementation(() => (disconnected ? walkOf() : walkOf(['/mnt/photos/gone.jpg'])));
+      mocks.storage.walkLibrary.mockImplementation(() => (disconnected ? walkOf() : walkOf(['/mnt/photos/gone.jpg'])));
       mocks.storage.stat.mockImplementation((path: string) => {
         if (path === '/mnt/photos') return Promise.resolve(directory);
         disconnected = true;
@@ -420,7 +675,7 @@ describe(LibraryScanService.name, () => {
       const result = { ...emptyLibraryScanResult(), phase, fingerprint: libraryPathsFingerprint(library) };
       const operation = operationOf({ result: result as never });
       if (phase === 'crawl') {
-        mocks.storage.walk.mockImplementationOnce(async function* () {
+        mocks.storage.walkLibrary.mockImplementationOnce(async function* () {
           waiting.resolve();
           await release.promise;
           yield ['/mnt/photos/stale.jpg'];
@@ -455,7 +710,7 @@ describe(LibraryScanService.name, () => {
         const waiting = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         operations.heartbeat.mockResolvedValue(false);
-        mocks.storage.walk.mockImplementationOnce(async function* () {
+        mocks.storage.walkLibrary.mockImplementationOnce(async function* () {
           waiting.resolve();
           await release.promise;
           yield ['/mnt/photos/stale.jpg'];
@@ -485,11 +740,11 @@ describe(LibraryScanService.name, () => {
         operation.id,
         expect.objectContaining({ stopReason: 'paths_changed' }),
       );
-      expect(mocks.storage.walk).not.toHaveBeenCalled();
+      expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
     });
 
     it('records the removal as the reason when a removed library cancels its scan', async () => {
-      mocks.storage.walk.mockImplementation(() => walkOf(['/mnt/photos/a.jpg']));
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg']));
       operations.setBulkResult.mockResolvedValue({ ...running, status: MediaOperationStatus.Cancelling });
       mocks.library.get.mockResolvedValueOnce(library).mockResolvedValue({ ...library, deletedAt: new Date() });
 
@@ -512,11 +767,11 @@ describe(LibraryScanService.name, () => {
 
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, 'stale-token', { released: false });
       expect(operations.setFinishedResult).not.toHaveBeenCalled();
-      expect(mocks.storage.walk).not.toHaveBeenCalled();
+      expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
     });
 
     it('hands the scan back at a batch boundary when a pause was asked for', async () => {
-      mocks.storage.walk.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
       operations.setBulkResult.mockResolvedValue({ ...running, pauseRequestedAt: new Date() });
 
       await sut.run(operationOf(), 'token');
