@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { JobRunResponseDto } from 'src/dtos/job-run.dto.js';
+import type { RunRead } from 'src/queue/run-query.js';
 import { mapMemoryExport } from 'src/dtos/memory.dto.js';
 import { QueueRunDto, RunningJobsResponseDto } from 'src/dtos/running-job.dto.js';
 import { MemoryExportStatus, Permission, QueueName } from 'src/enum.js';
@@ -48,14 +50,16 @@ export class RunningJobService {
 
   async getRunning(auth: AuthDto): Promise<RunningJobsResponseDto> {
     const canManageQueues = this.canManageQueues(auth);
+    const canReadJobRuns = auth.user.isAdmin && this.isGranted(auth, Permission.JobRead);
     const canReadMemoryExports = this.isGranted(auth, Permission.MemoryRead);
 
-    const [operations, memoryExports, queues] = await Promise.all([
+    const [operations, memoryExports, queues, durable] = await Promise.all([
       this.mediaOperationService.listUnfinished(auth, RUNNING_OPERATIONS_LIMIT),
       canReadMemoryExports
         ? this.memoryRepository.searchExports(auth.user.id, { status: RUNNING_MEMORY_EXPORT_STATUSES })
         : Promise.resolve([]),
       canManageQueues ? this.getQueueRuns() : Promise.resolve([]),
+      canReadJobRuns ? this.getDurableRuns() : Promise.resolve({ runs: [], unavailable: false }),
     ]);
 
     return {
@@ -63,14 +67,16 @@ export class RunningJobService {
       memoryExports: memoryExports.map((run) => mapMemoryExport(run)),
       queues,
       canManageQueues,
+      canReadJobRuns,
+      durableRuns: durable.runs,
+      durableRunsUnavailable: durable.unavailable,
     };
   }
 
   /**
    * Every queue with work in it, in the order the queues are declared.
    *
-   * A queue that cannot be read is left out rather than failing the whole answer: the panel would
-   * otherwise lose the viewer's own jobs over one unreachable queue.
+   * A failed queue read becomes an explicit unavailable row. Other work remains visible.
    */
   private async getQueueRuns(): Promise<QueueRunDto[]> {
     const runs = await Promise.all(
@@ -93,15 +99,80 @@ export class RunningJobService {
             processed: run.processed,
             total: run.processed + run.active + run.waiting,
             startedAt: run.startedAt ? run.startedAt.toISOString() : null,
+            unavailable: false,
+            state: isPaused
+              ? 'paused'
+              : run.active > 0
+                ? 'running'
+                : run.blocked > 0 && run.blocked === run.waiting
+                  ? 'blocked'
+                  : run.delayed > 0 && run.delayed === run.waiting
+                    ? 'delayed'
+                    : !run.workerAvailable
+                      ? 'unavailable'
+                      : run.retrying > 0
+                        ? 'retrying'
+                        : 'waiting',
+            noDispatchBacklog: run.noDispatchBacklog,
+            lastProgressAt: run.lastProgressAt?.toISOString() ?? null,
           };
-        } catch (error) {
-          this.logger.warn(`Unable to read the ${name} queue for the running-jobs summary: ${error}`);
-          return null;
+        } catch {
+          this.logger.warn(`Unable to read the ${name} queue for the running-jobs summary`);
+          return {
+            name,
+            isPaused: false,
+            canPause: false,
+            unavailable: true,
+            state: 'unavailable',
+            active: 0,
+            waiting: 0,
+            processed: 0,
+            total: 0,
+            startedAt: null,
+            lastProgressAt: null,
+            noDispatchBacklog: false,
+          };
         }
       }),
     );
 
     return runs.filter((run): run is QueueRunDto => run !== null);
+  }
+
+  private async getDurableRuns(): Promise<{ runs: JobRunResponseDto[]; unavailable: boolean }> {
+    try {
+      const rows = await this.jobRepository.listRuns(25, 0);
+      return {
+        runs: rows.map((row: RunRead) => ({
+          id: row.id,
+          kind: row.kind,
+          createdAt: row.createdAt.toISOString(),
+          finishedAt: row.finishedAt?.toISOString() ?? null,
+          enumerationDone: row.enumerationDone,
+          total: row.total,
+          completed: row.completed,
+          failed: row.failed,
+          needsAttention: row.needsAttention,
+          cancelled: row.cancelled,
+          active: row.active,
+          retrying: row.retrying,
+          delayed: row.delayed,
+          paused: row.paused,
+          waiting: row.waiting,
+          blocked: row.blocked,
+          stageTotals: row.stageTotals,
+          state: row.state,
+          lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+          lastStage: row.lastStage,
+          reasons: row.reasons,
+          noDispatchBacklog: row.noDispatchBacklog,
+        })),
+        unavailable: false,
+      };
+    } catch {
+      this.logger.warn('Unable to read durable job run summaries');
+      return { runs: [], unavailable: true };
+    }
   }
 
   /** Server-wide queue counts: administrators whose credentials may read queues, and nobody else. */
