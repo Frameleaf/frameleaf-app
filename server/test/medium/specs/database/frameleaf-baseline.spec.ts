@@ -1,4 +1,6 @@
+import { readOrder } from '@frameleaf/sql-tools';
 import { sql } from 'kysely';
+import { fileURLToPath } from 'node:url';
 import { getKyselyDB } from 'test/utils.js';
 
 it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async () => {
@@ -16,8 +18,12 @@ it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async
     const ledgers = await sql<{ name: string }>`SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public'
       AND tablename IN ('frameleaf_migrations', 'kysely_migrations', 'migrations')`.execute(db);
     expect(ledgers.rows.map(({ name }) => name)).toEqual(['frameleaf_migrations']);
-    const migrations = await sql<{ name: string }>`SELECT name FROM public.frameleaf_migrations`.execute(db);
-    expect(migrations.rows.map(({ name }) => name)).toEqual(['0000000000000-FrameleafBaseline']);
+    const expectedOrder = readOrder(fileURLToPath(new URL('../../../../src/schema/migrations/', import.meta.url)));
+    expect(expectedOrder?.[0]).toBe('0000000000000-FrameleafBaseline');
+    const migrations = await sql<{ name: string }>`SELECT name FROM public.frameleaf_migrations ORDER BY name`.execute(
+      db,
+    );
+    expect(migrations.rows.map(({ name }) => name)).toEqual(expectedOrder);
     for (const table of [
       'asset',
       'album',
