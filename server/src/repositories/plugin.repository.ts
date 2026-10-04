@@ -95,7 +95,7 @@ export class PluginRepository {
 
   @GenerateSql()
   async search(dto: PluginSearchDto = {}) {
-    const query = await this.queryBuilder();
+    const query = this.queryBuilder();
     return query
       .$if(!!dto.id, (qb) => qb.where('plugin.id', '=', dto.id!))
       .$if(dto.enabled !== undefined, (qb) => qb.where('plugin.enabled', '=', dto.enabled!))
@@ -109,19 +109,19 @@ export class PluginRepository {
 
   @GenerateSql({ params: [DummyValue.STRING] })
   async getByHash(hash: Buffer) {
-    const query = await this.queryBuilder();
+    const query = this.queryBuilder();
     return query.where('plugin.sha256hash', '=', hash).executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
   async getByName(name: string) {
-    const query = await this.queryBuilder();
+    const query = this.queryBuilder();
     return query.where('plugin.name', '=', name).executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async get(id: string) {
-    const query = await this.queryBuilder();
+    const query = this.queryBuilder();
     return query.where('plugin.id', '=', id).executeTakeFirst();
   }
 
