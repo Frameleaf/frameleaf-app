@@ -179,6 +179,39 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
       },
     ];
     content.album = [{ id: albumId, albumName: 'Private album', description: 'preserved', isActivityEnabled: false }];
+    content.asset_audio = [{ assetId, bitrate: 192_000, index: 1, profile: null, codecName: 'aac' }];
+    content.asset_video = [
+      {
+        assetId,
+        bitrate: 4_000_000,
+        frameCount: 300,
+        timeBase: 15_360,
+        index: 0,
+        profile: 100,
+        level: 41,
+        colorPrimaries: 1,
+        colorTransfer: 1,
+        colorMatrix: 1,
+        dvProfile: null,
+        dvLevel: null,
+        dvBlSignalCompatibilityId: null,
+        codecName: 'h264',
+        formatName: 'mov',
+        formatLongName: 'QuickTime / MOV',
+        pixelFormat: 'yuv420p',
+      },
+    ];
+    content.asset_keyframe = [
+      {
+        assetId,
+        pts: [0, 15_360],
+        accDuration: [0, 1000],
+        ownDuration: [1000, 1000],
+        totalDuration: 2000,
+        packetCount: 60,
+        outputFrames: 60,
+      },
+    ];
     content.album_user = [
       { albumId, userId: owner1, role: 'owner' },
       { albumId, userId: owner2, role: 'viewer' },
@@ -279,6 +312,13 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
       ).toEqual([{ personGroupId: personId, sourceType: 'manual', isVisible: false }]);
       const [owner] = await connection.db.query('SELECT "clusterGroupId" FROM public."user" WHERE id=$1', [owner1]);
       expect(owner.clusterGroupId).toBe(importer.source.fixture.tables.cluster_group ? groupId : clusterId(owner1));
+      for (const table of ['asset_audio', 'asset_video', 'asset_keyframe']) {
+        expect(await connection.db.query(`SELECT * FROM public.${quote(table)}`)).toEqual(
+          content[table].map((row) =>
+            table === 'asset_audio' ? { ...row, channels: null, channelLayout: null, sampleRate: null } : row,
+          ),
+        );
+      }
       expect(await readFile(sourcePath)).toEqual(original);
       expect(await readFile(targetPath)).toEqual(original);
       const after = await stat(sourcePath, { bigint: true });
