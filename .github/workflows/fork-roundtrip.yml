@@ -27,6 +27,7 @@ on:
       - 'server/src/services/storage.service.ts'
       - 'server/src/services/storage-template.service.ts'
       - 'server/src/services/physical-deduplication.service.ts'
+      - 'server/src/services/storage-migration.service.ts'
       - 'server/src/utils/database.ts'
   workflow_dispatch:
   # Nightly backstop against fork/main: catches cutover breakage introduced by

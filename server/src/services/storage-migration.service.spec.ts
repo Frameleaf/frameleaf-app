@@ -54,7 +54,7 @@ const setup = () => {
   const mocks = {
     logger: { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() },
     databaseRepository: { withLock: vi.fn((_lock: DatabaseLock, work: () => Promise<unknown>) => work()) },
-    forkSchemaRepository: { getState: vi.fn().mockResolvedValue({ phase: 'active' }) },
+    forkSchemaRepository: { isStorageSteady: vi.fn().mockResolvedValue(true) },
     jobRepository: { queue: vi.fn() },
     mediaHealthRepository: {
       createRun: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -149,8 +149,8 @@ describe(StorageMigrationService.name, () => {
   });
 
   describe('handleBatch', () => {
-    it('waits while the fork-schema backfill is still running', async () => {
-      sut.mocks.forkSchemaRepository.getState.mockResolvedValue({ phase: 'dual-write' });
+    it('waits while the fork-schema backfill, an official handoff or a return is under way', async () => {
+      sut.mocks.forkSchemaRepository.isStorageSteady.mockResolvedValue(false);
       sut.setState({});
       await expect(sut.service.handleBatch()).resolves.toBe(JobStatus.Skipped);
       expect(sut.mocks.storageMigrationRepository.getAssetPage).not.toHaveBeenCalled();
@@ -230,6 +230,14 @@ describe(StorageMigrationService.name, () => {
       );
       await sut.service.runBatch(() => at);
       expect(sut.state()).toMatchObject({ skipped: 2, skippedAssetIds: ['a1', 'a2'] });
+    });
+
+    it('makes no media-health run while every original is on disk', async () => {
+      sut.setState({});
+      sut.mocks.storageMigrationRepository.getAssetPage.mockResolvedValue([asset('a1'), asset('a2')]);
+      await sut.service.runBatch(() => at);
+      expect(sut.mocks.mediaHealthRepository.createRun).not.toHaveBeenCalled();
+      expect(sut.state()).toMatchObject({ runId: null, cursor: 'a2', checked: 2 });
     });
 
     it('moves on to relinking once every asset was checked', async () => {
