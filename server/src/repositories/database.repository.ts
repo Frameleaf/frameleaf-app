@@ -152,14 +152,19 @@ export class DatabaseRepository {
   async getSchemaDrift() {
     const source = getFrameleafSchema();
     const { database } = this.configRepository.getEnv();
-    const target = await schemaFromDatabase({ connection: database.config });
+    const target = await schemaFromDatabase({
+      connection: database.config,
+      overrides: false,
+      excludeMigrationTables: true,
+    });
+    if (target.warnings.length) throw new Error(`Canonical schema reader warnings: ${target.warnings.join('; ')}`);
 
     const drift = schemaDiff(source, target, {
-      tables: { ignoreExtra: true },
+      tables: { ignoreExtra: false },
       constraints: { ignoreExtra: false },
-      indexes: { ignoreExtra: true },
-      triggers: { ignoreExtra: true },
-      columns: { ignoreExtra: true },
+      indexes: { ignoreExtra: false },
+      triggers: { ignoreExtra: false },
+      columns: { ignoreExtra: false },
       functions: { ignoreExtra: false },
       parameters: { ignoreExtra: true },
       extensions: { ignoreExtra: true },

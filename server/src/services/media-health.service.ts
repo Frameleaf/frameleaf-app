@@ -1768,65 +1768,6 @@ export class MediaHealthService {
     });
   }
 
-  /**
-   * FL-326 (spec §3.6, relink step 2): one bounded step of the universal storage migration's search of
-   * library storage for these Missing findings' originals. The same exact-checksum search Library
-   * Care runs, over library storage only: an external original is never relinked from it. Returns a
-   * continuation while the walk is incomplete; until it completes nothing is verified.
-   */
-  locateForStorageMigration(input: {
-    runId: string;
-    findingIds: string[];
-    managedSearch: ManagedSearchProgress | null;
-  }): Promise<MediaHealthLocateStep> {
-    return this.locateFindings({
-      runId: input.runId,
-      findingIds: input.findingIds,
-      rootIds: [MANAGED_ROOT_ID],
-      managedSearch: input.managedSearch ?? undefined,
-    });
-  }
-
-  /**
-   * FL-326 (spec §3.6, relink steps 2 and 3): relink a Missing finding's original automatically, but
-   * only when the completed search found exactly one verified exact match. The candidate is hashed
-   * again and the commit is guarded exactly as a reviewed relink is (`relinkOne`), and the relink is
-   * recorded on the finding, so it shows in Library Care's history. Zero matches, several, a conflict
-   * or an external original: nothing changes and the finding stays for review.
-   */
-  async relinkForStorageMigration(findingId: string): Promise<'relinked' | 'review'> {
-    const [finding] = await this.mediaHealthRepository.getByIds([findingId]);
-    if (!finding || finding.category !== MediaHealthCategory.Missing) {
-      return 'review';
-    }
-    if (finding.status === MediaHealthStatus.Relinked) {
-      return 'relinked';
-    }
-    const resolution = (finding.resolution ?? {}) as Record<string, unknown>;
-    if (finding.status !== MediaHealthStatus.Found || resolution.autoRelinkable !== true) {
-      return 'review';
-    }
-    const [asset] = await this.mediaHealthRepository.getAssets([finding.assetId]);
-    if (!asset || asset.isExternal || asset.libraryId) {
-      return 'review';
-    }
-    const verified = (await this.mediaHealthRepository.getCandidatesByHealthIds([finding.id])).filter(
-      ({ status }) => status === MediaHealthStatus.Found,
-    );
-    if (verified.length !== 1) {
-      return 'review';
-    }
-
-    // Background work for the owner's own library: the owner is the one it is done for.
-    const auth = { user: { id: asset.ownerId, isAdmin: false } } as AuthDto;
-    const result = await this.relinkOne(auth, {
-      assetId: asset.id,
-      findingId: finding.id,
-      candidateId: verified[0].id,
-    });
-    return result.status === MediaOperationItemStatus.Ok ? 'relinked' : 'review';
-  }
-
   @OnJob({ name: JobName.MediaHealthScanMissing, queue: QueueName.MediaHealth })
   async handleMissingScan(job: JobOf<JobName.MediaHealthScanMissing>): Promise<JobStatus> {
     return this.handleMediaHealthScan(job);

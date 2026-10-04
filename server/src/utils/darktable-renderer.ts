@@ -7,6 +7,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { trackQueueChild } from 'src/queue/child-process.js';
 import {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
   AssetDevelopMaskKind,
@@ -32,6 +33,7 @@ let nativeRenderActive = false;
 async function runDarktable(args: string[], signal: AbortSignal) {
   signal.throwIfAborted();
   const execution = execFile('darktable-cli', args, { signal, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+  trackQueueChild(execution.child);
   const closed = new Promise<void>((resolve) => execution.child.once('close', () => resolve()));
   // Node 24 execFile does not forward killSignal to spawn's AbortSignal handler.
   const abort = () => {

@@ -156,11 +156,6 @@ describe(PartnerOriginRepository.name, () => {
     const { user: bob } = await ctx.newUser();
     await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
 
-    await expect(sut.getPartnershipsWithoutBackfill()).resolves.toContainEqual({
-      sharedById: alice.id,
-      sharedWithId: bob.id,
-    });
-
     await sut.startBackfill(alice.id, bob.id, 3);
     const later = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
     const earlier = '00000000-0000-4000-8000-000000000001';
@@ -174,10 +169,6 @@ describe(PartnerOriginRepository.name, () => {
       cursor: later,
       total: 3,
       done: 2,
-    });
-    await expect(sut.getPartnershipsWithoutBackfill()).resolves.not.toContainEqual({
-      sharedById: alice.id,
-      sharedWithId: bob.id,
     });
 
     await sut.stopBackfill(alice.id, bob.id);

@@ -1,24 +1,19 @@
-import { schemaFromCode } from '@frameleaf/sql-tools';
 import type { DatabaseSchema } from '@frameleaf/sql-tools';
-import 'src/schema/index.js';
-import { immich_uuid_v7 } from 'src/schema/functions.js';
+import { readCatalogArtifact } from 'src/schema/catalog-artifacts.js';
 
-/** Frameleaf owns this model and its migrations independently of import source versions. */
-export const getFrameleafSchema = (): DatabaseSchema =>
-  schemaFromCode({
-    databaseName: 'frameleaf',
-    schemaName: 'public',
-    namingStrategy: 'default',
-    overrides: false,
-    uuidFunction: (version) => (version === 7 ? `${immich_uuid_v7.name}()` : 'uuid_generate_v4()'),
-  });
+/** The complete captured catalog is the single evolving desired-schema authority. */
+export const getFrameleafSchema = (): DatabaseSchema => readCatalogArtifact('desired-schema');
 
-export const getFrameleafBaselineSchema = (): DatabaseSchema => {
-  const schema = getFrameleafSchema();
-  // Runtime model changes can resize embeddings. Fresh installation still needs the columns and indexes.
-  for (const table of schema.tables) {
-    for (const column of table.columns) column.synchronize = true;
-    for (const index of table.indexes) index.synchronize = true;
-  }
-  return schema;
+/** Frozen initial catalog, also used by isolated schema fixtures. Never rebuilt from current models. */
+export const getFrameleafBaselineSchema = (): DatabaseSchema => readCatalogArtifact('baseline');
+
+/** Source-only guard used by hosted verification and the migration generation CLI. */
+export const verifyFrameleafSchemaSources = async (): Promise<void> => {
+  const { readFile } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+  const { verifyCatalogSources } = await import('src/schema/catalog-authority.js');
+  const provenance = JSON.parse(
+    await readFile(new URL('./catalog/desired-schema.provenance.json', import.meta.url), 'utf8'),
+  );
+  await verifyCatalogSources(fileURLToPath(new URL('../../', import.meta.url)), provenance);
 };
