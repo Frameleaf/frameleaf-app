@@ -69,8 +69,8 @@ export const restoreVerificationDue = (
   return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
 };
 
-/** FL-295: the last line `pg_dump` writes (`pg_dumpall`: "cluster dump complete"), only once the dump finished. */
-const DUMP_COMPLETE = /-- PostgreSQL database (?:cluster )?dump complete/;
+/** The final marker written by pg_dump only after the database dump finishes. */
+const DUMP_COMPLETE = /-- PostgreSQL database dump complete/;
 /** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
 const DUMP_TAIL_BYTES = 4096;
 
@@ -335,7 +335,7 @@ export class DatabaseBackupService {
 
   /**
    * FL-295: whether a gzipped dump is complete: not empty, a valid gzip stream to its end, and SQL that
-   * ends with the line `pg_dump` (or `pg_dumpall`) writes once it has finished. Throws
+   * ends with the line `pg_dump` writes once it has finished. Throws
    * {@link DatabaseBackupVerificationError} saying what is wrong.
    */
   async verifyDatabaseBackup(filePath: string): Promise<void> {
@@ -353,10 +353,12 @@ export class DatabaseBackupService {
         new Writable({
           write(chunk: Buffer, _encoding, callback) {
             bytes += chunk.length;
+            advanceJobProgress(chunk.length);
             tail = (tail + chunk.toString('latin1')).slice(-DUMP_TAIL_BYTES);
             callback();
           },
         }),
+        { signal: jobSignal() },
       );
     } catch (error) {
       throw new DatabaseBackupVerificationError(`${basename(filePath)} is not a complete gzip file (${error})`);
@@ -373,11 +375,9 @@ export class DatabaseBackupService {
 
   /** Validate before any restore DDL; an Immich dump is a source for import-immich only. */
   private async assertFrameleafBackup(filePath: string): Promise<void> {
-    const file = this.storageRepository.createPlainReadStream(filePath);
-    const stream = filePath.endsWith('.gz') ? file.pipe(this.storageRepository.createGunzip()) : file;
+    const stream = this.readDatabaseDump(filePath);
     const signal = jobSignal();
     const abort = () => {
-      file.destroy(signal?.reason);
       stream.destroy(signal?.reason);
     };
     signal?.addEventListener('abort', abort, { once: true });
@@ -402,9 +402,20 @@ export class DatabaseBackupService {
         throw new Error('Restore requires a complete Frameleaf PostgreSQL 19 backup.');
     } finally {
       signal?.removeEventListener('abort', abort);
-      file.destroy();
       stream.destroy();
     }
+  }
+
+  private readDatabaseDump(filePath: string): Readable {
+    const file = this.storageRepository.createPlainReadStream(filePath);
+    if (!filePath.endsWith('.gz')) {
+      return file;
+    }
+    const decoded = this.storageRepository.createGunzip();
+    // Pipe does not forward source errors. Forward them, and stop disk reads when the consumer stops.
+    file.on('error', (error) => decoded.destroy(error));
+    decoded.once('close', () => file.destroy());
+    return file.pipe(decoded);
   }
 
   async uploadBackup(file: Express.Multer.File): Promise<void> {
@@ -589,7 +600,6 @@ export class DatabaseBackupService {
       await this.storageRepository.stat(backupFilePath);
       await this.assertFrameleafBackup(backupFilePath);
 
-      let isPgClusterDump = false;
       const version = findDatabaseBackupVersion(filename);
 
       // FL-81: migrations only move a database forward, so a backup from a newer server cannot run on
@@ -601,16 +611,9 @@ export class DatabaseBackupService {
           `This backup was made by a newer server (v${backupVersion.toString()}) than the one running (v${runningVersion.toString()}). Update the server first.`,
         );
       }
-      if (version && satisfies(version, '<= 2.4')) {
-        isPgClusterDump = true;
-      }
-      // A cluster dump may drop this database, which cannot preserve its reserved lock connection.
-      if (isPgClusterDump && fence)
-        throw new Error('Convert this legacy cluster dump to a database dump before a locked restore');
-
       const { bin, args, databaseUsername, databasePassword, databaseMajorVersion } =
         await this.buildPostgresLaunchArguments('psql', {
-          singleTransaction: !isPgClusterDump,
+          singleTransaction: true,
         });
 
       progressCb?.('backup', 0.05);
@@ -619,17 +622,9 @@ export class DatabaseBackupService {
 
       this.logger.log(`Database Restore Starting. Database Version: ${databaseMajorVersion}`);
 
-      let inputStream: Readable;
-      if (backupFilePath.endsWith('.gz')) {
-        const fileStream = this.storageRepository.createPlainReadStream(backupFilePath);
-        const gunzip = this.storageRepository.createGunzip();
-        fileStream.pipe(gunzip);
-        inputStream = gunzip;
-      } else {
-        inputStream = this.storageRepository.createPlainReadStream(backupFilePath);
-      }
+      const inputStream = this.readDatabaseDump(backupFilePath);
 
-      const sqlStream = Readable.from(sql(inputStream, databaseUsername, isPgClusterDump, fence));
+      const sqlStream = Readable.from(sql(inputStream, databaseUsername, fence));
       const psql = this.processRepository.spawnDuplexStream(bin, args, {
         env: {
           PATH: process.env.PATH,
@@ -670,12 +665,8 @@ export class DatabaseBackupService {
         await fence?.assert();
         progressCb?.('rollback', 0);
 
-        const fileStream = this.storageRepository.createPlainReadStream(restorePointFilePath);
-        const gunzip = this.storageRepository.createGunzip();
-        fileStream.pipe(gunzip);
-        inputStream = gunzip;
-
-        const sqlStream = Readable.from(sqlRollback(inputStream, databaseUsername, fence));
+        const rollbackStream = this.readDatabaseDump(restorePointFilePath);
+        const sqlStream = Readable.from(sqlRollback(rollbackStream, databaseUsername, fence));
         const psql = this.processRepository.spawnDuplexStream(bin, args, {
           env: {
             PATH: process.env.PATH,
@@ -736,22 +727,10 @@ const SQL_RESET_SCHEMA = (username: string) => `
   GRANT ALL ON SCHEMA public TO public;
 `;
 
-async function* sql(
-  inputStream: Readable,
-  databaseUsername: string,
-  isPgClusterDump: boolean,
-  fence?: DatabaseRestoreFence,
-) {
+async function* sql(inputStream: Readable, databaseUsername: string, fence?: DatabaseRestoreFence) {
   await fence?.assert();
   yield SQL_DROP_CONNECTIONS(fence?.backendPid);
-  yield isPgClusterDump
-    ? // it is likely the dump contains SQL to try to drop the currently active
-      // database to ensure we have a fresh slate; if the `postgres` database exists
-      // then prefer to switch before continuing otherwise this will just silently fail
-      String.raw`
-        \c postgres
-      `
-    : SQL_RESET_SCHEMA(databaseUsername);
+  yield SQL_RESET_SCHEMA(databaseUsername);
 
   for await (const chunk of inputStream) {
     await fence?.assert();
@@ -829,6 +808,7 @@ function createSqlProgressStreams(cb: (progress: number) => void) {
 
   const sink = new Writable({
     write(chunk, _encoding, callback) {
+      advanceJobProgress(chunk.byteLength);
       for (const byte of chunk) {
         if (byte === 10) {
           linesProcessed++;
