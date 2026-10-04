@@ -396,16 +396,13 @@ WHERE
   )
 LIMIT
   1
-select
-  "id"
-from
-  "album"
+delete from "album_asset"
 where
-  "id" in ()
-order by
-  "id"
-for no key update
-rollback
+  "assetId" in ($1)
+returning
+  "albumId",
+  "assetId"
+commit
 
 -- AlbumRepository.getAssetIds
 select
