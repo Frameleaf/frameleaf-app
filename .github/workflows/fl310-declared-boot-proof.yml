@@ -26,3 +26,60 @@ jobs:
         run: >-
           pnpm exec vitest --config test/vitest.config.medium.mjs --run
           test/medium/specs/repositories/buddy-capture.spec.ts
+      - name: Build the compatible recovery distribution
+        run: mise run //server:build
+      - name: Validate the compiled boot configuration module in a fresh process
+        working-directory: server
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readBuddyBootConfiguration } from './dist/utils/buddy-boot-configuration.js';
+          const before = process.env.FRAMELEAF_PORT;
+          const valid = { version: 1, entries: [{ key: 'FRAMELEAF_PORT', state: 'value', value: 2284 }] };
+          assert.deepEqual(readBuddyBootConfiguration(valid), valid);
+          assert.throws(() => readBuddyBootConfiguration({
+            version: 1, entries: [{ key: 'FRAMELEAF_PORT', state: 'value', value: '2284' }],
+          }));
+          assert.equal(process.env.FRAMELEAF_PORT, before);
+          console.log('Compiled recovery validator imported and preserved canonical types without activation');
+          NODE
+      - name: Collect genuine Buddy formatting output
+        if: ${{ !cancelled() }}
+        working-directory: server
+        run: |
+          pnpm format:fix
+          git diff --binary -- src test > "$RUNNER_TEMP/buddy-format.patch"
+      - name: Archive Buddy formatting output
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl310-buddy-format
+          path: ${{ runner.temp }}/buddy-format.patch
+          retention-days: 7
+  github-format-repair:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .github
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: c3a9c381ab976d54b5e81d8ce1c113dbbbb738aa
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: pnpm install --frozen-lockfile
+      - name: Collect genuine release test formatting output
+        run: |
+          pnpm format:fix
+          git diff --binary -- frameleaf-release.test.cjs > "$RUNNER_TEMP/github-format.patch"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl177-c3a-github-format
+          path: ${{ runner.temp }}/github-format.patch
+          retention-days: 7
