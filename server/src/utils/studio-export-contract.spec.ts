@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ColorTransfer } from 'src/enum.js';
+import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import {
   buildStudioExportContract,
   findStudioExportOutputMismatch,
@@ -130,6 +130,57 @@ describe('findStudioExportOutputMismatch (FL-102)', () => {
       findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [audio as never] }),
     ).toMatch('misaligned');
   });
+});
+
+describe.each([
+  ['PQ', 'smpte2084', ColorTransfer.Smpte2084],
+  ['HLG', 'arib-std-b67', ColorTransfer.AribStdB67],
+] as const)('HDR export signalling (%s, FL-107)', (_, transfer, colorTransfer) => {
+  const contract = { video: { minBitDepth: 10 as const, transfer }, audio: null };
+  const stream = {
+    pixelFormat: 'yuv420p10le',
+    colorTransfer,
+    colorPrimaries: ColorPrimaries.Bt2020,
+    colorMatrix: ColorMatrix.Bt2020Nc,
+    duration: 5,
+    frameRate: 25,
+  };
+
+  it.each([
+    ['BT.709 primaries', { colorPrimaries: ColorPrimaries.Bt709 }, /primaries/i],
+    ['unknown primaries', { colorPrimaries: ColorPrimaries.Unknown }, /primaries/i],
+    ['BT.709 matrix', { colorMatrix: ColorMatrix.Bt709 }, /matrix/i],
+    ['unknown matrix', { colorMatrix: ColorMatrix.Unknown }, /matrix/i],
+  ])('rejects %s even when ten-bit precision and transfer match', (_, tags, reason) => {
+    expect(
+      findStudioExportOutputMismatch(contract, { videoStreams: [{ ...stream, ...tags } as never], audioStreams: [] }),
+    ).toMatch(reason);
+  });
+
+  it('accepts ten-bit BT.2020 with the BT.2020 non-constant-luminance matrix', () => {
+    expect(findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [] })).toBeNull();
+  });
+});
+
+it('keeps SDR BT.709 exports eligible without an HDR gamut requirement (FL-107)', () => {
+  expect(
+    findStudioExportOutputMismatch(
+      { video: { minBitDepth: 8, transfer: null }, audio: null },
+      {
+        videoStreams: [
+          {
+            pixelFormat: 'yuv420p',
+            colorTransfer: ColorTransfer.Bt709,
+            colorPrimaries: ColorPrimaries.Bt709,
+            colorMatrix: ColorMatrix.Bt709,
+            duration: 5,
+            frameRate: 25,
+          } as never,
+        ],
+        audioStreams: [],
+      },
+    ),
+  ).toBeNull();
 });
 
 describe('sameTimeBase', () => {

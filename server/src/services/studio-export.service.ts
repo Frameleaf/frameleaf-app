@@ -452,6 +452,7 @@ export class StudioExportService {
       .map(({ session }) => ({
         gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
         codecs: session.codecs ?? [],
+        formats: session.formats ?? [],
         colorPrecision: session.colorPrecision,
       }));
     const verdict = evaluateRenderOutput(candidates, settings);

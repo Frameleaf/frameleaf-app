@@ -606,14 +606,6 @@ export const RENDER_MEMORY_BY_RESOLUTION: Readonly<Record<string, number>> = Obj
   '2160p': 8 * 1024 ** 3,
 });
 
-/** The encoder names that satisfy each export format, matched against the verified codec list. */
-const FORMAT_ENCODERS: Readonly<Record<string, RegExp>> = Object.freeze({
-  'mp4-hevc-main10': /hevc|h\.?265|x265/i,
-  'mp4-h264': /h\.?264|avc|x264/i,
-  'webm-av1': /av1|svt|aom|rav1e/i,
-  'prores-422-hq': /prores/i,
-});
-
 /** Bit depth a format writes: Main10 and ProRes 422 HQ are 10-bit. */
 const FORMAT_BIT_DEPTH: Readonly<Record<string, number>> = Object.freeze({
   'mp4-hevc-main10': 10,
@@ -627,6 +619,8 @@ export type RenderOutputRequest = { format: string; color: string; resolution: s
 export type RenderOutputCandidate = {
   gpuMemoryBytes: number | null;
   codecs: readonly string[];
+  /** Container evidence from this same session; legacy sessions without it prove no output. */
+  formats?: readonly string[] | null;
   colorPrecision: RenderColorPrecision | null;
 };
 
@@ -665,9 +659,9 @@ export const evaluateRenderOutput = (
   if (withMemory.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
   }
-  const encoder = FORMAT_ENCODERS[request.format];
+  const output = requiredOutput(request);
   const withCodec = withMemory.filter(
-    (candidate) => !!encoder && candidate.codecs.some((codec) => encoder.test(codec)),
+    (candidate) => !!output && provesOutput({ codecs: candidate.codecs, formats: candidate.formats ?? [] }, output),
   );
   if (withCodec.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };
