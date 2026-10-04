@@ -1,0 +1,59 @@
+name: FL regression proof
+on:
+  push:
+    branches: [aj/fl-hosted-regression-proof-v2]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.mjs --run
+          src/utils/render-admission.spec.ts
+          src/utils/studio-export-contract.spec.ts
+          src/services/studio-export.service.spec.ts
+  medium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - run: mise run //packages/plugin-core:build
+      - working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/services/album-source.service.spec.ts
+          test/medium/specs/sync/sync-album-source-links.spec.ts
+  offline-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+      - run: node --test --test-timeout=15000 server/test/runtime/buddy-recovery.test.mjs
