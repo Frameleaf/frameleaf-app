@@ -1,9 +1,10 @@
 import { Kysely, sql } from 'kysely';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { BuddySettingsSchema } from 'src/dtos/buddy-backup.dto.js';
 import {
   AlbumKind,
   AssetFileType,
@@ -31,6 +32,8 @@ import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { BUDDY_BLOCK_BYTES, type BuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import { buddyBackupCommand } from 'src/utils/buddy-backup-offline.js';
+import { BuddyVault, buddySnapshotBytes } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
@@ -740,6 +743,97 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       expect(await capture.readCapture(run.runId)).toBeNull();
     }
     expect(backups.createDatabaseBackup).not.toHaveBeenCalled();
+  });
+
+  it('captures only declared typed boot inputs and stages them privately after loss of the original server', async () => {
+    const declaration = { version: 1, environmentKeys: ['FRAMELEAF_PORT', 'REDIS_PASSWORD'] };
+    const checked = BuddySettingsSchema.safeParse({ ...settings, bootConfiguration: declaration });
+    // A valid declaration must enter through the real settings contract, never a cast or schema bypass.
+    expect(checked.success).toBe(true);
+    if (!checked.success) throw new Error('Declared boot configuration was rejected');
+    const secret = randomBytes(32).toString('base64url');
+    const undeclared = randomBytes(32).toString('base64url');
+    vi.stubEnv('FRAMELEAF_PORT', '2284');
+    vi.stubEnv('REDIS_PASSWORD', secret);
+    vi.stubEnv('BUDDY_UNDECLARED_FIXTURE', undeclared);
+    vi.stubEnv('NODE_OPTIONS', 'forbidden-runtime-fixture');
+    const historicalIdentity = join(root, 'forbidden-historical-identity');
+    vi.stubEnv('FRAMELEAF_IDENTITY_DIR', historicalIdentity);
+    const media = await original('declared-boot.jpg');
+    const run = { ...options(), settings: checked.data };
+    const { capture } = fixture();
+    const captured = await capture.capture(run);
+    const vaultRoot = join(root, 'encrypted-source');
+    const vault = new BuddyVault(vaultRoot, ring.vaultId);
+    const capacity = { quotaBytes: 20 * 1024 ** 3, freeBytes: 100e9, totalBytes: 200e9 };
+    for (const receipt of captured.objects)
+      await vault.put(receipt, await readFile(capture.blockPath(receipt.id, run.runId)), capacity);
+    const now = Date.now();
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const jwk = publicKey.export({ format: 'jwk' });
+    if (!jwk.x) throw new Error('Fixture signing key is missing its public coordinate');
+    const snapshot = {
+      version: 1 as const,
+      vaultId: ring.vaultId,
+      id: captured.manifest.snapshotId,
+      sequence: 1,
+      previous: null,
+      keyVersion: ring.current,
+      createdAt: new Date(now).toISOString(),
+      retainUntil: new Date(now + 31 * 86_400_000).toISOString(),
+      objects: captured.objects,
+      manifest: captured.manifestBlocks,
+    };
+    await vault.commit(
+      { snapshot, signature: sign(null, buddySnapshotBytes(snapshot), privateKey).toString('base64url') },
+      { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, now, capacity,
+    );
+    const kit = join(root, 'independent-kit.json');
+    await writeFile(kit, JSON.stringify(ring), { mode: 0o600 });
+    const exported = join(root, 'exported');
+    await buddyBackupCommand(['export', '--vault', join(vaultRoot, ring.vaultId), '--output', exported]);
+    await rm(vaultRoot, { recursive: true });
+    await rm(join(root, 'source'), { recursive: true });
+    await rm(join(root, 'identity'), { recursive: true });
+    const output = join(root, 'replacement-stage');
+    await buddyBackupCommand(['recover', '--vault', join(exported, ring.vaultId), '--kit', kit, '--output', output]);
+    const directory = join(output, 'recovery', snapshot.id);
+    const artifact = JSON.parse(await readFile(join(directory, 'boot-configuration.json'), 'utf8'));
+    expect(artifact.version).toBe(1);
+    expect(artifact.snapshotId).toBe(snapshot.id);
+    expect((await stat(join(directory, 'boot-configuration.json'))).mode & 0o777).toBe(0o600);
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    expect(artifact.entries.map((entry: { key: string }) => entry.key).sort()).toEqual(['FRAMELEAF_PORT', 'REDIS_PASSWORD']);
+    const portEntry = artifact.entries.find((entry: { key: string }) => entry.key === 'FRAMELEAF_PORT');
+    expect(portEntry?.state === 'value' && portEntry.value === 2284).toBe(true);
+    const secretEntry = artifact.entries.find((entry: { key: string }) => entry.key === 'REDIS_PASSWORD');
+    // Boolean assertions keep synthetic secret values out of failed-test diagnostics.
+    expect(secretEntry?.state === 'value' && secretEntry.value === secret).toBe(true);
+    expect(JSON.stringify(artifact).includes(undeclared)).toBe(false);
+    const prepared = JSON.parse(await readFile(join(directory, 'prepared.json'), 'utf8'));
+    expect(prepared.manifest.bootConfiguration.version).toBe(1);
+    expect(JSON.stringify(prepared.manifest.bootConfiguration.entries) === JSON.stringify(artifact.entries)).toBe(true);
+    expect(Object.keys(prepared.manifest.environment ?? {}).every((key) => declaration.environmentKeys.includes(key))).toBe(true);
+    await expect(readFile(media.path)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(join(historicalIdentity, 'instance-key.pem'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(process.env.FRAMELEAF_PORT).toBe('2284');
+    expect(process.env.REDIS_PASSWORD === secret).toBe(true);
+    expect(process.env.BUDDY_UNDECLARED_FIXTURE === undeclared).toBe(true);
+  }, 20_000);
+
+  it('rejects forbidden or invalid boot declarations while retaining undeclared legacy settings', () => {
+    expect(BuddySettingsSchema.safeParse(settings).success).toBe(true);
+    for (const bootConfiguration of [
+      { version: 2, environmentKeys: ['FRAMELEAF_PORT'] },
+      { version: 1, environmentKeys: ['FRAMELEAF_PORT', 'FRAMELEAF_PORT'] },
+      { version: 1, environmentKeys: ['BUDDY_UNKNOWN_FIXTURE'] },
+      { version: 1, environmentKeys: ['NODE_OPTIONS'] },
+      { version: 1, environmentKeys: ['LD_PRELOAD'] },
+      { version: 1, environmentKeys: ['FRAMELEAF_IDENTITY_DIR'] },
+      { version: 1, environmentKeys: ['FRAMELEAF_LINK_TOKEN'] },
+    ]) {
+      expect(BuddySettingsSchema.safeParse({ ...settings, bootConfiguration }).success).toBe(false);
+    }
   });
 
   it('reclaims an interrupted multi-block capture before capture.json exists', async () => {
