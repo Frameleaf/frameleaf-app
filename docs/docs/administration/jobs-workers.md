@@ -18,6 +18,8 @@ When the container stops (`docker compose stop`, an image upgrade or a NAS packa
 
 PostgreSQL stores claims, attempts, run manifests and completed stages. Recovery permits one automatic retry of safe, repeatable media work after 30 seconds. Unsafe work, remote submissions and exhausted retries require attention. An interrupted item stays visible in the run; independent items continue. Restarting a server does not reset the retry budget.
 
+An expired lease immediately prevents the old attempt from publishing. Automatic recovery also requires confirmation that the handler returned, or that its executor and registered native processes stopped. Recovery allows one additional 30-second sweep for the supervisor to persist that confirmation. If it remains unavailable, the item and any linked media operation require attention, and other items continue. Inspect the worker and host processes before explicitly resubmitting those items. A whole-host interruption can leave this state when no supervisor survived to record the stop.
+
 ### Execution deadlines
 
 The coordinator runs separately from media handlers. Claims last 60 seconds and renew every 15 seconds; reconciliation scans every 5 seconds and recovery sweeps every 30 seconds. Executor heartbeats prove responsiveness but do not count as media progress. Actual advancing bytes, frames or committed checkpoints extend the progress deadline. Repeated status messages do not.
@@ -30,6 +32,8 @@ The coordinator runs separately from media handlers. Claims last 60 seconds and 
 | `FRAMELEAF_JOB_CANCEL_GRACE_MS` | 10000 (10 seconds) | 1000–30000 |
 
 Use the same settings in all server containers. Invalid, infinite, fractional or out-of-range values stop startup with the setting's name. Existing tighter operation-specific limits still apply. A progressing video, hash or backup can run beyond the ordinary deadline. An opaque handler has a fixed deadline. When cancellation does not stop an executor within its grace period, the supervisor terminates it before replacement work can publish results.
+
+Generated media is prepared in an attempt-specific directory. Bounded maintenance slices run every minute and reclaim abandoned files only after a 24-hour grace period, confirmed execution stop, and checks for current media, revision, profile and backup references. Referenced files and attempts with unconfirmed termination remain protected. Detailed queue-history cleanup retains the stop evidence needed for later file cleanup.
 
 ## Split workers
 
