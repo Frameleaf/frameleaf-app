@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import {
   AlbumUserRole,
   AssetFileType,
@@ -244,11 +244,10 @@ describe(PartnerCopyService.name, () => {
         expect(await readFile(sourcePath)).toEqual(bytes);
         expect(await readFile(destinationPath)).toEqual(bytes);
         expect(
-          await db
-            .selectFrom('physical_file_trash')
-            .select('id')
-            .where('path', 'in', [sourcePath, destinationPath])
-            .execute(),
+          (
+            await sql<{ id: string }>`SELECT id FROM public.physical_file_trash
+              WHERE path = ANY(${[sourcePath, destinationPath]}::text[])`.execute(db)
+          ).rows,
         ).toEqual([]);
       } finally {
         await rm(media, { recursive: true, force: true });
