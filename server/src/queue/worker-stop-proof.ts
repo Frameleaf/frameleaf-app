@@ -72,7 +72,7 @@ export class WorkerStopProofRecorder {
     this.retry = undefined;
     this.flushing = this.write().finally(() => {
       this.flushing = undefined;
-      if (this.pending.size && !this.closed) {
+      if (this.pending.size > 0 && !this.closed) {
         this.retry = setTimeout(() => {
           void this.flush();
         }, this.options.retryMs ?? WORKER_PROOF_RETRY_MS);
@@ -83,7 +83,7 @@ export class WorkerStopProofRecorder {
   }
 
   private async write() {
-    const entries = [...this.pending.values()];
+    const entries = this.pending.values().toArray();
     const proofs = entries.map((entry) => {
       entry.attempted = true;
       return entry.proof;

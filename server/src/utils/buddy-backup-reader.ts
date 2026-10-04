@@ -1,4 +1,7 @@
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
+import { createHash, randomUUID } from 'node:crypto';
+import { open, rename, rm } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { BUDDY_ID, type BuddyKeyring, decryptBuddyBlock } from './buddy-backup-crypto.ts';
 import { readBuddyMetadata } from './buddy-backup-metadata.ts';
 import {
@@ -8,9 +11,6 @@ import {
   createBuddyDirectory,
   flushBuddyDirectory,
 } from './buddy-backup-vault.ts';
-import { createHash, randomUUID } from 'node:crypto';
-import { open, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 /** Both peer recovery and offline recovery use this authenticated reader; it has no Cloud dependency. */

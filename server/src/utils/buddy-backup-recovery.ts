@@ -1,12 +1,12 @@
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
-import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
-import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
+import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
+import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
 import type { CloudBackupManifestFile } from './cloud-backup.ts';
+import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 export type BuddyRecovery = {
   version: 1;

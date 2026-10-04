@@ -55,7 +55,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     await windows.close();
     windowsPass = state.pass.id;
   }
-  const withLease = <T>(work: (tx: Transaction<DB>) => Promise<T>) =>
+  const withLease = <T,>(work: (tx: Transaction<DB>) => Promise<T>) =>
     db.transaction().execute(async (tx) => {
       await sql`SET LOCAL lock_timeout='1s'`.execute(tx);
       await sql`SET LOCAL statement_timeout='3s'`.execute(tx);
@@ -91,7 +91,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
           if (job && ['active', 'needs_attention'].includes(job.state)) return false;
           if (!job) {
             const exists = await sql`SELECT 1 FROM job WHERE id=${identity.jobId}::uuid`.execute(tx);
-            if (exists.rows.length) return false;
+            if (exists.rows.length > 0) return false;
           }
           const proof =
             await sql`SELECT 1 FROM system_metadata m WHERE m.key=${ATTEMPT_EVIDENCE_PREFIX + identity.token}
