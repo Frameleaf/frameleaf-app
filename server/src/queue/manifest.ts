@@ -1,6 +1,7 @@
 import { Kysely, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName } from 'src/enum.js';
+import { selectionLineageSource } from 'src/queue/selection-lineage.js';
 import { unfinishedRunItems } from 'src/queue/selection-state.js';
 import {
   QUEUE_BATCH,
@@ -230,8 +231,9 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       sourceRunId: string;
       producerId: string | null;
       copyAfter: string | null;
+      lineageAfter: string;
     }>`
-      select m."runId", m."selectionId", s."runId" "sourceRunId", s."producerId", m."copyAfter"
+      select m."runId", m."selectionId", s."runId" "sourceRunId", s."producerId", m."copyAfter", m."lineageAfter"
       from job_selection_run m join job_selection s on s.id = m."selectionId"
       where not m."copyComplete" and s."capturedAt" is not null
         and ${'producerId' in filter ? sql`s."producerId" = ${filter.producerId}::uuid` : sql`s.queue = ${filter.queue}`}
@@ -246,8 +248,26 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       select ${membership.runId}::uuid, "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId"
       from page on conflict do nothing returning 1
     ) select max("itemKey") "after", count(*)::int size from page where (select count(*) from copied) >= 0`.execute(tx);
-    const complete = page.size < QUEUE_BATCH;
-    await sql`update job_selection_run set "copyAfter" = coalesce(${page.after}, "copyAfter"), "copyComplete" = ${complete}
+    // A child's key may sort before the frozen-root cursor. Its separately sequenced origin is
+    // appended under this same publication guard, including while root copying is incomplete.
+    const remaining = QUEUE_BATCH - page.size;
+    const history =
+      remaining > 0
+        ? (
+            await sql<{ after: string | null; size: number }>`with page as materialized (
+      ${selectionLineageSource(membership.selectionId, membership.lineageAfter, remaining)}
+    ), copied as (
+      insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId")
+      select ${membership.runId}::uuid, "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId"
+      from page on conflict do nothing returning 1
+    ) select max("lineageId")::text "after", count(*)::int size from page where (select count(*) from copied) >= 0`.execute(
+              tx,
+            )
+          ).rows[0]
+        : undefined;
+    const complete = !!history && history.size < remaining;
+    await sql`update job_selection_run set "copyAfter" = coalesce(${page.after}, "copyAfter"),
+      "lineageAfter" = coalesce(${history?.after ?? null}::bigint, "lineageAfter"), "copyComplete" = ${complete}
       where "selectionId" = ${membership.selectionId}::uuid and "runId" = ${membership.runId}::uuid`.execute(tx);
     if (complete) {
       await sql`update job_run_item i set "selectionVersion" = (select count(*) from job_selection
