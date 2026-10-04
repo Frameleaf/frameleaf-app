@@ -57,6 +57,19 @@ describe(LanDiscoveryService.name, () => {
       });
     });
 
+    it('advertises the FRAMELEAF_LOCAL_URL port behind a container port mapping (FL-218)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        port: 2283,
+        frameleafCloud: { ...env.frameleafCloud, localUrl: 'http://192.168.1.20:2290' },
+      });
+
+      await sut.onBootstrap();
+
+      expect(publish).toHaveBeenCalledWith(expect.objectContaining({ port: 2290 }));
+    });
+
     it('says when setup is complete, and publishes again once the first administrator exists (FL-292)', async () => {
       await sut.onBootstrap();
       expect(publish.mock.calls[0][0].txt).toMatchObject({ setup: 'needed' });
