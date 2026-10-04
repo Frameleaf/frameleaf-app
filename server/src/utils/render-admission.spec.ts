@@ -315,7 +315,7 @@ describe(evaluateClaimAdmission.name, () => {
           [
             {
               gpuMemoryBytes: 2 * 1024 ** 3,
-              codecs: capabilities.codecs,
+              ...capabilities,
               colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false },
             },
           ],
@@ -532,9 +532,71 @@ describe('input grants', () => {
 
 describe('evaluateRenderOutput (FL-42)', () => {
   const gib = 1024 ** 3;
-  const sdr = { gpuMemoryBytes: 12 * gib, codecs: ['h264_nvenc', 'hevc_nvenc'], colorPrecision: null };
+  const sdr = { gpuMemoryBytes: 12 * gib, codecs: ['h264_nvenc', 'hevc_nvenc'], formats: ['mp4'], colorPrecision: null };
   const hdr = { ...sdr, colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } };
   const request = { format: 'mp4-h264', color: 'preserve', resolution: '1080p' };
+
+  // These fixtures independently exercise submission and real claim admission. A decoder, or
+  // encoder evidence without its muxer, must never leave an export queued with no eligible worker.
+  it.each([
+    ['decoder only', ['h264_cuvid'], ['mp4']],
+    ['bare codec name', ['h264'], ['mp4']],
+    ['wrong container', ['webcodecs-avc'], ['webm']],
+    ['missing container', ['webcodecs-avc'], []],
+  ])('refuses %s evidence at submission as well as claim', (_name, codecs, formats) => {
+    const capabilities = { codecs, formats };
+    const candidate = { ...sdr, ...capabilities };
+
+    expect(
+      evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } })),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+    expect(evaluateRenderOutput([candidate], request)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+  });
+
+  it('refuses legacy sessions without any container evidence', () => {
+    const candidate = { gpuMemoryBytes: 12 * gib, codecs: ['webcodecs-avc'], colorPrecision: null };
+    expect(
+      evaluateClaimAdmission(claimInput({ session: { capabilities: null }, operation: { settings: request } })),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+    expect(evaluateRenderOutput([candidate], request)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+  });
+
+  it('never joins encoder and container evidence from different sessions', () => {
+    const candidates = [
+      { ...sdr, codecs: ['webcodecs-avc'], formats: ['webm'] },
+      { ...sdr, codecs: ['libaom-av1'], formats: ['mp4'] },
+    ];
+    for (const { codecs, formats } of candidates) {
+      expect(
+        evaluateClaimAdmission(
+          claimInput({ session: { capabilities: { codecs, formats } }, operation: { settings: request } }),
+        ),
+      ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+    }
+    expect(evaluateRenderOutput(candidates, request)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+  });
+
+  it.each([
+    ['webcodecs-avc', 'mp4'],
+    ['WEBCODECS-AVC', 'MP4'],
+    ['LIBX264', 'MP4'],
+  ])('admits the same session proving writer %s and container %s', (codec, container) => {
+    const capabilities = { codecs: [codec], formats: [container] };
+    const candidate = { ...sdr, ...capabilities };
+    expect(evaluateRenderOutput([candidate], request)).toEqual({ supported: true });
+    expect(
+      evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } })),
+    ).toEqual({ admitted: true });
+  });
 
   it('needs a qualified session at all', () => {
     expect(evaluateRenderOutput([], request)).toEqual({
