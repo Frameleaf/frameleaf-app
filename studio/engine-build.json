@@ -274,6 +274,11 @@
       "path": "patches/0054-channel-preservation-tests.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "2659a78ebe3deae8e260a53b586533937f4f90f796457a53e4e6deb2189e67ca"
+    },
+    {
+      "path": "patches/0055-channel-preserving-gain-mix.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "75a92551a901160e5ec89d102d45f21c6e4910c871cbfaa13f271e3a1f4b5283"
     }
   ],
   "sourceSha256": "b482ca96155e835cafe9bbbaeb0f27a14ecb7b128e2cddc8d2ecc6e872cf3762"
