@@ -1,9 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { lookup } from 'node:dns';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import type { LookupAddress } from 'node:dns';
+import type { RequestOptions } from 'node:https';
+import type { LookupFunction } from 'node:net';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { FrameleafCloudBackup } from 'src/types.js';
@@ -24,6 +30,7 @@ import {
   CloudBackupFileChangedError,
   CloudBackupStoreError,
 } from 'src/repositories/cloud-backup-store.repository.js';
+import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
 import {
@@ -43,6 +50,14 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
+vi.mock('node:dns', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:dns')>()),
+  lookup: vi.fn(),
+}));
+vi.mock('node:https', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:https')>()),
+  request: vi.fn(),
+}));
 
 /** Each escrow open or wrap runs the real scrypt (N = 2^17, 128 MiB); a busy runner needs more than 5 s. */
 const SCRYPT_TEST_TIMEOUT_MS = 30_000;
@@ -1746,6 +1761,132 @@ describe(CloudBackupService.name, () => {
       expect(cloudBackup.rotate).not.toHaveBeenCalled();
       expect(store.claim).not.toHaveBeenCalled();
     });
+
+    it('propagates the actual measured median and stable-ID winner into the first grant and persisted claim', async () => {
+      // These are authored interfaces, not evidence of live Cloud provisioning or socket connectivity.
+      const actual = await vi.importActual<typeof import('src/utils/backup-location-selection.js')>(
+        'src/utils/backup-location-selection.js',
+      );
+      const locations = [
+        { ...grant.location, locationId: 'loc-08', probeUrl: 'https://s3.eu-west-1.backup.frameleaf.cloud/' },
+        { ...grant.location, locationId: 'loc-01', probeUrl: 'https://s3.eu-central-2.backup.frameleaf.cloud/' },
+        { ...grant.location, probeUrl: `${grant.endpoint}/` },
+      ];
+      const samples: Record<string, number[]> = {
+        's3.eu-west-1.backup.frameleaf.cloud': [70, 70, 80],
+        's3.eu-central-2.backup.frameleaf.cloud': [1, 90, 100],
+        's3.eu-central-1.backup.frameleaf.cloud': [70, 70, 1000],
+      };
+      let now = 0;
+      const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+      vi.mocked(lookup).mockImplementation(((
+        _host: string,
+        _options: unknown,
+        callback: (error: Error | null, addresses: LookupAddress[]) => void,
+      ) => callback(null, [{ address: '8.8.8.8', family: 4 }])) as never);
+      vi.mocked(request).mockImplementation(((
+        url: URL,
+        options: RequestOptions,
+        respond: (response: unknown) => void,
+      ) => {
+        expect(options).toMatchObject({ method: 'HEAD', agent: false, rejectUnauthorized: true });
+        expect(options).not.toHaveProperty('headers');
+        const req = new EventEmitter() as EventEmitter & { end: () => void };
+        req.end = () => {
+          (options.lookup as LookupFunction)(url.hostname, {}, (error, address) => {
+            expect(error).toBeNull();
+            expect(address).toBe('8.8.8.8');
+            now += samples[url.hostname].shift()!;
+            respond({ statusCode: 200, resume: vi.fn() });
+          });
+        };
+        return req;
+      }) as never);
+      vi.mocked(selectBackupLocation).mockImplementation((candidates) => actual.selectBackupLocation(candidates));
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      metadata[SystemMetadataKey.SystemConfig] = {};
+      const transport = vi.fn(
+        (schema: { parse: (value: unknown) => unknown }, options: { url: string; method?: string }) => {
+          if (options.url.endsWith('/locations')) {
+            return Promise.resolve(schema.parse({ version: 2, locations }));
+          }
+          if (options.method !== 'POST') {
+            return Promise.reject(
+              new FrameleafCloudError(
+                MlAdmissionRefusal.CloudUnavailable,
+                404,
+                'unclaimed',
+                errorEnvelopeSchema.parse({ code: 'not-found', message: 'unclaimed', retryable: false }),
+              ),
+            );
+          }
+          return Promise.resolve(schema.parse(grant));
+        },
+      );
+      const repository = new FrameleafCloudBackupRepository({ requestJson: transport } as never);
+      cloudBackup.metadata.mockImplementation((target) => repository.metadata(target));
+      cloudBackup.locations.mockImplementation((target) => repository.locations(target));
+      cloudBackup.grant.mockImplementation((target, id) => repository.grant(target, id));
+      try {
+        await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
+        expect(request).toHaveBeenCalledTimes(9);
+        expect(Object.values(samples)).toEqual([[], [], []]);
+        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'loc-07');
+        expect(transport).toHaveBeenLastCalledWith(expect.anything(), {
+          method: 'POST',
+          url: 'https://api.frameleaf.test/v2/backup/grant',
+          dpop: expect.anything(),
+          body: { locationId: 'loc-07' },
+        });
+        expect(vi.mocked(request).mock.invocationCallOrder.at(-1)).toBeLessThan(
+          cloudBackup.grant.mock.invocationCallOrder[0],
+        );
+        expect(cloudBackup.rotate).not.toHaveBeenCalled();
+        expect(store.claim).toHaveBeenCalledTimes(1);
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+          bucketRef: managedRef,
+          managed: { storageId: grant.storageId, location: grant.location },
+        });
+      } finally {
+        clock.mockRestore();
+        vi.mocked(request).mockReset();
+        vi.mocked(lookup).mockReset();
+      }
+    });
+
+    it.each([
+      ['selected location', { ...grant, location: { ...grant.location, locationId: 'loc-01' } }, rotated],
+      [
+        'storage ID',
+        cloudContractFixture('backup/grant-metadata.json'),
+        { ...rotated, storageId: '0194b445-9c8a-7001-8000-000000000099' },
+      ],
+      [
+        'bucket',
+        cloudContractFixture('backup/grant-metadata.json'),
+        { ...rotated, bucket: grant.bucket.replace('fl-eu-', 'fl-na-') },
+      ],
+      ['region', cloudContractFixture('backup/grant-metadata.json'), { ...rotated, region: 'us-east-1' }],
+    ])(
+      'refuses an initial setup grant/rotation %s mismatch before local claim or settings persistence',
+      async (_field, offered, issued) => {
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+        metadata[SystemMetadataKey.SystemConfig] = {};
+        const before = structuredClone(metadata);
+        cloudBackup.grant.mockResolvedValue(offered);
+        cloudBackup.rotate.mockResolvedValue(issued);
+        await expect(
+          sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+        ).rejects.toThrow('different storage binding');
+        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(expect.anything(), grant.location.locationId);
+        expect(store.claim).not.toHaveBeenCalled();
+        expect(keys.write).not.toHaveBeenCalled();
+        expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+        expect(cloudBackup.putSettings).not.toHaveBeenCalled();
+        expect(metadata).toEqual(before);
+      },
+    );
 
     it('reuses the persisted location on setup retry without fetching or probing a new catalog', async () => {
       const recorded = cloudContractFixture('backup/grant-metadata.json');
