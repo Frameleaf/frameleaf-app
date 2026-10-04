@@ -1,9 +1,9 @@
-import { fork, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, fork } from 'node:child_process';
 import { once } from 'node:events';
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
-import { SharpProcessPool } from 'src/queue/sharp-pool.js';
 import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
+import { SharpProcessPool } from 'src/queue/sharp-pool.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 
 vi.mock('node:worker_threads', async (original) => ({
@@ -37,7 +37,9 @@ const pool = (options: ConstructorParameters<typeof SharpProcessPool>[0] = {}) =
   return value;
 };
 afterEach(async () => {
-  await Promise.all(pools.splice(0).map((value) => value.close()));
+  const closing = pools.map((value) => value.close());
+  pools.length = 0;
+  await Promise.all(closing);
   children.length = 0;
 });
 
@@ -51,15 +53,15 @@ describe('bounded native image process pool', () => {
     first.once('close', () => {
       didClose = true;
     });
-    const failed = value.run('getImageMetadata', ['hang']).then(
-      () => {
+    const failed = value
+      .run('getImageMetadata', ['hang'])
+      .then(() => {
         throw new Error('expected timeout');
-      },
-      (error: Error) => {
+      })
+      .catch((error: Error) => {
         expect(didClose).toBe(true);
         return error;
-      },
-    );
+      });
     expect(children).toHaveLength(1);
     expect((await failed).message).toContain('execution deadline');
     expect((await closed)[1]).toBe('SIGKILL');
@@ -74,12 +76,12 @@ describe('bounded native image process pool', () => {
     const value = pool();
     await value.run('getImageMetadata', ['warm']);
     const activeAbort = new AbortController();
-    const active = value.run('getImageMetadata', ['hang'], activeAbort.signal).then(
-      () => {
+    const active = value
+      .run('getImageMetadata', ['hang'], activeAbort.signal)
+      .then(() => {
         throw new Error('expected cancellation');
-      },
-      (error: Error) => error,
-    );
+      })
+      .catch((error: Error) => error);
     const queuedAbort = new AbortController();
     const queued = value.run('getImageMetadata', ['queued'], queuedAbort.signal);
     await expect(value.run('getImageMetadata', ['overflow'])).rejects.toThrow('admission is full');
@@ -89,6 +91,33 @@ describe('bounded native image process pool', () => {
     activeAbort.abort(new Error('cancel active'));
     expect((await active).message).toBe('cancel active');
     expect(children[0].signalCode).toBe('SIGKILL');
+  });
+
+  it('settles every pending task before pool shutdown finishes without starting another child', async () => {
+    const value = pool({ pending: 3, deadlineMs: 30_000 });
+    await value.run('getImageMetadata', ['warm']);
+    const active = expect(value.run('getImageMetadata', ['hang'])).rejects.toThrow('Sharp pool is closed');
+    const abort = new AbortController();
+    const settled = vi.fn();
+    const pending = Promise.allSettled(
+      Array.from({ length: 3 }, () => value.run('getImageMetadata', ['queued'], abort.signal)),
+    ).then((outcomes) => {
+      settled(outcomes);
+      return outcomes;
+    });
+    try {
+      await value.close();
+      await active;
+      await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(1), { timeout: 1000, interval: 10 });
+      expect(await pending).toEqual(
+        Array.from({ length: 3 }, () => ({ status: 'rejected', reason: new Error('Sharp pool is closed') })),
+      );
+      expect(children).toHaveLength(1);
+      expect(children[0].signalCode).toBe('SIGKILL');
+    } finally {
+      abort.abort(new Error('fixture cleanup'));
+      await pending;
+    }
   });
 
   it('uses the current execution cancellation context and removes per-task listeners on reuse', async () => {
@@ -127,7 +156,7 @@ describe('bounded native image process pool', () => {
     const value = pool({
       deadlineMs: 10_000,
       createChild: () => {
-        const child = fork(new URL('./sharp-worker.ts', import.meta.url), [], {
+        const child = fork(new URL('sharp-worker.ts', import.meta.url), [], {
           serialization: 'advanced',
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
           execArgv: ['--import', 'tsx'],

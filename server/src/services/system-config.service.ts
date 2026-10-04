@@ -677,7 +677,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    return { queued: !alreadyInFlight, cloudBatches: false, ...(runId ? { runId } : {}) };
+    return { queued: !alreadyInFlight, cloudBatches: false, ...(runId && { runId }) };
   }
 
   /**
