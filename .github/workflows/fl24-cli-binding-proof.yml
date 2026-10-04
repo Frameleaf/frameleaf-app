@@ -1,0 +1,42 @@
+name: FL24 CLI release binding proof
+on:
+  push:
+    branches: [aj/fl24-cli-binding-proof]
+permissions:
+  contents: read
+jobs:
+  release-contracts:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Install locked server test dependencies
+        run: pnpm --filter immich install --frozen-lockfile --ignore-scripts
+      - name: Verify release trust and NAS caller contracts
+        run: >-
+          node --test --test-concurrency=1
+          .github/frameleaf-release.test.cjs
+          .github/verify-release-bundle.test.cjs
+          packaging/nas/build.test.cjs
+      - name: Collect genuine release formatter output
+        if: ${{ !cancelled() }}
+        working-directory: .github
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm format:fix
+          git diff --binary -- . > "$RUNNER_TEMP/cli-binding-format.patch"
+      - name: Archive formatter output
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl24-cli-binding-format
+          path: ${{ runner.temp }}/cli-binding-format.patch
+          retention-days: 7
