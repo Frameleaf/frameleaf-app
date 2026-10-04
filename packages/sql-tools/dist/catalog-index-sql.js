@@ -3,7 +3,7 @@
 // Other casts and expression changes deliberately retain exact comparison.
 const literal = String.raw`'(?:[^']|'')*'::character varying`;
 const sqlParts = new RegExp(
-  String.raw`E'(?:[^'\\]|\\[\s\S]|'')*'|'(?:[^']|'')*'|"(?:[^"]|"")*"|(?<quote>\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$)[\s\S]*?\k<quote>|/\*[\s\S]*?\*/|--[^\n]*(?:\n|$)|\(ARRAY\[(?<elements>${literal}(?:, ${literal})*)\]\)::text\[\]`,
+  String.raw`[Ee]'(?:[^'\\]|\\[\s\S]|'')*'|'(?:[^']|'')*'|"(?:[^"]|"")*"|(?<quote>\$(?:[A-Za-z_\u0080-\u{10ffff}][A-Za-z_0-9\u0080-\u{10ffff}]*)?\$)[\s\S]*?\k<quote>|/\*[\s\S]*?\*/|--[^\n]*(?:\n|$)|\(ARRAY\[(?<elements>${literal}(?:, ${literal})*)\]\)::text\[\]`,
   'gu',
 );
 const literals = new RegExp(literal, 'gu');
