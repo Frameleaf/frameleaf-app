@@ -4,6 +4,9 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AssetLockReason,
   AssetType,
+  ColorMatrix,
+  ColorPrimaries,
+  ColorTransfer,
   JobName,
   MediaOperationDestination,
   MediaOperationKind,
@@ -1152,6 +1155,74 @@ describe(StudioExportService.name, () => {
           'claim-p',
           expect.objectContaining({ error: expect.stringContaining('smpte2084') }),
         );
+      });
+
+      describe.each([
+        ['PQ', 'smpte2084', ColorTransfer.Smpte2084],
+        ['HLG', 'arib-std-b67', ColorTransfer.AribStdB67],
+      ] as const)('HDR publication signalling (%s, FL-107)', (_, transfer, colorTransfer) => {
+        const hdrVideo = {
+          pixelFormat: 'yuv420p10le',
+          colorTransfer,
+          colorPrimaries: ColorPrimaries.Bt2020,
+          colorMatrix: ColorMatrix.Bt2020Nc,
+        };
+        const hdrContract = { video: { minBitDepth: 10, transfer }, audio: null };
+
+        it.each([
+          ['BT.709 primaries', { colorPrimaries: ColorPrimaries.Bt709 }, /primaries/i],
+          ['unknown primaries', { colorPrimaries: ColorPrimaries.Unknown }, /primaries/i],
+          ['BT.709 matrix', { colorMatrix: ColorMatrix.Bt709 }, /matrix/i],
+          ['unknown matrix', { colorMatrix: ColorMatrix.Unknown }, /matrix/i],
+        ])('refuses %s before moving or publishing the rendered file', async (_, tags, reason) => {
+          repository.publish.mockResolvedValue(published());
+          media.probe.mockResolvedValue(renderedOutput({ video: { ...hdrVideo, ...tags }, audio: [] }));
+
+          await sut.run(contracted(hdrContract));
+
+          expect(storage.rename).not.toHaveBeenCalled();
+          expect(repository.publish).not.toHaveBeenCalled();
+          expect(operations.fail).toHaveBeenCalledWith(
+            PUBLISH,
+            'claim-p',
+            expect.objectContaining({
+              errorCode: 'studio_export_output_rejected',
+              error: expect.stringMatching(reason),
+            }),
+          );
+        });
+
+        it('publishes ten-bit BT.2020 with the BT.2020 non-constant-luminance matrix', async () => {
+          repository.publish.mockResolvedValue(published());
+          media.probe.mockResolvedValue(renderedOutput({ video: hdrVideo, audio: [] }));
+
+          await sut.run(contracted(hdrContract));
+
+          expect(storage.rename).toHaveBeenCalledWith(staged, expect.any(String));
+          expect(repository.publish).toHaveBeenCalledOnce();
+          expect(operations.fail).not.toHaveBeenCalled();
+        });
+      });
+
+      it('still publishes an SDR BT.709 result without an HDR gamut requirement (FL-107)', async () => {
+        repository.publish.mockResolvedValue(published());
+        media.probe.mockResolvedValue(
+          renderedOutput({
+            video: {
+              pixelFormat: 'yuv420p',
+              colorTransfer: ColorTransfer.Bt709,
+              colorPrimaries: ColorPrimaries.Bt709,
+              colorMatrix: ColorMatrix.Bt709,
+            },
+            audio: [],
+          }),
+        );
+
+        await sut.run(contracted({ video: { minBitDepth: 8, transfer: null }, audio: null }));
+
+        expect(storage.rename).toHaveBeenCalledWith(staged, expect.any(String));
+        expect(repository.publish).toHaveBeenCalledOnce();
+        expect(operations.fail).not.toHaveBeenCalled();
       });
 
       it('holds an export from before the contract to the precision of its settings', async () => {
