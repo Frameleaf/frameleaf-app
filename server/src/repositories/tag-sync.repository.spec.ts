@@ -1,48 +1,49 @@
 import { SyncEntityType } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { forkGuardAnswer, scriptedKysely } from 'test/scripted-kysely.js';
+import { scriptedKysely } from 'test/scripted-kysely.js';
 
-describe('tag sync maintenance on official-origin libraries', () => {
+describe('canonical tag sync maintenance', () => {
+  it.each(['reset', 'cleanupAuditTables'] as const)('waits to write until the %s tables exist', async (method) => {
+    const { db, queries } = scriptedKysely(() => ({ rows: [{ table: null }] }));
+    const repo = new TagSync(db);
+    await expect(method === 'reset' ? repo.reset('session-id') : repo.cleanupAuditTables(30)).resolves.toBeUndefined();
+    expect(queries).toHaveLength(1);
+    expect(queries[0].sql).toContain('to_regclass');
+  });
   it.each(['reset', 'cleanupAuditTables'] as const)(
-    'keeps existing %s usable before legacy-fork adoption',
+    'writes existing canonical %s tables with bounded scope',
     async (method) => {
       const { db, queries } = scriptedKysely((query) =>
-        query.sql.includes("to_regclass('public.")
-          ? { rows: [{ table: null }] }
-          : forkGuardAnswer({ phase: 'inactive' })(query),
+        query.sql.includes('to_regclass') ? { rows: [{ table: 'present' }] } : {},
       );
       const repo = new TagSync(db);
       await expect(
         method === 'reset' ? repo.reset('session-id') : repo.cleanupAuditTables(30),
       ).resolves.toBeUndefined();
-      expect(queries).toHaveLength(1);
-      expect(queries[0].sql).toContain('to_regclass');
+      const deletes = queries.filter(({ sql }) => sql.startsWith('delete from'));
+      expect(deletes.length).toBeGreaterThan(0);
+      if (method === 'reset') {
+        expect(deletes).toHaveLength(1);
+        expect(deletes[0].sql).toContain('session_tag_sync_state');
+        expect(deletes[0].sql).toContain('"sessionId" =');
+        expect(deletes[0].parameters).toContain('session-id');
+      } else {
+        expect(deletes.map(({ sql }) => sql)).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining('"tag_audit"'),
+            expect.stringContaining('"tag_asset_audit"'),
+            expect.stringContaining('"pet_audit"'),
+            expect.stringContaining('"pet_observation_audit"'),
+          ]),
+        );
+        for (const query of deletes) {
+          expect(query.sql).toContain('"deletedAt" <');
+          expect(query.parameters).toContain(30);
+        }
+      }
     },
   );
-  it.each(['reset', 'cleanupAuditTables'] as const)(
-    'retains handoff write refusal for existing %s tables',
-    async (method) => {
-      const { db, queries } = scriptedKysely((query) =>
-        query.sql.includes("to_regclass('public.")
-          ? { rows: [{ table: 'present' }] }
-          : forkGuardAnswer({ phase: 'failed' })(query),
-      );
-      const repo = new TagSync(db);
-      await expect(method === 'reset' ? repo.reset('session-id') : repo.cleanupAuditTables(30)).rejects.toThrow(
-        'This change is unavailable during database handoff',
-      );
-      expect(queries.some(({ sql }) => sql.startsWith('delete from'))).toBe(false);
-    },
-  );
-});
-
-it('rejects new tag streaming before querying identifiers on an inactive official-origin library', async () => {
-  const { db, queries } = scriptedKysely(forkGuardAnswer({ phase: 'inactive' }));
-  await expect(new TagSync(db).reconcile(authStub.user1, 'tag')).rejects.toThrow(
-    'This change is unavailable during database handoff',
-  );
-  expect(queries.some(({ sql }) => sql.includes('from "tag"') || sql.includes('session_tag_sync_state'))).toBe(false);
 });
 
 const newestKinds = [
@@ -54,7 +55,7 @@ const newestKinds = [
 ] as const;
 
 it.each(newestKinds)('orders fresh %s by source before opaque event IDs', async (kind, table) => {
-  const { db, queries } = scriptedKysely(forkGuardAnswer({ phase: 'active' }));
+  const { db, queries } = scriptedKysely();
   await new TagSync(db).reconcile(authStub.user1, kind);
   const pending = queries.find(({ sql }) => sql.includes('"acknowledged" =') && sql.startsWith('select'))!.sql;
   expect(pending).toContain('order by "deliveryOrder" asc nulls last');
@@ -68,7 +69,7 @@ it.each(newestKinds)('acks delivered %s by durable order rather than UUID compar
     if (query.sql.startsWith('select') && query.sql.includes('"eventId" =')) {
       return { rows: [{ deliveryOrder: 7 }] };
     }
-    return forkGuardAnswer({ phase: 'active' })(query);
+    return {};
   });
   await new TagSync(db).acknowledge(authStub.user1.session!.id, {
     type: SyncEntityType[type],

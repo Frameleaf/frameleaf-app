@@ -6,7 +6,7 @@ export function isValidDatabaseBackupName(filename: string) {
 
 export function isValidDatabaseRoutineBackupName(filename: string) {
   const oldBackupStyle = filename.match(/^frameleaf-db-backup-\d+\.sql\.gz$/);
-  //frameleaf-db-backup-20250729T114018-v1.136.0-pg14.17.sql.gz
+  //frameleaf-db-backup-20250729T114018-v1.136.0-pg19beta4.sql.gz
   const newBackupStyle = filename.match(/^frameleaf-db-backup-\d{8}T\d{6}-v.*-pg.*\.sql\.gz$/);
   return oldBackupStyle || newBackupStyle;
 }
@@ -26,13 +26,7 @@ export function isFailedDatabaseBackupName(filename: string) {
   return filename.match(/^frameleaf-db-backup-.*\.sql\.gz\.tmp$/);
 }
 
-/**
- * FL-295: the safety copy the first Frameleaf start takes of a library the official server created,
- * before anything upgrades it. It keeps the `frameleaf-db-backup-<timestamp>-…` shape so the existing
- * backup tools (Frameleaf's and the official server's) list and restore it, with `pre-upgrade` between
- * the timestamp and the version. That also keeps it out of the routine-backup pattern above, so the
- * rotation (`keepLastAmount`) of either server never removes it.
- */
+/** Retained safety copies remain visible but are excluded from routine backup rotation. */
 export const PRE_UPGRADE_BACKUP_LABEL = 'pre-upgrade';
 
 export function isPreUpgradeBackupName(filename: string) {

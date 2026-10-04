@@ -61,8 +61,7 @@ describe(EventRepository.name, () => {
   });
 
   describe('AppBootstrap order (FL-289)', () => {
-    // Boot adoption of an official-origin library skips the maintenance-mode check, which is only safe
-    // because it runs in DatabaseService's bootstrap migration step: the first AppBootstrap handler,
+    // Canonical database migrations run in DatabaseService's bootstrap step: the first AppBootstrap handler,
     // awaited before the queue workers start (QueueService) and before the API listens for HTTP
     // (configureExpress runs after NestFactory.create resolves module init).
     it('runs the database bootstrap first and the queue workers after it on the API worker', () => {
@@ -71,18 +70,14 @@ describe(EventRepository.name, () => {
 
       expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');
       expect(bootstrap.indexOf('QueueService.onBootstrap')).toBeGreaterThan(0);
-      expect(bootstrap.indexOf('ForkSchemaMigrationService.onBootstrap')).toBeGreaterThan(
-        bootstrap.indexOf('QueueService.onBootstrap'),
-      );
     });
 
-    it('runs the database bootstrap first on the microservices worker and never auto-starts the backfill there', () => {
+    it('runs the canonical database bootstrap before queue workers on the microservices worker', () => {
       const { labels } = setupServices(ImmichWorker.Microservices);
       const bootstrap = labels('AppBootstrap');
 
       expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');
       expect(bootstrap.indexOf('QueueService.onBootstrap')).toBeGreaterThan(0);
-      expect(bootstrap).not.toContain('ForkSchemaMigrationService.onBootstrap');
     });
 
     it('keeps the database bootstrap priority strictly below every other bootstrap priority', () => {

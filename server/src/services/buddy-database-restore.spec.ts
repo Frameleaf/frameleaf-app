@@ -10,14 +10,15 @@ describe('Buddy database recovery fence', () => {
     const logger = { setContext() {}, debug() {}, log() {}, error() {}, warn() {} };
     const storage = {
       stat: vi.fn(),
-      createPlainReadStream: () => Readable.from(['SELECT 1;']),
+      createPlainReadStream: () =>
+        Readable.from([
+          '-- Dumped from database version 19beta4\nCREATE TABLE public.frameleaf_migrations (name text, timestamp text);\nSELECT 1;\n-- PostgreSQL database dump complete\n',
+        ]),
       createGunzip: () => new PassThrough(),
     };
     const database = {
-      isCertifiedReturnStartup: () => Promise.resolve(false),
-      detectMigrationMode: () => Promise.resolve('legacy'),
       runMigrations: vi.fn(),
-      runForkMigrations: vi.fn(),
+      resetTransientExecutionState: vi.fn(),
     };
     const process = {
       spawnDuplexStream: () => {
@@ -49,7 +50,7 @@ describe('Buddy database recovery fence', () => {
       args: [],
       databaseUsername: 'owner',
       databasePassword: '',
-      databaseMajorVersion: 18,
+      databaseMajorVersion: 19,
     });
     return { service, statements, database };
   };
