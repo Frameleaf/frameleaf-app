@@ -127,6 +127,10 @@ export type BuddyStatusDto = {
         uploadedObjects: number;
     } | null;
     settings: {
+        bootConfiguration?: {
+            environmentKeys: EnvironmentKeys[];
+            version: Version;
+        };
         configurationFiles?: string[];
         directory: string;
         downloadMbps?: number;
@@ -265,6 +269,10 @@ export type BuddyRestoreStatusDto = {
     state: string;
 };
 export type BuddySettingsDto = {
+    bootConfiguration?: {
+        environmentKeys: EnvironmentKeys[];
+        version: Version;
+    };
     configurationFiles?: string[];
     directory: string;
     downloadMbps?: number;
@@ -27193,6 +27201,75 @@ export enum Monthly {
 }
 export enum Version {
     $1 = 1
+}
+export enum EnvironmentKeys {
+    FrameleafBuildData = "FRAMELEAF_BUILD_DATA",
+    FrameleafBuild = "FRAMELEAF_BUILD",
+    FrameleafBuildUrl = "FRAMELEAF_BUILD_URL",
+    FrameleafBuildImage = "FRAMELEAF_BUILD_IMAGE",
+    FrameleafBuildImageUrl = "FRAMELEAF_BUILD_IMAGE_URL",
+    FrameleafConfigFile = "FRAMELEAF_CONFIG_FILE",
+    FrameleafHelmetFile = "FRAMELEAF_HELMET_FILE",
+    FrameleafEnv = "FRAMELEAF_ENV",
+    FrameleafHost = "FRAMELEAF_HOST",
+    FrameleafIgnoreMountCheckErrors = "FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS",
+    FrameleafImportRoots = "FRAMELEAF_IMPORT_ROOTS",
+    FrameleafLogLevel = "FRAMELEAF_LOG_LEVEL",
+    FrameleafLogFormat = "FRAMELEAF_LOG_FORMAT",
+    FrameleafMediaLocation = "FRAMELEAF_MEDIA_LOCATION",
+    FrameleafAllowExternalPlugins = "FRAMELEAF_ALLOW_EXTERNAL_PLUGINS",
+    FrameleafPluginsInstallFolder = "FRAMELEAF_PLUGINS_INSTALL_FOLDER",
+    FrameleafPort = "FRAMELEAF_PORT",
+    FrameleafRepository = "FRAMELEAF_REPOSITORY",
+    FrameleafShutdownGraceSeconds = "FRAMELEAF_SHUTDOWN_GRACE_SECONDS",
+    FrameleafShutdownDeadlineSeconds = "FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS",
+    FrameleafRepositoryUrl = "FRAMELEAF_REPOSITORY_URL",
+    FrameleafSourceRef = "FRAMELEAF_SOURCE_REF",
+    FrameleafSourceCommit = "FRAMELEAF_SOURCE_COMMIT",
+    FrameleafSourceCommitUrl = "FRAMELEAF_SOURCE_COMMIT_URL",
+    FrameleafAllowSetup = "FRAMELEAF_ALLOW_SETUP",
+    FrameleafTrustedProxies = "FRAMELEAF_TRUSTED_PROXIES",
+    FrameleafWorkersInclude = "FRAMELEAF_WORKERS_INCLUDE",
+    FrameleafWorkersExclude = "FRAMELEAF_WORKERS_EXCLUDE",
+    FrameleafRecoveryRoots = "FRAMELEAF_RECOVERY_ROOTS",
+    FrameleafAndroidReleaseUrl = "FRAMELEAF_ANDROID_RELEASE_URL",
+    FrameleafAndroidAppId = "FRAMELEAF_ANDROID_APP_ID",
+    FrameleafAndroidSigningSha256 = "FRAMELEAF_ANDROID_SIGNING_SHA256",
+    FrameleafIosAppUrl = "FRAMELEAF_IOS_APP_URL",
+    FrameleafCloudUrl = "FRAMELEAF_CLOUD_URL",
+    FrameleafPushUrl = "FRAMELEAF_PUSH_URL",
+    FrameleafLicenseExtraJwksFile = "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
+    FrameleafIdentityDir = "FRAMELEAF_IDENTITY_DIR",
+    FrameleafLinkToken = "FRAMELEAF_LINK_TOKEN",
+    FrameleafSetupCode = "FRAMELEAF_SETUP_CODE",
+    FrameleafEdgePort = "FRAMELEAF_EDGE_PORT",
+    FrameleafEdgeBind = "FRAMELEAF_EDGE_BIND",
+    FrameleafAcmeDirectoryUrl = "FRAMELEAF_ACME_DIRECTORY_URL",
+    FrameleafEdgeSecret = "FRAMELEAF_EDGE_SECRET",
+    FrameleafLocalUrl = "FRAMELEAF_LOCAL_URL",
+    FrameleafTrustedLanCidrs = "FRAMELEAF_TRUSTED_LAN_CIDRS",
+    FrameleafAndroidStoreUrl = "FRAMELEAF_ANDROID_STORE_URL",
+    FrameleafDocsUrl = "FRAMELEAF_DOCS_URL",
+    FrameleafSupportUrl = "FRAMELEAF_SUPPORT_URL",
+    FrameleafBugFeatureUrl = "FRAMELEAF_BUG_FEATURE_URL",
+    FrameleafSourceUrl = "FRAMELEAF_SOURCE_URL",
+    DbDatabaseName = "DB_DATABASE_NAME",
+    DbHostname = "DB_HOSTNAME",
+    DbPassword = "DB_PASSWORD",
+    DbPort = "DB_PORT",
+    DbSkipMigrations = "DB_SKIP_MIGRATIONS",
+    DbSslMode = "DB_SSL_MODE",
+    DbUrl = "DB_URL",
+    DbUsername = "DB_USERNAME",
+    DbVectorExtension = "DB_VECTOR_EXTENSION",
+    NoColor = "NO_COLOR",
+    RedisHostname = "REDIS_HOSTNAME",
+    RedisPort = "REDIS_PORT",
+    RedisDbindex = "REDIS_DBINDEX",
+    RedisUsername = "REDIS_USERNAME",
+    RedisPassword = "REDIS_PASSWORD",
+    RedisSocket = "REDIS_SOCKET",
+    RedisUrl = "REDIS_URL"
 }
 export enum Action {
     Start = "start",
