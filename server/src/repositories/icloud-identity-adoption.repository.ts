@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
+import { guardWeeklyIdentityAdoption, lockIdentityAdoptionMetadata, weeklyIdentityAdoptionActive, weeklyIdentityAdoptionFence } from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
@@ -51,6 +52,7 @@ export type IdentityAdoptionEvidence = {
 export type IdentityAdoptionResult = 'miss' | 'retry' | 'adopted';
 type Source = { resource: ICloudResource; sourceRevision: string; masterRevision: string; itemClaimId: string };
 class Retired extends Error {}
+class WeeklyUnavailable extends Error {}
 
 /** No public/authenticated endpoint: this producer accepts only the claimed local sync operation. */
 @Injectable()
@@ -94,6 +96,8 @@ export class ICloudIdentityAdoptionRepository {
         if (!owner) {
           throw new Retired();
         }
+        const weekly = await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId);
+        if (!weekly) { return 'miss'; }
         const source = await this.source(db, authority);
         if (!['original', 'motion', 'raw'].includes(source.resource.role) || source.resource.source.isHidden === true) {
           return 'miss';
@@ -145,7 +149,7 @@ export class ICloudIdentityAdoptionRepository {
         // Classification can write the active privacy sidecar without touching the asset row.
         // Match DatabaseRepository.withAssetMetadataLock BEFORE any asset row lock, and hold
         // its authority through every file await, mapping/receipt publication and replay.
-        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${candidate.assetId})::int)`.execute(db);
+        if (!(await lockIdentityAdoptionMetadata(db, candidate.assetId))) { return 'retry'; }
         await lockFilePath(db, candidate.originalPath);
         if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) {
           return 'miss';
@@ -168,7 +172,10 @@ export class ICloudIdentityAdoptionRepository {
           }
           replay = receipt.rows[0];
         }
+        // The captured owner/input/grant rows remain locked; activation can still stop new work.
+        if (!weeklyIdentityAdoptionActive()) { throw new WeeklyUnavailable(); }
         const evidence = await verify(candidate);
+        if (!weeklyIdentityAdoptionActive()) { throw new WeeklyUnavailable(); }
         if (evidence === 'miss') {
           return 'miss';
         }
@@ -186,6 +193,9 @@ export class ICloudIdentityAdoptionRepository {
           return 'miss';
         }
         if (!(await evidence.current())) {
+          if (!(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+            throw new WeeklyUnavailable();
+          }
           return 'retry';
         }
         const finalSource = await this.source(db, authority);
@@ -223,7 +233,13 @@ export class ICloudIdentityAdoptionRepository {
         };
         // Keep the same handle and pathname evidence current after the final awaited row checks.
         if (!(await evidence.current())) {
+          if (!(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+            throw new WeeklyUnavailable();
+          }
           return 'retry';
+        }
+        if (!(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+          throw new WeeklyUnavailable();
         }
         if (replay) {
           const live = await sql`SELECT r.id FROM immich_fork.icloud_resource r
@@ -235,7 +251,10 @@ export class ICloudIdentityAdoptionRepository {
               AND o."claimExpiresAt">clock_timestamp() AND o.status IN ('preparing','rendering','validating')
               AND o."cancelRequestedAt" IS NULL AND o."pauseRequestedAt" IS NULL
               AND c."ownerId"=r."ownerId" AND c.holder=${`icloud-sync:${authority.connectionId}`}
-              AND c."expiresAt">clock_timestamp()`.execute(db);
+              AND c."expiresAt">clock_timestamp() AND ${weeklyIdentityAdoptionFence(weekly)}`.execute(db);
+          if (live.rows.length !== 1 && !(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+            throw new WeeklyUnavailable();
+          }
           return live.rows.length === 1 && canonicalJson(replay.snapshot) === canonicalJson(snapshot)
             ? 'adopted'
             : 'retry';
@@ -253,21 +272,26 @@ export class ICloudIdentityAdoptionRepository {
               AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL)
             AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${source.itemClaimId}::uuid
               AND "ownerId"=${authority.ownerId}::uuid AND holder=${`icloud-sync:${authority.connectionId}`}
-              AND "expiresAt">clock_timestamp()) RETURNING id`.execute(db);
+              AND "expiresAt">clock_timestamp()) AND ${weeklyIdentityAdoptionFence(weekly)} RETURNING id`.execute(db);
         if (mapped.rows.length !== 1) {
+          if (!(await guardWeeklyIdentityAdoption(db, authority.ownerId, authority.connectionId, weekly))) {
+            throw new WeeklyUnavailable();
+          }
           throw new Retired();
         }
-        await sql`INSERT INTO immich_fork.icloud_identity_reuse
+        const receipt = await sql`INSERT INTO immich_fork.icloud_identity_reuse
           ("ownerId","connectionId","sourceResourceId","identityId","assetId","operationId","itemClaimId",basis,
            "libraryKey","cplAssetRecordName","cplMasterRecordName",role,"expectedSha256","appleFingerprint",snapshot)
-          VALUES (${authority.ownerId}::uuid,${authority.connectionId}::uuid,${authority.resourceId}::uuid,
+          SELECT ${authority.ownerId}::uuid,${authority.connectionId}::uuid,${authority.resourceId}::uuid,
             ${candidate.identityId}::uuid,${candidate.assetId}::uuid,${authority.operationId}::uuid,${source.itemClaimId}::uuid,
             'exact-identity',${source.resource.libraryKey},upper(${source.resource.sourceAssetId}),
             ${candidate.cplMasterRecordName},${identityRoleOf[source.resource.role]},${evidence.sha256},
-            ${evidence.appleFingerprint},${snapshot}::jsonb)`.execute(db);
+            ${evidence.appleFingerprint},${snapshot}::jsonb WHERE ${weeklyIdentityAdoptionFence(weekly)} RETURNING id`.execute(db);
+        if (receipt.rows.length !== 1) { throw new WeeklyUnavailable(); }
         return 'adopted';
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof WeeklyUnavailable) { return 'miss'; }
       return 'retry';
     }
   }

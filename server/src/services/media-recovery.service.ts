@@ -39,6 +39,11 @@ export class MediaRecoveryService {
       if (!resource.assetId || !resource.sha1 || !resource.sha256) {
         return;
       }
+      const reuse = await this.repository.identityReuseAuthority(input);
+      if (reuse.required && !reuse.context) {
+        // Backpressure on an existing mapping: never stage/relabel it or clear its immutable receipt.
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
       const candidates = await this.repository.findCandidates(
         input.ownerId,
         { sha1: resource.sha1, sha256: resource.sha256 },
@@ -47,6 +52,9 @@ export class MediaRecoveryService {
       const candidate = candidates.find(({ id }) => id === resource.assetId);
       if (!candidate?.matchesContent || candidate.identityConflict) {
         return { outcome: 'needs-review', reason: 'mapped_asset_identity_changed' };
+      }
+      if (reuse.required && candidate.hidden) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
       }
       if (candidate.hidden && !input.includeHidden) {
         return { outcome: 'needs-review', reason: 'hidden_match_requires_consent' };
@@ -74,7 +82,7 @@ export class MediaRecoveryService {
       if (verified.status !== 'healthy') {
         return { outcome: verified.status === 'unsupported' ? 'needs-review' : 'retry', reason: verified.reason };
       }
-      return await this.repository.commitVerifiedReuse({ ...input, candidate, verified, verifyFinal: validate });
+      return await this.repository.commitVerifiedReuse({ ...input, weeklyReuse: reuse.context, candidate, verified, verifyFinal: validate });
     } catch {
       return { outcome: 'retry', reason: 'reuse_not_committed' };
     }
