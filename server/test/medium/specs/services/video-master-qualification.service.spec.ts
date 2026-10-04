@@ -755,6 +755,87 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     expect(digest(source)).toBe(before);
   }, 120_000);
 
+  it.each(['silent', 'muted', 'irregular', 'reordered-nonzero'] as const)(
+    'publishes a measured complete %s clip with its independently decoded frames and clock', async (mode) => {
+      let source = fixture(folder, 320, 240, 12, mode === 'muted' ? 1 : 0, mode === 'irregular');
+      if (mode === 'reordered-nonzero') {
+        const reordered = join(folder, 'nonzero-bframes.mp4');
+        ffmpeg('-i', source, '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '10', '-bf', '2',
+          '-video_track_timescale', '90000', '-output_ts_offset', '5', reordered);
+        source = reordered;
+        const observed = inspect<{ packets: Array<{ pts: number }> }>(source, '-select_streams', 'v:0',
+          '-show_packets', '-show_entries', 'packet=pts').packets.map((packet) => packet.pts);
+        expect(Math.min(...observed)).toBeGreaterThan(0);
+        expect(observed.some((pts, index) => index > 0 && pts < observed[index - 1])).toBe(true);
+      }
+      const before = digest(source);
+      const sourceIds = frameIds(source);
+      const sourceClock = frameTimes(source);
+      const asset = await seed(source);
+      const edits: AssetEditActionItem[] = [fullCrop(320, 240)];
+      if (mode === 'muted') {
+        edits.push({ action: AssetEditAction.Audio, parameters: { muted: true } });
+      }
+      const version = await requested(asset.id, edits);
+      expect(await render(asset.id, version.id)).toBe(JobStatus.Success);
+      const current = (await setup.ctx.get(AssetEditRepository).getVideoVersion(asset.id, version.id))!;
+      expect((await selection(asset.id)).currentVersionId).toBe(version.id);
+      expect(frameIds(current.masterPath!)).toEqual(sourceIds);
+      const actualClock = frameTimes(current.masterPath!);
+      expect(actualClock).toHaveLength(sourceClock.length);
+      for (const [index, pts] of actualClock.entries()) {
+        // Independent decoded PTS oracle at the fixture's measured 90 kHz clock.
+        expect(Math.abs((pts - actualClock[0]) - (sourceClock[index] - sourceClock[0])))
+          .toBeLessThanOrEqual(2 / 90_000);
+      }
+      expect(inspect(current.masterPath!, '-select_streams', 'a', '-show_streams').streams).toHaveLength(0);
+      expect(digest(source)).toBe(before);
+    }, 120_000,
+  );
+
+  it.each(['silent', 'muted'] as const)(
+    'refuses a genuinely truncated unpublished %s clip and retains the current master', async (mode) => {
+      const source = fixture(folder, 320, 240, 36, mode === 'muted' ? 1 : 0);
+      const before = digest(source);
+      const asset = await seed(source);
+      const edits: AssetEditActionItem[] = [fullCrop(320, 240)];
+      if (mode === 'muted') {
+        edits.push({ action: AssetEditAction.Audio, parameters: { muted: true } });
+      }
+      const initial = await requested(asset.id, edits);
+      expect(await render(asset.id, initial.id)).toBe(JobStatus.Success);
+      const current = (await setup.ctx.get(AssetEditRepository).getVideoVersion(asset.id, initial.id))!;
+      const currentHash = digest(current.masterPath!);
+      const failed = await requested(asset.id, [...edits, { action: AssetEditAction.Rotate, parameters: { angle: 90 } }]);
+      expect(failed.id).not.toBe(initial.id);
+      const media = setup.ctx.get(MediaRepository);
+      const transcode = media.transcode.bind(media);
+      let candidate = '';
+      let decodedCandidateCount = 0;
+      vi.spyOn(media, 'transcode').mockImplementation(async (input, output, command) => {
+        await transcode(input, output, command);
+        if (typeof output === 'string' && output.includes(failed.id) && output.endsWith('.master.mp4')) {
+          candidate = output;
+          const truncated = join(folder, 'injected-native-truncation.mp4');
+          ffmpeg('-i', output, '-map', '0:v:0', '-an', '-c:v', 'copy', '-frames:v', '18', truncated);
+          writeFileSync(output, readFileSync(truncated));
+          decodedCandidateCount = frameTimes(output).length;
+        }
+      });
+      expect(await render(asset.id, failed.id)).toBe(JobStatus.Failed);
+      expect(candidate).not.toBe('');
+      expect(decodedCandidateCount).toBeGreaterThan(0);
+      expect(decodedCandidateCount).toBeLessThan(frameTimes(source).length);
+      expect((await selection(asset.id)).currentVersionId).toBe(initial.id);
+      expect((await setup.ctx.get(AssetEditRepository).getVideoVersion(asset.id, failed.id))!.status).toBe('failed');
+      expect(existsSync(candidate)).toBe(false);
+      expect(existsSync(`${candidate}.lineage.json`)).toBe(false);
+      expect(existsSync(candidate.replace('.master.mp4', '.proxy.mp4'))).toBe(false);
+      expect(digest(current.masterPath!)).toBe(currentHash);
+      expect(digest(source)).toBe(before);
+    }, 120_000,
+  );
+
   it('refuses a genuine multiple-audio-track original before any transcode or publication', async () => {
     const source = fixture(folder, 320, 240, 36, 2);
     expect(inspect(source, '-select_streams', 'a', '-show_streams').streams).toHaveLength(2);

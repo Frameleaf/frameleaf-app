@@ -165,6 +165,10 @@ export interface AudioStreamInfo {
 
 /** Packet-derived video data needed for accurate HLS playlists. */
 export interface VideoPacketInfo {
+  /** FL-16: non-discard presentation endpoints, independent of decode order and duration sums.
+   * Absent/null means packet timing could not be measured safely; never infer it from fps.
+   */
+  presentation?: { startPts: number; endPts: number } | null;
   /** Sum of source packet duration across all packets (includes discard). */
   totalDuration: number;
   /** Post-discard packet count. */
