@@ -139,9 +139,9 @@ export class StorageMigrationService {
 
   @OnJob({ name: JobName.UniversalStorageMigration, queue: QueueName.StorageTemplateMigration })
   async handleBatch(): Promise<JobStatus> {
-    const { phase } = await this.forkSchemaRepository.getState();
-    if (phase === 'dual-write') {
-      // The fork-schema backfill normalizes storage too: wait for it before touching files.
+    if (!(await this.forkSchemaRepository.isStorageSteady())) {
+      // The fork-schema backfill normalizes storage too, and an official handoff or return splits shared
+      // originals back out: wait for either before touching files.
       await this.queueNext(STORAGE_MIGRATION_BACKFILL_WAIT_MS);
       return JobStatus.Skipped;
     }
@@ -218,10 +218,9 @@ export class StorageMigrationService {
    * listed as skipped (it is never linked: the linking stage hashes every file again anyway).
    */
   private async checkBatch(state: StorageMigrationState): Promise<BatchOutcome> {
+    // The migration's media-health run is made with its first Missing finding: a run with no findings
+    // would be an orphan the return to an official server refuses (`ORPHAN_FAMILIES`).
     let runId = state.runId;
-    if (!runId) {
-      runId = (await this.mediaHealthRepository.createRun(MediaHealthCategory.Missing)).id;
-    }
 
     const assets = await this.storageMigrationRepository.getAssetPage(state.cursor, STORAGE_MIGRATION_BATCH_SIZE);
     if (assets.length === 0) {
@@ -235,6 +234,7 @@ export class StorageMigrationService {
     const skipped: string[] = [];
     for (const asset of assets) {
       if (!(await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK))) {
+        runId ??= (await this.mediaHealthRepository.createRun(MediaHealthCategory.Missing)).id;
         await this.mediaHealthRepository.upsertFinding({
           runId,
           assetId: asset.id,
