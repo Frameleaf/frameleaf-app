@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Kysely, type SelectQueryBuilder, sql } from 'kysely';
+import { Kysely, type SelectQueryBuilder, sql, type Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
@@ -502,6 +502,12 @@ export class JobRepository {
       throw new Error('Destination admission lost its claim');
     }
     return row.destination;
+  }
+
+  /** Database-only producer already holding its domain claim; admission commits with that publication. */
+  async queueInTransaction(tx: Transaction<any>, item: JobItem): Promise<void> {
+    if (queueExecution.getStore()) throw new Error('Queue-owned producers must use their completion transaction');
+    await this.store.enqueue([this.intent(item)], tx);
   }
 
   async queueAll(items: JobItem[]): Promise<void> {

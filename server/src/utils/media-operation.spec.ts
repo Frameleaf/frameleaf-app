@@ -179,6 +179,7 @@ describe('automatic retry (FL-104)', () => {
 describe('safe automatic replay', () => {
   it('allows local resumable rendering, while excluding remote submissions and destructive operations', () => {
     expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).toContain(MediaOperationKind.StudioExport);
+    expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).toContain(MediaOperationKind.StudioExportPublish);
     expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).toContain(MediaOperationKind.QuickEdit);
     for (const kind of [
       MediaOperationKind.CloudMlJob,
