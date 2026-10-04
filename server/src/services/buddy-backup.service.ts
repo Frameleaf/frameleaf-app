@@ -43,7 +43,12 @@ import {
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
-import { assertExecutionActive, executionDelay, executionSignal } from 'src/utils/execution-signal.js';
+import {
+  advanceExecutionProgress,
+  assertExecutionActive,
+  executionDelay,
+  executionSignal,
+} from 'src/utils/execution-signal.js';
 import {
   type BuddyAcceptRequest,
   BuddyAction,
@@ -662,7 +667,10 @@ export class BuddyBackupService {
         const newest = snapshots[0];
         if (!newest) throw new Error('There is no complete Buddy snapshot to verify');
         const envelope = await client.request<BuddySignedSnapshot>('GET', `snapshots/${newest.id}`);
-        const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`));
+        const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`), {
+          signal: executionSignal(),
+          progress: advanceExecutionProgress,
+        });
         const manifest = await reader.manifest();
         const selected = envelope.snapshot.objects.filter(
           (_, index) => index % 52 === Math.floor(Date.now() / (7 * 86_400_000)) % 52,

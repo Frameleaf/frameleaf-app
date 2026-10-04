@@ -224,7 +224,10 @@ export class BuddyBackupRestoreService {
     if (list.every((entry) => entry.id !== snapshotId)) throw new NotFoundException('Backup unavailable');
     const envelope = await client.request<BuddySignedSnapshot>('GET', `snapshots/${snapshotId}`);
     const ring = await this.backup.keyring();
-    const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`));
+    const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`), {
+      signal: executionSignal(),
+      progress: advanceExecutionProgress,
+    });
     const manifest = await reader.manifest();
     if (manifest.snapshotId !== snapshotId) throw new Error('Buddy snapshot identity mismatch');
     return { reader, manifest, envelope };

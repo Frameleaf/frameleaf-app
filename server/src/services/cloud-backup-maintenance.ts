@@ -25,6 +25,7 @@ import {
   objectKey,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { advanceExecutionProgress } from 'src/utils/execution-signal.js';
 
 /** The claimed bucket an operation works on, opened with its key for this operation only. */
 export type CloudBackupBucket = {
@@ -199,6 +200,7 @@ export class CloudBackupMaintenance {
     );
     for (const manifest of plan.remove) {
       await this.store.delete(bucket.connection, manifest.key);
+      advanceExecutionProgress(1);
     }
 
     let progress = result;
@@ -210,6 +212,7 @@ export class CloudBackupMaintenance {
       }
       for (const { key } of batch) {
         await this.store.delete(bucket.connection, key);
+        advanceExecutionProgress(1);
       }
       progress = { ...progress, deleted: progress.deleted + batch.length };
       // a pause or cancel stops here; the next clean-up plans again from the bucket as it is then
@@ -219,6 +222,7 @@ export class CloudBackupMaintenance {
     }
     for (const { key } of staleDumps) {
       await this.store.delete(bucket.connection, key);
+      advanceExecutionProgress(1);
     }
     return { ...progress, done: true };
   }
@@ -297,6 +301,7 @@ export class CloudBackupMaintenance {
           method: start.depth === 'full' ? 'size-head' : 'sha256-get',
           result: problem ?? 'passed',
         });
+        advanceExecutionProgress(1);
         if (problem) {
           record(sha256, problem);
         }
@@ -330,6 +335,7 @@ export class CloudBackupMaintenance {
           }
         }
         result = { ...result, checked: result.checked + 1 };
+        advanceExecutionProgress(1);
       }
     }
     await this.settleBad(bucket, [], degraded);
