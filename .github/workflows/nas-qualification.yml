@@ -97,14 +97,23 @@ jobs:
           const fs = require('node:fs');
           const { execFileSync } = require('node:child_process');
           const plan = JSON.parse(fs.readFileSync(process.env.PLAN, 'utf8'));
-          for (const asset of ['database.dump', 'media.tar']) execFileSync('gh', ['release', 'download', plan.fixtureRelease, '--repo', 'Frameleaf/frameleaf-app', '--pattern', asset, '--dir', `${process.env.QUALIFICATION_ROOT}/checkpoint`], { stdio: 'inherit' });
+          for (const asset of ['database.dump', 'media.tar', 'acceptance.json']) execFileSync('gh', ['release', 'download', plan.fixtureRelease, '--repo', 'Frameleaf/frameleaf-app', '--pattern', asset, '--dir', `${process.env.QUALIFICATION_ROOT}/checkpoint`], { stdio: 'inherit' });
           JS
           node packaging/nas/qualification.cjs backup-restore "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
       - name: Migration
         run: node packaging/nas/qualification.cjs migration "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
       - name: Rollback
         run: node packaging/nas/qualification.cjs rollback "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
-      # No signing, report publication or success artifact exists until genuine migration/rollback adapters are reviewed.
+      - name: Retain unsigned adapter operation diagnostics
+        if: always() && steps.qualification-workspace.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nas-adapter-operations-${{ github.run_id }}
+          path: |
+            ${{ env.QUALIFICATION_ROOT }}/checkpoint/migration-operation.json
+            ${{ env.QUALIFICATION_ROOT }}/checkpoint/rollback-operation.json
+          if-no-files-found: warn
+      # Unsigned redacted operation diagnostics cannot satisfy build.cjs certification/attestation gates.
       - name: Remove disposable checkpoint files
         if: always() && steps.qualification-workspace.outcome == 'success'
         shell: bash
