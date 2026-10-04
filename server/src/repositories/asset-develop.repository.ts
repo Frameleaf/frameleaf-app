@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import {
   ASSET_DEVELOP_RECIPE_VERSION,
   type AssetDevelopRecipe,
@@ -105,7 +106,9 @@ export class AssetDevelopRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(db);
+  }
   async listByAsset(assetId: string): Promise<AssetDevelopRevision[]> {
     const { rows } = await sql<AssetDevelopRevision>`
       SELECT * FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid ORDER BY revision DESC
