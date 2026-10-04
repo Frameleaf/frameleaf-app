@@ -23,6 +23,7 @@ import { MediaIntegrityIdentity, MediaIntegrityResult, MediaIntegrityService } f
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { appleFingerprintHash, isAppleFingerprint } from 'src/utils/icloud-identity.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { privateCopyIdentity, privateCopyScope, validPrivateCopy } from 'src/utils/icloud-private-copy.js';
 
 export type ScheduledValidationOutcome =
   | { status: 'validated'; receipt: ScheduledFreshDownload; validation: ScheduledDeepValidation; verified: Extract<MediaIntegrityResult, { status: 'healthy' }> }
@@ -77,20 +78,103 @@ export class ICloudScheduledStagingService {
   private trackOwnedWork(resourceId: string, work: Promise<void>) {
     const owned = this.ownedWork.get(resourceId) ?? new Set<Promise<void>>();
     owned.add(work); this.ownedWork.set(resourceId, owned);
-    void work.finally(() => { owned.delete(work); if (!owned.size) { this.ownedWork.delete(resourceId); } });
+    this.cleanups.add(work);
+    const finished = () => { owned.delete(work); this.cleanups.delete(work); if (!owned.size) { this.ownedWork.delete(resourceId); } };
+    void work.then(finished, finished);
   }
 
   /** Refused private bytes are cleaned only after decoder AND delayed final readonly guards settle. */
   cleanupRetired(input: ScheduledStagingInput) {
     const cleanup = (async () => {
       await Promise.allSettled([...(this.ownedWork.get(input.resource.id) ?? [])]);
-      const resource = await this.repository.refusedResource(input);
-      if (!resource) { return; }
-      if (resource.stagingPath) { await this.staging.cleanup(resource); }
-      await this.repository.releaseRefusedBytes(input);
+      await this.repository.disposePrivateCopy(input);
+      await this.repository.disposeRefusedStaging(input);
     })().catch(() => {}).finally(() => this.cleanups.delete(cleanup));
     this.cleanups.add(cleanup);
     return cleanup;
+  }
+
+  /** Restart can resume sealed settled copies; unknown/pending generations remain charged. */
+  async housekeeping() {
+    for (const resource of await this.repository.retiredPrivateCopies()) {
+      const record = resource.verification?.auditPrivateCopy;
+      if (!validPrivateCopy(record) || !record.payload.identity) {
+        await this.repository.retainPrivateCopy(resource, 'unproven'); continue;
+      }
+      if (!record.payload.settled || record.pending.length) {
+        await this.repository.retainPrivateCopy(resource, 'pending-settlement'); continue;
+      }
+      if (!record.seal) { await this.repository.retainPrivateCopy(resource, 'unproven'); continue; }
+      const input: ScheduledStagingInput = { ownerId: resource.ownerId, resource: { id: resource.id, leaseToken: record.payload.resourceLeaseToken },
+        authority: { purpose: 'scheduled-weekly', auditRequestId: record.payload.auditRequestId,
+          operationId: record.payload.operationId, operationClaimToken: record.payload.operationClaimToken } };
+      try {
+        await this.cleanupRetired(input);
+        await this.repository.retainPrivateCopy(resource, 'fence-or-unlink');
+      } catch { await this.repository.retainPrivateCopy(resource, 'fence-or-unlink'); }
+    }
+  }
+
+  /** Real exclusive private inode, registered and charged before copying/decoding/promotion. */
+  async copyRecovery(input: ScheduledStagingInput, promotedPath: string) {
+    await this.checkpoint(input);
+    const token = await this.repository.beginPrivateWork(input);
+    let file: FileHandle | undefined;
+    let promoted = false;
+    let ownershipPersisted = false;
+    let directoryOpen = false;
+    let readonlySettled = false;
+    const work = (async () => {
+      const initial = await this.repository.privateCopy(input);
+      if (!initial || initial.payload.promotedPath !== promotedPath || initial.payload.identity || !token) {
+        throw new Error('scheduled_private_copy_unavailable');
+      }
+      const parent = join(promotedPath, '..');
+      if (await realpath(parent) !== parent) { throw new Error('scheduled_private_copy_parent_changed'); }
+      const directory = await lstat(parent);
+      if (!directory.isDirectory() || (directory.mode & 0o077) !== 0 || (process.getuid && directory.uid !== process.getuid())) {
+        throw new Error('scheduled_private_copy_parent_unowned');
+      }
+      file = await open(initial.payload.temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      const persist = async () => {
+        const record = await this.repository.privateCopy(input);
+        if (!record || !file) { throw new Error('scheduled_private_copy_changed'); }
+        const immutable = (payload: typeof initial.payload) => ({ ...payload, identity: null, promoted: false, settled: false });
+        if (canonicalJson(immutable(record.payload)) !== canonicalJson(immutable(initial.payload))) { throw new Error('scheduled_private_copy_changed'); }
+        const stat = await file.stat();
+        if (!ownedFile(stat)) { throw new Error('scheduled_private_copy_unowned'); }
+        const payload = { ...record.payload, identity: privateCopyIdentity(stat), promoted, settled: false };
+        const next = { ...record, payload, seal: await this.transport.encodeSession(privateCopyScope(payload), payload) };
+        if (!validPrivateCopy(next) || !(await this.repository.storePrivateCopy(input, record, next))) {
+          throw new Error('scheduled_private_copy_changed');
+        }
+      };
+      try {
+        await persist(); // Includes actual dev/ino/uid/size before any bytes or decoder work.
+        const observed = await this.readOwned(input, initial.payload.stagingPath, undefined, file);
+        const receipt = await this.cached(input, initial.payload.stagingPath);
+        readonlySettled = true;
+        if (observed.sha1 !== receipt.payload.sha1 || observed.sha256 !== receipt.payload.sha256) {
+          throw new Error('scheduled_private_copy_source_changed');
+        }
+        await file.sync(); await persist();
+        // EEXIST never makes the destination ours. No existing original is replaced or borrowed.
+        await this.step(input, async () => { await link(initial.payload.temporaryPath, promotedPath); promoted = true; });
+        await persist();
+        const directory = await open(parent, 'r');
+        directoryOpen = true;
+        try { await directory.sync(); } finally { await directory.close(); directoryOpen = false; }
+        await this.repository.unlinkPrivateTemporary(input);
+      } finally {
+        // On failure preserve actual partial inode evidence and conservative charge, never fake free.
+        // A failed final ownership write cannot prove the final inode size or promotion state.
+        // Keep its pending generation charged even after the actual handle closes.
+        try { await persist(); ownershipPersisted = true; } catch { ownershipPersisted = false; }
+        await file.close(); file = undefined;
+      }
+    })().finally(async () => { if (!file && !directoryOpen && readonlySettled && ownershipPersisted) { await this.repository.finishPrivateWork(input, token); } });
+    this.trackOwnedWork(input.resource.id, work);
+    await work;
   }
 
   private async checkpoint(input: ScheduledStagingInput, signal?: AbortSignal) {
@@ -286,6 +370,7 @@ export class ICloudScheduledStagingService {
 
   /** No hashing/decoder work in the final transaction. Managed path locks must be held by the caller. */
   async holdPublicationFiles(input: ScheduledStagingInput, signal?: AbortSignal, destination?: string) {
+    const privateWork = await this.repository.beginPrivateWork(input);
     const { path } = await this.directory(input, signal);
     const receipt = await this.cached(input, path, signal);
     const { guarded, resource } = await this.checkpoint(input, signal);
@@ -333,7 +418,8 @@ export class ICloudScheduledStagingService {
       const release = () => {
         released = true;
         const cleanup = Promise.allSettled([...pending]).then(async () => {
-          await Promise.allSettled(files.map(({ handle }) => handle.close()));
+          await Promise.all(files.map(({ handle }) => handle.close()));
+          await this.repository.finishPrivateWork(input, privateWork);
         }).finally(() => this.cleanups.delete(cleanup));
         this.cleanups.add(cleanup);
         this.trackOwnedWork(input.resource.id, cleanup);
@@ -341,13 +427,17 @@ export class ICloudScheduledStagingService {
       };
       return { receipt, validation, current, release, paths: files.map(({ path }) => path) };
     } catch {
-      await Promise.allSettled(files.map(({ handle }) => handle.close()));
+      const closed = await Promise.allSettled(files.map(({ handle }) => handle.close()));
+      if (closed.every(({ status }) => status === 'fulfilled')) { await this.repository.finishPrivateWork(input, privateWork); }
       throw new Error('scheduled_audit_unavailable');
     }
   }
 
   /** A unique owned copy is the decoder input; cached bytes alone never qualify a result. */
   async validate(input: ScheduledStagingInput, signal?: AbortSignal, destination?: string): Promise<ScheduledFreshValidation> {
+    // Durable pending ownership precedes preliminary readonly work and the unique input copy too.
+    // A preparation failure without a complete settlement record remains conservatively retained.
+    const privateWork = await this.repository.beginPrivateWork(input);
     try {
       const { directory, path } = await this.directory(input, signal);
       const receipt = await this.cached(input, path, signal);
@@ -374,10 +464,7 @@ export class ICloudScheduledStagingService {
           type, expected: { sha1: Buffer.from(receipt.payload.sha1, 'hex'), sha256: Buffer.from(receipt.payload.sha256, 'hex'),
             sizeInBytes: receipt.payload.binding.sizeInBytes }, deep: true });
         started = true;
-        const settled = validation.settled.then(() => rm(copyDirectory, { recursive: true, force: true }))
-          .catch(() => {}).finally(() => this.cleanups.delete(settled));
-        this.cleanups.add(settled);
-        this.trackOwnedWork(input.resource.id, settled);
+        const decoderCleanup = validation.settled.then(() => rm(copyDirectory, { recursive: true, force: true }));
         let cancelled = false;
         const refusal = Promise.withResolvers<ScheduledValidationOutcome>();
         const cancel = () => {
@@ -425,6 +512,13 @@ export class ICloudScheduledStagingService {
           } catch { return { status: 'unavailable' }; }
           finally { clearInterval(timer); signal?.removeEventListener('abort', cancel); }
         })();
+        // Result refusal/timeout is not settlement. Include late hashing/readonly/receipt work,
+        // actual decoder termination and removal of its unique input before issuing the seal.
+        const settled = Promise.all([decoderCleanup, work]).then(async () => {
+          await this.repository.finishPrivateWork(input, privateWork);
+        }).catch(() => {}).finally(() => this.cleanups.delete(settled));
+        this.cleanups.add(settled);
+        this.trackOwnedWork(input.resource.id, settled);
         const result = Promise.race([work, refusal.promise]).finally(() => {
           clearInterval(timer); signal?.removeEventListener('abort', cancel);
         });
