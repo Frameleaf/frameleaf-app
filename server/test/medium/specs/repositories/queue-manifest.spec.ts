@@ -180,6 +180,13 @@ describe('durable bounded selection manifests', () => {
         .execute(db)
         .then(({ rows }) => rows[0]);
     expect(await readRun()).toMatchObject({ enumerationDone: true, finishedAt: expect.any(Date) });
+    const exhausted = (await store.listRuns(100, 0)).find((run) => run.id === first.runId)!;
+    expect(exhausted).toMatchObject({
+      state: 'completed_with_errors',
+      total: 1250,
+      needsAttention: 1250,
+      stageTotals: { total: 1251, failed: 1, needsAttention: 1250 },
+    });
     expect(await store.feedManifest(queue)).toBe(0);
     expect(await store.retryFailed(queue)).toBe(1);
     expect(await readRun()).toEqual({ enumerationDone: false, finishedAt: null });
@@ -211,16 +218,31 @@ describe('durable bounded selection manifests', () => {
     } = await sql<{ media: number; stages: number }>`select count(distinct "rootItemKey")::int media,
       count(*)::int stages from job_run_item where "runId" = ${runId}::uuid`.execute(db);
     expect(counts).toEqual({ media: 1, stages: 2 });
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+      total: 1,
+      waiting: 1,
+      stageTotals: { total: 2, waiting: 2 },
+    });
   });
 
   it('leaves excess items manifest-only, honors pause and refills between the watermarks in bounded transactions', async () => {
-    await repository.createRun('direct', {}, () =>
+    const runId = await repository.createRun('direct', {}, () =>
       repository.queueSelection(
         JobName.AssetGenerateThumbnails,
         db.selectFrom(sql<{ id: string }>`(select generate_series(1, 15000)::text id)`.as('selected')).select('id'),
       ),
     );
+    const readRun = async () => (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
     await store.pause(queue, true);
+    expect(await readRun()).toMatchObject({
+      total: 15_000,
+      paused: 15_000,
+      completed: 0,
+      state: 'paused',
+      enumerationDone: true,
+      finishedAt: null,
+      stageTotals: { total: 15_000, paused: 15_000 },
+    });
     expect(await store.feedManifest(queue)).toBe(0);
     await store.pause(queue, false);
     for (let batch = 0; batch < 4; batch++) expect(await store.feedManifest(queue)).toBe(250);
@@ -231,12 +253,27 @@ describe('durable bounded selection manifests', () => {
         .execute(db)
         .then(({ rows }) => rows[0].count);
     expect(await count()).toBe(QUEUE_HIGH_WATER);
+    // Frozen roots remain visible even though 14,000 have no execution row yet.
+    expect(await readRun()).toMatchObject({
+      total: 15_000,
+      waiting: 15_000,
+      completed: 0,
+      enumerationDone: true,
+      finishedAt: null,
+      stageTotals: { total: 15_000, waiting: 15_000 },
+    });
     await store.setConcurrency(queue, 250);
     for (let batch = 0; batch < 2; batch++) {
       for (const claim of await store.claim(queue, worker)) await store.complete(claim, []);
       if (batch === 0) expect(await store.feedManifest(queue)).toBe(0);
     }
     expect(await count()).toBe(QUEUE_LOW_WATER);
+    expect(await readRun()).toMatchObject({
+      total: 15_000,
+      completed: 500,
+      waiting: 14_500,
+      stageTotals: { total: 15_000, completed: 500, waiting: 14_500 },
+    });
     expect(await store.feedManifest(queue)).toBe(250);
     expect(await store.feedManifest(queue)).toBe(250);
     expect(await count()).toBe(QUEUE_HIGH_WATER);
