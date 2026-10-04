@@ -35,6 +35,7 @@ import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { readConfig } from 'src/utils/config.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -188,7 +189,8 @@ describe(CloudBackupService.name, () => {
     mocks.systemMetadata.set.mock.calls
       .filter(([key]) => key === SystemMetadataKey.SystemConfig)
       .map(([, value]) => value);
-  const savedConfig = () => sut.readConfigForUpdate();
+  const savedConfig = () =>
+    readConfig({ configRepo: mocks.config, metadataRepo: mocks.systemMetadata, logger: mocks.logger });
 
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
   const manifestOf = (at = 0) => JSON.parse(gunzipSync(streamed[at]).toString());

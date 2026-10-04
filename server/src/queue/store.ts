@@ -1,5 +1,6 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { feedManifest, finishSelections, resumeSelections, shareSelections } from 'src/queue/manifest.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -100,6 +101,7 @@ export class SqlQueueStore {
               db,
             );
           }
+          await shareSelections(db, existing.id);
           continue;
         }
       }
@@ -146,6 +148,10 @@ export class SqlQueueStore {
       await sql`update job_run set "enumerationDone" = true where id = ${runId}::uuid`.execute(tx);
       await this.settleRuns(tx);
     });
+  }
+
+  async feedManifest(queue: string) {
+    return feedManifest(this.db, queue);
   }
 
   async claim(queue: string, workerId: string): Promise<QueueClaim[]> {
@@ -275,10 +281,7 @@ export class SqlQueueStore {
       });
       await this.enqueue(inherited, tx);
       await this.scheduleLatest(claim.id, job.latestPending, tx);
-      await sql`update job_run r set "enumerationDone" = true where r.id in
-        (select "runId" from job_run_item where "jobId" = ${claim.id}::uuid and "rootItemKey" is null)
-        and not exists(select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
-          and i.state in ('pending','waiting','active'))`.execute(tx);
+      await finishSelections(tx, claim.id, true);
       await this.settleRuns(tx);
       return true;
     });
@@ -332,6 +335,7 @@ export class SqlQueueStore {
         error = (select error from job where id = ${claim.id}::uuid) where token = ${claim.token}::uuid`.execute(tx);
       await this.syncItem(claim.id, tx);
       if (rows[0].state !== 'pending') {
+        await finishSelections(tx, claim.id, false);
         await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
         await this.scheduleLatest(claim.id, rows[0].latestPending, tx, false);
       }
@@ -418,7 +422,7 @@ export class SqlQueueStore {
 
   private async settleDependencies(tx: Executor) {
     // Recursive closure settles every descendant, including branches never admitted to ready work.
-    await sql`with recursive blocked as (
+    const { rows: blockedProducers } = await sql<{ jobId: string }>`with recursive blocked as (
       select c.id from job c join job p on p.id = c."parentId"
       where c.state in ('pending','waiting') and p.state in ('failed','needs_attention','cancelled','blocked')
       union select c.id from job c join blocked b on c."parentId" = b.id where c.state in ('pending','waiting')
@@ -426,7 +430,8 @@ export class SqlQueueStore {
       update job set state = 'blocked', error = 'Dependency did not succeed', "finishedAt" = now()
       where id in (select id from blocked) returning id, "runId", "itemKey", name
     ) update job_run_item i set state = 'blocked' from changed c
-      where i."jobId" = c.id`.execute(tx);
+      where i."jobId" = c.id returning i."jobId"`.execute(tx);
+    for (const { jobId } of blockedProducers) await finishSelections(tx, jobId, false);
   }
 
   private async settleRuns(tx: Executor) {
@@ -518,11 +523,16 @@ export class SqlQueueStore {
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
         and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
         and j."latestPending" ->> 'name' = i.stage)`.execute(tx);
+      if (states.includes('pending') || states.includes('waiting')) {
+        await sql`update job_run_item set state = 'cancelled' where queue = ${queue}
+          and "selectionId" is not null and "jobId" is null and state = 'pending'`.execute(tx);
+      }
       const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
         "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
         and state != 'active' returning id`.execute(tx);
       for (const { id } of rows) {
         await this.syncItem(id, tx);
+        await finishSelections(tx, id, false);
       }
       await this.settleDependencies(tx);
       await this.settleRuns(tx);
@@ -544,6 +554,7 @@ export class SqlQueueStore {
             and d.state in ('pending','waiting','active'))) returning id, "runId"`.execute(tx);
         for (const row of rows) {
           await this.syncItem(row.id, tx);
+          await resumeSelections(tx, row.id);
           if (row.runId) {
             await sql`update job_run set "finishedAt" = null where id = ${row.runId}::uuid`.execute(tx);
           }
@@ -580,5 +591,18 @@ export async function resetQueueAfterRestore(db: Executor) {
     db,
   );
   await sql`update job_run_item i set state = j.state from job j where i."jobId" = j.id`.execute(db);
+  const { rows: stoppedProducers } = await sql<{
+    producerId: string;
+  }>`select distinct s."producerId" from job_selection s
+    join job j on j.id = s."producerId" where j.state in ('failed','needs_attention','cancelled','blocked')`.execute(
+    db,
+  );
+  for (const { producerId } of stoppedProducers) await finishSelections(db, producerId, false);
+  await sql`update job_selection set state = 'needs_attention' where not "safeToRetry"`.execute(db);
+  await sql`update job_run_item set state = 'needs_attention' where "jobId" is null and state = 'pending'
+    and "selectionId" in (select id from job_selection where state = 'needs_attention')`.execute(db);
+  await sql`update job_run r set "finishedAt" = now() where "enumerationDone" and "finishedAt" is null
+    and not exists(select 1 from job_run_item i where i."runId" = r.id
+      and i.state in ('pending','waiting','active'))`.execute(db);
   await sql`update job_worker set state = 'lost'`.execute(db);
 }

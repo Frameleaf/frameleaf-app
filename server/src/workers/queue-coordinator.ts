@@ -109,6 +109,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       }
       if (!stopping) {
         for (const queue of queues) {
+          await store.feedManifest(queue);
           const claims = await store.claim(queue, workerId);
           for (const claim of claims) {
             active.set(claim.id, claim);
