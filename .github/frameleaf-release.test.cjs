@@ -659,20 +659,17 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.deepEqual(
-      sums.map((line) => line.split("  ")[1]).sort(),
-      [
-        "cli-image.txt",
-        "docker-compose.rootless.yml",
-        "docker-compose.yml",
-        "example.env",
-        "hwaccel.ml.yml",
-        "hwaccel.transcoding.yml",
-        "nas-manifest.json",
-        "release-manifest.json",
-        "supported-versions.json",
-      ],
-    );
+    assert.deepEqual(sums.map((line) => line.split("  ")[1]).sort(), [
+      "cli-image.txt",
+      "docker-compose.rootless.yml",
+      "docker-compose.yml",
+      "example.env",
+      "hwaccel.ml.yml",
+      "hwaccel.transcoding.yml",
+      "nas-manifest.json",
+      "release-manifest.json",
+      "supported-versions.json",
+    ]);
     for (const line of sums) {
       const [expected, name] = line.split("  ");
       assert.equal(
