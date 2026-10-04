@@ -234,6 +234,17 @@ describe('/asset', () => {
       // FL-326: a partner reads their own copy, never the source
       it("gets the partner's own copy and refuses the source", async () => {
         const copyId = await utils.waitForPartnerCopy(user2.userId, user1Assets[0].id);
+        const db = await utils.connectDatabase();
+        const { rows } = await db.query(
+          `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin."rootOwnerId"
+           FROM public.asset_origin origin JOIN public.asset copy ON copy.id = origin."assetId"
+           WHERE origin."sourceAssetId" = $1 AND origin."ownerId" = $2`,
+          [user1Assets[0].id, user2.userId],
+        );
+        expect(copyId).not.toBe(user1Assets[0].id);
+        expect(rows).toEqual([
+          { id: copyId, ownerId: user2.userId, sourceAssetId: user1Assets[0].id, rootOwnerId: user1.userId },
+        ]);
 
         const source = await request(app)
           .get(`/assets/${user1Assets[0].id}`)
