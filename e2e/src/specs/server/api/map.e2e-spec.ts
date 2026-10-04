@@ -166,7 +166,15 @@ describe('/map', () => {
   });
 
   describe('partner revocation and bounds (FL-51)', () => {
-    it("drops a partner's located items from the markers, the counts and the bounds once the partner stops sharing", async () => {
+    it("does not duplicate owned content or deliver new items after a partner stops sharing", async () => {
+      const db = await utils.connectDatabase();
+      const partnership = await db.query(
+        'SELECT 1 FROM partner WHERE "sharedById" = $1 AND "sharedWithId" = $2',
+        [partner.userId, admin.userId],
+      );
+      if (!partnership.rows.length) {
+        await utils.createPartner(partner.accessToken, admin.userId);
+      }
       const { id: partnerLocatedId } = await utils.createAsset(partner.accessToken, {
         assetData: {
           // not the partner's archived thompson-springs.jpg, which the upload would answer as a duplicate
@@ -195,29 +203,60 @@ describe('/map', () => {
         return body as { count: number }[];
       };
 
-      // the timeline (and so its bounds) shows a partner only once the viewer turns them on
-      const { status: shown } = await request(app)
-        .put(`/partners/${partner.userId}`)
+      await utils.waitForAllQueuesFinish(admin.accessToken);
+      const owned = await db.query<{ id: string; visibility: string }>(
+        'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
+        [admin.userId],
+      );
+      expect(owned.rows).toHaveLength(3);
+      expect(owned.rows.find(({ id }) => id === adminArchivedAssetId)).toMatchObject({ visibility: 'archive' });
+      // The recipient already owns these bytes: the one-copy rule keeps its existing archived item.
+      expect((await db.query(
+        'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+        [partnerLocatedId, admin.userId],
+      )).rows).toEqual([]);
+      await request(app)
+        .get(`/assets/${partnerLocatedId}`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ inTimeline: true });
-      expect(shown).toBe(200);
-
-      expect(await markerIds()).toContain(partnerLocatedId);
-      expect(await statistics()).toEqual(expect.objectContaining({ partner: 1 }));
-      // the whole world holds the admin's two located timeline items and the partner's one; an empty
-      // sea holds nothing, and archived items stay out of the bounds as they stay off the timeline
-      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(3);
+        .expect(400);
+      expect(await markerIds()).toEqual(
+        expect.arrayContaining(
+          owned.rows.filter(({ visibility }) => visibility === 'timeline').map(({ id }) => id),
+        ),
+      );
+      expect(await markerIds()).toHaveLength(2);
+      expect(await markerIds()).not.toContain(partnerLocatedId);
+      expect(await statistics()).toEqual({ archived: 1, partner: 0, unlocated: 0 });
+      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
       expect(await bucketsInBounds('-150,-65,-140,-55')).toEqual([]);
 
-      const { status } = await request(app)
+      await request(app)
         .delete(`/partners/${admin.userId}`)
-        .set('Authorization', `Bearer ${partner.accessToken}`);
-      expect(status).toBe(204);
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .expect(204);
+      const later = await utils.createAsset(partner.accessToken);
+      try {
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        expect((await db.query(
+          'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+          [later.id, admin.userId],
+        )).rows).toEqual([]);
+        expect((await db.query(
+          'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
+          [admin.userId],
+        )).rows).toEqual(owned.rows);
+        expect(await markerIds()).toHaveLength(2);
+        expect(await statistics()).toEqual({ archived: 1, partner: 0, unlocated: 0 });
+        expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
+      } finally {
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        await request(app)
+          .delete('/assets').set('Authorization', `Bearer ${partner.accessToken}`)
+          .send({ ids: [later.id], force: true }).expect(204);
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+      }
 
-      expect(await markerIds()).not.toContain(partnerLocatedId);
-      expect(await statistics()).toEqual(expect.objectContaining({ partner: 0 }));
-      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
-    });
+    }, 90_000);
   });
 
   describe('batch location changes (FL-51)', () => {
