@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { link, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mapMediaPath, verifyMediaFile } from './media.js';
+import { mapMediaPath, verifyMediaFile } from 'src/immich-import/media.js';
 
 describe('offline media verification', () => {
   let directory: string;
@@ -20,7 +20,7 @@ describe('offline media verification', () => {
     await writeFile(target, 'original bytes');
     const checksum = createHash('sha1').update('original bytes').digest('hex');
     const roots = [{ source: join(directory, 'source'), target: join(directory, 'target') }];
-    await expect(verifyMediaFile(source, roots, `\\x${checksum}`, 'sha1')).resolves.toBe(target);
+    await expect(verifyMediaFile(source, roots, String.raw`\x${checksum}`, 'sha1')).resolves.toBe(target);
     await expect(verifyMediaFile(source, roots, '0'.repeat(40), 'sha1')).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
     await writeFile(target, 'modified bytes');
     await expect(verifyMediaFile(source, roots)).rejects.toThrow('MEDIA_CHANGED_OR_MISMATCHED');

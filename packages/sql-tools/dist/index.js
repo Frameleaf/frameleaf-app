@@ -1,9 +1,12 @@
 import { parse } from "pg-connection-string";
+import { sequenceDiff, sequenceDiffSql } from "./catalog-sequences.js";
 import postgres from "postgres";
 import { Graph, depthFirstSearch, hasCycle } from "graph-data-structure";
 import { createHash } from "node:crypto";
 import { Kysely, sql } from "kysely";
-import { FileMigrationProvider, Migrator as Migrator$1 } from "kysely/migration";
+import { Migrator as Migrator$1 } from "kysely/migration";
+import { createMigrationProvider } from "./canonical-provider.js";
+export { createMigrationProvider } from "./canonical-provider.js";
 import { PostgresJSDialect } from "kysely-postgres-js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -288,7 +291,7 @@ var getColumnModifiers = (column) => {
 	const modifiers = [];
 	if (!column.nullable) modifiers.push("NOT NULL");
 	if (column.default) modifiers.push(`DEFAULT ${column.default}`);
-	if (column.identity) modifiers.push(`GENERATED ALWAYS AS IDENTITY`);
+	if (column.identity) modifiers.push(`GENERATED ${column.identityMode === "by default" ? "BY DEFAULT" : "ALWAYS"} AS IDENTITY`);
 	return modifiers.length === 0 ? "" : " " + modifiers.join(" ");
 };
 var asColumnComment = (tableName, columnName, comment) => {
@@ -688,8 +691,10 @@ var Migrator = class {
 	#connectionParams;
 	#migrationsFolder;
 	#uuidFactory;
+	#desiredSchema;
 	constructor(options) {
-		const { connectionParams, allowUnorderedMigrations, migrationFolder, uuidFactory } = options;
+		const { connectionParams, allowUnorderedMigrations, migrationFolder, uuidFactory, desiredSchema } = options;
+		this.#desiredSchema = desiredSchema;
 		this.#connectionParams = connectionParams;
 		this.#migrationsFolder = migrationFolder;
 		this.#uuidFactory = uuidFactory ?? defaultUuidFactory;
@@ -705,11 +710,7 @@ var Migrator = class {
 			migrationLockTableName: "frameleaf_migrations_lock",
 			allowUnorderedMigrations,
 			migrationTableName: "frameleaf_migrations",
-			provider: new FileMigrationProvider({
-				fs: { readdir },
-				path: { join },
-				migrationFolder: join(this.#migrationsFolder)
-			})
+			provider: createMigrationProvider(this.#migrationsFolder)
 		});
 	}
 	getDatabase() {
@@ -752,7 +753,7 @@ var Migrator = class {
 	}
 	async generate({ dist, targetPath, withComments }) {
 		const paths = [];
-		for (const filename of await readdir(dist, { recursive: true })) {
+		if (!this.#desiredSchema) for (const filename of await readdir(dist, { recursive: true })) {
 			if (extname(filename) !== ".js") continue;
 			paths.push(join(dist, filename));
 		}
@@ -779,7 +780,7 @@ var Migrator = class {
 	async #compare() {
 		const { version } = await this.#db.selectNoFrom(({ fn }) => fn("version").$castTo().as("version")).executeTakeFirstOrThrow();
 		const { db, major } = /^(?<db>\w+) (?<major>\d+)(?:\.(?<minor>\d+)|(?:beta|rc)\d+)(\.(?<patch>\d+))?.*$/.exec(version)?.groups ?? {};
-		const source = schemaFromCode({
+		const source = this.#desiredSchema ? await this.#desiredSchema() : schemaFromCode({
 			overrides: true,
 			namingStrategy: "default",
 			uuidFunction: this.#uuidFactory({
@@ -787,11 +788,13 @@ var Migrator = class {
 				major
 			})
 		});
+		if (this.#desiredSchema && !Array.isArray(source.sequences)) throw new Error("Canonical desired schema is not a complete captured catalog");
 		const target = await schemaFromDatabase({ connection: this.#connectionParams });
+		if (this.#desiredSchema && (source.warnings.length || target.warnings.length)) throw new Error(`Canonical schema comparison has reader warnings: ${[...source.warnings, ...target.warnings].join("; ")}`);
 		console.log(source.warnings.join("\n"));
 		return {
 			up: schemaDiff(source, target, {
-				tables: { ignoreExtra: true },
+				tables: { ignoreExtra: !this.#desiredSchema },
 				functions: { ignoreExtra: false },
 				parameters: { ignoreExtra: true },
 				extensions: { ignoreExtra: true }
@@ -811,11 +814,11 @@ var Migrator = class {
 		return `import { Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
-${up.map((sql) => `  await sql\`${sql}\`.execute(db);`).join("\n")}
+${up.map((statement) => `  await sql.raw(${JSON.stringify(statement)}).execute(db);`).join("\n")}
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-${down.map((sql) => `  await sql\`${sql}\`.execute(db);`).join("\n")}
+${down.map((statement) => `  await sql.raw(${JSON.stringify(statement)}).execute(db);`).join("\n")}
 }
 `;
 	}
@@ -1060,6 +1063,7 @@ var compareColumns = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
+		if (!!source.identity !== !!target.identity || (source.identity && (source.identityMode ?? "always") !== (target.identityMode ?? "always"))) return dropAndRecreateColumn(source, target, "identity generation changed");
 		const sourceType = getColumnType(source);
 		const targetType = getColumnType(target);
 		if (sourceType !== targetType) return dropAndRecreateColumn(source, target, `column type is different (${sourceType} vs ${targetType})`);
@@ -1152,6 +1156,7 @@ var compareConstraints = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
+		if (source.definition !== undefined && source.definition !== target.definition) return dropAndRecreateConstraint(source, target, "constraint definition changed");
 		switch (source.type) {
 			case ConstraintType.PRIMARY_KEY: return comparePrimaryKeyConstraint(source, target);
 			case ConstraintType.FOREIGN_KEY: return compareForeignKeyConstraint(source, target);
@@ -1230,6 +1235,10 @@ var compareIndexes = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
+		if (source.definition !== undefined && source.definition !== target.definition) return [
+			{ type: "IndexDrop", object: target, reason: "index definition changed" },
+			{ type: "IndexCreate", object: source, reason: "index definition changed" }
+		];
 		const sourceUsing = source.using ?? "btree";
 		const targetUsing = target.using ?? "btree";
 		let reason = "";
@@ -1265,6 +1274,10 @@ var compareTriggers = () => ({
 	}],
 	onCompare: (source, target) => {
 		let reason = "";
+		if (source.definition !== undefined && source.definition !== target.definition) return [
+			{ type: "TriggerDrop", object: target, reason: "trigger definition changed" },
+			{ type: "TriggerCreate", object: source, reason: "trigger definition changed" }
+		];
 		if (source.functionName !== target.functionName) reason = `function is different (${source.functionName} vs ${target.functionName})`;
 		else if (source.actions.join(" OR ") !== target.actions.join(" OR ")) reason = `action is different (${source.actions} vs ${target.actions})`;
 		else if (source.timing !== target.timing) reason = `timing method is different (${source.timing} vs ${target.timing})`;
@@ -1392,6 +1405,7 @@ var BaseContext = class {
 			databaseName: this.databaseName,
 			schemaName: this.schemaName,
 			tables: this.tables,
+			sequences: this.sequences,
 			functions: this.functions,
 			enums: this.enums,
 			extensions: this.extensions,
@@ -1436,6 +1450,7 @@ var transformConstraints = (ctx, { object, type }) => {
 };
 var withAction = (constraint) => ` ON UPDATE ${constraint.onUpdate ?? ActionType.NO_ACTION} ON DELETE ${constraint.onDelete ?? ActionType.NO_ACTION}`;
 var asConstraintBody = (constraint) => {
+	if (constraint.definition !== undefined) return `CONSTRAINT "${constraint.name}" ${constraint.definition}`;
 	const base = `CONSTRAINT "${constraint.name}"`;
 	const type = constraint.type;
 	switch (type) {
@@ -1500,6 +1515,7 @@ var transformIndexes = (ctx, { object, type }) => {
 	}
 };
 var asIndexCreate = (index) => {
+	if (index.definition !== undefined) return index.definition + ";";
 	let sql = `CREATE`;
 	if (index.unique) sql += " UNIQUE";
 	sql += ` INDEX "${index.name}" ON "${index.tableName}"`;
@@ -1575,6 +1591,7 @@ var transformTriggers = (ctx, { object, type }) => {
 	}
 };
 var asTriggerCreate = (trigger) => {
+	if (trigger.definition !== undefined) return trigger.definition + ";";
 	const sql = [`CREATE OR REPLACE TRIGGER "${trigger.name}"`, `${trigger.timing.toUpperCase()} ${trigger.actions.map((action) => action.toUpperCase()).join(" OR ")} ON "${trigger.tableName}"`];
 	if (trigger.referencingOldTableAs || trigger.referencingNewTableAs) {
 		let statement = `REFERENCING`;
@@ -1623,10 +1640,12 @@ var schemaDiff = (source, target, options = {}) => {
 		getId: getSchemaItemId,
 		getChildrenIds: (item) => getSchemaItemChildrenIds(ctx, item, items)
 	});
+	const sequences = sequenceDiff(source.sequences, target.sequences, orderedItems);
+	const completeItems = [...sequences.before, ...orderedItems, ...sequences.after];
 	return {
-		items: orderedItems,
-		asSql: (diffOptions) => schemaDiffToSql(orderedItems, diffOptions),
-		asHuman: () => schemaDiffToHuman(orderedItems)
+		items: completeItems,
+		asSql: (diffOptions) => schemaDiffToSql(completeItems, diffOptions),
+		asHuman: () => schemaDiffToHuman(completeItems)
 	};
 };
 /**
@@ -1642,6 +1661,8 @@ var schemaDiffToHuman = (items) => {
 	return items.flatMap((item) => asHuman(item));
 };
 var asSql = (item, options) => {
+	const sequenceSql = sequenceDiffSql(item);
+	if (sequenceSql) return [sequenceSql];
 	const ctx = new BaseContext(options);
 	for (const transform of transformers) {
 		const results = transform(ctx, item);
@@ -1651,6 +1672,7 @@ var asSql = (item, options) => {
 	throw new Error(`Unhandled schema diff type: ${item.type}`);
 };
 var asHuman = ({ object, type }) => {
+	if (type.startsWith("Sequence")) return `${type}: ${object.name}`;
 	switch (type) {
 		case "ExtensionCreate": return `The extension "${object.name}" is missing and needs to be created`;
 		case "ExtensionDrop": return `The extension "${object.name}" exists but is no longer needed`;
@@ -2288,6 +2310,14 @@ var ReaderContext = class extends BaseContext {
 //#endregion
 //#region src/readers/column.reader.ts
 var readColumns = async (ctx, db) => {
+	const { rows: attributes } = await sql`
+		SELECT c.relname AS "tableName", a.attname AS "columnName", a.atttypmod AS typmod,
+			a.attidentity AS identity
+		FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = ${ctx.schemaName} AND a.attnum > 0 AND NOT a.attisdropped
+	`.execute(db);
+	const attributeMap = new Map(attributes.map((a) => [`${a.tableName}.${a.columnName}`, a]));
 	const columns = await db.selectFrom("information_schema.columns as c").leftJoin("information_schema.element_types as o", (join) => join.onRef("c.table_catalog", "=", "o.object_catalog").onRef("c.table_schema", "=", "o.object_schema").onRef("c.table_name", "=", "o.object_name").on("o.object_type", "=", sql.lit("TABLE")).onRef("c.dtd_identifier", "=", "o.collection_type_identifier")).leftJoin("pg_type as t", (join) => join.onRef("t.typname", "=", "c.udt_name").on("c.data_type", "=", sql.lit("USER-DEFINED"))).leftJoin("pg_enum as e", (join) => join.onRef("e.enumtypid", "=", "t.oid")).select([
 		"c.table_name",
 		"c.column_name",
@@ -2317,6 +2347,7 @@ var readColumns = async (ctx, db) => {
 		const table = ctx.getTableByName(column.table_name);
 		if (!table) continue;
 		const columnName = column.column_name;
+		const attribute = attributeMap.get(`${table.name}.${columnName}`);
 		const item = {
 			type: column.data_type,
 			primary: false,
@@ -2330,6 +2361,10 @@ var readColumns = async (ctx, db) => {
 			default: column.column_default ?? void 0,
 			synchronize: true
 		};
+		if (attribute?.identity) {
+			item.identity = true;
+			item.identityMode = attribute.identity === "d" ? "by default" : "always";
+		}
 		const columnLabel = `${table.name}.${columnName}`;
 		switch (column.data_type) {
 			case "ARRAY":
@@ -2351,6 +2386,11 @@ var readColumns = async (ctx, db) => {
 				item.type = column.array_type;
 				break;
 			case "USER-DEFINED":
+				if (column.udt_name === "vector") {
+					item.type = "vector";
+					if (attribute?.typmod > 0) item.length = attribute.typmod;
+					break;
+				}
 				if (!Object.hasOwn(enumMap, column.udt_name)) {
 					ctx.warnings.push(`Unable to find type for ${columnLabel} (ENUM)`);
 					continue;
@@ -2423,6 +2463,7 @@ var readConstraints = async (ctx, db) => {
 				table.constraints.push({
 					type: ConstraintType.PRIMARY_KEY,
 					name: constraintName,
+					definition: constraint.expression,
 					tableName: constraint.table_name,
 					columnNames: constraint.column_names,
 					synchronize: true
@@ -2436,6 +2477,7 @@ var readConstraints = async (ctx, db) => {
 				table.constraints.push({
 					type: ConstraintType.FOREIGN_KEY,
 					name: constraintName,
+					definition: constraint.expression,
 					tableName: constraint.table_name,
 					columnNames: constraint.column_names,
 					referenceTableName: constraint.reference_table_name,
@@ -2449,6 +2491,7 @@ var readConstraints = async (ctx, db) => {
 				table.constraints.push({
 					type: ConstraintType.UNIQUE,
 					name: constraintName,
+					definition: constraint.expression,
 					tableName: constraint.table_name,
 					columnNames: constraint.column_names,
 					synchronize: true
@@ -2457,6 +2500,7 @@ var readConstraints = async (ctx, db) => {
 			case "c": table.constraints.push({
 				type: ConstraintType.CHECK,
 				name: constraint.constraint_name,
+				definition: constraint.expression,
 				tableName: constraint.table_name,
 				expression: constraint.expression.replace("CHECK ", ""),
 				synchronize: true
@@ -2502,6 +2546,7 @@ var readFunctions = async (ctx, db) => {
 var readIndexes = async (ctx, db) => {
 	const indexes = await db.selectFrom("pg_index as ix").innerJoin("pg_class as i", "ix.indexrelid", "i.oid").innerJoin("pg_am as a", "i.relam", "a.oid").innerJoin("pg_class as t", "ix.indrelid", "t.oid").innerJoin("pg_namespace", "pg_namespace.oid", "i.relnamespace").leftJoin("pg_constraint", (join) => join.onRef("pg_constraint.conindid", "=", "i.oid").on("pg_constraint.contype", "in", [sql.lit("p"), sql.lit("u")])).where("pg_constraint.oid", "is", null).select((eb) => [
 		"i.relname as index_name",
+		eb.fn("pg_get_indexdef", ["i.oid"]).as("definition"),
 		"t.relname as table_name",
 		"ix.indisunique as unique",
 		"a.amname as using",
@@ -2521,6 +2566,7 @@ var readIndexes = async (ctx, db) => {
 		if (!table) continue;
 		table.indexes.push({
 			name: index.index_name,
+			definition: index.definition,
 			tableName: index.table_name,
 			columnNames: index.column_names ?? void 0,
 			expression: index.expression ?? void 0,
@@ -2584,6 +2630,7 @@ var readTables = async (ctx, db) => {
 var readTriggers = async (ctx, db) => {
 	const triggers = await db.selectFrom("pg_trigger as t").innerJoin("pg_proc as p", "t.tgfoid", "p.oid").innerJoin("pg_namespace as n", "p.pronamespace", "n.oid").innerJoin("pg_class as c", "t.tgrelid", "c.oid").select((eb) => [
 		"t.tgname as name",
+		eb.fn("pg_get_triggerdef", ["t.oid"]).as("definition"),
 		"t.tgenabled as enabled",
 		"t.tgtype as type",
 		"t.tgconstraint as _constraint",
@@ -2601,6 +2648,7 @@ var readTriggers = async (ctx, db) => {
 		if (!table) continue;
 		table.triggers.push({
 			name: trigger.name,
+			definition: trigger.definition,
 			tableName: trigger.table_name,
 			functionName: trigger.function_name,
 			referencingNewTableAs: trigger.referencing_new_table_as ?? void 0,
@@ -2645,7 +2693,6 @@ var parseTriggerType = (type) => {
 		}
 	]) if (hasMask(type, mask)) {
 		actions.push(value);
-		break;
 	}
 	if (actions.length === 0) throw new Error(`Unable to parse trigger type ${type}`);
 	return {
@@ -2656,7 +2703,28 @@ var parseTriggerType = (type) => {
 };
 //#endregion
 //#region src/readers/index.ts
+var readSequences = async (ctx, db) => {
+	const { rows } = await sql`
+		SELECT c.relname AS name, format_type(s.seqtypid, NULL) AS "dataType", s.seqstart::text AS start,
+			s.seqmin::text AS min, s.seqmax::text AS max, s.seqincrement::text AS increment,
+			s.seqcache::text AS cache, s.seqcycle AS cycle, d.deptype = 'i' AS identity,
+			t.relname AS "tableName", a.attname AS "columnName"
+		FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = c.oid
+			AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+		LEFT JOIN pg_class t ON t.oid = d.refobjid
+		LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+		WHERE n.nspname = ${ctx.schemaName}
+		ORDER BY c.relname
+	`.execute(db);
+	ctx.sequences = rows.map(({ tableName, columnName, identity, ...sequence }) => ({
+		...sequence, identity: identity === true, synchronize: true,
+		...(tableName ? { owner: { tableName, columnName } } : {})
+	}));
+};
 var readers = [
+	readSequences,
 	readName,
 	readParameters,
 	readExtensions,

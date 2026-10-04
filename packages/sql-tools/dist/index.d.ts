@@ -33,3 +33,5 @@ export * from './schema-diff.js';
 export * from './schema-from-code.js';
 export * from './schema-from-database.js';
 export * from './types.js';
+
+export * from './canonical-provider.js';

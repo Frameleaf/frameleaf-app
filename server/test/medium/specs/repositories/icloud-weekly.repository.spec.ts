@@ -7,9 +7,6 @@ import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, UserMetadataKey } from 'src/enum.js';
-import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
-import * as weeklyMigration from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -19,28 +16,19 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 describe('weekly consent foundation, never execution authority', () => {
   let db: Kysely<DB>;
   let sut: ICloudWeeklyRepository;
   let sync: ICloudSyncRepository;
   beforeAll(async () => {
-    db = await getActiveForkKyselyDB();
-    const audit = await sql<{
-      present: string | null;
-    }>`SELECT to_regclass('immich_fork.icloud_identity_audit')::text AS present`.execute(db);
-    if (!audit.rows[0].present) {
-      await auditMigration.up(db);
-    }
-    const weekly = await sql<{
-      present: string | null;
-    }>`SELECT to_regclass('immich_fork.icloud_weekly_grant')::text AS present`.execute(db);
-    if (!weekly.rows[0].present) {
-      await weeklyMigration.up(db);
-    }
+    db = await getKyselyDB();
+    await expectCanonicalTables(db, ['icloud_identity_audit', 'icloud_weekly_grant']);
+
     sut = new ICloudWeeklyRepository(db);
     sync = new ICloudSyncRepository(db);
   });
@@ -50,19 +38,19 @@ describe('weekly consent foundation, never execution authority', () => {
   const freezeFixture = async (f: Awaited<ReturnType<typeof arrange>>) => {
     const cohortId = randomUUID();
     const receiptId = randomUUID();
-    await sql`INSERT INTO immich_fork.icloud_weekly_cohort
+    await sql`INSERT INTO public.icloud_weekly_cohort
       (id,"ownerId","connectionId","weekStart","grantId","grantGeneration","configFingerprint",
         "privacyFingerprint",seed,"manifestDigest","populationCount","staleCount","selectedCount")
       SELECT ${cohortId}::uuid,"ownerId","connectionId",date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date,
         id,generation,"configFingerprint","privacyFingerprint",${Buffer.alloc(32, 1)},${Buffer.alloc(32, 2)},1,0,1
-      FROM immich_fork.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
-    await sql`INSERT INTO immich_fork.icloud_weekly_member
+      FROM public.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+    await sql`INSERT INTO public.icloud_weekly_member
       ("cohortId","ownerId","connectionId","receiptId","resourceRoleKey",ordinal,rank,selected,"batchOrdinal",
         "grantId","grantGeneration","expectedSha256",bindings,"technicalEligibility")
       SELECT id,"ownerId","connectionId",${receiptId}::uuid,'ordinary-original',0,${Buffer.alloc(32, 3)},true,0,
         "grantId","grantGeneration",${Buffer.alloc(32, 4)},
         ${{ receipt: { id: receiptId }, source: { revision: 'frozen' }, identity: { revision: 'frozen' }, original: { revision: 'frozen' } }}::jsonb,'current'
-      FROM immich_fork.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db);
+      FROM public.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db);
     return cohortId;
   };
 
@@ -95,8 +83,9 @@ describe('weekly consent foundation, never execution authority', () => {
       await sut.setAuthority(f.auth, f.connection.id, { ...f.input, requestKey: f.input.requestKey.toUpperCase() }),
     ).toEqual(granted);
     for (const table of ['icloud_weekly_cohort', 'icloud_weekly_member']) {
-      const rows =
-        await sql`SELECT 1 FROM ${sql.table(`immich_fork.${table}`)} WHERE "ownerId"=${f.user.id}::uuid`.execute(db);
+      const rows = await sql`SELECT 1 FROM ${sql.table(`public.${table}`)} WHERE "ownerId"=${f.user.id}::uuid`.execute(
+        db,
+      );
       expect(rows.rows).toEqual([]);
     }
     expect(JSON.stringify(granted)).not.toMatch(/generation|pinBinding|grantId|sessionId|requestKey/);
@@ -152,7 +141,7 @@ describe('weekly consent foundation, never execution authority', () => {
       const held = Promise.withResolvers<number>();
       const release = Promise.withResolvers<void>();
       const blocker = db.transaction().execute(async (transaction) => {
-        await sql`SELECT id FROM immich_fork.icloud_connection WHERE id=${f.connection.id}::uuid FOR UPDATE`.execute(
+        await sql`SELECT id FROM public.icloud_connection WHERE id=${f.connection.id}::uuid FOR UPDATE`.execute(
           transaction,
         );
         const pid = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(transaction);
@@ -190,7 +179,7 @@ describe('weekly consent foundation, never execution authority', () => {
         expect((await sut.status(f.connection.id, f.user.id)).enabled).toBe(false);
         expect(
           (
-            await sql`SELECT 1 FROM immich_fork.icloud_weekly_grant
+            await sql`SELECT 1 FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)
           ).rows,
         ).toEqual([]);
@@ -206,7 +195,7 @@ describe('weekly consent foundation, never execution authority', () => {
     async (kind) => {
       const f = await arrange(true);
       await sut.setAuthority(f.auth, f.connection.id, f.input);
-      const before = await sql<{ generation: number }>`SELECT generation FROM immich_fork.icloud_weekly_grant
+      const before = await sql<{ generation: number }>`SELECT generation FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       switch (kind) {
         case 'config': {
@@ -250,7 +239,7 @@ describe('weekly consent foundation, never execution authority', () => {
       await expect(sut.setAuthority(f.auth, f.connection.id, f.input)).rejects.toThrow();
       await sut.setAuthority(f.auth, f.connection.id, { ...f.input, requestKey: randomUUID() });
       await expect(sut.setAuthority(f.auth, f.connection.id, f.input)).rejects.toThrow();
-      const after = await sql<{ generation: number }>`SELECT generation FROM immich_fork.icloud_weekly_grant
+      const after = await sql<{ generation: number }>`SELECT generation FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       expect(after.rows[0].generation).toBeGreaterThan(before.rows[0].generation);
     },
@@ -264,9 +253,7 @@ describe('weekly consent foundation, never execution authority', () => {
       await sut.setAuthority(f.auth, f.connection.id, f.input);
       await sut.setAuthority(other.auth, other.connection.id, other.input);
       const before =
-        await sql`SELECT * FROM immich_fork.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(
-          db,
-        );
+        await sql`SELECT * FROM public.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       await expect(
         db.transaction().execute(async (transaction) => {
           switch (kind) {
@@ -288,12 +275,12 @@ describe('weekly consent foundation, never execution authority', () => {
               break;
             }
             case 'config': {
-              await sql`UPDATE immich_fork.icloud_connection SET config=config || '{"intervalHours":48}'::jsonb
+              await sql`UPDATE public.icloud_connection SET config=config || '{"intervalHours":48}'::jsonb
             WHERE id=${f.connection.id}::uuid`.execute(transaction);
               break;
             }
             case 'disconnect': {
-              await sql`UPDATE immich_fork.icloud_connection SET state='disconnected',"encryptedSession"=NULL
+              await sql`UPDATE public.icloud_connection SET state='disconnected',"encryptedSession"=NULL
             WHERE id=${f.connection.id}::uuid`.execute(transaction);
               break;
             }
@@ -302,18 +289,15 @@ describe('weekly consent foundation, never execution authority', () => {
               break;
             }
           }
-          const retired = await sql<{ enabled: boolean }>`SELECT enabled FROM immich_fork.icloud_weekly_grant
+          const retired = await sql<{ enabled: boolean }>`SELECT enabled FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(transaction);
           expect(retired.rows[0].enabled).toBe(false);
           throw new Error('rollback authority probe');
         }),
       ).rejects.toThrow('rollback authority probe');
       expect(
-        (
-          await sql`SELECT * FROM immich_fork.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(
-            db,
-          )
-        ).rows,
+        (await sql`SELECT * FROM public.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db))
+          .rows,
       ).toEqual(before.rows);
       expect((await sut.status(other.connection.id, other.user.id)).available).toBe(true);
       expect((await sut.status(f.connection.id, f.user.id)).available).toBe(true);
@@ -324,37 +308,35 @@ describe('weekly consent foundation, never execution authority', () => {
     const f = await arrange(true);
     await sut.setAuthority(f.auth, f.connection.id, f.input);
     const id = await freezeFixture(f);
-    const before = await sql`SELECT * FROM immich_fork.icloud_weekly_cohort WHERE id=${id}::uuid`.execute(db);
-    const members = await sql`SELECT * FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${id}::uuid`.execute(db);
+    const before = await sql`SELECT * FROM public.icloud_weekly_cohort WHERE id=${id}::uuid`.execute(db);
+    const members = await sql`SELECT * FROM public.icloud_weekly_member WHERE "cohortId"=${id}::uuid`.execute(db);
     await sut.setAuthority(f.auth, f.connection.id, {
       enabled: false,
       includeProtected: false,
       requestKey: randomUUID(),
     });
     await sut.setAuthority(f.auth, f.connection.id, { ...f.input, requestKey: randomUUID() });
-    expect((await sql`SELECT * FROM immich_fork.icloud_weekly_cohort WHERE id=${id}::uuid`.execute(db)).rows).toEqual(
+    expect((await sql`SELECT * FROM public.icloud_weekly_cohort WHERE id=${id}::uuid`.execute(db)).rows).toEqual(
       before.rows,
     );
     expect(
-      (await sql`SELECT * FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${id}::uuid`.execute(db)).rows,
+      (await sql`SELECT * FROM public.icloud_weekly_member WHERE "cohortId"=${id}::uuid`.execute(db)).rows,
     ).toEqual(members.rows);
     await expect(
-      sql`UPDATE immich_fork.icloud_weekly_cohort SET "grantGeneration"="grantGeneration"+1
+      sql`UPDATE public.icloud_weekly_cohort SET "grantGeneration"="grantGeneration"+1
       WHERE id=${id}::uuid`.execute(db),
     ).rejects.toThrow('icloud_weekly_cohort_frozen');
     await expect(
-      sql`UPDATE immich_fork.icloud_weekly_member SET rank=${Buffer.alloc(32, 5)}
+      sql`UPDATE public.icloud_weekly_member SET rank=${Buffer.alloc(32, 5)}
       WHERE "cohortId"=${id}::uuid`.execute(db),
     ).rejects.toThrow('icloud_weekly_member_frozen');
     expect(members.rows[0]).toMatchObject({ outcome: 'pending', auditRequestId: null });
     await expect(
-      sql`UPDATE immich_fork.icloud_weekly_cohort SET status='settled' WHERE id=${id}::uuid`.execute(db),
+      sql`UPDATE public.icloud_weekly_cohort SET status='settled' WHERE id=${id}::uuid`.execute(db),
     ).rejects.toMatchObject({ code: '23514' });
-    await sql`UPDATE immich_fork.icloud_weekly_member SET outcome='unavailable' WHERE "cohortId"=${id}::uuid`.execute(
-      db,
-    );
+    await sql`UPDATE public.icloud_weekly_member SET outcome='unavailable' WHERE "cohortId"=${id}::uuid`.execute(db);
     await expect(
-      sql`UPDATE immich_fork.icloud_weekly_member SET outcome='pending' WHERE "cohortId"=${id}::uuid`.execute(db),
+      sql`UPDATE public.icloud_weekly_member SET outcome='pending' WHERE "cohortId"=${id}::uuid`.execute(db),
     ).rejects.toThrow('icloud_weekly_outcome_frozen');
   });
 
@@ -364,7 +346,7 @@ describe('weekly consent foundation, never execution authority', () => {
     const cohortId = await freezeFixture(f);
     const insert = (purpose: string, sessionId: string | null, scheduled: boolean, ordinal = 0) =>
       sql`
-      INSERT INTO immich_fork.icloud_identity_audit
+      INSERT INTO public.icloud_identity_audit
         (id,"ownerId","connectionId","sessionId","identityId","originalAssetId","sourceResourceId",
           "expectedSha256",snapshot,purpose,"grantId","grantGeneration","cohortId","memberOrdinal","batchOrdinal")
       SELECT ${randomUUID()}::uuid,"ownerId","connectionId",${sessionId}::uuid,
@@ -374,7 +356,7 @@ describe('weekly consent foundation, never execution authority', () => {
         CASE WHEN ${scheduled} THEN id ELSE NULL END,
         CASE WHEN ${scheduled} THEN ${ordinal}::bigint ELSE NULL END,
         CASE WHEN ${scheduled} THEN 0 ELSE NULL END
-      FROM immich_fork.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db);
+      FROM public.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db);
     await insert('manual-session', f.session.id, false);
     await expect(insert('manual-session', null, false)).rejects.toMatchObject({ code: '23514' });
     await expect(insert('scheduled-weekly', f.session.id, true)).rejects.toMatchObject({ code: '23514' });
@@ -386,7 +368,7 @@ describe('weekly consent foundation, never execution authority', () => {
       verifiedAt: Date | null;
       result: string;
     }>`SELECT purpose,"verifiedAt",result
-      FROM immich_fork.icloud_identity_audit WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+      FROM public.icloud_identity_audit WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     expect(rows.rows).toHaveLength(2);
     expect(rows.rows.every((row) => row.verifiedAt === null && row.result === 'queued')).toBe(true);
   });
@@ -398,11 +380,11 @@ describe('weekly consent foundation, never execution authority', () => {
     const encrypted = encryptICloudSession(key, f.connection.id, providerSession);
     await sync.update(f.connection.id, f.user.id, { encryptedSession: encrypted });
     await sut.setAuthority(f.auth, f.connection.id, f.input);
-    const before = await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+    const before = await sql`SELECT * FROM public.icloud_weekly_grant
       WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     const bytes = Buffer.from('owned test transport bytes');
     const resourceId = randomUUID();
-    await sql`INSERT INTO immich_fork.icloud_resource
+    await sql`INSERT INTO public.icloud_resource
       (id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,
         fingerprint,source,"expectedSize")
       VALUES (${resourceId}::uuid,${f.connection.id}::uuid,${f.user.id}::uuid,'fixture-library','{}'::jsonb,
@@ -451,7 +433,7 @@ describe('weekly consent foundation, never execution authority', () => {
       expect(decryptICloudSession(key, f.connection.id, refreshed.encryptedSession!)).toEqual(providerSession);
       expect(
         (
-          await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+          await sql`SELECT * FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)
         ).rows,
       ).toEqual(before.rows);
@@ -479,7 +461,7 @@ describe('weekly consent foundation, never execution authority', () => {
     async (kind) => {
       const f = await arrange(true);
       await sut.setAuthority(f.auth, f.connection.id, f.input);
-      const before = await sql<{ generation: number }>`SELECT generation FROM immich_fork.icloud_weekly_grant
+      const before = await sql<{ generation: number }>`SELECT generation FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       if (kind === 'explicit-replacement') {
         await sync.update(f.connection.id, f.user.id, { encryptedSession: 'explicit-replacement' });
@@ -494,7 +476,7 @@ describe('weekly consent foundation, never execution authority', () => {
           }),
         );
       } else {
-        await sql`UPDATE immich_fork.icloud_connection SET "encryptedSession"=NULL
+        await sql`UPDATE public.icloud_connection SET "encryptedSession"=NULL
           WHERE id=${f.connection.id}::uuid`.execute(db);
         await sync.update(f.connection.id, f.user.id, { encryptedSession: 'fixture-only' });
       }
@@ -503,145 +485,10 @@ describe('weekly consent foundation, never execution authority', () => {
         available: false,
         regrantRequired: true,
       });
-      const retired = await sql<{ generation: number }>`SELECT generation FROM immich_fork.icloud_weekly_grant
+      const retired = await sql<{ generation: number }>`SELECT generation FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       expect(retired.rows[0].generation).toBeGreaterThan(before.rows[0].generation);
       await expect(sut.setAuthority(f.auth, f.connection.id, f.input)).rejects.toThrow();
-    },
-  );
-
-  it.each(['inactive', 'handoff'] as const)(
-    'refuses every public retirement writer during %s without mutating authority',
-    async (mode) => {
-      const f = await arrange(true);
-      await sut.setAuthority(f.auth, f.connection.id, f.input);
-      const users = new UserRepository(db);
-      const checked = await users.getForPinCode(f.user.id);
-      const preferences = new DatabaseRepository(db, { setContext: vi.fn() } as never, {} as never);
-      const original = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(db);
-      const before = await sql`SELECT * FROM immich_fork.icloud_weekly_grant
-      WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
-      let handoffId: string | undefined;
-      try {
-        if (mode === 'inactive') {
-          await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-        } else {
-          handoffId = (
-            await sql<{ id: string }>`INSERT INTO immich_fork.migration_audit(name,phase,status)
-          VALUES ('official-handoff-preparation','ready','running') RETURNING id`.execute(db)
-          ).rows[0].id;
-        }
-        const writes = [
-          () => users.setPinCodeAndLockSessions(f.user.id, checked, 'refused-pin'),
-          () => users.update(f.user.id, { pinCode: 'refused-pin' }),
-          () => users.update(f.user.id, { deletedAt: new Date() }),
-          () => users.updateAll({ pinCode: 'refused-pin' }),
-          () => users.restore(f.user.id),
-          () => users.delete(f.user),
-          () => users.delete(f.user, true),
-          () =>
-            users.upsertMetadata(f.user.id, {
-              key: UserMetadataKey.Preferences,
-              value: { privacy: { suppression: { tagIds: [randomUUID()] } } },
-            }),
-          () => users.deleteMetadata(f.user.id, UserMetadataKey.Preferences),
-        ];
-        for (const write of writes) {
-          await expect(write()).rejects.toThrow('This change is unavailable during database handoff');
-        }
-        const callback = vi.fn(async () => {});
-        await expect(preferences.withUserPreferencesLock(f.user.id, callback)).rejects.toThrow(
-          'This change is unavailable during database handoff',
-        );
-        expect(callback).not.toHaveBeenCalled();
-        expect(await users.getForPinCode(f.user.id)).toEqual(checked);
-        expect(
-          (
-            await sql`SELECT * FROM immich_fork.icloud_weekly_grant
-        WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)
-          ).rows,
-        ).toEqual(before.rows);
-        expect((await new SessionRepository(db).get(f.session.id))?.pinExpiresAt).not.toBeNull();
-      } finally {
-        await sql`UPDATE immich_fork.state SET phase=${original.rows[0].phase} WHERE id=1`.execute(db);
-        if (handoffId) {
-          await sql`DELETE FROM immich_fork.migration_audit WHERE id=${handoffId}`.execute(db);
-        }
-      }
-    },
-  );
-
-  it.each(['pin', 'preferences'] as const)(
-    'takes the phase guard before %s locks and refuses after a concurrent handoff',
-    async (kind) => {
-      const f = await arrange(true);
-      await sut.setAuthority(f.auth, f.connection.id, f.input);
-      const original = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(db);
-      const users = new UserRepository(db);
-      const checked = await users.getForPinCode(f.user.id);
-      const preferences = new DatabaseRepository(db, { setContext: vi.fn() } as never, {} as never);
-      const held = Promise.withResolvers<number>();
-      const release = Promise.withResolvers<void>();
-      const blocker = db.transaction().execute(async (transaction) => {
-        await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(transaction);
-        held.resolve((await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(transaction)).rows[0].pid);
-        await release.promise;
-      });
-      let pending: Promise<unknown> | undefined;
-      try {
-        const pid = await Promise.race([
-          held.promise,
-          blocker.then(() => {
-            throw new Error('Phase did not pause');
-          }),
-        ]);
-        pending =
-          kind === 'pin'
-            ? users.setPinCodeAndLockSessions(f.user.id, checked, 'refused-pin')
-            : preferences.withUserPreferencesLock(f.user.id, async (transaction) => {
-                await users.upsertMetadata(
-                  f.user.id,
-                  { key: UserMetadataKey.Preferences, value: { privacy: { suppression: { tagIds: [randomUUID()] } } } },
-                  transaction,
-                );
-              });
-        const outcome = pending
-          .then(() => ({ accepted: true }))
-          .catch((error: unknown) => ({ accepted: false, error }));
-        await expect
-          .poll(
-            async () => {
-              const observed = await sql<{ blocked: boolean }>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-          WHERE datname=current_database() AND wait_event_type='Lock' AND ${pid}=ANY(pg_blocking_pids(pid))) AS blocked`.execute(
-                db,
-              );
-              return observed.rows[0].blocked;
-            },
-            { interval: 10, timeout: 1000 },
-          )
-          .toBe(true);
-        // A caller blocked on the phase has not locked any later owner/session/preference rows.
-        await db.transaction().execute(async (transaction) => {
-          await sql`SELECT id FROM public.user WHERE id=${f.user.id}::uuid FOR UPDATE NOWAIT`.execute(transaction);
-          await sql`SELECT id FROM public.session WHERE id=${f.session.id}::uuid FOR UPDATE NOWAIT`.execute(
-            transaction,
-          );
-          await sql`SELECT key FROM public.user_metadata WHERE "userId"=${f.user.id}::uuid
-          AND key=${UserMetadataKey.Preferences} FOR UPDATE NOWAIT`.execute(transaction);
-          const advisory = await sql<{
-            free: boolean;
-          }>`SELECT pg_try_advisory_xact_lock(-2,hashtext(${f.user.id})::int) AS free`.execute(transaction);
-          expect(advisory.rows[0].free).toBe(true);
-        });
-        release.resolve();
-        expect(await outcome).toMatchObject({ accepted: false });
-        expect(await users.getForPinCode(f.user.id)).toEqual(checked);
-        expect((await sut.status(f.connection.id, f.user.id)).available).toBe(true);
-      } finally {
-        release.resolve();
-        await Promise.allSettled([blocker, ...(pending ? [pending] : [])]);
-        await sql`UPDATE immich_fork.state SET phase=${original.rows[0].phase} WHERE id=1`.execute(db);
-      }
     },
   );
 
@@ -770,7 +617,7 @@ describe('weekly consent foundation, never execution authority', () => {
     const checked = await users.getForPinCode(f.user.id);
     const beforeSession = await new SessionRepository(db).get(f.session.id);
     const other = await arrange(true);
-    const beforeGrant = await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+    const beforeGrant = await sql`SELECT * FROM public.icloud_weekly_grant
       WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     await db
       .updateTable('session')
@@ -794,7 +641,7 @@ describe('weekly consent foundation, never execution authority', () => {
       expect((await new SessionRepository(db).get(f.session.id))?.pinExpiresAt).toEqual(beforeSession?.pinExpiresAt);
       expect(
         (
-          await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+          await sql`SELECT * FROM public.icloud_weekly_grant
         WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)
         ).rows,
       ).toEqual(beforeGrant.rows);
@@ -812,17 +659,16 @@ describe('weekly consent foundation, never execution authority', () => {
     await sut.setAuthority(f.auth, f.connection.id, f.input);
     await sut.setAuthority(other.auth, other.connection.id, other.input);
     await freezeFixture(f);
-    await sql`DELETE FROM immich_fork.icloud_connection WHERE id=${f.connection.id}::uuid
+    await sql`DELETE FROM public.icloud_connection WHERE id=${f.connection.id}::uuid
       AND "ownerId"=${f.user.id}::uuid`.execute(db);
     for (const table of ['icloud_weekly_grant', 'icloud_weekly_cohort', 'icloud_weekly_member']) {
       expect(
-        (await sql`SELECT 1 FROM ${sql.table(`immich_fork.${table}`)} WHERE "ownerId"=${f.user.id}::uuid`.execute(db))
-          .rows,
+        (await sql`SELECT 1 FROM ${sql.table(`public.${table}`)} WHERE "ownerId"=${f.user.id}::uuid`.execute(db)).rows,
       ).toEqual([]);
     }
     expect((await sut.status(other.connection.id, other.user.id)).available).toBe(true);
     await db.deleteFrom('user').where('id', '=', other.user.id).execute();
-    const retained = await sql<{ enabled: boolean }>`SELECT enabled FROM immich_fork.icloud_weekly_grant
+    const retained = await sql<{ enabled: boolean }>`SELECT enabled FROM public.icloud_weekly_grant
       WHERE "ownerId"=${other.user.id}::uuid`.execute(db);
     expect(retained.rows).toEqual([{ enabled: false }]);
   });

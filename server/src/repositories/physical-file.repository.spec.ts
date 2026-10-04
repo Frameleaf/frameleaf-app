@@ -26,7 +26,7 @@ describe(PhysicalFileRepository.name, () => {
 
   it('deletes an unreferenced path inside the Buddy and path locks', async () => {
     const { db, queries } = scriptedKysely(referenceAnswer());
-    const unlink = vi.fn(async () => {
+    const unlink = vi.fn(() => {
       const statements = queries.map(({ sql }) => sql);
       expect(statements[0]).toBe('begin');
       expect(queries.find(({ sql }) => sql.includes('pg_advisory_xact_lock_shared'))?.parameters).toContain(
@@ -34,6 +34,7 @@ describe(PhysicalFileRepository.name, () => {
       );
       expect(statements.some((sql) => sql.includes('pg_advisory_xact_lock('))).toBe(true);
       expect(statements).not.toContain('commit');
+      return Promise.resolve();
     });
     await expect(new PhysicalFileRepository(db).deleteUnreferencedPath(path, unlink)).resolves.toEqual({
       deleted: true,
@@ -57,9 +58,7 @@ describe(PhysicalFileRepository.name, () => {
   it('rolls back the physical row cleanup when unlink fails', async () => {
     const { db, queries } = scriptedKysely(referenceAnswer());
     await expect(
-      new PhysicalFileRepository(db).deleteUnreferencedPath(path, async () => {
-        throw new Error('disk failure');
-      }),
+      new PhysicalFileRepository(db).deleteUnreferencedPath(path, () => Promise.reject(new Error('disk failure'))),
     ).rejects.toThrow('disk failure');
     expect(queries.at(-1)?.sql).toBe('rollback');
     expect(queries.some(({ sql }) => sql === 'commit')).toBe(false);

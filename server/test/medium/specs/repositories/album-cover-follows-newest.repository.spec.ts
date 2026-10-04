@@ -1,12 +1,10 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { AssetVisibility } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000205-AlbumCoverFollowsNewest.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -14,7 +12,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -34,25 +31,12 @@ const coverOf = async (albumId: string) => {
   return albumThumbnailAssetId;
 };
 
-const isTable = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.album_cover_follows_newest');
-
 const oldest = new Date('2023-01-01T00:00:00.000Z');
 const older = new Date('2024-01-01T00:00:00.000Z');
 const newer = new Date('2024-06-01T00:00:00.000Z');
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isTable(entry))).toEqual(manifest[kind].filter((entry) => isTable(entry)));
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['album_cover_follows_newest']);
 });
 
 it('makes the newest item the cover when turned on and keeps the cover when turned off', async () => {

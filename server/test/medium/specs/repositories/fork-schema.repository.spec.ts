@@ -6,7 +6,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -133,7 +133,7 @@ describe(AssetChecksumRepository.name, () => {
       });
 
       const row = await sql<{ sha1: Buffer; evidence: string }>`
-        SELECT sha1, evidence::text FROM immich_fork.asset_checksum WHERE "assetId" = ${asset.id}::uuid
+        SELECT sha1, evidence::text FROM public.asset_checksum WHERE "assetId" = ${asset.id}::uuid
       `.execute(defaultDatabase);
 
       expect(row.rows[0]?.sha1).toEqual(sha1);
@@ -166,7 +166,7 @@ describe(AssetChecksumRepository.name, () => {
 
       const row = await sql<{ sha1: Buffer; sha256: Buffer; evidence: string }>`
         SELECT sha1, sha256, evidence::text
-        FROM immich_fork.asset_checksum
+        FROM public.asset_checksum
         WHERE "assetId" = ${asset.id}::uuid
       `.execute(defaultDatabase);
 
@@ -189,7 +189,7 @@ describe(AssetChecksumRepository.name, () => {
     const read = async (assetId: string) => {
       const row = await sql<{ sha1: Buffer; sizeInBytes: number; evidence: string; updatedAt: Date }>`
         SELECT sha1, "sizeInBytes"::int AS "sizeInBytes", evidence::text, "updatedAt"
-        FROM immich_fork.asset_checksum WHERE "assetId" = ${assetId}::uuid
+        FROM public.asset_checksum WHERE "assetId" = ${assetId}::uuid
       `.execute(defaultDatabase);
       return row.rows[0];
     };

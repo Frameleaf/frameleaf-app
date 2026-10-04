@@ -4,12 +4,20 @@ import { sql } from "kysely";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
+import { pathToFileURL } from "node:url";
 //#region src/bin/cli.ts
 var withMigrator = (fn) => async function(...args) {
 	const command = args.at(-1);
 	const options = command.optsWithGlobals();
 	if (!options.url) throw new Error(`Missing required option '-u, --url <url>'`);
+	let desiredSchema;
+	if (command.name() === "generate") {
+		const provider = await import(pathToFileURL(resolve(options.schemaProvider)).href);
+		if (typeof provider.getFrameleafSchema !== "function") throw new Error("Schema provider must export getFrameleafSchema()");
+		desiredSchema = provider.getFrameleafSchema;
+	}
 	const migrator = new Migrator({
+		desiredSchema,
 		connectionParams: {
 			connectionType: "url",
 			url: options.url
@@ -17,8 +25,11 @@ var withMigrator = (fn) => async function(...args) {
 		allowUnorderedMigrations: false,
 		migrationFolder: join(process.cwd(), options.folder)
 	});
-	await fn(migrator, options, command.args);
-	await migrator.destroy();
+	try {
+		await fn(migrator, options, command.args);
+	} finally {
+		await migrator.destroy();
+	}
 };
 var program = new Command("sql-tools");
 program.option("-u, --url <url>", "Database connection url").option("-f, --folder <migrationsFolder>", "Path to the runnable (compiled) migration files", "dist/schema/migrations").option("--source-folder <migrationsSourceFolder>", "Path to the migration source files", "src/schema/migrations");
@@ -39,7 +50,7 @@ migrations.command("verify-order").description(`Verify the ${ORDER_FILENAME} fil
 	if (errors.length > 0) throw new Error(errors.map((error) => `- ${error}`).join("\n"));
 	console.log(`${ORDER_FILENAME} is consistent (${readOrder(folder)?.length ?? 0} migrations)`);
 });
-migrations.command("generate").description("Generate a new migration file that contains the UP and DOWN queries to migrate the schema").option("--debug", "Generate the migration file with extra comments", false).option("-s, --schemaDist <path>", "Path to the built schema files", "dist/schema").argument("[path]", "Optional path where the migration file should be written to. Defaults to `src/Migration`", "src/Migration").action(withMigrator((migrator, { debug, schemaDist }, [path]) => migrator.generate({
+migrations.command("generate").description("Generate a new migration file that contains the UP and DOWN queries to migrate the schema").option("--debug", "Generate the migration file with extra comments", false).option("--schema-provider <path>", "Complete desired-schema provider module", "dist/schema/frameleaf-schema.js").option("-s, --schemaDist <path>", "Path to the built schema files", "dist/schema").argument("[path]", "Optional path where the migration file should be written to. Defaults to `src/Migration`", "src/Migration").action(withMigrator((migrator, { debug, schemaDist }, [path]) => migrator.generate({
 	dist: join(process.cwd(), schemaDist),
 	targetPath: join(process.cwd(), path ?? "src/Migration"),
 	withComments: debug

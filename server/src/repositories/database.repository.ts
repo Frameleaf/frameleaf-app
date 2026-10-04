@@ -1,8 +1,9 @@
-import { schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
+import { createMigrationProvider, schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { Kysely, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
+import { fileURLToPath } from 'node:url';
 import { InjectKysely } from 'nestjs-kysely';
 import * as semver from 'semver';
 import z from 'zod';
@@ -13,10 +14,10 @@ import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
-import * as frameleafBaseline from 'src/schema/migrations/0000000000000-FrameleafBaseline.js';
 import { ExtensionVersion, VectorExtension } from 'src/types.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
+import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 import { resetQueueAfterRestore } from 'src/queue/store.js';
 
 const CLIP_TABLES = [
@@ -304,6 +305,7 @@ export class DatabaseRepository {
   async resetTransientExecutionState(): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
       await resetQueueAfterRestore(tx);
+      await resetMediaOperationsAfterRestore(tx);
       await sql`TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease, public.socket_io_attachments, public.frameleaf_websocket_worker`.execute(
         tx,
       );
@@ -316,7 +318,7 @@ export class DatabaseRepository {
       db: this.db,
       migrationTableName: 'frameleaf_migrations',
       migrationLockTableName: 'frameleaf_migrations_lock',
-      provider: { getMigrations: async () => ({ '0000000000000-FrameleafBaseline': frameleafBaseline }) },
+      provider: createMigrationProvider(fileURLToPath(new URL('../schema/migrations/', import.meta.url))),
     });
     const { error, results } = await migrator.migrateToLatest();
     if (error) throw error;

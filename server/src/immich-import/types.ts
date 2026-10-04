@@ -1,4 +1,5 @@
-import type { SourceStructure } from './schema.js';
+import type { SourceStructure } from 'src/immich-import/schema.js';
+
 export type ImportRow = Record<string, unknown>;
 export interface ImportDatabase {
   query(sql: string, parameters?: unknown[]): Promise<ImportRow[]>;

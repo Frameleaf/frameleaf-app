@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
-import { canonicalJson, CONTENT_TABLES, digest, frozenSource } from './adapters.js';
-import { readSourceStructure, verifySourceStructure } from './schema.js';
-import { FrozenSource, ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from './types.js';
+import { CONTENT_TABLES, canonicalJson, digest, frozenSource } from 'src/immich-import/adapters.js';
+import { readSourceStructure, verifySourceStructure } from 'src/immich-import/schema.js';
+import {
+  FrozenSource,
+  ImportConfig,
+  ImportDatabase,
+  ImportRefused,
+  ImportRow,
+  quote,
+} from 'src/immich-import/types.js';
 
 export class ImmichSource {
   readonly fixture: FrozenSource;
@@ -29,7 +36,7 @@ export class ImmichSource {
         OR pg_has_role(current_user,c.relowner,'MEMBER')) LIMIT 1`);
     const others = await this.db.query(`SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
       AND pid <> pg_backend_pid() AND backend_type = 'client backend' LIMIT 1`);
-    if (elevated.length || writable.length || others.length) {
+    if (elevated.length > 0 || writable.length > 0 || others.length > 0) {
       throw new ImportRefused('SOURCE_WRITERS_OR_WRITE_AUTHORITY_PRESENT');
     }
     const [frameleaf] = await this.db.query("SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present");
@@ -63,7 +70,7 @@ export class ImmichSource {
 
   async *batches(table: string, after: string[] | null = null): AsyncGenerator<{ row: ImportRow; cursor: string[] }[]> {
     const shape = this.fixture.tables[table];
-    if (!shape || !shape.key.length || !(CONTENT_TABLES as readonly string[]).includes(table)) {
+    if (!shape || shape.key.length === 0 || !(CONTENT_TABLES as readonly string[]).includes(table)) {
       throw new ImportRefused('UNSUPPORTED_IMPORT_TABLE');
     }
     const fields = shape.columns

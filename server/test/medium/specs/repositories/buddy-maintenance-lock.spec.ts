@@ -1,11 +1,12 @@
 import { Kysely, sql } from 'kysely';
-import type { DB } from 'src/schema/index.js';
 import { DatabaseLock } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
+import type { DB } from 'src/schema/index.js';
 
 it('keeps a second recovery worker excluded through database connection termination', async () => {
   const db = await getKyselyDB('fl310_buddy_fence');
@@ -15,7 +16,7 @@ it('keeps a second recovery worker excluded through database connection terminat
     // postgres.js can return a closed reserved connection to the pool when Kysely releases it.
     await db.connection().execute(async (restore) => {
       const database = await sql<{ name: string }>`SELECT current_database() AS name`.execute(restore);
-      const url = process.env.IMMICH_TEST_POSTGRES_URL!.replace('/mich', () => `/${database.rows[0].name}`);
+      const url = canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, database.rows[0].name);
       const withExcludedContender = async (afterProbe: (pid: number) => void | Promise<void>) => {
         const client = new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url }));
         try {

@@ -1,15 +1,13 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { ChecksumAlgorithm, MediaOperationStatus } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import * as migration from 'src/schema/migrations/2100000000720-SafetyProofFacts.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -19,39 +17,18 @@ const setup = () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   return { ctx, integrity: new IntegrityRepository(db), backup: new CloudBackupIndexRepository(db) };
 };
-const isProof = (entry: { identity: string }) =>
-  ['asset_integrity_verification', 'cloud_backup_manifest_original', 'cloud_backup_object_verification'].some(
-    (table) => entry.identity === `public.${table}` || entry.identity.startsWith(`public.${table}.`),
-  );
 
 beforeAll(async () => {
   db = await getKyselyDB();
 });
 
 describe('FL-226 persisted proof prerequisites', () => {
-  it('matches the real catalog and rolls back and applies without historical backfill', async () => {
-    const evidence = async () => {
-      const catalog = await getCatalogEvidence(db);
-      return Object.fromEntries(
-        ['tables', 'columns', 'constraints', 'indexes'].map((key) => [
-          key,
-          catalog[key as 'tables'].filter((entry) => isProof(entry)),
-        ]),
-      );
-    };
-    const expected = Object.fromEntries(
-      ['tables', 'columns', 'constraints', 'indexes'].map((key) => [
-        key,
-        manifest[key as 'tables'].filter((entry) => isProof(entry)),
-      ]),
-    );
-    expect(expected.tables).toHaveLength(3);
-    expect(await evidence()).toEqual(expected);
-    await migration.down(db);
-    expect((await evidence()).tables).toEqual([]);
-    await migration.up(db);
-    expect(await evidence()).toEqual(expected);
-    expect(await db.selectFrom('asset_integrity_verification').selectAll().execute()).toEqual([]);
+  it('installs feature tables in the real canonical baseline', async () => {
+    await expectCanonicalTables(db, [
+      'asset_integrity_verification',
+      'cloud_backup_manifest_original',
+      'cloud_backup_object_verification',
+    ]);
   });
 
   it('timestamps repeated checks and records failures without replacing the immutable baseline', async () => {
@@ -75,7 +52,7 @@ describe('FL-226 persisted proof prerequisites', () => {
     const fork = ctx.get(AssetChecksumRepository);
     await fork.recordAssetChecksums(baseline);
     const readBaseline = async () =>
-      (await sql`SELECT * FROM immich_fork.asset_checksum WHERE "assetId" = ${asset.id}::uuid`.execute(db)).rows;
+      (await sql`SELECT * FROM public.asset_checksum WHERE "assetId" = ${asset.id}::uuid`.execute(db)).rows;
     const original = await readBaseline();
     const proof = {
       assetId: asset.id,

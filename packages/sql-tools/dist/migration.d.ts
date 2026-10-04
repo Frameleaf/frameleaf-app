@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { DatabaseConnectionParams, UuidFunctionFactory } from './index.js';
+import { DatabaseConnectionParams, DatabaseSchema, UuidFunctionFactory } from './index.js';
 declare const defaultUuidFactory: ({ db, major }: {
     db: string;
     major: string;
@@ -11,6 +11,7 @@ export declare class Migrator {
         allowUnorderedMigrations: boolean;
         migrationFolder: string;
         uuidFactory?: typeof defaultUuidFactory;
+        desiredSchema?: () => DatabaseSchema | Promise<DatabaseSchema>;
     });
     getDatabase(): Kysely<unknown>;
     runMigrations(): Promise<void>;

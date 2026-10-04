@@ -10,15 +10,14 @@ import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /**
- * FL-97: the Studio HDR intermediate is a fork sidecar (immich_fork.studio_hdr_intermediate), never
- * an official asset_file row. It is served only while it matches the original as it is now, with no
+ * FL-97: the Studio HDR intermediate is a canonical derived record (public.studio_hdr_intermediate), never
+ * an asset_file row. It is served only while it matches the original as it is now, with no
  * edit published over it; it goes with its asset, is swept when stale, orphaned or unused, is
- * tracked by the integrity checks and FileDelete, and is written only while the fork schema is.
+ * tracked by the integrity checks and FileDelete, and never replaces an original.
  */
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -46,14 +45,14 @@ const setup = async () => {
     (
       await sql<{
         status: string;
-      }>`SELECT status FROM immich_fork.studio_hdr_intermediate WHERE "assetId"=${asset.id}::uuid`.execute(db)
+      }>`SELECT status FROM public.studio_hdr_intermediate WHERE "assetId"=${asset.id}::uuid`.execute(db)
     ).rows;
   return { asset, user, ctx, sut, path, fingerprint, record, rows };
 };
 
 it('is recorded against the original it was made from and served while that original is current', async () => {
   const { asset, sut, path, record } = await setup();
-  await expect(sut.canRecordStudioHdrIntermediates()).resolves.toBe(true);
+
   await expect(record()).resolves.toEqual({ recorded: true });
   await expect(sut.getCurrentStudioHdrIntermediates([asset.id])).resolves.toEqual(new Map([[asset.id, path]]));
 
@@ -103,27 +102,6 @@ it('keeps a refusal for the same original, and reports an intermediate it replac
   await expect(sut.getCurrentStudioHdrIntermediates([asset.id])).resolves.toEqual(new Map());
 });
 
-it('is refused while the fork schema cannot be written (inactive, or a handoff runs)', async () => {
-  const { sut, record } = await setup();
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.canRecordStudioHdrIntermediates()).resolves.toBe(false);
-    await expect(record()).resolves.toEqual({ recorded: false });
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
-  await sql`INSERT INTO immich_fork.migration_audit(name,phase,status) VALUES('official-handoff-preparation','ready','running')`.execute(
-    db,
-  );
-  try {
-    await expect(record()).resolves.toEqual({ recorded: false });
-  } finally {
-    await sql`DELETE FROM immich_fork.migration_audit WHERE name='official-handoff-preparation' AND status='running'`.execute(
-      db,
-    );
-  }
-});
-
 it('is tracked by the integrity checks, so the untracked-file report never offers it', async () => {
   const { path, record } = await setup();
   await record();
@@ -135,7 +113,7 @@ it('counts as a reference for FileDelete while its row exists', async () => {
   const { path, record } = await setup();
   await record();
   const { rows } = await sql<{ count: number }>`
-    SELECT count(*)::int AS count FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
+    SELECT count(*)::int AS count FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
   `.execute(db);
   expect(rows[0].count).toBe(1);
 });
@@ -151,13 +129,12 @@ it('goes with its asset, and its file is released with the asset', async () => {
 it('is left while fork writes are disabled and released by the nightly sweep afterwards', async () => {
   const { asset, sut, path, record, rows } = await setup();
   await record();
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
+
   try {
     const removed = await sut.remove({ id: asset.id });
     expect(removed?.derivedPaths).not.toContain(path);
     await expect(sut.releaseStudioHdrIntermediates()).resolves.toEqual([]);
   } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
   await expect(sut.releaseStudioHdrIntermediates()).resolves.toContain(path);
   await expect(rows()).resolves.toEqual([]);
@@ -196,23 +173,20 @@ it('sweeps an intermediate whose original changed or that an edit now covers', a
 it('keeps what projects use and sweeps what none used for 30 days', async () => {
   const { asset, sut, path, record, rows } = await setup();
   await record();
-  await sql`UPDATE immich_fork.studio_hdr_intermediate SET "lastUsedAt" = now() - interval '29 days'
+  await sql`UPDATE public.studio_hdr_intermediate SET "lastUsedAt" = now() - interval '29 days'
     WHERE "assetId"=${asset.id}::uuid`.execute(db);
   await sut.touchStudioHdrIntermediates([asset.id]);
   await expect(sut.releaseStudioHdrIntermediates()).resolves.not.toContain(path);
 
-  await sql`UPDATE immich_fork.studio_hdr_intermediate SET "lastUsedAt" = now() - interval '31 days'
+  await sql`UPDATE public.studio_hdr_intermediate SET "lastUsedAt" = now() - interval '31 days'
     WHERE "assetId"=${asset.id}::uuid`.execute(db);
   await expect(sut.releaseStudioHdrIntermediates()).resolves.toContain(path);
   await expect(rows()).resolves.toEqual([]);
 });
 
-it('releases a row a handoff return archived as an orphan', async () => {
-  const { user } = await setup();
-  const orphanId = '00000000-0000-4000-8000-00000000f197';
-  await sql`INSERT INTO immich_fork.orphaned_records ("sourceTable", "sourceKey", payload)
-    VALUES ('studio_hdr_intermediate', ${orphanId}, ${JSON.stringify({ assetId: orphanId, ownerId: user.id, status: 'ready', path: '/archived/studio-hdr.mp4' })}::text::jsonb)`.execute(
-    db,
-  );
-  await expect(new AssetRepository(db).releaseStudioHdrIntermediates()).resolves.toContain('/archived/studio-hdr.mp4');
+it('releases a derived row whose original asset is gone', async () => {
+  const { asset, record, path, sut } = await setup();
+  await record();
+  await db.deleteFrom('asset').where('id', '=', asset.id).execute();
+  await expect(sut.releaseStudioHdrIntermediates()).resolves.toContain(path);
 });

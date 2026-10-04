@@ -3,9 +3,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { DB } from 'src/schema/index.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
-import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, AssetType, ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
@@ -25,7 +22,10 @@ import { assertOwnerRestorePath } from 'src/utils/cloud-backup-owner-path.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
+import type { DB } from 'src/schema/index.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 
 const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 describe('Buddy retained per-asset work', () => {
@@ -35,7 +35,7 @@ describe('Buddy retained per-asset work', () => {
   let ownerId: string;
   let inventory: Map<string, CloudBackupManifestFile>;
   beforeAll(async () => {
-    db = await getActiveForkKyselyDB();
+    db = await getKyselyDB();
   }, 30_000);
   afterAll(async () => {
     await db?.destroy();
@@ -144,7 +144,7 @@ describe('Buddy retained per-asset work', () => {
           isTransparent: false,
         },
       ];
-      const result = await sql<{ id: string }>`INSERT INTO immich_fork.video_edit_version
+      const result = await sql<{ id: string }>`INSERT INTO public.video_edit_version
         ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files)
         VALUES (${asset.id}::uuid,${ownerId}::uuid,${source.path},${asset.checksum},${JSON.stringify(edits)}::text::jsonb,
           'save','ready',${master.path},${proxy.path},${JSON.stringify(projection)}::text::jsonb) RETURNING id`.execute(
@@ -153,16 +153,16 @@ describe('Buddy retained per-asset work', () => {
       return { id: result.rows[0].id, master, proxy, projection };
     };
     const versions = [await createVersion('first'), await createVersion('second')];
-    await sql`INSERT INTO immich_fork.video_edit_selection ("assetId","ownerId","requestedVersionId","currentVersionId")
+    await sql`INSERT INTO public.video_edit_selection ("assetId","ownerId","requestedVersionId","currentVersionId")
       VALUES (${asset.id}::uuid,${ownerId}::uuid,${versions[1].id}::uuid,${versions[1].id}::uuid)`.execute(db);
     const { state, manifest } = await capture(asset.id, source, versions[1].projection, edits);
     const paths = await stage(manifest, state);
     const newer = randomUUID();
-    await sql`INSERT INTO immich_fork.video_edit_version
+    await sql`INSERT INTO public.video_edit_version
       (id,"assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files)
       SELECT ${newer}::uuid,"assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files
-      FROM immich_fork.video_edit_version WHERE id=${versions[1].id}::uuid`.execute(db);
-    await sql`UPDATE immich_fork.video_edit_selection SET "currentVersionId"=${newer}::uuid,
+      FROM public.video_edit_version WHERE id=${versions[1].id}::uuid`.execute(db);
+    await sql`UPDATE public.video_edit_selection SET "currentVersionId"=${newer}::uuid,
       "requestedVersionId"=${newer}::uuid WHERE "assetId"=${asset.id}::uuid`.execute(db);
     const identity = await db
       .selectFrom('asset')
@@ -178,8 +178,8 @@ describe('Buddy retained per-asset work', () => {
     const kept = (await new AssetEditRepository(db).listVideoVersions(asset.id, ownerId)).find((row) => row.isCurrent)!;
     expect(kept.id).toBe(newer);
     expect(kept.sourceChecksum).toEqual(asset.checksum);
-    await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
-    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
     await db
       .updateTable('asset')
       .set({ checksum: Buffer.from(source.sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File })
@@ -209,7 +209,7 @@ describe('Buddy retained per-asset work', () => {
     expect(currentFile.path).toBe(paths.get(versions[1].proxy.path));
 
     await db.transaction().execute(async (trx) => {
-      await sql`UPDATE immich_fork.video_edit_selection SET "currentVersionId"=${versions[0].id}::uuid,
+      await sql`UPDATE public.video_edit_selection SET "currentVersionId"=${versions[0].id}::uuid,
         "requestedVersionId"=${versions[0].id}::uuid WHERE "assetId"=${asset.id}::uuid`.execute(trx);
     });
     await publish(state, paths, 'keep');
@@ -237,9 +237,9 @@ describe('Buddy retained per-asset work', () => {
       .values({ id: exportId, assetId: asset.id, ownerId, sourceChecksum: asset.checksum, fileName: 'original.tif' })
       .execute();
     const recipe = { ...defaultDevelopRecipe(), masks: [{ id: randomUUID(), kind: 'brush', artifact: mask.sha256 }] };
-    await sql`INSERT INTO immich_fork.asset_develop_artifact ("assetId",id,"ownerId",kind,path,bytes,width,height)
+    await sql`INSERT INTO public.asset_develop_artifact ("assetId",id,"ownerId",kind,path,bytes,width,height)
       VALUES (${asset.id}::uuid,${mask.sha256},${ownerId}::uuid,'mask',${mask.path},${mask.size},32,32)`.execute(db);
-    await sql`INSERT INTO immich_fork.asset_develop_revision ("assetId","ownerId",revision,recipe,kind,status,
+    await sql`INSERT INTO public.asset_develop_revision ("assetId","ownerId",revision,recipe,kind,status,
       "sourceChecksum","renditionChecksum","exportId","masterPath","previewPath","isCurrent")
       VALUES (${asset.id}::uuid,${ownerId}::uuid,1,${JSON.stringify(recipe)}::text::jsonb,'external','rendered',
         ${asset.checksum},${Buffer.from(master.sha256, 'hex')},${exportId}::uuid,${master.path},${preview.path},true)`.execute(
@@ -290,8 +290,8 @@ describe('Buddy retained per-asset work', () => {
     expect(Object.hasOwn(state.restorations[0], 'fullOperationId')).toBe(false);
     expect(Object.hasOwn(state.restorations[0], 'destinationId')).toBe(false);
     const paths = await stage(manifest, state);
-    await sql`DELETE FROM immich_fork.asset_develop_revision WHERE "assetId"=${asset.id}::uuid`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_develop_artifact WHERE "assetId"=${asset.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.asset_develop_revision WHERE "assetId"=${asset.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.asset_develop_artifact WHERE "assetId"=${asset.id}::uuid`.execute(db);
     await db.deleteFrom('develop_export').where('assetId', '=', asset.id).execute();
     await db.deleteFrom('asset_restoration').where('assetId', '=', asset.id).execute();
     await db
@@ -359,36 +359,18 @@ describe('Buddy retained per-asset work', () => {
       isTransparent: false,
     });
     expect(() => readBuddyAssetFidelity(missing, asset.id)).toThrow('closure');
-    await db.transaction().execute(async (trx) => {
-      const before = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(trx);
-      try {
-        await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(trx);
-        await expect(
-          new BuddyBackupFidelityRepository(trx).publish({
-            state,
-            paths,
-            mode: 'replace',
-            ownerId,
-            originalSha256: source.sha256,
-            verify: async () => {},
-          }),
-        ).rejects.toThrow('handoff');
-      } finally {
-        await sql`UPDATE immich_fork.state SET phase=${before.rows[0].phase} WHERE id=1`.execute(trx);
-      }
-    });
   });
 
   it('retains an unfinished Develop recipe without restarting its job or replacing a later render in keep mode', async () => {
     const { asset, source } = await original();
     const recipe = defaultDevelopRecipe();
-    const { rows } = await sql<{ id: string }>`INSERT INTO immich_fork.asset_develop_revision
+    const { rows } = await sql<{ id: string }>`INSERT INTO public.asset_develop_revision
       ("assetId","ownerId",revision,recipe,status,progress,"cancelRequested",attempts)
       VALUES (${asset.id}::uuid,${ownerId}::uuid,1,${JSON.stringify(recipe)}::text::jsonb,'rendering',70,true,3)
       RETURNING id`.execute(db);
     const { state, manifest } = await capture(asset.id, source);
     const paths = await stage(manifest, state);
-    await sql`DELETE FROM immich_fork.asset_develop_revision WHERE id=${rows[0].id}::uuid`.execute(db);
+    await sql`DELETE FROM public.asset_develop_revision WHERE id=${rows[0].id}::uuid`.execute(db);
     await publish(state, paths);
     expect((await new AssetDevelopRepository(db).listByAsset(asset.id))[0]).toMatchObject({
       id: rows[0].id,
@@ -400,7 +382,7 @@ describe('Buddy retained per-asset work', () => {
       masterPath: null,
     });
     const later = await file('later-render.jpg');
-    await sql`UPDATE immich_fork.asset_develop_revision SET status='rendered',"isCurrent"=true,
+    await sql`UPDATE public.asset_develop_revision SET status='rendered',"isCurrent"=true,
       "masterPath"=${later.path},"sourceChecksum"=${asset.checksum},"renditionChecksum"=${Buffer.from(later.sha256, 'hex')}
       WHERE id=${rows[0].id}::uuid`.execute(db);
     await publish(state, paths, 'keep');

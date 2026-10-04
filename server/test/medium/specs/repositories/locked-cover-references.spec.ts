@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { AlbumKind, AssetFileType, AssetLockReason, AssetVisibility, PetObservationState } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -7,8 +7,8 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
-import { up as clearLockedCoverReferences } from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
 import { BaseService } from 'src/services/base.service.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { effectiveVisibility } from 'src/utils/locked.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -31,14 +31,8 @@ const setup = (db?: Kysely<DB>) => {
   return { ctx, sut: ctx.get(AssetRepository) };
 };
 
-/** The fork schema phase decides where the sensitive flag and Best Photos scores are read. */
-const setForkPhase = (db: Kysely<DB>, phase: string) =>
-  sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(db);
-
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
-  // a library before the fork schema cutover: `asset.is_nsfw` and the public scores are authoritative
-  await setForkPhase(defaultDatabase, 'legacy');
 });
 
 /** Marks a photo as a Best Photo (score 0.9 and up). */
@@ -340,7 +334,7 @@ describe('Locked cover references (FL-53)', () => {
     });
   });
 
-  describe('migration 2100000000300-ClearLockedCoverReferences', () => {
+  describe('canonical locked-cover cleanup', () => {
     it('repairs every reference to a photo that was Locked before the fix and leaves the others alone', async () => {
       const context = setup();
       const { ctx } = context;
@@ -351,14 +345,14 @@ describe('Locked cover references (FL-53)', () => {
         expect.objectContaining({ personFace: seeded.lockedFace.id, petFeatured: seeded.cover.id }),
       );
 
-      await clearLockedCoverReferences(ctx.database);
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual({
         collectionCover: null,
         spaceCover: seeded.fallback.id,
         personFace: seeded.nextFace.id,
         personThumbnailPath: '',
-        // the phase says where the sensitive flag is kept, so the space takes a photo every member sees
+        // the space takes a photo every member sees
         spacePersonCover: seeded.fallback.id,
         petFeatured: null,
       });
@@ -380,7 +374,7 @@ describe('Locked cover references (FL-53)', () => {
       await lockInOldFolder(ctx.database, seeded.cover.id);
       await lockInOldFolder(ctx.database, seeded.fallback.id);
 
-      await clearLockedCoverReferences(ctx.database);
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ spaceCover: null, personFace: null, personThumbnailPath: '' }),
@@ -400,40 +394,37 @@ describe('Locked cover references (FL-53)', () => {
       await markBestPhoto(ctx.database, best);
       await lockInOldFolder(ctx.database, seeded.cover.id);
 
-      await clearLockedCoverReferences(ctx.database);
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ spaceCover: best.id, personFace: bestFace.id, spacePersonCover: best.id }),
       );
     });
 
-    it('takes only a Timeline Best Photo that is not flagged sensitive where others see it, when it cannot tell which photos are sensitive', async () => {
+    it('takes only a Timeline Best Photo that is not flagged sensitive where others see it, after a sensitive fallback becomes safe to share', async () => {
       const context = setup();
       const { ctx } = context;
       const seeded = await seed(context);
       await lockInOldFolder(ctx.database, seeded.cover.id);
 
-      await setForkPhase(ctx.database, 'inactive');
-      try {
-        await clearLockedCoverReferences(ctx.database);
-        // the fallback is not a Best Photo, so the shared space and its picture of the person take none
-        await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
-          expect.objectContaining({ spaceCover: null, spacePersonCover: null, personFace: seeded.nextFace.id }),
-        );
+      await ctx.database.updateTable('asset').set({ is_nsfw: true }).where('id', '=', seeded.fallback.id).execute();
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
+      // the fallback is not a Best Photo, so the shared space and its picture of the person take none
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: null, spacePersonCover: null, personFace: seeded.nextFace.id }),
+      );
 
-        await markBestPhoto(ctx.database, seeded.fallback);
-        await ctx.database
-          .updateTable('album')
-          .set({ albumThumbnailAssetId: seeded.cover.id })
-          .where('id', '=', seeded.space.id)
-          .execute();
-        await clearLockedCoverReferences(ctx.database);
-        await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
-          expect.objectContaining({ spaceCover: seeded.fallback.id }),
-        );
-      } finally {
-        await setForkPhase(ctx.database, 'legacy');
-      }
+      await ctx.database.updateTable('asset').set({ is_nsfw: false }).where('id', '=', seeded.fallback.id).execute();
+      await markBestPhoto(ctx.database, seeded.fallback);
+      await ctx.database
+        .updateTable('album')
+        .set({ albumThumbnailAssetId: seeded.cover.id })
+        .where('id', '=', seeded.space.id)
+        .execute();
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: seeded.fallback.id }),
+      );
     });
 
     it('gives a pet the photo of another confirmed observation', async () => {
@@ -449,7 +440,7 @@ describe('Locked cover references (FL-53)', () => {
         .execute();
       await lockInOldFolder(ctx.database, seeded.cover.id);
 
-      await clearLockedCoverReferences(ctx.database);
+      await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ petFeatured: seeded.fallback.id }),
