@@ -68,7 +68,7 @@ describe(CloudBackupMaintenance.name, () => {
   beforeEach(() => {
     objects = new Map();
     store = {
-      listAll: vi.fn().mockImplementation((_connection, prefix: string, onPage: (page: unknown[]) => Promise<void>) => {
+      listAll: vi.fn<CloudBackupStoreRepository['listAll']>().mockImplementation((_connection, prefix, onPage) => {
         const page = objects
           .entries()
           .filter(([key]) => key.startsWith(prefix))
