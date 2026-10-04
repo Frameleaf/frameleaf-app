@@ -2132,9 +2132,15 @@ var processTableLoops = (ctx) => {
 		}
 		const [tableName] = cycles;
 		if (!tableName) break;
-		const constraint = (ctx.getTableByName(tableName)?.constraints ?? []).find((c) => c.type === ConstraintType.FOREIGN_KEY && cycles.has(c.referenceTableName));
+		const constraints = ctx.getTableByName(tableName)?.constraints ?? [];
+		const adjacent = new Set(graph.adjacent(tableName) ?? []);
+		// A table can remain cyclic after one edge is removed. Only choose an edge
+		// still in the graph, otherwise a self-reference can be selected forever.
+		const constraint = constraints.find((c) => c.type === ConstraintType.FOREIGN_KEY && cycles.has(c.referenceTableName) && adjacent.has(c.referenceTableName));
 		if (!constraint) throw new Error(`Table ${tableName} was reported to be in a cycle, but does not have any foreign key references to cyclic tables`);
-		constraint.deferred = true;
+		// The graph coalesces multiple foreign keys between the same two tables.
+		// All such constraints must be emitted after table creation with this edge.
+		for (const candidate of constraints) if (candidate.type === ConstraintType.FOREIGN_KEY && candidate.referenceTableName === constraint.referenceTableName) candidate.deferred = true;
 		graph.removeEdge(constraint.tableName, constraint.referenceTableName);
 	}
 };

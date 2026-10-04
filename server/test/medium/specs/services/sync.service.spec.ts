@@ -1,4 +1,3 @@
-import { schemaFromCode } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { v4 } from 'uuid';
@@ -6,6 +5,7 @@ import { AssetMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseSync, SyncRepository } from 'src/repositories/sync.repository.js';
+import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 import { DB } from 'src/schema/index.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -23,6 +23,10 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+});
+
+afterAll(async () => {
+  await defaultDatabase?.destroy();
 });
 
 const deletedLongAgo = DateTime.now().minus({ days: 35 }).toISO();
@@ -255,7 +259,7 @@ describe(SyncService.name, () => {
       // render_worker_audit is the operator's record of render worker actions, kept like any audit
       // log; it is not a sync tombstone table and sync never cleans it
       const notSyncTombstones = new Set(['render_worker_audit']);
-      const auditTables = schemaFromCode()
+      const auditTables = getFrameleafSchema()
         .tables.filter((table) => table.name.endsWith('_audit') && !notSyncTombstones.has(table.name))
         .map(({ name }) => name);
 
