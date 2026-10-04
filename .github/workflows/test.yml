@@ -822,8 +822,22 @@ jobs:
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run formatter
+        id: github-format
         run: pnpm format
         if: ${{ !cancelled() }}
+      - name: Capture diagnosed formatter correction
+        if: ${{ failure() && steps.github-format.outcome == 'failure' }}
+        run: |
+          pnpm exec prettier --write frameleaf-release.test.cjs
+          git diff --binary -- frameleaf-release.test.cjs > "$RUNNER_TEMP/github-format.patch"
+      - name: Upload formatter correction
+        if: ${{ failure() && steps.github-format.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: github-format-correction
+          path: ${{ runner.temp }}/github-format.patch
+          if-no-files-found: error
+          retention-days: 7
     timeout-minutes: 60
   shellcheck:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
