@@ -2,7 +2,7 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ["fork/main", "master/frameleaf-implementation"]
+    branches: ['fork/main', 'master/frameleaf-implementation']
   workflow_call:
   workflow_dispatch:
     inputs:
@@ -34,7 +34,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version-file: ".nvmrc"
+          node-version-file: '.nvmrc'
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -54,7 +54,7 @@ jobs:
       - name: Set up the pinned NAS renderer Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: "3.11.15"
+          python-version: '3.11.15'
       - name: Prepare the pinned TrueNAS rendering library
         run: |
           catalog="$RUNNER_TEMP/truenas-catalog"
@@ -73,8 +73,8 @@ jobs:
       - name: Validate NAS package fixtures
         env:
           TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
-          FRAMELEAF_REQUIRE_TRUENAS_RENDER: "true"
-          PYTHONDONTWRITEBYTECODE: "1"
+          FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
+          PYTHONDONTWRITEBYTECODE: '1'
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
@@ -161,15 +161,15 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.8.15"
-          python-version: "3.12"
+          version: '0.8.15'
+          python-version: '3.12'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
       - name: Run ML unit tests without model downloads
         env:
-          HF_HUB_OFFLINE: "1"
-          TRANSFORMERS_OFFLINE: "1"
-          MACHINE_LEARNING_TEST_FULL: "false"
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          MACHINE_LEARNING_TEST_FULL: 'false'
         run: .venv/bin/python -m pytest -q
 
   machine-learning-containers:
@@ -219,7 +219,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         if: inputs.raw_engine == 'libraw'
         with:
-          node-version-file: ".nvmrc"
+          node-version-file: '.nvmrc'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: inputs.raw_engine == 'libraw'
@@ -281,7 +281,7 @@ jobs:
         if: inputs.raw_engine == 'darktable'
         env:
           RAW_PLATFORM: ${{ matrix.platform }}
-          DOCKER_BUILDKIT: "1"
+          DOCKER_BUILDKIT: '1'
         run: |
           mkdir -p "$RUNNER_TEMP/raw-validation"
           docker build --pull --no-cache --platform "$RAW_PLATFORM" \
