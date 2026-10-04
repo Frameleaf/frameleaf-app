@@ -3,8 +3,15 @@ import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from 'src/immich-import/adapters.js';
+import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
 import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types.js';
+
+vi.mock('src/immich-import/destination-schema.js', () => ({ assertCanonicalDestination: vi.fn() }));
+
+beforeEach(() => {
+  vi.mocked(assertCanonicalDestination).mockReset().mockResolvedValue(undefined);
+});
 
 const config: ImportConfig = {
   version: '3.2.4',
@@ -45,6 +52,13 @@ const createImporter = (run?: ImportRow, populated = false) => {
 };
 
 describe('import admission and activation gates', () => {
+  it('refuses destination drift before journal writes', async () => {
+    const { importer, statements } = createImporter();
+    vi.mocked(assertCanonicalDestination).mockRejectedValueOnce(new Error('DESTINATION_SCHEMA_NOT_CANONICAL'));
+    await expect(importer.run()).rejects.toThrow('DESTINATION_SCHEMA_NOT_CANONICAL');
+    expect(statements.some((statement) => /^(INSERT|UPDATE)/u.test(statement))).toBe(false);
+  });
+
   it('refuses populated destinations before journal writes', async () => {
     const { importer, statements } = createImporter(undefined, true);
     await expect(importer.run()).rejects.toThrow('DESTINATION_NOT_FRESH');
