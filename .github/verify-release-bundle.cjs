@@ -18,23 +18,64 @@ const {
   github,
   trustedRun,
   ATTESTATION_TYPE,
+  LEGACY_ATTESTATION_TYPE,
   COSIGN_PUBLIC_KEY,
+  Registry,
 } = require("./frameleaf-release.cjs");
+const {
+  CLI_IMAGE,
+  validateCliQualification,
+  verifyCliQualification,
+} = require("./frameleaf-cli-qualification.cjs");
 
 async function verifyBundle(
   directory,
   expectedTag,
-  { authenticate = false, run, request = github } = {},
+  {
+    authenticate = false,
+    run,
+    request = github,
+    registry = new Registry(),
+  } = {},
 ) {
   assert.match(
     expectedTag,
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/,
   );
+  const manifestFile = path.join(directory, "release-manifest.json");
+  assert(
+    (await fs.lstat(manifestFile)).isFile(),
+    "release-manifest.json is not a regular file",
+  );
+  const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
+  assert(
+    manifest.schemaVersion === 2 || manifest.schemaVersion === 3,
+    "Unsupported release manifest version",
+  );
+  const cliQualified = manifest.schemaVersion === 3;
+  if (!cliQualified) {
+    assert(
+      !Object.hasOwn(manifest, "cliQualification"),
+      "Historical v2 cannot claim CLI qualification",
+    );
+    assert(
+      !Object.hasOwn(manifest.assets || {}, "cli-image.txt"),
+      "Historical v2 cannot carry a CLI asset",
+    );
+    const cliFile = await fs
+      .lstat(path.join(directory, "cli-image.txt"))
+      .catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+    assert.equal(cliFile, null, "Historical v2 cannot carry a CLI asset");
+  }
   const names = [
     ...INSTALL_FILES,
     "supported-versions.json",
     "nas-manifest.json",
     "release-manifest.json",
+    ...(cliQualified ? ["cli-image.txt"] : []),
   ];
   const lines = (await fs.readFile(path.join(directory, "SHA256SUMS"), "utf8"))
     .trimEnd()
@@ -59,13 +100,33 @@ async function verifyBundle(
       `${name} checksum differs`,
     );
   }
-  const manifest = JSON.parse(
-    await fs.readFile(path.join(directory, "release-manifest.json"), "utf8"),
-  );
-  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.repository, REPOSITORY);
   assert.equal(manifest.tag, expectedTag, "Release tag differs");
   assert.match(manifest.sourceCommit, /^[a-f0-9]{40}$/);
+  if (cliQualified) {
+    const cliReference = validateCliQualification(
+      manifest.cliQualification,
+      manifest.sourceCommit,
+    );
+    const cliDependencies = manifest.dependencies?.filter(
+      ({ reference }) => reference === `${CLI_IMAGE}:latest`,
+    );
+    assert.equal(
+      cliDependencies?.length,
+      1,
+      "Missing or duplicate CLI bundle dependency",
+    );
+    assert.equal(
+      cliDependencies[0].digest,
+      manifest.cliQualification.publication.digest,
+      "CLI bundle dependency differs",
+    );
+    assert.equal(
+      await fs.readFile(path.join(directory, "cli-image.txt"), "utf8"),
+      cliReference + "\n",
+      "CLI install image differs from qualification",
+    );
+  }
   assert.equal(
     manifest.images?.length,
     VARIANTS.length,
@@ -130,7 +191,12 @@ async function verifyBundle(
     for (const image of manifest.images) {
       const reference = `${image.image}@${image.digest}`;
       cosign(["verify", "--key", key, reference], run);
-      verifyAttestedPredicate(reference, ATTESTATION_TYPE, manifest, run);
+      verifyAttestedPredicate(
+        reference,
+        cliQualified ? ATTESTATION_TYPE : LEGACY_ATTESTATION_TYPE,
+        manifest,
+        run,
+      );
     }
     const id = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
       manifest.certifiedBuildRun,
@@ -140,6 +206,13 @@ async function verifyBundle(
         trustedRun(await request(`actions/runs/${id}`), manifest.sourceCommit),
       "Build certification is not trusted",
     );
+    if (cliQualified)
+      await verifyCliQualification(
+        registry,
+        manifest.sourceCommit,
+        manifest.cliQualification,
+        { run },
+      );
   }
   return manifest;
 }

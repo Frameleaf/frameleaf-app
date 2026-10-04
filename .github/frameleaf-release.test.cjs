@@ -15,12 +15,28 @@ const {
   chooseTag,
   verifyImage,
   createBundle,
-  verifyDependencyImages,
+  verifyDependencyImages: checkDependencyImages,
   checkedResponse,
   hash,
   Registry,
   reserveAndStage,
 } = require("./frameleaf-release.cjs");
+const {
+  syntheticCliQualification,
+} = require("./fixtures/cli-qualification.cjs");
+const {
+  requireCliQualification,
+  verifyCliQualification,
+  validateCliQualification,
+  downloadCliPublication,
+  REQUIRED_CLI_JOBS,
+} = require("./frameleaf-cli-qualification.cjs");
+const verifyDependencyImages = (registry, root) =>
+  checkDependencyImages(
+    registry,
+    root,
+    syntheticCliQualification(sha, digest(2)),
+  );
 const sha = "a".repeat(40);
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
 const clone = (v) => structuredClone(v);
@@ -587,24 +603,32 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     );
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
-    const files = await createBundle(dir, root, tag, {
-      sourceCommit: sha,
-      images: [
-        {
-          image: "ghcr.io/frameleaf/frameleaf-server",
-          suffix: "",
-          digest: digest(3),
-          platforms: ["linux/amd64", "linux/arm64"],
-        },
-        {
-          image: "ghcr.io/frameleaf/frameleaf-machine-learning",
-          suffix: "",
-          digest: digest(4),
-          platforms: ["linux/amd64", "linux/arm64"],
-        },
-      ],
-    });
-    assert.equal(files.length, 9);
+    const files = await createBundle(
+      dir,
+      root,
+      tag,
+      {
+        schemaVersion: 3,
+        sourceCommit: sha,
+        cliQualification: syntheticCliQualification(sha, digest(2)),
+        images: [
+          {
+            image: "ghcr.io/frameleaf/frameleaf-server",
+            suffix: "",
+            digest: digest(3),
+            platforms: ["linux/amd64", "linux/arm64"],
+          },
+          {
+            image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+            suffix: "",
+            digest: digest(4),
+            platforms: ["linux/amd64", "linux/arm64"],
+          },
+        ],
+      },
+      new Map([["ghcr.io/frameleaf/frameleaf-cli:latest", digest(2)]]),
+    );
+    assert.equal(files.length, 10);
     const nas = JSON.parse(
       await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
     );
@@ -635,7 +659,20 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.equal(sums.length, 8);
+    assert.deepEqual(
+      sums.map((line) => line.split("  ")[1]).sort(),
+      [
+        "cli-image.txt",
+        "docker-compose.rootless.yml",
+        "docker-compose.yml",
+        "example.env",
+        "hwaccel.ml.yml",
+        "hwaccel.transcoding.yml",
+        "nas-manifest.json",
+        "release-manifest.json",
+        "supported-versions.json",
+      ],
+    );
     for (const line of sums) {
       const [expected, name] = line.split("  ");
       assert.equal(
@@ -1110,7 +1147,12 @@ const database =
   "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
 const published = (entries) => ({
   read: async (image, reference) => {
-    const found = entries[`${image}:${reference}`];
+    const found =
+      entries[`${image}:${reference}`] ??
+      (image === "frameleaf-cli" &&
+      reference === entries["frameleaf-cli:latest"]
+        ? reference
+        : undefined);
     if (!found)
       throw Object.assign(new Error("Remote request failed (404)"), {
         status: 404,
@@ -1153,7 +1195,9 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
       root,
       "frameleaf-v3.1.0-1",
       {
+        schemaVersion: 3,
         sourceCommit: sha,
+        cliQualification: syntheticCliQualification(sha, digest(2)),
         images: [
           {
             image: "ghcr.io/frameleaf/frameleaf-server",
@@ -1184,7 +1228,12 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
         path.join(root, "unverified"),
         root,
         "frameleaf-v3.1.0-1",
-        {},
+        {
+          schemaVersion: 3,
+          sourceCommit: sha,
+          cliQualification: syntheticCliQualification(sha, digest(2)),
+        },
+        new Map([["ghcr.io/frameleaf/frameleaf-cli:latest", digest(2)]]),
       ),
       /was not verified and pinned by digest/,
     );
@@ -1285,4 +1334,479 @@ test("dependency reads use an anonymous registry token, as an installation would
   });
   assert.equal(tokenRequests.length, 1);
   assert.equal(tokenRequests[0].Authorization, undefined);
+});
+
+// Synthetic source fixtures exercise contracts; no hosted/registry proof is claimed.
+function cliHarness() {
+  const evidence = syntheticCliQualification(sha);
+  const entries = new Map();
+  const put = (json) => {
+    const bytes = JSON.stringify(json);
+    const record = {
+      digest: hash(bytes),
+      json,
+      size: Buffer.byteLength(bytes),
+    };
+    entries.set(record.digest, record);
+    return record;
+  };
+  const descriptors = evidence.publication.architectures.map((native) => {
+    const config = put({
+      os: "linux",
+      architecture: native.architecture,
+      config: {
+        Labels: {
+          "org.opencontainers.image.source": SOURCE,
+          "org.opencontainers.image.revision": sha,
+        },
+      },
+      rootfs: { diff_ids: native.rootfsDiffIds },
+    });
+    const child = put({
+      schemaVersion: 2,
+      mediaType: "application/vnd.oci.image.manifest.v1+json",
+      config: { digest: config.digest, size: config.size },
+      layers: [
+        {
+          digest: digest(9),
+          size: 12,
+          mediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+        },
+      ],
+    });
+    native.digest = child.digest;
+    native.configDigest = config.digest;
+    return {
+      mediaType: child.json.mediaType,
+      digest: child.digest,
+      size: child.size,
+      platform: { os: "linux", architecture: native.architecture },
+    };
+  });
+  const index = put({
+    schemaVersion: 2,
+    mediaType: "application/vnd.oci.image.index.v1+json",
+    annotations: {
+      "org.opencontainers.image.source": SOURCE,
+      "org.opencontainers.image.revision": sha,
+    },
+    manifests: descriptors,
+  });
+  evidence.publication.digest = index.digest;
+  const record = {
+    id: evidence.runId,
+    run_attempt: 1,
+    head_sha: sha,
+    head_branch: "fork/main",
+    head_repository: { full_name: "Frameleaf/frameleaf-app" },
+    repository: { id: 99, full_name: "Frameleaf/frameleaf-app" },
+    event: "workflow_dispatch",
+    status: "completed",
+    conclusion: "success",
+    path: ".github/workflows/cli.yml",
+    updated_at: "2026-10-04T00:00:00Z",
+  };
+  const jobs = evidence.jobs.map((job) => ({
+    ...job,
+    run_id: record.id,
+    run_attempt: 1,
+    head_sha: sha,
+    head_branch: "fork/main",
+    workflow_name: "CLI Build",
+    status: "completed",
+    conclusion: "success",
+  }));
+  const artifact = {
+    ...evidence.artifact,
+    name: "cli-publication",
+    expired: false,
+    size_in_bytes: 500,
+    workflow_run: {
+      id: record.id,
+      head_sha: sha,
+      head_branch: "fork/main",
+      repository_id: 99,
+      head_repository_id: 99,
+    },
+  };
+  const identity = `${SOURCE}/.github/workflows/cli.yml@refs/heads/fork/main`;
+  const verification = {
+    signature: {
+      certificate: {
+        subjectAlternativeName: { value: identity },
+        issuer: "https://token.actions.githubusercontent.com",
+        sourceRepositoryURI: SOURCE,
+        sourceRepositoryDigest: sha,
+        sourceRepositoryRef: "refs/heads/fork/main",
+        buildSignerURI: identity,
+        buildSignerDigest: sha,
+        runnerEnvironment: "github-hosted",
+        runInvocationURI: `${SOURCE}/actions/runs/17/attempts/1`,
+      },
+    },
+    statement: {
+      predicateType: "https://slsa.dev/provenance/v1",
+      subject: [
+        {
+          name: evidence.publication.image,
+          digest: { sha256: index.digest.slice(7) },
+        },
+      ],
+    },
+  };
+  const responses = new Map([
+    [
+      `actions/workflows/cli.yml/runs?head_sha=${sha}&per_page=100`,
+      { total_count: 1, workflow_runs: [record] },
+    ],
+    ["actions/runs/17/attempts/1/jobs?per_page=100", { total_count: 3, jobs }],
+    [
+      "actions/runs/17/artifacts?per_page=100",
+      { total_count: 1, artifacts: [artifact] },
+    ],
+    ["actions/runs/17", record],
+  ]);
+  const calls = [];
+  const run = (command, args) => {
+    calls.push([command, args]);
+    if (command === "cosign") return "verified";
+    assert.equal(command, "gh");
+    if (args[0] === "--version") return "gh version 2.102.0 (synthetic)\n";
+    return JSON.stringify([{ verificationResult: verification }]);
+  };
+  return {
+    evidence,
+    entries,
+    index,
+    record,
+    jobs,
+    artifact,
+    verification,
+    responses,
+    calls,
+    registry: {
+      read: (image, reference, kind, options) => {
+        assert.equal(image, "frameleaf-cli");
+        assert.equal(options.anonymous, true);
+        assert(entries.has(reference));
+        return Promise.resolve(entries.get(reference));
+      },
+    },
+    options: {
+      run,
+      request: (endpoint) => {
+        assert(responses.has(endpoint), endpoint);
+        return Promise.resolve(responses.get(endpoint));
+      },
+      download: () => Promise.resolve(structuredClone(evidence.publication)),
+    },
+  };
+}
+
+test("CLI qualification binds both native jobs, publication receipt, signed graph and exact GitHub attempt", async () => {
+  const fixture = cliHarness();
+  const result = await requireCliQualification(
+    fixture.registry,
+    sha,
+    fixture.options,
+  );
+  assert.deepEqual(result, fixture.evidence);
+  assert.equal(
+    fixture.calls.filter(([command]) => command === "cosign").length,
+    3,
+  );
+  const args = fixture.calls.find(
+    ([command, args]) => command === "gh" && args[0] === "attestation",
+  )[1];
+  assert(
+    args.includes(
+      `oci://${result.publication.image}@${result.publication.digest}`,
+    ),
+  );
+  assert(
+    args.includes("--cert-identity") &&
+      args.includes("--source-digest") &&
+      args.includes("--deny-self-hosted-runners"),
+  );
+});
+
+test("an arbitrary published CLI latest cannot satisfy dependency admission", async () => {
+  const root = await dependencyRoot(database);
+  const registry = published({
+    "frameleaf-cli:latest": digest(2),
+    "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+  });
+  try {
+    await assert.rejects(
+      checkDependencyImages(registry, root),
+      /Invalid CLI qualification identity/,
+    );
+    await fs.writeFile(
+      path.join(root, "docker/docker-compose.yml"),
+      `image: ghcr.io/frameleaf/frameleaf-cli@${digest(9)}\n`,
+    );
+    await assert.rejects(
+      checkDependencyImages(registry, root, syntheticCliQualification(sha)),
+      /CLI dependency differs from qualification/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI required jobs and publisher guards are source-backed", async () => {
+  const workflow = await fs.readFile(
+    path.join(__dirname, "workflows/cli.yml"),
+    "utf8",
+  );
+  assert(
+    workflow.includes("name: CLI container build (${{ matrix.architecture }})"),
+  );
+  for (const architecture of ["amd64", "arm64"])
+    assert(workflow.includes(`architecture: ${architecture}`));
+  assert(
+    workflow.includes("name: CLI Publish") &&
+      workflow.includes("inputs.publish"),
+  );
+  assert(
+    workflow.includes("environment: production") &&
+      workflow.includes("FRAMELEAF_ENABLE_CLI_PUBLISH == 'true'"),
+  );
+  assert(
+    workflow.includes("runAttempt:$attempt") &&
+      workflow.includes("runAttempt==$attempt"),
+  );
+  assert.equal(REQUIRED_CLI_JOBS.length, 3);
+});
+
+for (const name of REQUIRED_CLI_JOBS) {
+  for (const mode of [
+    "missing",
+    "failure",
+    "skipped",
+    "wrong-sha",
+    "old-attempt",
+  ]) {
+    test(`CLI qualification rejects ${name}: ${mode}`, async () => {
+      const fixture = cliHarness();
+      const job = fixture.jobs.find((job) => job.name === name);
+      if (mode === "missing") {
+        fixture.jobs.splice(fixture.jobs.indexOf(job), 1);
+        fixture.responses.get("actions/runs/17/attempts/1/jobs?per_page=100")
+          .total_count--;
+      } else if (mode === "wrong-sha") job.head_sha = "b".repeat(40);
+      else if (mode === "old-attempt") job.run_attempt = 2;
+      else job.conclusion = mode;
+      await assert.rejects(
+        requireCliQualification(fixture.registry, sha, fixture.options),
+      );
+    });
+  }
+}
+
+test("CLI qualification never falls back to old green, incomplete lists, or a changed attempt", async () => {
+  for (const mutate of [
+    (f) => {
+      f.record.conclusion = "failure";
+    },
+    (f) => {
+      f.record.event = "push";
+    },
+    (f) => {
+      f.record.path = ".github/workflows/cli.yml-untrusted";
+    },
+    (f) => {
+      f.record.head_repository.full_name = "other/repository";
+    },
+    (f) => {
+      f.record.head_sha = "b".repeat(40);
+    },
+    (f) => {
+      const response = f.responses.get(
+        `actions/workflows/cli.yml/runs?head_sha=${sha}&per_page=100`,
+      );
+      response.workflow_runs.unshift({
+        ...f.record,
+        id: 16,
+        updated_at: "2026-10-04T01:00:00Z",
+        conclusion: "failure",
+      });
+      response.total_count++;
+    },
+    (f) => {
+      f.responses.set("actions/runs/17", { ...f.record, run_attempt: 2 });
+    },
+    (f) => {
+      f.jobs[1].id = f.jobs[0].id;
+    },
+    (f) => {
+      f.artifact.expired = true;
+    },
+    (f) => {
+      f.artifact.workflow_run.head_sha = "b".repeat(40);
+    },
+    (f) => {
+      f.artifact.workflow_run.head_repository_id = 100;
+    },
+    (f) => {
+      const response = f.responses.get(
+        "actions/runs/17/artifacts?per_page=100",
+      );
+      response.artifacts.push({ ...f.artifact });
+      response.total_count++;
+    },
+    (f) => {
+      const response = f.responses.get(
+        "actions/runs/17/artifacts?per_page=100",
+      );
+      response.artifacts = [];
+      response.total_count = 0;
+    },
+  ]) {
+    const fixture = cliHarness();
+    mutate(fixture);
+    await assert.rejects(
+      requireCliQualification(fixture.registry, sha, fixture.options),
+    );
+  }
+  for (const endpoint of [
+    `actions/workflows/cli.yml/runs?head_sha=${sha}&per_page=100`,
+    "actions/runs/17/attempts/1/jobs?per_page=100",
+    "actions/runs/17/artifacts?per_page=100",
+  ]) {
+    for (const total of [undefined, "1", -1, 101]) {
+      const fixture = cliHarness();
+      fixture.responses.get(endpoint).total_count = total;
+      await assert.rejects(
+        requireCliQualification(fixture.registry, sha, fixture.options),
+      );
+    }
+  }
+});
+
+test("CLI graph, smoke receipt and GitHub certificate bindings fail closed", async () => {
+  for (const mutate of [
+    (f) => {
+      f.evidence.publication.architectures[0].runAttempt = "2";
+    },
+    (f) => {
+      f.evidence.publication.architectures[0].archiveSha256 = "bad";
+    },
+    (f) => {
+      f.evidence.publication.architectures[0].smoke = "failed";
+    },
+    (f) => {
+      f.evidence.publication.architectures[0].sourceCommit = "b".repeat(40);
+    },
+    (f) => {
+      f.index.json.manifests[1].platform.architecture = "amd64";
+    },
+    (f) => {
+      f.index.json.manifests[0].digest = digest(9);
+    },
+    (f) => {
+      f.entries.get(
+        f.evidence.publication.architectures[0].configDigest,
+      ).json.rootfs.diff_ids = [digest(1)];
+    },
+    (f) => {
+      f.entries.get(
+        f.evidence.publication.architectures[0].configDigest,
+      ).json.config.Labels["org.opencontainers.image.revision"] = "b".repeat(
+        40,
+      );
+    },
+    (f) => {
+      f.verification.signature.certificate.runInvocationURI = `${SOURCE}/actions/runs/17/attempts/2`;
+    },
+    (f) => {
+      f.verification.signature.certificate.buildSignerURI += "-untrusted";
+    },
+    (f) => {
+      f.verification.signature.certificate.sourceRepositoryDigest = "b".repeat(
+        40,
+      );
+    },
+    (f) => {
+      f.verification.signature.certificate.sourceRepositoryRef =
+        "refs/heads/FORK/main";
+    },
+    (f) => {
+      f.verification.signature.certificate.runnerEnvironment = "self-hosted";
+    },
+    (f) => {
+      f.verification.statement.subject[0].digest.sha256 = "f".repeat(64);
+    },
+    (f) => {
+      const original = f.options.run;
+      f.options.run = (command, args) =>
+        command === "gh" && args[0] === "--version"
+          ? "gh version 2.101.0\n"
+          : original(command, args);
+    },
+    (f) => {
+      f.options.run = () => {
+        throw new Error("Signature verification failed");
+      };
+    },
+  ]) {
+    const fixture = cliHarness();
+    mutate(fixture);
+    await assert.rejects(
+      verifyCliQualification(
+        fixture.registry,
+        sha,
+        fixture.evidence,
+        fixture.options,
+      ),
+    );
+  }
+  const fixture = cliHarness();
+  await assert.rejects(
+    requireCliQualification(fixture.registry, sha, fixture.options, {
+      ...fixture.evidence,
+      attempt: 2,
+    }),
+    /changed before promotion/,
+  );
+  assert.throws(() => validateCliQualification(undefined, sha));
+});
+
+test("CLI artifact download authenticates the archive and forwards no token to storage", async () => {
+  const bytes = Buffer.from("synthetic zipped bytes");
+  const artifact = { id: 27, digest: hash(bytes) };
+  const calls = [];
+  const fetcher = (url, options) => {
+    calls.push([url, options]);
+    return Promise.resolve(
+      calls.length % 2 === 1
+        ? new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://example.blob.core.windows.net/publication.zip",
+            },
+          })
+        : new Response(bytes),
+    );
+  };
+  const run = (command, args) =>
+    args[0] === "-Z1" ? "cli-publication.json\n" : '{"synthetic":true}';
+  assert.deepEqual(await downloadCliPublication(artifact, { fetcher, run }), {
+    synthetic: true,
+  });
+  assert.equal(calls[1][1].headers, undefined);
+  await assert.rejects(
+    downloadCliPublication(
+      { ...artifact, digest: digest(1) },
+      { fetcher, run },
+    ),
+    /digest differs/,
+  );
+  await assert.rejects(
+    downloadCliPublication(artifact, {
+      fetcher,
+      run: () => "../cli-publication.json\n",
+    }),
+    /Unexpected CLI artifact entries/,
+  );
 });
