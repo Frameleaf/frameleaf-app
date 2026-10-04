@@ -512,7 +512,7 @@ export class AuthService extends BaseService {
   /**
    * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
    * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
-   * passes when a Frameleaf sign-in created it (`immich_fork.frameleaf_session`), or when an
+   * passes when a Frameleaf sign-in created it (`public.frameleaf_session`), or when an
    * administrator allowed password sign-in over remote access; an API key passes only when its
    * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
    * `frameleaf_sign_in_required`. Requests from the home network never reach this check.

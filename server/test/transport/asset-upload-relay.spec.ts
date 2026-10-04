@@ -15,7 +15,7 @@ import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js
 import { FakeRelay, type FakeTunnel, relayFixture } from 'test/fixtures/relay.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 
-// Deliberately outside unit discovery. This fixture requires an isolated, empty, real API/PG/Redis stack.
+// Deliberately outside unit discovery. This fixture requires an isolated, empty, real API/PostgreSQL stack.
 const base = new URL(process.env.FL225_API_URL ?? 'http://127.0.0.1:0');
 const secret = process.env.FL225_EDGE_SECRET;
 const pgUrl = process.env.FL225_PG_URL;

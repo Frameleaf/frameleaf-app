@@ -62,7 +62,6 @@ const versionHiddenFrom = (visibility: StudioExportVisibility) => {
     ? sql<boolean>`(${hiddenSource} or ${hiddenResult})`
     : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource} or ${hiddenResult})`;
 };
-/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export type StudioExportVersion = Selectable<StudioExportVersionTable>;
 export type StudioExportVersionSource = Selectable<StudioExportVersionSourceTable>;
 export type StudioExportRemoteReference = Selectable<StudioExportRemoteReferenceTable>;
@@ -96,7 +95,7 @@ export const isLibrarySource = (source: Pick<StudioExportVersionSource, 'assetId
   !!source.assetId && !!source.ownerId;
 /**
  * Why a publication stopped. `cancel` refusals end the version as `cancelled` (the owner, the
- * project or a source went away, or the database is being handed over); `fail` refusals end the
+ * project or a source went away); `fail` refusals end the
  * publication job's attempt and, once its automatic retry is spent, the version as `failed`.
  */
 export type StudioExportRefusalCode =
@@ -210,7 +209,7 @@ export class StudioExportRepository {
     private db: Kysely<DB>,
     private privacy: DerivativePrivacyRepository,
   ) {}
-  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  /** Execute the write in a database transaction. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(query);
   }
@@ -560,19 +559,19 @@ export class StudioExportRepository {
    * In order, inside one transaction:
    *
    *   1. the current validating operation claim and its staged version are locked;
-   *   2. the database must not be handed over or taken back right now (the fork state row is
-   *      share-locked, so a cutover waits for this transaction or this one sees it);
-   *   3. the owner (share-locked) must not be deleted, and the project (locked for the version
+   *   2. the owner (share-locked) must not be deleted, and the project (locked for the version
    *      number) must be theirs and not in the trash;
-   *   4. every library source is share-locked and must still exist, be out of the trash, be online
+   *   3. every library source is share-locked and must still exist, be out of the trash, be online
    *      and have the checksum the render read; a source of somebody else's must still be shared
    *      with the owner, with the granting rows share-locked;
-   *   5. the union of the sources' Locked and sensitive evidence, read under those locks, is
+   *   4. the union of the sources' Locked and sensitive evidence, read under those locks, is
    *      computed and must put the result where the service prepared its file;
-   *   6. a `library` result becomes an asset with that privacy installed before the transaction
+   *   5. a `library` result becomes an asset with that privacy installed before the transaction
    *      commits — or, when the owner already has these exact bytes restricted at least as much,
    *      that asset is referenced instead; a `project` result keeps its file with the version;
-   *   7. the version is numbered, its provenance completed and it is marked `published`.
+   *   6. the version is numbered, its provenance completed and it is marked `published`;
+   *   7. supplied metadata and notification schedulers enqueue in this transaction, the claim
+   *      is rechecked, and the operation records the durable follow-up checkpoint.
    *
    * Any refusal throws {@link StudioExportRefusal} and rolls everything back. Publishing a version
    * this job already published answers with it again, so a retry after an uncertain commit is safe.
@@ -792,7 +791,7 @@ export class StudioExportRepository {
 
   /**
    * Save a published `project` result to its owner's library (FL-194), atomically: the version is
-   * locked, the database must not be handed over, every library source is re-checked under locks
+   * locked, every library source is re-checked under locks
    * as at publication and must still make a `library` result (the owner's own, none gone), and the
    * file becomes an asset with the sources' privacy installed — or the owner's existing asset with
    * the same bytes, restricted at least as much, is referenced. A version already in the library
@@ -926,12 +925,6 @@ export class StudioExportRepository {
     return kind === 'library-asset' || kind === 'audio';
   }
   /**
-   * Nothing is published while the database is being handed to the official server or taken back
-   * from it, and nothing after a handover (`inactive`) or a failed cutover. The state row is
-   * share-locked so a cutover that starts now waits for this transaction.
-   */
-
-  /**
    * The result as a new asset of the owner's, with its privacy installed in the same transaction
    * before anything can list it. Quota is charged here, guarded, so a full account refuses instead
    * of going over. The asset is never linked to another account's physical file: publication only
@@ -979,8 +972,8 @@ export class StudioExportRepository {
   /* ------------------------------------------------------------------ */
   /**
    * Pending versions whose premise went away: the owner is being deleted, the project is gone or
-   * in the trash, a recorded library source is gone, in the trash or offline, or the database is
-   * being handed over. The sweep cancels them and their jobs.
+   * in the trash, or a recorded library source is gone, in the trash or offline.
+   * The sweep cancels them and their jobs.
    */
   async listOrphanedWork(limit = 200): Promise<
     Array<
@@ -1078,7 +1071,6 @@ export class StudioExportRepository {
   }
   /** The output row is durable cleanup intent until its exact, unreferenced file is removed. */
   async markOutputRemoved(id: string, unlink: (version: StudioExportVersion) => Promise<void>): Promise<boolean> {
-    // Preserve the public writer's handoff refusal even when there is no removable output.
     const version = await this.db
       .selectFrom('studio_export_version')
       .selectAll()
@@ -1099,8 +1091,6 @@ export class StudioExportRepository {
     );
     return result.deleted;
   }
-  /** Whether the database is being handed over or taken back, or has been handed over. */
-
   /* ------------------------------------------------------------------ */
   /* Remote references                                                   */
   /* ------------------------------------------------------------------ */

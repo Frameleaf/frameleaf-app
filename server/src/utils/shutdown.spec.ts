@@ -155,9 +155,9 @@ describe(closeGracefully.name, () => {
 
   it('still closes the app when stopping the jobs fails', async () => {
     const close = vi.fn(() => Promise.resolve());
-    const stopJobs = vi.fn(() => Promise.reject(new Error('redis away')));
+    const stopJobs = vi.fn(() => Promise.reject(new Error('queue shutdown unavailable')));
 
-    await expect(closeGracefully({ stopJobs, close, graceMs: 5000 })).rejects.toThrow('redis away');
+    await expect(closeGracefully({ stopJobs, close, graceMs: 5000 })).rejects.toThrow('queue shutdown unavailable');
     expect(close).toHaveBeenCalled();
   });
 

@@ -95,9 +95,8 @@ export class DerivativePrivacyRepository {
     );
   }
   /**
-   * Which of these assets carry sensitive evidence, from the store the fork schema phase makes
-   * authoritative: `asset.is_nsfw` until the cutover, the privacy sidecar once it is `active` (the
-   * same rule as `getUnlockedDetectionIds`). Only positive evidence counts.
+   * Which of these assets carry positive sensitive evidence in `public.asset.is_nsfw`,
+   * the same source used by `getUnlockedDetectionIds`.
    */
   private async sensitiveIds(tx: Kysely<DB>, assetIds: readonly string[]): Promise<Set<string>> {
     const { rows } = await sql<{

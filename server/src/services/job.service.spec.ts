@@ -288,7 +288,7 @@ describe(JobService.name, () => {
     it('logs an error from a JobSuccess listener instead of failing the job', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
       mocks.event.emit.mockImplementation((...[name]) =>
-        name === 'JobSuccess' ? Promise.reject(new Error('redis down')) : Promise.resolve(),
+        name === 'JobSuccess' ? Promise.reject(new Error('success listener unavailable')) : Promise.resolve(),
       );
       const item = { name: JobName.SidecarCheck, data: { id: 'asset-1' } } as const;
 

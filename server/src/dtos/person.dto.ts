@@ -191,7 +191,7 @@ export class MergeSuggestionsResponseDto extends createZodDto(MergeSuggestionsRe
 
 // FL-57: correction history. Every manual face decision the owner made about this person (moving a
 // face onto or off them, "not a face of anyone", a merge, a moved face box), kept in
-// `immich_fork.face_correction` so it outlives face reprocessing.
+// `public.face_correction` so it outlives face reprocessing.
 const PersonCorrectionActionSchema = z
   .enum(['reassign', 'new-person', 'unassign', 'remove', 'merge', 'box-move', 'partner-merge'])
   .describe('What the decision did')

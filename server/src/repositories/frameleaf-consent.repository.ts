@@ -26,7 +26,7 @@ export class FrameleafConsentRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
-  /** Record a consent. Refused while the fork schema is not writable (a handoff is in progress). */
+  /** Record a consent in `public.frameleaf_consent`. */
   async record(entry: {
     destinationId: string;
     version: string;
@@ -73,7 +73,7 @@ export class FrameleafConsentRepository {
   }
   /**
    * Revoke every consent in force for a destination and clear the consent the destination carries,
-   * in one transaction, so the two never disagree. Refused, like `record`, during a handoff.
+   * in one transaction, so the two never disagree.
    */
   async revoke(destinationId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
