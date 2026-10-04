@@ -154,7 +154,7 @@ const createRunFixture = async (directory: string) => {
       environment: {},
       storageRoot: directory,
       storageRoots: [directory],
-      settings: { system: null, fork: [], users: [] },
+      settings: { system: null, users: [] },
     },
     manifestBlocks: [],
     objects: [],
