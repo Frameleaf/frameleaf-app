@@ -7,6 +7,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import * as attemptEvidence from 'src/utils/attempt-evidence.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -27,7 +28,7 @@ describe(JobRepository.name, () => {
       {} as ModuleRef,
       {} as ConfigRepository,
       {} as EventRepository,
-      { setContext: vi.fn(), error: vi.fn() } as unknown as LoggingRepository,
+      { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository,
       {} as Kysely<any>,
     );
     sut['store'].enqueue = enqueue;
@@ -94,18 +95,19 @@ describe(JobRepository.name, () => {
     ).rejects.toThrow('cancelled');
     expect(enqueue).not.toHaveBeenCalled();
   });
-  it('retries fenced core publication but never destructive forced CLIP rebuilding', async () => {
+  it('retries fenced media publication and the non-destructive forced CLIP producer', async () => {
     for (const item of [
       { name: JobName.AssetExtractMetadata, data: { id: 'asset' } },
       { name: JobName.AssetDetectFaces, data: { id: 'asset' } },
       { name: JobName.SmartSearchQueueAll, data: { force: true } },
     ] as const) {
       await sut.queue(item);
-      expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(item.name !== JobName.SmartSearchQueueAll);
+      expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(true);
     }
   });
 
   it('delivers observers only after accepted adoption and never when the token was rejected', async () => {
+    const recordStopped = vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
     const notify = vi.fn();
     const abort = new AbortController();
     const claim = {
@@ -122,12 +124,18 @@ describe(JobRepository.name, () => {
     });
     sut['store'].complete = vi.fn().mockResolvedValue(false);
     await sut['execute'](claim, abort);
+    expect(sut['store'].complete).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
     sut['store'].complete = vi.fn().mockImplementation(() => {
       expect(notify).not.toHaveBeenCalled();
       return Promise.resolve(true);
     });
     await sut['execute'](claim, abort);
+    expect(recordStopped).toHaveBeenCalledTimes(2);
+    expect(recordStopped).toHaveBeenLastCalledWith(sut['store'].db, claim.id, claim.token);
+    expect(recordStopped.mock.invocationCallOrder[1]).toBeLessThan(
+      vi.mocked(sut['store'].complete).mock.invocationCallOrder[0],
+    );
     expect(notify).toHaveBeenCalledOnce();
   });
 });

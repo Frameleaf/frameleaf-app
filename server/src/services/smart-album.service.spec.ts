@@ -160,7 +160,19 @@ describe(SmartAlbumService.name, () => {
       expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(foodAlbumId, assetId, 'tag');
     });
 
-    it('should batch repo lookups: one getAllSmartAlbumIdsForOwner + one getExcludedSmartAlbumIds per evaluate', async () => {
+    it('keeps an exclusion added after matching but before publication', async () => {
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
+      mocks.smartAlbum.getExcludedSmartAlbumIds
+        .mockResolvedValueOnce(new Set())
+        .mockResolvedValueOnce(new Set([travelAlbumId]));
+
+      await sut.evaluate({ assetId, ownerId, tags: ['beach'] });
+
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(2);
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+    });
+
+    it('batches candidate lookups and rechecks each matching album before publication', async () => {
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(
         albumMap({ travel: travelAlbumId, food: foodAlbumId, nature: natureAlbumId }),
       );
@@ -168,7 +180,13 @@ describe(SmartAlbumService.name, () => {
       await sut.evaluate({ assetId, ownerId, tags: ['beach'] });
 
       expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).toHaveBeenCalledTimes(1);
-      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(1);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(2);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenNthCalledWith(1, assetId, [
+        travelAlbumId,
+        foodAlbumId,
+        natureAlbumId,
+      ]);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenNthCalledWith(2, assetId, [travelAlbumId]);
       // Per-kind isExcluded MUST NOT be called; we batched it.
       expect(mocks.smartAlbum.isExcluded).not.toHaveBeenCalled();
       // Per-kind getSmartAlbumIdForOwnerAndKind MUST NOT be called either.
@@ -342,8 +360,11 @@ describe(SmartAlbumService.name, () => {
     );
 
     it('should propagate a failed snapshot instead of recording producer success', async () => {
+      const selection = {} as never;
+      mocks.assetJob.selectionForSmartAlbumReevaluation.mockReturnValue(selection);
       mocks.job.queueSelection.mockRejectedValue(new Error('snapshot unavailable'));
       await expect(sut.handleReevaluateAll({})).rejects.toThrow('snapshot unavailable');
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.SmartAlbumReevaluate, selection, {});
     });
 
     it('should skip with unknown kind', async () => {
