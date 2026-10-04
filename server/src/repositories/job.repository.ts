@@ -12,6 +12,7 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -416,71 +417,13 @@ export class JobRepository {
     selection: SelectQueryBuilder<any, any, { id: string }>,
     data: Record<string, unknown> = {},
   ) {
-    const context = queueExecution.getStore();
-    const runId = context?.claim.runId ?? runSubmission.getStore() ?? (await this.store.createRun(name, {}));
-    const intent = this.intent({ name, data } as JobItem);
-    await this.store.db.transaction().execute(async (tx) => {
-      await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
-      await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
-      if (context) {
-        const claim = context.claim;
-        const result = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
-          and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
-          tx,
-        );
-        if (result.rows.length === 0) {
-          throw new Error('Selection producer lost its claim');
-        }
-      }
-      const {
-        rows: [run],
-      } = await sql<{
-        materialized: boolean;
-      }>`select coalesce((selection -> '_materializedStages') ? ${name}, false) materialized
-        from job_run where id = ${runId}::uuid for update`.execute(tx);
-      if (!run.materialized) {
-        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection)
-          select ${runId}::uuid, selected.id::text, selected.id::text, ${name}, ${intent.queue}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
-          from (${selection}) selected on conflict do nothing`.execute(tx);
-        // A producer restart must not enumerate a moving library a second time.
-        await sql`update job_run set selection = jsonb_set(selection, '{_materializedStages}',
-          coalesce(selection -> '_materializedStages', '{}'::jsonb) || jsonb_build_object(${name}::text, true))
-          where id = ${runId}::uuid`.execute(tx);
-      }
-    });
-    // The immutable ledger itself is the durable cursor. Each small scheduling transaction
-    // fills only rows without a job; a producer restart resumes these rows without reselection.
-    let scheduled: number;
-    do {
-      scheduled = await this.store.db.transaction().execute(async (tx) => {
-        await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
-        if (context) {
-          const claim = context.claim;
-          const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
-            and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
-            tx,
-          );
-          if (!rows.length) throw new Error('Selection producer lost its claim');
-        }
-        const { rows } = await sql`with selected as (
-          select * from job_run_item where "runId" = ${runId}::uuid and stage = ${name} and "jobId" is null
-            and state = 'pending' order by "itemKey" limit 250 for update
-        ), added as (
-          insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey", "rootItemKey")
-          select gen_random_uuid(), ${intent.queue}, ${name}, selection, ${intent.safeToRetry}, ${intent.sensitive},
-            ${intent.deadlineMs}, "runId", "itemKey", "rootItemKey" from selected
-          on conflict do nothing returning id, "runId", "itemKey", name
-        ) update job_run_item i set "jobId" = a.id from added a
-          where i."runId" = a."runId" and i."itemKey" = a."itemKey" and i.stage = a.name returning i."jobId"`.execute(
-          tx,
-        );
-        return rows.length;
-      });
-      if (scheduled) context?.progress((context.progressUnits += scheduled));
-    } while (scheduled > 0);
-    if (!context?.claim.runId && !runSubmission.getStore()) {
-      await this.store.finishEnumeration(runId);
-    }
+    await freezeSelection(
+      this.store.db,
+      this.intent({ name, data } as JobItem),
+      selection,
+      queueExecution.getStore(),
+      runSubmission.getStore(),
+    );
   }
 
   /** Snapshot source identity before I/O, then recheck it under the accepted publication lock. */

@@ -4,7 +4,7 @@ import { Kysely, sql } from 'kysely';
 export async function createQueueSchema(db: Kysely<any>) {
   const statements = `
     create table job_queue (
-      name text primary key, paused boolean not null default false,
+      name text primary key, paused boolean not null default false, "manifestFilling" boolean not null default false,
       concurrency integer not null default 1 check (concurrency > 0)
     );
     create table job_worker (
@@ -17,12 +17,20 @@ export async function createQueueSchema(db: Kysely<any>) {
       "enumerationDone" boolean not null default false,
       "createdAt" timestamptz not null default now(), "finishedAt" timestamptz
     );
+    create table job_selection (
+      id uuid primary key, "runId" uuid not null references job_run(id), "producerId" uuid,
+      stage text not null, queue text not null references job_queue(name),
+      "safeToRetry" boolean not null, sensitive boolean not null, "deadlineMs" integer not null,
+      state text not null check (state in ('enumerating','ready','needs_attention')),
+      "createdAt" timestamptz not null default now(), unique ("runId", stage), unique ("producerId", stage)
+    );
     create table job_run_item (
       "runId" uuid not null references job_run(id), "itemKey" text not null, "rootItemKey" text, stage text not null, queue text not null references job_queue(name),
-      selection jsonb not null, "jobId" uuid, state text not null default 'pending',
+      selection jsonb not null, "selectionId" uuid references job_selection(id), "jobId" uuid, state text not null default 'pending',
       primary key ("runId", "itemKey", stage),
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked'))
     );
+    create index job_run_item_job on job_run_item("jobId") where "jobId" is not null;
     create index job_run_root_item on job_run_item("runId", "rootItemKey");
     create table job (
       id uuid primary key, queue text not null references job_queue(name), name text not null,
@@ -40,6 +48,8 @@ export async function createQueueSchema(db: Kysely<any>) {
       check ((state = 'active') = (token is not null)),
       foreign key ("runId", "itemKey", name) references job_run_item("runId", "itemKey", stage)
     );
+    alter table job_selection add foreign key ("producerId") references job(id) on delete set null;
+    create index job_manifest_pending on job_run_item("selectionId", "itemKey") where "jobId" is null and state = 'pending';
     create unique index job_dedup_live on job(queue, "dedupKey")
       where "dedupKey" is not null and state in ('pending','waiting','active');
     create unique index job_run_stage on job("runId", "itemKey", name) where "runId" is not null;

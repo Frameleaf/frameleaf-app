@@ -563,7 +563,12 @@ describe('PostgreSQL queue', () => {
       await store.setConcurrency(queue, 64);
       let batches = 0;
       let maximumReady = 0;
+      expect(
+        (await sql<{ count: number }>`select count(*)::int count from job where "runId" = ${runId}::uuid`.execute(db))
+          .rows[0].count,
+      ).toBe(0);
       for (;;) {
+        expect(await store.feedManifest(queue)).toBeLessThanOrEqual(250);
         const claims = await store.claim(queue, batches % 2 ? workerA : workerB);
         const {
           rows: [ready],
@@ -576,7 +581,11 @@ describe('PostgreSQL queue', () => {
         await sql`update job set "availableAt" = now() where queue = ${queue} and state = 'pending'
           and attempt > 0`.execute(db);
         const counts = await store.counts(queue);
-        if (counts.waiting + counts.active + counts.delayed === 0) {
+        const {
+          rows: [backlog],
+        } = await sql<{ count: number }>`select count(*)::int count from job_run_item
+          where "runId" = ${runId}::uuid and "jobId" is null and state = 'pending'`.execute(db);
+        if (counts.waiting + counts.active + counts.delayed + backlog.count === 0) {
           break;
         }
         if (++batches === 20) {
@@ -806,9 +815,25 @@ describe('PostgreSQL queue', () => {
     await store.complete(parent, [
       intent({ name: 'required-ml', runId: firstRun, itemKey: 'asset', parentId: parent.id }),
     ]);
-    const runs = await store.listRuns(100, 0);
+    const { rows: runs } = await sql<{
+      id: string;
+      stages: number;
+      completed: number;
+      pending: number;
+      finishedAt: Date | null;
+    }>`
+      select r.id, r."finishedAt", count(*)::int stages,
+        count(*) filter(where i.state = 'completed')::int completed,
+        count(*) filter(where i.state in ('pending','waiting'))::int pending
+      from job_run r join job_run_item i on i."runId" = r.id
+      where r.id in (${firstRun}::uuid, ${otherRun}::uuid) group by r.id`.execute(db);
     for (const id of [firstRun, otherRun]) {
-      expect(runs.find((run) => run.id === id)).toMatchObject({ total: 2, completed: 1, waiting: 1, finishedAt: null });
+      expect(runs.find((run) => run.id === id)).toMatchObject({
+        stages: 2,
+        completed: 1,
+        pending: 1,
+        finishedAt: null,
+      });
     }
   });
 

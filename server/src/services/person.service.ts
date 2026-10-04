@@ -1143,10 +1143,14 @@ export class PersonService extends BaseService {
         ? { clusterGroupId, sourceType: SourceType.MachineLearning }
         : { personGroupId: null, clusterGroupId, sourceType: SourceType.MachineLearning },
     );
-    await this.jobRepository.queueSelection(JobName.FacialRecognition, faces.clearSelect().select('asset_face.id'), {
-      deferred: false,
-      force: !!force,
-    });
+    await this.jobRepository.queueSelection(
+      JobName.FacialRecognition,
+      faces.clearSelect().select(['asset_face.id', 'asset_face.assetId as rootItemKey']),
+      {
+        deferred: false,
+        force: !!force,
+      },
+    );
 
     await publishJobResult(async () => {
       await this.systemMetadataRepository.set(SystemMetadataKey.FacialRecognitionState, { lastRun });
