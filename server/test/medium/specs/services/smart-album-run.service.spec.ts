@@ -390,18 +390,27 @@ describe('durable smart-album reevaluation', () => {
       const execution = executionFor(claim);
       await queueExecution.run(execution, () => f.sut.handleReevaluate({ id: asset.id, kind: 'travel' }));
       expect(await f.memberships()).toEqual([]);
-      if (reason === 'cancelled')
-        await sql`update job set "cancelRequestedAt" = now() where id = ${claim.id}::uuid`.execute(db);
-      else if (reason === 'expired')
-        await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
-          db,
-        );
-      else if (reason === 'tags-changed')
-        await f.ctx.newMetadata({
-          assetId: asset.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: { description: { status: 'success', result: { tags: ['changed'] } } },
-        });
+      switch (reason) {
+        case 'cancelled': {
+          await sql`update job set "cancelRequestedAt" = now() where id = ${claim.id}::uuid`.execute(db);
+          break;
+        }
+        case 'expired': {
+          await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
+            db,
+          );
+          break;
+        }
+        case 'tags-changed': {
+          await f.ctx.newMetadata({
+            assetId: asset.id,
+            key: AssetMetadataKey.MlEnrichment,
+            value: { description: { status: 'success', result: { tags: ['changed'] } } },
+          });
+          // No default
+          break;
+        }
+      }
       const acceptance = f.store.complete(claim, [], (tx) =>
         publicationTransaction.run(tx, async () => {
           for (const adopt of execution.adoptions) await adopt(tx);
