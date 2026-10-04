@@ -13,24 +13,54 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
     if (!lock.acquired) return 0;
     const {
       rows: [cursor],
-    } = await sql<{ finishedAt: string | null; id: string | null }>`select
-      value->>'finishedAt' as "finishedAt", (value->>'id')::uuid as id
+    } = await sql<{
+      finishedAt: string | null;
+      id: string | null;
+      throughAt: string | null;
+      throughId: string | null;
+    }>`select value->>'finishedAt' as "finishedAt", (value->>'id')::uuid as id,
+      value->>'throughAt' as "throughAt", (value->>'throughId')::uuid as "throughId"
       from system_metadata where key=${RETENTION_CURSOR}`.execute(tx);
+    const continuing = !!(cursor?.throughAt && cursor.throughId);
+    const through = continuing
+      ? cursor
+      : (
+          await sql<{
+            throughAt: string;
+            throughId: string;
+          }>`select id as "throughId", "finishedAt"::text as "throughAt" from job
+            where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
+              and "finishedAt" is not null order by job."finishedAt" desc,id desc limit 1`.execute(tx)
+        ).rows[0];
     // LIMIT must precede dependency/evidence checks. Otherwise an ineligible parent prefix
     // can force every coordinator sweep to rescan the entire retained history.
-    const { rows: candidates } = await sql<{ id: string; finishedAt: string }>`select id, "finishedAt"::text from job
+    const candidates = through
+      ? (
+          await sql<{ id: string; finishedAt: string }>`select id, "finishedAt"::text from job
       where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
         and "finishedAt" is not null
-        ${cursor?.finishedAt && cursor.id ? sql`and ("finishedAt",id) > (${cursor.finishedAt}::timestamptz,${cursor.id}::uuid)` : sql``}
-      order by job."finishedAt", id limit ${QUEUE_BATCH} for update skip locked`.execute(tx);
+        and ("finishedAt",id) <= (${through.throughAt}::timestamptz,${through.throughId}::uuid)
+        ${continuing && cursor?.finishedAt && cursor.id ? sql`and ("finishedAt",id) > (${cursor.finishedAt}::timestamptz,${cursor.id}::uuid)` : sql``}
+      order by job."finishedAt", id limit ${QUEUE_BATCH}`.execute(tx)
+        ).rows
+      : [];
     const last = candidates.at(-1);
-    // A complete pass wraps, so parents are revisited after their children disappear.
+    // Freeze the pass end so new completions cannot prevent revisiting blocked parents.
     // Cursor and deletion commit together; interruption cannot skip a partially checked page.
     await sql`insert into system_metadata(key,value) values (${RETENTION_CURSOR},
-      ${last && candidates.length === QUEUE_BATCH ? sql`jsonb_build_object('finishedAt',${last.finishedAt}::timestamptz,'id',${last.id}::uuid)` : sql`'{}'::jsonb`})
+      ${
+        last && candidates.length === QUEUE_BATCH
+          ? sql`jsonb_build_object('finishedAt',${last.finishedAt}::timestamptz,'id',${last.id}::uuid,
+        'throughAt',${through!.throughAt}::timestamptz,'throughId',${through!.throughId}::uuid)`
+          : sql`'{}'::jsonb`
+      })
       on conflict(key) do update set value=excluded.value`.execute(tx);
+    // Lock only the selected page. LIMIT with SKIP LOCKED alone scans past every locked row.
+    const { rows: locked } = await sql<{ id: string }>`select id from job
+      where id=any(${candidates.map(({ id }) => id)}::uuid[]) for update skip locked`.execute(tx);
     const { rows } = await sql<{ id: string }>`select j.id from job j
-      where j.id = any(${candidates.map(({ id }) => id)}::uuid[])
+      where j.id = any(${locked.map(({ id }) => id)}::uuid[])
+        and j.state in ('completed','failed','cancelled','blocked') and j."latestPending" is null
         and j."finishedAt" < now() - case when j.state = 'completed' then interval '7 days' else interval '30 days' end
         and not exists(select 1 from job child where child."parentId" = j.id)
         and not exists(select 1 from job_run_item i join job_run r on r.id = i."runId"
