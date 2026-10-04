@@ -22,6 +22,8 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 import { MediaService } from 'src/services/media.service.js';
+import { queueExecution } from 'src/queue/context.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -1816,6 +1818,38 @@ describe(MediaService.name, () => {
 
         expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
         expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      });
+
+      it('does not retain visibility adoptions when the edit claim is lost after rendering', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: null } as never);
+        const execution = {
+          claim: { id: 'job-1', token: 'attempt-1', name: JobName.AssetEditThumbnailGeneration },
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          followups: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+
+        await expect(
+          queueExecution.run(execution, () =>
+            sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' }),
+          ),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(execution.adoptions).toHaveLength(0);
+        expect(mocks.person.updateVisibility).not.toHaveBeenCalled();
+        expect(mocks.ocr.updateOcrVisibilities).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
         expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
       });
     });
