@@ -156,15 +156,7 @@ test.describe('Explore', () => {
       await utils.waitForQueueFinish(admin.accessToken, queue);
     }
     const client = await utils.connectDatabase();
-    await client.query(`DO $$
-      BEGIN
-        IF to_regclass('public.asset_best_photo_score') IS NOT NULL THEN
-          DELETE FROM public.asset_best_photo_score;
-        END IF;
-        IF to_regclass('immich_fork.asset_best_photo_score') IS NOT NULL THEN
-          DELETE FROM immich_fork.asset_best_photo_score;
-        END IF;
-      END $$;`);
+    await client.query('DELETE FROM public.asset_best_photo_score');
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/best-photos');

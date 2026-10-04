@@ -58,6 +58,7 @@ test("failed checks preserve diagnostics but cannot produce a successful develop
     "server",
     "postgres",
     "schema",
+    "baseline_sql",
     "catalog",
     "openapi",
     "client",

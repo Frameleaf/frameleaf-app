@@ -1457,7 +1457,7 @@ export class StudioResourceService extends BaseService {
     project: { ownerId: string; sharedSpace: boolean },
   ): Promise<string[]> {
     const candidates = [...new Set(hdrIds.filter((id) => isStudioUuid(id)))];
-    if (candidates.length === 0 || !(await this.assetRepository.canRecordStudioHdrIntermediates())) {
+    if (candidates.length === 0) {
       return [];
     }
     const states = await this.assetRepository.getStudioHdrIntermediateStates(candidates);

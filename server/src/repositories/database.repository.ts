@@ -16,6 +16,7 @@ import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 import * as frameleafBaseline from 'src/schema/migrations/0000000000000-FrameleafBaseline.js';
 import { ExtensionVersion, VectorExtension } from 'src/types.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
+import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { resetQueueAfterRestore } from 'src/queue/store.js';
 
 const CLIP_TABLES = [
@@ -409,11 +410,11 @@ export class DatabaseRepository {
     const reserved = this.db
       .connection()
       .execute(async (connection) => {
-        if (!(await this.acquireTryLock(lock, connection))) {
-          settle(null);
-          return;
-        }
         try {
+          if (!(await this.acquireTryLock(lock, connection))) {
+            settle(null);
+            return;
+          }
           let lost = false;
           const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(connection);
           settle({
@@ -543,6 +544,6 @@ export class DatabaseRepository {
   }
 
   private async releaseLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
-    await sql`SELECT pg_advisory_unlock(${lock})`.execute(connection);
+    await withDatabaseCleanup(() => sql`SELECT pg_advisory_unlock(${lock})`.execute(connection));
   }
 }

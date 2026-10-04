@@ -164,7 +164,8 @@
     "typescript-eslint": "^8.28.0",
     "unplugin-swc": "^1.4.5",
     "vitest": "^4.0.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "@types/pg": "8.23.1"
   },
   "overrides": {
     "sharp": "^0.35.3"

@@ -1,19 +1,41 @@
 import type { createPostgres } from '@frameleaf/sql-tools';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { parentPort } from 'node:worker_threads';
 import { jobSignal } from 'src/queue/context.js';
 
 type Client = ReturnType<typeof createPostgres>;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
 export const DATABASE_MAX_WAITERS = 64;
+export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;
+const cleanupExecution = new AsyncLocalStorage<AbortSignal>();
+
+/** Only rollback and mandatory session-lock cleanup may outlive an aborted job. */
+export const withDatabaseCleanup = <T,>(callback: () => Promise<T>): Promise<T> =>
+  cleanupExecution.run(AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS), callback);
+
+const requestDatabaseRestart = () => {
+  const message = { type: 'database-unusable' };
+  if (parentPort) parentPort.postMessage(message);
+  else process.send?.(message);
+};
 
 /**
  * A timed-out reservation never executes SQL. If the driver grants it later, it is immediately
  * returned. The waiter cap also bounds the underlying driver's queue during pool exhaustion.
  */
-export const boundExecutionReservations = (client: Client): Client => {
+export const boundExecutionReservations = (client: Client, onUnusable: () => void = requestDatabaseRestart): Client => {
   const reserve = client.reserve.bind(client);
   let pending = 0;
+  let unusable: Promise<void> | undefined;
+  const discardPool = () => {
+    // PostgresJS cannot discard one reserved session. Close this worker's pool before any
+    // poisoned reservation can be released, then let its supervisor create a fresh worker.
+    unusable ??= client.end({ timeout: 0 }).finally(onUnusable);
+    return unusable;
+  };
   client.reserve = async () => {
-    const signal = jobSignal();
+    if (unusable) throw new Error('Database pool requires worker restart');
+    const signal = cleanupExecution.getStore() ?? jobSignal();
     signal?.throwIfAborted();
     if (pending >= DATABASE_MAX_WAITERS) throw new Error('Database acquisition capacity exhausted');
     pending++;
@@ -39,14 +61,23 @@ export const boundExecutionReservations = (client: Client): Client => {
           settled = true;
           clearTimeout(timer);
           signal?.removeEventListener('abort', fail);
+          const release = connection.release.bind(connection);
+          connection.release = () => {
+            if (!unusable) release();
+          };
           const unsafe = connection.unsafe.bind(connection);
           connection.unsafe = ((...args: Parameters<typeof connection.unsafe>) => {
             const query = unsafe(...args);
-            // Rollback must still execute after cancellation before the connection is released.
-            if (/^\s*rollback\b/i.test(args[0])) return query;
-            const cancellation = jobSignal();
+            const cleanup =
+              cleanupExecution.getStore() ??
+              (/^\s*rollback\b/i.test(args[0]) ? AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS) : undefined);
+            const cancellation = cleanup ?? jobSignal();
             if (!cancellation) return query;
-            const cancel = () => query.cancel();
+            const cancel = () => {
+              query.cancel();
+              // A cleanup timeout must close the underlying connection, not just stop awaiting it.
+              if (cleanup) void discardPool().catch(() => {});
+            };
             const watch = () => {
               cancellation.throwIfAborted();
               cancellation.addEventListener('abort', cancel, { once: true });
@@ -56,16 +87,29 @@ export const boundExecutionReservations = (client: Client): Client => {
               get(target, property, receiver) {
                 if (property === 'then') {
                   return (...callbacks: Parameters<typeof query.then>) => {
-                    watch();
-                    return query.then(...callbacks).finally(unwatch);
+                    const execute = async () => {
+                      try {
+                        watch();
+                        return await query;
+                      } catch (error) {
+                        if (cleanup) await discardPool();
+                        throw error;
+                      } finally {
+                        unwatch();
+                      }
+                    };
+                    return execute().then(...callbacks);
                   };
                 }
                 if (property === 'cursor') {
                   return (size: number) =>
                     (async function* () {
-                      watch();
                       try {
+                        watch();
                         for await (const rows of query.cursor(size)) yield rows;
+                      } catch (error) {
+                        if (cleanup) await discardPool();
+                        throw error;
                       } finally {
                         unwatch();
                       }
