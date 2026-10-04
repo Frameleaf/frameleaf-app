@@ -26,12 +26,24 @@ jobs:
         run: mise run //server:build
       - name: Check the actual entrypoint's first cached configuration in fresh processes
         run: node --test --test-timeout=90000 server/test/runtime/buddy-boot-binding.test.mjs
+      - name: Check readiness finalization in the existing recovery service suite
+        if: ${{ !cancelled() }}
+        working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.mjs --run
+          src/services/buddy-backup-recovery.service.spec.ts
+      - name: Check actual encrypted capture and recovery compatibility
+        if: ${{ !cancelled() }}
+        working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/repositories/buddy-capture.spec.ts
       - name: Collect genuine boot regression formatting output
         if: ${{ !cancelled() }}
         working-directory: server
         run: |
           pnpm format:fix
-          git diff --binary -- test/runtime/buddy-boot-binding.test.mjs > "$RUNNER_TEMP/effective-boot-format.patch"
+          git diff --binary -- src/main.ts src/supervisor.ts src/utils/buddy-boot-binding.ts src/services/buddy-backup-recovery.service.ts src/services/buddy-backup-recovery.service.spec.ts test/runtime/buddy-boot-binding.test.mjs > "$RUNNER_TEMP/effective-boot-format.patch"
       - name: Archive boot regression formatter output
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
