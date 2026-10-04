@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { parse } from 'cookie';
+import { timingSafeEqual } from 'node:crypto';
 import type { JWTPayload } from 'jose';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { UserAdmin } from 'src/database.js';
@@ -18,20 +19,26 @@ import {
   FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
+  FrameleafLinkConfirmDto,
+  FrameleafLinkDto,
+  FrameleafLinkResponseDto,
+  FrameleafLinkRoleChange,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorCode,
 } from 'src/dtos/frameleaf-auth.dto.js';
-import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, DatabaseLock, ImmichCookie } from 'src/enum.js';
+import { mapNotification } from 'src/dtos/notification.dto.js';
+import { mapUserAdmin } from 'src/dtos/user.dto.js';
+import { AdminAuditAction, DatabaseLock, ImmichCookie, NotificationLevel, NotificationType } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
-import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_TYPE,
+  type FrameleafAccess,
   frameleafAccess,
   frameleafCallbackUrl,
   frameleafOAuthConfig,
@@ -47,6 +54,30 @@ export const HANDOFF_TTL_SECONDS = 60;
 
 const NOT_AVAILABLE_MESSAGE = 'Sign in with Frameleaf is not available on this server';
 const NOT_LINKED_MESSAGE = 'This server is not linked to Frameleaf Cloud';
+const LINK_CONFIRM_TTL_SECONDS = 10 * 60;
+const LINK_CONFIRM_PURPOSE = 'frameleaf-link-confirm';
+
+type PendingLink = {
+  userId: string;
+  sessionId: string | null;
+  sub: string;
+  email: string;
+  role: 'admin' | 'user' | null;
+  access: FrameleafAccess | null;
+};
+
+type PendingLinkConfirmation = PendingLink & { authority: string; exp: number };
+
+/** Linking would make (or made) a non-administrator an administrator. */
+const promotes = (user: { isAdmin: boolean } | undefined, role: PendingLink['role']) =>
+  !!user && !user.isAdmin && role === 'admin';
+
+const constantTimeEqual = (a: string, b: string) => {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
 const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
@@ -475,9 +506,18 @@ export class FrameleafAuthService extends BaseService {
     };
   }
 
-  /** `POST oauth/frameleaf/link`: link a Frameleaf account to the signed-in local account. */
-  async link(auth: AuthDto, dto: OAuthCallbackDto, headers: IncomingHttpHeaders): Promise<UserAdminResponseDto> {
+  /**
+   * `POST oauth/frameleaf/link`: link a Frameleaf account to the signed-in local account.
+   *
+   * FL-218 (owner decision 2026-10-03): `frameleaf_role` is the cloud's authority, so an admin share makes the
+   * linked account an administrator here. Linking applies that promotion at once (not at the next sign-in) and
+   * says so (`roleChange: granted-admin`), and the other administrators are notified. With `preview` nothing is
+   * linked: the response reports what linking would change and carries a short-lived `confirmToken` for
+   * `POST oauth/frameleaf/link/confirm`. Demotions still apply at sign-in, never to the last administrator.
+   */
+  async link(auth: AuthDto, dto: FrameleafLinkDto, headers: IncomingHttpHeaders): Promise<FrameleafLinkResponseDto> {
     const config = await this.requireConfig();
+    const authority = dto.preview ? await this.pendingLinkAuthority(config) : null;
     const { profile } = await this.exchange(config, dto, headers);
     const email = profile.email?.trim().toLowerCase();
     if (!email) {
@@ -487,28 +527,149 @@ export class FrameleafAuthService extends BaseService {
     if (emailProblem) {
       throw new BadRequestException(emailProblem);
     }
-    const other = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
+    const claims: PendingLink = {
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      sub: profile.sub,
+      email,
+      role: frameleafRole(profile),
+      access: frameleafAccess(profile),
+    };
+    await this.checkLinkable(auth, claims);
+    if (dto.preview) {
+      const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
+      const expiresAt = new Date(Date.now() + LINK_CONFIRM_TTL_SECONDS * 1000);
+      return {
+        ...mapUserAdmin(user ?? (auth.user as never)),
+        linked: false,
+        roleChange: promotes(user, claims.role) ? FrameleafLinkRoleChange.GrantedAdmin : FrameleafLinkRoleChange.None,
+        confirmToken: await this.signPendingLink({ ...claims, authority: authority!, exp: expiresAt.getTime() }),
+        confirmExpiresAt: expiresAt.toISOString(),
+      };
+    }
+    return this.applyLink(auth, claims);
+  }
+
+  /** `POST oauth/frameleaf/link/confirm`: links what a preview reported, by its confirm token. */
+  async confirmLink(auth: AuthDto, dto: FrameleafLinkConfirmDto): Promise<FrameleafLinkResponseDto> {
+    const claims = await this.verifyPendingLink(dto.confirmToken);
+    if (!claims || claims.userId !== auth.user.id || claims.sessionId !== (auth.session?.id ?? null)) {
+      throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+    }
+    // Resolve account conflicts before taking the authority fence. A revoke may finish while this
+    // lookup waits; the current authority is then checked again under the fence before any write.
+    await this.checkLinkable(auth, claims);
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const config = await this.requireConfig();
+      if (claims.authority !== (await this.pendingLinkAuthority(config))) {
+        throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+      }
+      await this.checkLinkable(auth, claims);
+      return this.applyLink(auth, claims);
+    });
+  }
+
+  private async checkLinkable(auth: AuthDto, claims: Pick<PendingLink, 'sub'>) {
+    const other = await this.frameleafAccountRepository.getLinkBySub(claims.sub);
     if (other && other.userId !== auth.user.id) {
       const owner = await this.userRepository.get(other.userId, { withDeleted: false });
       throw new BadRequestException(
         owner ? 'This Frameleaf account is already linked to another account on this server' : DELETED_ACCOUNT_MESSAGE,
       );
     }
+  }
+
+  private async applyLink(auth: AuthDto, claims: PendingLink): Promise<FrameleafLinkResponseDto> {
     await this.frameleafAccountRepository.upsertLink({
       userId: auth.user.id,
-      sub: profile.sub,
-      email,
+      sub: claims.sub,
+      email: claims.email,
       emailVerified: true,
-      role: frameleafRole(profile),
+      role: claims.role,
       autoRegistered: false,
-      access: frameleafAccess(profile),
+      access: claims.access,
     });
-    const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
+    let user = await this.userRepository.get(auth.user.id, { withDeleted: false });
+    let roleChange = FrameleafLinkRoleChange.None;
     if (user) {
-      await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
+      await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, claims.email);
+      if (promotes(user, claims.role)) {
+        const promoted = await this.applyRole(user, 'admin');
+        if (promoted.isAdmin) {
+          user = promoted;
+          roleChange = FrameleafLinkRoleChange.GrantedAdmin;
+        }
+      }
     }
     this.websocketRepository.clientSend('on_frameleaf_cloud', auth.user.id, { topic: 'account' });
-    return mapUserAdmin(user ?? (auth.user as never));
+    return {
+      ...mapUserAdmin(user ?? (auth.user as never)),
+      linked: true,
+      roleChange,
+      confirmToken: null,
+      confirmExpiresAt: null,
+    };
+  }
+
+  /** A preview's claims, signed with this server's own key so a confirm cannot change them. */
+  private async signPendingLink(claims: PendingLinkConfirmation): Promise<string> {
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    const mac = await this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      LINK_CONFIRM_PURPOSE,
+      payload,
+    );
+    return `${payload}.${mac}`;
+  }
+
+  private async verifyPendingLink(token: string): Promise<PendingLinkConfirmation | null> {
+    const [payload, mac, extra] = token.split('.', 3);
+    if (!payload || !mac || extra !== undefined) {
+      return null;
+    }
+    const expected = await this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      LINK_CONFIRM_PURPOSE,
+      payload,
+    );
+    if (!constantTimeEqual(mac, expected)) {
+      return null;
+    }
+    try {
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as PendingLinkConfirmation;
+      return typeof claims.exp === 'number' && claims.exp > Date.now() ? claims : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Bind a preview to this exact Cloud link generation without putting link credentials in the token. */
+  private async pendingLinkAuthority(config: OAuthConfig): Promise<string> {
+    const { cloudUrl, link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    if (
+      !linked ||
+      !link?.linkedAt ||
+      link.oidc?.issuer !== config.issuerUrl ||
+      link.oidc?.clientId !== config.clientId
+    ) {
+      throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+    }
+    return this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      LINK_CONFIRM_PURPOSE,
+      JSON.stringify({
+        cloudUrl,
+        instanceId: link.instanceId,
+        accountId: link.accountId ?? null,
+        linkedAt: link.linkedAt,
+        issuer: config.issuerUrl,
+        clientId: config.clientId,
+        scope: config.scope,
+      }),
+    );
   }
 
   /**
@@ -609,7 +770,29 @@ export class FrameleafAuthService extends BaseService {
         detail: 'frameleaf_role',
       },
     ]);
+    if (role === 'admin') {
+      await this.notifyAdminsOfGrant(updated);
+    }
     return updated;
+  }
+
+  /** FL-218: every other administrator sees that Frameleaf Cloud made someone an administrator here. */
+  private async notifyAdminsOfGrant(user: UserAdmin) {
+    const admins = await this.userRepository.getAdmins();
+    for (const admin of admins) {
+      if (admin.id === user.id) {
+        continue;
+      }
+      const item = await this.notificationRepository.create({
+        userId: admin.id,
+        type: NotificationType.SystemMessage,
+        level: NotificationLevel.Info,
+        title: 'New administrator',
+        description: `${user.name || user.email} became an administrator through Frameleaf Cloud`,
+        data: JSON.stringify({ userId: user.id, source: 'frameleaf_role' }),
+      });
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
+    }
   }
 
   private async config() {
