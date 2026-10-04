@@ -62,7 +62,7 @@ conversion; no renderer mock or observed output baseline supplies the goldens.
 
 | Graph path | Existing coverage | Remaining qualification |
 | --- | --- | --- |
-| Effects / curves / LUTs | Effects matrix and declared HDR semantics | Per-node numerical ramps and signed/extended golden coverage beyond finite/range checks; imported LUT domains |
+| Effects / curves / LUTs | Existing 54-node effects matrix and declared HDR semantics; eight authored independent brightness/contrast/exposure/levels numerical cases, bound by hosted per-file hashes ([source contract](photometric-source-contract.md)) | Hosted execution of 1024 mandatory numerical channels; other 50 nodes, curves/LUT domains, collapsed/reversed levels (epsilon shader vs hard-threshold ledger wording), parameter interactions and animation goldens |
 | Blends | Blend matrix, signed soft-light transport; authored nested alpha-coverage ramp | Hosted ramp execution; additional blend modes and supported hardware |
 | Transitions / nested Compose | Float/transition matrices; nested float; authored decoded nested mask/SDR golden | Hosted execution; simultaneous nested PQ+HLG and all fallback paths |
 | Masks | Allocation sites declared; authored functional alpha-mask inclusion/exclusion golden | Hosted execution; luma/inverted/combined/feathered mask goldens; HDR preserves/refuses every Canvas2D fallback |
