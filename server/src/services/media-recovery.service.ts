@@ -11,7 +11,7 @@ import {
   RecoveryResult,
   RecoveryTarget,
 } from 'src/repositories/media-recovery.repository.js';
-import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
 
 export type MediaRecoveryInput = RecoveryAuthority & {
   stagedPath: string;
@@ -19,6 +19,8 @@ export type MediaRecoveryInput = RecoveryAuthority & {
   type: AssetType;
   sourceCreatedAt?: Date;
   sourceHidden?: boolean;
+  scheduledValidate?: (path: string) => Promise<MediaIntegrityResult>;
+  scheduledVerified?: Extract<MediaIntegrityResult, { status: 'healthy' }>;
 };
 
 @Injectable()
@@ -79,10 +81,20 @@ export class MediaRecoveryService {
   }
 
   async reconcile(input: MediaRecoveryInput): Promise<RecoveryResult> {
+    if (input.audit?.purpose === 'scheduled-weekly' && (!input.scheduled || !input.scheduledValidate || !input.scheduledVerified)) {
+      return { outcome: 'retry', reason: 'scheduled_worker_evidence_required' };
+    }
     if (input.sourceHidden && !input.includeHidden) {
       return { outcome: 'needs-review', reason: 'source_hidden_requires_consent' };
     }
     try {
+      const step = async <T>(work: () => Promise<T>) => {
+        const value = await work();
+        if (input.audit?.purpose === 'scheduled-weekly' && !(await this.repository.getResource(input))) {
+          throw new Error('scheduled_audit_authority_changed');
+        }
+        return value;
+      };
       const resource = await this.repository.getResource(input);
       if (!resource) {
         return { outcome: 'retry', reason: 'lease_unavailable' };
@@ -90,7 +102,7 @@ export class MediaRecoveryService {
       if (!resource.stagingPath || normalize(resource.stagingPath) !== normalize(input.stagedPath)) {
         return { outcome: 'failed', reason: 'staging_path_mismatch' };
       }
-      const staged = await this.integrity.validate({
+      const staged = input.scheduledVerified ?? await this.integrity.validate({
         path: input.stagedPath,
         originalFileName: input.originalFileName,
         type: input.type,
@@ -147,7 +159,7 @@ export class MediaRecoveryService {
       }
       let outcome: RecoveryTarget['outcome'] = 'imported';
       if (candidate) {
-        const current = await this.integrity.validate({
+        const current = input.scheduledValidate ? await input.scheduledValidate(candidate.originalPath) : await this.integrity.validate({
           path: candidate.originalPath,
           originalFileName: candidate.originalFileName,
           type: candidate.type,
@@ -191,19 +203,19 @@ export class MediaRecoveryService {
         return { outcome: 'retry', reason: 'reservation_changed' };
       }
       if (reservation.target.outcome !== 'reused') {
-        await mkdir(dirname(reservation.promotedPath), { recursive: true, mode: 0o700 });
+        await step(() => mkdir(dirname(reservation.promotedPath), { recursive: true, mode: 0o700 }));
         const temporary = `${reservation.promotedPath}.${randomUUID()}.partial`;
         try {
-          await copyFile(input.stagedPath, temporary, constants.COPYFILE_EXCL);
+          await step(() => copyFile(input.stagedPath, temporary, constants.COPYFILE_EXCL));
           const file = await open(temporary, 'r');
           try {
-            await file.sync();
+            await step(() => file.sync());
           } finally {
             await file.close();
           }
           // link() publishes complete bytes exclusively; a retry verifies an existing final rather than replacing it.
           try {
-            await link(temporary, reservation.promotedPath);
+            await step(() => link(temporary, reservation.promotedPath));
           } catch (error) {
             if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) {
               throw error;
@@ -211,7 +223,7 @@ export class MediaRecoveryService {
           }
           const directory = await open(dirname(reservation.promotedPath), 'r');
           try {
-            await directory.sync();
+            await step(() => directory.sync());
           } finally {
             await directory.close();
           }
@@ -224,7 +236,7 @@ export class MediaRecoveryService {
         originalFileName: basename(input.originalFileName),
         reservation,
         verified: staged,
-        verifyFinal: () =>
+        verifyFinal: () => input.scheduledValidate ? input.scheduledValidate(reservation.promotedPath) :
           this.integrity.validate({
             path: reservation.promotedPath,
             originalFileName: input.originalFileName,
