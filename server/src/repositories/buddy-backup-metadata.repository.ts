@@ -42,7 +42,7 @@ export class BuddyBackupMetadataRepository {
     if (lock) {
       query = query.forUpdate().noWait();
     }
-    const rows = await await query.execute();
+    const rows = await query.execute();
     if (rows.length === 0) {
       return new Map<
         string,

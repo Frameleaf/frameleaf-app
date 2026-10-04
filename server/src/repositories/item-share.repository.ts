@@ -16,7 +16,6 @@ export type ItemShareRow = {
   sharedWithId: string;
   createdAt: Date;
 };
-const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed over';
 /**
  * Items shared with a person in this library (FL-83 AL-30b) in `public.asset_user_share`
  * (fork migration 0000000000206): one row per item and recipient. The service decides who may share

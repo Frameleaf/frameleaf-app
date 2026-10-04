@@ -67,7 +67,7 @@ export class SmartAlbumRepository {
           .select('albumId')
           .executeTakeFirstOrThrow();
         {
-          const rule = await trx
+          await trx
             .insertInto('smart_album')
             .values({ albumId: album.albumId, ownerId, kind })
             .returning('id')
