@@ -86,8 +86,8 @@ const stagesFor = (
     when q.paused then 'paused'
     when j."dependencyReason" is not null then 'blocked'
     when p.id is not null and p.state != 'completed' then 'blocked'
-    when j."availableAt" > now() then 'delayed'
     when j.attempt > j."retryBaseAttempt" then 'retrying'
+    when j."availableAt" > now() then 'delayed'
     else 'waiting' end outcome
   from job_run_item i left join job j on j.id = i."jobId"
   left join job_queue q on q.name = coalesce(j.queue, i.queue) left join job p on p.id = j."parentId" where ${filter}`;
@@ -115,6 +115,7 @@ const workerAvailable = sql<boolean>`exists (
 
 type Aggregate = Omit<RunRead, keyof RunCounts | 'state' | 'reasons' | 'noDispatchBacklog'> & {
   counts: RunCounts;
+  readyStages: number;
   unfinishedStages: number;
   dependencyWaiting: boolean;
   dependencyUnavailable: boolean;
@@ -174,7 +175,7 @@ export const runReasons = (row: {
 };
 
 export const runState = (
-  row: Pick<Aggregate, 'enumerationDone' | 'unfinishedStages' | 'workerAvailable' | 'stageTotals'>,
+  row: Pick<Aggregate, 'enumerationDone' | 'unfinishedStages' | 'workerAvailable' | 'stageTotals' | 'readyStages'>,
 ): RunState => {
   const stages = row.stageTotals;
   if (row.enumerationDone && row.unfinishedStages === 0) {
@@ -197,6 +198,9 @@ export const runState = (
   }
   if (stages.blocked > 0 && stages.waiting + stages.retrying === 0) {
     return 'blocked';
+  }
+  if (stages.retrying > 0 && row.readyStages === 0) {
+    return 'retrying';
   }
   if (!row.workerAvailable) {
     return 'unavailable';
@@ -229,7 +233,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
           and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        count(*) filter (where s.outcome in ('waiting','retrying')) ready,
+        count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()) ready,
         count(*) filter (where s.outcome = 'active') active
       from run_stages s group by s."runId"
     ), latest as (
@@ -238,6 +242,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
     ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::jsonb) counts,
       coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::jsonb) "stageTotals",
       coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
+      coalesce(stage.ready, 0)::int "readyStages",
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
       coalesce(stage."dependencyFailed", false) "dependencyFailed",
       latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
@@ -331,9 +336,9 @@ export async function observeQueueRun(db: Kysely<any>, name: string) {
         and (("parentState" is distinct from 'completed' and "parentId" is not null) or "dependencyReason" is not null))::int blocked,
       count(*) filter (where state in ('pending','waiting') and paused)::int paused,
       count(*) filter (where state in ('pending','waiting') and not paused and "dependencyReason" is null
-        and ("parentId" is null or "parentState" = 'completed') and "availableAt" > now())::int delayed,
+        and ("parentId" is null or "parentState" = 'completed') and "availableAt" > now() and attempt = "retryBaseAttempt")::int delayed,
       count(*) filter (where state in ('pending','waiting') and not paused and "dependencyReason" is null
-        and ("parentId" is null or "parentState" = 'completed') and "availableAt" <= now() and attempt > "retryBaseAttempt")::int retrying,
+        and ("parentId" is null or "parentState" = 'completed') and attempt > "retryBaseAttempt")::int retrying,
       coalesce(count(*) filter (where state in ('pending','waiting') and not paused and "availableAt" <= now()
         and "dependencyReason" is null and ("parentId" is null or "parentState" = 'completed')) > 0
         and count(*) filter (where state = 'active') = 0
