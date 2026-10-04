@@ -213,6 +213,70 @@ describe(AlbumSourceService.name, () => {
       expect(assets.every(({ deletedAt }) => deletedAt === null)).toBe(true);
     });
 
+    it('does not claim a concurrent copyAlbums insertion after the source read found no membership', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset: original } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: copied } = await ctx.newAsset({ ownerId: user.id });
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Copy wins' }, [original.id]);
+      const link = (await sut.resolve(auth, { sources: [source('copy-wins', 'Copy wins')] })).links[0];
+      const read = barrier();
+      const release = barrier();
+      const getAssetIds = AlbumRepository.prototype.getAssetIds;
+      const paused = vi
+        .spyOn(AlbumRepository.prototype, 'getAssetIds')
+        .mockImplementationOnce(async function (this: AlbumRepository, albumId, ids) {
+          const existing = await getAssetIds.call(this, albumId, ids);
+          expect(existing.has(copied.id)).toBe(false);
+          read.open();
+          await release.reached;
+          return existing;
+        });
+      ctx.getMock(EventRepository).emit.mockClear();
+      ctx.getMock(JobRepository).queue.mockClear();
+      ctx.getMock(JobRepository).queueAll.mockClear();
+      const adding = sut.addAssets(auth, link.id, { ids: [copied.id] });
+      try {
+        await read.reached;
+        // Actual AssetService.copy production seam; its INSERT bypasses the source album fence.
+        await ctx.get(AlbumRepository).copyAlbums({ sourceAssetId: original.id, targetAssetId: copied.id });
+        const winner = await defaultDatabase
+          .selectFrom('album_asset')
+          .select('updateId')
+          .where('albumId', '=', album.id)
+          .where('assetId', '=', copied.id)
+          .executeTakeFirstOrThrow();
+        release.open();
+        await expect(adding).resolves.toEqual([{ id: copied.id, success: false, error: 'duplicate' }]);
+        expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+        expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+        await expect(sut.removeAssets(auth, link.id, { ids: [copied.id] })).resolves.toEqual([
+          { id: copied.id, success: false, error: 'not_found' },
+        ]);
+        const surviving = await defaultDatabase
+          .selectFrom('album_asset')
+          .select('updateId')
+          .where('albumId', '=', album.id)
+          .where('assetId', '=', copied.id)
+          .executeTakeFirstOrThrow();
+        expect(surviving.updateId).toBe(winner.updateId);
+        expect(await membersOf(defaultDatabase, album.id)).toEqual([original.id, copied.id].toSorted());
+        const media = await defaultDatabase
+          .selectFrom('asset')
+          .select(['deletedAt', 'visibility'])
+          .where('id', '=', copied.id)
+          .executeTakeFirstOrThrow();
+        expect(media).toMatchObject({ deletedAt: null, visibility: copied.visibility });
+      } finally {
+        release.open();
+        await Promise.allSettled([adding]);
+        paused.mockRestore();
+      }
+    });
+
     it('ordinary remove and manual re-add end the source claim', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

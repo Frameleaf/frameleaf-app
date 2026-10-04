@@ -543,10 +543,28 @@ export class AlbumService extends BaseService {
         const recorded = sourceLinkId
           ? await this.albumSourceRepository.getRecordedAssetIds(tx, id, dto.ids)
           : new Set<string>();
-        const results = await addAssets(
+        let inserted: Set<string> | undefined;
+        const sourceBulk = sourceLinkId
+          ? {
+              getAssetIds: bulk.getAssetIds.bind(bulk),
+              removeAssetIds: bulk.removeAssetIds.bind(bulk),
+              addAssetIds: async (albumId: string, assetIds: string[]) => {
+                const memberships = await bulk.addAssetIdsReturning(albumId, assetIds);
+                inserted = new Set(memberships.map(({ assetId }) => assetId));
+              },
+            }
+          : bulk;
+        const attempted = await addAssets(
           auth,
-          { access: this.accessRepository, bulk },
+          { access: this.accessRepository, bulk: sourceBulk },
           { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
+        );
+        // An unfenced writer may win an absent-row insert after the utility's read. That is a
+        // duplicate, not source ownership, and must not produce addition events or follow-up jobs.
+        const results = attempted.map((result) =>
+          result.success && inserted && !inserted.has(result.id)
+            ? { id: result.id, success: false, error: BulkIdErrorReason.DUPLICATE }
+            : result,
         );
         const syncOwned = results.filter(
           ({ success, error, id }) => !success && error === BulkIdErrorReason.DUPLICATE && recorded.has(id),
