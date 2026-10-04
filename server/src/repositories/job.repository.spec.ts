@@ -1,6 +1,7 @@
 import { ModuleRef } from '@nestjs/core';
 import { Kysely } from 'kysely';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { queueExecution } from 'src/queue/context.js';
 import { QUEUE_TIMING, QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -137,5 +138,137 @@ describe(JobRepository.name, () => {
       vi.mocked(sut['store'].complete).mock.invocationCallOrder[0],
     );
     expect(notify).toHaveBeenCalledOnce();
+  });
+
+  describe('database admission', () => {
+    const claim = (index: number): QueueClaim => ({
+      id: String(index),
+      token: `token-${index}`,
+      workerId: 'worker',
+      attempt: 1,
+      runId: null,
+      itemKey: null,
+      data: {},
+      name: JobName.SendMail,
+      queue: QueueName.BackgroundTask,
+      startedAt: new Date(),
+      deadlineMs: 60_000,
+      safeToRetry: false,
+    });
+
+    beforeEach(() => {
+      vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+      sut['store'].complete = vi.fn().mockResolvedValue(true);
+      sut['store'].fail = vi.fn().mockResolvedValue(true);
+      sut['store'].defer = vi.fn().mockResolvedValue(true);
+    });
+
+    it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
+      const work = Promise.withResolvers<void>();
+      let active = 0;
+      let peak = 0;
+      let completed = 0;
+      sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await work.promise;
+        active--;
+        completed++;
+      });
+      const other = new JobRepository(
+        {} as ModuleRef,
+        {} as ConfigRepository,
+        sut['eventRepository'],
+        sut['logger'],
+        sut['store'].db,
+      );
+      other['store'].complete = sut['store'].complete;
+      other['store'].fail = sut['store'].fail;
+      other['store'].defer = sut['store'].defer;
+      const executions = Array.from({ length: 128 }, (_, index) =>
+        (index % 2 ? sut : other)['execute'](claim(index), new AbortController()),
+      );
+      try {
+        await Promise.resolve();
+        expect(peak).toBeGreaterThan(0);
+        expect(peak).toBeLessThan(10);
+      } finally {
+        work.resolve();
+        await Promise.all(executions);
+      }
+      expect(completed).toBe(128);
+      expect(sut['store'].complete).toHaveBeenCalledTimes(128);
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+      expect(sut['store'].defer).not.toHaveBeenCalled();
+    });
+
+    it('waits outside SQL for publication and never reruns external work after an outcome error', async () => {
+      const publication = Promise.withResolvers<void>();
+      const entered = Promise.withResolvers<void>();
+      let running = 0;
+      let peak = 0;
+      const sent = new Set<string>();
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const id = queueExecution.getStore()!.claim.id;
+        expect(sent.has(id)).toBe(false);
+        sent.add(id);
+        return Promise.resolve();
+      });
+      sut['store'].complete = vi.fn().mockImplementation(async () => {
+        running++;
+        peak = Math.max(peak, running);
+        entered.resolve();
+        await publication.promise;
+        running--;
+        throw new Error('Outcome unavailable after external work');
+      });
+      const executions = [
+        sut['execute'](claim(1), new AbortController()),
+        sut['execute'](claim(2), new AbortController()),
+      ];
+      try {
+        await entered.promise;
+        await Promise.resolve();
+        expect(peak).toBe(1);
+      } finally {
+        publication.resolve();
+        await Promise.all(executions);
+      }
+      expect(sent).toEqual(new Set(['1', '2']));
+      expect(sut['store'].complete).toHaveBeenCalledTimes(2);
+      expect(sut['store'].fail).toHaveBeenCalledTimes(2);
+      expect(sut['store'].defer).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])(
+      'never starts a cancelled waiter, including when immediate deferral is fenced (%s)',
+      async (deferred) => {
+        const admission = queueAdmission(sut['store'].db);
+        const held = await Promise.all(
+          Array.from({ length: QUEUE_EXECUTION_CAPACITY }, () =>
+            admission.execution.acquire(new AbortController().signal),
+          ),
+        );
+        sut['store'].defer = vi.fn().mockResolvedValue(deferred);
+        sut['eventRepository'].emit = vi.fn();
+        const postMessage = vi.fn();
+        sut['coordinator'] = { postMessage } as never;
+        const abort = new AbortController();
+        const execution = sut['execute'](claim(3), abort);
+        abort.abort(new Error('Queue deadline reached'));
+        await execution;
+        for (const release of held) release();
+        await Promise.resolve();
+        expect(sut['eventRepository'].emit).not.toHaveBeenCalled();
+        expect(postMessage).not.toHaveBeenCalled();
+        expect(sut['store'].complete).not.toHaveBeenCalled();
+        expect(sut['store'].fail).not.toHaveBeenCalled();
+        expect(sut['store'].defer).toHaveBeenCalledWith(
+          expect.objectContaining({ id: '3', token: 'token-3' }),
+          'local-capacity',
+        );
+        expect(attemptEvidence.recordStoppedAttempt).toHaveBeenCalledWith(sut['store'].db, '3', 'token-3');
+      },
+    );
   });
 });

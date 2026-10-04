@@ -11,6 +11,7 @@ import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
@@ -31,6 +32,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
+import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
@@ -162,6 +164,9 @@ export class JobRepository {
     const { port1, port2 } = new MessageChannel();
     const workerId = randomUUID();
     parentPort.postMessage({ type: 'queue-watchdog-port', workerId, port: port1 }, [port1]);
+    this.logger.log(
+      `Queue execution capacity: ${QUEUE_EXECUTION_CAPACITY} jobs across all queues (${DATABASE_POOL_SIZE} database sessions)`,
+    );
     this.coordinator = new Worker(new URL('../workers/queue-coordinator.js', import.meta.url), {
       workerData: {
         workerId,
@@ -189,6 +194,9 @@ export class JobRepository {
   }
 
   private async execute(claim: QueueClaim, abort: AbortController) {
+    const admission = queueAdmission(this.store.db);
+    let releaseExecution: (() => void) | undefined;
+    let started = false;
     const context: QueueExecution = {
       claim,
       signal: abort.signal,
@@ -200,6 +208,9 @@ export class JobRepository {
     };
     try {
       try {
+        releaseExecution = await admission.execution.acquire(abort.signal);
+        abort.signal.throwIfAborted();
+        started = true;
         await queueExecution.run(context, () =>
           this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
         );
@@ -207,30 +218,34 @@ export class JobRepository {
         // Handler/native work has returned; lease expiry alone cannot attest this.
         // Keep this before durable completion, while the watchdog still owns the claim.
         try {
-          await recordStoppedAttempt(this.store.db, claim.id, claim.token);
+          await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
+            recordStoppedAttempt(this.store.db, claim.id, claim.token),
+          );
         } catch {
           this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
         }
       }
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
-        await this.store.defer(claim, context.dependencyReason);
+        await admission.publication.run(abort.signal, () => this.store.defer(claim, context.dependencyReason!));
         return;
       }
       if (context.outcome === 'failed') {
         throw new Error('Handler returned Failed');
       }
-      const accepted = await this.store.complete(claim, context.followups, async (tx) => {
-        await publicationTransaction.run(tx, () =>
-          queueExecution.run(context, async () => {
-            context.buffering = true;
-            for (const adopt of context.adoptions) {
-              await adopt(tx);
-            }
-            abort.signal.throwIfAborted();
-          }),
-        );
-      });
+      const accepted = await admission.publication.run(abort.signal, () =>
+        this.store.complete(claim, context.followups, async (tx) => {
+          await publicationTransaction.run(tx, () =>
+            queueExecution.run(context, async () => {
+              context.buffering = true;
+              for (const adopt of context.adoptions) {
+                await adopt(tx);
+              }
+              abort.signal.throwIfAborted();
+            }),
+          );
+        }),
+      );
       if (accepted) {
         // Notification failure cannot change an already committed outcome or replay media work.
         await deliverJobObservers(context.afterCommit ?? [], () =>
@@ -244,24 +259,30 @@ export class JobRepository {
       }
     } catch (error) {
       try {
-        if (context.dependencyReason) {
-          await this.store.defer(claim, context.dependencyReason);
-          return;
-        }
-        await this.store.fail(
-          claim,
-          error instanceof Error ? error.message : 'Job failed',
-          context.failureDiagnostics?.length
-            ? async (tx) =>
-                publicationTransaction.run(tx, async () => {
-                  for (const publish of context.failureDiagnostics!) await publish(tx);
-                })
-            : undefined,
-        );
+        await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), async () => {
+          if (!started || context.dependencyReason) {
+            // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
+            // A rejected fence remains active for existing lease recovery; never invent a new claim.
+            await this.store.defer(claim, context.dependencyReason ?? 'local-capacity');
+            return;
+          }
+          await this.store.fail(
+            claim,
+            error instanceof Error ? error.message : 'Job failed',
+            context.failureDiagnostics?.length
+              ? async (tx) =>
+                  publicationTransaction.run(tx, async () => {
+                    for (const publish of context.failureDiagnostics!) await publish(tx);
+                  })
+              : undefined,
+          );
+        });
       } catch {
         // No successful database outcome was observed. Lease recovery owns this claim.
         this.logger.error('Could not persist job outcome; lease recovery is pending');
       }
+    } finally {
+      releaseExecution?.();
     }
   }
 

@@ -4,6 +4,7 @@ import type { createPostgres } from '@frameleaf/sql-tools';
 import { executionSignal } from 'src/utils/execution-signal.js';
 
 type Client = ReturnType<typeof createPostgres>;
+export const DATABASE_POOL_SIZE = 10;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
 export const DATABASE_MAX_WAITERS = 64;
 export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;

@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { type MessagePort, parentPort, workerData } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
@@ -39,6 +40,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   let lastSweep = 0;
   let lastBeat = 0;
   let progressBusy = false;
+  let nextQueue = 0;
   const progress = new Map<string, number>();
 
   parentPort!.on('message', (message: QueueWorkerMessage) => {
@@ -105,9 +107,16 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         parentPort!.postMessage({ type: 'cancel', id: deadline.id });
       }
       if (!stopping) {
-        for (const queue of queues) {
+        const start = nextQueue;
+        for (let offset = 0; offset < queues.length; offset++) {
+          const capacity = QUEUE_EXECUTION_CAPACITY - active.size;
+          if (capacity <= 0) break;
+          const index = (start + offset) % queues.length;
+          const queue = queues[index];
+          // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
+          nextQueue = (index + 1) % queues.length;
           await store.feedManifest(queue);
-          const claims = await store.claim(queue, workerId);
+          const claims = await store.claim(queue, workerId, capacity);
           for (const claim of claims) {
             active.set(claim.id, claim);
             watchdog.add(claim.id, performance.now(), claim.deadlineMs);
