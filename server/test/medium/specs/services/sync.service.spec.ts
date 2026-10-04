@@ -256,9 +256,9 @@ describe(SyncService.name, () => {
     it('should cleanup every table through its respective cleanup path', async () => {
       const { sut } = setup();
 
-      // render_worker_audit is the operator's record of render worker actions, kept like any audit
-      // log; it is not a sync tombstone table and sync never cleans it
-      const notSyncTombstones = new Set(['render_worker_audit']);
+      // Render-worker actions and iCloud integrity results are operational history, not sync
+      // tombstones. Neither has deletedAt, and sync must never prune either record.
+      const notSyncTombstones = new Set(['render_worker_audit', 'icloud_identity_audit']);
       const auditTables = getFrameleafSchema()
         .tables.filter((table) => table.name.endsWith('_audit') && !notSyncTombstones.has(table.name))
         .map(({ name }) => name);
