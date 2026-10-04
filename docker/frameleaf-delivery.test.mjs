@@ -388,6 +388,23 @@ test("operational examples use stable service names and owned application images
   assert.ok(backup.includes("docker compose exec -T database pg_dump"));
   assert.ok(backup.includes("docker compose exec -T database psql"));
   assert.ok(backup.includes("docker compose up -d database"));
+  assert.match(
+    backup,
+    /pg_dump[^\n]*--no-owner[^\n]*--no-acl[^\n]*--dbname=frameleaf/,
+  );
+  assert.match(
+    backup,
+    /psql[^\n]*--set=ON_ERROR_STOP=on[^\n]*--single-transaction/,
+  );
+  assert.match(backup, /fresh, isolated database/);
+  assert.match(
+    backup,
+    /Frameleaf's recovery interface for an operational restore/,
+  );
+  assert.match(
+    backup,
+    /without `public\.frameleaf_migrations` before destructive restore/,
+  );
   for (const path of [
     "docs/docs/administration/backup-and-restore.md",
     "docs/docs/administration/server-commands.md",
@@ -661,6 +678,9 @@ test("the server base is built in-repo and identical in the production and devel
   assert.equal(block("server/Dockerfile.dev"), block("server/Dockerfile"));
   assert.match(read("server/Dockerfile.dev"), /^FROM base-server-dev AS dev$/m);
   for (const file of ["server/Dockerfile", "server/Dockerfile.dev"]) {
+    assert.match(block(file), /\$\{VERSION_CODENAME\}-pgdg main 19/);
+    assert.match(block(file), /^  postgresql-client-19 \\$/m);
+    assert.doesNotMatch(block(file), /postgresql-client-(?:14|15|16|17|18)\b/);
     for (const [, image] of read(file).matchAll(/^FROM\s+(\S+)/gm)) {
       assert.ok(
         !image.includes("/") || /@sha256:[a-f0-9]{64}$/.test(image),
