@@ -1,4 +1,4 @@
-import { Kysely, type KyselyPlugin, type QueryId, RawNode, SelectQueryNode, sql, TableNode } from 'kysely';
+import { CompiledQuery, Kysely, type KyselyPlugin, type QueryId, RawNode, SelectQueryNode, sql, TableNode } from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import {
@@ -97,10 +97,18 @@ describe('iCloud exact identity adoption', () => {
   let media: MediaRepository;
   let integrity: MediaIntegrityService;
   let service: ICloudIdentityAdoptionService;
+  let captureCompiledQuery: ((query: CompiledQuery) => void) | undefined;
   const directories = new Set<string>();
   const connections = new Set<string>();
   beforeAll(async () => {
-    db = await getActiveForkKyselyDB();
+    db = await getActiveForkKyselyDB(undefined, (event) => {
+      if (event.level === 'query') {
+        captureCompiledQuery?.(event.query);
+      } else {
+        // This fixture's diagnostic path must not print SQL, bindings, or driver error details.
+        console.error('iCloud qualification database query failed');
+      }
+    });
     const table = await sql<{
       present: string | null;
     }>`SELECT to_regclass('immich_fork.icloud_identity_reuse')::text AS present`.execute(db);
@@ -135,6 +143,7 @@ describe('iCloud exact identity adoption', () => {
     service = new ICloudIdentityAdoptionService(repository, integrity);
   });
   afterEach(async () => {
+    captureCompiledQuery = undefined;
     await service.onShutdown();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -1371,6 +1380,70 @@ describe('iCloud exact identity adoption', () => {
         adoptionOther: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
       };
       type Statement = keyof typeof statementTimings;
+      const planStatements = ['claimCandidate', 'claimLocalReservations', 'claimGlobalReservations'] as const;
+      type PlanStatement = (typeof planStatements)[number];
+      const pendingPlans = new WeakMap<QueryId, PlanStatement>();
+      const capturedPlans = new Map<PlanStatement, CompiledQuery>();
+      let capturePlans = size > 101;
+      captureCompiledQuery = (query) => {
+        const statement = pendingPlans.get(query.queryId);
+        if (statement) {
+          capturedPlans.set(statement, query);
+          pendingPlans.delete(query.queryId);
+        }
+      };
+      const sanitizePlan = (value: unknown, depth = 0): Record<string, unknown> => {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 16) return {};
+        const node = value as Record<string, unknown>;
+        const safe: Record<string, unknown> = {};
+        for (const key of ['Startup Cost', 'Total Cost', 'Plan Rows', 'Plan Width']) {
+          if (typeof node[key] === 'number' && Number.isFinite(node[key])) safe[key] = node[key];
+        }
+        // PostgreSQL structural labels only. Expressions, aliases, output columns and bindings are excluded.
+        for (const key of ['Node Type', 'Parent Relationship', 'Strategy', 'Scan Direction', 'Partial Mode']) {
+          if (typeof node[key] === 'string' && /^[A-Za-z ]{1,40}$/.test(node[key])) safe[key] = node[key];
+        }
+        if (node['Relation Name'] === 'icloud_resource') safe['Relation Name'] = node['Relation Name'];
+        const knownIndexes = [
+          'icloud_resource_pkey',
+          'icloud_resource_pending_idx',
+          'icloud_resource_lease_idx',
+          'icloud_resource_asset_idx',
+          'icloud_resource_owner_idx',
+          'icloud_resource_jobs_idx',
+        ];
+        if (typeof node['Index Name'] === 'string' && knownIndexes.includes(node['Index Name'])) {
+          safe['Index Name'] = node['Index Name'];
+        }
+        if (Array.isArray(node.Plans)) safe.Plans = node.Plans.slice(0, 32).map((child) => sanitizePlan(child, depth + 1));
+        return safe;
+      };
+      let plansEmitted = 0;
+      const explainCapturedPlans = async (phase: 'after-analyze-first-claim' | 'after-4000-adoptions') => {
+        capturePlans = false;
+        for (const statement of planStatements) {
+          const query = capturedPlans.get(statement);
+          expect(query, `actual compiled query missing for ${statement}`).toBeDefined();
+          expect(plansEmitted).toBeLessThan(6);
+          plansEmitted++;
+          try {
+            // The supported logger supplied the exact executed SQL and bound parameters.
+            // Plain EXPLAIN plans that statement without executing its selection/locks/aggregates again.
+            const result = await db.executeQuery<{ 'QUERY PLAN': unknown }>(
+              CompiledQuery.raw(`EXPLAIN (FORMAT JSON) ${query!.sql}`, [...query!.parameters]),
+            );
+            const document = result.rows[0]?.['QUERY PLAN'];
+            expect(Array.isArray(document)).toBe(true);
+            const root = (document as Array<{ Plan?: unknown }>)[0]?.Plan;
+            expect(root).toBeDefined();
+            console.info('weekly-large-population-plan', { phase, statement, plan: JSON.stringify(sanitizePlan(root)) });
+          } catch {
+            // Raw PostgreSQL diagnostics may include parameters; preserve only the fixed failure label.
+            throw new Error(`weekly qualification plain EXPLAIN failed: ${statement}`);
+          }
+        }
+        capturedPlans.clear();
+      };
       const observe = (scope: 'claim' | 'adoption'): KyselyPlugin => {
         const pending = new WeakMap<QueryId, { statement: Statement; started: number }>();
         return {
@@ -1402,6 +1475,9 @@ describe('iCloud exact identity adoption', () => {
               node.from?.froms.some((table) => TableNode.is(table) && table.table.identifier.name === 'user')
             ) {
               statement = 'adoptionOwnerLock';
+            }
+            if (capturePlans && scope === 'claim' && planStatements.some((candidate) => candidate === statement)) {
+              pendingPlans.set(queryId, statement as PlanStatement);
             }
             statementTimings[statement].started++;
             pending.set(queryId, { statement, started: performance.now() });
@@ -1505,6 +1581,7 @@ describe('iCloud exact identity adoption', () => {
         if (size > 101) await sql`ANALYZE immich_fork.icloud_claim`.execute(db);
         progress('actual-receipts', 1);
         for (let index = 1; index < size; index += concurrency) {
+          if (size > 101 && index === 3997) capturePlans = true;
           const admitted: ICloudResource[] = [];
           for (let slot = 0; slot < Math.min(concurrency, size - index); slot++) {
             const claimStarted = performance.now();
@@ -1512,6 +1589,7 @@ describe('iCloud exact identity adoption', () => {
             timings.claimMs += performance.now() - claimStarted;
             expect(resource).toBeDefined();
             admitted.push(resource);
+            if (size > 101 && index === 1 && slot === 0) await explainCapturedPlans('after-analyze-first-claim');
           }
           // Admission pauses until the whole wave finalizes: a new claim otherwise
           // could take another adopter's committed resource before it releases its lease.
@@ -1568,6 +1646,7 @@ describe('iCloud exact identity adoption', () => {
             if (result.status === 'rejected') throw result.reason;
           }
           const receipts = index + admitted.length;
+          if (size > 101 && receipts === 4001) await explainCapturedPlans('after-4000-adoptions');
           if (receipts % 1000 === 1 || receipts === size) progress('actual-receipts', receipts);
         }
       }
