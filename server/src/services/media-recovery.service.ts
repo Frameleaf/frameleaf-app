@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, link, mkdir, open, unlink } from 'node:fs/promises';
@@ -12,6 +12,7 @@ import {
   RecoveryTarget,
 } from 'src/repositories/media-recovery.repository.js';
 import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 
 export type MediaRecoveryInput = RecoveryAuthority & {
   stagedPath: string;
@@ -28,6 +29,7 @@ export class MediaRecoveryService {
   constructor(
     private repository: MediaRecoveryRepository,
     private integrity: MediaIntegrityService,
+    @Optional() private scheduledStaging?: ICloudScheduledStagingService,
   ) {}
 
   async verifyMapped(input: RecoveryAuthority): Promise<RecoveryResult | undefined> {
@@ -219,31 +221,37 @@ export class MediaRecoveryService {
       }
       if (reservation.target.outcome !== 'reused') {
         await step(() => mkdir(dirname(reservation.promotedPath), { recursive: true, mode: 0o700 }));
-        const temporary = `${reservation.promotedPath}.${randomUUID()}.partial`;
-        try {
-          await step(() => copyFile(input.stagedPath, temporary, constants.COPYFILE_EXCL));
-          const file = await open(temporary, 'r');
+        if (input.audit?.purpose === 'scheduled-weekly') {
+          if (!this.scheduledStaging) { throw new Error('scheduled_private_copy_producer_unavailable'); }
+          await this.scheduledStaging.copyRecovery({ authority: input.audit, ownerId: input.ownerId,
+            resource: { id: input.resourceId, leaseToken: input.leaseToken } }, reservation.promotedPath);
+        } else {
+          const temporary = `${reservation.promotedPath}.${randomUUID()}.partial`;
           try {
-            await step(() => file.sync());
-          } finally {
-            await file.close();
-          }
-          // link() publishes complete bytes exclusively; a retry verifies an existing final rather than replacing it.
-          try {
-            await step(() => link(temporary, reservation.promotedPath));
-          } catch (error) {
-            if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) {
-              throw error;
+            await step(() => copyFile(input.stagedPath, temporary, constants.COPYFILE_EXCL));
+            const file = await open(temporary, 'r');
+            try {
+              await step(() => file.sync());
+            } finally {
+              await file.close();
             }
-          }
-          const directory = await open(dirname(reservation.promotedPath), 'r');
-          try {
-            await step(() => directory.sync());
+            // link() publishes complete bytes exclusively; a retry verifies an existing final rather than replacing it.
+            try {
+              await step(() => link(temporary, reservation.promotedPath));
+            } catch (error) {
+              if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) {
+                throw error;
+              }
+            }
+            const directory = await open(dirname(reservation.promotedPath), 'r');
+            try {
+              await step(() => directory.sync());
+            } finally {
+              await directory.close();
+            }
           } finally {
-            await directory.close();
+            await unlink(temporary).catch(() => {});
           }
-        } finally {
-          await unlink(temporary).catch(() => {});
         }
       }
       return await this.repository.commit({
