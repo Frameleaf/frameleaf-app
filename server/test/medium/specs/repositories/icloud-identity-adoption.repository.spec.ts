@@ -2966,7 +2966,12 @@ describe('iCloud exact identity adoption', () => {
           await fixture.retire();
           const reached = Promise.withResolvers<void>();
           const resume = Promise.withResolvers<void>();
-          const decode = fixture.transport.decodeSession.bind(fixture.transport);
+          // decodeSession is already vi.fn. Capture its implementation, not the
+          // mutable mock wrapper that spyOn would recursively replace below.
+          const decode = fixture.transport.decodeSession.getMockImplementation();
+          if (!decode) {
+            throw new Error('actual_session_decoder_required');
+          }
           const barrier = vi.spyOn(fixture.transport, 'decodeSession').mockImplementation(async (scope, encrypted) => {
             const payload = await decode(scope, encrypted);
             if (scope.startsWith('icloud-scheduled-private-copy:')) {
@@ -2984,13 +2989,15 @@ describe('iCloud exact identity adoption', () => {
             copy.payload.generation = randomUUID();
             await sql`UPDATE immich_fork.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${copy}::jsonb)
               WHERE id=${fixture.resource.id}::uuid`.execute(db);
-          } finally {
             resume.resolve();
-          }
-          try {
             await cleanup;
           } finally {
-            barrier.mockRestore();
+            resume.resolve();
+            try {
+              await cleanup;
+            } finally {
+              barrier.mockRestore();
+            }
           }
           expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
           expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
@@ -3336,8 +3343,9 @@ describe('iCloud exact identity adoption', () => {
             paths: [] as string[],
             current: () => Promise.resolve(false),
           };
+          let duplicateGate: { mockRestore: () => void } | undefined;
           try {
-            await expect(
+            const commit = () =>
               repository.commit({
                 ownerId: fixture.f.user.id,
                 resourceId: fixture.resource.id,
@@ -3363,10 +3371,26 @@ describe('iCloud exact identity adoption', () => {
                   publication.validation = files.validation;
                   return result.verified;
                 },
-              }),
-            ).rejects.toThrow('scheduled_audit_result_invalid');
-          } finally {
+              });
+            // The real original necessarily still owns these matching bytes.
+            // Keep the production duplicate guard as a positive control first.
+            expect(await commit()).toEqual({ outcome: 'retry', reason: 'matching_asset_created' });
+            expect(protectedBeforeJobs).not.toHaveBeenCalled();
             await files?.release();
+            files = undefined;
+            // Isolated writer negative only: bypass this earlier duplicate
+            // short-circuit, not frozen identity, live authority, actual decode
+            // or authenticated proof. This does not qualify a worker mismatch.
+            duplicateGate = vi
+              .spyOn(repository as unknown as { hasManagedMatch: () => Promise<boolean> }, 'hasManagedMatch')
+              .mockResolvedValue(false);
+            await expect(commit()).rejects.toThrow('scheduled_audit_result_invalid');
+          } finally {
+            try {
+              await files?.release();
+            } finally {
+              duplicateGate?.mockRestore();
+            }
           }
           expect(protectedBeforeJobs).toHaveBeenCalledTimes(1);
           expect(await db.selectFrom('asset').select('id').where('id', '=', assetId).execute()).toEqual([]);
@@ -3376,7 +3400,9 @@ describe('iCloud exact identity adoption', () => {
           ).toEqual([]);
           expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
           expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
-        });
+          // Hosted phase proof measured 2157 ms for one actual destination
+          // decode/publication. This case now deliberately runs that path twice.
+        }, 10_000);
 
         it('keeps execution unavailable by default without transport or a successful counter', async () => {
           const fixture = await createWorkerFixture();
@@ -3524,103 +3550,109 @@ describe('iCloud exact identity adoption', () => {
           },
         );
 
-        it.each(['expiry', 'revoke'] as const)(
-          'refuses late readonly guard settlement after actual %s without closing its descriptor early',
-          async (kind) => {
-            const fixture = await createStageFixture();
-            await fixture.staging.download(fixture.input);
-            const validation = await fixture.staging.validate(fixture.input);
-            const outcome = await validation.result;
-            expect(outcome.status).toBe('validated');
-            await validation.settled;
-            if (outcome.status !== 'validated') {
-              throw new Error('actual_validation_required');
-            }
-            const files = await fixture.staging.holdPublicationFiles(fixture.input);
-            const probe = await open(files.receipt.payload.path, 'r');
-            const prototype = Object.getPrototypeOf(probe) as FileHandle;
-            await probe.close();
-            const entered = Promise.withResolvers<void>();
-            const release = Promise.withResolvers<void>();
-            const actualStat = prototype.stat;
-            const closed = new Set<number>();
-            const observed = new Set<FileHandle>();
-            let guardedFd!: number;
-            vi.spyOn(prototype, 'stat').mockImplementation(async function (
-              this: FileHandle,
-              ...args: Parameters<FileHandle['stat']>
-            ) {
-              // FileHandle.close belongs to each real instance, rather than its prototype.
-              if (!observed.has(this)) {
-                observed.add(this);
-                const actualClose = this.close;
-                vi.spyOn(this, 'close').mockImplementation(function (
-                  this: FileHandle,
-                  ...closeArgs: Parameters<FileHandle['close']>
-                ) {
-                  closed.add(this.fd);
-                  return actualClose.apply(this, closeArgs);
-                });
+        for (const kind of ['expiry', 'revoke'] as const) {
+          it(
+            `refuses late readonly guard settlement after actual ${kind} without closing its descriptor early`,
+            async () => {
+              const fixture = await createStageFixture();
+              await fixture.staging.download(fixture.input);
+              const validation = await fixture.staging.validate(fixture.input);
+              const outcome = await validation.result;
+              expect(outcome.status).toBe('validated');
+              await validation.settled;
+              if (outcome.status !== 'validated') {
+                throw new Error('actual_validation_required');
               }
-              const result = await actualStat.apply(this, args);
-              guardedFd = this.fd;
-              entered.resolve();
-              await release.promise;
-              return result;
-            });
-            if (kind === 'expiry') {
-              await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()+interval '1.5 seconds'
-              WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
-            }
-            const publishing = new ICloudScheduledWorkerRepository(db, fixture.repository).publishMatch(
-              fixture.input,
-              files,
-              outcome.verified,
-            );
-            void publishing.catch(() => {});
-            let cleanup: Promise<void> | undefined;
-            try {
-              await entered.promise;
-              let revoked: Promise<unknown> | undefined;
-              if (kind === 'revoke') {
-                revoked = weekly().setAuthority(fixture.auth, fixture.f.connection.id, {
-                  enabled: false,
-                  includeProtected: false,
-                  requestKey: randomUUID(),
-                });
-                void revoked.catch(() => {});
-              }
-              await sql`SELECT pg_sleep(${kind === 'expiry' ? 1.6 : 2.1})`.execute(db); // Actual DB time, hosted-only authored contract.
+              const files = await fixture.staging.holdPublicationFiles(fixture.input);
+              const probe = await open(files.receipt.payload.path, 'r');
+              const prototype = Object.getPrototypeOf(probe) as FileHandle;
+              await probe.close();
+              const entered = Promise.withResolvers<void>();
+              const release = Promise.withResolvers<void>();
+              const actualStat = prototype.stat;
+              const closed = new Set<number>();
+              const observed = new Set<FileHandle>();
+              let guardedFd!: number;
+              vi.spyOn(prototype, 'stat').mockImplementation(async function (
+                this: FileHandle,
+                ...args: Parameters<FileHandle['stat']>
+              ) {
+                // FileHandle.close belongs to each real instance, rather than its prototype.
+                if (!observed.has(this)) {
+                  observed.add(this);
+                  const actualClose = this.close;
+                  vi.spyOn(this, 'close').mockImplementation(function (
+                    this: FileHandle,
+                    ...closeArgs: Parameters<FileHandle['close']>
+                  ) {
+                    closed.add(this.fd);
+                    return actualClose.apply(this, closeArgs);
+                  });
+                }
+                const result = await actualStat.apply(this, args);
+                guardedFd = this.fd;
+                entered.resolve();
+                await release.promise;
+                return result;
+              });
               if (kind === 'expiry') {
-                release.resolve();
+                await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()+interval '1.5 seconds'
+                WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
               }
-              await expect(publishing).rejects.toThrow(
-                kind === 'expiry' ? 'scheduled_audit_authority_expired' : 'scheduled_audit_file_changed',
+              const publishing = new ICloudScheduledWorkerRepository(db, fixture.repository).publishMatch(
+                fixture.input,
+                files,
+                outcome.verified,
               );
-              await revoked; // Owner mutation can commit once the bounded readonly transaction refuses/releases.
-              if (kind === 'revoke') {
+              void publishing.catch(() => {});
+              let cleanup: Promise<void> | undefined;
+              try {
+                await entered.promise;
+                let revoked: Promise<unknown> | undefined;
+                if (kind === 'revoke') {
+                  revoked = weekly().setAuthority(fixture.auth, fixture.f.connection.id, {
+                    enabled: false,
+                    includeProtected: false,
+                    requestKey: randomUUID(),
+                  });
+                  void revoked.catch(() => {});
+                }
+                await sql`SELECT pg_sleep(${kind === 'expiry' ? 1.6 : 2.1})`.execute(db); // Actual DB time, hosted-only authored contract.
+                if (kind === 'expiry') {
+                  release.resolve();
+                }
+                await expect(publishing).rejects.toThrow(
+                  kind === 'expiry' ? 'scheduled_audit_authority_expired' : 'scheduled_audit_file_changed',
+                );
+                await revoked; // Owner mutation can commit once the bounded readonly transaction refuses/releases.
+                if (kind === 'revoke') {
+                  expect(
+                    (
+                      await sql<{ enabled: boolean }>`SELECT enabled FROM immich_fork.icloud_weekly_grant
+                WHERE "connectionId"=${fixture.f.connection.id}::uuid`.execute(db)
+                    ).rows[0].enabled,
+                  ).toBe(false);
+                }
+                cleanup = files.release();
+                if (kind === 'revoke') {
+                  expect(closed.has(guardedFd)).toBe(false);
+                }
+                expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
                 expect(
-                  (
-                    await sql<{ enabled: boolean }>`SELECT enabled FROM immich_fork.icloud_weekly_grant
-              WHERE "connectionId"=${fixture.f.connection.id}::uuid`.execute(db)
-                  ).rows[0].enabled,
-                ).toBe(false);
+                  (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+                ).toBe('queued');
+              } finally {
+                release.resolve();
+                await (cleanup ?? files.release());
               }
-              cleanup = files.release();
-              if (kind === 'revoke') {
-                expect(closed.has(guardedFd)).toBe(false);
-              }
-              expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
-              expect(
-                (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
-              ).toBe('queued');
-            } finally {
-              release.resolve();
-              await (cleanup ?? files.release());
-            }
-            expect(closed.has(guardedFd)).toBe(true);
-          },
-        );
+              expect(closed.has(guardedFd)).toBe(true);
+              // Hosted revoke phases before its intentional 2.1 s DB wait total
+              // 2961 ms; the measured case needs >5 s. The 2 s readonly guard,
+              // operation/item/resource leases and expiry case remain unchanged.
+            },
+            kind === 'revoke' ? 8000 : 5000,
+          );
+        }
 
         it.each([false, true])(
           'creates only actual completed stream evidence, resumes same obligation and validates real private bytes; protected=%s',
