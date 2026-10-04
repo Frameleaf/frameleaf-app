@@ -683,9 +683,14 @@ describe(LibraryService.name, () => {
 
       expect(scan).toEqual(
         expect.objectContaining({
-          status: MediaOperationStatus.Queued,
+          // LibraryScan is unsafe to replay until asset and processing-intent admission is atomic.
+          status: MediaOperationStatus.Failed,
           errorCode: 'library_source_unavailable',
           error: expect.stringContaining(missingPath),
+          autoRetries: 0,
+          retryAt: null,
+          claimToken: null,
+          claimExpiresAt: null,
         }),
       );
       await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
