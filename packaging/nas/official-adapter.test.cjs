@@ -1,7 +1,7 @@
 // Synthetic trust/type/transaction rejection contracts only. No container or certification proof.
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { validateOfficialPlan, validateAcceptance, pairedRecovery, project } = require('./official-adapter.cjs');
+const { validateOfficialPlan, validateAcceptance, verifyAlbumAssets, pairedRecovery, project } = require('./official-adapter.cjs');
 const { hash } = require('../../.github/frameleaf-release.cjs');
 const supported = require('../../server/src/fork-schema/supported-versions.json');
 const { verifyDatabaseCheckpoint } = require('./checkpoint-database.cjs');
@@ -33,7 +33,7 @@ test('source admission binds supported image and reviewed stopped-source capture
 });
 
 test('acceptance admits typed fixture invariants, refuses executable fields/live credentials/path escapes/empty permission checks', () => {
-  const p = plan(); validateAcceptance(fixture(p), p);
+  const p = plan(); const accepted = fixture(p); accepted.database.albumAssetsDigest = digest(1); validateAcceptance(accepted, p);
   for (const mutate of [
     (x) => { x.sql = 'DROP TABLE public.asset'; },
     (x) => { x.database.query = 'SELECT 1'; },
@@ -48,8 +48,27 @@ test('acceptance admits typed fixture invariants, refuses executable fields/live
     (x) => { x.media.original.path = x.media.derivative.path; },
     (x) => { x.checkpointId = 'other'; },
     (x) => { x.database.usersDigest = 'unbound'; },
-  ]) { const changed = fixture(p); mutate(changed); assert.throws(() => validateAcceptance(changed, p)); }
+    (x) => { delete x.database.albumAssetsDigest; },
+    (x) => { x.database.albumAssetsDigest = 'unbound'; },
+  ]) { const changed = structuredClone(accepted); mutate(changed); assert.throws(() => validateAcceptance(changed, p)); }
   assert.deepEqual(project({ id: 'a', accessToken: 'not-retained', details: { count: 2, secret: 'not-retained' } }, { id: 'a', details: { count: 2 } }), { id: 'a', details: { count: 2 } });
+});
+
+test('the fixed album/asset oracle rejects an equal-count asset swap independent of user roles', () => {
+  const original = [{ albumId: id(4), assetId: id(3) }, { albumId: id(6), assetId: id(5) }];
+  const swapped = [{ albumId: id(4), assetId: id(5) }, { albumId: id(6), assetId: id(3) }];
+  const counts = (rows) => Object.fromEntries(rows.map(({ albumId }) => [albumId, rows.filter((row) => row.albumId === albumId).length]));
+  assert.deepEqual(counts(swapped), counts(original));
+  assert.deepEqual(swapped.map(({ assetId }) => assetId).sort(), original.map(({ assetId }) => assetId).sort());
+  // psql's JSON text is hashed without rebuilding it; the test substitutes only the
+  // database response and executes the exact helper used by target and source acceptance.
+  const response = (rows) => (query) => {
+    assert.equal(query, `SELECT coalesce(json_agg(x), '[]'::json) FROM (SELECT "albumId"::text, "assetId"::text FROM public.album_asset ORDER BY "albumId"::text COLLATE "C", "assetId"::text COLLATE "C") x`);
+    return `${JSON.stringify(rows)}\n`;
+  };
+  const expectedDigest = hash(JSON.stringify(original));
+  verifyAlbumAssets(response(original), expectedDigest);
+  assert.throws(() => verifyAlbumAssets(response(swapped), expectedDigest), /album\/asset relationships differ/);
 });
 
 test('paired recovery discards mutated database and restores/verifies both original halves before source startup', async () => {

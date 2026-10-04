@@ -100,9 +100,9 @@ function validateAcceptance(fixture, plan) {
     assert(!account.assets.some((asset) => asset.id === denied), 'A denied asset cannot also be admitted to this account');
     assert(fixture.accounts.some((other) => other.id !== account.id && other.assets.some((asset) => asset.id === denied)), 'Permission refusal must target an existing independently authenticated asset');
   }
-  keys(fixture.database, ['users', 'assets', 'albums', 'usersDigest', 'assetsDigest', 'albumMembershipDigest', 'targetLedgerDigest']);
+  keys(fixture.database, ['users', 'assets', 'albums', 'usersDigest', 'assetsDigest', 'albumMembershipDigest', 'albumAssetsDigest', 'targetLedgerDigest']);
   for (const key of ['users', 'assets', 'albums']) assert(Number.isSafeInteger(fixture.database[key]) && fixture.database[key] > 0);
-  for (const key of ['usersDigest', 'assetsDigest', 'albumMembershipDigest', 'targetLedgerDigest']) assert.match(fixture.database[key], sha);
+  for (const key of ['usersDigest', 'assetsDigest', 'albumMembershipDigest', 'albumAssetsDigest', 'targetLedgerDigest']) assert.match(fixture.database[key], sha);
   keys(fixture.media, ['original', 'derivative']);
   for (const sample of Object.values(fixture.media)) {
     keys(sample, ['path', 'digest']);
@@ -113,6 +113,13 @@ function validateAcceptance(fixture, plan) {
   assert.match(fixture.media.original.path, /^(?:upload|library)\//, 'Original sample must use the existing media storage topology');
   assert.match(fixture.media.derivative.path, /^(?:thumbs|encoded-video)\//, 'Derivative sample must use the existing media storage topology');
   return fixture;
+}
+
+// All relationships, independent of album counts, metadata and user membership roles.
+// Both migration and original-source acceptance use this same fixed query/hash oracle.
+function verifyAlbumAssets(sql, expectedDigest) {
+  const inventory = sql(`SELECT coalesce(json_agg(x), '[]'::json) FROM (SELECT "albumId"::text, "assetId"::text FROM public.album_asset ORDER BY "albumId"::text COLLATE "C", "assetId"::text COLLATE "C") x`).trim();
+  assert.equal(hash(inventory), expectedDigest, 'Database album/asset relationships differ');
 }
 
 function project(actual, expected) {
@@ -263,6 +270,7 @@ async function runOfficialAdapter(plan, directory, nas, phase, { verifyCheckpoin
       albumMembershipDigest: `SELECT album.id::text, album."albumName", coalesce((SELECT json_agg(x ORDER BY x."userId" COLLATE "C") FROM (SELECT membership."userId"::text, membership.role FROM public.album_user membership WHERE membership."albumId" = album.id) x), '[]'::json) AS members FROM public.album ORDER BY album.id::text COLLATE "C"`,
     };
     for (const [key, projection] of Object.entries(projections)) assert.equal(hash(sql(`SELECT coalesce(json_agg(x), '[]'::json) FROM (${projection}) x`)), fixture.database[key], 'Database entity/permission content differs');
+    verifyAlbumAssets(sql, fixture.database.albumAssetsDigest);
     if (target) {
       assert.equal(sql(`SELECT to_regnamespace('immich_fork') IS NOT NULL`), 't', 'Frameleaf schema adoption did not occur');
       assert.equal(hash(sql(`SELECT coalesce(json_agg(name ORDER BY name COLLATE "C"), '[]'::json) FROM public.kysely_migrations`)), fixture.database.targetLedgerDigest, 'Target migration ledger differs');
@@ -326,4 +334,4 @@ async function runOfficialAdapter(plan, directory, nas, phase, { verifyCheckpoin
   assert.equal(report.status, 'passed', `NAS_ADAPTER_${report.failureCategory ?? 'UNKNOWN'}_FAILED; diagnostic contains no response/auth data`);
 }
 
-module.exports = { validateOfficialPlan, validateAcceptance, project, pairedRecovery, runOfficialAdapter };
+module.exports = { validateOfficialPlan, validateAcceptance, verifyAlbumAssets, project, pairedRecovery, runOfficialAdapter };
