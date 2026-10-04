@@ -241,8 +241,8 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
       where "meaningfulAt" is not null order by "runId", "meaningfulAt" desc, stage
-    ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::jsonb) counts,
-      coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::jsonb) "stageTotals",
+    ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) counts,
+      coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) "stageTotals",
       coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
       coalesce(stage.ready, 0)::int "readyStages",
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",

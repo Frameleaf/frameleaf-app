@@ -64,9 +64,9 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     expect(await db.query('SELECT id FROM public.asset')).toHaveLength(0);
     expect(
       await db.query(
-        "SELECT row_count::text AS count,complete FROM public.frameleaf_immich_import_checkpoint WHERE table_name='user'",
+        "SELECT row_count::text AS count,complete,cursor,jsonb_typeof(cursor) AS type FROM public.frameleaf_immich_import_checkpoint WHERE table_name='user'",
       ),
-    ).toEqual([{ count: '2', complete: false }]);
+    ).toEqual([{ count: '2', complete: false, cursor: [[f.owner, f.reader].sort().at(-1)], type: 'array' }]);
     await expect(assertImmichImportActivated(db)).rejects.toThrow('NOT_ACTIVATED');
   };
 
@@ -239,6 +239,26 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     'preserves real %s password hashes, ownership and album-sharing relationships',
     async (version) => {
       const f = await start(version);
+      const metadata = [
+        { key: 'json-array', value: [null, false, 17, { nested: 'value' }], type: 'array' },
+        { key: 'json-boolean', value: false, type: 'boolean' },
+        { key: 'json-number', value: 17.5, type: 'number' },
+        {
+          key: 'json-object',
+          value: { nested: { values: [null, true, String.raw`"quoted" \ path`] } },
+          type: 'object',
+        },
+        { key: 'json-string', value: '{"this":"stays a string"}', type: 'string' },
+      ];
+      await f.mutateSource(async (db) => {
+        for (const { key, value } of metadata) {
+          await db.query('INSERT INTO public.asset_metadata("assetId",key,value) VALUES ($1,$2,$3::text::jsonb)', [
+            f.asset,
+            key,
+            JSON.stringify(value),
+          ]);
+        }
+      });
       const importer = f.importer();
       const fingerprint = await importer.source.preflight();
       const fileBefore = await stat(f.sourcePath, { bigint: true });
@@ -291,6 +311,20 @@ describe('offline Immich import over PostgreSQL source and destination connectio
           showExif: false,
         },
       ]);
+      expect(
+        await f.destination.db.query(
+          'SELECT key,value,jsonb_typeof(value) AS type FROM public.asset_metadata ORDER BY key',
+        ),
+      ).toEqual(metadata);
+      const [metadataCheckpoint] = await f.destination.db.query(
+        "SELECT cursor,jsonb_typeof(cursor) AS type,row_count::text AS count,complete FROM public.frameleaf_immich_import_checkpoint WHERE table_name='asset_metadata'",
+      );
+      expect(metadataCheckpoint).toEqual({
+        cursor: [f.asset, 'json-string'],
+        type: 'array',
+        count: '5',
+        complete: true,
+      });
       // Check a real permission tamper before permitting the activation gate to succeed.
       await f.destination.db.query('UPDATE public.album_user SET role=\'editor\' WHERE "userId"=$1', [f.reader]);
       const dispatch = vi.fn(async () => {
@@ -300,6 +334,17 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       await expect(importer.verify(dispatch)).rejects.toThrow('DESTINATION_ROW_OR_PERMISSION_MISMATCH');
       expect(dispatch).not.toHaveBeenCalled();
       await f.destination.db.query('UPDATE public.album_user SET role=\'viewer\' WHERE "userId"=$1', [f.reader]);
+      // A JSON string containing the same serialized object is still corrupted destination data.
+      const objectValue = JSON.stringify(metadata.find((row) => row.type === 'object')!.value);
+      await f.destination.db.query(
+        "UPDATE public.asset_metadata SET value=to_jsonb($1::text) WHERE key='json-object'",
+        [objectValue],
+      );
+      await expect(importer.verify(dispatch)).rejects.toThrow('DESTINATION_ROW_OR_PERMISSION_MISMATCH');
+      expect(dispatch).not.toHaveBeenCalled();
+      await f.destination.db.query("UPDATE public.asset_metadata SET value=$1::text::jsonb WHERE key='json-object'", [
+        objectValue,
+      ]);
       await importer.verify(dispatch);
       expect(dispatch).toHaveBeenCalledOnce();
       await expect(assertImmichImportActivated(f.destination.db)).resolves.toBeUndefined();
