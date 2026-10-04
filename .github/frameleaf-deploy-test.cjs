@@ -16,6 +16,7 @@ const { execFileSync } = require("node:child_process");
 const SERVER_REPOSITORY = "ghcr.io/frameleaf/frameleaf-server";
 const ML_REPOSITORY = "ghcr.io/frameleaf/frameleaf-machine-learning";
 const TEST_TAG = "deploy-test";
+const DATABASE_TEST_IMAGE = "frameleaf-postgres:deploy-test";
 const SHA = /^[a-f0-9]{40}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const EDGE_PORT = 2443;
@@ -428,6 +429,66 @@ async function loadArchive(file, name, workDir) {
   return reference;
 }
 
+/** Only the disposable test stack uses a local tag; release installation pins stay unchanged. */
+async function prepareTestDatabase(
+  compose,
+  { root, workDir, archive },
+  { execute = run, load = loadArchive } = {},
+) {
+  const pattern =
+    /^(\s*image:\s*)(ghcr\.io\/frameleaf\/frameleaf-postgres:\S+)(\s*)$/gm;
+  const references = [...compose.matchAll(pattern)];
+  assert.equal(
+    references.length,
+    1,
+    "Expected exactly one Frameleaf database image",
+  );
+  const releaseReference = references[0][2];
+  assert.match(
+    releaseReference,
+    /^ghcr\.io\/frameleaf\/frameleaf-postgres:[A-Za-z0-9_.-]+@sha256:[a-f0-9]{64}$/,
+    "The release database image must be digest-pinned",
+  );
+  let image;
+  if (archive) {
+    const source = await load(archive, "database", workDir);
+    execute("docker", ["tag", source, DATABASE_TEST_IMAGE]);
+    image = {
+      source: `archive ${path.basename(archive)}`,
+      id: execute("docker", [
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        source,
+      ]).trim(),
+    };
+  } else {
+    execute(
+      "docker",
+      [
+        "build",
+        "--quiet",
+        "--tag",
+        DATABASE_TEST_IMAGE,
+        path.join(root, "docker/postgres"),
+      ],
+      {
+        stdio: ["ignore", "pipe", "inherit"],
+      },
+    );
+    image = { source: "built from docker/postgres" };
+  }
+  return {
+    compose: compose.replace(
+      pattern,
+      (_line, prefix, _reference, suffix) =>
+        `${prefix}${DATABASE_TEST_IMAGE}${suffix}`,
+    ),
+    image: { ...image, releaseReference },
+  };
+}
+
 async function main(env = process.env) {
   // The release files under test: this checkout, or a checkout of the candidate commit.
   const root = path.resolve(env.SOURCE_ROOT || path.join(__dirname, ".."));
@@ -483,7 +544,6 @@ async function main(env = process.env) {
     path.join(root, "docker/docker-compose.yml"),
     "utf8",
   );
-  await fs.writeFile(path.join(workDir, "docker-compose.yml"), compose);
   const databasePassword = crypto
     .randomBytes(24)
     .toString("base64url")
@@ -497,41 +557,17 @@ async function main(env = process.env) {
     { mode: 0o600 },
   );
 
-  // The release database image; built from docker/postgres when it is not yet published.
-  const database =
-    /^\s*image:\s*(ghcr\.io\/frameleaf\/frameleaf-postgres:\S+)\s*$/m.exec(
-      compose,
-    )?.[1];
-  assert(
-    database,
-    "The release Compose file names no Frameleaf database image",
+  // Integration uses the runner's actual archive. Other source validation builds the candidate locally.
+  const database = await prepareTestDatabase(compose, {
+    root,
+    workDir,
+    archive: env.DATABASE_ARCHIVE,
+  });
+  await fs.writeFile(
+    path.join(workDir, "docker-compose.yml"),
+    database.compose,
   );
-  // Integration Image: the database archive built on this runner, so the digest it later pushes is the
-  // one this test ran. Unset everywhere else: the release database image is pulled, or built below.
-  if (env.DATABASE_ARCHIVE) {
-    const databaseArchive = await loadArchive(
-      env.DATABASE_ARCHIVE,
-      "database",
-      workDir,
-    );
-    run("docker", ["tag", databaseArchive, database]);
-    images.database = {
-      source: `archive ${path.basename(env.DATABASE_ARCHIVE)}`,
-      id: run("docker", [
-        "image",
-        "inspect",
-        "--format",
-        "{{.Id}}",
-        databaseArchive,
-      ]).trim(),
-    };
-  } else {
-    // Source CI always builds the candidate database locally; publication is a separate authorized step.
-    run("docker", ["build", "--quiet", "--tag", database, path.join(root, "docker/postgres")], {
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    images.database = { source: "built from docker/postgres" };
-  }
+  images.database = database.image;
 
   const composeArgs = [
     "compose",
@@ -630,6 +666,7 @@ module.exports = {
   environmentFile,
   listeningOn,
   missingMigrations,
+  prepareTestDatabase,
   serviceStates,
   testImage,
   waitHealthy,

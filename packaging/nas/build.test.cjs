@@ -77,8 +77,15 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     fs.writeFileSync(name, body);
   };
   try {
-    for (const name of INSTALL_FILES)
-      write(path.join(sourceRoot, 'docker', name), fs.readFileSync(path.join(__dirname, '../../docker', name)));
+    for (const name of INSTALL_FILES) {
+      let body = fs.readFileSync(path.join(__dirname, '../../docker', name), 'utf8');
+      if (name.startsWith('docker-compose')) {
+        const pinned = new RegExp(`${database.replaceAll('.', '\\.')}@sha256:[a-f0-9]{64}`, 'g');
+        assert(pinned.test(body), `${name} must retain a pinned production PostgreSQL image`);
+        body = body.replace(pinned, `${database}@${digest(8)}`);
+      }
+      write(path.join(sourceRoot, 'docker', name), body);
+    }
     const release = {
       schemaVersion: 3,
       repository: REPOSITORY,
