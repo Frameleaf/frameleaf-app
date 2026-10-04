@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -407,8 +407,8 @@ describe('weekly consent foundation, never execution authority', () => {
       encodeSession: (id: string, value: unknown) => encryptICloudSession(key, id, value),
       download,
     };
-    const root = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-staging-'));
-    const mediaRoot = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-media-'));
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-staging-')));
+    const mediaRoot = await realpath(await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-media-')));
     const priorRoot = process.env.FRAMELEAF_ICLOUD_STAGING_PATH;
     let priorMediaLocation: string | undefined;
     try {

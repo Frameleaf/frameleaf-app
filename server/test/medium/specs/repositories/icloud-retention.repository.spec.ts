@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { ICloudConnection, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
+import * as claimAccessPaths from 'src/schema/migrations/1791101770001-ICloudClaimAccessPaths.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -162,5 +163,85 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     });
     expect(await repository.get(oldConnection.id)).toMatchObject({ state: 'connected' });
     expect(await repository.resource(retained.id)).toMatchObject({ reservedBytes: 90 });
+  });
+
+  it.each(['local', 'global'])('counts zero-byte active leases against %s concurrency', async (scope) => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', scope === 'local' ? '100' : '1');
+    const leases = [];
+    for (let index = 0; index < (scope === 'local' ? 4 : 1); index++) {
+      leases.push(await resource(`zero-byte-${index}`, { role: 'original', status: 'failed', current: false }));
+    }
+    for (const lease of leases) {
+      await sql`UPDATE public.icloud_resource SET "leaseToken"=${randomUUID()}::uuid,
+        "leaseExpiresAt"=now()+interval '1 hour' WHERE id=${lease.id}::uuid`.execute(db);
+    }
+    if (scope === 'global') {
+      connection = (await repository.create(
+        randomUUID(),
+        'Other photos',
+        ICloudConfigSchema.parse({ concurrency: 4 }),
+      ))!;
+      await repository.update(connection.id, connection.ownerId, { state: 'connected' });
+    }
+    const candidate = await resource('new', { role: 'original' });
+    expect(await repository.claim(connection.id, 1000)).toBeUndefined();
+    expect(await repository.resource(candidate.id)).toMatchObject({ reservedBytes: 0, leaseToken: null });
+  });
+
+  it.each(['local', 'global'])('keeps expired noncurrent charges in %s capacity accounting', async (scope) => {
+    const retained = await resource('expired-retained', {
+      role: 'original',
+      status: 'failed',
+      current: false,
+      reserved: 90,
+    });
+    await sql`UPDATE public.icloud_resource SET "leaseToken"=${randomUUID()}::uuid,
+      "leaseExpiresAt"=now()-interval '1 hour' WHERE id=${retained.id}::uuid`.execute(db);
+    if (scope === 'global') {
+      connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({})))!;
+      await repository.update(connection.id, connection.ownerId, { state: 'connected' });
+      vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '95');
+    }
+    await resource('new', { role: 'original' });
+    expect(await repository.claim(connection.id, scope === 'local' ? 95 : 1000)).toBeUndefined();
+    expect(await repository.get(connection.id)).toMatchObject({
+      state: 'error',
+      lastError: 'staging_retained_capacity',
+    });
+    expect(await repository.resource(retained.id)).toMatchObject({ reservedBytes: 90 });
+  });
+
+  it('excludes finalized and removed charges and leases from admission totals', async () => {
+    for (const status of ['finalized', 'removed']) {
+      const ignored = await resource(status, { role: 'original', status, current: false, reserved: 100 });
+      await sql`UPDATE public.icloud_resource SET "leaseToken"=${randomUUID()}::uuid,
+        "leaseExpiresAt"=now()+interval '1 hour' WHERE id=${ignored.id}::uuid`.execute(db);
+    }
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', '1');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '10');
+    const candidate = await resource('new', { role: 'original' });
+    expect(await repository.claim(connection.id, 10)).toMatchObject({ id: candidate.id, reservedBytes: 10 });
+  });
+
+  it('rolls back only the claim indexes and preserves resource data', async () => {
+    const saved = await resource('preserved', { role: 'original', status: 'failed', reserved: 90 });
+    const indexes = () =>
+      sql<{ name: string }>`SELECT indexname AS name FROM pg_indexes WHERE schemaname='public'
+        AND indexname IN ('icloud_resource_claim_order_idx','icloud_resource_reservation_contributors_idx')
+        ORDER BY indexname`
+        .execute(db)
+        .then(({ rows }) => rows.map(({ name }) => name));
+    expect(await indexes()).toEqual([
+      'icloud_resource_claim_order_idx',
+      'icloud_resource_reservation_contributors_idx',
+    ]);
+    try {
+      await claimAccessPaths.down(db);
+      expect(await indexes()).toEqual([]);
+      expect(await repository.resource(saved.id)).toMatchObject({ reservedBytes: 90 });
+    } finally {
+      await claimAccessPaths.up(db);
+    }
+    expect(await indexes()).toHaveLength(2);
   });
 });

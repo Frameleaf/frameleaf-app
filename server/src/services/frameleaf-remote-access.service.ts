@@ -204,16 +204,18 @@ export class FrameleafRemoteAccessService extends BaseService {
    */
   private async syncDesired(enabled: boolean) {
     // under the check-in's lock, so a check-in saving the link at the same time is not overwritten
-    await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
-      const { link, linked } = await readCloudLink(this.linkDeps);
-      if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
-        return;
-      }
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
-        ...link,
-        desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
-      });
-    });
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        const { link, linked } = await readCloudLink(this.linkDeps);
+        if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
+          return;
+        }
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
+          ...link,
+          desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
+        });
+      }),
+    );
   }
 
   // ------------------------------------------------------------------ custom hostname

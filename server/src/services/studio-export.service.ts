@@ -433,32 +433,39 @@ export class StudioExportService {
   ) {
     const now = new Date();
     const sessions = await this.renderWorkers.listLiveSessions();
-    const candidates = sessions
-      .filter(
-        ({ worker, session }) =>
-          worker.destination === destination &&
-          session.scopes.includes(MediaOperationKind.StudioExport) &&
-          isQualifiedRenderSession({
-            worker: {
-              revoked: worker.status !== RenderWorkerStatus.Active,
-              engineDigest: worker.engineDigest,
-              conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
-            },
-            session: {
-              revoked: session.revokedAt !== null,
-              expiresAt: new Date(session.expiresAt),
-              engineDigest: session.engineDigest,
-              conformanceReportedAt: new Date(session.conformanceReportedAt),
-              scopes: session.scopes,
-            },
-            now,
-          }),
-      )
-      .map(({ session }) => ({
-        gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
-        codecs: session.codecs ?? [],
-        colorPrecision: session.colorPrecision,
-      }));
+    const qualified = sessions.filter(
+      ({ worker, session }) =>
+        worker.destination === destination &&
+        session.scopes.includes(MediaOperationKind.StudioExport) &&
+        isQualifiedRenderSession({
+          worker: {
+            revoked: worker.status !== RenderWorkerStatus.Active,
+            engineDigest: worker.engineDigest,
+            conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+          },
+          session: {
+            revoked: session.revokedAt !== null,
+            expiresAt: new Date(session.expiresAt),
+            engineDigest: session.engineDigest,
+            conformanceReportedAt: new Date(session.conformanceReportedAt),
+            scopes: session.scopes,
+          },
+          now,
+        }),
+    );
+    const candidates = await Promise.all(
+      qualified.map(async ({ session }) => {
+        // FL-95 stores writer/container proof beside the session, keyed by its admitted id.
+        // Read the same record as claim admission; never infer a muxer from the session's codecs.
+        const capabilities = await this.renderWorkers.getSessionCapabilities(session.id);
+        return {
+          gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
+          codecs: capabilities?.codecs ?? [],
+          formats: capabilities?.formats ?? [],
+          colorPrecision: session.colorPrecision,
+        };
+      }),
+    );
     const verdict = evaluateRenderOutput(candidates, settings);
     if (!verdict.supported) {
       throw new ConflictException({

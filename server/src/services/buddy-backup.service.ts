@@ -25,7 +25,7 @@ import {
   NotificationLevel,
   NotificationType,
 } from 'src/enum.js';
-import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { BuddyBackupRepository, type BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -838,26 +838,39 @@ export class BuddyBackupService {
         const message = waiting
           ? waiting.message
           : 'Backup is incomplete. Check required mounts, source integrity, recovery keys, and local staging space.';
-        await this.repository.update((current) => ({
+        const update = (current: BuddyState): BuddyState => ({
           ...current,
-          run: current.run && {
-            ...current.run,
-            state: waiting
-              ? waiting.status === 507
-                ? 'waiting-quota'
-                : waiting.status === 401 || waiting.status === 403
-                  ? 'waiting-authorization'
-                  : 'waiting-peer'
-              : 'incomplete',
-            error: message,
-          },
-        }));
-        if (waiting)
-          await this.operations.requeue(id, token, {
-            delayMs: 60_000 + Math.floor(Math.random() * 60_000),
-            returnAttempt: true,
-          });
-        else {
+          run:
+            current.run?.id === id
+              ? {
+                  ...current.run,
+                  state: waiting
+                    ? waiting.status === 507
+                      ? 'waiting-quota'
+                      : waiting.status === 401 || waiting.status === 403
+                        ? 'waiting-authorization'
+                        : 'waiting-peer'
+                    : 'incomplete',
+                  error: message,
+                }
+              : current.run,
+        });
+        if (waiting) {
+          // The successful requeue retains its row lock through the state write.
+          // A replacement cannot claim this same operation until publication finishes.
+          if (
+            !(await this.operations.requeue(
+              id,
+              token,
+              { delayMs: 60_000 + Math.floor(Math.random() * 60_000), returnAttempt: true },
+              async (trx) => {
+                await this.repository.update(update, trx);
+              },
+            ))
+          )
+            return;
+        } else {
+          await this.repository.update(update);
           await this.operations.fail(id, token, { error: message, errorCode: 'buddy_incomplete' }, { retry });
           await this.capture.reconcile();
         }
