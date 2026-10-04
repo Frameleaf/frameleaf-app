@@ -5,11 +5,14 @@ set -o pipefail
 create_frameleaf_directory() {
   local -r Tgt='./frameleaf-app'
   echo "Creating Frameleaf directory..."
-  if [[ -e $Tgt ]]; then
-    echo "Found existing directory $Tgt, will overwrite YAML files"
-  else
-    mkdir "$Tgt" || return
+  if [[ -e $Tgt || -L $Tgt ]]; then
+    echo "Fresh installation requires a new $Tgt directory; refusing the existing destination." >&2
+    echo 'Existing configuration, media and PostgreSQL files have not been changed.' >&2
+    echo 'For a fresh install, run this installer from a new parent directory. To recover a previous attempt, inspect its retained .env and Compose files; do not delete its media or database directories.' >&2
+    return 1
   fi
+  # mkdir also refuses a destination created after the check above.
+  mkdir "$Tgt" || return 1
   cd "$Tgt" || return 1
 }
 
@@ -59,7 +62,7 @@ show_friendly_message() {
 Frameleaf is running.
 You can access the website or the mobile app at http://$ip_address:2283
 ---------------------------------------------------
-If you want to configure custom information of the server, including the database, Redis information, or the backup (or upload) location, etc.
+To configure database settings or the backup and upload locations:
 
   1. First bring down the containers with the command 'docker compose down' in the frameleaf-app directory,
 
