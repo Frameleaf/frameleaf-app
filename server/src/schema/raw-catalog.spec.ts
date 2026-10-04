@@ -29,4 +29,7 @@ it('checks exact raw constraint definitions and PG19 column nullability', () => 
   const unknown = structuredClone(raw);
   unknown.constraints[0].definition = 'PRIMARY KEY (other)';
   expect(() => verifyRawCatalog(catalog, unknown)).toThrow('differs');
+  const incomplete = structuredClone(catalog);
+  delete incomplete.tables[0].constraints[0].definition;
+  expect(() => verifyRawCatalog(incomplete, raw)).toThrow('Catalog lacks exact definition for sample.sample_pk');
 });
