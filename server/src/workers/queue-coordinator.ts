@@ -1,12 +1,12 @@
 import { Kysely } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { performance } from 'node:perf_hooks';
-import { parentPort, workerData, type MessagePort } from 'node:worker_threads';
+import { type MessagePort, parentPort, workerData } from 'node:worker_threads';
 import postgres from 'postgres';
+import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog } from 'src/queue/watchdog.js';
-import type { ConfigRepository } from 'src/repositories/config.repository.js';
 
 type CoordinatorData = {
   workerId: string;
@@ -19,7 +19,9 @@ type CoordinatorData = {
 export async function coordinate({ workerId, queues, connection, supervisor }: CoordinatorData) {
   const options = { max: 2, connect_timeout: 5, connection: { statement_timeout: 5000, lock_timeout: 3000 } };
   const client =
-    connection.connectionType === 'url' ? postgres(connection.url, options) : postgres({ ...connection, ...options });
+    connection.connectionType === 'url'
+      ? postgres(connection.url, options)
+      : postgres({ ...connection, ssl: connection.ssl === 'disable' ? false : connection.ssl, ...options });
   const db = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: client }) });
   const store = new SqlQueueStore(db);
   const watchdog = new QueueWatchdog();
@@ -34,14 +36,21 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const progress = new Map<string, number>();
 
   parentPort!.on('message', (message: QueueWorkerMessage) => {
-    if (message.type === 'settled') {
-      active.delete(message.id);
-      watchdog.remove(message.id);
-    } else if (message.type === 'progress') {
-      watchdog.progress(message.id, message.units, performance.now());
-      progress.set(message.id, message.units);
-    } else if (message.type === 'stop') {
-      stopping = true;
+    switch (message.type) {
+      case 'settled': {
+        active.delete(message.id);
+        watchdog.remove(message.id);
+        break;
+      }
+      case 'progress': {
+        watchdog.progress(message.id, message.units, performance.now());
+        progress.set(message.id, message.units);
+        break;
+      }
+      case 'stop': {
+        stopping = true;
+        break;
+      }
     }
   });
 
@@ -69,7 +78,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       }
       const now = performance.now();
       if (now - lastBeat >= QUEUE_TIMING.heartbeat) {
-        await store.heartbeat(workerId, [...active.values()]);
+        await store.heartbeat(workerId, active.values().toArray());
         lastBeat = now;
         lastHeartbeat = performance.now();
       }

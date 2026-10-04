@@ -5,6 +5,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository>> => {
   return {
     setup: vitest.fn(),
+    pinDestination: vitest.fn().mockImplementation(async (_workload, destinationId) => destinationId),
     collectFollowups: vitest.fn().mockImplementation((action) => action()),
     createRun: vitest.fn().mockImplementation(async (_kind, _selection, enqueue) => {
       await enqueue();

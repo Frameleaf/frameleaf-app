@@ -11,6 +11,8 @@ import type { DB } from 'src/schema/index.js';
 import { EXTENSION_NAMES, POSTGRES_VERSION_RANGE, VECTOR_INDEX_TABLES, VECTOR_VERSION_RANGE } from 'src/constants.js';
 import { GenerateSql } from 'src/decorators.js';
 import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { resetQueueAfterRestore } from 'src/queue/store.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
@@ -18,7 +20,6 @@ import { ExtensionVersion, VectorExtension } from 'src/types.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
-import { resetQueueAfterRestore } from 'src/queue/store.js';
 
 const CLIP_TABLES = [
   'smart_search',
@@ -41,6 +42,7 @@ export class DatabaseRepository {
     private logger: LoggingRepository,
     private configRepository: ConfigRepository,
   ) {
+    this.db = publicationDatabase(this.db);
     this.logger.setContext(DatabaseRepository.name);
   }
 

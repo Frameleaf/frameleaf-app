@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Transaction } from 'kysely';
 import { basename, dirname, join } from 'node:path';
+import type { Transaction } from 'kysely';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { DB } from 'src/schema/index.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 
 export const queueExecution = new AsyncLocalStorage<QueueExecution>();
 export const jobSignal = () => queueExecution.getStore()?.signal;
@@ -20,13 +22,14 @@ export const jobStagingPath = (root: string, filename: string) => {
 };
 
 /** Register a database-only adoption to commit with the successful claim and its child intents. */
-export const deferJobAdoption = (adopt: (tx: Transaction<any>) => Promise<void>) => {
+export const deferJobAdoption = (adopt: (tx: Transaction<DB>) => Promise<void>) => {
   const context = queueExecution.getStore();
-  if (!context) {
+  if (!context || publicationTransaction.getStore()) {
     return false;
   }
   context.signal.throwIfAborted();
-  context.adoptions.push(adopt);
+  // Queue SQL owns its untyped bookkeeping tables; publication uses the application's DB schema.
+  context.adoptions.push((tx) => adopt(tx as unknown as Transaction<DB>));
   return true;
 };
 
@@ -53,3 +56,10 @@ export const afterJobCommit = async (notify: () => Promise<void>) => {
     await notify();
   }
 };
+
+/** Run a publication now for non-queue callers, or defer it into the accepted claim transaction. */
+export async function publishJobResult(publish: () => Promise<void>) {
+  if (!deferJobAdoption(async () => publish())) {
+    await publish();
+  }
+}

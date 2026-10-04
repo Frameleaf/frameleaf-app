@@ -62,6 +62,8 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
+import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
@@ -943,72 +945,87 @@ export class PersonService extends BaseService {
     );
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);
 
-    const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
-    const embeddings: FaceSearchTable[] = [];
-    const mlFaceIds = new Set<string>();
-    const decided = await this.getDecidedFaceIds(asset);
-
-    for (const face of asset.faces) {
-      if (face.sourceType === SourceType.MachineLearning) {
-        mlFaceIds.add(face.id);
+    await publishJobResult(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const latest = await this.assetJobRepository.getForDetectFacesJob(id);
+      if (
+        !latest ||
+        !latest.checksum.equals(asset.checksum) ||
+        (latest.files.find((file) => file.isEdited) ?? latest.files[0])?.path !== previewFile.path
+      ) {
+        throw new Error('Face source changed before publication');
       }
-    }
+      // Recompute matches against current owner decisions under the accepted transaction.
+      const asset = latest;
+      const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
+      const embeddings: FaceSearchTable[] = [];
+      const mlFaceIds = new Set<string>();
+      const decided = await this.getDecidedFaceIds(asset);
 
-    const heightScale = imageHeight / (asset.faces[0]?.imageHeight || 1);
-    const widthScale = imageWidth / (asset.faces[0]?.imageWidth || 1);
-    for (const { boundingBox, embedding } of faces) {
-      const scaledBox = {
-        x1: boundingBox.x1 * widthScale,
-        y1: boundingBox.y1 * heightScale,
-        x2: boundingBox.x2 * widthScale,
-        y2: boundingBox.y2 * heightScale,
-      };
-      const match = asset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
-
-      // FL-57: a face kept for its explicit decision takes the new embedding too
-      if (match && (!mlFaceIds.delete(match.id) || decided.has(match.id))) {
-        embeddings.push({ faceId: match.id, embedding });
-      } else if (!match) {
-        const faceId = this.cryptoRepository.randomUUID();
-        facesToAdd.push({
-          id: faceId,
-          assetId: asset.id,
-          imageHeight,
-          imageWidth,
-          boundingBoxX1: boundingBox.x1,
-          boundingBoxY1: boundingBox.y1,
-          boundingBoxX2: boundingBox.x2,
-          boundingBoxY2: boundingBox.y2,
-        });
-        embeddings.push({ faceId, embedding });
+      for (const face of asset.faces) {
+        if (face.sourceType === SourceType.MachineLearning) {
+          mlFaceIds.add(face.id);
+        }
       }
-    }
-    // FL-57: a face with an explicit decision stays even when this detection no longer finds it
-    const faceIdsToRemove = [...mlFaceIds.difference(decided)];
 
-    if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
-      await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
-    }
+      const heightScale = imageHeight / (asset.faces[0]?.imageHeight || 1);
+      const widthScale = imageWidth / (asset.faces[0]?.imageWidth || 1);
+      for (const { boundingBox, embedding } of faces) {
+        const scaledBox = {
+          x1: boundingBox.x1 * widthScale,
+          y1: boundingBox.y1 * heightScale,
+          x2: boundingBox.x2 * widthScale,
+          y2: boundingBox.y2 * heightScale,
+        };
+        const match = asset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
 
-    const reapplied = facesToAdd.length > 0 ? await this.reapplyFaceDecisions(asset, facesToAdd) : new Set<string>();
+        // FL-57: a face kept for its explicit decision takes the new embedding too
+        if (match && (!mlFaceIds.delete(match.id) || decided.has(match.id))) {
+          embeddings.push({ faceId: match.id, embedding });
+        } else if (!match) {
+          const faceId = this.cryptoRepository.randomUUID();
+          facesToAdd.push({
+            id: faceId,
+            assetId: asset.id,
+            imageHeight,
+            imageWidth,
+            boundingBoxX1: boundingBox.x1,
+            boundingBoxY1: boundingBox.y1,
+            boundingBoxX2: boundingBox.x2,
+            boundingBoxY2: boundingBox.y2,
+          });
+          embeddings.push({ faceId, embedding });
+        }
+      }
+      // FL-57: a face with an explicit decision stays even when this detection no longer finds it
+      const faceIdsToRemove = [...mlFaceIds.difference(decided)];
 
-    if (faceIdsToRemove.length > 0) {
-      this.logger.log(`Removed ${faceIdsToRemove.length} faces below detection threshold in asset ${id}`);
-    }
+      if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
+        await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
+      }
 
-    if (facesToAdd.length > 0) {
-      this.logger.log(`Detected ${facesToAdd.length} new faces in asset ${id}`);
-      // a face that took over a person's decision is not left to recognition
-      const jobs = facesToAdd
-        .filter((face) => !reapplied.has(face.id))
-        .map((face) => ({ name: JobName.FacialRecognition, data: { id: face.id } }) as const);
-      await this.jobRepository.queueAll([{ name: JobName.FacialRecognitionQueueAll, data: { force: false } }, ...jobs]);
-    } else if (embeddings.length > 0) {
-      this.logger.log(`Added ${embeddings.length} face embeddings for asset ${id}`);
-    }
+      const reapplied = facesToAdd.length > 0 ? await this.reapplyFaceDecisions(asset, facesToAdd) : new Set<string>();
 
-    await this.assetRepository.upsertJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
+      if (faceIdsToRemove.length > 0) {
+        this.logger.log(`Removed ${faceIdsToRemove.length} faces below detection threshold in asset ${id}`);
+      }
 
+      if (facesToAdd.length > 0) {
+        this.logger.log(`Detected ${facesToAdd.length} new faces in asset ${id}`);
+        // a face that took over a person's decision is not left to recognition
+        const jobs = facesToAdd
+          .filter((face) => !reapplied.has(face.id))
+          .map((face) => ({ name: JobName.FacialRecognition, data: { id: face.id } }) as const);
+        await this.jobRepository.queueAll([
+          { name: JobName.FacialRecognitionQueueAll, data: { force: false } },
+          ...jobs,
+        ]);
+      } else if (embeddings.length > 0) {
+        this.logger.log(`Added ${embeddings.length} face embeddings for asset ${id}`);
+      }
+
+      await this.assetRepository.upsertJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
+    });
     return JobStatus.Success;
   }
 

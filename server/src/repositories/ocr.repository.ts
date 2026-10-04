@@ -4,13 +4,16 @@ import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import { deferJobAdoption } from 'src/queue/context.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
 
 @Injectable()
 export class OcrRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getById(id: string) {

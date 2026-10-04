@@ -1,4 +1,4 @@
-import type { Generated, ColumnType } from 'kysely';
+import type { ColumnType, Generated } from 'kysely';
 import type { QueueIntent, QueueState } from 'src/queue/types.js';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;

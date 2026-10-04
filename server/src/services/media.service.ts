@@ -1,6 +1,5 @@
-import { sql } from 'kysely';
-import { attemptOutputPath, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -51,6 +50,8 @@ import {
   VideoCodec,
   VideoContainer,
 } from 'src/enum.js';
+import { attemptOutputPath, deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
@@ -387,6 +388,19 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetJobRepository.getForGenerateThumbnailJob(asset.id);
+      if (
+        !current ||
+        current.originalPath !== asset.originalPath ||
+        current.coverTimestampMs !== asset.coverTimestampMs ||
+        JSON.stringify(current.edits) !== JSON.stringify(asset.edits)
+      ) {
+        throw new Error('Thumbnail source changed before publication');
+      }
+    });
+
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {
       this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
@@ -453,7 +467,9 @@ export class MediaService extends BaseService {
     const thumbhash = editedGenerated?.thumbhash || generated.thumbhash;
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
-      await this.assetRepository.update({ id: asset.id, thumbhash });
+      await publishJobResult(async () => {
+        await this.assetRepository.update({ id: asset.id, thumbhash });
+      });
     }
 
     return JobStatus.Success;
@@ -979,9 +995,6 @@ export class MediaService extends BaseService {
     if (getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: true })) {
       return JobStatus.Skipped;
     }
-    if (!(await this.assetRepository.canRecordStudioHdrIntermediates())) {
-      return JobStatus.Skipped;
-    }
     // Taken before the transcode: an original replaced or rewritten meanwhile is not recorded.
     const sourceFingerprint = await this.assetRepository.getStudioHdrSourceFingerprint(asset.id);
     if (!sourceFingerprint) {
@@ -1065,6 +1078,14 @@ export class MediaService extends BaseService {
     if (!asset) {
       return JobStatus.Failed;
     }
+
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetJobRepository.getForVideoConversion(asset.id);
+      if (!current || current.originalPath !== asset.originalPath) {
+        throw new Error('Video source changed before publication');
+      }
+    });
 
     const input = asset.originalPath;
     const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
@@ -1157,7 +1178,9 @@ export class MediaService extends BaseService {
 
     if (queueExecution.getStore()) {
       await this.stageGeneratedFiles(
-        asset.files.filter((file) => file.type === AssetFileType.EncodedVideo && !file.isEdited),
+        this.toExistingAssetFiles(
+          asset.files.filter((file) => file.type === AssetFileType.EncodedVideo && !file.isEdited),
+        ),
         [
           {
             assetId: asset.id,
@@ -2674,7 +2697,10 @@ export class MediaService extends BaseService {
 
   /** Hash/stat happen without a connection. Only accepted output references enter the final SQL commit. */
   private async stageGeneratedFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
-    const prepared = [];
+    const prepared: Array<{
+      file: UpsertFileOptions;
+      physical: { id: string; checksum: Buffer; size: number; type: PhysicalFileType } | undefined;
+    }> = [];
     const discarded: string[] = [];
     for (const input of newFiles) {
       const original = await this.physicalFileRepository.getOriginalPhysicalFile(input.assetId);
@@ -2717,17 +2743,17 @@ export class MediaService extends BaseService {
       }
       for (const file of obsolete) {
         if (
-          !prepared.some(
-            ({ file: replacement }) => replacement.type === file.type && replacement.isEdited === file.isEdited,
+          prepared.every(
+            ({ file: replacement }) => replacement.type !== file.type || replacement.isEdited !== file.isEdited,
           )
         ) {
-          await sql`delete from asset_file where "assetId" = ${file.assetId}::uuid and type = ${file.type}
+          await sql`delete from asset_file where id = ${file.id}::uuid and type = ${file.type}
             and "isEdited" = ${file.isEdited} and path = ${file.path}`.execute(tx);
         }
       }
     });
     const paths = [...discarded, ...obsolete.map((file) => file.path)];
-    if (paths.length) {
+    if (paths.length > 0) {
       await this.jobRepository.collectFollowups(() =>
         this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } }),
       );
@@ -2832,15 +2858,17 @@ export class MediaService extends BaseService {
         }
       : undefined;
 
-    const originalDimensions = getDimensions(asset.exifInfo!);
-    const assetFaces = await this.personRepository.getFaces(asset.id, { viewingUserId: asset.ownerId });
-    const ocrData = await this.ocrRepository.getByAssetId(asset.id, {});
+    await publishJobResult(async () => {
+      const originalDimensions = getDimensions(asset.exifInfo!);
+      const assetFaces = await this.personRepository.getFaces(asset.id, { viewingUserId: asset.ownerId });
+      const ocrData = await this.ocrRepository.getByAssetId(asset.id, {});
 
-    const faceStatuses = checkFaceVisibility(assetFaces, originalDimensions, cropBox);
-    await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
+      const faceStatuses = checkFaceVisibility(assetFaces, originalDimensions, cropBox);
+      await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
 
-    const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
-    await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);
+      const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
+      await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);
+    });
 
     return generated;
   }
