@@ -23,18 +23,48 @@ packet. Hosted execution, immutable-source replay, and raw measurement evidence
 remain pending. No prepared engine source artifact was available to this owner;
 the packet changes regression coverage and does not claim a production correction.
 
+## Nested mask and alpha packet (October 3, 2026)
+
+The same hosted HDR-source regression now puts each real decoded PQ/HLG source
+through a functional upper-half alpha mask and two nested compositions. An SDR
+graphic sits above the mask track: it blends over HDR where the mask includes
+the video and remains visible where the mask excludes it. The inner instance
+scales into the right half of the outer transparent viewport. Root opacity is
+0.5, and five quarter-pixel translations create an alpha-coverage ramp across
+the viewport edge. Independent decoded-plane references and source-over algebra
+define six sample points for every segment, translation and output policy.
+Signed and above-white contributions remain mandatory; clipping and interpolation
+without premultiplied-alpha weighting must produce distinguishable counterfactuals.
+These 60 frame cases require preservation. A refusal cannot pass their goldens.
+
+A separate masked 16-bit HDR raster transition records a **diagnostic-unqualified**
+result. If it renders, independent signal goldens are mandatory. If it refuses,
+only an actual `Error` with one of patch 0043's exact HDR-raster refusal messages
+is recorded; unrelated exceptions fail. Partial emitted signals remain in its
+report. No authoritative current supported-float versus forced-Canvas capability
+discriminator was available, so neither outcome qualifies fallback reachability.
+In particular, a supported float path cannot use this diagnostic to excuse a
+refusal, and a forced Canvas path still needs an explicit refusal/no-output test
+bound to its actual capability contract. Non-GPU effect fallbacks remain open.
+
+The existing workflow already executes `hdr-source.browser.mjs`. No tests,
+browser, runtime, preparation, generation, build or index refresh ran locally.
+Hosted exact-candidate execution and raw evidence remain pending. The fixture
+uses production renderers, composition stores, masks, video decoding and output
+conversion; no renderer mock or observed output baseline supplies the goldens.
+
 ## Remaining acceptance matrix
 
 | Graph path | Existing coverage | Remaining qualification |
 | --- | --- | --- |
 | Effects / curves / LUTs | Effects matrix and declared HDR semantics | Per-node numerical ramps and signed/extended golden coverage beyond finite/range checks; imported LUT domains |
-| Blends | Blend matrix and signed soft-light transport | Full premultiplied-alpha edge goldens on supported hardware |
-| Transitions / nested Compose | Float and transition matrices; nested float regression | Mixed real sources through nested, masked, and fallback paths |
-| Masks | Allocation sites declared | HDR participant keeps float or explicitly refuses every Canvas2D fallback; mask edge goldens |
+| Blends | Blend matrix, signed soft-light transport; authored nested alpha-coverage ramp | Hosted ramp execution; additional blend modes and supported hardware |
+| Transitions / nested Compose | Float/transition matrices; nested float; authored decoded nested mask/SDR golden | Hosted execution; simultaneous nested PQ+HLG and all fallback paths |
+| Masks | Allocation sites declared; authored functional alpha-mask inclusion/exclusion golden | Hosted execution; luma/inverted/combined/feathered mask goldens; HDR preserves/refuses every Canvas2D fallback |
 | Non-GPU effects | Legacy fallback sites declared | Real HDR source keeps float or refuses each Canvas2D effect path |
 | Text | Deliberate SDR graphic input | Numerical HDR reference-white and alpha-edge goldens |
 | Lottie | Deliberate SDR graphic input | Real Lottie HDR reference-white golden with admitted resources |
-| Mixed SDR/PQ/HLG | This authored decoded-source / exposure / alpha / output packet | Hosted execution; overlapping sources, nested graph and complete delivery goldens |
+| Mixed SDR/PQ/HLG | Authored simultaneous PQ+HLG+SDR and nested HDR/SDR packets | Hosted execution; simultaneous nested PQ+HLG, overlapping sources and complete delivery goldens |
 | Allocation and readback | Declared allocation audit and software readback regressions | Prove HDR cannot reach every declared 8-bit fallback; cross-backend precision |
 | FL-107 output | Explicit output and HDR master regressions retained | Hosted exact-candidate evidence, encoded metadata and actual device HDR playback |
 
