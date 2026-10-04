@@ -144,6 +144,8 @@ describe(FrameleafAuthService.name, () => {
       frameleafCloud: { ...baseEnv.frameleafCloud, url: cloud.url, identityDir },
     } as never);
     mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+    // FL-218: a promotion notifies the other administrators
+    mocks.user.getAdmins.mockResolvedValue([]);
     mocks.systemMetadata.set.mockImplementation((key, value) => {
       metadata.set(key, value);
       return Promise.resolve();
@@ -1062,6 +1064,92 @@ describe(FrameleafAuthService.name, () => {
         expect.objectContaining({ userId: user.id, sub: 'fl-sub', email: 'remote@example.test' }),
       );
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_frameleaf_cloud', user.id, { topic: 'account' });
+    });
+
+    describe('a cloud admin share on link (FL-218, owner decision 2026-10-03)', () => {
+      const setup = (isAdmin: boolean) => {
+        const user = UserFactory.create({ isAdmin });
+        const admin = UserFactory.create({ isAdmin: true });
+        const auth = AuthFactory.from(user).session({ id: 'session-1' }).build();
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.get.mockResolvedValue(user as never);
+        mocks.user.update.mockImplementation((id, change) => Promise.resolve({ ...user, ...change, id } as never));
+        mocks.user.getAdmins.mockResolvedValue([admin] as never);
+        mocks.notification.create.mockImplementation((value) =>
+          Promise.resolve({ id: 'notification-1', createdAt: new Date(), readAt: null, data: null, ...value } as never),
+        );
+        return { user, admin, auth };
+      };
+
+      it('makes the linked account an administrator at once and notifies the other administrators', async () => {
+        const { user, admin, auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+
+        const result = await sut.link(auth, callbackDto, {});
+        expect(result).toMatchObject({ linked: true, roleChange: 'granted-admin', isAdmin: true, confirmToken: null });
+        expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ userId: user.id, actorId: null, action: AdminAuditAction.AdminGranted }),
+        ]);
+        expect(mocks.notification.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: admin.id,
+            description: `${user.name} became an administrator through Frameleaf Cloud`,
+          }),
+        );
+        expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', admin.id, expect.anything());
+      });
+
+      it('changes no role for a share that is not admin', async () => {
+        const { auth } = setup(false);
+        idClaims.frameleaf_role = 'user';
+
+        const result = await sut.link(auth, callbackDto, {});
+        expect(result).toMatchObject({ linked: true, roleChange: 'none', isAdmin: false });
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.notification.create).not.toHaveBeenCalled();
+      });
+
+      it('never demotes at link time; demotion waits for sign-in', async () => {
+        const { auth } = setup(true);
+        idClaims.frameleaf_role = 'user';
+
+        await expect(sut.link(auth, callbackDto, {})).resolves.toMatchObject({ roleChange: 'none', isAdmin: true });
+        expect(mocks.user.update).not.toHaveBeenCalled();
+      });
+
+      it('previews the promotion without linking, then links on confirm', async () => {
+        const { user, auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+
+        const preview = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        expect(preview).toMatchObject({ linked: false, roleChange: 'granted-admin', isAdmin: false });
+        expect(preview.confirmToken).toEqual(expect.any(String));
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+
+        const confirmed = await sut.confirmLink(auth, { confirmToken: preview.confirmToken! });
+        expect(confirmed).toMatchObject({ linked: true, roleChange: 'granted-admin', isAdmin: true });
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: user.id, sub: 'fl-sub', role: 'admin' }),
+        );
+      });
+
+      it('refuses a tampered confirm token, or one from another session or person', async () => {
+        const { auth } = setup(false);
+        idClaims.frameleaf_role = 'user';
+        const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        const [payload, mac] = confirmToken!.split('.');
+        const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        const forged = `${Buffer.from(JSON.stringify({ ...claims, role: 'admin' })).toString('base64url')}.${mac}`;
+
+        await expect(sut.confirmLink(auth, { confirmToken: forged })).rejects.toThrow('not valid any more');
+        const otherSession = AuthFactory.from(auth.user).session({ id: 'session-2' }).build();
+        await expect(sut.confirmLink(otherSession, { confirmToken: confirmToken! })).rejects.toThrow(
+          'not valid any more',
+        );
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+      });
     });
 
     it('unlinks and ends the other Frameleaf sessions, keeping this one', async () => {

@@ -10,10 +10,12 @@ import {
   FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
+  FrameleafLinkConfirmDto,
+  FrameleafLinkDto,
+  FrameleafLinkResponseDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
-import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
@@ -169,11 +171,30 @@ export class FrameleafAuthController {
     operationId: 'linkFrameleafAccount',
     summary: 'Link your Frameleaf account',
     description:
-      'Links the Frameleaf account you just signed in with to your account here, so you can sign in with it when you are away from home. A verified email is required.',
+      'Links the Frameleaf account you just signed in with to your account here, so you can sign in with it when you are away from home. A verified email is required. If that Frameleaf account holds an admin share of this server on Frameleaf Cloud, you become an administrator here at once (roleChange: granted-admin) and the other administrators are notified. With preview: true nothing is linked yet: the response reports the role change and a confirmToken for link/confirm.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  link(@Req() request: Request, @Auth() auth: AuthDto, @Body() dto: OAuthCallbackDto): Promise<UserAdminResponseDto> {
+  link(
+    @Req() request: Request,
+    @Auth() auth: AuthDto,
+    @Body() dto: FrameleafLinkDto,
+  ): Promise<FrameleafLinkResponseDto> {
     return this.service.link(auth, dto, request.headers);
+  }
+
+  @Post('link/confirm')
+  @Authenticated({ permission: Permission.FrameleafAccountUpdate })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    operationId: 'confirmFrameleafAccountLink',
+    summary: 'Confirm linking your Frameleaf account',
+    description:
+      'Links the Frameleaf account a preview reported, by its confirm token (valid for 10 minutes, for this session only). If the Frameleaf account holds an admin share of this server, you become an administrator here.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  confirmLink(@Auth() auth: AuthDto, @Body() dto: FrameleafLinkConfirmDto): Promise<FrameleafLinkResponseDto> {
+    return this.service.confirmLink(auth, dto);
   }
 
   @Delete('link')
