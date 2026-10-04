@@ -36,6 +36,7 @@ import {
 import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { type BuddyBootConfiguration, captureBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
   type CloudBackupManifest,
@@ -72,6 +73,7 @@ export type BuddyManifest = {
   configurationFiles: CloudBackupManifestFile[];
   cloudBackupKeys?: Array<{ fingerprint: string; content: string }>;
   environment: Record<string, string | undefined>;
+  bootConfiguration?: BuddyBootConfiguration;
   storageRoot: string;
   storageRoots: string[];
   settings: {
@@ -217,7 +219,10 @@ export class BuddyBackupCaptureService {
       assetFidelity: {},
       dependencies: [],
       configurationFiles: [],
-      environment: { ...process.env },
+      environment: {},
+      ...(settings.bootConfiguration && {
+        bootConfiguration: captureBuddyBootConfiguration(settings.bootConfiguration),
+      }),
       storageRoot: StorageCore.getMediaLocation(),
       storageRoots: [],
       settings: { system: null, users: [], buddy: readBuddySettingsSnapshot({ version: 1, settings }) },

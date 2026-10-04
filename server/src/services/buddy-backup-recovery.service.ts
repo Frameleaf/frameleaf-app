@@ -24,6 +24,7 @@ import {
 } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { finalizeBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 
@@ -205,7 +206,8 @@ export class BuddyBackupRecoveryService {
     const before = await files.load();
     if (before === 'complete') {
       await files.verify(plan, roots, settings.configurationFiles);
-      return this.restoreKeys(plan.manifest, assert);
+      await this.restoreKeys(plan.manifest, assert);
+      return finalizeBuddyBootBinding(this.repository.root(), id, assert);
     }
     await files.publish(plan, roots, settings.configurationFiles);
     if (before !== 'database-ready') {
@@ -249,6 +251,7 @@ export class BuddyBackupRecoveryService {
     await assert();
     await this.repository.update((state) => ({ ...state, run: null, nextScheduledAt: null }));
     await files.state('complete');
+    await finalizeBuddyBootBinding(this.repository.root(), id, assert);
   }
 
   async settings(id: string, assert: () => Promise<void>) {
@@ -261,13 +264,15 @@ export class BuddyBackupRecoveryService {
     const before = await files.load();
     if (before === 'complete') {
       await files.verify(plan, [], settings.configurationFiles);
-      return this.restoreKeys(plan.manifest, assert);
+      await this.restoreKeys(plan.manifest, assert);
+      return finalizeBuddyBootBinding(this.repository.root(), id, assert);
     }
     if (before === 'database-ready') {
       await files.verify(plan, [], settings.configurationFiles);
       await this.restoreKeys(plan.manifest, assert);
       await this.restoreBuddySettings(buddy, plan.mode, assert);
-      return files.state('complete');
+      await files.state('complete');
+      return finalizeBuddyBootBinding(this.repository.root(), id, assert);
     }
     const preimage = join(directory, 'settings-rollback.json');
     const digest = createHash('sha256').update(JSON.stringify(plan)).digest('hex');
@@ -316,5 +321,6 @@ export class BuddyBackupRecoveryService {
     await this.restoreKeys(plan.manifest, assert);
     await this.restoreBuddySettings(buddy, plan.mode, assert);
     await files.state('complete');
+    await finalizeBuddyBootBinding(this.repository.root(), id, assert);
   }
 }
