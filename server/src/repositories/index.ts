@@ -1,3 +1,5 @@
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-scheduled-worker.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -123,6 +125,8 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   ICloudAuditRepository,
+  ICloudScheduledStagingRepository,
+  ICloudScheduledWorkerRepository,
   ICloudIdentityAdoptionRepository,
   AssetUploadResourceRepository,
   BackupDeviceRepository,
