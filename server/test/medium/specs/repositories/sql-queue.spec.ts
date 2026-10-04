@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { PostgresJSDialect } from 'kysely-postgres-js';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -17,7 +18,7 @@ import { queueNotifications } from 'src/queue/notifications.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
-import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
+import { QUEUE_HIGH_WATER, QUEUE_TIMING, QueueClaim, QueueIntent } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -509,14 +510,119 @@ describe('PostgreSQL queue', () => {
     expect((await store.counts(queue)).waiting).toBe(1);
   });
 
-  it('executes 15,000 immutable selected items through bounded producers, handlers, publication and retries', async () => {
+  it('claims and recovers through an independent coordinator pool while every execution connection is reserved', async () => {
+    const {
+      rows: [database],
+    } = await sql<{ name: string }>`select current_database() name`.execute(db);
+    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+    url.pathname = `/${database.name}`;
+    const executionClient = postgres(url.toString(), {
+      max: 2,
+      connect_timeout: 3,
+      connection: { statement_timeout: 2000 },
+    });
+    const coordinatorClient = postgres(url.toString(), {
+      max: 1,
+      connect_timeout: 3,
+      connection: { statement_timeout: 2000, lock_timeout: 1000 },
+    });
+    const executionDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: executionClient }) });
+    const coordinatorDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: coordinatorClient }) });
+    const coordinator = new SqlQueueStore(coordinatorDb);
+    const reservations: Array<Awaited<ReturnType<typeof executionClient.reserve>>> = [];
+    let queuedQuery: Promise<unknown> | undefined;
+    let queryFinished = false;
+    try {
+      for (let count = 0; count < 2; count++) reservations.push(await executionClient.reserve());
+      const executorPids = await Promise.all(
+        reservations.map(
+          async (connection) => (await connection<{ pid: number }[]>`select pg_backend_pid() pid`)[0].pid,
+        ),
+      );
+      const {
+        rows: [dispatchPid],
+      } = await sql<{ pid: number }>`select pg_backend_pid() pid`.execute(coordinatorDb);
+      expect(new Set([...executorPids, dispatchPid.pid]).size).toBe(3);
+      // All executor slots are held; this Kysely query cannot acquire any connection yet.
+      queuedQuery = sql`select 1`.execute(executionDb).finally(() => {
+        queryFinished = true;
+      });
+      await coordinator.enqueue([intent({ data: { id: 'lost' } }), intent({ data: { id: 'healthy' } })]);
+      const started = performance.now();
+      const [lost] = await coordinator.claim(queue, workerA);
+      expect(lost).toBeDefined();
+      // Inject an expired clock, not a terminal outcome. The production recovery path revokes the token.
+      await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${lost.id}::uuid`.execute(
+        coordinatorDb,
+      );
+      await coordinator.recoverExpired();
+      await coordinator.heartbeat(workerB, []);
+      const [healthy] = await coordinator.claim(queue, workerB);
+      expect(healthy.id).not.toBe(lost.id);
+      expect(await coordinator.complete(healthy, [])).toBe(true);
+      const latePublication = vi.fn();
+      expect(await coordinator.complete(lost, [], latePublication)).toBe(false);
+      expect(latePublication).not.toHaveBeenCalled();
+      expect(performance.now() - started).toBeLessThan(5000);
+      expect(queryFinished).toBe(false);
+      expect(await coordinator.counts(queue)).toMatchObject({ active: 0, completed: 1, delayed: 1 });
+      reservations.pop()!.release();
+      await queuedQuery;
+      expect(queryFinished).toBe(true);
+      await sql`update job set "availableAt" = now() where id = ${lost.id}::uuid`.execute(coordinatorDb);
+      const [retry] = await coordinator.claim(queue, workerB);
+      expect(retry).toMatchObject({ id: lost.id, attempt: 2 });
+      expect(await coordinator.complete(retry, [])).toBe(true);
+      expect(await coordinator.counts(queue)).toMatchObject({ active: 0, completed: 2, delayed: 0 });
+    } finally {
+      for (const connection of reservations) connection.release();
+      await queuedQuery?.catch(() => undefined);
+      await executionDb.destroy();
+      await coordinatorDb.destroy();
+    }
+  }, 15_000);
+
+  it('executes 15,000 selected media through synthetic metadata, thumbnail, video and ML stages via the production facade', async () => {
+    // These handlers model scheduling/publication only: they do not decode media, run FFmpeg or call ML.
+    // The separate child-process/ML-body fault cases below exercise those cancellation boundaries.
     const table = `queue_fixture_${randomUUID().replaceAll('-', '')}`;
-    await sql`create table ${sql.id(table)} (id text not null, stage text not null, primary key(id, stage))`.execute(
-      db,
-    );
+    const checkpoints = `${table}_checkpoint`;
+    await sql`create table ${sql.id(table)} (id text not null, stage text not null, attempt integer not null,
+      output text not null, primary key(id, stage))`.execute(db);
+    await sql`create table ${sql.id(checkpoints)} (name text primary key, requested integer not null)`.execute(db);
+    const stages = [
+      JobName.AssetExtractMetadata,
+      JobName.AssetGenerateThumbnails,
+      JobName.AssetEncodeVideo,
+      JobName.SmartSearch,
+    ];
+    const concurrency = 128;
+    let activeClaims: QueueClaim[] = [];
+    let heartbeatBusy: Promise<void> | undefined;
+    let heartbeatError: unknown;
+    const heartbeat = setInterval(() => {
+      if (!heartbeatBusy) {
+        heartbeatBusy = Promise.all([
+          store.heartbeat(
+            workerA,
+            activeClaims.filter((claim) => claim.workerId === workerA),
+          ),
+          store.heartbeat(
+            workerB,
+            activeClaims.filter((claim) => claim.workerId === workerB),
+          ),
+        ])
+          .then(() => undefined)
+          .catch((error) => {
+            heartbeatError = error;
+          })
+          .finally(() => {
+            heartbeatBusy = undefined;
+          });
+      }
+    }, 10_000);
     try {
       const artifacts = publicationDatabase(db);
-      let executor: JobRepository;
       const makeExecutor = () => {
         const next: JobRepository = new JobRepository(
           {} as never,
@@ -525,27 +631,53 @@ describe('PostgreSQL queue', () => {
           { setContext: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
           db,
         );
-        for (const name of [JobName.AssetGenerateThumbnails, JobName.SmartSearch]) {
+        next['handlers'][JobName.AssetExtractMetadataQueueAll] = {
+          jobName: JobName.AssetExtractMetadataQueueAll,
+          queueName: queue as QueueName,
+          label: 'synthetic-metadata-selection',
+          handler: async () => {
+            const checkpoint = await next.prepareCheckpoint('selection', async () => {
+              await artifacts.insertInto(checkpoints).values({ name: 'selection', requested: 15_000 }).execute();
+              return { requested: 15_000 };
+            });
+            // A new facade must recover this committed setup, not insert it twice.
+            if (queueExecution.getStore()!.claim.attempt === 1) throw new Error('interrupted producer fixture');
+            await next.queueSelection(
+              JobName.AssetExtractMetadata,
+              db
+                .selectFrom(
+                  sql<{ id: string }>`(select generate_series(1, ${checkpoint.requested})::text id)`.as('selected'),
+                )
+                .select('id'),
+            );
+            return JobStatus.Success;
+          },
+        };
+        for (const [position, name] of stages.entries()) {
           next['handlers'][name] = {
             jobName: name,
             queueName: queue as QueueName,
-            label: 'bounded-fixture',
+            label: `synthetic-${name}`,
             handler: async (data) => {
               const { id } = data as { id: string };
               const execution = queueExecution.getStore()!;
               const index = Number(id);
-              // Real executor failures exercise the one-retry budget, without setting terminal SQL state.
-              if (name === JobName.AssetGenerateThumbnails && index % 1000 === 0) {
-                throw new Error('poison fixture');
-              }
-              if (name === JobName.SmartSearch && index % 499 === 0 && execution.claim.attempt === 1) {
+              if (name === JobName.AssetGenerateThumbnails && index % 1000 === 0) throw new Error('poison fixture');
+              if (name === JobName.SmartSearch && index % 499 === 0 && execution.claim.attempt === 1)
                 throw new Error('transient fixture');
-              }
               await publishJobResult(async () => {
-                await artifacts.insertInto(table).values({ id, stage: name }).execute();
-                if (name === JobName.AssetGenerateThumbnails) {
-                  await next.queue({ name: JobName.SmartSearch, data: { id } });
-                }
+                // A duplicate acceptance fails the PK instead of silently hiding repeated publication.
+                await artifacts
+                  .insertInto(table)
+                  .values({
+                    id,
+                    stage: name,
+                    attempt: execution.claim.attempt,
+                    output: `synthetic/${execution.claim.id}/${execution.claim.token}`,
+                  })
+                  .execute();
+                const following = stages[position + 1];
+                if (following) await next.queue({ name: following, data: { id } } as JobItem);
               });
               return JobStatus.Success;
             },
@@ -553,70 +685,121 @@ describe('PostgreSQL queue', () => {
         }
         return next;
       };
-      executor = makeExecutor();
-      const runId = await executor.createRun('pipeline-fixture', { requested: 15_000 }, async () => {
-        await executor.queueSelection(
-          JobName.AssetGenerateThumbnails,
-          db.selectFrom(sql<{ id: string }>`(select generate_series(1, 15000)::text id)`.as('selected')).select('id'),
-        );
-      });
-      await store.setConcurrency(queue, 64);
+      let executor = makeExecutor();
+      const runId = await executor.createRun('synthetic-four-stage-pipeline', { requested: 15_000 }, () =>
+        executor.queue({ name: JobName.AssetExtractMetadataQueueAll, data: {} }),
+      );
+      await store.setConcurrency(queue, concurrency);
+      const readRun = async () => (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
+      expect(await readRun()).toMatchObject({ total: 0, enumerationDone: false, stageTotals: { total: 1 } });
+      const scheduled = async () =>
+        (
+          await sql<{ count: number }>`select count(*)::int count from job
+        where queue = ${queue} and state in ('pending','waiting','active')`.execute(db)
+        ).rows[0].count;
       let batches = 0;
-      let maximumReady = 0;
-      expect(
-        (await sql<{ count: number }>`select count(*)::int count from job where "runId" = ${runId}::uuid`.execute(db))
-          .rows[0].count,
-      ).toBe(0);
+      let replacements = 0;
+      let maximumScheduled = 0;
       for (;;) {
+        if (heartbeatError) throw heartbeatError;
         expect(await store.feedManifest(queue)).toBeLessThanOrEqual(250);
-        const claims = await store.claim(queue, batches % 2 ? workerA : workerB);
-        const {
-          rows: [ready],
-        } = await sql<{ count: number }>`select count(*)::int count from job
-          where queue = ${queue} and state in ('waiting','active')`.execute(db);
-        maximumReady = Math.max(maximumReady, ready.count);
-        expect(claims.length).toBeLessThanOrEqual(64);
-        await Promise.all(claims.map((claim) => executor['execute'](claim, new AbortController())));
-        // Advance only retry availability. Every outcome still goes through the production executor.
-        await sql`update job set "availableAt" = now() where queue = ${queue} and state = 'pending'
-          and attempt > 0`.execute(db);
+        activeClaims = await store.claim(queue, batches % 2 ? workerA : workerB);
+        maximumScheduled = Math.max(maximumScheduled, await scheduled());
+        expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
+        expect(activeClaims.length).toBeLessThanOrEqual(concurrency);
+        // The facade and store remain production code; only the four handlers are synthetic.
+        await Promise.all(activeClaims.map((claim) => executor['execute'](claim, new AbortController())));
+        const completedProducer = activeClaims.some(
+          (claim) => claim.name === JobName.AssetExtractMetadataQueueAll && claim.attempt === 2,
+        );
+        activeClaims = [];
+        if (completedProducer) {
+          expect(await readRun()).toMatchObject({
+            total: 15_000,
+            enumerationDone: true,
+            completed: 0,
+            waiting: 15_000,
+            stageTotals: { total: 15_001, completed: 1 },
+          });
+          expect(await scheduled()).toBe(0); // the entire selection is still manifest-only
+        }
+        maximumScheduled = Math.max(maximumScheduled, await scheduled());
+        expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
+        // Accelerate the retry clock only. No terminal states or item outcomes are fabricated.
+        await sql`update job set "availableAt" = now() where queue = ${queue} and state = 'pending' and attempt > 0`.execute(
+          db,
+        );
         const counts = await store.counts(queue);
         const {
           rows: [backlog],
         } = await sql<{ count: number }>`select count(*)::int count from job_run_item
           where "runId" = ${runId}::uuid and "jobId" is null and state = 'pending'`.execute(db);
-        if (counts.waiting + counts.active + counts.delayed + backlog.count === 0) {
-          break;
-        }
-        if (++batches === 20) {
+        if (counts.waiting + counts.active + counts.delayed + backlog.count === 0) break;
+        batches++;
+        if (batches === 1 || batches === 20) {
           executor = makeExecutor();
-        } // replace the execution facade mid-run
-        if (batches > 1000) {
-          throw new Error('Pipeline stopped making bounded progress');
+          replacements++;
         }
+        if (batches > 1500) throw new Error('Pipeline stopped making bounded progress');
       }
-      expect(maximumReady).toBeLessThanOrEqual(1000);
-      const {
-        rows: [artifactsCount],
-      } = await sql<{ count: number }>`select count(*)::int count from ${sql.id(table)}`.execute(db);
-      expect(artifactsCount.count).toBe(29_970);
-      const final = (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
-      expect(final.state).toBe('failed');
-      const {
-        rows: [roots],
-      } = await sql<{
-        count: number;
-      }>`select count(distinct "rootItemKey")::int count from job_run_item where "runId" = ${runId}::uuid`.execute(db);
-      expect(roots.count).toBe(15_000);
+      expect(replacements).toBe(2);
+      const final = await readRun();
+      expect(final).toMatchObject({
+        state: 'completed_with_errors',
+        enumerationDone: true,
+        total: 15_000,
+        completed: 14_985,
+        failed: 15,
+        active: 0,
+        waiting: 0,
+        delayed: 0,
+        retrying: 0,
+        stageTotals: { total: 59_971, completed: 59_956, failed: 15 },
+      });
       expect(final.finishedAt).not.toBeNull();
+      const { rows: outputs } = await sql<{ stage: string; count: number }>`select stage, count(*)::int count
+        from ${sql.id(table)} group by stage`.execute(db);
+      expect(outputs).toEqual(
+        expect.arrayContaining(stages.map((stage, index) => ({ stage, count: index === 0 ? 15_000 : 14_985 }))),
+      );
+      expect(outputs).toHaveLength(4);
+      const { rows: edges } = await sql<{ stage: string; predecessor: string; count: number; invalid: number }>`
+        select c.name stage, p.name predecessor, count(*)::int count,
+          count(*) filter(where p.state != 'completed' or c."startedAt" < p."finishedAt"
+            or c."rootItemKey" is distinct from p."rootItemKey")::int invalid
+        from job c join job p on p.id = c."parentId" where c."runId" = ${runId}::uuid
+        group by c.name, p.name`.execute(db);
+      expect(edges).toEqual(
+        expect.arrayContaining([
+          { stage: stages[1], predecessor: stages[0], count: 15_000, invalid: 0 },
+          { stage: stages[2], predecessor: stages[1], count: 14_985, invalid: 0 },
+          { stage: stages[3], predecessor: stages[2], count: 14_985, invalid: 0 },
+        ]),
+      );
+      expect(edges).toHaveLength(3);
+      expect(await artifacts.selectFrom(checkpoints).selectAll().execute()).toEqual([
+        { name: 'selection', requested: 15_000 },
+      ]);
+      const {
+        rows: [publications],
+      } = await sql<{ total: number; outputs: number; retries: number }>`
+        select count(*)::int total, count(distinct output)::int outputs,
+          count(*) filter(where attempt = 2)::int retries from ${sql.id(table)}`.execute(db);
+      expect(publications).toEqual({ total: 59_955, outputs: 59_955, retries: 30 });
       const {
         rows: [attempts],
       } = await sql<{ maximum: number; retried: number }>`select max(attempt)::int maximum,
         count(*) filter (where attempt = 2)::int retried from job where "runId" = ${runId}::uuid`.execute(db);
-      expect(attempts.maximum).toBe(2);
-      expect(attempts.retried).toBeGreaterThan(15);
+      expect(attempts).toEqual({ maximum: 2, retried: 46 }); // producer +15 poison +30 transient ML
+      const {
+        rows: [poison],
+      } = await sql<{ count: number }>`select count(*)::int count from ${sql.id(table)}
+        where id::integer % 1000 = 0 and stage != ${JobName.AssetExtractMetadata}`.execute(db);
+      expect(poison.count).toBe(0);
     } finally {
-      await sql`drop table ${sql.id(table)}`.execute(db);
+      clearInterval(heartbeat);
+      await heartbeatBusy;
+      await sql`drop table ${sql.id(checkpoints)}, ${sql.id(table)}`.execute(db);
     }
   }, 900_000);
 
