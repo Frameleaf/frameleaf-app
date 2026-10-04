@@ -1,5 +1,7 @@
 import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
+import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import type { ImageFormat } from 'src/enum.js';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -8,8 +10,6 @@ import type {
   RawImageInfo,
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
-import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
-import type { ImageFormat } from 'src/enum.js';
 
 // Kept local so the subprocess loads no application services, database or decorators.
 const ORIENTATION_TO_SHARP_ROTATION: Record<number, { angle: number; flip?: boolean; flop?: boolean }> = {

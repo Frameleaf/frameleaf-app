@@ -1,13 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { fork, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, fork } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { queueExecution } from 'src/queue/context.js';
+import type { SharpArguments, SharpOperation, SharpResponse, SharpResult } from 'src/queue/sharp-protocol.js';
 import { trackQueueChild } from 'src/queue/child-process.js';
+import { queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
-import { sharpPayloadBytes, SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
-import type { SharpArguments, SharpOperation, SharpResponse, SharpResult } from 'src/queue/sharp-protocol.js';
+import { SharpResourceLimitError, sharpPayloadBytes } from 'src/queue/sharp-protocol.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 
@@ -46,8 +46,8 @@ type PoolOptions = ReturnType<typeof sharpConfiguration> & {
 };
 
 function createSharpChild() {
-  const compiled = new URL('./sharp-worker.js', import.meta.url);
-  const source = new URL('./sharp-worker.ts', import.meta.url);
+  const compiled = new URL('sharp-worker.js', import.meta.url);
+  const source = new URL('sharp-worker.ts', import.meta.url);
   return fork(existsSync(compiled) ? compiled : source, [], {
     serialization: 'advanced',
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -135,8 +135,8 @@ export class SharpProcessPool {
 
   async close() {
     this.stopped = true;
-    for (const task of [...this.pending]) {
-      this.cancelPending(task, new Error('Sharp pool is closed'));
+    while (this.pending.length > 0) {
+      this.cancelPending(this.pending[0], new Error('Sharp pool is closed'));
     }
     const slots = [...this.slots];
     for (const slot of slots) {
@@ -177,7 +177,7 @@ export class SharpProcessPool {
     if (this.stopped) {
       return;
     }
-    while (this.pending.length) {
+    while (this.pending.length > 0) {
       let slot = [...this.slots].find((entry) => !entry.task && !entry.retiring);
       if (!slot) {
         if (this.slots.size >= this.options.workers) {
@@ -215,15 +215,13 @@ export class SharpProcessPool {
   private spawn(): Slot {
     const child = this.options.createChild();
     trackQueueChild(child); // Remains registered during idle reuse; only child close unregisters it.
-    let closed!: () => void;
+    const { promise: closed, resolve: markClosed } = Promise.withResolvers<void>();
     const slot: Slot = {
       child,
       ready: false,
       retiring: false,
       completed: 0,
-      closed: new Promise((resolve) => {
-        closed = resolve;
-      }),
+      closed,
     };
     this.slots.add(slot);
     child.on('message', (message: SharpResponse) => this.message(slot, message));
@@ -233,7 +231,7 @@ export class SharpProcessPool {
       slot.task?.reject(slot.lifetime?.error() ?? new Error(`Sharp child closed (${code ?? signal})`));
       slot.lifetime?.release();
       this.slots.delete(slot);
-      closed();
+      markClosed();
       this.dispatch();
     });
     return slot;

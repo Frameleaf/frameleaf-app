@@ -164,9 +164,11 @@ describe(CloudBackupMaintenance.name, () => {
       objects = nightlyBucket(1);
       let stopped = false;
       store.head.mockImplementation(() =>
-        executionDelay(1000).finally(() => {
-          stopped = true;
-        }),
+        executionDelay(1000)
+          .then(() => null)
+          .finally(() => {
+            stopped = true;
+          }),
       );
       const renew = vi.fn().mockResolvedValue(true);
       const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
