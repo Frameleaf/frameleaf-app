@@ -9,7 +9,7 @@ SELECT
   "createdAt",
   "updatedAt"
 FROM
-  immich_fork.recipient_group
+  public.recipient_group
 WHERE
   "ownerId" = $1::uuid
 ORDER BY
@@ -25,7 +25,7 @@ SELECT
   "createdAt",
   "updatedAt"
 FROM
-  immich_fork.recipient_group
+  public.recipient_group
 WHERE
   id = $1::uuid
   AND "ownerId" = $2::uuid

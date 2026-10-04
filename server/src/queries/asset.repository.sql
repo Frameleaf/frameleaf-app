@@ -274,26 +274,23 @@ FOR UPDATE OF
   stack
 SELECT
   asset.id,
-  coalesce(
-    mapping."upstreamPath",
-    reservation."upstreamPath",
-    asset."originalPath"
-  ) AS "originalPath",
+  asset."originalPath" AS "originalPath",
   asset."originalFileName",
   asset.checksum,
   coalesce(exif."fileSizeInByte", 0)::float8 AS "sizeInBytes",
-  reservation."temporaryPath" AS "reservationTemporaryPath",
+  NULL::text AS "reservationTemporaryPath",
   asset."libraryId",
   asset."isOffline"
 FROM
   public.asset asset
-  LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-  LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
   LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
 WHERE
   asset."ownerId" = $1::uuid
 FOR UPDATE OF
   asset
+DELETE FROM public.asset_checksum
+WHERE
+  "assetId" = ANY ($1::uuid[])
 delete from "stack"
 where
   (
@@ -420,45 +417,15 @@ where
       asset_lock."assetId" = "asset"."id"
   )
   and not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
 
 -- AssetRepository.getUploadAssetIdByChecksum
@@ -479,45 +446,15 @@ where
       asset_lock."assetId" = "asset"."id"
   )
   and not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
 limit
   $3
@@ -578,14 +515,6 @@ order by
   "timeBucket" desc
 
 -- AssetRepository.getTimelineHighlights
-SELECT
-  to_regclass('immich_fork.state')::text AS "stateTable"
-SELECT
-  phase
-FROM
-  immich_fork.state
-WHERE
-  id = 1
 with
   asset as (
     (
@@ -1073,45 +1002,15 @@ from
   "asset"
 where
   "asset"."id" = any ($1::uuid[])
-  and case
-    when "asset"."id" is null then false
-    when coalesce(
-      (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ),
-      'inactive'
-    ) in ('legacy', 'dual-write', 'ready') then exists (
-      select
-        1
-      from
-        asset as nsfw_asset
-      where
-        nsfw_asset.id = "asset"."id"
-        and nsfw_asset.is_nsfw = true
-    )
-    when (
-      select
-        phase
-      from
-        immich_fork.state
-      where
-        id = 1
-    ) = 'active' then not exists (
-      select
-        1
-      from
-        immich_fork.asset_privacy as privacy_asset
-      where
-        privacy_asset."assetId" = "asset"."id"
-        and privacy_asset."isNsfw" = false
-    )
-    else false
-  end
+  and exists (
+    select
+      1
+    from
+      public.asset as nsfw_asset
+    where
+      nsfw_asset.id = "asset"."id"
+      and nsfw_asset.is_nsfw = true
+  )
 
 -- AssetRepository.detectOfflineExternalAssets
 update "asset"

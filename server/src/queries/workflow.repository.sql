@@ -77,17 +77,6 @@ where
   "workflow"."id" = $1
 
 -- WorkflowRepository.getForWorkflowRun
-SELECT
-  EXISTS (
-    SELECT
-      1
-    FROM
-      information_schema.columns
-    WHERE
-      table_schema = 'public'
-      AND table_name = 'plugin_method'
-      AND column_name = 'allowedHosts'
-  ) AS "exists"
 select
   "workflow"."id",
   "workflow"."name",
@@ -109,7 +98,7 @@ select
           "plugin_method"."name" as "methodName",
           "plugin_method"."types" as "types",
           "plugin_method"."hostFunctions",
-          "plugin_method"."allowedHosts" as "allowedHosts"
+          "plugin_method"."allowedHosts"
         from
           "workflow_step"
           inner join "plugin_method" on "plugin_method"."id" = "workflow_step"."pluginMethodId"

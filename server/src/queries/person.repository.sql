@@ -300,6 +300,16 @@ where
   "person"."ownerId" = $1
   and "person"."personGroupId" = $2
   and "asset_face"."deletedAt" is null
+  and "asset_face"."personGroupId" = "person"."personGroupId"
+  and "asset_face"."isVisible" = $3
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 
 -- PersonRepository.reassignFace
 update "asset_face"
@@ -679,45 +689,15 @@ where
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
 order by
-  case
-    when "asset_face"."assetId" is null then false
-    when coalesce(
-      (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ),
-      'inactive'
-    ) in ('legacy', 'dual-write', 'ready') then exists (
-      select
-        1
-      from
-        asset as nsfw_asset
-      where
-        nsfw_asset.id = "asset_face"."assetId"
-        and nsfw_asset.is_nsfw = true
-    )
-    when (
-      select
-        phase
-      from
-        immich_fork.state
-      where
-        id = 1
-    ) = 'active' then not exists (
-      select
-        1
-      from
-        immich_fork.asset_privacy as privacy_asset
-      where
-        privacy_asset."assetId" = "asset_face"."assetId"
-        and privacy_asset."isNsfw" = false
-    )
-    else false
-  end asc
+  exists (
+    select
+      1
+    from
+      public.asset as nsfw_asset
+    where
+      nsfw_asset.id = "asset_face"."assetId"
+      and nsfw_asset.is_nsfw = true
+  ) asc
 
 -- PersonRepository.getMissingThumbnailsForAssets
 select
@@ -858,7 +838,7 @@ where
     select
       1
     from
-      immich_fork.person_merge_verdict verdict
+      public.person_merge_verdict verdict
     where
       verdict."ownerId" = $5::uuid
       and verdict."personId" = "candidates"."personId"
@@ -872,7 +852,7 @@ where
     select
       1
     from
-      immich_fork.person_merge_verdict verdict
+      public.person_merge_verdict verdict
     where
       verdict."ownerId" = $6::uuid
       and verdict.verdict = 'ignore'

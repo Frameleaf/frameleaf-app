@@ -6635,6 +6635,8 @@ export type QueueStatusLegacyDto = {
 export type QueueResponseLegacyDto = {
     jobCounts: QueueStatisticsDto;
     queueStatus: QueueStatusLegacyDto;
+    /** Durable run created by a batch start */
+    runId?: string;
 };
 export type QueuesResponseLegacyDto = {
     backgroundTask: QueueResponseLegacyDto;
@@ -6665,6 +6667,42 @@ export type QueuesResponseLegacyDto = {
 };
 export type JobCreateDto = {
     name: ManualJobName;
+};
+export type JobRunResponseDto = {
+    active: number;
+    blocked: number;
+    cancelled: number;
+    completed: number;
+    createdAt: string;
+    delayed: number;
+    enumerationDone: boolean;
+    failed: number;
+    finishedAt: string | null;
+    id: string;
+    kind: string;
+    lastProgressAt: string | null;
+    lastStage: string | null;
+    needsAttention: number;
+    noDispatchBacklog: boolean;
+    paused: number;
+    reasons: Reasons[];
+    retrying: number;
+    stageTotals: {
+        active: number;
+        blocked: number;
+        cancelled: number;
+        completed: number;
+        delayed: number;
+        failed: number;
+        needsAttention: number;
+        paused: number;
+        retrying: number;
+        total: number;
+        waiting: number;
+    };
+    state: State4;
+    total: number;
+    waiting: number;
 };
 export type MemoryHighlightResponseDto = {
     audio: MemoryHighlightAudio;
@@ -6718,23 +6756,60 @@ export type QueueRunDto = {
     canPause: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
+    lastProgressAt?: string | null;
     name: QueueName;
+    noDispatchBacklog?: boolean;
     /** Jobs finished, completed or failed, since this run started */
     processed: number;
     /** When this run was first seen with work */
     startedAt: string | null;
+    state?: State4;
     /** processed + active + waiting */
     total: number;
+    /** Status could not be read; zero counts are unknown, not idle */
+    unavailable?: boolean;
     /** Jobs waiting to start, including those held by a paused queue */
     waiting: number;
 };
 export type RunningJobsResponseDto = {
     /** Whether the viewer may see and pause the server job queues */
     canManageQueues: boolean;
+    canReadJobRuns?: boolean;
+    /** Operational summaries; JobRead administrators only */
+    durableRuns?: JobRunResponseDto[];
+    durableRunsUnavailable?: boolean;
     memoryExports: MemoryExportResponseDto[];
     operations: MediaOperationDto[];
     /** Server job queues with work; always empty for non-administrators */
     queues: QueueRunDto[];
+};
+export type JobRunPageDto = {
+    hasNextPage: boolean;
+    items: JobRunResponseDto[];
+};
+export type JobRunItemResponseDto = {
+    id: string;
+    lastProgressAt: string | null;
+    lastStage: string | null;
+    outcome: Outcome;
+    reasons: Reasons[];
+    stageTotals: {
+        active: number;
+        blocked: number;
+        cancelled: number;
+        completed: number;
+        delayed: number;
+        failed: number;
+        needsAttention: number;
+        paused: number;
+        retrying: number;
+        total: number;
+        waiting: number;
+    };
+};
+export type JobRunItemPageDto = {
+    hasNextPage: boolean;
+    items: JobRunItemResponseDto[];
 };
 export type QueueCommandDto = {
     command: QueueCommand;
@@ -7918,7 +7993,7 @@ export type PartnerBackfillDto = {
     /** Items copied so far */
     done: number;
     /** Where the first copy stands */
-    state: State4;
+    state: State5;
     /** Items to copy */
     total: number;
 };
@@ -9145,7 +9220,7 @@ export type PhotographyWorkflowDto = {
         processing: Processing;
         proofRevisionId: string | null;
         rating: number | null;
-        state: State5;
+        state: State6;
         withheld: boolean;
     }[];
     chapters: {
@@ -9921,7 +9996,7 @@ export type PhotographyInvitationDto = {
             processing: Processing;
             proofRevisionId: string | null;
             rating: number | null;
-            state: State5;
+            state: State6;
             withheld: boolean;
         }[];
         chapters: {
@@ -12261,42 +12336,6 @@ export type ServerStorageResponseDto = {
     diskUse: string;
     /** Used disk space in bytes */
     diskUseRaw: number;
-};
-export type StorageMigrationStageProgressDto = {
-    /** Items finished in this stage */
-    done: number;
-    /** Items this stage covers */
-    total: number;
-};
-export type StorageMigrationStatusResponseDto = {
-    /** An administrator chose to let it finish in the background */
-    background: boolean;
-    /** Bytes of extra copies moved to the file trash */
-    bytesFreed: number;
-    /** Estimated time left, from the measured rate */
-    estimatedSecondsLeft: number | null;
-    /** When the migration finished */
-    finishedAt: string | null;
-    /** Missing originals relinked automatically */
-    relinked: number;
-    /** False when the library had nothing to combine (a fresh install) */
-    required: boolean;
-    /** Whether the Getting Ready screen waits for it */
-    showInGettingReady: boolean;
-    /** Files that could not be read or verified, skipped */
-    skipped: number;
-    stage: StorageMigrationStage;
-    /** Progress of each stage */
-    stages: {
-        checking: StorageMigrationStageProgressDto;
-        linking: StorageMigrationStageProgressDto;
-        relinking: StorageMigrationStageProgressDto;
-        trashing: StorageMigrationStageProgressDto;
-    };
-    /** When the migration started */
-    startedAt: string | null;
-    /** Missing originals left for review in Library Care */
-    toReview: number;
 };
 export type ServerVersionResponseDto = {
     /** Major version number */
@@ -20128,6 +20167,41 @@ export function getRunningJobs(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List durable job runs
+ */
+export function getJobRuns({ skip, take }: {
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobRunPageDto;
+    }>(`/jobs/runs${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Inspect selected job run items
+ */
+export function getJobRunItems({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobRunItemPageDto;
+    }>(`/jobs/runs/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Run jobs
  */
 export function runQueueCommandLegacy({ name, queueCommandDto }: {
@@ -24081,29 +24155,6 @@ export function getStorage(opts?: Oazapfts.RequestOpts) {
         data: ServerStorageResponseDto;
     }>("/server/storage", {
         ...opts
-    }));
-}
-/**
- * Get storage migration status
- */
-export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: StorageMigrationStatusResponseDto;
-    }>("/server/storage-migration", {
-        ...opts
-    }));
-}
-/**
- * Run the storage migration in the background
- */
-export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: StorageMigrationStatusResponseDto;
-    }>("/server/storage-migration/background", {
-        ...opts,
-        method: "POST"
     }));
 }
 /**
@@ -28718,6 +28769,38 @@ export enum ManualJobName {
     IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all",
     AnalyticsCollect = "analytics-collect"
 }
+export enum Reasons {
+    WorkerUnavailable = "worker_unavailable",
+    NoDispatchBacklog = "no_dispatch_backlog",
+    DependencyUnavailable = "dependency_unavailable",
+    DependencyWait = "dependency_wait",
+    DependencyFailed = "dependency_failed",
+    RetryBackoff = "retry_backoff",
+    ScheduledDelay = "scheduled_delay",
+    QueuePaused = "queue_paused",
+    NeedsAttention = "needs_attention",
+    StageFailed = "stage_failed",
+    Enumerating = "enumerating",
+    WorkloadDisabled = "workload-disabled",
+    DestinationUnavailable = "destination-unavailable",
+    DestinationConfiguration = "destination-configuration",
+    DestinationConsent = "destination-consent",
+    DestinationBudget = "destination-budget",
+    SourceUnavailable = "source-unavailable"
+}
+export enum State4 {
+    Running = "running",
+    Retrying = "retrying",
+    Delayed = "delayed",
+    Paused = "paused",
+    Waiting = "waiting",
+    Blocked = "blocked",
+    Unavailable = "unavailable",
+    NeedsAttention = "needs_attention",
+    Completed = "completed",
+    CompletedWithErrors = "completed_with_errors",
+    Cancelled = "cancelled"
+}
 export enum MemoryExportFormat {
     Archive = "archive",
     Highlight = "highlight"
@@ -28743,6 +28826,18 @@ export enum MemoryExportStatus {
     Failed = "failed",
     Cancelling = "cancelling",
     Cancelled = "cancelled"
+}
+export enum Outcome {
+    Completed = "completed",
+    Failed = "failed",
+    NeedsAttention = "needsAttention",
+    Cancelled = "cancelled",
+    Active = "active",
+    Retrying = "retrying",
+    Delayed = "delayed",
+    Paused = "paused",
+    Waiting = "waiting",
+    Blocked = "blocked"
 }
 export enum QueueCommand {
     Start = "start",
@@ -28949,7 +29044,7 @@ export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
 }
-export enum State4 {
+export enum State5 {
     Pending = "pending",
     Running = "running",
     Done = "done",
@@ -29267,7 +29362,7 @@ export enum Layout {
     Grid = "grid",
     Slideshow = "slideshow"
 }
-export enum State5 {
+export enum State6 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",
@@ -29652,7 +29747,6 @@ export enum QueueJobStatus {
 export enum JobName {
     ICloudSync = "ICloudSync",
     AnalyticsCollect = "AnalyticsCollect",
-    ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",
     AssetDeleteCheck = "AssetDeleteCheck",
     AssetDetectFacesQueueAll = "AssetDetectFacesQueueAll",
@@ -29707,6 +29801,7 @@ export enum JobName {
     UserSyncUsage = "UserSyncUsage",
     PersonCleanup = "PersonCleanup",
     PersonFileMigration = "PersonFileMigration",
+    ProfileImageRepair = "profile-image-repair",
     PersonGenerateThumbnail = "PersonGenerateThumbnail",
     PersonIdentityRefresh = "PersonIdentityRefresh",
     SessionCleanup = "SessionCleanup",
@@ -29716,11 +29811,13 @@ export enum JobName {
     SidecarWrite = "SidecarWrite",
     SmartSearchQueueAll = "SmartSearchQueueAll",
     SmartSearch = "SmartSearch",
+    SmartSearchPostprocess = "SmartSearchPostprocess",
+    AssetMetadataPostprocess = "AssetMetadataPostprocess",
+    ImageEnrichmentPostprocess = "ImageEnrichmentPostprocess",
     StorageTemplateMigration = "StorageTemplateMigration",
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
-    UniversalStorageMigration = "UniversalStorageMigration",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",
@@ -29846,14 +29943,6 @@ export enum FrameleafSetupErrorCode {
     SetupLinkTokenInvalid = "setup_link_token_invalid",
     SetupLinkTokenUsed = "setup_link_token_used",
     SetupLinkFailed = "setup_link_failed"
-}
-export enum StorageMigrationStage {
-    Pending = "pending",
-    Checking = "checking",
-    Relinking = "relinking",
-    Linking = "linking",
-    Trashing = "trashing",
-    Done = "done"
 }
 export enum ReleaseType {
     Major = "major",
