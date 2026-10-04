@@ -99,8 +99,9 @@ describe('catalog manifests', () => {
     // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
     // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
     // photography workflows and studio sites (FL-283), the universal storage file trash, and partner copy
-    // origins, backfills and people links (FL-326), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(233);
+    // origins, backfills and people links (FL-326), and album source links and their sync-added memberships
+    // (FL-331), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(235);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'immich_fork.icloud_weekly_grant',
@@ -165,10 +166,12 @@ describe('catalog manifests', () => {
         'immich_fork.person_origin',
         'immich_fork.partner_backfill',
         'immich_fork.partner_person_link',
+        'immich_fork.album_source_link',
+        'immich_fork.album_source_asset',
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(142);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(144);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {
