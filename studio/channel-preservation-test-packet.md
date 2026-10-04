@@ -413,3 +413,71 @@ expected to require a genuine root-owned hosted recovery receipt before a new
 adapted digest can be admitted. No engine reconstruction or source inventory is
 generated locally. GitNexus cannot map the changed Stretch constructor/search
 or new regression; impact coverage remains UNKNOWN, with no HIGH/CRITICAL result.
+
+### Hosted harness corrections after 0058 digest admission
+
+Run 37222356306 / source head 2a4dda369f3a1f5255f1b8496e426fcf3db5eb90
+passed source admission, lifecycle, eight clip-gain cases, all twelve original
+retiming cases and sixteen shared/high-rate actual-processor cases. It then
+reported an EOF syntax failure in search-completeness and eight high-rate export
+failures at production `resample`: `OfflineAudioContext is not defined`.
+These failures do not establish a new DSP defect.
+
+The 0058 new-file hunk declared 49 lines but contained 50; the applied file ended
+without the describe closure. Correcting the declaration to 50 restores the
+already-authored complete test, without changing its code or assertions. Only
+that tracked patch hash is updated to
+`abcf69dc92b7d73cb075b3f1374615c9d842f63a9118a44c844f76dc47ea8933`.
+The last authenticated adapted digest 89143966… remains unchanged pending the
+next authentic hosted receipt. Static hunk accounting must consume every added
+line, rather than relying only on `git apply --numstat` acceptance.
+
+The high-rate export fixture genuinely requires browser-native Web Audio for
+192-kHz to 48-kHz resampling; jsdom cannot qualify it. The separate proposed
+native Chromium Vitest browser run retains all eight cases, decoded-boundary
+mock only, actual production DSP/resampling, existing thresholds and deadlines.
+No Web Audio mock, dependency or browser harness implementation is added in this
+syntax correction packet. Real browser qualification and remaining full FL-103
+gates stay open.
+
+### 0059: mandatory native Web Audio export harness
+
+Root reviewed the native-browser plan and official Vitest Playwright provider
+configuration. Patch 0059 declares exact @vitest/browser-playwright 4.1.10,
+matching the already-recorded Vitest 4.1.10 family and existing Playwright 1.60.0.
+It adds Node/browser configurations and a native Web Audio prerequisite hook.
+No local dependency resolution is performed and the old lockfile/hash remain
+unchanged until genuine root-owned hosted package-lock-only resolution is
+reviewed. This staged pre-resolution packet is not yet installable/qualified.
+
+The browser suite includes exactly the existing high-rate export file. Its
+original eight tests, waveforms, assertions, deadlines and mediabunny decoded
+boundary mock remain byte-identical in 0057. All production DSP/extraction/
+mixing/resampling is actual browser code. The prerequisite verifies native
+OfflineAudioContext and AudioBuffer constructors, real 192-kHz input buffers,
+48-kHz native rendering and Chromium identity, with no assigned/polyfilled audio
+global. The browser config retains engine plugins/aliases but replaces jsdom's
+setup with this native prerequisite. The audited old setup imports jest-dom,
+i18n and a keyframe store reset and conditionally supplies ImageData and
+ResizeObserver emulation; none is required by this export-only fixture. Native
+browser DOM objects and the fixture's existing cache cleanup are retained.
+
+The mandatory workflow now installs its already-pinned Chromium earlier, runs
+the existing Node search/shared-DSP tests with Node config, runs all eight export
+cases in real Chromium, and validates the actual Vitest JSON report against the
+exact eight case names and passed statuses, zero pending/todo/failed and success.
+The original clip-gain and twelve retiming cases remain mandatory and unchanged.
+The later broad Node suite also uses Node config, excluding this exact file only
+because the separate mandatory browser run owns it. Report absence, browser
+launch/native API incompatibility, provider/mock/config failure, timeout or any
+case failure is a failed qualification, never skipped success. No case/hook/
+workflow deadline is increased. The Chromium install is reused by later browser
+tools. Direct standalone `vp test` users must likewise select the appropriate
+Node/browser configurations; the workflow does not attest a jsdom high-rate run.
+
+New configuration/source files and the eventual resolved lock require another
+authentic hosted source receipt before adapted digest admission. The manifest
+retains the last authenticated 89143966… source digest. Existing patches 0056
+and 0057, actual high-rate case contents, production audio code, attribution and
+the default-OFF controls remain unchanged. Hosted lock resolution and native
+execution remain prerequisites; the remaining full FL-103 gates remain open.

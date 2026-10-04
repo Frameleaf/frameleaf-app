@@ -1,0 +1,94 @@
+Subject: Run the unchanged high-rate export cases with native Chromium Web Audio
+
+Test harness adaptation only. Freecut MIT / SoundTouch LGPL attribution remains
+unchanged. No decoded waveform, production DSP/resampling or assertion changes.
+
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -117,3 +117,4 @@
+     "@vitejs/plugin-react": "6.0.1",
++    "@vitest/browser-playwright": "4.1.10",
+     "@vitest/coverage-v8": "4.1.10",
+     "@webgpu/types": "0.1.69",
+diff --git a/vite.node.config.ts b/vite.node.config.ts
+new file mode 100644
+--- /dev/null
++++ b/vite.node.config.ts
+@@ -0,0 +1,15 @@
++import { configDefaults } from 'vitest/config'
++import base from './vite.config'
++
++// Relocate exactly the native-Web-Audio suite into the mandatory browser run.
++// Preserve every other engine test and the existing Node/jsdom setup.
++export default {
++  ...base,
++  test: {
++    ...base.test,
++    exclude: [
++      ...(base.test?.exclude ?? configDefaults.exclude),
++      'src/features/export/utils/canvas-audio-highrate-retiming.test.ts',
++    ],
++  },
++}
+diff --git a/vite.highrate-browser.config.ts b/vite.highrate-browser.config.ts
+new file mode 100644
+--- /dev/null
++++ b/vite.highrate-browser.config.ts
+@@ -0,0 +1,24 @@
++import { playwright } from '@vitest/browser-playwright'
++import base from './vite.config'
++
++const report = process.env.STUDIO_HIGHRATE_REPORT
++if (!report) throw new Error('Native high-rate tests require an evidence report path')
++
++export default {
++  ...base,
++  test: {
++    ...base.test,
++    // No jsdom emulation setup or audio API substitute in this native run.
++    environment: undefined,
++    setupFiles: ['./src/test/highrate-browser-setup.ts'],
++    include: ['src/features/export/utils/canvas-audio-highrate-retiming.test.ts'],
++    reporters: ['default', 'json'],
++    outputFile: { json: report },
++    browser: {
++      enabled: true,
++      provider: playwright(),
++      instances: [{ browser: 'chromium' }],
++      headless: true,
++    },
++  },
++}
+diff --git a/src/test/highrate-browser-setup.ts b/src/test/highrate-browser-setup.ts
+new file mode 100644
+--- /dev/null
++++ b/src/test/highrate-browser-setup.ts
+@@ -0,0 +1,27 @@
++import { beforeAll, expect } from 'vite-plus/test'
++
++// Prerequisite hook, not an extra counted case: all eight original export tests
++// must run in a real browser. Do not assign or polyfill any Web Audio global.
++beforeAll(async () => {
++  expect(typeof OfflineAudioContext).toBe('function')
++  expect(typeof AudioBuffer).toBe('function')
++  expect(Function.prototype.toString.call(OfflineAudioContext)).toContain('[native code]')
++  expect(Function.prototype.toString.call(AudioBuffer)).toContain('[native code]')
++  const context = new OfflineAudioContext(1, 48, 48_000)
++  const input = context.createBuffer(1, 192, 192_000)
++  expect(input).toBeInstanceOf(AudioBuffer)
++  expect(input.sampleRate).toBe(192_000)
++  expect(input.length).toBe(192)
++  input.getChannelData(0)[16] = 0.125
++  const source = context.createBufferSource()
++  source.buffer = input
++  source.connect(context.destination)
++  source.start(0)
++  const rendered = await context.startRendering()
++  expect(rendered).toBeInstanceOf(AudioBuffer)
++  expect(rendered.sampleRate).toBe(48_000)
++  expect(rendered.length).toBe(48)
++  expect(rendered.getChannelData(0).some((value) => value !== 0)).toBe(true)
++  source.disconnect()
++  expect(navigator.userAgent).toContain('Chrome')
++})

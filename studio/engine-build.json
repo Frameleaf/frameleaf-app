@@ -293,7 +293,12 @@
     {
       "path": "patches/0058-complete-multichannel-overlap-search.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "2c122ec8d97ba6b70316f8c8656ecd8099868db3119973b32e9b4d5b8c8feb0e"
+      "sha256": "abcf69dc92b7d73cb075b3f1374615c9d842f63a9118a44c844f76dc47ea8933"
+    },
+    {
+      "path": "patches/0059-native-webaudio-highrate-browser-harness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e7b156f4d5bf36e99b3273729e9f651238d143969a246ea914379ea0a7ace5bb"
     }
   ],
   "sourceSha256": "8914396631b115fb98c26b19b3c130b0a228543752dc1494d23f98cf5bf1abc7"

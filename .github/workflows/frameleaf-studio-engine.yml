@@ -114,7 +114,25 @@ jobs:
         run: ./node_modules/.bin/vp test run src/features/export/utils/canvas-audio-retiming-preservation.test.ts
       - name: Qualify shared multichannel retiming DSP
         working-directory: studio/engine
-        run: ./node_modules/.bin/vp test run src/infrastructure/audio/time-stretch-search-completeness.test.ts src/infrastructure/audio/time-stretch-multichannel.test.ts src/features/export/utils/canvas-audio-highrate-retiming.test.ts
+        run: ./node_modules/.bin/vp test run --config vite.node.config.ts src/infrastructure/audio/time-stretch-search-completeness.test.ts src/infrastructure/audio/time-stretch-multichannel.test.ts
+      - name: Install Chromium for native audio and compositor readback
+        working-directory: studio/engine
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Qualify all eight high-rate exports with native Web Audio
+        id: highrate_browser
+        working-directory: studio/engine
+        env:
+          STUDIO_HIGHRATE_REPORT: ${{ runner.temp }}/highrate-browser-report.json
+        run: ./node_modules/.bin/vp test run --config vite.highrate-browser.config.ts
+      - name: Require exactly eight native high-rate passes without skips
+        run: node studio/tools/highrate-browser-report.mjs "$RUNNER_TEMP/highrate-browser-report.json"
+      - name: Retain native high-rate browser evidence
+        if: ${{ always() && steps.highrate_browser.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-highrate-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/highrate-browser-report.json
+          if-no-files-found: error
       - name: Approved-fixture Whisper inference timing diagnostic (FL-103, FL-111)
         timeout-minutes: 12
         env:
@@ -139,9 +157,6 @@ jobs:
         env:
           HDR_TIMING_REPORT: ${{ runner.temp }}/hdr-master-timing-report.json
         run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs studio/tools/hdr-source-validation.test.mjs
-      - name: Install Chromium for compositor readback
-        working-directory: studio/engine
-        run: npx --no-install playwright install --with-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
         run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs
       - name: Render-worker hardware probe refuses software GPU evidence
@@ -196,7 +211,7 @@ jobs:
           git diff --exit-code -- studio/conformance.json
       - name: Upstream unit and Node headless contracts
         run: |
-          npm --prefix studio/engine run test:run
+          (cd studio/engine && ./node_modules/.bin/vp test run --config vite.node.config.ts)
           npm --prefix studio/engine run headless:test:node
       - name: Build and attest the isolated engine
         run: |
