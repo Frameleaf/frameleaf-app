@@ -1653,7 +1653,7 @@ describe(SystemConfigService.name, () => {
         }
         return Promise.resolve();
       });
-      return { history: () => history };
+      return { config: () => config, history: () => history };
     };
 
     it('should record a saved change with the administrator and the values before and after', async () => {
@@ -1718,8 +1718,11 @@ describe(SystemConfigService.name, () => {
     });
 
     it('should keep the save when the history cannot be written', async () => {
-      useStore(partialConfig);
-      mocks.systemMetadata.set.mockRejectedValue(new Error('disk full'));
+      const store = useStore(partialConfig);
+      const write = mocks.systemMetadata.set.getMockImplementation()!;
+      mocks.systemMetadata.set.mockImplementation((key, value) =>
+        key === SystemMetadataKey.SystemConfigHistory ? Promise.reject(new Error('disk full')) : write(key, value),
+      );
       const { config, revision } = await sut.getAdminConfigWithRevision();
 
       await expect(
@@ -1729,6 +1732,8 @@ describe(SystemConfigService.name, () => {
         ),
       ).resolves.toEqual(expect.objectContaining({ revision: expect.any(String) }));
       expect(configWrites().length).toBeGreaterThan(0);
+      expect(store.config().trash?.days).toBe(12);
+      expect(store.history()).toBeNull();
       expect(mocks.logger.error).toHaveBeenCalled();
     });
 
