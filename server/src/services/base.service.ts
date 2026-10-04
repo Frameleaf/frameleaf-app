@@ -19,6 +19,7 @@ import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
@@ -35,7 +36,6 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
@@ -450,13 +450,14 @@ export class BaseService {
    * Refuses when the destination is missing, disabled, unconsented, over budget, unhealthy or
    * does not serve the workload; never substitutes another destination.
    */
-  protected selectMlDestination(request: MlSelectionRequest) {
+  protected async selectMlDestination(request: MlSelectionRequest) {
+    const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
     return selectMlDestination(
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
       },
-      request,
+      { ...request, destinationId },
     );
   }
 

@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Kysely, sql, type SelectQueryBuilder } from 'kysely';
+import { Kysely, type SelectQueryBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { MessageChannel, parentPort, Worker } from 'node:worker_threads';
+import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
@@ -13,6 +13,7 @@ import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import {
   QUEUE_TIMING,
   QueueClaim,
@@ -47,6 +48,10 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartSearch,
   JobName.Ocr,
   JobName.BestPhotosScore,
+  JobName.AssetExtractMetadata,
+  JobName.AssetDetectFaces,
+  JobName.ImageDescription,
+  JobName.NsfwDetection,
   JobName.AssetEncodeVideoQueueAll,
   JobName.SmartSearchQueueAll,
   JobName.AssetExtractMetadataQueueAll,
@@ -175,9 +180,15 @@ export class JobRepository {
         throw new Error('Handler returned Failed');
       }
       const accepted = await this.store.complete(claim, context.followups, async (tx) => {
-        for (const adopt of context.adoptions) {
-          await adopt(tx);
-        }
+        await publicationTransaction.run(tx, () =>
+          queueExecution.run(context, async () => {
+            context.buffering = true;
+            for (const adopt of context.adoptions) {
+              await adopt(tx);
+            }
+            abort.signal.throwIfAborted();
+          }),
+        );
       });
       if (accepted) {
         // Notification failure cannot change an already committed outcome or replay media work.
@@ -211,7 +222,15 @@ export class JobRepository {
 
   private async stopOnce(graceMs: number) {
     this.coordinator?.postMessage({ type: 'stop' });
-    await Promise.race([Promise.allSettled([...this.active.values()].map(({ finished }) => finished)), sleep(graceMs)]);
+    await Promise.race([
+      Promise.allSettled(
+        this.active
+          .values()
+          .toArray()
+          .map(({ finished }) => finished),
+      ),
+      sleep(graceMs),
+    ]);
     for (const { abort } of this.active.values()) {
       abort.abort(new Error('Worker stopped'));
     }
@@ -369,8 +388,10 @@ export class JobRepository {
       if (context) {
         const claim = context.claim;
         const result = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
-          and state = 'active' and "leaseExpiresAt" > now() and "cancelRequestedAt" is null for update`.execute(tx);
-        if (!result.rows.length) {
+          and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+          tx,
+        );
+        if (result.rows.length === 0) {
           throw new Error('Selection producer lost its claim');
         }
       }
@@ -402,6 +423,27 @@ export class JobRepository {
     }
   }
 
+  /** Persist before admission. A retry keeps its original destination even if routing changes. */
+  async pinDestination(workload: string, destinationId: string): Promise<string> {
+    const context = queueExecution.getStore();
+    if (!context) {
+      return destinationId;
+    }
+    context.signal.throwIfAborted();
+    const {
+      rows: [row],
+    } = await sql<{ destination: string }>`update job set data = jsonb_set(data,
+      '{_queueDestinations}', coalesce(data->'_queueDestinations', '{}'::jsonb) ||
+      jsonb_build_object(${workload}::text, coalesce(data->'_queueDestinations'->>${workload}, ${destinationId})))
+      where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid and state = 'active'
+      and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null
+      returning data->'_queueDestinations'->>${workload} as destination`.execute(this.store.db);
+    if (!row) {
+      throw new Error('Destination admission lost its claim');
+    }
+    return row.destination;
+  }
+
   async queueAll(items: JobItem[]): Promise<void> {
     const intents = items.map((item) => this.intent(item));
     const context = queueExecution.getStore();
@@ -418,9 +460,9 @@ export class JobRepository {
             await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
           }
           const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
-            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > now()
+            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
             and "cancelRequestedAt" is null for update`.execute(tx);
-          if (!rows.length) {
+          if (rows.length === 0) {
             throw new Error('Producer lost its claim');
           }
           await this.store.enqueue(batch, tx);

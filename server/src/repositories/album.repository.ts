@@ -18,7 +18,7 @@ import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -27,6 +27,7 @@ import { albumCoverCandidates } from 'src/utils/album-cover.js';
 import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
+
 export interface AlbumAssetCount {
   albumId: string;
   assetCount: number;
@@ -103,7 +104,8 @@ export class AlbumRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {
-    this.smartAlbums = new SmartAlbumRepository(db);
+    this.db = publicationDatabase(this.db);
+    this.smartAlbums = new SmartAlbumRepository(this.db);
   }
   @GenerateSql({ params: [DummyValue.UUID, { withAssets: true }, DummyValue.UUID] })
   async getById(id: string, options: AlbumInfoOptions, authUserId?: string) {

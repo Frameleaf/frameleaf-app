@@ -5,6 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
   anyUuid,
@@ -25,7 +26,9 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
 export class AssetJobRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForSearchDuplicatesJob(id: string) {

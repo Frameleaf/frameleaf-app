@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import type { QueueExecution } from 'src/queue/types.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
@@ -11,6 +12,7 @@ import {
   SourceType,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -1413,6 +1415,44 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      const face = AssetFaceFactory.create({ assetId: asset.id });
+      mocks.crypto.randomUUID.mockReturnValue(face.id);
+      mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      const execution: QueueExecution = {
+        claim: {
+          id: 'claim',
+          token: 'token',
+          name: 'fixture',
+          queue: 'fixture',
+          workerId: 'worker',
+          attempt: 1,
+          runId: null,
+          itemKey: null,
+          deadlineMs: 600_000,
+          startedAt: new Date(),
+          data: {},
+        },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      await queueExecution.run(execution, () => sut.handleDetectFaces({ id: asset.id }));
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      const changed = getForDetectedFaces(asset);
+      changed.files = changed.files.map((file) => ({ ...file, path: '/replacement-preview' }));
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(changed);
+      await expect(execution.adoptions[0]({} as never)).rejects.toThrow('Face source changed');
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+    });
+
     it('should skip if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 

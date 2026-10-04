@@ -1,5 +1,3 @@
-import { parentPort } from 'node:worker_threads';
-import { jobSignal, advanceJobProgress } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
 import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
@@ -8,6 +6,7 @@ import { Duration } from 'luxon';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
+import { parentPort } from 'node:worker_threads';
 import sharp, { Sharp } from 'sharp';
 import type {
   DecodeToBufferOptions,
@@ -39,11 +38,11 @@ import {
   LogLevel,
   RawExtractedFormat,
 } from 'src/enum.js';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { handlePromiseError } from 'src/utils/misc.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { createAffineMatrix } from 'src/utils/transform.js';

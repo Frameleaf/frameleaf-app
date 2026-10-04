@@ -25,6 +25,7 @@ import {
 } from 'src/dtos/search.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, PetObservationState } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import {
@@ -349,7 +350,9 @@ const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
 
 @Injectable()
 export class SearchRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   @GenerateSql({
     params: [

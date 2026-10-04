@@ -7,6 +7,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -25,6 +26,7 @@ import {
 } from 'src/utils/database.js';
 import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
+
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
   closestFaceAssetId?: string;
@@ -223,7 +225,9 @@ export class PersonRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
   async reassignFaces({
     oldPersonGroupId,

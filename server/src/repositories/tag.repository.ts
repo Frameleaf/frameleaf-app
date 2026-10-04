@@ -13,6 +13,7 @@ import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -37,6 +38,7 @@ export class TagRepository {
     @InjectKysely() private db: Kysely<DB>,
     private logger: LoggingRepository,
   ) {
+    this.db = publicationDatabase(this.db);
     this.logger.setContext(TagRepository.name);
   }
 

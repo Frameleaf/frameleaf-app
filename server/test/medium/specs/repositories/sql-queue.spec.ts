@@ -1,10 +1,17 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { JobName, QueueName } from 'src/enum.js';
-import { queueExecution } from 'src/queue/context.js';
-import { JobRepository } from 'src/repositories/job.repository.js';
-import { SqlQueueStore } from 'src/queue/store.js';
+import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
+import type { JobItem } from 'src/types.js';
+import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { publishJobResult, queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /** Real PostgreSQL races and rollback tests. Runs in the hosted medium suite, never on the operator Mac. */
@@ -33,6 +40,37 @@ describe('PostgreSQL queue', () => {
     workerB = randomUUID();
     await store.initialize([queue], workerA);
     await store.initialize([], workerB);
+  });
+
+  it('restores safe work within its existing retry budget and never independently resumes operation jobs', async () => {
+    await store.setConcurrency(queue, 3);
+    await store.enqueue([
+      intent({ data: { kind: 'safe' } }),
+      intent({ safeToRetry: false, data: { kind: 'unsafe' } }),
+      intent({ data: { kind: 'operation', operationId: randomUUID() } }),
+    ]);
+    const claims = await store.claim(queue, workerA);
+    expect(claims).toHaveLength(3);
+    await resetQueueAfterRestore(db);
+    await resetQueueAfterRestore(db); // resumed recovery must be idempotent
+    const { rows } = await sql<{ kind: string; state: string; token: string | null; attempt: number }>`select
+      data->>'kind' kind, state, token, attempt from job where queue = ${queue}`.execute(db);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { kind: 'safe', state: 'pending', token: null, attempt: 1 },
+        { kind: 'unsafe', state: 'needs_attention', token: null, attempt: 1 },
+        { kind: 'operation', state: 'needs_attention', token: null, attempt: 1 },
+      ]),
+    );
+    for (const claim of claims) {
+      expect(await store.complete(claim, [])).toBe(false);
+    }
+    await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+    const [retry] = await store.claim(queue, workerB);
+    expect(retry.data.kind).toBe('safe');
+    expect(retry.attempt).toBe(2);
+    await store.fail(retry, 'exhausted');
+    expect(await store.claim(queue, workerB)).toEqual([]);
   });
 
   it('claims at most concurrency one across competing workers, without holding the connection during work', async () => {
@@ -117,33 +155,186 @@ describe('PostgreSQL queue', () => {
     expect((await store.counts(queue)).waiting).toBe(1);
   });
 
-  it('keeps 15,000 immutable selected items accounted for across mixed terminal outcomes and dependency stages', async () => {
-    const runId = await store.createRun('mixed', { requested: 15_000 });
-    await store.enqueue(Array.from({ length: 15_000 }, (_, index) => intent({ runId, itemKey: String(index) })));
-    await store.finishEnumeration(runId);
-    const [claim] = await store.claim(queue, workerA);
-    await store.complete(claim, [intent({ name: 'ml', runId, itemKey: claim.itemKey!, parentId: claim.id })]);
-    const {
-      rows: [ready],
-    } = await sql<{
-      count: number;
-    }>`select count(*)::int count from job where queue = ${queue} and state in ('waiting','active')`.execute(db);
-    expect(ready.count).toBeLessThanOrEqual(1000);
-    const open = (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
-    expect(open.total).toBe(15_001);
-    expect(open.finishedAt).toBeNull();
-    // Persisted outcomes from many workers: accounting must include every row, not a bounded job-list page.
-    await sql`update job_run_item set state = case when "itemKey"::int % 13 = 0 then 'failed' else 'completed' end where "runId" = ${runId}::uuid`.execute(
+  it('executes 15,000 immutable selected items through bounded producers, handlers, publication and retries', async () => {
+    const table = `queue_fixture_${randomUUID().replaceAll('-', '')}`;
+    await sql`create table ${sql.id(table)} (id text not null, stage text not null, primary key(id, stage))`.execute(
       db,
     );
-    await store.finishEnumeration(runId);
-    const final = (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
-    expect(final.total).toBe(15_001);
-    expect(final.completed + final.failed).toBe(15_001);
-    expect(final.failed).toBeGreaterThan(1000);
-    expect(final.state).toBe('failed');
-    expect(final.finishedAt).not.toBeNull();
-  }, 180_000);
+    try {
+      const artifacts = publicationDatabase(db);
+      let executor: JobRepository;
+      const makeExecutor = () => {
+        const next: JobRepository = new JobRepository(
+          {} as never,
+          {} as never,
+          { emit: async (_event: string, _queue: string, item: JobItem) => next.run(item) } as never,
+          { setContext: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+          db,
+        );
+        for (const name of [JobName.AssetGenerateThumbnails, JobName.SmartSearch]) {
+          next['handlers'][name] = {
+            jobName: name,
+            queueName: queue as QueueName,
+            label: 'bounded-fixture',
+            handler: async (data) => {
+              const { id } = data as { id: string };
+              const execution = queueExecution.getStore()!;
+              const index = Number(id);
+              // Real executor failures exercise the one-retry budget, without setting terminal SQL state.
+              if (name === JobName.AssetGenerateThumbnails && index % 1000 === 0) {
+                throw new Error('poison fixture');
+              }
+              if (name === JobName.SmartSearch && index % 499 === 0 && execution.claim.attempt === 1) {
+                throw new Error('transient fixture');
+              }
+              await publishJobResult(async () => {
+                await artifacts.insertInto(table).values({ id, stage: name }).execute();
+                if (name === JobName.AssetGenerateThumbnails) {
+                  await next.queue({ name: JobName.SmartSearch, data: { id } });
+                }
+              });
+              return JobStatus.Success;
+            },
+          };
+        }
+        return next;
+      };
+      executor = makeExecutor();
+      const runId = await executor.createRun('pipeline-fixture', { requested: 15_000 }, async () => {
+        await executor.queueSelection(
+          JobName.AssetGenerateThumbnails,
+          db.selectFrom(sql<{ id: string }>`(select generate_series(1, 15000)::text id)`.as('selected')).select('id'),
+        );
+      });
+      await store.setConcurrency(queue, 64);
+      let batches = 0;
+      let maximumReady = 0;
+      for (;;) {
+        const claims = await store.claim(queue, batches % 2 ? workerA : workerB);
+        const {
+          rows: [ready],
+        } = await sql<{ count: number }>`select count(*)::int count from job
+          where queue = ${queue} and state in ('waiting','active')`.execute(db);
+        maximumReady = Math.max(maximumReady, ready.count);
+        expect(claims.length).toBeLessThanOrEqual(64);
+        await Promise.all(claims.map((claim) => executor['execute'](claim, new AbortController())));
+        // Advance only retry availability. Every outcome still goes through the production executor.
+        await sql`update job set "availableAt" = now() where queue = ${queue} and state = 'pending'
+          and attempt > 0`.execute(db);
+        const counts = await store.counts(queue);
+        if (counts.waiting + counts.active + counts.delayed === 0) {
+          break;
+        }
+        if (++batches === 20) {
+          executor = makeExecutor();
+        } // replace the execution facade mid-run
+        if (batches > 1000) {
+          throw new Error('Pipeline stopped making bounded progress');
+        }
+      }
+      expect(maximumReady).toBeLessThanOrEqual(1000);
+      const {
+        rows: [artifactsCount],
+      } = await sql<{ count: number }>`select count(*)::int count from ${sql.id(table)}`.execute(db);
+      expect(artifactsCount.count).toBe(29_970);
+      const final = (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
+      expect(final).toMatchObject({ total: 29_985, completed: 29_970, failed: 15, state: 'failed' });
+      expect(final.finishedAt).not.toBeNull();
+      const {
+        rows: [attempts],
+      } = await sql<{ maximum: number; retried: number }>`select max(attempt)::int maximum,
+        count(*) filter (where attempt = 2)::int retried from job where "runId" = ${runId}::uuid`.execute(db);
+      expect(attempts.maximum).toBe(2);
+      expect(attempts.retried).toBeGreaterThan(15);
+    } finally {
+      await sql`drop table ${sql.id(table)}`.execute(db);
+    }
+  }, 900_000);
+
+  it('rejects a late publication from a real still-running partitioned executor', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'queue-partition-'));
+    const oldPath = join(folder, 'old-attempt');
+    const worker = new Worker(
+      `const {parentPort,workerData}=require('node:worker_threads');
+      const fs=require('node:fs'); parentPort.postMessage('ready');
+      parentPort.once('message',()=>{fs.writeFileSync(workerData,'late private output');parentPort.postMessage('prepared');});
+      setInterval(()=>{},1000);`,
+      { eval: true, workerData: oldPath },
+    );
+    try {
+      await once(worker, 'message');
+      await store.enqueue([intent()]);
+      const [old] = await store.claim(queue, workerA);
+      await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${old.id}::uuid`.execute(db);
+      await store.recoverExpired();
+      await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+      const [replacement] = await store.claim(queue, workerB);
+      expect(await store.complete(replacement, [])).toBe(true);
+      const prepared = once(worker, 'message');
+      worker.postMessage('resume');
+      await prepared;
+      expect(await readFile(oldPath, 'utf8')).toBe('late private output');
+      const adopt = vi.fn();
+      expect(await store.complete(old, [intent()], adopt)).toBe(false);
+      expect(adopt).not.toHaveBeenCalled();
+      expect((await store.counts(queue)).waiting).toBe(0);
+      expect(worker.threadId).not.toBe(-1); // safety does not assume the remote executor stopped
+    } finally {
+      await worker.terminate();
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('rolls back nested repository writes when the lease expires during publication', async () => {
+    await store.enqueue([intent()]);
+    const [claim] = await store.claim(queue, workerA);
+    const adapted = publicationDatabase(db);
+    await expect(
+      store.complete(claim, [intent()], (tx) =>
+        publicationTransaction.run(tx, async () => {
+          await adapted.transaction().execute(async (nested) => {
+            await sql`update job set error = 'must roll back', "leaseExpiresAt" = clock_timestamp() + interval '30 milliseconds'
+          where id = ${claim.id}::uuid`.execute(nested);
+            await sql`select pg_sleep(0.06)`.execute(nested);
+          });
+        }),
+      ),
+    ).rejects.toThrow('Publication lease expired');
+    const {
+      rows: [row],
+    } = await sql<{
+      state: string;
+      error: string | null;
+    }>`select state, error from job where id = ${claim.id}::uuid`.execute(db);
+    expect(row).toEqual({ state: 'active', error: null });
+    expect((await store.counts(queue)).waiting).toBe(0);
+  });
+
+  it('keeps the admitted destination on retry and fences admission from a lost claim', async () => {
+    await store.enqueue([intent()]);
+    const [claim] = await store.claim(queue, workerA);
+    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    const execution = {
+      claim,
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    await queueExecution.run(execution, async () => {
+      expect(await repository.pinDestination('search', 'explicit-a')).toBe('explicit-a');
+      expect(await repository.pinDestination('search', 'new-route-b')).toBe('explicit-a');
+      await store.fail(claim, 'retry');
+      await expect(repository.pinDestination('search', 'new-route-b')).rejects.toThrow('lost its claim');
+    });
+    await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+    const [retry] = await store.claim(queue, workerB);
+    await queueExecution.run({ ...execution, claim: retry }, async () => {
+      expect(await repository.pinDestination('search', 'new-route-b')).toBe('explicit-a');
+    });
+  });
 
   it('a poison parent settles unstarted descendants while other selected items continue', async () => {
     const runId = await store.createRun('dependency', {});

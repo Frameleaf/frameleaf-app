@@ -89,19 +89,19 @@ describe(JobRepository.name, () => {
     const abort = new AbortController();
     abort.abort(new Error('cancelled'));
     execution.signal = abort.signal;
-    await expect(queueExecution.run(execution, () => sut.queue({ name: JobName.VersionCheck }))).rejects.toThrow(
-      'cancelled',
-    );
+    await expect(
+      queueExecution.run(execution, () => sut.queue({ name: JobName.VersionCheck, data: {} })),
+    ).rejects.toThrow('cancelled');
     expect(enqueue).not.toHaveBeenCalled();
   });
-  it('does not automatically replay metadata, faces or destructive forced CLIP rebuilding', async () => {
+  it('retries fenced core publication but never destructive forced CLIP rebuilding', async () => {
     for (const item of [
       { name: JobName.AssetExtractMetadata, data: { id: 'asset' } },
       { name: JobName.AssetDetectFaces, data: { id: 'asset' } },
       { name: JobName.SmartSearchQueueAll, data: { force: true } },
     ] as const) {
       await sut.queue(item);
-      expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(false);
+      expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(item.name !== JobName.SmartSearchQueueAll);
     }
   });
 
@@ -115,16 +115,17 @@ describe(JobRepository.name, () => {
       data: {},
       startedAt: new Date(),
     };
-    sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+    sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
       const execution = queueExecution.getStore()!;
       execution.afterCommit = [notify];
+      return Promise.resolve();
     });
     sut['store'].complete = vi.fn().mockResolvedValue(false);
     await sut['execute'](claim, abort);
     expect(notify).not.toHaveBeenCalled();
-    sut['store'].complete = vi.fn().mockImplementation(async () => {
+    sut['store'].complete = vi.fn().mockImplementation(() => {
       expect(notify).not.toHaveBeenCalled();
-      return true;
+      return Promise.resolve(true);
     });
     await sut['execute'](claim, abort);
     expect(notify).toHaveBeenCalledOnce();

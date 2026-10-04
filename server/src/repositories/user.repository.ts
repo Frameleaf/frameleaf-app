@@ -8,13 +8,14 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { asUuid, isNotLockedAsset, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
+
 export interface UserListFilter {
   id?: string;
   withDeleted?: boolean;
@@ -66,7 +67,9 @@ export class UserRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.BOOLEAN] })
   get(userId: string, options: UserFindOptions) {
     options ||= {};

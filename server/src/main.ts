@@ -3,9 +3,10 @@ import { CommandFactory } from 'nest-commander';
 import { ChildProcess, fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { Worker, type MessagePort } from 'node:worker_threads';
+import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
 import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
+import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
@@ -42,6 +43,8 @@ class Workers {
     {};
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
+  private databaseRestarts = new Set<ImmichWorker>();
+
   private stopper = new SupervisorStop({
     exit: (code) => process.exit(code),
     deadlineMs: new ConfigRepository().getEnv().shutdown.deadlineMs,
@@ -196,49 +199,7 @@ class Workers {
     } else {
       const worker = new Worker(workerFile);
       if (name === ImmichWorker.Microservices) {
-        let watchdog: MessagePort | undefined;
-        const children = new Set<number>();
-        const killChildren = () => {
-          for (const pid of children) {
-            try {
-              process.kill(pid, 'SIGKILL');
-            } catch {
-              /* already exited */
-            }
-          }
-          children.clear();
-        };
-        let lastSeen = Date.now();
-        const timer = setInterval(() => {
-          if (watchdog && Date.now() - lastSeen > 15_000) {
-            killChildren();
-            void worker.terminate();
-          }
-        }, 5000);
-        worker.on('message', (message: { type?: string; port?: MessagePort; pid?: number; active?: boolean }) => {
-          if (message.type === 'queue-child' && Number.isSafeInteger(message.pid) && message.pid! > 0) {
-            if (message.active) {
-              children.add(message.pid!);
-            } else {
-              children.delete(message.pid!);
-            }
-          }
-          if (message.type === 'queue-watchdog-port' && message.port) {
-            watchdog = message.port;
-            watchdog.on('message', (event: { type: string }) => {
-              lastSeen = Date.now();
-              if (event.type === 'terminate') {
-                killChildren();
-                void worker.terminate();
-              }
-            });
-          }
-        });
-        worker.once('exit', () => {
-          clearInterval(timer);
-          killChildren();
-          watchdog?.close();
-        });
+        superviseQueueWorker(worker);
       }
 
       kill = async () => void (await worker.terminate());
@@ -246,6 +207,12 @@ class Workers {
       anyWorker = worker;
     }
 
+    anyWorker.on('message', (message: { type?: string }) => {
+      if (message?.type === 'database-unusable') {
+        this.databaseRestarts.add(name);
+        void kill('SIGKILL');
+      }
+    });
     anyWorker.on('error', (error) => this.onError(name, error));
     anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
 
@@ -329,9 +296,9 @@ class Workers {
       return;
     }
 
-    // Queue watchdog/crash recovery restarts only the execution owner. Expired claims are recovered
-    // by the replacement coordinator; there is never a second live handler for the same claim.
-    if (name === ImmichWorker.Microservices) {
+    // Database cleanup failure poisons only its originating pool. Restart that worker; keep the
+    // other API/edge/executor pools available. Safe queue publications remain token fenced.
+    if (this.databaseRestarts.delete(name) || name === ImmichWorker.Microservices) {
       delete this.workers[name];
       setTimeout(() => {
         if (!this.stopper.stopping && !this.restarting && !this.workers[name]) {

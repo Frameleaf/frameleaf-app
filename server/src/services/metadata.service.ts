@@ -25,15 +25,16 @@ import {
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
+import { afterJobCommit, attemptOutputPath, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { assertPublicationSource } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
-import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -195,9 +196,11 @@ export class MetadataService extends BaseService {
     }
 
     const [photoAsset, motionAsset] = asset.type === AssetType.Image ? [asset, match] : [match, asset];
-    await linkLivePhotoAssets(
-      { asset: this.assetRepository, album: this.albumRepository, event: this.eventRepository },
-      { photoAssetId: photoAsset.id, motionAssetId: motionAsset.id, motionOwnerId: motionAsset.ownerId },
+    await this.assetRepository.update({ id: photoAsset.id, livePhotoVideoId: motionAsset.id });
+    await this.assetRepository.update({ id: motionAsset.id, visibility: AssetVisibility.Hidden });
+    await this.albumRepository.removeAssetsFromAll([motionAsset.id]);
+    await afterJobCommit(() =>
+      this.eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId: motionAsset.ownerId }),
     );
   }
 
@@ -377,58 +380,78 @@ export class MetadataService extends BaseService {
     const assetWidth = validate(isSidewards ? height : width);
     const assetHeight = validate(isSidewards ? width : height);
 
-    const tasks = new Tasks();
-
-    tasks.push(
-      () =>
-        this.assetRepository.update({
-          id: asset.id,
-          duration: this.getDuration(exifTags),
-          localDateTime: dates.localDateTime,
-          fileCreatedAt: dates.dateTimeOriginal ?? undefined,
-          fileModifiedAt: stats.mtime,
-
-          // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.
-          width: !asset.isEdited || asset.width === null ? assetWidth : undefined,
-          height: !asset.isEdited || asset.height === null ? assetHeight : undefined,
-        }),
-      async () => {
-        await this.assetRepository.upsertExif({
-          exif: exifData,
-          cameraEvidence: cameraLocked ? undefined : cameraEvidence,
-          audio: audioData,
-          video: videoData,
-          keyframes: keyframeData,
-          lockedPropertiesBehavior: 'skip',
-          // FL-202: a write can lock AND unlock a property while the file is being read. The
-          // revision check is atomic with this save, so even that interleaving keeps newer values.
-          expectedUpdateId: previous?.updateId ?? null,
-        });
-        await this.applyTagList(asset, previous?.tags ?? []);
-      },
-    );
-
     if (this.isMotionPhoto(asset, exifTags)) {
-      tasks.push(() => this.applyMotionPhotos(asset, exifTags, dates, stats));
+      await this.applyMotionPhotos(asset, exifTags, dates, stats);
     }
+    await publishJobResult(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetJobRepository.getForMetadataExtraction(asset.id);
+      if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
+        throw new Error('Metadata source changed before publication');
+      }
+      const tasks = new Tasks();
 
-    if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
-      tasks.push(() => this.applyTaggedFaces(asset, exifTags));
-    }
+      tasks.push(
+        () =>
+          this.assetRepository.update({
+            id: asset.id,
+            duration: this.getDuration(exifTags),
+            localDateTime: dates.localDateTime,
+            fileCreatedAt: dates.dateTimeOriginal ?? undefined,
+            fileModifiedAt: stats.mtime,
 
-    await tasks.all();
+            // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.
+            width: !current.isEdited || current.width === null ? assetWidth : undefined,
+            height: !current.isEdited || current.height === null ? assetHeight : undefined,
+          }),
+        async () => {
+          await this.assetRepository.upsertExif({
+            exif: exifData,
+            cameraEvidence: cameraLocked ? undefined : cameraEvidence,
+            audio: audioData,
+            video: videoData,
+            keyframes: keyframeData,
+            lockedPropertiesBehavior: 'skip',
+            // FL-202: a write can lock AND unlock a property while the file is being read. The
+            // revision check is atomic with this save, so even that interleaving keeps newer values.
+            expectedUpdateId: previous?.updateId ?? null,
+          });
+          await this.applyTagList(asset, previous?.tags ?? []);
+        },
+      );
 
-    if (exifData.livePhotoCID) {
-      await this.linkLivePhotos(asset, exifData);
-    }
+      if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
+        tasks.push(() => this.applyTaggedFaces(asset, exifTags));
+      }
 
-    await this.assetRepository.upsertJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await tasks.all();
 
-    await this.eventRepository.emit('AssetMetadataExtracted', {
-      assetId: asset.id,
-      userId: asset.ownerId,
-      source: data.source,
+      if (exifData.livePhotoCID) {
+        await this.linkLivePhotos(asset, exifData);
+      }
+
+      await this.assetRepository.upsertJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+
+      if (queueExecution.getStore()) {
+        await this.jobRepository.queue({ name: JobName.AssetMetadataPostprocess, data });
+      } else {
+        await this.eventRepository.emit('AssetMetadataExtracted', {
+          assetId: asset.id,
+          userId: asset.ownerId,
+          source: data.source,
+        });
+      }
     });
+  }
+
+  @OnJob({ name: JobName.AssetMetadataPostprocess, queue: QueueName.MetadataExtraction })
+  async handleMetadataPostprocess({ id, source }: JobOf<JobName.AssetMetadataPostprocess>) {
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) {
+      return JobStatus.Skipped;
+    }
+    await this.eventRepository.emit('AssetMetadataExtracted', { assetId: id, userId: asset.ownerId, source });
+    return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.SidecarQueueAll, queue: QueueName.Sidecar })
@@ -840,14 +863,27 @@ export class MetadataService extends BaseService {
         });
       }
       const checksum = this.cryptoRepository.hashSha1(video);
-      const checksumQuery = { ownerId: asset.ownerId, libraryId: asset.libraryId ?? undefined, checksum };
-
-      let motionAsset = await this.assetRepository.getByChecksum(checksumQuery);
-      let isNewMotionAsset = false;
-
-      if (!motionAsset) {
-        try {
-          const motionAssetId = this.cryptoRepository.randomUUID();
+      const existing = await this.assetRepository.getByChecksum({
+        ownerId: asset.ownerId,
+        libraryId: asset.libraryId ?? undefined,
+        checksum,
+      });
+      if (
+        existing?.id === asset.livePhotoVideoId &&
+        (await this.storageRepository.checkFileExists(existing.originalPath))
+      ) {
+        return;
+      }
+      const motionAssetId = this.cryptoRepository.randomUUID();
+      const outputPath = attemptOutputPath(StorageCore.getAndroidMotionPath(asset, motionAssetId));
+      this.storageCore.ensureFolders(outputPath);
+      await this.storageRepository.createFile(outputPath, video);
+      await publishJobResult(async () => {
+        await assertPublicationSource(asset.id, asset.checksum);
+        const checksumQuery = { ownerId: asset.ownerId, libraryId: asset.libraryId ?? undefined, checksum };
+        let motionAsset = await this.assetRepository.getByChecksum(checksumQuery);
+        const created = !motionAsset;
+        if (!motionAsset) {
           motionAsset = await this.assetRepository.create({
             id: motionAssetId,
             libraryId: asset.libraryId,
@@ -858,78 +894,34 @@ export class MetadataService extends BaseService {
             checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha1File,
             ownerId: asset.ownerId,
-            originalPath: StorageCore.getAndroidMotionPath(asset, motionAssetId),
+            originalPath: outputPath,
             originalFileName: `${parse(asset.originalFileName).name}.mp4`,
             visibility: AssetVisibility.Hidden,
           });
-
-          isNewMotionAsset = true;
-
           if (!asset.isExternal) {
             await this.userRepository.updateUsage(asset.ownerId, video.byteLength);
           }
-        } catch (error) {
-          if (!isAssetChecksumConstraint(error)) {
-            throw error;
-          }
-
-          motionAsset = await this.assetRepository.getByChecksum(checksumQuery);
-          if (!motionAsset) {
-            this.logger.warn(`Unable to find existing motion video asset for ${asset.id}: ${asset.originalPath}`);
-            return;
-          }
         }
-      }
-
-      if (!isNewMotionAsset) {
-        this.logger.debugFn(() => {
-          const base64Checksum = checksum.toString('base64');
-          return `Motion asset with checksum ${base64Checksum} already exists for asset ${asset.id}: ${asset.originalPath}`;
-        });
-      }
-
-      // Hide the motion photo video asset if it's not already hidden to prepare for linking
-      if (motionAsset.visibility === AssetVisibility.Timeline) {
-        await this.assetRepository.update({
-          id: motionAsset.id,
-          visibility: AssetVisibility.Hidden,
-        });
-        this.logger.log(`Hid unlinked motion photo video asset (${motionAsset.id})`);
-      }
-
-      if (asset.livePhotoVideoId !== motionAsset.id) {
+        if (!created && motionAsset.originalPath !== outputPath) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [outputPath] } });
+        }
         await this.assetRepository.update({ id: asset.id, livePhotoVideoId: motionAsset.id });
-
-        // If the asset already had an associated livePhotoVideo, delete it, because
-        // its checksum doesn't match the checksum of the motionAsset we just extracted
-        // (if it did, getByChecksum() would've returned a motionAsset with the same ID as livePhotoVideoId)
-        // note asset.livePhotoVideoId is not motionAsset.id yet
-        if (asset.livePhotoVideoId) {
+        await this.assetRepository.update({ id: motionAsset.id, visibility: AssetVisibility.Hidden });
+        if (asset.livePhotoVideoId && asset.livePhotoVideoId !== motionAsset.id) {
           await this.jobRepository.queue({
             name: JobName.AssetDelete,
             data: { id: asset.livePhotoVideoId, deleteOnDisk: true },
           });
-          this.logger.log(`Removed old motion photo video asset (${asset.livePhotoVideoId})`);
         }
-      }
-
-      // write extracted motion video to disk, especially if the encoded-video folder has been deleted
-      const isExistsOnDisk = await this.storageRepository.checkFileExists(motionAsset.originalPath);
-      if (!isExistsOnDisk) {
-        this.storageCore.ensureFolders(motionAsset.originalPath);
-        await this.storageRepository.createFile(motionAsset.originalPath, video);
-        this.logger.log(`Wrote motion photo video to ${motionAsset.originalPath}`);
-
-        await this.handleMetadataExtraction({ id: motionAsset.id });
-        await this.jobRepository.queue({ name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } });
-      }
-
-      this.logger.debug(`Finished motion photo video extraction for asset ${asset.id}: ${asset.originalPath}`);
-    } catch (error: Error | any) {
-      this.logger.error(
-        `Failed to extract motion video for ${asset.id}: ${asset.originalPath}: ${error}`,
-        error?.stack,
-      );
+        await this.jobRepository.queueAll([
+          { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
+          { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
+        ]);
+      });
+    } catch (error) {
+      // A partial publication must roll back and consume the same single queue retry budget.
+      this.logger.error(`Motion extraction failed for asset ${asset.id}`);
+      throw error;
     }
   }
 

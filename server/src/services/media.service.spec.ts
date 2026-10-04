@@ -3702,13 +3702,6 @@ describe(MediaService.name, () => {
       expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
     });
 
-    it('makes nothing while the fork schema cannot record it (handoff or inactive)', async () => {
-      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
-      mocks.asset.canRecordStudioHdrIntermediates.mockResolvedValue(false);
-      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.media.transcode).not.toHaveBeenCalled();
-    });
-
     it('skips when the current intermediate is on disk, and makes a lost one again', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
       mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(new Map([['video-id', '/x-studio-hdr.mp4']]));

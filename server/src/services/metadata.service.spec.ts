@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
 import type { LockableProperty } from 'src/database.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -17,6 +18,7 @@ import {
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -172,6 +174,43 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it('prepares metadata without mutation and rejects a source replaced before adoption', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Make: 'Camera' });
+      const execution: QueueExecution = {
+        claim: {
+          id: 'claim',
+          token: 'token',
+          name: 'fixture',
+          queue: 'fixture',
+          workerId: 'worker',
+          attempt: 1,
+          runId: null,
+          itemKey: null,
+          deadlineMs: 600_000,
+          startedAt: new Date(),
+          data: {},
+        },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      await queueExecution.run(execution, () => sut.handleMetadataExtraction({ id: asset.id }));
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      expect(execution.adoptions).toHaveLength(1);
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(
+        getForMetadataExtraction({ ...asset, checksum: Buffer.from('replacement') }),
+      );
+      await expect(execution.adoptions[0]({} as never)).rejects.toThrow('Metadata source changed');
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    });
+
     it.each(['original', 'sidecar'])('rejects a failed %s read before destructive effects', async (source) => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -1074,16 +1113,16 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
-      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
+        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
+      ]);
     });
 
     it('should extract the EmbeddedVideo tag from Samsung JPEG motion photos', async () => {
@@ -1126,16 +1165,16 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
-      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
+        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
+      ]);
     });
 
     it('should extract the motion photo video from the XMP directory entry ', async () => {
@@ -1178,16 +1217,16 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
-      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
+        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
+      ]);
     });
 
     it('should delete old motion photo video assets if they do not match what is extracted', async () => {
@@ -1260,7 +1299,7 @@ describe(MetadataService.name, () => {
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
-      expect(mocks.asset.update).toHaveBeenCalledTimes(4);
+      expect(mocks.asset.update).toHaveBeenCalledTimes(3);
     });
 
     it('should not update storage usage if motion photo is external', async () => {

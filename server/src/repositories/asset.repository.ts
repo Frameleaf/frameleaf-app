@@ -17,7 +17,6 @@ import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -37,9 +36,8 @@ import {
   CalendarHeatmapType,
   TimeBucketDateType,
 } from 'src/enum.js';
-
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
-
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -96,6 +94,7 @@ import {
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+
 export type AssetStats = Record<AssetType, number>;
 /** FL-97: what became of a Studio HDR intermediate's original. */
 export type StudioHdrIntermediateStatus = 'ready' | 'ineligible' | 'failed';
@@ -375,7 +374,7 @@ const getBoundingCircle = (bbox: BoundingBox) => {
   )`;
   return { centerLatitude, centerLongitude, radius };
 };
-const withBoundingBox = <T,>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T>, bbox: BoundingBox) => {
+const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T>, bbox: BoundingBox) => {
   const { west, south, east, north } = bbox;
   const withLatitude = qb.where('asset_exif.latitude', '>=', south).where('asset_exif.latitude', '<=', north);
   if (west <= east) {
@@ -386,7 +385,7 @@ const withBoundingBox = <T,>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', 
   );
 };
 /** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
-const withoutLocationHiddenOwners = <O,>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
+const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
   ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
 /**
  * The visibility a timeline request lists (see `visibilityIs`). FL-34: the Locked view is every locked
@@ -409,7 +408,8 @@ export class AssetRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {
-    this.smartAlbums = new SmartAlbumRepository(db);
+    this.db = publicationDatabase(this.db);
+    this.smartAlbums = new SmartAlbumRepository(this.db);
   }
   @GenerateSql({
     params: [

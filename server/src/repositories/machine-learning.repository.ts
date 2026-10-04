@@ -1,4 +1,3 @@
-import { fetchJobText } from 'src/queue/http.js';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
@@ -33,9 +32,8 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
+import { fetchJobText } from 'src/queue/http.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-// Restoration's selection registry and inference types live with the rest of restoration's
-// rules; that module only needs this one's types, so the import cycle is inert at load time.
 import {
   RestorationInference,
   RestorationInferenceInput,
