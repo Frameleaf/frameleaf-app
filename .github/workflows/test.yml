@@ -899,6 +899,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
       # Frameleaf's own Postgres image (docker/postgres), built here rather than pulled. pgvector is the
       # only vector extension and the search path is the default, matching the schema baseline.
@@ -929,6 +930,18 @@ jobs:
           version: 2026.7.12
       - name: Install server dependencies
         run: pnpm install --frozen-lockfile
+      - name: Verify canonical schema authority and immutable baseline history
+        env:
+          SCHEMA_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          schema_base="$SCHEMA_BASE_SHA"
+          if [[ -z "$schema_base" || "$schema_base" =~ ^0+$ ]]; then
+            schema_base=$(git rev-parse HEAD^)
+          fi
+          [[ "$schema_base" =~ ^[a-f0-9]{40}$ ]] || { echo '::error::Invalid schema history base'; exit 1; }
+          git cat-file -e "$schema_base^{commit}"
+          pnpm --filter immich exec tsx scripts/verify-frameleaf-schema.ts "$schema_base"
       - name: Build plugins
         run: mise run //:plugins
       - name: Build the app
