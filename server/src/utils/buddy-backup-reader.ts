@@ -76,6 +76,10 @@ export class BuddyBackupReader {
     if (manifest.metadata !== undefined) {
       manifest.metadata = readBuddyMetadata(manifest.metadata);
     }
+    if (manifest.bootConfiguration !== undefined) {
+      const { readBuddyBootConfiguration } = await import('./buddy-boot-configuration.ts');
+      manifest.bootConfiguration = readBuddyBootConfiguration(manifest.bootConfiguration);
+    }
     return manifest;
   }
 
