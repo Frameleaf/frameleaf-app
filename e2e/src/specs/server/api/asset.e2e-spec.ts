@@ -232,12 +232,28 @@ describe('/asset', () => {
 
     describe('partner assets', () => {
       it('should get the asset info', async () => {
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        const db = await utils.connectDatabase();
+        const { rows } = await db.query<{ id: string; ownerId: string; sourceAssetId: string }>(
+          `SELECT copy.id, copy."ownerId", origin."sourceAssetId"
+           FROM immich_fork.asset_origin origin JOIN asset copy ON copy.id = origin."assetId"
+           WHERE origin."sourceAssetId" = $1 AND origin."ownerId" = $2`,
+          [user1Assets[0].id, user2.userId],
+        );
+        expect(rows).toHaveLength(1);
+        const [copy] = rows;
+        expect(copy.id).not.toBe(user1Assets[0].id);
+        expect(copy).toMatchObject({ ownerId: user2.userId, sourceAssetId: user1Assets[0].id });
         const { status, body } = await request(app)
-          .get(`/assets/${user1Assets[0].id}`)
+          .get(`/assets/${copy.id}`)
           .set('Authorization', `Bearer ${user2.accessToken}`);
         expect(status).toBe(200);
-        expect(body).toMatchObject({ id: user1Assets[0].id });
-      });
+        expect(body).toMatchObject({ id: copy.id, ownerId: user2.userId });
+        await request(app)
+          .get(`/assets/${user1Assets[0].id}`)
+          .set('Authorization', `Bearer ${user2.accessToken}`)
+          .expect(400);
+      }, 90_000);
 
       it('disallows viewing archived assets', async () => {
         const asset = await utils.createAsset(user1.accessToken, { visibility: AssetVisibility.Archive });
