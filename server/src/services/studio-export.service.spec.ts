@@ -263,7 +263,7 @@ describe(StudioExportService.name, () => {
     renderWorkers.listLiveSessions.mockResolvedValue(sessions);
     renderWorkers.getSessionCapabilities.mockImplementation((id: string) => {
       const index = sessions.findIndex(({ session }) => session.id === id);
-      return Promise.resolve(index < 0 ? undefined : fixtures[index].capabilities);
+      return Promise.resolve(index === -1 ? undefined : fixtures[index].capabilities);
     });
   };
 

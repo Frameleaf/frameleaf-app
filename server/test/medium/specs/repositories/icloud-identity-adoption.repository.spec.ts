@@ -1,4 +1,13 @@
-import { CompiledQuery, Kysely, type KyselyPlugin, type QueryId, RawNode, SelectQueryNode, TableNode, sql } from 'kysely';
+import {
+  CompiledQuery,
+  Kysely,
+  type KyselyPlugin,
+  type QueryId,
+  RawNode,
+  SelectQueryNode,
+  TableNode,
+  sql,
+} from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import {
@@ -1381,6 +1390,7 @@ describe('iCloud exact identity adoption', () => {
       };
       type Statement = keyof typeof statementTimings;
       const planStatements = ['claimCandidate', 'claimLocalReservations', 'claimGlobalReservations'] as const;
+      const planStatementLookup: readonly Statement[] = planStatements;
       type PlanStatement = (typeof planStatements)[number];
       const pendingPlans = new WeakMap<QueryId, PlanStatement>();
       const capturedPlans = new Map<PlanStatement, CompiledQuery>();
@@ -1415,7 +1425,8 @@ describe('iCloud exact identity adoption', () => {
         if (typeof node['Index Name'] === 'string' && knownIndexes.includes(node['Index Name'])) {
           safe['Index Name'] = node['Index Name'];
         }
-        if (Array.isArray(node.Plans)) safe.Plans = node.Plans.slice(0, 32).map((child) => sanitizePlan(child, depth + 1));
+        if (Array.isArray(node.Plans))
+          safe.Plans = node.Plans.slice(0, 32).map((child) => sanitizePlan(child, depth + 1));
         return safe;
       };
       let plansEmitted = 0;
@@ -1436,7 +1447,11 @@ describe('iCloud exact identity adoption', () => {
             expect(Array.isArray(document)).toBe(true);
             const root = (document as Array<{ Plan?: unknown }>)[0]?.Plan;
             expect(root).toBeDefined();
-            console.info('weekly-large-population-plan', { phase, statement, plan: JSON.stringify(sanitizePlan(root)) });
+            console.info('weekly-large-population-plan', {
+              phase,
+              statement,
+              plan: JSON.stringify(sanitizePlan(root)),
+            });
           } catch {
             // Raw PostgreSQL diagnostics may include parameters; preserve only the fixed failure label.
             throw new Error(`weekly qualification plain EXPLAIN failed: ${statement}`);
@@ -1476,7 +1491,7 @@ describe('iCloud exact identity adoption', () => {
             ) {
               statement = 'adoptionOwnerLock';
             }
-            if (capturePlans && scope === 'claim' && planStatements.some((candidate) => candidate === statement)) {
+            if (capturePlans && scope === 'claim' && planStatementLookup.includes(statement)) {
               pendingPlans.set(queryId, statement as PlanStatement);
             }
             statementTimings[statement].started++;
