@@ -158,7 +158,7 @@ const readQueue = async (accessToken: string, name: QueueName, context: WaitCont
   const queue = await getQueue({ name }, { headers: asBearerAuth(accessToken), signal: context.signal });
   context.remaining();
   if (typeof queue.hasUnfinishedWork !== 'boolean') {
-    throw new Error(`Queue ${name} did not report authoritative unfinished work`);
+    throw new TypeError(`Queue ${name} did not report authoritative unfinished work`);
   }
   return queue;
 };
@@ -194,10 +194,10 @@ export const utils = {
     if (connecting) {
       return connecting;
     }
-    const pending = ownedWait('Connecting test database', 8_000, async (context) => {
+    const pending = ownedWait('Connecting test database', 8000, async (context) => {
       for (let attempt = 1; attempt <= 5; attempt++) {
         context.remaining();
-        const nextClient = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: Math.min(1_000, context.remaining()) });
+        const nextClient = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: Math.min(1000, context.remaining()) });
         const forget = () => {
           if (client === nextClient) {
             client = null;
@@ -212,8 +212,8 @@ export const utils = {
         } catch (error) {
           try {
             await nextClient.end();
-          } catch (cleanup) {
-            throw new AggregateError([error, cleanup], 'Test database connection and cleanup failed', { cause: error });
+          } catch (error_) {
+            throw new AggregateError([error, error_], 'Test database connection and cleanup failed', { cause: error_ });
           }
           context.remaining();
           if (attempt === 5 || !isTransientDatabaseError(error)) {
@@ -255,30 +255,30 @@ export const utils = {
     }
     resetting = true;
     try {
-      await ownedWait('Resetting test database', 8_000, async (total) => {
-        const cleanupDeadline = performance.now() + 8_000;
+      await ownedWait('Resetting test database', 8000, async (total) => {
+        const cleanupDeadline = performance.now() + 8000;
         const cleanupBudget = () => {
           const remaining = Math.floor(cleanupDeadline - performance.now());
           if (remaining <= 0) {
             throw new Error('Reset cleanup deadline expired');
           }
-          return Math.min(2_000, remaining);
+          return Math.min(2000, remaining);
         };
-        const db = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 1_000, statement_timeout: 1_000, lock_timeout: 1_000 });
+        const db = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 1000, statement_timeout: 1000, lock_timeout: 1000 });
         // This client belongs only to this reset; it is never the shared assertion client.
         db.on('error', () => {});
         let primary: unknown;
         let failed = false;
         const sessions = new Map<string, { token: string; hashed: Buffer }>();
         const query = async (context: WaitContext, text: string, values?: unknown[]) => {
-          const timeout = Math.min(1_000, context.remaining());
+          const timeout = Math.min(1000, context.remaining());
           await db.query(`SELECT set_config('statement_timeout', $1, false), set_config('lock_timeout', $1, false)`, [`${timeout}ms`]);
           context.remaining();
           return db.query(text, values);
         };
         try {
           await db.connect();
-          await withDeadline('Quiescing test database', Math.min(6_000, total.remaining()), async (context) => {
+          await withDeadline('Quiescing test database', Math.min(6000, total.remaining()), async (context) => {
             const ownerToken = async (ownerId: string) => {
               const existing = sessions.get(ownerId);
               if (existing) {
@@ -323,10 +323,10 @@ export const utils = {
                   let remaining;
                   try {
                     remaining = await unfinishedOperations(operation.id);
-                  } catch (probe) {
-                    throw new AggregateError([error, probe], `Reset could not confirm media operation ${operation.id} stopped`, { cause: error });
+                  } catch (error_) {
+                    throw new AggregateError([error, error_], `Reset could not confirm media operation ${operation.id} stopped`, { cause: error_ });
                   }
-                  if (remaining.length) {
+                  if (remaining.length > 0) {
                     throw new Error(`Reset refused: owner cancellation of media operation ${operation.id} (${operation.status}) was not accepted`, { cause: error });
                   }
                 }
@@ -334,7 +334,7 @@ export const utils = {
               return operations.length > 0;
             };
             const { rows: admins } = await query(context, `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`);
-            const token = admins.length ? await ownerToken(admins[0].id) : undefined;
+            const token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
             await resetWhilePaused({
               pause: async () => {
                 await query(context, 'BEGIN');
@@ -364,7 +364,11 @@ export const utils = {
                         OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
                           WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
                         OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`);
-                      return rows[0].unfinished || (await unfinishedOperations()).length > 0;
+                      if (rows[0].unfinished) {
+                        return true;
+                      }
+                      const operations = await unfinishedOperations();
+                      return operations.length > 0;
                     }
                     const headers = asBearerAuth(token);
                     for (const name of Object.values(QueueName)) {
@@ -373,9 +377,16 @@ export const utils = {
                     }
                     let unfinished = false;
                     for (const name of Object.values(QueueName)) {
-                      unfinished ||= (await readQueue(token, name, context)).hasUnfinishedWork;
+                      if (!unfinished) {
+                        const queue = await readQueue(token, name, context);
+                        unfinished = queue.hasUnfinishedWork;
+                      }
                     }
-                    return unfinished || (await unfinishedOperations()).length > 0;
+                    if (unfinished) {
+                      return true;
+                    }
+                    const operations = await unfinishedOperations();
+                    return operations.length > 0;
                   });
                 }, (unfinished) => !unfinished, 100);
               },
@@ -397,18 +408,18 @@ export const utils = {
           primary = error;
         }
         try {
-          if (sessions.size) {
+          if (sessions.size > 0) {
             await withDeadline('Removing reset session', cleanupBudget(),
-              (cleanup) => query(cleanup, 'DELETE FROM "session" WHERE token = ANY($1::bytea[])', [[...sessions.values()].map(({ hashed }) => hashed)]));
+              (cleanup) => query(cleanup, 'DELETE FROM "session" WHERE token = ANY($1::bytea[])', [sessions.values().map(({ hashed }) => hashed).toArray()]));
           }
-        } catch (cleanup) {
-          primary = failed ? new AggregateError([primary, cleanup], 'Reset and temporary session cleanup failed', { cause: primary }) : cleanup;
+        } catch (error) {
+          primary = failed ? new AggregateError([primary, error], 'Reset and temporary session cleanup failed', { cause: error }) : error;
           failed = true;
         } finally {
           try {
             await db.end();
-          } catch (cleanup) {
-            primary = failed ? new AggregateError([primary, cleanup], 'Reset and owned connection cleanup failed', { cause: primary }) : cleanup;
+          } catch (error) {
+            primary = failed ? new AggregateError([primary, error], 'Reset and owned connection cleanup failed', { cause: error }) : error;
             failed = true;
           }
         }
@@ -436,7 +447,7 @@ export const utils = {
       throw new Error('Invalid reset table name');
     }
     await utils.drainQueues(async (db, context) => {
-      const timeout = Math.min(1_000, context.remaining());
+      const timeout = Math.min(1000, context.remaining());
       await db.query('BEGIN');
       try {
         await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [`${timeout}ms`]);
@@ -460,7 +471,7 @@ export const utils = {
             context.remaining();
             await db.query(`DELETE FROM "${table}"`);
           }
-        } else if (dataTables.length) {
+        } else if (dataTables.length > 0) {
           context.remaining();
           await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
         }
@@ -469,8 +480,8 @@ export const utils = {
       } catch (error) {
         try {
           await db.query('ROLLBACK');
-        } catch (cleanup) {
-          throw new AggregateError([error, cleanup], 'Fixture reset and rollback failed', { cause: error });
+        } catch (error_) {
+          throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
         }
         throw error;
       }
@@ -1288,7 +1299,7 @@ export const utils = {
 
   poll: (cb: () => request.Test, validate: (value: request.Response) => boolean,
     map?: (value: request.Response) => any, signal?: AbortSignal) =>
-    ownedWait('Polling test endpoint', 5_000, async (context) => {
+    ownedWait('Polling test endpoint', 5000, async (context) => {
       const value = await pollRequest<request.Response>(context, cb, (response) => {
         if (response.status >= 500) {
           throw new Error(`Polling test endpoint failed: HTTP ${response.status}`);

@@ -128,7 +128,11 @@ test.describe('Quick editor', () => {
     const savedRevisionId = saved.revisions[0].id;
     let pendingRead: ReturnType<typeof getAssetDevelop> | undefined;
     assetReady.onCleanup(async () => {
-      await pendingRead?.catch(() => {});
+      try {
+        await pendingRead;
+      } catch {
+        // The assertion owns read failure; teardown joins cancellation before releasing its context.
+      }
     });
     // Save queues rendering; reopening uses the published current recipe, not merely a saved row.
     await expect

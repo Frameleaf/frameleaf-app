@@ -2,48 +2,45 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { expect, it } from 'vitest';
 import { ownedWait, settlePendingWaits } from './harness-context';
 
-let active = 0;
-let reads = 0;
-let timedOutSettled = false;
-let finishedSettled = false;
+const state = { active: 0, reads: 0, timedOutSettled: false, finishedSettled: false, retryAttempt: 0 };
 
 it.fails('uses the actual runner timeout, even when the helper has a larger CI budget', { timeout: 30 }, async () => {
   await ownedWait('long CI queue wait', 60_000, async ({ signal }) => {
-    active++;
-    reads++;
+    state.active++;
+    state.reads++;
     try {
       await sleep(60_000, undefined, { signal });
     } finally {
-      active--;
-      timedOutSettled = true;
+      state.active--;
+      state.timedOutSettled = true;
     }
   });
 });
 
 it('starts the next test only after the expired test request has settled', () => {
-  expect(timedOutSettled).toBe(true);
-  expect(active).toBe(0);
-  expect(reads).toBe(1);
+  expect(state.timedOutSettled).toBe(true);
+  expect(state.active).toBe(0);
+  expect(state.reads).toBe(1);
 });
 
 it('owns an accidentally unawaited helper until its test-finished cleanup', async () => {
   const started = Promise.withResolvers<void>();
   void ownedWait('leftover queue read', 60_000, async ({ signal }) => {
-    active++;
+    state.active++;
     started.resolve();
     try {
       await sleep(60_000, undefined, { signal });
     } finally {
-      active--;
-      finishedSettled = true;
+      state.active--;
+      state.finishedSettled = true;
     }
   }).catch(() => {});
   await started.promise;
 });
 
 it('does not carry the unawaited request into the next test', () => {
-  expect(finishedSettled).toBe(true);
-  expect(active).toBe(0);
+  expect(state.finishedSettled).toBe(true);
+  expect(state.active).toBe(0);
 });
 
 it('lets a caller abort and await exactly the requests it owns', async () => {
@@ -66,9 +63,8 @@ it('lets a caller abort and await exactly the requests it owns', async () => {
   await rejected;
 });
 
-let retryAttempt = 0;
 it('gives a normal assertion retry a fresh scope after the prior attempt settles', { retry: 1 }, async () => {
-  retryAttempt++;
+  state.retryAttempt++;
   await expect(ownedWait('retry queue read', 100, async () => 'complete')).resolves.toBe('complete');
-  expect(retryAttempt).toBe(2);
+  expect(state.retryAttempt).toBe(2);
 });

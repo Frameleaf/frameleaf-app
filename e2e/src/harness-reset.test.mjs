@@ -32,7 +32,7 @@ test('failed drain forbids mutation and both primary and restoration errors are 
     restore: async () => { throw cleanup; },
   }), (error) => {
     assert.ok(error instanceof AggregateError);
-    assert.equal(error.cause, primary);
+    assert.equal(error.cause, cleanup);
     assert.deepEqual(error.errors, [primary, cleanup]);
     return true;
   });

@@ -8,7 +8,7 @@ const callerWaits = new WeakMap<AbortSignal, Set<Promise<unknown>>>();
 
 /** The caller aborts its signal first, then awaits the transport settlement in its teardown. */
 export const settlePendingWaits = async (signal: AbortSignal) => {
-  await Promise.allSettled([...(callerWaits.get(signal) ?? [])]);
+  await Promise.allSettled(callerWaits.get(signal) ?? []);
 };
 
 /** Vitest aborts this signal at the actual test deadline, which can be shorter than
@@ -35,13 +35,13 @@ export const ownedWait = async <T>(
     }
     context.onTestFinished(async () => {
       current.controller.abort(new Error('Test finished before its E2E wait settled'));
-      await Promise.allSettled([...current.pending]);
+      await Promise.allSettled(current.pending);
       context.signal.removeEventListener('abort', cancel);
       scopes.delete(context.signal);
     });
   }
   const signals = [scope?.controller.signal, signal].filter((value): value is AbortSignal => !!value);
-  const pending = withDeadline(description, timeout, operation, signals.length ? AbortSignal.any(signals) : undefined);
+  const pending = withDeadline(description, timeout, operation, signals.length > 0 ? AbortSignal.any(signals) : undefined);
   scope?.pending.add(pending);
   let caller = signal && callerWaits.get(signal);
   if (signal && !caller) {
