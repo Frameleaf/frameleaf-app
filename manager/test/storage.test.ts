@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, mkdir, rm, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appdataDefaults, configuredAppdata } from '../src/appdata.js';
-import { databaseMount, filesystemMounts } from '../src/postgres-storage.js';
+import { databaseMount, filesystemMounts, PostgresStorage } from '../src/postgres-storage.js';
 import { renderCompose } from '../src/compose.js';
 import type { Container } from '../src/docker.js';
 import type { Installation } from '../src/contracts.js';
@@ -234,5 +234,21 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     );
   } finally {
     await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('fresh PG19 bind parents allow traversal while withholding listing and write permissions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'manager-pg-parent-'));
+  const storage = new PostgresStorage({} as never, root, [root], false);
+  // Filesystem admission is covered separately; exercise the real exclusive allocation and permissions.
+  Object.assign(storage, { validate: async () => ({ root, filesystem: 'ext4', device: '/fixture' }) });
+  try {
+    const first = await storage.allocate(root, 'a'.repeat(12), 1);
+    const second = await storage.allocate(root, 'a'.repeat(12), 1);
+    assert.notEqual(first, second);
+    assert.equal((await stat(first)).mode & 0o777, 0o711);
+    assert.equal((await stat(second)).mode & 0o777, 0o711);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

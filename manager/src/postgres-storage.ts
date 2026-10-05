@@ -1,4 +1,4 @@
-import { access, lstat, mkdtemp, open, readFile, realpath, statfs } from 'node:fs/promises';
+import { chmod, access, lstat, mkdtemp, open, readFile, realpath, statfs } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
@@ -164,6 +164,9 @@ export class PostgresStorage {
     // mkdtemp is exclusive. Import, restore and interrupted attempts never reuse source physical data.
     const path = await mkdtemp(join(root, 'frameleaf-' + installationId + '-postgres-'));
     if ((await realpath(path)) !== path) throw new Refusal('database_path_changed');
+    // PG19's entrypoint owns only 19/docker, not this bind parent. Permit traversal
+    // without directory listing or writes; PGDATA itself remains postgres-owned 0700.
+    await chmod(path, 0o711);
     const parent = await open(root, 'r');
     try {
       await parent.sync();
