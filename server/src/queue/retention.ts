@@ -63,6 +63,7 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
         and j.state in ('completed','failed','cancelled','blocked') and j."latestPending" is null
         and j."finishedAt" < now() - case when j.state = 'completed' then interval '7 days' else interval '30 days' end
         and not exists(select 1 from job child where child."parentId" = j.id)
+        and not exists(select 1 from job_run_item child where child."libraryParentId"=j.id and not child."libraryOriginComplete")
         and not exists(select 1 from job_run_item i join job_run r on r.id = i."runId"
           where i."jobId" = j.id and r."finishedAt" is null)
         and not exists(select 1 from job_attempt a where a."jobId" = j.id
@@ -83,8 +84,10 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
       pruned = ids.length;
       // The manifest, stage state and original root identity are retained. Old handler payloads
       // are no longer needed after every associated run closes.
-      await sql`update job_run_item set "jobId" = null, selection = '{}'::jsonb
-        where "jobId" = any(${ids}::uuid[])`.execute(tx);
+      await sql`update job_run_item i set state=case when i.state='cancelled' then i.state else j.state end, "jobId" = null, selection = '{}'::jsonb,
+        "libraryIntent" = case when "libraryIntent" is null then null
+          else "libraryIntent" - 'options' || jsonb_build_object('data', '{}'::jsonb) end
+        from job j where i."jobId"=j.id and j.id = any(${ids}::uuid[])`.execute(tx);
       await sql`delete from job where id = any(${ids}::uuid[])`.execute(tx);
     }
     await sql`delete from job_worker where id in (

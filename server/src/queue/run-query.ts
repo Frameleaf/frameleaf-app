@@ -1,5 +1,11 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
-import { selectionItemState } from 'src/queue/selection-state.js';
+import {
+  initialCanonicalOutcomeContext,
+  initialSelectionEntitlementRows,
+  libraryRunPending,
+  selectionItemContext,
+  selectionItemState,
+} from 'src/queue/selection-state.js';
 
 export const RUN_OUTCOMES = [
   'completed',
@@ -79,38 +85,75 @@ export type RunItemRead = {
 
 // Neither payloads nor free-text errors enter these reads. Stage names are operational job names.
 // Bookkeeping (rootItemKey NULL) affects run settlement, but never selected-media item counts.
+// OFFSET 0 retains one effective-state evaluation without a second full materialized ledger.
+// The initial canonical tuple is its own entitlement/owner. Without either a detailed
+// job or retained executor pointer, the complete state context reduces to item/header state.
+// Frozen rows and admitted/shared owners keep the complete ownership/proof context.
+const initialCanonicalWithoutExecution = sql<boolean>`snapshot."sourceKind"='library-initial'
+  and i."runId"=snapshot."runId" and i."runId"=snapshot."libraryOperationId" and i."jobId" is null and i."libraryExecutionRunId" is null`;
+
+// An initial alias with no sparse canonical exception has pending/null-owner state.
+// Item-specific frozen proofs cannot grant an initial row: their source must be library-child.
+const initialColdAliasWithoutExecution = sql<boolean>`snapshot."sourceKind"='library-initial'
+  and i."runId"!=snapshot."runId" and i.state='pending' and i."jobId" is null
+  and i."libraryExecutionRunId" is null and initial_canonical."itemKey" is null`;
+const simpleInitialState = sql<boolean>`(${initialCanonicalWithoutExecution}) or (${initialColdAliasWithoutExecution})`;
+
+const materializedInitialEntitlementContext = sql`left join initial_entitlements initial_entitlement
+  on initial_entitlement."runId"=i."runId" and initial_entitlement."selectionId"=snapshot.id`;
+
 const stagesFor = (
   filter: RawBuilder<boolean>,
-) => sql`select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
-  greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
+  runScope: RawBuilder<string>,
+) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})
+  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",
   case
-    when ${selectionItemState} = 'needs_attention' then 'needsAttention'
-    when ${selectionItemState} not in ('pending','waiting') then ${selectionItemState}
-    when q.paused then 'paused'
-    when j."dependencyReason" is not null then 'blocked'
-    when p.id is not null and p.state != 'completed' then 'blocked'
-    when j.attempt > j."retryBaseAttempt" then 'retrying'
-    when j."availableAt" > now() then 'delayed'
+    when state = 'needs_attention' then 'needsAttention'
+    when state not in ('pending','waiting') then state
+    when paused then 'paused'
+    when "dependencyReason" is not null then 'blocked'
+    when "parentState" is not null and "parentState" != 'completed' then 'blocked'
+    when attempt > "retryBaseAttempt" then 'retrying'
+    when "availableAt" > now() then 'delayed'
     else 'waiting' end outcome
-  from job_run_item i left join job j on j.id = i."jobId"
-  left join job_selection snapshot on snapshot.id = i."selectionId"
-  left join job_queue q on q.name = coalesce(j.queue, i.queue) left join job p on p.id = j."parentId" where ${filter}`;
+  from ((
+  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
+  greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
+  p.state "parentState"
+  ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
+  left join job_queue q on q.name = coalesce(j.queue, i.queue) left join job p on p.id = j."parentId" where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
+  ) union all (
+  select i."runId",i."rootItemKey",i.stage,
+    case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
+      when i.state='pending' and snapshot.state in ('needs_attention','cancelled') then snapshot.state else i.state end state,
+    null::timestamptz "availableAt",null::int attempt,null::int "retryBaseAttempt",null::text "dependencyReason",q.paused,
+    null::timestamptz "meaningfulAt",null::text "parentState"
+  from job_run_item i join job_selection snapshot on snapshot.id=i."selectionId"
+  ${initialCanonicalOutcomeContext}
+  ${materializedInitialEntitlementContext}
+  left join job_queue q on q.name=i.queue
+  where ${filter} and (${simpleInitialState}) offset 0
+  )) effective`;
 
 const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,
   ${sql.join(RUN_OUTCOMES.map((key) => sql`${key}::text, count(*) filter (where ${sql.ref(`${alias}.outcome`)} = ${key})::int`))})`;
 
 // Nonterminal stages take precedence: a failed thumbnail plus a live face stage is still active.
 // A stored blocked stage is terminal prerequisite failure; a derived blocked pending stage is not.
-const selectedOutcome = sql`case
-  when bool_or(outcome = 'active') then 'active'
-  when bool_or(outcome = 'retrying') then 'retrying'
-  when bool_or(outcome = 'waiting') then 'waiting'
-  when bool_or(outcome = 'delayed') then 'delayed'
-  when bool_or(outcome = 'paused') then 'paused'
-  when bool_or(outcome = 'blocked' and state in ('pending','waiting')) then 'blocked'
-  when bool_or(outcome = 'needsAttention') then 'needsAttention'
-  when bool_or(outcome in ('failed','blocked')) then 'failed'
-  when bool_or(outcome = 'cancelled') then 'cancelled'
+// One scalar aggregate preserves this priority without nine aggregate states per root.
+const selectedOutcome = sql`case max(case
+  when outcome='active' then 10
+  when outcome='retrying' then 9
+  when outcome='waiting' then 8
+  when outcome='delayed' then 7
+  when outcome='paused' then 6
+  when outcome='blocked' and state in ('pending','waiting') then 5
+  when outcome='needsAttention' then 4
+  when outcome in ('failed','blocked') then 3
+  when outcome='cancelled' then 2 else 1 end)
+  when 10 then 'active' when 9 then 'retrying' when 8 then 'waiting'
+  when 7 then 'delayed' when 6 then 'paused' when 5 then 'blocked'
+  when 4 then 'needsAttention' when 3 then 'failed' when 2 then 'cancelled'
   else 'completed' end`;
 
 const workerAvailable = sql<boolean>`exists (
@@ -127,6 +170,7 @@ type Aggregate = Omit<RunRead, keyof RunCounts | 'state' | 'reasons' | 'noDispat
   dependencyFailed: boolean;
   workerAvailable: boolean;
   noDispatchBacklog: boolean;
+  librarySourceAttention?: boolean;
 };
 
 export const runReasons = (row: {
@@ -139,6 +183,7 @@ export const runReasons = (row: {
   noDispatchBacklog: boolean;
   enumerationDone: boolean;
   unfinishedStages: number;
+  librarySourceAttention?: boolean;
 }): RunReason[] => {
   const reasons: RunReason[] = [];
   if (!row.enumerationDone) {
@@ -169,7 +214,7 @@ export const runReasons = (row: {
   if (row.stageTotals.paused > 0) {
     reasons.push('queue_paused');
   }
-  if (row.stageTotals.needsAttention > 0) {
+  if (row.librarySourceAttention || row.stageTotals.needsAttention > 0) {
     reasons.push('needs_attention');
   }
   if (row.stageTotals.failed > 0) {
@@ -179,9 +224,18 @@ export const runReasons = (row: {
 };
 
 export const runState = (
-  row: Pick<Aggregate, 'enumerationDone' | 'unfinishedStages' | 'workerAvailable' | 'stageTotals' | 'readyStages'>,
+  row: Pick<
+    Aggregate,
+    | 'enumerationDone'
+    | 'unfinishedStages'
+    | 'workerAvailable'
+    | 'stageTotals'
+    | 'readyStages'
+    | 'librarySourceAttention'
+  >,
 ): RunState => {
   const stages = row.stageTotals;
+  if (row.librarySourceAttention && stages.active === 0) return 'needs_attention';
   if (row.enumerationDone && row.unfinishedStages === 0) {
     if (stages.failed + stages.needsAttention + stages.blocked > 0) {
       return 'completed_with_errors';
@@ -220,10 +274,13 @@ export const runState = (
 
 export async function listRuns(db: Kysely<any>, take: number, skip: number): Promise<RunRead[]> {
   const { rows } = await sql<Aggregate>`with runs as (
-      select id, kind, "createdAt", "finishedAt", "enumerationDone" from job_run
-      order by ("finishedAt" is not null), "createdAt" desc, id desc limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`)}), run_stages as (
-      select s.* from stages s join runs r on r.id = s."runId"
+      select r.id, r.kind, r."createdAt", r."finishedAt", (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
+        exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
+          where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention') "librarySourceAttention"
+      from job_run r
+      order by (r."finishedAt" is not null), r."createdAt" desc, r.id desc limit ${take} offset ${skip}
+    ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
+      select s.* from stages s
     ), selected as (
       select "runId", "rootItemKey", ${selectedOutcome} outcome
       from run_stages where "rootItemKey" is not null group by "runId", "rootItemKey"
@@ -233,8 +290,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
       select s."runId", ${counts('s')} totals,
         count(*) filter (where s.state in ('pending','waiting','active')) unfinished,
         bool_or(s.state = 'blocked') "dependencyFailed",
-        array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting')
-          and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
+        array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
         count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()) ready,
@@ -288,7 +344,7 @@ export async function listRunItems(
   const { rows } = await sql<RunItemRead>`with roots as materialized (
       select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
       order by "rootItemKey" limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots)`)}), selected as (
+    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots)`, sql<string>`${runId}::uuid`)}), selected as (
     select s."rootItemKey", ${selectedOutcome} outcome, ${counts('s')} "stageTotals",
       max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
       array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",

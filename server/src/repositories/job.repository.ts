@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
+import type { DB } from 'src/schema/index.js';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
@@ -14,6 +15,15 @@ import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueN
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import {
+  type LibrarySourceIdentity,
+  appendLibraryInitialSources,
+  closeLibrarySource,
+  ensureLibrarySource,
+  markLibrarySourceOutcome,
+  settleTerminalLibrarySources,
+  withLibraryQueueFence,
+} from 'src/queue/library-admission.js';
 import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -513,6 +523,74 @@ export class JobRepository {
       if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
       return value;
     });
+  }
+
+  /** A queue producer cannot leave a new domain scan behind after losing its own acceptance fence. */
+  async prepareLibraryScanSource<T>(
+    libraryId: string,
+    create: (tx: Transaction<DB>) => Promise<{ operationId: string; value: T }>,
+  ): Promise<T> {
+    if (runAdmission.getStore() || publicationTransaction.getStore())
+      throw new Error('Library submission requires its own fenced transaction');
+    const context = queueExecution.getStore();
+    return withLibraryQueueFence(this.store.db, context, async (tx) => {
+      const { operationId, value } = await create(tx as Transaction<DB>);
+      const intent = this.intent({ name: JobName.SidecarCheck, data: { id: operationId, source: 'upload' } });
+      await ensureLibrarySource(tx, { operationId, libraryId }, intent, context);
+      return value;
+    });
+  }
+
+  /** Bind the operation's source to its submitter, never to a later deduplicated drain wake. */
+  async ensureLibraryScanSource(identity: LibrarySourceIdentity, attachOrigin = true): Promise<void> {
+    if (runAdmission.getStore() || publicationTransaction.getStore())
+      throw new Error('Library source setup requires its own fenced transaction');
+    const context = queueExecution.getStore();
+    const intent = this.intent({ name: JobName.SidecarCheck, data: { id: identity.operationId, source: 'upload' } });
+    await withLibraryQueueFence(this.store.db, context, (tx) =>
+      ensureLibrarySource(tx, identity, intent, attachOrigin ? context : undefined),
+    );
+  }
+
+  /** Only library scans may publish bounded assets, durable sources and a checkpoint before completion. */
+  async commitLibraryScanBatch<T>(
+    identity: LibrarySourceIdentity,
+    examined: number,
+    work: (tx: Transaction<DB>) => Promise<{ value: T; assetIds: string[]; accepted: boolean }>,
+    close = false,
+  ): Promise<T> {
+    if (!Number.isSafeInteger(examined) || examined < 0 || examined > QUEUE_BATCH)
+      throw new Error('Library acceptance is limited to 250 examined items');
+    if (runAdmission.getStore() || publicationTransaction.getStore())
+      throw new Error('Library acceptance cannot nest publication transactions');
+    return withLibraryQueueFence(this.store.db, queueExecution.getStore(), async (tx) => {
+      const { value, assetIds, accepted } = await work(tx as Transaction<DB>);
+      if (!accepted) return value;
+      if (assetIds.length > QUEUE_BATCH) throw new Error('Library acceptance is limited to 250 source intents');
+      const intents = assetIds.map((id) => ({
+        ...this.intent({ name: JobName.SidecarCheck, data: { id, source: 'upload' } }),
+        runId: identity.operationId,
+        rootItemKey: id,
+        parentId: undefined,
+      }));
+      await appendLibraryInitialSources(tx, identity.operationId, intents);
+      if (close && value) await closeLibrarySource(tx, identity.operationId);
+      return value;
+    });
+  }
+
+  /** Mandatory terminal control only: the update callback must fence the exact domain claim. */
+  async settleLibraryScanSource<T>(operationId: string, update: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+    return withLibraryQueueFence(this.store.db, undefined, async (tx) => {
+      const outcome = await update(tx as Transaction<DB>);
+      await markLibrarySourceOutcome(tx, operationId);
+      return outcome;
+    });
+  }
+
+  /** Domain recovery may fail a scan without a live worker; retained open sources remain non-runnable. */
+  settleTerminalLibrarySources(): Promise<number> {
+    return withLibraryQueueFence(this.store.db, undefined, settleTerminalLibrarySources);
   }
 
   /** Materialize the full selected ID set in PostgreSQL before workers see any item. */

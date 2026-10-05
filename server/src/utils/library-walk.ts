@@ -1,4 +1,4 @@
-import { generateTasks, isDynamicPattern } from 'fast-glob';
+import glob from 'fast-glob';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import picomatch from 'picomatch';
@@ -6,6 +6,10 @@ import type { Dir, Dirent, Stats } from 'node:fs';
 import type { WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+
+// Node ESM requires the actual CommonJS namespace; Vite can synthesize absent named exports.
+// eslint-disable-next-line import-x/no-named-as-default-member -- Native CJS exports are properties of the default namespace.
+const { generateTasks, isDynamicPattern } = glob;
 
 /** Each open directory has a fixed native buffer; no directory listing or lifetime path index. */
 export const LIBRARY_WALK_BUFFER = 32;

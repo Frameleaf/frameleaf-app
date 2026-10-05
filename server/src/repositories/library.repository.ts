@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type RawBuilder, type Updateable, sql } from 'kysely';
+import { type Insertable, type Kysely, type RawBuilder, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { LibraryStatsResponseDto, ManagedUploadsStatsResponseDto } from 'src/dtos/library.dto.js';
@@ -230,8 +230,11 @@ export class LibraryRepository {
   async withScanClaim<T>(
     claim: { operationId: string; claimToken: string; libraryId: string; fingerprint: string },
     mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
+    executor?: Transaction<DB>,
   ): Promise<{ value: T } | { stopReason: LibraryScanStopReason } | undefined> {
-    return this.db.transaction().execute(async (tx) => {
+    const work = async (
+      tx: Transaction<DB>,
+    ): Promise<{ value: T } | { stopReason: LibraryScanStopReason } | undefined> => {
       const operation = await tx
         .selectFrom('media_operation')
         .select('id')
@@ -239,7 +242,7 @@ export class LibraryRepository {
         .where('claimToken', '=', claim.claimToken)
         .where('kind', '=', MediaOperationKind.LibraryScan)
         .where('status', '=', MediaOperationStatus.Rendering)
-        .where('claimExpiresAt', '>', sql<Date>`now()`)
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
         .where('cancelRequestedAt', 'is', null)
         .where('pauseRequestedAt', 'is', null)
         .forUpdate()
@@ -261,7 +264,8 @@ export class LibraryRepository {
         .executeTakeFirst();
       if (!owner || owner.deletedAt || owner.status !== UserStatus.Active) return { stopReason: 'owner_deleted' };
       return { value: await mutate(new AssetRepository(tx), new LibraryRepository(tx)) };
-    });
+    };
+    return executor ? work(executor) : this.db.transaction().execute(work);
   }
 
   /** One page of a library's item ids in id order, after `afterId` (FL-78 scan check phase). */
