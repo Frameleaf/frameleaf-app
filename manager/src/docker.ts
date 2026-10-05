@@ -334,6 +334,61 @@ export class Docker {
     if (!line) throw new Refusal('invalid_import_response');
     return JSON.parse(line);
   }
+  async restoreCommand(directory: string, project: string, operationId: string): Promise<void> {
+    if (!/^frameleaf-[a-f0-9]{12}$/.test(project) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(operationId))
+      throw new Refusal('invalid_restore_command');
+    const name = `${project}-restore-${operationId}`;
+    const containers = await this.inventory();
+    if (
+      containers.some(
+        (c) =>
+          c.State.Running &&
+          c.Config.Labels['app.frameleaf.manager'] === project.slice(10) &&
+          c.Config.Labels['com.docker.compose.service'] !== 'database',
+      )
+    )
+      throw new Refusal('restore_workers_must_be_stopped');
+    const existing = containers.find((c) => c.Name === `/${name}`);
+    if (existing) {
+      if (
+        existing.Config.Labels['app.frameleaf.manager.restore'] !== operationId ||
+        existing.Config.Labels['app.frameleaf.manager'] !== project.slice(10) ||
+        existing.Config.Labels['com.docker.compose.service'] !== 'immich-server'
+      )
+        throw new Refusal('restore_container_identity_changed');
+      if (existing.State.Running) throw new Refusal('restore_still_running_retry_when_stopped');
+      await this.execute('docker', ['rm', existing.Id]);
+    }
+    await this.execute(
+      'docker',
+      [
+        'compose',
+        '--project-name',
+        project,
+        '--file',
+        'compose.json',
+        'run',
+        '--rm',
+        '--name',
+        name,
+        '--label',
+        `app.frameleaf.manager.restore=${operationId}`,
+        '--no-deps',
+        '--pull',
+        'never',
+        '-T',
+        '--env',
+        `FRAMELEAF_MANAGER_RESTORE_OPERATION_ID=${operationId}`,
+        '--entrypoint',
+        'node',
+        'immich-server',
+        'dist/main.js',
+        'frameleaf-admin',
+        'restore-state',
+      ],
+      { cwd: directory, timeout: 7_200_000 },
+    );
+  }
   async logs(id: string): Promise<string> {
     containerId.parse(id);
     return this.execute('docker', ['logs', '--tail', '200', '--since', '1h', id]);
