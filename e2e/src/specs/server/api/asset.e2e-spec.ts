@@ -465,22 +465,26 @@ describe('/asset', () => {
     });
 
     // FL-36 (V-24): a place name typed in the information panel is kept over reverse geocoding.
-    it('should keep a typed place name through metadata extraction', { timeout: process.env.CI ? 135_000 : 35_000 }, async () => {
-      const { status, body } = await request(app)
-        .put(`/assets/${user1Assets[0].id}`)
-        .set('Authorization', `Bearer ${user1.accessToken}`)
-        .send({ latitude: 51.1784, longitude: -115.5708, city: ' Banff ', state: '', country: 'Canada' });
-      expect(status).toEqual(200);
-      expect(body).toMatchObject({
-        exifInfo: expect.objectContaining({ city: 'Banff', state: null, country: 'Canada' }),
-      });
+    it(
+      'should keep a typed place name through metadata extraction',
+      { timeout: process.env.CI ? 135_000 : 35_000 },
+      async () => {
+        const { status, body } = await request(app)
+          .put(`/assets/${user1Assets[0].id}`)
+          .set('Authorization', `Bearer ${user1.accessToken}`)
+          .send({ latitude: 51.1784, longitude: -115.5708, city: ' Banff ', state: '', country: 'Canada' });
+        expect(status).toEqual(200);
+        expect(body).toMatchObject({
+          exifInfo: expect.objectContaining({ city: 'Banff', state: null, country: 'Canada' }),
+        });
 
-      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
-      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+        await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+        await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
 
-      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
-      expect(asset.exifInfo).toMatchObject({ city: 'Banff', state: null, country: 'Canada' });
-    });
+        const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+        expect(asset.exifInfo).toMatchObject({ city: 'Banff', state: null, country: 'Canada' });
+      },
+    );
 
     it('should let a moved item be named again when no place is typed', async () => {
       await request(app)
