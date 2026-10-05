@@ -408,6 +408,13 @@ export async function finishSelections(tx: Executor, producerId: string, succeed
   if (!succeeded)
     await sql`update job_selection_run m set "copyComplete" = true from job_selection s
     where m."selectionId" = s.id and s."producerId" = ${producerId}::uuid and s."capturedAt" is null`.execute(tx);
+  // Ordinary selected media cannot change enumeration. A bounded existence proof avoids
+  // planning the recursive library predicate; eligible coordinators retain the full update.
+  const { rows: coordinators } = await sql`select 1 from job_run_item i join job j on j.id = i."jobId"
+    where i."jobId" = ${producerId}::uuid and i."rootItemKey" is null
+      and (i."runId" = j."runId" or not exists (select 1 from job_library_source_producer link where link."producerId" = j.id))
+    limit 1`.execute(tx);
+  if (coordinators.length === 0) return;
   await sql`update job_run r set "enumerationDone" = not exists (
       select 1 from job_selection_run m where m."runId" = r.id and not m."copyComplete")
       and not (${libraryRunPending(sql<string>`r.id`)}) where r.id in

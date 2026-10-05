@@ -121,7 +121,10 @@ const stagesFor = (
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState"
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
-  left join job_queue q on q.name = coalesce(j.queue, i.queue) left join job p on p.id = j."parentId" where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
+  left join job_queue q on q.name = coalesce(j.queue, i.queue)
+  left join lateral (select parent.state from job parent where j."parentId" is not null
+    and parent.id = j."parentId" limit 1) p on true
+  where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
   ) union all (
   select i."runId",i."rootItemKey",i.stage,
     case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
