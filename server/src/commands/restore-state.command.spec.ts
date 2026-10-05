@@ -1,5 +1,5 @@
-import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 import { commandsAndQuestions } from 'src/commands/index.js';
+import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 
 it('registers stopped-worker restore reconstruction in the real admin command registry', () => {
   expect(commandsAndQuestions.filter((command) => command === RestoreStateCommand)).toHaveLength(1);
@@ -9,10 +9,16 @@ it('reconstructs execution state offline after canonical initialization and sani
   const previous = { ...process.env };
   const events: string[] = [];
   const database = {
-    initialize: vi.fn().mockImplementation(async () => events.push('initialize')),
+    initialize: vi.fn().mockImplementation(() => {
+      events.push('initialize');
+      return Promise.resolve();
+    }),
   };
   const repository = {
-    resetTransientExecutionState: vi.fn().mockImplementation(async () => events.push('reset')),
+    resetTransientExecutionState: vi.fn().mockImplementation(() => {
+      events.push('reset');
+      return Promise.resolve();
+    }),
   };
   const output = vi.spyOn(console, 'log').mockImplementation(() => {});
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
