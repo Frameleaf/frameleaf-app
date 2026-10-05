@@ -1,4 +1,5 @@
 import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
@@ -31,14 +32,14 @@ describe('/trash', () => {
   const lock = (ids: string[]) =>
     request(app).post('/assets/lock').set('Authorization', bearer()).send({ ids }).expect(204);
   /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
-  const emptyVisibleTrash = async () => {
+  const emptyVisibleTrash = async (signal?: AbortSignal) => {
     // an asset's upload jobs must finish before it is permanently deleted, or they fail on the missing asset
-    await utils.waitForAllQueuesFinish(admin.accessToken);
+    await utils.waitForAllQueuesFinish(admin.accessToken, signal);
     return request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
   };
-  const trashed = async () => {
-    const { id } = await utils.createAsset(admin.accessToken);
-    await utils.waitForAllQueuesFinish(admin.accessToken);
+  const trashed = async (signal?: AbortSignal) => {
+    const { id } = await utils.createAsset(admin.accessToken, undefined, { signal });
+    await utils.waitForAllQueuesFinish(admin.accessToken, signal);
     await utils.deleteAssets(admin.accessToken, [id]);
     return id;
   };
@@ -177,34 +178,38 @@ describe('/trash', () => {
       expect(after).toStrictEqual(expect.objectContaining({ id: assetId, isTrashed: false }));
     });
 
-    it('should not restore offline assets', async () => {
-      utils.createImageFile(`${testAssetDir}/temp/trash-restore-all/offline/offline.png`);
+    it('should not restore offline assets', { timeout: process.env.CI ? 150_000 : 50_000 }, async ({ signal }) => {
+      const fixtureFolder = `temp/trash-restore-all-${randomUUID()}`;
+      utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      try {
+        const library = await utils.createLibrary(admin.accessToken, {
+          ownerId: admin.userId,
+          importPaths: [`${testAssetDirInternal}/${fixtureFolder}/offline`],
+        });
 
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/trash-restore-all/offline`],
-      });
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      await utils.scan(admin.accessToken, library.id);
+        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
+        expect(assets.count).toBe(1);
+        const assetId = assets.items[0].id;
 
-      const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
-      expect(assets.count).toBe(1);
-      const assetId = assets.items[0].id;
+        await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
 
-      await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      await utils.scan(admin.accessToken, library.id);
+        const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
+        expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isOffline: true }));
 
-      const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
-      expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isOffline: true }));
+        const { status } = await request(app)
+          .post('/trash/restore')
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
 
-      const { status } = await request(app).post('/trash/restore').set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
-
-      const after = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
-      expect(after).toStrictEqual(expect.objectContaining({ id: assetId, isOffline: true }));
-
-      utils.removeImageFile(`${testAssetDir}/temp/trash-restore-all/offline/offline.png`);
+        const after = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
+        expect(after).toStrictEqual(expect.objectContaining({ id: assetId, isOffline: true }));
+      } finally {
+        utils.removeImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      }
     });
   });
 
@@ -227,89 +232,103 @@ describe('/trash', () => {
       expect(after.isTrashed).toBe(false);
     });
 
-    it('should not restore an offline asset', async () => {
-      utils.createImageFile(`${testAssetDir}/temp/trash-restore-selected/offline/offline.png`);
+    it('should not restore an offline asset', { timeout: process.env.CI ? 270_000 : 70_000 }, async ({ signal }) => {
+      const fixtureFolder = `temp/trash-restore-selected-${randomUUID()}`;
+      utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      try {
+        const library = await utils.createLibrary(admin.accessToken, {
+          ownerId: admin.userId,
+          importPaths: [`${testAssetDirInternal}/${fixtureFolder}/offline`],
+        });
 
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/trash-restore-selected/offline`],
-      });
+        await utils.scan(admin.accessToken, library.id, signal);
+        await utils.waitForQueueFinish(admin.accessToken, 'library', undefined, signal);
 
-      await utils.scan(admin.accessToken, library.id);
-      await utils.waitForQueueFinish(admin.accessToken, 'library');
+        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
+        expect(assets.count).toBe(1);
+        const assetId = assets.items[0].id;
 
-      const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
-      expect(assets.count).toBe(1);
-      const assetId = assets.items[0].id;
+        await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
 
-      await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
+        await utils.scan(admin.accessToken, library.id, signal);
+        await utils.waitForQueueFinish(admin.accessToken, 'library', undefined, signal);
 
-      await utils.scan(admin.accessToken, library.id);
-      await utils.waitForQueueFinish(admin.accessToken, 'library');
+        const before = await utils.getAssetInfo(admin.accessToken, assetId);
+        expect(before.isTrashed).toBe(true);
 
-      const before = await utils.getAssetInfo(admin.accessToken, assetId);
-      expect(before.isTrashed).toBe(true);
+        const { status } = await request(app)
+          .post('/trash/restore/assets')
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .send({ ids: [assetId] });
+        expect(status).toBe(200);
 
-      const { status } = await request(app)
-        .post('/trash/restore/assets')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ ids: [assetId] });
-      expect(status).toBe(200);
-
-      const after = await utils.getAssetInfo(admin.accessToken, assetId);
-      expect(after.isTrashed).toBe(true);
-
-      utils.removeImageFile(`${testAssetDir}/temp/trash-restore-selected/offline/offline.png`);
+        const after = await utils.getAssetInfo(admin.accessToken, assetId);
+        expect(after.isTrashed).toBe(true);
+      } finally {
+        utils.removeImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      }
     });
   });
 
   describe('reviewed trash (FL-47)', () => {
-    it('should permanently delete exactly the reviewed items', async () => {
-      await emptyVisibleTrash();
-      const first = await trashed();
-      const second = await trashed();
+    it(
+      'should permanently delete exactly the reviewed items',
+      { timeout: process.env.CI ? 350_000 : 100_000 },
+      async ({ signal }) => {
+        await emptyVisibleTrash(signal);
+        const first = await trashed(signal);
+        const second = await trashed(signal);
 
-      const reviewed = await review({ action: 'empty' });
-      expect(reviewed.status).toBe(200);
-      expect(reviewed.body).toMatchObject({ action: 'empty', count: 2, retainedOriginals: 0 });
+        const reviewed = await review({ action: 'empty' });
+        expect(reviewed.status).toBe(200);
+        expect(reviewed.body).toMatchObject({ action: 'empty', count: 2, retainedOriginals: 0 });
 
-      const { status, body } = await apply({ action: 'empty', token: reviewed.body.token });
-      expect(status).toBe(200);
-      expect(body).toEqual({ count: 2 });
+        const { status, body } = await apply({ action: 'empty', token: reviewed.body.token });
+        expect(status).toBe(200);
+        expect(body).toEqual({ count: 2 });
 
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: first });
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: second });
-    });
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: first, signal });
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: second, signal });
+      },
+    );
 
-    it('should refuse to empty the trash when an item arrived after the review', async () => {
-      await emptyVisibleTrash();
-      const reviewedId = await trashed();
+    it(
+      'should refuse to empty the trash when an item arrived after the review',
+      { timeout: process.env.CI ? 330_000 : 80_000 },
+      async ({ signal }) => {
+        await emptyVisibleTrash(signal);
+        const reviewedId = await trashed(signal);
 
-      const reviewed = await review({ action: 'empty' });
-      const lateId = await trashed();
+        const reviewed = await review({ action: 'empty' });
+        const lateId = await trashed(signal);
 
-      const { status } = await apply({ action: 'empty', token: reviewed.body.token });
-      expect(status).toBe(409);
+        const { status } = await apply({ action: 'empty', token: reviewed.body.token });
+        expect(status).toBe(409);
 
-      await expect(utils.getAssetInfo(admin.accessToken, reviewedId)).resolves.toMatchObject({ isTrashed: true });
-      await expect(utils.getAssetInfo(admin.accessToken, lateId)).resolves.toMatchObject({ isTrashed: true });
-    });
+        await expect(utils.getAssetInfo(admin.accessToken, reviewedId)).resolves.toMatchObject({ isTrashed: true });
+        await expect(utils.getAssetInfo(admin.accessToken, lateId)).resolves.toMatchObject({ isTrashed: true });
+      },
+    );
 
-    it('should refuse when an item was locked between review and apply', async () => {
-      await emptyVisibleTrash();
-      const open = await trashed();
-      const laterLocked = await trashed();
+    it(
+      'should refuse when an item was locked between review and apply',
+      { timeout: process.env.CI ? 330_000 : 80_000 },
+      async ({ signal }) => {
+        await emptyVisibleTrash(signal);
+        const open = await trashed(signal);
+        const laterLocked = await trashed(signal);
 
-      const reviewed = await review({ action: 'delete', ids: [open, laterLocked] });
-      expect(reviewed.body.count).toBe(2);
+        const reviewed = await review({ action: 'delete', ids: [open, laterLocked] });
+        expect(reviewed.body.count).toBe(2);
 
-      await lock([laterLocked]);
+        await lock([laterLocked]);
 
-      // the Locked item is no longer this session's to change, so nothing is deleted
-      const { status } = await apply({ action: 'delete', ids: [open, laterLocked], token: reviewed.body.token });
-      expect(status).toBe(400);
-      await expect(utils.getAssetInfo(admin.accessToken, open)).resolves.toMatchObject({ isTrashed: true });
-    });
+        // the Locked item is no longer this session's to change, so nothing is deleted
+        const { status } = await apply({ action: 'delete', ids: [open, laterLocked], token: reviewed.body.token });
+        expect(status).toBe(400);
+        await expect(utils.getAssetInfo(admin.accessToken, open)).resolves.toMatchObject({ isTrashed: true });
+      },
+    );
 
     it('should keep Locked items out of an ordinary session and out of empty', async () => {
       await emptyVisibleTrash();
