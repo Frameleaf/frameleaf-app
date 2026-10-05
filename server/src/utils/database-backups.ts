@@ -7,7 +7,11 @@ export function isValidDatabaseBackupName(filename: string) {
 export function isValidDatabaseRoutineBackupName(filename: string) {
   const oldBackupStyle = filename.match(/^frameleaf-db-backup-\d+\.sql\.gz$/);
   //frameleaf-db-backup-20250729T114018-v1.136.0-pg19beta4.sql.gz
-  const newBackupStyle = filename.match(/^frameleaf-db-backup-\d{8}T\d{6}-v.*-pg.*\.sql\.gz$/);
+  // Queued attempts add a UUID to avoid overwriting an accepted dump made in the same second.
+  // Only that label is routine; pre-upgrade and other retained safety labels remain excluded.
+  const newBackupStyle = filename.match(
+    /^frameleaf-db-backup-\d{8}T\d{6}(?:-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})?-v.*-pg.*\.sql\.gz$/,
+  );
   return oldBackupStyle || newBackupStyle;
 }
 

@@ -62,6 +62,7 @@ const runSubmission = new AsyncLocalStorage<string>();
 const runAdmission = new AsyncLocalStorage<{ intents: QueueIntent[]; open: boolean }>();
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
   JobName.AssetGenerateThumbnailsQueueAll,
   JobName.AssetEditThumbnailGeneration,

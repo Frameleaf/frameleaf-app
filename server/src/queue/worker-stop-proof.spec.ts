@@ -50,6 +50,65 @@ describe('supervisor stop proof recorder', () => {
     }
   });
 
+  it('republishes the original confirmed proof after metadata replacement and then releases it', async () => {
+    const rows = new Map<string, unknown>();
+    const query = vi.fn((_sql: string, [payload]: [string]) => {
+      for (const value of JSON.parse(payload)) rows.set(value.workerId, value);
+      return Promise.resolve({});
+    });
+    vi.mocked(Pool).mockImplementation(function () {
+      return {
+        connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }),
+        on: vi.fn(),
+        end: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Pool;
+    });
+    const recorder = new WorkerStopProofRecorder(config);
+    try {
+      await recorder.republish();
+      expect(query).not.toHaveBeenCalled(); // A cold supervisor cannot invent stop evidence.
+      await recorder.record(proof);
+      rows.clear(); // An older dump replaced system_metadata after the successful first write.
+      await vi.advanceTimersByTimeAsync(1000);
+      await recorder.republish();
+      expect(rows.values().toArray()).toEqual([proof]);
+      expect(query.mock.calls[1][1]).toEqual([JSON.stringify([proof])]);
+      await recorder.republish();
+      expect(query).toHaveBeenCalledTimes(2); // Successful bootstrap releases the retained proof.
+    } finally {
+      await recorder.close();
+    }
+  });
+
+  it('retries a failed republication without refreshing the confirmed stop time', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('restore connection reset'))
+      .mockResolvedValue({});
+    const release = vi.fn();
+    vi.mocked(Pool).mockImplementation(function () {
+      return {
+        connect: vi.fn().mockResolvedValue({ query, release }),
+        on: vi.fn(),
+        end: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Pool;
+    });
+    const recorder = new WorkerStopProofRecorder(config, { retryMs: 50, diagnostic: vi.fn() });
+    try {
+      await recorder.record(proof);
+      await recorder.republish();
+      expect(release).toHaveBeenLastCalledWith(true);
+      await vi.advanceTimersByTimeAsync(51);
+      expect(query).toHaveBeenCalledTimes(3);
+      expect(query.mock.calls.every((call) => call[1][0] === JSON.stringify([proof]))).toBe(true);
+      await recorder.republish();
+      expect(query).toHaveBeenCalledTimes(3);
+    } finally {
+      await recorder.close();
+    }
+  });
+
   it('does not return a concurrently arriving proof before its first write attempt', async () => {
     const { promise: first, resolve: finish } = Promise.withResolvers<void>();
     const query = vi.fn().mockReturnValueOnce(first).mockResolvedValue({});

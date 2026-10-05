@@ -58,7 +58,7 @@ describe('/admin/database-backups', () => {
             backups: [
               expect.objectContaining({
                 filename: expect.stringMatching(
-                  /^frameleaf-db-backup-\d{8}T\d{6}-v[^/]+-pg19(?:[.\d]+|(?:alpha|beta|rc)\d+)\.sql\.gz$/,
+                  /^frameleaf-db-backup-\d{8}T\d{6}-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}-v[^/]+-pg19(?:[.\d]+|(?:alpha|beta|rc)\d+)\.sql\.gz$/,
                 ),
                 filesize: expect.any(Number),
               }),

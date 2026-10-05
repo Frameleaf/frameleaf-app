@@ -142,7 +142,8 @@ export class DatabaseBackupService {
   @OnJob({ name: JobName.DatabaseBackup, queue: QueueName.BackupDatabase })
   async handleBackupDatabase(): Promise<JobStatus> {
     try {
-      await this.createDatabaseBackup();
+      // An interrupted attempt may already have published a verified dump. Never overwrite it on replay.
+      await this.createDatabaseBackup('', { label: randomUUID() });
     } catch (error) {
       if (error instanceof UnsupportedPostgresError) {
         return JobStatus.Failed;

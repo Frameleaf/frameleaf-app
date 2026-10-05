@@ -14,6 +14,7 @@ import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/e
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
+import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
@@ -241,6 +242,27 @@ describe(DatabaseBackupService.name, () => {
 
       expect(await leftFiles()).toEqual([basename(path)]);
       expect(path).toMatch(/\/frameleaf-db-backup-\d{8}T\d{6}-v[\d.]+-pg19(?:beta\d+|rc\d+|[\d.]+)\.sql\.gz$/);
+    });
+
+    it('keeps distinct verified queued attempts in the same second and rotates them as routine backups', async () => {
+      const now = DateTime.now();
+      vi.spyOn(DateTime, 'now').mockReturnValue(now);
+      try {
+        await sut.handleBackupDatabase();
+        const [first] = await leftFiles();
+        await sut.handleBackupDatabase();
+        const files = await leftFiles();
+        expect(files).toHaveLength(2);
+        expect(files).toContain(first);
+        expect(files.every((file) => !!isValidDatabaseRoutineBackupName(file))).toBe(true);
+        for (const file of files) await expect(sut.verifyDatabaseBackup(local(file))).resolves.toBeUndefined();
+        // keepLastAmount=1 must include the new unique routine names, not exempt them as safety copies.
+        mocks.storage.readdir.mockResolvedValue(files);
+        await sut.cleanupDatabaseBackups();
+        expect(await leftFiles()).toHaveLength(1);
+      } finally {
+        vi.mocked(DateTime.now).mockRestore();
+      }
     });
 
     it('verifies every routine backup before renaming it (FL-298)', async () => {

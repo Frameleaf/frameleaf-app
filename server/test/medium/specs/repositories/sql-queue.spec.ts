@@ -95,6 +95,106 @@ describe('PostgreSQL queue', () => {
     expect(await store.claim(queue, workerB)).toEqual([]);
   });
 
+  it('reconstructs legacy backup safety without another retry budget or operation-owned replay', async () => {
+    const backupQueue = QueueName.BackupDatabase;
+    const testId = randomUUID();
+    const backup = (kind: string, data: Record<string, unknown> = {}): QueueIntent =>
+      intent({
+        name: JobName.DatabaseBackup,
+        queue: backupQueue,
+        safeToRetry: false,
+        data: { kind, testId, ...data },
+      });
+    await store.initialize([backupQueue]);
+    await store.setConcurrency(backupQueue, 3);
+    try {
+      await store.enqueue([backup('retry'), backup('exhausted'), backup('operation', { operationId: randomUUID() })]);
+      const originals = await store.claim(backupQueue, workerA);
+      expect(originals).toHaveLength(3);
+      const exhausted = originals.find((claim) => claim.data.kind === 'exhausted')!;
+      await sql`update job set "safeToRetry" = true where id = ${exhausted.id}::uuid`.execute(db);
+      await store.fail(exhausted, 'first attempt failed');
+      await sql`update job set "availableAt" = now() where id = ${exhausted.id}::uuid`.execute(db);
+      const [second] = await store.claim(backupQueue, workerA);
+      expect(second.id).toBe(exhausted.id);
+      expect(second.attempt).toBe(2);
+      // Simulate the old serialized classification after a real second claim was recorded.
+      await sql`update job set "safeToRetry" = false where id = ${second.id}::uuid`.execute(db);
+      await store.enqueue([backup('not-started'), { ...backup('wrong-queue'), queue }]);
+      await resetQueueAfterRestore(db);
+      await resetQueueAfterRestore(db);
+      expect(
+        (
+          await sql`select data->>'kind' kind, state, attempt, "retryBaseAttempt", "safeToRetry", token
+        from job where data->>'testId' = ${testId}`.execute(db)
+        ).rows,
+      ).toEqual(
+        expect.arrayContaining([
+          { kind: 'retry', state: 'pending', attempt: 1, retryBaseAttempt: 0, safeToRetry: true, token: null },
+          { kind: 'not-started', state: 'pending', attempt: 0, retryBaseAttempt: 0, safeToRetry: true, token: null },
+          {
+            kind: 'exhausted',
+            state: 'needs_attention',
+            attempt: 2,
+            retryBaseAttempt: 0,
+            safeToRetry: true,
+            token: null,
+          },
+          {
+            kind: 'operation',
+            state: 'needs_attention',
+            attempt: 1,
+            retryBaseAttempt: 0,
+            safeToRetry: false,
+            token: null,
+          },
+          {
+            kind: 'wrong-queue',
+            state: 'needs_attention',
+            attempt: 0,
+            retryBaseAttempt: 0,
+            safeToRetry: false,
+            token: null,
+          },
+        ]),
+      );
+      for (const stale of [...originals, second]) expect(await store.complete(stale, [])).toBe(false);
+      expect(
+        (
+          await sql`select a.outcome from job_attempt a join job j on j.id = a."jobId"
+        where j.data->>'testId' = ${testId} and j.data->>'kind' = 'retry'`.execute(db)
+        ).rows,
+      ).toEqual([{ outcome: 'restored_retry' }]);
+      await sql`update job set "availableAt" = now() where data->>'testId' = ${testId}`.execute(db);
+      const retries = await store.claim(backupQueue, workerB);
+      expect(retries).toHaveLength(2);
+      for (const claim of retries) {
+        if (claim.data.kind === 'retry') {
+          expect(claim.attempt).toBe(2);
+          await store.fail(claim, 'one retry exhausted');
+        } else {
+          expect(claim.data.kind).toBe('not-started');
+          expect(claim.attempt).toBe(1);
+          expect(await store.complete(claim, [])).toBe(true);
+        }
+      }
+      expect(await store.claim(backupQueue, workerB)).toEqual([]);
+      expect(
+        (
+          await sql`select data->>'kind' kind, state from job where data->>'testId' = ${testId}
+        and data->>'kind' in ('retry','not-started')`.execute(db)
+        ).rows,
+      ).toEqual(
+        expect.arrayContaining([
+          { kind: 'retry', state: 'failed' },
+          { kind: 'not-started', state: 'completed' },
+        ]),
+      );
+    } finally {
+      await sql`delete from job where data->>'testId' = ${testId}`.execute(db);
+    }
+  });
+
   it('commits failure diagnostics with the failed attempt, discarding successful effects and stale diagnostics', async () => {
     const table = `queue_diagnostic_${randomUUID().replaceAll('-', '')}`;
     await sql`create table ${sql.id(table)} (attempt integer not null, kind text not null)`.execute(db);
