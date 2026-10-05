@@ -474,10 +474,15 @@ export async function publishLibraryFollowups(tx: Transaction<any>, jobId: strin
 /** Sensitive execution payloads live only until their retained owner reaches a terminal state.
  * Source identity remains available for deduplication; late copies receive the redacted value.
  */
-export async function redactLibraryPayloads(tx: Kysely<any> | Transaction<any>, jobId: string, terminalOnly = true) {
+export async function redactLibraryPayloads(
+  tx: Kysely<any> | Transaction<any>,
+  jobId: string | string[],
+  terminalOnly = true,
+) {
+  const jobIds = Array.isArray(jobId) ? jobId : [jobId];
   await sql`update job_run_item i set selection = '{}'::jsonb,
     "libraryIntent" = i."libraryIntent" - 'options' || jsonb_build_object('data', '{}'::jsonb)
-    from job j where j.id = ${jobId}::uuid and j.sensitive and i."jobId" = j.id
+    from job j where j.id = any(${jobIds}::uuid[]) and j.sensitive and i."jobId" = j.id
       and i."libraryIntent" is not null and (${!terminalOnly} or j.state not in ('pending','waiting','active'))`.execute(
     tx,
   );
