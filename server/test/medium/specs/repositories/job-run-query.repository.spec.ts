@@ -52,6 +52,57 @@ const job = async (
   return id;
 };
 
+it('reads an exact retained run outside the global page without changing default pagination or privacy', async () => {
+  const retained = await run();
+  await stage(retained, 'private-root', 'Thumbnail', 'failed');
+  await sql`insert into job_run(id,kind,selection,"enumerationDone")
+    select uuid_generate_v4(),'newer','{}',true from generate_series(1,30)`.execute(db);
+  const page = await listRuns(db, 25, 0);
+  expect(page).toHaveLength(25);
+  expect(page.some((row) => row.id === retained)).toBe(false);
+  const exact = await listRuns(db, 1, 0, retained);
+  expect(exact).toHaveLength(1);
+  expect(exact[0]).toMatchObject({ id: retained, total: 1, failed: 1, state: 'completed_with_errors' });
+  expect(JSON.stringify(exact)).not.toMatch(/private-root|private-name|private-asset-id|selection|itemKey/);
+  expect(await listRuns(db, 1, 0, randomUUID())).toEqual([]);
+  expect(await listRuns(db, 1, 1, retained)).toEqual([]);
+  expect(await listRuns(db, 25, 0)).toEqual(page);
+});
+
+it('explains an old first-setup hold without a dispatch alert, then restores genuine backlog and terminal outcomes', async () => {
+  const id = await run(); // More than the ordinary two-minute dispatch warning boundary.
+  const marker = { installation: '333333334444', operationId: randomUUID(), preparedAt: new Date().toISOString(), startedAt: null };
+  await sql`UPDATE job_run SET kind='immich-import-derived',selection=${JSON.stringify({ managerSetup: marker })}::text::jsonb WHERE id=${id}::uuid`.execute(db);
+  const item = await stage(id, 'private-root', 'Thumbnail', 'pending');
+  const selectionId = randomUUID();
+  await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
+    VALUES (${selectionId}::uuid,${id}::uuid,'Thumbnail','test',true,false,1000,'enumerating',now())`.execute(db);
+  await sql`UPDATE job_run_item SET "selectionId"=${selectionId}::uuid WHERE "runId"=${id}::uuid AND "itemKey"=${item}`.execute(db);
+  let [summary] = await listRuns(db, 1, 0, id);
+  expect(summary).toMatchObject({ enumerationDone: true, state: 'blocked', noDispatchBacklog: false });
+  expect(summary.reasons).toContain('first_setup_pending');
+  expect(summary.reasons).not.toContain('enumerating');
+  expect(summary.reasons).not.toContain('no_dispatch_backlog');
+  await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(db);
+  await sql`UPDATE job_selection SET state='ready' WHERE id=${selectionId}::uuid`.execute(db);
+  [summary] = await listRuns(db, 1, 0, id);
+  expect(summary).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
+  expect(summary.reasons).not.toContain('first_setup_pending');
+  expect(summary.reasons).toContain('no_dispatch_backlog');
+  await sql`UPDATE job_run SET selection='{}' WHERE id=${id}::uuid`.execute(db); // Legacy/independent-copy import stays ungated.
+  expect((await listRuns(db, 1, 0, id))[0]).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
+  await sql`UPDATE job_run SET selection=${JSON.stringify({ managerSetup: marker })}::text::jsonb WHERE id=${id}::uuid`.execute(db);
+  await sql`UPDATE job_selection SET state='cancelled' WHERE id=${selectionId}::uuid`.execute(db);
+  [summary] = await listRuns(db, 1, 0, id);
+  expect(summary).toMatchObject({ state: 'cancelled', noDispatchBacklog: false });
+  expect(summary.reasons).not.toContain('first_setup_pending');
+  await sql`UPDATE job_selection SET state='needs_attention' WHERE id=${selectionId}::uuid`.execute(db);
+  [summary] = await listRuns(db, 1, 0, id);
+  expect(summary).toMatchObject({ state: 'completed_with_errors', noDispatchBacklog: false });
+  expect(summary.reasons).not.toContain('first_setup_pending');
+  expect(summary.reasons).toContain('needs_attention');
+});
+
 it('counts 15,000 selected roots once despite multiple face subjects, stages and a coordinator', async () => {
   const id = await run();
   await sql`insert into job_run_item("runId", "rootItemKey", "itemKey", stage, queue, state, selection)
