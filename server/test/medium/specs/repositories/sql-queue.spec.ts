@@ -939,7 +939,9 @@ describe('PostgreSQL queue', () => {
         settled.resolve();
       }
     }
-  }, 900_000);
+    // Whole-batch validation budget, not an application deadline. Stall/recovery deadlines
+    // are asserted separately; a progressing 60,000-stage run can exceed 15 minutes locally.
+  }, 1_800_000);
 
   it('fences a partitioned executor and defers retry until its actual stop is confirmed', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'queue-partition-'));
