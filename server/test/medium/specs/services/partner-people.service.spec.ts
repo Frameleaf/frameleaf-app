@@ -50,6 +50,7 @@ const setup = () => {
     mock: [JobRepository, LoggingRepository],
   });
   ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
   return { ctx, base: ctx.sut as BaseService };
 };
 
