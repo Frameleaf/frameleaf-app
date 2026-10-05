@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations } from '../src/operations.js';
@@ -15,7 +15,7 @@ import { fileHash } from '../src/files.js';
 
 for (const restoredAgain of [false, true]) {
   test(`reviewed canonical restore carries original import identity before setup (restored again=${restoredAgain})`, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'manager-restore-regeneration-'));
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'manager-restore-regeneration-')));
     const store = new Store(join(root, 'state'));
     const original = 'aaaabbbbcccc';
     const prior = {
@@ -28,6 +28,7 @@ for (const restoredAgain of [false, true]) {
       mounts: [{ type: 'bind', source: join(root, 'media'), target: '/data', readOnly: false }],
     } as Installation;
     const events: string[] = [];
+    let interruptReconstruction = true;
     const release = { directory: join(root, 'release'), nas: {
       tag: prior.release, platforms: ['linux/amd64'], images: {
         server: `fixture.invalid/server@sha256:${'a'.repeat(64)}`,
@@ -61,6 +62,10 @@ for (const restoredAgain of [false, true]) {
         assert.equal(environment.FRAMELEAF_MANAGER_TOKEN_FILE, '/run/frameleaf/manager-token');
         assert.equal(project, store.get<Installation>('installation')!.project);
         assert.ok(operationId);
+        if (interruptReconstruction) {
+          interruptReconstruction = false;
+          throw new Error('lost offline reconstruction acknowledgement');
+        }
       },
       node: async (_id: string, _script: string, args: string[]) => {
         events.push('setup'); assert.deepEqual(args, ['POST']);
@@ -90,13 +95,15 @@ for (const restoredAgain of [false, true]) {
       const review = await operations.reviewRestore('a'.repeat(64), root);
       const { operation } = store.start('restore', randomUUID(), { reviewId: review.id });
       const run = (operations as unknown as { applyRestore(operation: Operation, review: unknown): Promise<void> }).applyRestore.bind(operations);
+      await assert.rejects(run(operation, store.get(`restore:${review.id}`)), /lost offline reconstruction acknowledgement/);
+      assert.deepEqual(events, ['database', 'restore', 'reconstruct']);
       await run(operation, store.get(`restore:${review.id}`));
-      assert.deepEqual(events, ['database', 'restore', 'reconstruct', 'workers', 'setup']);
+      assert.deepEqual(events, ['database', 'restore', 'reconstruct', 'reconstruct', 'workers', 'setup']);
       const installation = operations.installation()!;
       assert.notEqual(installation.id, prior.id);
       assert.equal(installation.importInstallation, original);
       await run(operation, store.get(`restore:${review.id}`));
-      assert.deepEqual(events, ['database', 'restore', 'reconstruct', 'workers', 'setup']);
+      assert.deepEqual(events, ['database', 'restore', 'reconstruct', 'reconstruct', 'workers', 'setup']);
       assert.equal(operations.installation()!.id, installation.id);
       assert.equal(operation.receipts['reconstruct-execution-state'], true);
     } finally {
@@ -127,6 +134,12 @@ test('offline reconstruction uses the real command environment and refuses a run
   containers.push({ Id: 'b'.repeat(64), Name: `/${name}`, State: { Running: false }, Config: { Labels: {} } } as Container);
   await assert.rejects(docker.restoreCommand('/private/fixture', project, operation), /restore_container_identity_changed/);
   assert.equal(calls.some(args => args[0] === 'rm'), false);
+  containers[1].Config.Labels = {
+    'app.frameleaf.manager.restore': operation, 'app.frameleaf.manager': 'aaaabbbbcccc',
+    'com.docker.compose.service': 'immich-server',
+  };
+  await docker.restoreCommand('/private/fixture', project, operation);
+  assert.deepEqual(calls.find(args => args[0] === 'rm'), ['rm', 'b'.repeat(64)]);
   containers = [{ Id: 'c'.repeat(64), State: { Running: true }, Config: { Labels: {
     'app.frameleaf.manager': 'aaaabbbbcccc', 'com.docker.compose.service': 'immich-server',
   } } } as Container];
