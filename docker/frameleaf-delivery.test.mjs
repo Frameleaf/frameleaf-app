@@ -904,6 +904,10 @@ test("release Compose files pull only digest-pinned or promotion-verified images
 });
 
 test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
+  assert.doesNotMatch(
+    read("server/bin/start.sh"),
+    /REDIS_|VALKEY_|BULLMQ_|IOREDIS_|\b(?:redis|valkey|bullmq|ioredis)\b/i,
+  );
   for (const file of [
     "docker/docker-compose.yml",
     "docker/docker-compose.rootless.yml",

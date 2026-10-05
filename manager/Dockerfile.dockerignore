@@ -1,0 +1,10 @@
+**
+!manager/
+!manager/**
+manager/node_modules/
+manager/build/
+manager/ui/dist/
+!cosign.pub
+!.github/
+!.github/frameleaf-release.cjs
+!.github/verify-release-bundle.cjs

@@ -59,6 +59,23 @@ describe('import admission and activation gates', () => {
     expect(statements.some((statement) => /^(INSERT|UPDATE)/u.test(statement))).toBe(false);
   });
 
+  it('refuses changing a journal from independent-copy to Manager in-place', async () => {
+    const { importer, statements } = createImporter({
+      status: 'copying',
+      source_fingerprint: 'same-source',
+      config_fingerprint: digest(config),
+    });
+    importer.config.mediaRoots = [{ source: '/source', target: '/source' }];
+    importer.config.media = {
+      mode: 'manager-in-place',
+      authority: 'frameleaf-manager',
+      operationId: 'operation-1',
+      deploymentId: 'deployment-1',
+    };
+    await expect(importer.run(true)).rejects.toThrow('RESUME_SOURCE_OR_CONFIGURATION_CHANGED');
+    expect(statements.some((statement) => /^(INSERT|UPDATE)/u.test(statement))).toBe(false);
+  });
+
   it('refuses populated destinations before journal writes', async () => {
     const { importer, statements } = createImporter(undefined, true);
     await expect(importer.run()).rejects.toThrow('DESTINATION_NOT_FRESH');
