@@ -60,7 +60,7 @@ import {
 } from '@immich/sdk';
 import { BrowserContext } from '@playwright/test';
 import { exec, spawn } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -302,6 +302,7 @@ export const utils = {
           let primary: unknown;
           let failed = false;
           const sessions = new Map<string, { token: string; hashed: Buffer }>();
+          let resetAdminId: string | undefined;
           const query = async (context: WaitContext, text: string, values?: unknown[]) => {
             const timeout = Math.min(1000, context.remaining());
             await db.query(`SELECT set_config('statement_timeout', $1, false), set_config('lock_timeout', $1, false)`, [
@@ -391,7 +392,7 @@ export const utils = {
                   context,
                   `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
                 );
-                const token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
+                let token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
                 await resetWhilePaused({
                   pause: async () => {
                     await query(context, 'BEGIN');
@@ -423,8 +424,8 @@ export const utils = {
                           (text) => query(context, text),
                           async () => {
                             if (!token) {
-                              // Initial startup has no administrator session. Both stop proof and durable
-                              // accounting still apply; lack of an administrator grants no reset authority.
+                              // Periodic jobs can be admitted without an administrator. They cannot drain
+                              // while paused, so use owned fixture authentication for the normal clear API.
                               const { rows } = await query(
                                 context,
                                 `SELECT
@@ -434,11 +435,22 @@ export const utils = {
                           WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
                         OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
                               );
-                              if (rows[0].unfinished) {
-                                return true;
+                              if (!rows[0].unfinished) {
+                                const operations = await unfinishedOperations();
+                                return operations.length > 0;
                               }
-                              const operations = await unfinishedOperations();
-                              return operations.length > 0;
+                              // Record ownership before the atomic write, including an ambiguous response.
+                              // No signup/onboarding hooks or existing account promotion are involved.
+                              resetAdminId = randomUUID();
+                              await query(
+                                context,
+                                `WITH owned_group AS (
+                                  INSERT INTO cluster_group (id) VALUES ($1) RETURNING id
+                                ) INSERT INTO "user" (id, email, "isAdmin", "clusterGroupId")
+                                  SELECT id, $2, true, id FROM owned_group`,
+                                [resetAdminId, `reset-${resetAdminId}@example.invalid`],
+                              );
+                              token = await ownerToken(resetAdminId);
                             }
                             const headers = asBearerAuth(token);
                             for (const name of Object.values(QueueName)) {
@@ -477,12 +489,26 @@ export const utils = {
                   },
                   restore: (snapshot) =>
                     withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
-                      await query(
-                        cleanup,
-                        `UPDATE job_queue q SET paused = original.paused
+                      await query(cleanup, 'BEGIN');
+                      try {
+                        if (resetAdminId) {
+                          // Revocation cascades to this fixture's sessions. Full reset may already have
+                          // truncated these rows; partial/failed resets still remove only our identity.
+                          await query(cleanup, 'DELETE FROM "user" WHERE id = $1', [resetAdminId]);
+                          await query(cleanup, 'DELETE FROM user_audit WHERE "userId" = $1', [resetAdminId]);
+                          await query(cleanup, 'DELETE FROM cluster_group WHERE id = $1', [resetAdminId]);
+                        }
+                        await query(
+                          cleanup,
+                          `UPDATE job_queue q SET paused = original.paused
                   FROM jsonb_to_recordset($1::jsonb) AS original(name text, paused boolean) WHERE q.name = original.name`,
-                        [JSON.stringify(snapshot)],
-                      );
+                          [JSON.stringify(snapshot)],
+                        );
+                        await query(cleanup, 'COMMIT');
+                      } catch (error) {
+                        await db.query('ROLLBACK');
+                        throw error;
+                      }
                     }),
                 });
               },
