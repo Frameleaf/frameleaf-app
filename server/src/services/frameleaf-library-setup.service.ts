@@ -152,12 +152,18 @@ export class FrameleafLibrarySetupService {
   }
 
   private async importedRun(db = this.db, lock = false) {
-    const { rows: [journal] } = await sql<{ status: string; source_fingerprint: string; config_fingerprint: string }>`
+    const {
+      rows: [journal],
+    } = await sql<{ status: string; source_fingerprint: string; config_fingerprint: string }>`
       SELECT status,source_fingerprint,config_fingerprint FROM frameleaf_immich_import`.execute(db);
     if (!journal) return null;
     const id = importDerivedRunId(journal.source_fingerprint, journal.config_fingerprint);
-    const { rows: [run] } = await sql<{ id: string; kind: string; selection: ImportRunSelection; enumerationDone: boolean }>`
-      SELECT id,kind,selection,"enumerationDone" FROM job_run WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
+    const {
+      rows: [run],
+    } = await sql<{ id: string; kind: string; selection: ImportRunSelection; enumerationDone: boolean }>`
+      SELECT id,kind,selection,"enumerationDone" FROM job_run WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}`.execute(
+      db,
+    );
     return { journal, run };
   }
 
@@ -171,16 +177,27 @@ export class FrameleafLibrarySetupService {
     const { journal, run } = imported;
     const marker = run?.selection.managerSetup;
     if (
-      journal.status !== 'activated' || !run || run.kind !== IMPORT_DERIVED_RUN_KIND ||
-      run.selection.source !== journal.source_fingerprint || run.selection.config !== journal.config_fingerprint ||
-      marker?.installation !== state.installation || !marker.operationId || !marker.preparedAt ||
-      marker.startedAt || !run.enumerationDone
-    ) return;
+      journal.status !== 'activated' ||
+      !run ||
+      run.kind !== IMPORT_DERIVED_RUN_KIND ||
+      run.selection.source !== journal.source_fingerprint ||
+      run.selection.config !== journal.config_fingerprint ||
+      marker?.installation !== state.installation ||
+      !marker.operationId ||
+      !marker.preparedAt ||
+      marker.startedAt ||
+      !run.enumerationDone
+    )
+      return;
     const stages = [...IMPORT_DERIVED_STAGES.map(([, stage]) => stage), JobName.PersonGenerateThumbnail];
-    const { rows: [prepared] } = await sql<{ ready: boolean }>`SELECT
+    const {
+      rows: [prepared],
+    } = await sql<{ ready: boolean }>`SELECT
       (SELECT count(*) FROM job_selection WHERE "runId"=${run.id}::uuid
         AND stage=ANY(${stages}::text[]) AND "capturedAt" IS NOT NULL)=${stages.length}
-      AND NOT EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${run.id}::uuid AND "capturedAt" IS NULL) AS ready`.execute(db);
+      AND NOT EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${run.id}::uuid AND "capturedAt" IS NULL) AS ready`.execute(
+      db,
+    );
     if (!prepared?.ready) return;
     const startedAt = new Date().toISOString();
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(startedAt)}::text::jsonb)
@@ -194,15 +211,20 @@ export class FrameleafLibrarySetupService {
     const imported = await this.importedRun();
     const run = imported?.run;
     const marker = run?.selection.managerSetup;
-    const matches = !!run && run.kind === IMPORT_DERIVED_RUN_KIND &&
-      run.selection.source === imported!.journal.source_fingerprint && run.selection.config === imported!.journal.config_fingerprint &&
+    const matches =
+      !!run &&
+      run.kind === IMPORT_DERIVED_RUN_KIND &&
+      run.selection.source === imported!.journal.source_fingerprint &&
+      run.selection.config === imported!.journal.config_fingerprint &&
       (!marker || marker.installation === state.installation);
     const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
-    const pending = !!marker && !marker.startedAt &&
+    const pending =
+      !!marker &&
+      !marker.startedAt &&
       !['cancelled', 'completed_with_errors', 'needs_attention'].includes(summary?.state ?? '');
     return {
       runId: run?.id ?? null,
-      state: !matches ? 'needs_attention' : pending ? 'pending_first_setup' : summary?.state ?? 'unavailable',
+      state: !matches ? 'needs_attention' : pending ? 'pending_first_setup' : (summary?.state ?? 'unavailable'),
       preparedAt: marker?.preparedAt ?? null,
       startedAt: marker?.startedAt ?? null,
       completed: summary?.completed ?? 0,
@@ -210,9 +232,21 @@ export class FrameleafLibrarySetupService {
       failed: summary?.failed ?? 0,
       blocked: summary?.blocked ?? 0,
       needsAttention: summary?.needsAttention ?? 0,
-      reasons: !matches ? ['import_not_prepared'] : pending ?
-        [!state.processingChoiceApplied ? 'settings_not_ready' : imported?.journal.status !== 'activated' ? 'import_not_activated' :
-          !marker.preparedAt ? 'snapshot_not_prepared' : state.phase === 'awaiting-account' ? 'account_not_ready' : 'first_setup_pending'] : summary?.reasons ?? [],
+      reasons: !matches
+        ? ['import_not_prepared']
+        : pending
+          ? [
+              !state.processingChoiceApplied
+                ? 'settings_not_ready'
+                : imported?.journal.status !== 'activated'
+                  ? 'import_not_activated'
+                  : !marker.preparedAt
+                    ? 'snapshot_not_prepared'
+                    : state.phase === 'awaiting-account'
+                      ? 'account_not_ready'
+                      : 'first_setup_pending',
+            ]
+          : (summary?.reasons ?? []),
     };
   }
 
