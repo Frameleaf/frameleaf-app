@@ -12,9 +12,10 @@ import {
   unlockAuthSession,
   updateConfig,
 } from '@immich/sdk';
-import { Page, expect, test } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 /**
  * FL-34 in the browser: when the session locks — by the owner elsewhere, or when the PIN unlock
@@ -42,7 +43,7 @@ test.describe('Locked content in the browser (FL-34)', () => {
   });
 
   /** A fresh onboarded account with one ordinary and one locked photo, its session unlocked. */
-  const setup = async () => {
+  const setup = async (signal: AbortSignal) => {
     const suffix = randomUUID().slice(0, 8);
     const user = await utils.userSetup(admin.accessToken, {
       email: `locked-${suffix}@example.com`,
@@ -56,11 +57,18 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await lockAssets({ bulkIdsDto: { ids: [locked.id] } }, { headers });
     await setupPinCode({ pinCodeSetupDto: { pinCode } }, { headers });
     await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers });
+    // Queue observation is administrative; media readiness uses this owner's unlocked bearer session.
+    await utils.waitForAssetReady(admin.accessToken, plain.id, { headers, signal });
+    await utils.waitForAssetReady(admin.accessToken, locked.id, { headers, signal });
     return { user, headers, plain, locked, suffix };
   };
 
-  test('closes an open viewer of a Locked item when the session locks elsewhere', async ({ context, page }) => {
-    const { user, headers, locked } = await setup();
+  test('closes an open viewer of a Locked item when the session locks elsewhere', async ({
+    context,
+    page,
+    assetReady,
+  }) => {
+    const { user, headers, locked } = await setup(assetReady.signal);
     await utils.setAuthCookies(context, user.accessToken);
 
     await page.goto(`/locked/photos/${locked.id}`);
@@ -73,8 +81,12 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test('empties the Locked view when the session locks, and asks for the PIN again', async ({ context, page }) => {
-    const { user, headers, plain, locked } = await setup();
+  test('empties the Locked view when the session locks, and asks for the PIN again', async ({
+    context,
+    page,
+    assetReady,
+  }) => {
+    const { user, headers, plain, locked } = await setup(assetReady.signal);
     await utils.setAuthCookies(context, user.accessToken);
 
     await page.goto('/locked');
@@ -92,9 +104,14 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test('lists what the Locked rules hide in the Locked view, badged Sensitive', async ({ context, page }) => {
-    const { user, plain, locked, suffix } = await setup();
+  test('lists what the Locked rules hide in the Locked view, badged Sensitive', async ({
+    context,
+    page,
+    assetReady,
+  }) => {
+    const { user, headers, plain, locked, suffix } = await setup(assetReady.signal);
     const ruleMatch = await utils.createAsset(user.accessToken, { assetData: { filename: `rule-${suffix}.png` } });
+    await utils.waitForAssetReady(admin.accessToken, ruleMatch.id, { headers, signal: assetReady.signal });
     const [tag] = await utils.upsertTags(user.accessToken, [`Private ${suffix}`]);
     await utils.tagAssets(user.accessToken, tag.id, [ruleMatch.id]);
     await utils.updateMyPreferences(user.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
@@ -110,9 +127,11 @@ test.describe('Locked content in the browser (FL-34)', () => {
   test('finds marks and rule matches in unlocked search, and drops them when the session locks (FL-195)', async ({
     context,
     page,
+    assetReady,
   }) => {
-    const { user, headers, plain, locked, suffix } = await setup();
+    const { user, headers, plain, locked, suffix } = await setup(assetReady.signal);
     const ruleMatch = await utils.createAsset(user.accessToken, { assetData: { filename: `rule-${suffix}.png` } });
+    await utils.waitForAssetReady(admin.accessToken, ruleMatch.id, { headers, signal: assetReady.signal });
     const [tag] = await utils.upsertTags(user.accessToken, [`Private ${suffix}`]);
     await utils.tagAssets(user.accessToken, tag.id, [ruleMatch.id]);
     await utils.updateMyPreferences(user.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
@@ -133,8 +152,8 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(page.getByText(`Private ${suffix}`)).toHaveCount(0);
   });
 
-  test('drops a trashed Locked item from Trash when the session locks', async ({ context, page }) => {
-    const { user, headers, plain, locked } = await setup();
+  test('drops a trashed Locked item from Trash when the session locks', async ({ context, page, assetReady }) => {
+    const { user, headers, plain, locked } = await setup(assetReady.signal);
     await deleteAssets({ assetBulkDeleteDto: { ids: [plain.id, locked.id] } }, { headers });
     await utils.setAuthCookies(context, user.accessToken);
 
@@ -147,8 +166,8 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, plain.id).first()).toBeVisible();
   });
 
-  test('closes the Locked view once the PIN unlock has expired', async ({ context, page }) => {
-    const { user, locked } = await setup();
+  test('closes the Locked view once the PIN unlock has expired', async ({ context, page, assetReady }) => {
+    const { user, locked } = await setup(assetReady.signal);
     await utils.setAuthCookies(context, user.accessToken);
     await page.goto('/locked');
     await expect(traces(page, locked.id).first()).toBeVisible();
@@ -166,8 +185,12 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test("never shows another account's Locked item, administrator included", async ({ context, page }) => {
-    const { locked } = await setup();
+  test("never shows another account's Locked item, administrator included", async ({
+    context,
+    page,
+    assetReady,
+  }) => {
+    const { locked } = await setup(assetReady.signal);
     await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers: asBearerAuth(admin.accessToken) });
     await utils.setAuthCookies(context, admin.accessToken);
 
@@ -180,8 +203,9 @@ test.describe('Locked content in the browser (FL-34)', () => {
   test('keeps corrected document evidence after reload and clears open detail on relock or revocation (FL-63)', async ({
     context,
     page,
+    assetReady,
   }) => {
-    const { user, headers, locked } = await setup();
+    const { user, headers, locked } = await setup(assetReady.signal);
     const config = await getConfig({ headers: asBearerAuth(admin.accessToken) });
     await updateConfig(
       {

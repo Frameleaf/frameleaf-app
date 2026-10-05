@@ -43,6 +43,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     isActive: vitest.fn(),
     isPaused: vitest.fn(),
     getJobCounts: vitest.fn(),
+    hasUnfinishedWork: vitest.fn().mockResolvedValue(false),
     observeQueueRun: vitest.fn().mockResolvedValue({
       active: 0,
       waiting: 0,

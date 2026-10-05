@@ -1,8 +1,9 @@
 import { createAssetDevelopExport, getAssetDevelop, importAssetDevelopRendition } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 /**
  * FL-144 / FL-64: "Edit in another app" round trip through the real editor and server. The
@@ -13,6 +14,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
 test('round trip: export, interrupted import retried once, and refused wrong original or damaged transfer', async ({
   context,
   page,
+  assetReady,
 }) => {
   test.setTimeout(120_000);
   utils.initSdk();
@@ -29,8 +31,8 @@ test('round trip: export, interrupted import retried once, and refused wrong ori
   const other = await utils.createAsset(owner.accessToken, {
     assetData: { filename: 'other.png', bytes: await gray('#404040') },
   });
-  await utils.waitForQueueFinish(owner.accessToken, 'metadataExtraction');
-  await utils.waitForQueueFinish(owner.accessToken, 'thumbnailGeneration');
+  await utils.waitForAssetReady(owner.accessToken, asset.id, { signal: assetReady.signal });
+  await utils.waitForAssetReady(owner.accessToken, other.id, { signal: assetReady.signal });
   await utils.setAuthCookies(context, owner.accessToken);
   const developed = await sharp({ create: { width: 128, height: 128, channels: 3, background: '#a0a0a0' } })
     .jpeg()

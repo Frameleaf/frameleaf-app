@@ -19,6 +19,7 @@ import {
 const queue = (name: QueueName, statistics: Partial<QueueResponseDto['statistics']> = {}, isPaused = false) => ({
   name,
   isPaused,
+  hasUnfinishedWork: (statistics.active ?? 0) + (statistics.waiting ?? 0) + (statistics.delayed ?? 0) + (statistics.paused ?? 0) > 0,
   statistics: { active: 0, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 0, ...statistics },
 });
 

@@ -1,4 +1,11 @@
-import { LibraryRemovalReviewDto, LibraryResponseDto, LoginResponseDto, updateConfig } from '@immich/sdk';
+import {
+  getAssetInfo,
+  LibraryRemovalReviewDto,
+  LibraryResponseDto,
+  LoginResponseDto,
+  searchAssets,
+  updateConfig,
+} from '@immich/sdk';
 import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
@@ -35,6 +42,17 @@ describe('/libraries', () => {
   let nonAdmin: LoginResponseDto;
   let websocket: Socket;
 
+  const scanLibraryAsset = async (libraryId: string, signal: AbortSignal, originalPath?: string) => {
+    await utils.scan(admin.accessToken, libraryId, signal);
+    const { assets } = await searchAssets(
+      { metadataSearchDto: { libraryId, originalPath } },
+      { headers: asBearerAuth(admin.accessToken), signal },
+    );
+    expect(assets.count).toBe(1);
+    await utils.waitForAssetReady(admin.accessToken, assets.items[0].id, { signal });
+    return getAssetInfo({ id: assets.items[0].id }, { headers: asBearerAuth(admin.accessToken), signal });
+  };
+
   beforeAll(async () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
@@ -54,26 +72,23 @@ describe('/libraries', () => {
   });
 
   describe('POST /libraries/:id/scan', () => {
-    it('should process metadata and thumbnails for external asset', async () => {
+    it('should process metadata and thumbnails for external asset', async ({ signal }) => {
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
         importPaths: [`${testAssetDirInternal}/temp/directoryA`],
       });
 
-      await utils.scan(admin.accessToken, library.id);
-
-      const { assets } = await utils.searchAssets(admin.accessToken, {
-        originalPath: `${testAssetDirInternal}/temp/directoryA/assetA.png`,
-        libraryId: library.id,
-      });
-      expect(assets.count).toBe(1);
-      const asset = assets.items[0];
+      const asset = await scanLibraryAsset(
+        library.id,
+        signal,
+        `${testAssetDirInternal}/temp/directoryA/assetA.png`,
+      );
       expect(asset.exifInfo).not.toBe(null);
       expect(asset.exifInfo?.dateTimeOriginal).not.toBe(null);
       expect(asset.thumbhash).not.toBe(null);
     });
 
-    it('should reimport a modified file', async () => {
+    it('should reimport a modified file', async ({ signal }) => {
       utils.createImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
@@ -82,20 +97,12 @@ describe('/libraries', () => {
 
       await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_000);
 
-      await utils.scan(admin.accessToken, library.id);
+      await scanLibraryAsset(library.id, signal);
 
       cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport/asset.jpg`);
       await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_001);
 
-      await utils.scan(admin.accessToken, library.id);
-
-      const { assets } = await utils.searchAssets(admin.accessToken, {
-        libraryId: library.id,
-      });
-
-      expect(assets.count).toEqual(1);
-
-      const asset = await utils.getAssetInfo(admin.accessToken, assets.items[0].id);
+      const asset = await scanLibraryAsset(library.id, signal);
 
       expect(asset).toEqual(
         expect.objectContaining({
@@ -109,7 +116,7 @@ describe('/libraries', () => {
       utils.removeImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
     });
 
-    it('should not reimport a modified file more than once', async () => {
+    it('should not reimport a modified file more than once', async ({ signal }) => {
       utils.createImageFile(`${testAssetDir}/temp/reimport-twice/asset.jpg`);
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
@@ -118,25 +125,17 @@ describe('/libraries', () => {
 
       await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_000);
 
-      await utils.scan(admin.accessToken, library.id);
+      await scanLibraryAsset(library.id, signal);
 
       cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
       await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
 
-      await utils.scan(admin.accessToken, library.id);
+      await scanLibraryAsset(library.id, signal);
 
       cpSync(`${testAssetDir}/albums/nature/el_torcal_rocks.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
       await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
 
-      await utils.scan(admin.accessToken, library.id);
-
-      const { assets } = await utils.searchAssets(admin.accessToken, {
-        libraryId: library.id,
-      });
-
-      expect(assets.count).toEqual(1);
-
-      const asset = await utils.getAssetInfo(admin.accessToken, assets.items[0].id);
+      const asset = await scanLibraryAsset(library.id, signal);
 
       expect(asset).toEqual(
         expect.objectContaining({
@@ -359,7 +358,7 @@ describe('/libraries', () => {
       await utils.resetAdminConfig(admin.accessToken);
     });
 
-    it('imports a file added to a watched folder and marks a deleted one offline', async () => {
+    it('imports a file added to a watched folder and marks a deleted one offline', async ({ signal }) => {
       const folder = `${testAssetDirInternal}/temp/fl78-watch`;
       utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
       const library = await utils.createLibrary(admin.accessToken, {
@@ -367,7 +366,7 @@ describe('/libraries', () => {
         name: 'FL-78 watch',
         importPaths: [folder],
       });
-      await utils.scan(admin.accessToken, library.id);
+      await scanLibraryAsset(library.id, signal);
 
       const config = await utils.getSystemConfig(admin.accessToken);
       config.library.watch.enabled = true;
@@ -387,6 +386,7 @@ describe('/libraries', () => {
         .poll(findAdded, { timeout: 45_000, interval: 1000 })
         .toEqual(expect.objectContaining({ originalPath: added, isOffline: false }));
       const { id } = await findAdded();
+      await utils.waitForAssetReady(admin.accessToken, id, { signal });
 
       await dockerExec([`rm ${added}`]).promise;
 

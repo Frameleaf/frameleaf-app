@@ -10,10 +10,11 @@ import {
   updateConfig,
   VideoCodec,
 } from '@immich/sdk';
-import { expect, Page, test } from '@playwright/test';
+import { expect, Page } from '@playwright/test';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 const byId = (a: string[], b: string[]) => a[0].localeCompare(b[0]);
 
@@ -217,7 +218,7 @@ test.describe('Duplicate review', () => {
       .toEqual(group.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)));
   });
 
-  test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page }) => {
+  test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page, assetReady }) => {
     test.setTimeout(300_000);
     await withVp9TranscodeTarget(admin.accessToken, async () => {
       const [kayak, forest] = await Promise.all([
@@ -238,16 +239,11 @@ test.describe('Duplicate review', () => {
           },
         }),
       ]);
-      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', 60_000);
-      // AssetEncodeVideo is only queued once AssetGenerateThumbnails completes (job.service.ts
-      // JobName.AssetGenerateThumbnails handler), not directly off metadataExtraction, so wait for
-      // that first or the videoConversion queue can read as empty before the job even exists.
-      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration', 60_000);
-      // The H.264 originals are not an accepted codec under the VP9 override above, so a
-      // transcode is required; wait for it to finish before the browser ever requests playback.
-      // VP9 software encoding (libvpx) is considerably slower than the default H.264 target,
-      // and here there are TWO clips to transcode, so give this more room than usual.
-      await utils.waitForQueueFinish(admin.accessToken, 'videoConversion', 200_000);
+      // Both clips share the existing 200s conversion budget and the enclosing test's cancellation.
+      const signal = AbortSignal.any([assetReady.signal, AbortSignal.timeout(200_000)]);
+      assetReady.onCleanup(() => utils.settlePendingWaits(signal));
+      await utils.waitForAssetReady(admin.accessToken, kayak.id, { video: true, timeout: 200_000, signal });
+      await utils.waitForAssetReady(admin.accessToken, forest.id, { video: true, timeout: 200_000, signal });
       await expectVp9Playback(page, kayak.id);
       await expectVp9Playback(page, forest.id);
 
