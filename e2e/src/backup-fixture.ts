@@ -6,7 +6,7 @@ export const amendBackupFixture = (backup: Buffer, mode: 'empty' | 'corrupted'):
   const marker = '-- PostgreSQL database dump complete';
   const end = sql.lastIndexOf(marker);
   if (
-    end < 0 ||
+    end === -1 ||
     !/-- Dumped from database version 19(?:[.\s]|beta|rc)/.test(sql) ||
     !/CREATE TABLE (?:public\.)?"?frameleaf_migrations"?\s*\(/.test(sql)
   ) {
