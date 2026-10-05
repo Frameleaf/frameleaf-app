@@ -694,6 +694,8 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     }
 
     case FrameleafCloudRepository:
+    case MediaRepository:
+    case MetadataRepository:
     case OAuthRepository: {
       return automock(key, { args: [{ setContext: () => {} }] });
     }

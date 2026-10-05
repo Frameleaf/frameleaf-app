@@ -1407,48 +1407,50 @@ export class MediaOperationRepository {
     claimToken?: string,
     queuedOnly = false,
   ): Promise<MediaOperation | undefined> {
-    return (await tx
-      .updateTable('media_operation')
-      .set((eb) => ({
-        // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
-        status: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(MediaOperationStatus.Cancelled)
-          .else(MediaOperationStatus.Cancelling)
-          .end(),
-        cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
-        cancelAcknowledgedAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(sql<Date>`now()`)
-          .else(eb.ref('cancelAcknowledgedAt'))
-          .end(),
-        finishedAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(sql<Date>`now()`)
-          .else(eb.ref('finishedAt'))
-          .end(),
-        // Only a queued or paused job had no worker to revoke.
-        claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
-        claimExpiresAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(null)
-          .else(eb.ref('claimExpiresAt'))
-          .end(),
-        // Stopping outranks holding: a pause waiting to be reached is dropped.
-        pauseRequestedAt: null,
-      }))
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
-      // Unsafe edit executors may start between the owner's read and this write.
-      .$if(queuedOnly, (qb) => qb.where('status', '=', MediaOperationStatus.Queued).where('claimToken', 'is', null))
-      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-      .returningAll()
-      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+    return (
+      (await tx
+        .updateTable('media_operation')
+        .set((eb) => ({
+          // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
+          status: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(MediaOperationStatus.Cancelled)
+            .else(MediaOperationStatus.Cancelling)
+            .end(),
+          cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
+          cancelAcknowledgedAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(sql<Date>`now()`)
+            .else(eb.ref('cancelAcknowledgedAt'))
+            .end(),
+          finishedAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(sql<Date>`now()`)
+            .else(eb.ref('finishedAt'))
+            .end(),
+          // Only a queued or paused job had no worker to revoke.
+          claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
+          claimExpiresAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(null)
+            .else(eb.ref('claimExpiresAt'))
+            .end(),
+          // Stopping outranks holding: a pause waiting to be reached is dropped.
+          pauseRequestedAt: null,
+        }))
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
+        // Unsafe edit executors may start between the owner's read and this write.
+        .$if(queuedOnly, (qb) => qb.where('status', '=', MediaOperationStatus.Queued).where('claimToken', 'is', null))
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .returningAll()
+        .executeTakeFirst()) as unknown as MediaOperation | undefined
+    );
   }
   notifyCancellation(row: MediaOperation | undefined): void {
     this.changed(row);
