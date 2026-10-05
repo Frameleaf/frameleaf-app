@@ -134,8 +134,18 @@ describe(JobRepository.name, () => {
       return Promise.resolve();
     });
     sut['store'].complete = vi.fn().mockResolvedValue(false);
+    sut['store'].fail = vi.fn().mockResolvedValue(true);
     await sut['execute'](claim, abort);
     expect(sut['store'].complete).toHaveBeenCalledOnce();
+    expect(sut['store'].fail).toHaveBeenCalledWith(
+      claim,
+      'Job deadline or cancellation requested',
+      undefined,
+      expect.objectContaining({ stopRequestedOnly: true }),
+    );
+    expect(recordStopped.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sut['store'].fail).mock.invocationCallOrder[0],
+    );
     expect(notify).not.toHaveBeenCalled();
     sut['store'].complete = vi.fn().mockImplementation(() => {
       expect(notify).not.toHaveBeenCalled();
@@ -272,7 +282,15 @@ describe(JobRepository.name, () => {
         expect(sut['eventRepository'].emit).not.toHaveBeenCalled();
         expect(postMessage).not.toHaveBeenCalled();
         expect(sut['store'].complete).not.toHaveBeenCalled();
-        expect(sut['store'].fail).not.toHaveBeenCalled();
+        expect(sut['store'].fail).toHaveBeenCalledTimes(deferred ? 0 : 1);
+        if (!deferred) {
+          expect(sut['store'].fail).toHaveBeenCalledWith(
+            expect.objectContaining({ id: '3', token: 'token-3' }),
+            'Job deadline or cancellation requested',
+            undefined,
+            expect.objectContaining({ stopRequestedOnly: true }),
+          );
+        }
         expect(sut['store'].defer).toHaveBeenCalledWith(
           expect.objectContaining({ id: '3', token: 'token-3' }),
           'local-capacity',
