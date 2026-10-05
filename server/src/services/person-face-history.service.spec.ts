@@ -288,6 +288,15 @@ describe('PersonService face history (FL-57)', () => {
       mocks.person.createGroup.mockResolvedValue({ id: newGroupId } as never);
       mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: entry.ownerId }));
       mocks.person.undoPartnerMerge.mockResolvedValue(true);
+      const thumbnailSelection = {
+        where: vi.fn().mockReturnThis(),
+        execute: vi
+          .fn()
+          .mockResolvedValue([
+            { data: { ownerId: entry.ownerId, personGroupId: newGroupId, selectionFaceId: 'face-1' } },
+          ]),
+      };
+      mocks.person.selectionForThumbnails.mockReturnValue(thumbnailSelection as never);
 
       await expect(sut.undoCorrection(auth, entry.id)).resolves.toEqual(
         expect.objectContaining({
@@ -301,6 +310,15 @@ describe('PersonService face history (FL-57)', () => {
       expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
         expect.objectContaining({ ownerId: entry.ownerId, personGroupId: newGroupId, sourcePersonGroupId }),
       );
+      expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, entry.ownerId);
+      expect(thumbnailSelection.where).toHaveBeenCalledWith('person.personGroupId', 'in', [newGroupId]);
+      expect(thumbnailSelection.where).toHaveBeenCalledWith('person.faceAssetId', 'is', null);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: entry.ownerId, personGroupId: newGroupId, selectionFaceId: 'face-1' },
+        },
+      ]);
       expect(mocks.person.undoFaceCorrection).not.toHaveBeenCalled();
     });
 
