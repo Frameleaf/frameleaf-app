@@ -1,8 +1,9 @@
 import { LoginResponseDto, ManualJobName } from '@immich/sdk';
+import { settleMaintenanceCleanup } from 'src/maintenance-cleanup.js';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('/admin/database-backups', () => {
   let cookie: string | undefined;
@@ -56,7 +57,9 @@ describe('/admin/database-backups', () => {
           expect.objectContaining({
             backups: [
               expect.objectContaining({
-                filename: expect.stringMatching(/immich-db-backup-\d{8}T\d{6}-v.*-pg.*\.sql\.gz$/),
+                filename: expect.stringMatching(
+                  /^frameleaf-db-backup-\d{8}T\d{6}-v[^/]+-pg19(?:[.\d]+|(?:alpha|beta|rc)\d+)\.sql\.gz$/,
+                ),
                 filesize: expect.any(Number),
               }),
             ],
@@ -156,6 +159,36 @@ describe('/admin/database-backups', () => {
   // => action: restore database
 
   describe.sequential('POST /backups/restore', () => {
+    // Register teardown before entering maintenance: failed assertions must not strand later specs.
+    afterEach(async () => {
+      if (!cookie) {
+        return;
+      }
+      await settleMaintenanceCleanup({
+        config: async (timeoutMs) => {
+          const response = await request(app).get('/server/config').timeout({ deadline: timeoutMs });
+          expect(response.status).toBe(200);
+          return response.body;
+        },
+        status: async (timeoutMs) => {
+          const response = await request(app)
+            .get('/admin/maintenance/status')
+            .set('cookie', cookie!)
+            .timeout({ deadline: timeoutMs });
+          expect(response.status).toBe(200);
+          return response.body;
+        },
+        end: (timeoutMs) =>
+          request(app)
+            .post('/admin/maintenance')
+            .set('cookie', cookie!)
+            .send({ action: 'end' })
+            .timeout({ deadline: timeoutMs })
+            .expect(201),
+      });
+      cookie = undefined;
+    }, 60_000);
+
     beforeAll(async () => {
       await utils.disconnectDatabase();
     });
@@ -165,16 +198,9 @@ describe('/admin/database-backups', () => {
     });
 
     it.sequential('should restore a backup', { timeout: 60_000 }, async () => {
-      let filename = await utils.createBackup(admin.accessToken);
+      const filename = await utils.createBackup(admin.accessToken);
 
-      // work-around until test is running on released version
-      await utils.move(
-        `/data/backups/${filename}`,
-        '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
-      );
-      filename = 'immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz';
-
-      const { status } = await request(app)
+      const { status, headers } = await request(app)
         .post('/admin/maintenance')
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({
@@ -182,6 +208,7 @@ describe('/admin/database-backups', () => {
           restoreBackupFilename: filename,
         });
 
+      cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
 
       await expect
@@ -222,19 +249,61 @@ describe('/admin/database-backups', () => {
         .toBeFalsy();
     });
 
+    it.sequential(
+      'refuses a noncanonical source before changing the current database',
+      { timeout: 60_000 },
+      async () => {
+        const filename = 'noncanonical.sql';
+        await utils.putTextFile('SELECT 1;\n-- PostgreSQL database dump complete\n', `/data/backups/${filename}`);
+        const { status, headers } = await request(app)
+          .post('/admin/maintenance')
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .send({ action: 'restore_database', restoreBackupFilename: filename });
+        cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
+        expect(status).toBe(201);
+        await expect
+          .poll(
+            async () => {
+              const answer = await request(app).get('/admin/maintenance/status').set('cookie', cookie!);
+              expect(answer.status).toBe(200);
+              return answer.body;
+            },
+            { interval: 500, timeout: 10_000 },
+          )
+          .toEqual(
+            expect.objectContaining({
+              active: true,
+              action: 'restore_database',
+              error: expect.stringContaining('Restore requires a complete Frameleaf PostgreSQL 19 backup.'),
+            }),
+          );
+        await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
+        await expect
+          .poll(
+            async () => {
+              const answer = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+              expect(answer.status).toBe(200);
+              return answer.body.id;
+            },
+            { interval: 500, timeout: 10_000 },
+          )
+          .toBe(admin.userId);
+      },
+    );
+
     it.sequential('fail to restore a corrupted backup', { timeout: 60_000 }, async () => {
-      await utils.prepareTestBackup('corrupted');
+      const filename = await utils.prepareTestBackup('corrupted', admin.accessToken);
 
       const { status, headers } = await request(app)
         .post('/admin/maintenance')
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({
           action: 'restore_database',
-          restoreBackupFilename: 'development-corrupted.sql.gz',
+          restoreBackupFilename: filename,
         });
 
+      cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
-      cookie = headers['set-cookie'][0].split(';', 1)[0];
 
       await expect
         .poll(
@@ -294,18 +363,18 @@ describe('/admin/database-backups', () => {
     });
 
     it.sequential('rollback to restore point if backup is missing admin', { timeout: 60_000 }, async () => {
-      await utils.prepareTestBackup('empty');
+      const filename = await utils.prepareTestBackup('empty', admin.accessToken);
 
       const { status, headers } = await request(app)
         .post('/admin/maintenance')
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({
           action: 'restore_database',
-          restoreBackupFilename: 'development-empty.sql.gz',
+          restoreBackupFilename: filename,
         });
 
+      cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
-      cookie = headers['set-cookie'][0].split(';', 1)[0];
 
       await expect
         .poll(
@@ -367,7 +436,8 @@ describe('/admin/database-backups', () => {
     // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
     it.sequential('refuses a backup made by a newer server', { timeout: 60_000 }, async () => {
       const created = await utils.createBackup(admin.accessToken);
-      const filename = 'immich-db-backup-20260114T184016-v999.0.0-pg14.19.sql.gz';
+      const filename = created.replace(/-v.+-pg/, '-v999.0.0-pg');
+      expect(filename).not.toBe(created);
       await utils.move(`/data/backups/${created}`, `/data/backups/${filename}`);
 
       const { status, headers } = await request(app)
@@ -375,8 +445,8 @@ describe('/admin/database-backups', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ action: 'restore_database', restoreBackupFilename: filename });
 
+      cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
-      cookie = headers['set-cookie'][0].split(';', 1)[0];
 
       await expect
         .poll(
@@ -404,20 +474,15 @@ describe('/admin/database-backups', () => {
 
     // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
     it.sequential('refuses conflicting actions while a restore runs', { timeout: 60_000 }, async () => {
-      let filename = await utils.createBackup(admin.accessToken);
-      await utils.move(
-        `/data/backups/${filename}`,
-        '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
-      );
-      filename = 'immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz';
+      const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)
         .post('/admin/maintenance')
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ action: 'restore_database', restoreBackupFilename: filename });
 
+      cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
-      cookie = headers['set-cookie'][0].split(';', 1)[0];
 
       await utils.poll(
         () => request(app).get('/admin/maintenance/status').set('cookie', cookie!),
