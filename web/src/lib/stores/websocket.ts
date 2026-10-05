@@ -51,7 +51,7 @@ export interface Events {
   /** FL-146 (FL-77): an administrator changed this account's preferences; read them again. */
   on_user_preferences_update: () => void;
 
-  AppRestartV1: (event: AppRestartEvent) => void;
+  AppRestartV1: (event: AppRestartEvent, acknowledge?: (ok: 'ok') => void) => void;
 
   MaintenanceStatusV1: (event: MaintenanceStatusResponseDto) => void;
   AssetEditReadyV2: (data: { asset: SyncAssetV2; edit: SyncAssetEditV1[] }) => void;
@@ -87,7 +87,10 @@ websocket
   })
   .on('disconnect', () => websocketStore.connected.set(false))
   .on('on_server_version', (serverVersion) => websocketStore.serverVersion.set(serverVersion))
-  .on('AppRestartV1', (mode) => websocketStore.serverRestarting.set(mode))
+  .on('AppRestartV1', (mode, acknowledge) => {
+    websocketStore.serverRestarting.set(mode);
+    acknowledge?.('ok');
+  })
   .on('MaintenanceStatusV1', (status) => {
     maintenanceStore.status.set(status);
 

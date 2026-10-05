@@ -31,11 +31,17 @@ server.on('connection', async (socket) => {
   socket.emit('joined');
 });
 server.on('channel-test', (payload, ack) => ack({ pid: process.pid, size: payload.length }));
-server.on('AppRestart', (_state, ack) => ack('ok'));
+server.on('AppRestart', (state, ack) => {
+  process.send({ type: 'worker-restart', state });
+  ack?.('ok');
+});
 await new Promise((resolve) => server.httpServer.once('listening', resolve));
 const client = io(`http://127.0.0.1:${server.httpServer.address().port}`, { transports: ['websocket'] });
 client.on('room-test', (payload, ack) => ack({ size: payload.length, pid: process.pid }));
-client.on('AppRestartV1', (_state, ack) => ack('ok'));
+client.on('AppRestartV1', (state, ack) => {
+  process.send({ type: 'client-restart', state });
+  ack?.('ok');
+});
 await new Promise((resolve, reject) => {
   client.once('joined', resolve);
   client.once('connect_error', reject);

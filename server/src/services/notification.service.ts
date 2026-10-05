@@ -119,12 +119,12 @@ export class NotificationService extends BaseService {
   }
 
   @OnEvent({ name: 'AppRestart' })
-  onAppRestart(state: ArgOf<'AppRestart'>) {
-    this.websocketRepository.clientBroadcast('AppRestartV1', {
+  async onAppRestart(state: ArgOf<'AppRestart'>) {
+    await this.websocketRepository.clientBroadcastAndFlush('AppRestartV1', {
       isMaintenanceMode: state.isMaintenanceMode,
     });
 
-    this.websocketRepository.serverSend('AppRestart', state);
+    await this.websocketRepository.serverSendAndFlush('AppRestart', state);
   }
 
   @OnEvent({ name: 'ConfigValidate', priority: -100 })

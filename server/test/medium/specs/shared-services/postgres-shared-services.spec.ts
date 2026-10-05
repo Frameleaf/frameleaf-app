@@ -9,6 +9,7 @@ import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { closeSharedServicePool, createSharedServicePool, trackPoolClients } from 'src/utils/shared-service-pool.js';
 
 /** Uses the canonical PG19 medium-test template. No test performs application startup DDL. */
@@ -252,7 +253,9 @@ describe('PostgreSQL shared services', () => {
 
   it('delivers rooms, binary attachments, channel messages and restart ACKs across OS processes and cleans stale attachments', async () => {
     server = await socketServer();
-    server.on('AppRestart', (_state, ack) => ack('ok'));
+    const websocket = new WebsocketRepository({} as never, { setContext: vi.fn(), debug: vi.fn() } as never);
+    Reflect.set(websocket, 'server', server);
+    server.on('AppRestart', async (_state, ack) => websocket.acknowledgeRestart(ack));
     transport = new PostgresSocketTransport(config);
     await transport.attach(server);
     child = fork(fileURLToPath(new URL('../../fixtures/postgres-socket-worker.mjs', import.meta.url)), [], {
@@ -281,6 +284,38 @@ describe('PostgreSQL shared services', () => {
     expect(messages).toEqual([{ pid: peer.pid, size: payload.length }]);
     const rooms = await server.to('frameleaf-test-room').timeout(5000).emitWithAck('room-test', payload);
     expect(rooms).toEqual([{ size: payload.length, pid: peer.pid }]);
+    const observeRestart = async (type: string, send: () => Promise<void>) => {
+      let timer: NodeJS.Timeout | undefined;
+      let listener: ((message: unknown) => void) | undefined;
+      let stopWaiting!: (error: Error) => void;
+      const notice = new Promise<unknown>((resolve, reject) => {
+        stopWaiting = reject;
+        listener = (message) => {
+          if ((message as { type?: string }).type === type) {
+            resolve(message);
+          }
+        };
+        child!.on('message', listener);
+        timer = setTimeout(() => reject(new Error(`Peer did not receive ${type}`)), 5000);
+      });
+      // Attach failure ownership before invoking the publisher, then settle both paths in finally.
+      const outcome = notice.then((message) => ({ message })).catch((error: unknown) => ({ error }));
+      try {
+        await send();
+        expect(await outcome).toEqual({ message: { type, state: { isMaintenanceMode: true } } });
+      } finally {
+        clearTimeout(timer);
+        child!.off('message', listener!);
+        stopWaiting(new Error('Restart observation owner finished'));
+        await outcome;
+      }
+    };
+    await observeRestart('client-restart', () =>
+      websocket.clientBroadcastAndFlush('AppRestartV1', { isMaintenanceMode: true }),
+    );
+    await observeRestart('worker-restart', () =>
+      websocket.serverSendAndFlush('AppRestart', { isMaintenanceMode: true }),
+    );
     vi.spyOn(ConfigRepository.prototype, 'getEnv').mockReturnValue(config.getEnv());
     await expect(new AppRepository().sendOneShotAppRestart({ isMaintenanceMode: true })).resolves.toBeUndefined();
     await database.query(
