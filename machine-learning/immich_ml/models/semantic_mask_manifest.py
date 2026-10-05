@@ -1,4 +1,5 @@
 """Offline trust boundary for the two pinned native Transformers snapshots."""
+
 import hashlib
 import math
 from pathlib import Path
@@ -9,14 +10,14 @@ def verify_snapshot(path: Path, files: dict[str, dict[str, str]]) -> None:
         target = path / name
         size = target.stat().st_size
         # SHA-1 here is Git's content address, not an integrity choice for model weights (SHA-256).
-        digest = hashlib.sha256() if 'sha256' in expected else hashlib.sha1()
-        if 'git' in expected:
-            digest.update(f'blob {size}\0'.encode())
-        with target.open('rb') as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+        digest = hashlib.sha256() if "sha256" in expected else hashlib.sha1()
+        if "git" in expected:
+            digest.update(f"blob {size}\0".encode())
+        with target.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
         if digest.hexdigest() != next(iter(expected.values())):
-            raise ValueError('Pinned semantic model file failed its content hash')
+            raise ValueError("Pinned semantic model file failed its content hash")
 
 
 def bounded_boxes(boxes: object, width: int, height: int) -> list[list[float]]:

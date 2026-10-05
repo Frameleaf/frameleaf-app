@@ -229,9 +229,7 @@ class ImageDescriptionOptions(_OptionsBase):
         if value is None:
             return None
         if len(value) > MAX_EXTERNAL_PROMPT_LENGTH:
-            raise ValueError(
-                f"external_prompt exceeds maximum length of {MAX_EXTERNAL_PROMPT_LENGTH} characters"
-            )
+            raise ValueError(f"external_prompt exceeds maximum length of {MAX_EXTERNAL_PROMPT_LENGTH} characters")
         return value
 
 
