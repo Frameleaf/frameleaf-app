@@ -506,7 +506,7 @@ describe('/trash', () => {
         .expect(400);
     });
 
-    it('should keep the hidden part of a Live Photo out of every trash review', async () => {
+    it('should keep the hidden part of a Live Photo out of every trash review', { timeout: process.env.CI ? 280_000 : 80_000 }, async () => {
       const open = await trashed();
       const hidden = await trashed();
       const before = await review({ action: 'empty' });

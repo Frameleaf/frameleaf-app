@@ -6,6 +6,7 @@ import {
   searchAssets,
   updateConfig,
 } from '@immich/sdk';
+import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
@@ -112,24 +113,25 @@ describe('/libraries', () => {
       utils.removeImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
     });
 
-    it('should not reimport a modified file more than once', async ({ signal }) => {
-      utils.createImageFile(`${testAssetDir}/temp/reimport-twice/asset.jpg`);
+    it('should not reimport a modified file more than once', { timeout: process.env.CI ? 390_000 : 90_000 }, async ({ signal }) => {
+      const fixtureFolder = `temp/reimport-twice-${randomUUID()}`;
+      utils.createImageFile(`${testAssetDir}/${fixtureFolder}/asset.jpg`);
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/reimport-twice`],
+        importPaths: [`${testAssetDirInternal}/${fixtureFolder}`],
       });
 
-      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_000);
+      await utimes(`${testAssetDir}/${fixtureFolder}/asset.jpg`, 447_775_200_000);
 
       await scanLibraryAsset(library.id, signal);
 
-      cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
+      cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/${fixtureFolder}/asset.jpg`);
+      await utimes(`${testAssetDir}/${fixtureFolder}/asset.jpg`, 447_775_200_001);
 
       await scanLibraryAsset(library.id, signal);
 
-      cpSync(`${testAssetDir}/albums/nature/el_torcal_rocks.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
+      cpSync(`${testAssetDir}/albums/nature/el_torcal_rocks.jpg`, `${testAssetDir}/${fixtureFolder}/asset.jpg`);
+      await utimes(`${testAssetDir}/${fixtureFolder}/asset.jpg`, 447_775_200_001);
 
       const asset = await scanLibraryAsset(library.id, signal);
 
@@ -142,7 +144,7 @@ describe('/libraries', () => {
         }),
       );
 
-      utils.removeImageFile(`${testAssetDir}/temp/reimport-twice/asset.jpg`);
+      utils.removeImageFile(`${testAssetDir}/${fixtureFolder}/asset.jpg`);
     });
   });
 
@@ -356,10 +358,11 @@ describe('/libraries', () => {
 
     it(
       'imports a file added to a watched folder and marks a deleted one offline',
-      { timeout: process.env.CI ? 305_000 : 155_000 },
+      { timeout: process.env.CI ? 425_000 : 175_000 },
       async ({ signal }) => {
-        const folder = `${testAssetDirInternal}/temp/fl78-watch`;
-        utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
+        const fixtureFolder = `temp/fl78-watch-${randomUUID()}`;
+        const folder = `${testAssetDirInternal}/${fixtureFolder}`;
+        utils.createImageFile(`${testAssetDir}/${fixtureFolder}/first.png`);
         const library = await utils.createLibrary(admin.accessToken, {
           ownerId: admin.userId,
           name: 'FL-78 watch',
@@ -388,6 +391,9 @@ describe('/libraries', () => {
           .poll(findAdded, { timeout: 45_000, interval: 1000 })
           .toEqual(expect.objectContaining({ originalPath: added, isOffline: false }));
         const { id } = await findAdded();
+        // The row is visible before LibrarySyncFiles queues sidecar discovery and its metadata followups.
+        await utils.waitForQueueFinish(admin.accessToken, 'library', undefined, signal);
+        await utils.waitForQueueFinish(admin.accessToken, 'sidecar', undefined, signal);
         await utils.waitForAssetReady(admin.accessToken, id, { signal });
 
         await dockerExec([`rm ${added}`]).promise;

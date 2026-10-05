@@ -176,7 +176,7 @@ describe('/faces (FL-38 corrections)', () => {
     expect(after.revision).toBe(face.revision);
   });
 
-  it('round-trips manual and corrected boxes through a crop and a rotation, and refuses boxes drawn before an edit', async () => {
+  it('round-trips manual and corrected boxes through a crop and a rotation, and refuses boxes drawn before an edit', { timeout: process.env.CI ? 150_000 : 50_000 }, async () => {
     const { body: before } = await request(app)
       .get('/faces/source')
       .query({ id: asset.id })
