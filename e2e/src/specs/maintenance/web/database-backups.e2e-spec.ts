@@ -48,18 +48,9 @@ test.describe('Database Backups', () => {
     const filename = await utils.createBackup(admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
 
-    // work-around until test is running on released version
-    await utils.move(
-      `/data/backups/${filename}`,
-      '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
-    );
-
     await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
-    // FL-81: the dialog says the older backup is brought up to date by its migrations.
-    await expect(page.getByRole('dialog', { name: 'Restore this backup?' })).toContainText(
-      'This backup is from v2.5.0.',
-    );
+    await expect(page.getByRole('dialog', { name: 'Restore this backup?' })).toContainText(filename);
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
@@ -72,12 +63,8 @@ test.describe('Database Backups', () => {
     test.setTimeout(90_000);
 
     await utils.resetBackups(admin.accessToken);
-    const filename = await utils.createBackup(admin.accessToken);
+    await utils.createBackup(admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
-    await utils.move(
-      `/data/backups/${filename}`,
-      '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
-    );
 
     await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
@@ -97,12 +84,11 @@ test.describe('Database Backups', () => {
   // FL-81: a backup from a newer server cannot be migrated down, so Restore stays disabled.
   test('a backup from a newer server cannot be restored', async ({ context, page }) => {
     await utils.resetBackups(admin.accessToken);
-    const filename = await utils.createBackup(admin.accessToken);
+    const created = await utils.createBackup(admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
-    await utils.move(
-      `/data/backups/${filename}`,
-      '/data/backups/immich-db-backup-20260114T184016-v999.0.0-pg14.19.sql.gz',
-    );
+    const filename = created.replace(/-v.+-pg/, '-v999.0.0-pg');
+    expect(filename).not.toBe(created);
+    await utils.move(`/data/backups/${created}`, `/data/backups/${filename}`);
 
     await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
@@ -116,7 +102,7 @@ test.describe('Database Backups', () => {
     test.setTimeout(60_000);
 
     await utils.resetBackups(admin.accessToken);
-    await utils.prepareTestBackup('corrupted');
+    await utils.prepareTestBackup('corrupted', admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
 
     await page.goto(databaseBackups);
@@ -133,7 +119,7 @@ test.describe('Database Backups', () => {
     test.setTimeout(60_000);
 
     await utils.resetBackups(admin.accessToken);
-    await utils.prepareTestBackup('empty');
+    await utils.prepareTestBackup('empty', admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
 
     await page.goto(databaseBackups);
@@ -150,14 +136,8 @@ test.describe('Database Backups', () => {
     test.setTimeout(60_000);
 
     await utils.resetBackups(admin.accessToken);
-    const filename = await utils.createBackup(admin.accessToken);
+    await utils.createBackup(admin.accessToken);
     await utils.setAuthCookies(context, admin.accessToken);
-
-    // work-around until test is running on released version
-    await utils.move(
-      `/data/backups/${filename}`,
-      '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
-    );
 
     await utils.resetDatabase();
 

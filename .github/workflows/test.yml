@@ -54,6 +54,8 @@ jobs:
         run: pnpm --filter @immich/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
+      - name: Validate canonical restore fixture mutations
+        run: node --test e2e/src/backup-fixture.test.mjs
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate Frameleaf variable and command names

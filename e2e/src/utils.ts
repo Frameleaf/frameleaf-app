@@ -60,16 +60,16 @@ import { BrowserContext } from '@playwright/test';
 import { exec, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as setAsyncTimeout } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { createGzip } from 'node:zlib';
 import pg from 'pg';
 import { io, type Socket } from 'socket.io-client';
+import { amendBackupFixture } from 'src/backup-fixture.js';
 import { loginDto, signupDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import request from 'supertest';
@@ -1057,17 +1057,27 @@ export const utils = {
     );
   },
 
-  prepareTestBackup: async (generate: 'empty' | 'corrupted') => {
+  prepareTestBackup: async (generate: 'empty' | 'corrupted', accessToken: string) => {
+    const filename = await utils.createBackup(accessToken);
     const dir = await mkdtemp(join(tmpdir(), 'test-'));
-    const fn = join(dir, 'file');
-
-    const sql = Readable.from(generate === 'corrupted' ? 'IM CORRUPTED;' : 'SELECT 1;');
-    const gzip = createGzip();
-    const writeStream = createWriteStream(fn);
-    await pipeline(sql, gzip, writeStream);
-
-    await executeCommand('docker', ['cp', fn, `immich-e2e-server:/data/backups/development-${generate}.sql.gz`])
-      .promise;
+    const source = join(dir, 'source.sql.gz');
+    const fixture = join(dir, 'fixture.sql.gz');
+    try {
+      const copied = await executeCommand('docker', ['cp', `immich-e2e-server:/data/backups/${filename}`, source])
+        .promise;
+      if (copied.exitCode !== 0) {
+        throw new Error(`Could not copy the canonical backup fixture: ${copied.stderr}`);
+      }
+      await writeFile(fixture, amendBackupFixture(await readFile(source), generate));
+      const installed = await executeCommand('docker', ['cp', fixture, `immich-e2e-server:/data/backups/${filename}`])
+        .promise;
+      if (installed.exitCode !== 0) {
+        throw new Error(`Could not install the canonical backup fixture: ${installed.stderr}`);
+      }
+      return filename;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   },
 
   resetAdminConfig: async (accessToken: string) => {
