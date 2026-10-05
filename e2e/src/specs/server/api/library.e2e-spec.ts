@@ -85,33 +85,42 @@ describe('/libraries', () => {
       expect(asset.thumbhash).not.toBe(null);
     });
 
-    it('should reimport a modified file', async ({ signal }) => {
-      utils.createImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/reimport`],
-      });
+    // Two scans plus two readiness waits, each 60s in CI / 10s locally, and 30s for setup/assertions.
+    it(
+      'should reimport a modified file',
+      { timeout: process.env.CI ? 270_000 : 70_000 },
+      async ({ signal }) => {
+        const fixtureFolder = `temp/reimport-${randomUUID()}`;
+        const fixturePath = `${testAssetDir}/${fixtureFolder}/asset.jpg`;
+        utils.createImageFile(fixturePath);
+        try {
+          const library = await utils.createLibrary(admin.accessToken, {
+            ownerId: admin.userId,
+            importPaths: [`${testAssetDirInternal}/${fixtureFolder}`],
+          });
 
-      await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_000);
+          await utimes(fixturePath, 447_775_200_000);
 
-      await scanLibraryAsset(library.id, signal);
+          await scanLibraryAsset(library.id, signal);
 
-      cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_001);
+          cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, fixturePath);
+          await utimes(fixturePath, 447_775_200_001);
 
-      const asset = await scanLibraryAsset(library.id, signal);
+          const asset = await scanLibraryAsset(library.id, signal);
 
-      expect(asset).toEqual(
-        expect.objectContaining({
-          originalFileName: 'asset.jpg',
-          exifInfo: expect.objectContaining({
-            model: 'NIKON D750',
-          }),
-        }),
-      );
-
-      utils.removeImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
-    });
+          expect(asset).toEqual(
+            expect.objectContaining({
+              originalFileName: 'asset.jpg',
+              exifInfo: expect.objectContaining({
+                model: 'NIKON D750',
+              }),
+            }),
+          );
+        } finally {
+          utils.removeImageFile(fixturePath);
+        }
+      },
+    );
 
     it(
       'should not reimport a modified file more than once',
