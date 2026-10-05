@@ -951,7 +951,9 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
     false,
   );
   assert.match(
-    publish.steps.find((s) => s.name === "Verify and publish only qualified digests").run,
+    publish.steps.find(
+      (s) => s.name === "Verify and publish only qualified digests",
+    ).run,
     /image=ghcr\.io\/frameleaf\/frameleaf-cli/,
   );
   assert.doesNotMatch(
@@ -967,21 +969,37 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
         (s) => s.name === "Verify and publish only qualified digests",
       ),
   );
-  assert.ok(guardIndex < publish.steps.findIndex((s) => s.name === "Download both qualified archives"));
+  assert.ok(
+    guardIndex <
+      publish.steps.findIndex(
+        (s) => s.name === "Download both qualified archives",
+      ),
+  );
   assert.equal(publish.needs, "build");
   assert.equal(publish.environment, "production");
-  assert.deepEqual(w.jobs.build.strategy.matrix.include.map(({ runner }) => runner), [
-    "ubuntu-24.04", "ubuntu-24.04-arm",
-  ]);
-  const build = w.jobs.build.steps.find((s) => s.name === "Build without publishing");
+  assert.deepEqual(
+    w.jobs.build.strategy.matrix.include.map(({ runner }) => runner),
+    ["ubuntu-24.04", "ubuntu-24.04-arm"],
+  );
+  const build = w.jobs.build.steps.find(
+    (s) => s.name === "Build without publishing",
+  );
   assert.equal(build.with.platforms, "linux/${{ matrix.architecture }}");
   assert.match(build.with.outputs, /type=oci/);
   assert.match(build.with.outputs, /type=docker/);
-  assert.ok(!publish.steps.some((s) => s.uses?.startsWith("docker/build-push-action@")));
+  assert.ok(
+    !publish.steps.some((s) => s.uses?.startsWith("docker/build-push-action@")),
+  );
   assert.ok(!JSON.stringify(w).includes("setup-qemu-action"));
-  const smoke = w.jobs.build.steps.find((s) => s.name === "Smoke-test the exact native image and record qualification").run;
+  const smoke = w.jobs.build.steps.find(
+    (s) =>
+      s.name === "Smoke-test the exact native image and record qualification",
+  ).run;
   assert.match(smoke, /docker load --input/);
-  assert.match(smoke, /docker image inspect frameleaf-cli:ci --format '\{\{\.Id\}\}'/);
+  assert.match(
+    smoke,
+    /docker image inspect frameleaf-cli:ci --format '\{\{\.Id\}\}'/,
+  );
   assert.match(smoke, /\.rootfs\.diff_ids==\$runtime\[0\]/);
   assert.match(smoke, /\.layers\[\]\.digest/);
   assert.match(smoke, /gzip -dc/);
@@ -989,15 +1007,29 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
   assert.match(smoke, /frameleaf-cli:ci --version/);
   assert.match(smoke, /frameleaf-cli:ci migrate --help/);
   assert.match(smoke, /if docker run.*invalid-command/);
-  const copy = publish.steps.find((s) => s.name === "Verify and publish only qualified digests").run;
-  for (const binding of [".sourceCommit==$source", ".runId==$run", ".runAttempt==$attempt", ".architecture==$a", ".archiveSha256==$hash"]) {
+  const copy = publish.steps.find(
+    (s) => s.name === "Verify and publish only qualified digests",
+  ).run;
+  for (const binding of [
+    ".sourceCommit==$source",
+    ".runId==$run",
+    ".runAttempt==$attempt",
+    ".architecture==$a",
+    ".archiveSha256==$hash",
+  ]) {
     assert.ok(copy.includes(binding), binding);
   }
   assert.match(copy, /sha256sum -c SHA256SUMS/);
   assert.match(copy, /oras cp --from-oci-layout/);
   assert.match(copy, /cosign verify --key cosign\.pub/);
-  assert.ok(publish.steps.findIndex((s) => s.name === "Attest published build provenance") <
-    publish.steps.findIndex((s) => s.name === "Update latest only after signature and provenance"));
+  assert.ok(
+    publish.steps.findIndex(
+      (s) => s.name === "Attest published build provenance",
+    ) <
+      publish.steps.findIndex(
+        (s) => s.name === "Update latest only after signature and provenance",
+      ),
+  );
 });
 
 test("CLI release guard rejects a stale tag, wrong checkout or non-SHA input before any publish", () => {
@@ -1219,6 +1251,57 @@ test("integration image is a guarded manual pre-release that never writes releas
   assert.match(push, /oras resolve/);
   assert.match(push, /^\s*push server "\$IMAGE" ""$/m);
   assert.match(push, /^\s*push database "\$DATABASE_IMAGE" \/postgres$/m);
+
+  // The hard-cut stack cannot pair current code with a retired v1 release manifest.
+  const ml = w.jobs.build.steps.find(
+    (step) => step.id === "machine-learning",
+  ).with;
+  assert.equal(ml.context, "machine-learning");
+  assert.equal(ml.file, "machine-learning/Dockerfile");
+  assert.equal(ml.target, "prod");
+  assert.equal(ml.platforms, "${{ matrix.platform }}");
+  assert.match(ml["build-args"], /^DEVICE=cpu$/m);
+  assert.match(
+    ml.outputs,
+    /^type=oci,dest=\$\{\{ runner\.temp \}\}\/archive\/ml\/image\.tar,/,
+  );
+  assert.doesNotMatch(ml.outputs, /push=true|type=image|type=registry/);
+  assert.equal(ml["cache-to"], undefined);
+  assert.equal(ml.provenance, "mode=min");
+  assert.equal(ml.sbom, true);
+  assert.match(
+    ml.labels,
+    /^org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(ml.labels, /^org\.frameleaf\.build\.variant=cpu$/m);
+  const records = w.jobs.build.steps.find(
+    (step) => step.name === "Record the platform digests",
+  );
+  assert.equal(
+    records.env.ML_DIGEST,
+    "${{ steps.machine-learning.outputs.digest }}",
+  );
+  assert.match(
+    records.run,
+    /^\s*record "\$ML_DIGEST" "\$RUNNER_TEMP\/archive\/ml"$/m,
+  );
+  const resolveImages = w.jobs["deploy-test"].steps.find(
+    (step) => step.name === "Resolve the images under test",
+  );
+  assert.equal(resolveImages.env.SERVER_BUILT, "true");
+  assert.equal(resolveImages.env.ML_BUILT, "true");
+  const prepareMl = w.jobs["deploy-test"].steps.find(
+    (step) => step.name === "Prepare the CPU ML archive for deployment",
+  );
+  assert.match(
+    prepareMl.run,
+    /mv "\$RUNNER_TEMP\/server\/ml\/image\.tar" "\$RUNNER_TEMP\/ml\/image\.tar"/,
+  );
+  assert.ok(
+    w.jobs["deploy-test"].steps.indexOf(prepareMl) <
+      w.jobs["deploy-test"].steps.indexOf(resolveImages),
+  );
+  assert.doesNotMatch(push, /^\s*push (?:ml|machine-learning) /m);
 
   // The database image is built from docker/postgres on the same runners, tested by the same
   // deployment test (DATABASE_ARCHIVE), and only then pushed: the pushed digest is the tested one.
