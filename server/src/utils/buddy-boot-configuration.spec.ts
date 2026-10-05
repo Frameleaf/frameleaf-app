@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BuddySettingsSchema } from 'src/dtos/buddy-backup.dto.js';
@@ -159,6 +159,7 @@ describe('Declared Buddy boot configuration', () => {
     await expect(readFile(join(directory, 'boot-configuration.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     const publicDirectory = join(root, 'public-boot-stage');
     await mkdir(publicDirectory, { mode: 0o755 });
+    await chmod(publicDirectory, 0o755); // The refusal fixture must remain public under a private process umask.
     await expect(stageBuddyBootConfiguration(publicDirectory, randomUUID(), configuration)).rejects.toThrow(
       'Boot configuration staging requires a private regular directory',
     );
