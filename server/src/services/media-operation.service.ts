@@ -496,16 +496,23 @@ export class MediaOperationService {
     }
 
     // FL-43: an edit is cancelled only where its render can stop without leaving the saved edit half
-    // shown: a photo version. A photo edit's previews and a video edit's master finish.
+    // shown: a photo version. Other edits can only be cancelled before their worker claims them.
     const edit = editOperationEdit(operation);
-    if (edit && !canCancelEdit(edit)) {
+    const queuedOnly = edit !== undefined && !canCancelEdit(edit);
+    if (queuedOnly && (operation.status !== MediaOperationStatus.Queued || operation.claimToken !== null)) {
       throw new BadRequestException('This edit finishes once it has started and cannot be cancelled');
     }
 
-    const cancelled = await this.repository.requestCancel(id, auth.user.id);
+    const cancelled = queuedOnly
+      ? await this.repository.requestCancel(id, auth.user.id, undefined, true)
+      : await this.repository.requestCancel(id, auth.user.id);
     if (!cancelled) {
+      const latest = await this.findOwned(auth, id);
+      if (queuedOnly && isActiveMediaOperation(latest.status as MediaOperationStatus)) {
+        throw new BadRequestException('This edit finishes once it has started and cannot be cancelled');
+      }
       // It finished between the read and the write. Report the settled state, not an error.
-      return this.present(auth, await this.findOwned(auth, id));
+      return this.present(auth, latest);
     }
 
     // An iCloud sync cancelled before a worker had it closes its run record here; the worker closes

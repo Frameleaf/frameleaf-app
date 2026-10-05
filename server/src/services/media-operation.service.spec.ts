@@ -969,7 +969,39 @@ describe(MediaOperationService.name, () => {
       expect(repository.list).toHaveBeenCalledWith(expect.objectContaining({ unfinishedFirst: true }));
     });
 
-    it.each(['photo_edit', 'video_edit', 'video_export'])('refuses to cancel a %s once queued', async (edit) => {
+    it.each(['photo_edit', 'video_edit', 'video_export'])('cancels a queued %s before it has a claim', async (edit) => {
+      const queued = editStub(edit, { status: MediaOperationStatus.Queued, claimedBy: 'job-queue' });
+      vi.mocked(repository.getForOwner).mockResolvedValue(queued);
+      vi.mocked(repository.requestCancel).mockResolvedValue({ ...queued, status: MediaOperationStatus.Cancelled });
+
+      const result = await sut.cancel(authStub.user1, queued.id);
+
+      expect(repository.requestCancel).toHaveBeenCalledWith(queued.id, authStub.user1.user.id, undefined, true);
+      expect(result.status).toBe(MediaOperationStatus.Cancelled);
+    });
+
+    it('refuses cancellation when the edit acquires a claim between the read and write', async () => {
+      const queued = editStub('photo_edit', { status: MediaOperationStatus.Queued });
+      vi.mocked(repository.getForOwner)
+        .mockResolvedValueOnce(queued)
+        .mockResolvedValueOnce({ ...queued, status: MediaOperationStatus.Preparing, claimToken: 'claim' });
+      vi.mocked(repository.requestCancel).mockResolvedValue(undefined);
+
+      await expect(sut.cancel(authStub.user1, queued.id)).rejects.toThrow(
+        'This edit finishes once it has started and cannot be cancelled',
+      );
+      expect(repository.requestCancel).toHaveBeenCalledWith(queued.id, authStub.user1.user.id, undefined, true);
+    });
+
+    it('refuses to cancel a queued edit that still has a claim', async () => {
+      const queued = editStub('photo_edit', { status: MediaOperationStatus.Queued, claimToken: 'claim' });
+      vi.mocked(repository.getForOwner).mockResolvedValue(queued);
+
+      await expect(sut.cancel(authStub.user1, queued.id)).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it.each(['photo_edit', 'video_edit', 'video_export'])('refuses to cancel a running %s', async (edit) => {
       vi.mocked(repository.getForOwner).mockResolvedValue(editStub(edit, { status: MediaOperationStatus.Rendering }));
 
       await expect(sut.cancel(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
