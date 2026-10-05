@@ -1,12 +1,22 @@
 import { readFile } from 'node:fs/promises';
+import type { ImportConfig } from 'src/immich-import/types.js';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 
-const fixture = vi.hoisted(() => ({
-  verify: vi.fn(async (dispatch: () => Promise<unknown>) => dispatch()),
-  status: vi.fn().mockResolvedValue({ status: 'activated', derivedRunId: 'retained-import-run' }),
-  close: vi.fn().mockResolvedValue(undefined),
-}));
+const fixture = vi.hoisted(() => {
+  const config: ImportConfig = {
+    version: '3.2.4',
+    sourceId: 'offline-source',
+    writersStopped: true,
+    mediaRoots: [{ source: '/source', target: '/target' }],
+  };
+  return {
+    config,
+    verify: vi.fn(async (dispatch: (config: ImportConfig) => Promise<unknown>) => dispatch(config)),
+    status: vi.fn().mockResolvedValue({ status: 'activated', derivedRunId: 'retained-import-run' }),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+});
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn().mockResolvedValue(
     JSON.stringify({
@@ -35,7 +45,7 @@ it('finishes verification after one durable transfer and reports its run without
   try {
     const command = new ImportImmichCommand({ dispatchImportedWork } as unknown as JobRepository);
     await command.run(['verify'], { config: 'fixture.json' });
-    expect(dispatchImportedWork).toHaveBeenCalledOnce();
+    expect(dispatchImportedWork).toHaveBeenCalledExactlyOnceWith(fixture.config);
     expect(fixture.verify).toHaveBeenCalledOnce();
     expect(output).toHaveBeenCalledWith(JSON.stringify({ status: 'activated', derivedRunId: 'retained-import-run' }));
     expect(fixture.close).toHaveBeenCalledTimes(2);

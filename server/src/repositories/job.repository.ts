@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
+import type { ImportConfig } from 'src/immich-import/types.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
@@ -742,8 +743,12 @@ export class JobRepository {
     );
   }
 
-  async dispatchImportedWork(): Promise<string> {
-    const runId = await transferImportedWork(this.store.db, (name) => this.intent({ name, data: {} } as JobItem));
+  async dispatchImportedWork(config?: ImportConfig): Promise<string> {
+    const runId = await transferImportedWork(
+      this.store.db,
+      (name) => this.intent({ name, data: {} } as JobItem),
+      config,
+    );
     await this.store.finishEnumeration(runId);
     return runId;
   }
