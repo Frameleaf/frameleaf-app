@@ -684,7 +684,7 @@ export class MediaService extends BaseService {
       person?.faceAssetId ? undefined : selectionFaceId,
     );
     if (!data) {
-      this.logger.error(`Could not generate person thumbnail for ${personGroupId}: missing data`);
+      this.logger.debug(`Skipping person thumbnail for ${personGroupId}: source is ineligible`);
       return JobStatus.Skipped;
     }
 
