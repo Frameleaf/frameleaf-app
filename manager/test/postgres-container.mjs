@@ -110,6 +110,17 @@ try {
     names.first,
     "CREATE TABLE manager_storage_probe (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO manager_storage_probe VALUES (1, 'disk persistence');",
   );
+  // Transport coverage only: the real canonical schema and release gate are covered by medium tests.
+  // These retained header shapes exercise JSON/timestamps and all five held snapshots through
+  // genuine pg_dump, encrypted Restic, container replacement and fresh-directory pg_restore.
+  sql(names.first, `CREATE TABLE job_run (id uuid PRIMARY KEY, selection jsonb NOT NULL);
+    CREATE TABLE job_selection (stage text PRIMARY KEY, state text NOT NULL, "capturedAt" timestamptz NOT NULL);
+    INSERT INTO job_run VALUES ('11111111-2222-3333-4444-555555555555',
+      '{"source":"fixture-source","config":"fixture-config","managerSetup":{"installation":"${firstId}","operationId":"11111111-2222-3333-4444-555555555555","preparedAt":"2026-01-01T00:00:00Z","startedAt":null}}');
+    INSERT INTO job_selection SELECT stage,'enumerating','2026-01-01T00:00:00Z' FROM unnest(ARRAY[
+      'AssetExtractMetadata','AssetGenerateThumbnails','SmartSearch','AssetDetectFaces','PersonGenerateThumbnail']) stage;`);
+  const pendingRun = sql(names.first, 'SELECT selection::text FROM job_run');
+  const heldSnapshots = sql(names.first, 'SELECT jsonb_agg(to_jsonb(s) ORDER BY stage)::text FROM job_selection s');
   const installation = { id: firstId, databaseRoot: root, databasePath: first };
   evaluate(
     storage +
@@ -174,6 +185,13 @@ try {
   assert.equal(sql(names.second, 'SELECT value FROM manager_storage_probe WHERE id=1'), 'disk persistence');
   assert.equal(sql(names.first, 'SELECT value FROM manager_storage_probe WHERE id=1'), 'disk persistence');
   evidence.checks.logicalRestoreUsesFreshHostDirectoryAndPreservesSource = 'passed';
+  assert.equal(sql(names.second, 'SELECT selection::text FROM job_run'), pendingRun);
+  assert.equal(sql(names.second, 'SELECT jsonb_agg(to_jsonb(s) ORDER BY stage)::text FROM job_selection s'), heldSnapshots);
+  assert.equal(sql(names.second, 'SELECT count(*) FROM job_selection WHERE state=\'enumerating\''), '5');
+  assert.equal(sql(names.second, "SELECT selection #>> '{managerSetup,installation}' FROM job_run"), firstId);
+  assert.equal(sql(names.second, "SELECT selection #>> '{managerSetup,startedAt}' FROM job_run"), '');
+  assert.equal(sql(names.first, 'SELECT selection::text FROM job_run'), pendingRun);
+  evidence.checks.preparedUnstartedImportAndFiveHeldSnapshotsSurviveCanonicalTransport = 'passed';
   for (const name of [names.first, names.second]) {
     const container = JSON.parse(docker('inspect', name))[0];
     const mount = container.Mounts.find((m) => m.Destination === '/var/lib/postgresql');
