@@ -527,7 +527,7 @@ describe('/trash', () => {
       expect(rows).toEqual([{ status: 'trashed' }]);
     });
 
-    it('should report a shared original as retained and keep it on disk after the delete', { timeout: process.env.CI ? 570_000 : 120_000 }, async () => {
+    it('should report a shared original as retained and keep it on disk after the delete', { timeout: process.env.CI ? 470_000 : 120_000 }, async () => {
       await emptyVisibleTrash();
       const { id: keeper } = await utils.createAsset(admin.accessToken);
       const removed = await trashed();
