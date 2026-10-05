@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations } from '../src/operations.js';
 import { Store } from '../src/store.js';
-import type { Docker, Container } from '../src/docker.js';
+import { Docker, type Container } from '../src/docker.js';
 import type { Installation, Source, Operation } from '../src/contracts.js';
 import type { Releases } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
@@ -165,9 +165,82 @@ test('offline import preserves exact mounts read-only and escapes literal dollar
     assert.deepEqual(app.logging, { driver: 'none' });
     for (const field of ['ports', 'depends_on', 'healthcheck']) assert.equal(field in app, false);
     assert.equal(app.environment.OLD_VALUE, undefined);
+    assert.equal(app.environment.FRAMELEAF_MANAGER_ORIGIN, f.installation.origin);
+    assert.equal(app.environment.FRAMELEAF_MANAGER_INSTALLATION, config.media.deploymentId);
     assert.equal(app.environment.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID, f.operation.id);
     assert.equal(new URL(app.environment.DB_URL).hostname, '172.20.0.8');
     assert.equal(new URL(app.environment.FRAMELEAF_IMPORT_SOURCE_URL).hostname, '172.19.0.7');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('actual offline verify command receives only the matching Manager import authority from its generated Compose', async () => {
+  const f = await fixture();
+  const commands: string[][] = [];
+  try {
+    // Stale live-app authority must never be carried into this operation's dedicated CLI.
+    const file = join(f.operations.directory(), 'compose.json');
+    const runtime = JSON.parse(await readFile(file, 'utf8'));
+    runtime.services['immich-server'].environment = {
+      FRAMELEAF_MANAGER_ORIGIN: 'restored_library',
+      FRAMELEAF_MANAGER_INSTALLATION: 'cccccccccccc',
+      FRAMELEAF_IMPORT_MANAGER_OPERATION_ID: 'stale-operation',
+    };
+    await writeFile(file, JSON.stringify(runtime));
+    await f.internal.configureImport(f.operation, { source: f.source }, f.installation);
+    const docker = new Docker(async (binary, args, options) => {
+      assert.equal(binary, 'docker');
+      commands.push(args);
+      if (!args.includes('run')) return '';
+      const directory = options!.cwd!;
+      const path = join(directory, args[args.indexOf('--file') + 1]);
+      assert.equal(directory, f.operations.directory());
+      assert.equal(path, join(directory, 'import-compose.json'));
+      const generated = JSON.parse(await readFile(path, 'utf8'));
+      const config = JSON.parse(await readFile(join(directory, 'import.json'), 'utf8'));
+      const environment = generated.services['immich-server'].environment;
+      assert.equal(config.media.mode, 'manager-in-place');
+      assert.equal(config.media.authority, 'frameleaf-manager');
+      assert.match(config.media.deploymentId, /^[a-f0-9]{12}$/);
+      assert.equal(environment.FRAMELEAF_MANAGER_ORIGIN, 'new_import');
+      assert.equal(environment.FRAMELEAF_MANAGER_INSTALLATION, config.media.deploymentId);
+      assert.equal(environment.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID, config.media.operationId);
+      assert.equal(config.media.deploymentId, f.installation.id);
+      assert.equal(config.media.operationId, f.operation.id);
+      assert.equal(args.includes('-e'), false); // No command override can replace the reviewed authority.
+      return '{"status":"activated"}';
+    });
+    assert.deepEqual(
+      await docker.importCommand(f.operations.directory(), f.installation.project, f.operation.id, 'verify'),
+      { status: 'activated' },
+    );
+    const command = commands.find((args) => args.includes('run'))!;
+    assert.ok(command);
+    assert.deepEqual(command.slice(-6), [
+      'dist/main.js', 'frameleaf-admin', 'import-immich', 'verify', '--config', '/run/frameleaf/import.json',
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('offline import refuses mismatched installation, source or operation authority before any grants', async () => {
+  const f = await fixture();
+  try {
+    for (const [operation, source, installation] of [
+      [f.operation, f.source, { ...f.installation, origin: 'restored_library' }],
+      [f.operation, f.source, { ...f.installation, id: 'invalid' }],
+      [f.operation, { ...f.source, id: 'different-reviewed-source' }, f.installation],
+      [{ ...f.operation, kind: 'update' }, f.source, f.installation],
+    ] as const) {
+      await assert.rejects(
+        f.internal.configureImport(operation as Operation, { source: source as Source }, installation as Installation),
+        /invalid_import_authority/,
+      );
+    }
+    assert.equal(f.events.length, 0);
+    assert.equal(f.store.get(`import-reader:${f.operation.id}`) === null, true);
   } finally {
     await f.cleanup();
   }
