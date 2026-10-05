@@ -159,7 +159,7 @@ describe('/search', () => {
         { headers: asBearerAuth(admin.accessToken), signal },
       );
     }),
-    SEARCH_SETUP_TIMEOUT + 5_000,
+    SEARCH_SETUP_TIMEOUT + 5000,
   );
 
   describe('POST /search/metadata', () => {

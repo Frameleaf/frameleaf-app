@@ -98,7 +98,7 @@ describe('/map', () => {
         }
       }
     }),
-    MAP_SETUP_TIMEOUT + 5_000,
+    MAP_SETUP_TIMEOUT + 5000,
   );
 
   afterAll(() => {
