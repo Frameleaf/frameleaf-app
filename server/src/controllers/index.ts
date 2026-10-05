@@ -97,6 +97,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  FrameleafLibrarySetupController,
   PhotographyWorkspaceController,
   PhotographyWorkflowController,
   AssetUploadResourceController,
@@ -199,3 +200,4 @@ export const controllers = [
   ViewController,
   WorkflowController,
 ];
+import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
