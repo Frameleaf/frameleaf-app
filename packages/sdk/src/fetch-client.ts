@@ -12240,6 +12240,18 @@ export type LibrarySetupStatusDto = {
     installation: string;
     origin: Origin;
     phase: Phase;
+    regeneration?: {
+        blocked: number;
+        completed: number;
+        failed: number;
+        needsAttention: number;
+        preparedAt: string | null;
+        reasons: string[];
+        runId: string | null;
+        startedAt: string | null;
+        state: string;
+        total: number;
+    } | null;
     rescanComplete: boolean;
     revision: string | null;
     setupRequired: boolean;
@@ -28970,6 +28982,7 @@ export enum ManualJobName {
 export enum Reasons {
     WorkerUnavailable = "worker_unavailable",
     NoDispatchBacklog = "no_dispatch_backlog",
+    FirstSetupPending = "first_setup_pending",
     DependencyUnavailable = "dependency_unavailable",
     DependencyWait = "dependency_wait",
     DependencyFailed = "dependency_failed",
