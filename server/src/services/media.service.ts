@@ -685,7 +685,7 @@ export class MediaService extends BaseService {
     );
     if (!data) {
       this.logger.error(`Could not generate person thumbnail for ${personGroupId}: missing data`);
-      return JobStatus.Failed;
+      return JobStatus.Skipped;
     }
 
     const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewPath, originalPath } = data;
