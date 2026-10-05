@@ -138,10 +138,32 @@ jobs:
             org.opencontainers.image.version=integration-${{ github.sha }}
             org.opencontainers.image.description=Pre-release integration build, not a release
             org.frameleaf.build.channel=integration
+      # Fresh-install validation uses the current CPU ML source, independently of older release manifests.
+      - name: Build the CPU machine-learning image to an OCI archive (not pushed)
+        id: machine-learning
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: machine-learning
+          file: machine-learning/Dockerfile
+          target: prod
+          platforms: ${{ matrix.platform }}
+          outputs: type=oci,dest=${{ runner.temp }}/archive/ml/image.tar,name=frameleaf-deploy-test/frameleaf-machine-learning:${{ matrix.architecture }}
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=integration-${{ github.sha }}
+            org.opencontainers.image.description=Pre-release integration build, not a release
+            org.frameleaf.build.variant=cpu
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-machine-learning-build-cache:${{ matrix.cache }}
+          build-args: |
+            DEVICE=cpu
       - name: Record the platform digests
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           DATABASE_DIGEST: ${{ steps.database.outputs.digest }}
+          ML_DIGEST: ${{ steps.machine-learning.outputs.digest }}
         run: |
           set -euo pipefail
           record() {
@@ -151,6 +173,7 @@ jobs:
           }
           record "$DIGEST" "$RUNNER_TEMP/archive"
           record "$DATABASE_DIGEST" "$RUNNER_TEMP/archive/postgres"
+          record "$ML_DIGEST" "$RUNNER_TEMP/archive/ml"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: integration-archive-${{ matrix.architecture }}
@@ -191,16 +214,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # The machine-learning image of the latest published release, from its verified manifest.
+      - name: Prepare the CPU ML archive for deployment
+        run: |
+          set -euo pipefail
+          test ! -e "$RUNNER_TEMP/ml"
+          mkdir "$RUNNER_TEMP/ml"
+          mv "$RUNNER_TEMP/server/ml/image.tar" "$RUNNER_TEMP/ml/image.tar"
       - name: Resolve the images under test
         env:
           SERVER_BUILT: 'true'
-          ML_BUILT: released
+          ML_BUILT: 'true'
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
       - name: Install ORAS (checksum-pinned)
         run: .github/install-oras.sh
-      - name: Deploy the unpushed server image and test the installation
+      - name: Deploy the unpushed server, database and ML images and test the installation
         env:
           SOURCE_SHA: ${{ github.sha }}
           DATABASE_ARCHIVE: ${{ runner.temp }}/server/postgres/image.tar
