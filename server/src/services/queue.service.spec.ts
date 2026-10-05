@@ -110,7 +110,9 @@ describe(QueueService.name, () => {
       let maximum = 0;
       mocks.job.getJobCounts.mockImplementation(async () => {
         maximum = Math.max(maximum, ++active);
-        await new Promise<void>((resolve) => releases.push(resolve));
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
         active--;
         return factory.queueStatistics();
       });
@@ -120,7 +122,7 @@ describe(QueueService.name, () => {
       for (let offset = 0; offset < names.length; offset += 4) {
         await vi.waitFor(() => expect(releases).toHaveLength(Math.min(offset + 4, names.length)));
         expect(maximum).toBeLessThanOrEqual(4);
-        for (const release of releases.slice(offset, offset + 4).reverse()) {
+        for (const release of releases.slice(offset, offset + 4).toReversed()) {
           release();
         }
       }
@@ -135,15 +137,17 @@ describe(QueueService.name, () => {
         if (name === Object.values(QueueName)[0]) {
           throw error;
         }
-        await new Promise<void>((resolve) => releases.push(resolve));
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
         return factory.queueStatistics();
       });
       mocks.job.isPaused.mockResolvedValue(false);
       mocks.job.hasUnfinishedWork.mockResolvedValue(false);
       let returned = false;
-      const result = sut.getAll(factory.auth()).catch((caught) => {
+      const result = sut.getAll(factory.auth()).catch((error_) => {
         returned = true;
-        throw caught;
+        throw error_;
       });
       const rejected = expect(result).rejects.toBe(error);
       await vi.waitFor(() => expect(releases).toHaveLength(3));
