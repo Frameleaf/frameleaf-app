@@ -1,4 +1,4 @@
-import { Kysely, SelectQueryBuilder, Transaction, sql } from 'kysely';
+import { Kysely, RawBuilder, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName } from 'src/enum.js';
 import {
@@ -75,6 +75,7 @@ export async function freezeSelection(
   selection: SelectQueryBuilder<any, any, { id: string }>,
   context?: QueueExecution,
   submittedRunId?: string,
+  readiness?: RawBuilder<'enumerating' | 'ready'>,
 ) {
   context?.signal.throwIfAborted();
   const claim = context?.claim;
@@ -82,6 +83,10 @@ export async function freezeSelection(
     // This short phase follows publication's catalogue -> job -> run lock order.
     await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
     if (claim) await sql`select name from job_queue order by name for no key update`.execute(tx);
+    if (readiness && submittedRunId) {
+      // Take the setup gate before inserting selection foreign keys or touching existing headers.
+      await sql`select id from job_run where id = ${submittedRunId}::uuid for update`.execute(tx);
+    }
     let runId = submittedRunId;
     let producerItemKey = context?.claim.itemKey;
     if (claim) {
@@ -116,6 +121,11 @@ export async function freezeSelection(
     return { runId, producerItemKey, selectionId };
   };
   const capture = async (tx: Transaction<any>, result: Awaited<ReturnType<typeof attach>>) => {
+    if (readiness) {
+      // Setup release uses this same run -> selection order. Read the committed gate only after
+      // locking its run, so a concurrent release cannot be overwritten by an older capture view.
+      await sql`select id from job_run where id = ${result.runId}::uuid for update`.execute(tx);
+    }
     // Only competing captures of this identity wait. Never take a selection row lock before
     // the final producer fence: failure/publication holds the producer before the selection.
     await sql`select pg_advisory_xact_lock(hashtextextended('frameleaf-selection:' || ${result.selectionId}, 0))`.execute(
@@ -147,7 +157,8 @@ export async function freezeSelection(
     // Rows and marker commit together, including zero rows. A crash can never turn a committed
     // empty or partial snapshot into permission to append IDs from a changed live selection.
     await sql`update job_selection set "capturedAt" = coalesce("capturedAt", clock_timestamp()),
-      state = case when state = 'cancelled' then state else ${claim ? 'enumerating' : 'ready'} end
+      state = case when state = 'cancelled' or (${!!readiness} and state = 'needs_attention') then state
+        else ${claim ? sql.lit('enumerating') : (readiness ?? sql.lit('ready'))} end
       where id = ${result.selectionId}::uuid`.execute(tx);
     if (claim) {
       // This run owns the source rows, so sharing them with itself requires no scan or copy.
@@ -163,7 +174,7 @@ export async function freezeSelection(
     ? await db.transaction().execute(attach)
     : await db.transaction().execute(async (tx) => {
         // A direct selection has no durable producer to retry it. Keep its new run/header atomic
-        // with capture, still without queue, producer or existing run row locks.
+        // with capture. A supplied setup gate additionally serializes on its existing run.
         const attached = await attach(tx);
         await capture(tx, attached);
         return attached;
