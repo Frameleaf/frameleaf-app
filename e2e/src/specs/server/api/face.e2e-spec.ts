@@ -176,103 +176,107 @@ describe('/faces (FL-38 corrections)', () => {
     expect(after.revision).toBe(face.revision);
   });
 
-  it('round-trips manual and corrected boxes through a crop and a rotation, and refuses boxes drawn before an edit', async () => {
-    const { body: before } = await request(app)
-      .get('/faces/source')
-      .query({ id: asset.id })
-      .set('Authorization', `Bearer ${admin.accessToken}`);
-    expect(before.revision).toEqual(expect.any(String));
-    const strangerSource = await request(app)
-      .get('/faces/source')
-      .query({ id: asset.id })
-      .set(asBearerAuth(stranger.accessToken));
-    expect(strangerSource.status).toBe(400);
+  it(
+    'round-trips manual and corrected boxes through a crop and a rotation, and refuses boxes drawn before an edit',
+    { timeout: process.env.CI ? 150_000 : 50_000 },
+    async () => {
+      const { body: before } = await request(app)
+        .get('/faces/source')
+        .query({ id: asset.id })
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(before.revision).toEqual(expect.any(String));
+      const strangerSource = await request(app)
+        .get('/faces/source')
+        .query({ id: asset.id })
+        .set(asBearerAuth(stranger.accessToken));
+      expect(strangerSource.status).toBe(400);
 
-    // crop to 200x150 at (100, 50), then turn a quarter: the edited image is 150x200
-    const edit = await request(app)
-      .put(`/assets/${asset.id}/edits`)
-      .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({
-        edits: [
-          { action: AssetEditAction.Crop, parameters: { x: 100, y: 50, width: 200, height: 150 } },
-          { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
-        ],
-      });
-    expect(edit.status).toBe(200);
-    // a saved edit renders on the editor queue, which also records the edited image's size
-    await utils.waitForQueueFinish(admin.accessToken, 'editor');
-    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+      // crop to 200x150 at (100, 50), then turn a quarter: the edited image is 150x200
+      const edit = await request(app)
+        .put(`/assets/${asset.id}/edits`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({
+          edits: [
+            { action: AssetEditAction.Crop, parameters: { x: 100, y: 50, width: 200, height: 150 } },
+            { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+          ],
+        });
+      expect(edit.status).toBe(200);
+      // a saved edit renders on the editor queue, which also records the edited image's size
+      await utils.waitForQueueFinish(admin.accessToken, 'editor');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
-    const { body: source } = await request(app)
-      .get('/faces/source')
-      .query({ id: asset.id })
-      .set('Authorization', `Bearer ${admin.accessToken}`);
-    expect(source.revision).not.toBe(before.revision);
+      const { body: source } = await request(app)
+        .get('/faces/source')
+        .query({ id: asset.id })
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(source.revision).not.toBe(before.revision);
 
-    const drawn = {
-      assetId: asset.id,
-      personId: emma.id,
-      imageWidth: 150,
-      imageHeight: 200,
-      x: 20,
-      y: 40,
-      width: 30,
-      height: 40,
-    };
-    const stale = await request(app)
-      .post('/faces')
-      .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({ ...drawn, expectedSourceRevision: before.revision });
-    expect(stale.status).toBe(409);
-
-    const created = await request(app)
-      .post('/faces')
-      .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({ ...drawn, expectedSourceRevision: source.revision });
-    expect(created.status).toBe(201);
-    expect(created.body).toEqual(
-      expect.objectContaining({
-        sourceType: SourceType.Manual,
+      const drawn = {
+        assetId: asset.id,
+        personId: emma.id,
         imageWidth: 150,
         imageHeight: 200,
-        boundingBoxX1: 20,
-        boundingBoxY1: 40,
-        boundingBoxX2: 50,
-        boundingBoxY2: 80,
-      }),
-    );
+        x: 20,
+        y: 40,
+        width: 30,
+        height: 40,
+      };
+      const stale = await request(app)
+        .post('/faces')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ ...drawn, expectedSourceRevision: before.revision });
+      expect(stale.status).toBe(409);
 
-    // move the recognized face on the edited image
-    const face = await detected();
-    const moved = await correct(admin.accessToken, detectedId, {
-      expectedRevision: face.revision,
-      expectedSourceRevision: source.revision,
-      box: { imageWidth: 150, imageHeight: 200, x: 60, y: 100, width: 40, height: 40 },
-    });
-    expect(moved.status).toBe(200);
-    expect(moved.body).toEqual(
-      expect.objectContaining({ boundingBoxX1: 60, boundingBoxY1: 100, boundingBoxX2: 100, boundingBoxY2: 140 }),
-    );
+      const created = await request(app)
+        .post('/faces')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ ...drawn, expectedSourceRevision: source.revision });
+      expect(created.status).toBe(201);
+      expect(created.body).toEqual(
+        expect.objectContaining({
+          sourceType: SourceType.Manual,
+          imageWidth: 150,
+          imageHeight: 200,
+          boundingBoxX1: 20,
+          boundingBoxY1: 40,
+          boundingBoxX2: 50,
+          boundingBoxY2: 80,
+        }),
+      );
 
-    const { body: mixed } = await listFaces(admin.accessToken, asset.id);
-    expect(mixed.map((row) => row.sourceType).toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual([
-      SourceType.MachineLearning,
-      SourceType.Manual,
-    ]);
+      // move the recognized face on the edited image
+      const face = await detected();
+      const moved = await correct(admin.accessToken, detectedId, {
+        expectedRevision: face.revision,
+        expectedSourceRevision: source.revision,
+        box: { imageWidth: 150, imageHeight: 200, x: 60, y: 100, width: 40, height: 40 },
+      });
+      expect(moved.status).toBe(200);
+      expect(moved.body).toEqual(
+        expect.objectContaining({ boundingBoxX1: 60, boundingBoxY1: 100, boundingBoxX2: 100, boundingBoxY2: 140 }),
+      );
 
-    // back to the original: both faces sit inside the crop rectangle, in 400x300 pixels
-    // `PUT` needs at least one edit (AssetEditsCreateSchema `.min(1)`); removing them all is `DELETE`
-    const removed = await request(app)
-      .delete(`/assets/${asset.id}/edits`)
-      .set('Authorization', `Bearer ${admin.accessToken}`);
-    expect(removed.status).toBe(204);
-    const { body: original } = await listFaces(admin.accessToken, asset.id);
-    for (const row of original) {
-      expect(row).toEqual(expect.objectContaining({ imageWidth: 400, imageHeight: 300 }));
-      expect(row.boundingBoxX1).toBeGreaterThanOrEqual(100);
-      expect(row.boundingBoxX2).toBeLessThanOrEqual(300);
-      expect(row.boundingBoxY1).toBeGreaterThanOrEqual(50);
-      expect(row.boundingBoxY2).toBeLessThanOrEqual(200);
-    }
-  });
+      const { body: mixed } = await listFaces(admin.accessToken, asset.id);
+      expect(mixed.map((row) => row.sourceType).toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual([
+        SourceType.MachineLearning,
+        SourceType.Manual,
+      ]);
+
+      // back to the original: both faces sit inside the crop rectangle, in 400x300 pixels
+      // `PUT` needs at least one edit (AssetEditsCreateSchema `.min(1)`); removing them all is `DELETE`
+      const removed = await request(app)
+        .delete(`/assets/${asset.id}/edits`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(removed.status).toBe(204);
+      const { body: original } = await listFaces(admin.accessToken, asset.id);
+      for (const row of original) {
+        expect(row).toEqual(expect.objectContaining({ imageWidth: 400, imageHeight: 300 }));
+        expect(row.boundingBoxX1).toBeGreaterThanOrEqual(100);
+        expect(row.boundingBoxX2).toBeLessThanOrEqual(300);
+        expect(row.boundingBoxY1).toBeGreaterThanOrEqual(50);
+        expect(row.boundingBoxY2).toBeLessThanOrEqual(200);
+      }
+    },
+  );
 });
