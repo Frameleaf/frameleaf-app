@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, mkdir, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, mkdir, rm, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appdataDefaults, configuredAppdata } from '../src/appdata.js';
@@ -238,7 +238,7 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
 });
 
 test('fresh PG19 bind parents allow traversal while withholding listing and write permissions', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'manager-pg-parent-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'manager-pg-parent-')));
   const storage = new PostgresStorage({} as never, root, [root], false);
   // Filesystem admission is covered separately; exercise the real exclusive allocation and permissions.
   Object.assign(storage, { validate: async () => ({ root, filesystem: 'ext4', device: '/fixture' }) });
