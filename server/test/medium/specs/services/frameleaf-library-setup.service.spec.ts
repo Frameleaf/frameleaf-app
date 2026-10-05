@@ -1,8 +1,8 @@
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
-import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { QueueName, SyncEntityType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -104,7 +104,7 @@ it('waits for a fresh full integrity scan when the existing operation is increme
     ] as const) {
       await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings, "createdAt")
         VALUES (${id}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Fixture integrity scan',
-        ${JSON.stringify(snapshot)}::jsonb, '{}'::jsonb, ${createdAt})`.execute(db);
+        ${JSON.stringify(snapshot)}::text::jsonb, '{}'::jsonb, ${createdAt})`.execute(db);
     }
     await service.status();
     let state = await sql<{
@@ -189,6 +189,9 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
       second = make();
     await Promise.all([first.begin(), second.begin()]);
     const key = `frameleaf-manager-library-setup:${installation}`;
+    const persisted = await sql<{ type: string; origin: string }>`SELECT jsonb_typeof(value) AS type,
+      value->>'origin' AS origin FROM system_metadata WHERE key=${key}`.execute(db);
+    expect(persisted.rows).toEqual([{ type: 'object', origin: 'new_library' }]);
     expect((await first.status(auth)).canFinish).toBe(false);
     await sql`UPDATE system_metadata SET value=jsonb_set(value, '{quietSince}', to_jsonb(${Date.now() - 20_000}::bigint)) WHERE key=${key}`.execute(
       db,
@@ -202,7 +205,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     );
     const statuses = await Promise.all([first.status(auth), second.status(other)]);
     expect(statuses.every((status) => status.phase === 'complete' && status.revision === revision)).toBe(true);
-    expect(statuses.every((status) => status.canFinish === false)).toBe(true);
+    expect(statuses.every((status) => !status.canFinish)).toBe(true);
     const receipt = await second.syncReceipt(auth, revision);
     await expect(first.finish(auth, revision, receipt, true)).rejects.toThrow('Finish syncing');
     acknowledged = true;
@@ -225,7 +228,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     expect((await make().status(auth)).canFinish).toBe(false);
     // Managed uploads require their durable integrity receipt even when every queue is idle.
     const pendingKey = 'frameleaf-manager-library-setup:dcbaabcdabcd';
-    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [auth.user.id], health: { [auth.user.id]: randomUUID() }, quietSince: Date.now() - 20_000 })}::jsonb WHERE key=${pendingKey}`.execute(
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [auth.user.id], health: { [auth.user.id]: randomUUID() }, quietSince: Date.now() - 20_000 })}::text::jsonb WHERE key=${pendingKey}`.execute(
       db,
     );
     expect((await make().status(auth)).phase).not.toBe('complete');

@@ -50,7 +50,7 @@ case "$filesystem" in
   *) echo 'Choose disk-backed appdata storage, outside the container filesystem' >&2; exit 2;;
 esac
 command -v cosign >/dev/null || { echo 'Install Cosign to verify the Manager image before launch' >&2; exit 2; }
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 cosign verify --key "$script_dir/cosign.pub" "$image" >/dev/null
 docker pull "$image"
 set --

@@ -2,9 +2,17 @@ name: Frameleaf Manager
 on:
   pull_request:
     branches: [master/frameleaf-implementation, fork/main]
-    paths: ['manager/**', '.github/verify-release-bundle*', '.github/workflows/manager.yml', 'server/src/*/frameleaf-library-setup*']
-  push:
-    branches: [codex/FL-334-frameleaf-manager]
+    paths:
+      [
+        "manager/**",
+        ".github/verify-release-bundle*",
+        ".github/workflows/manager.yml",
+        "server/src/*/frameleaf-library-setup*",
+        "server/test/medium/specs/services/frameleaf-library-setup*",
+        "open-api/**",
+        "packages/sdk/**",
+      ]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -23,6 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
         include:
           - runner: ubuntu-24.04
             architecture: amd64

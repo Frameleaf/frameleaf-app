@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
 import { Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   FinishLibrarySetupDto,
   LibrarySetupStatusDto,
@@ -119,7 +119,11 @@ export class FrameleafLibrarySetupController {
         if (response.destroyed) {
           return callback(new Error('Client disconnected'));
         }
-        response.write(chunk) ? callback() : response.once('drain', callback);
+        if (response.write(chunk)) {
+          callback();
+        } else {
+          response.once('drain', callback);
+        }
       },
     });
     const disconnected = () => {
@@ -134,7 +138,7 @@ export class FrameleafLibrarySetupController {
       }
     });
     const flushed = finished(sink);
-    void flushed.catch(() => undefined);
+    void flushed.catch(() => {});
     try {
       await this.sync.stream(auth, sink, { types: LIBRARY_SETUP_SYNC_TYPES, reset: dto.reset });
       await flushed;
