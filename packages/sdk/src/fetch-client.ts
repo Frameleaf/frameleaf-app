@@ -12233,6 +12233,29 @@ export type ServerFeaturesDto = {
     /** Whether trash feature is enabled */
     trash: boolean;
 };
+export type LibrarySetupStatusDto = {
+    canFinish: boolean;
+    installation: string;
+    origin: Origin;
+    phase: Phase;
+    rescanComplete: boolean;
+    revision: string | null;
+    setupRequired: boolean;
+    sync: {
+        authenticated: boolean;
+        catalogComplete: boolean;
+        previewsReady: boolean;
+    };
+    verificationPassed: boolean;
+};
+export type FinishLibrarySetupDto = {
+    previewsReady: true;
+    receipt: string;
+    revision: string;
+};
+export type WarmLibrarySetupDto = {
+    reset?: boolean;
+};
 export type ServerMediaTypesResponseDto = {
     /** Supported image MIME types */
     image: string[];
@@ -24077,6 +24100,89 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Library preparation for this authenticated device
+ */
+export function getLibrarySetupStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup", {
+        ...opts
+    }));
+}
+/**
+ * Start the managed library rescan
+ */
+export function beginLibrarySetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup/begin", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Finish after catalog and browsing previews are cached
+ */
+export function finishLibrarySetup({ finishLibrarySetupDto }: {
+    finishLibrarySetupDto: FinishLibrarySetupDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup/finish", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: finishLibrarySetupDto
+    })));
+}
+/**
+ * Manager machine-authenticated setup status
+ */
+export function getManagerLibrarySetup({ xFrameleafManager }: {
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup/manager", {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
+ * Manager machine-authenticated rescan
+ */
+export function beginManagerLibrarySetup({ xFrameleafManager }: {
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup/manager", {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
+ * Warm the authenticated device catalog during setup
+ */
+export function syncLibrarySetup({ warmLibrarySetupDto }: {
+    warmLibrarySetupDto: WarmLibrarySetupDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/server/library-setup/sync", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: warmLibrarySetupDto
+    })));
+}
+/**
  * Get supported media types
  */
 export function getSupportedMediaTypes(opts?: Oazapfts.RequestOpts) {
@@ -30013,6 +30119,18 @@ export enum SearchSuggestionType {
     CameraMake = "camera-make",
     CameraModel = "camera-model",
     CameraLensModel = "camera-lens-model"
+}
+export enum Origin {
+    NewImport = "new_import",
+    NewLibrary = "new_library",
+    RestoredLibrary = "restored_library"
+}
+export enum Phase {
+    AwaitingAccount = "awaiting-account",
+    Rescanning = "rescanning",
+    Verifying = "verifying",
+    NeedsAttention = "needs-attention",
+    Complete = "complete"
 }
 export enum Cloud {
     Available = "available",

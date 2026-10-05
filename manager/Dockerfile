@@ -7,9 +7,10 @@ RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
 ARG TARGETARCH
-RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker.io docker-compose restic openssl ca-certificates util-linux curl && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/local/lib/docker/cli-plugins \
-    && ln -s /usr/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+    && ln -s /usr/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose \
+    && docker --version && docker compose version
 RUN case "$TARGETARCH" in \
       amd64) checksum=4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71 ;; \
       arm64) checksum=c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a ;; \

@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
-import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { SyncEntityType } from 'src/enum.js';
 
 describe(FrameleafLibrarySetupController.name, () => {
