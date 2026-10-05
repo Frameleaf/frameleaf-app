@@ -1,9 +1,9 @@
 import { Worker } from 'node:worker_threads';
 import { createRequire } from 'node:module';
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Refusal, releaseTag, imageDigest, sha256, type NasManifest, type Source } from './contracts.js';
+import { Refusal, releaseTag, sha256, type NasManifest } from './contracts.js';
 
 const require = createRequire(import.meta.url);
 const { INSTALL_FILES } = require('../../.github/frameleaf-release.cjs') as { INSTALL_FILES: string[] };
@@ -12,7 +12,6 @@ export type VerifiedRelease = {
   directory: string;
   nas: NasManifest;
   release: Record<string, unknown>;
-  reports: { family: string; version: string; report: Record<string, unknown> }[];
 };
 export function offered(body: string, seed: string, tag: string): boolean {
   if (/^[ \t]*withdrawn:[ \t]*\S/im.test(body)) return false;
@@ -62,13 +61,7 @@ export class Releases {
     const directory = join(this.root, randomUUID());
     await mkdir(directory, { recursive: true, mode: 0o700 });
     try {
-      for (const name of [
-        ...INSTALL_FILES,
-        'supported-versions.json',
-        'nas-manifest.json',
-        'release-manifest.json',
-        'SHA256SUMS',
-      ]) {
+      for (const name of [...INSTALL_FILES, 'nas-manifest.json', 'release-manifest.json', 'SHA256SUMS']) {
         const asset = metadata.assets?.find((a: any) => a.name === name);
         if (
           !asset ||
@@ -90,10 +83,10 @@ export class Releases {
       throw error;
     }
   }
-  async verify(directory: string, tag: string, receipts?: unknown): Promise<VerifiedRelease> {
+  async verify(directory: string, tag: string): Promise<VerifiedRelease> {
     return new Promise((resolve, reject) => {
       const worker = new Worker(new URL('../release-worker.cjs', import.meta.url), {
-        workerData: { directory, tag, receipts },
+        workerData: { directory, tag },
       });
       const timeout = setTimeout(() => {
         void worker.terminate();
@@ -115,41 +108,5 @@ export class Releases {
         }
       });
     });
-  }
-  async qualify(release: VerifiedRelease, source: Source): Promise<VerifiedRelease> {
-    return this.qualifyMigration(release, 'officialImmich', source.version, source.postgres);
-  }
-  async qualifyMigration(
-    release: VerifiedRelease,
-    family: 'officialImmich' | 'priorFrameleaf',
-    version: string,
-    postgres: { major: number; extensions: unknown },
-  ): Promise<VerifiedRelease> {
-    if (!release.nas.migration[family].includes(version)) throw new Refusal('source_version_not_qualified');
-    // The pointer need not be in R; its immutable report is hash-, signature- and trusted-run verified.
-    const metadata = await this.eligible(release.nas.tag);
-    const asset = metadata.assets?.find((a: any) => a.name === 'qualification-receipts.json');
-    if (
-      !asset ||
-      asset.size > 100_000 ||
-      !String(asset.browser_download_url).startsWith(
-        `https://github.com/Frameleaf/frameleaf-app/releases/download/${release.nas.tag}/`,
-      )
-    )
-      throw new Refusal('qualification_receipts_missing');
-    const response = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Refusal('qualification_receipts_missing');
-    const text = await response.text();
-    if (text.length > 100_000) throw new Refusal('qualification_receipts_invalid');
-    const qualified = await this.verify(release.directory, release.nas.tag, { receipts: JSON.parse(text), family });
-    const report = qualified.reports.find((r) => r.version === version && r.family === family)?.report;
-    const tested = report?.sourcePostgres as { major: number; extensions: unknown } | undefined;
-    if (
-      !tested ||
-      tested.major !== postgres.major ||
-      JSON.stringify(tested.extensions) !== JSON.stringify(postgres.extensions)
-    )
-      throw new Refusal('database_combination_not_qualified');
-    return qualified;
   }
 }

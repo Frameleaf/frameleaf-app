@@ -6,6 +6,9 @@ on:
       [
         'manager/**',
         '.github/verify-release-bundle*',
+        '.github/frameleaf-release.cjs',
+        'docker/postgres/**',
+        'docker/docker-compose*.yml',
         '.github/workflows/manager.yml',
         'server/src/*/frameleaf-library-setup*',
         'server/src/controllers/index*',

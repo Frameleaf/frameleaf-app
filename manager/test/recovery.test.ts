@@ -263,12 +263,16 @@ test('a completed Restic snapshot is reused after a lost acknowledgement', async
   let backups = 0,
     checks = 0;
   const execute = async (_binary: string, args: string[]) => {
-    if (args.includes('snapshots')) return JSON.stringify([{ id: 'a'.repeat(64), paths: [directory] }]);
+    if (args.includes('snapshots'))
+      return JSON.stringify([
+        { id: 'a'.repeat(64), paths: [directory], tags: ['frameleaf-manager-database', 'frameleaf-canonical'] },
+      ]);
     if (args.includes('backup')) backups++;
     if (args.includes('check')) checks++;
     return '';
   };
   try {
+    await writeFile(join(directory, 'recovery.json'), JSON.stringify({ databaseFormat: 'frameleaf-canonical' }));
     assert.equal(await new Backups('/repo', '/key', execute).snapshot(directory, 'operation'), 'a'.repeat(64));
     assert.equal(backups, 0);
     assert.equal(checks, 1);
@@ -284,7 +288,10 @@ test('relative checkpoint backups restore the snapshot root, not their absolute 
   const calls: string[][] = [];
   const execute = async (_binary: string, args: string[]) => {
     calls.push(args);
-    if (args.includes('snapshots')) return JSON.stringify([{ id: snapshot, paths: ['/old/host/checkpoint'] }]);
+    if (args.includes('snapshots'))
+      return JSON.stringify([
+        { id: snapshot, paths: ['/old/host/checkpoint'], tags: ['frameleaf-manager-database', 'frameleaf-canonical'] },
+      ]);
     return '';
   };
   try {
@@ -376,9 +383,7 @@ test('import verification uses the fenced dump receipt instead of earlier discov
   } as Installation;
   const target = container('c'),
     server = container('d');
-  target.Mounts = [
-    { Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql/data', RW: true },
-  ];
+  target.Mounts = [{ Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql', RW: true }];
   for (const [c, service] of [
     [target, 'database'],
     [server, 'immich-server'],
@@ -386,7 +391,8 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     c.Config.Labels = { 'app.frameleaf.manager': installation.id, 'com.docker.compose.service': service };
   const docker = {
     inventory: async () => structuredClone([app, sourceDb, target, server]),
-    sql: async () => JSON.stringify({ users: 1, assets: 2, albums: 1, adopted: true }),
+    sql: async () => JSON.stringify({ users: 1, assets: 2, albums: 1 }),
+    importCommand: async () => ({ status: 'activated' }),
     node: async () => '{}',
   } as unknown as Docker;
   store.set('installation', installation);
@@ -399,8 +405,11 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     'review-source',
     'fence-source',
     'start-database',
+    'capture-fenced-settings',
     'copy-current-database',
-    'restore-new-database',
+    'configure-offline-import',
+    'import-canonical-database',
+    'import-settings',
     'start-frameleaf',
   ];
   operation.receipts.configure = installation;
@@ -408,15 +417,48 @@ test('import verification uses the fenced dump receipt instead of earlier discov
   operation.state = 'interrupted';
   store.save(operation);
   try {
-    new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never).resume(
-      operation.id,
-    );
+    const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
+    // This case isolates fenced-count selection; transport reconciliation has separate coverage.
+    Object.assign(operations, { runImport: async () => ({ status: 'activated' }) });
+    operations.resume(operation.id);
     for (let i = 0; i < 100 && store.history()[0].state === 'running'; i++)
       await new Promise((resolve) => setTimeout(resolve, 1));
     assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
-    assert.deepEqual(store.history()[0].receipts['verify-import'], { countsMatch: true, adopted: true });
+    assert.deepEqual(store.history()[0].receipts['verify-import'], { countsMatch: true, activated: true });
   } finally {
     store.close();
     await rm(directory, { recursive: true });
   }
+});
+
+test('offline importer command refuses a surviving runner and never accepts arbitrary actions', async () => {
+  const active = container('a');
+  const project = 'frameleaf-aaaaaaaaaaaa';
+  const operation = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  active.Name = `/${project}-import-${operation}`;
+  active.Config.Labels['app.frameleaf.manager.import'] = operation;
+  const calls: string[][] = [];
+  const docker = new Docker(async (_binary, args) => {
+    calls.push(args);
+    if (args[0] === 'ps') return active.Id;
+    if (args[0] === 'inspect') return JSON.stringify([active]);
+    if (args.includes('run')) return '{"status":"activated"}';
+    return '';
+  });
+  await assert.rejects(docker.importCommand('/fixture', project, operation, 'verify'), /import_still_running/);
+  assert.equal(
+    calls.some((args) => args[0] === 'rm' || args.includes('run')),
+    false,
+  );
+  await assert.rejects(
+    docker.importCommand('/fixture', project, operation, 'shell' as never),
+    /invalid_import_command/,
+  );
+  active.State.Running = false;
+  assert.deepEqual(await docker.importCommand('/fixture', project, operation, 'status'), { status: 'activated' });
+  const command = calls.find((args) => args.includes('run'))!;
+  assert.deepEqual(
+    command.slice(-6),
+    ['dist/main.js', 'frameleaf-admin', 'import-immich', 'status', '--config', '/run/frameleaf/import.json'].slice(-7),
+  );
 });

@@ -134,12 +134,12 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     await mkdir(bundle);
     await writeFile(
       join(bundle, 'docker-compose.yml'),
-      JSON.stringify({ services: { database: {}, redis: {}, 'immich-server': {}, 'immich-machine-learning': {} } }),
+      JSON.stringify({ services: { database: {}, 'immich-server': {}, 'immich-machine-learning': {} } }),
     );
     const image = 'ghcr.io/frameleaf/test@sha256:' + 'a'.repeat(64);
     const release = {
       directory: bundle,
-      nas: { images: { server: image, machineLearning: image, postgres: image, valkey: image } },
+      nas: { images: { server: image, machineLearning: image, postgres: image } },
     } as VerifiedRelease;
     const installation: Installation = {
       id: 'a'.repeat(12),
@@ -152,7 +152,11 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
       mayHaveWrittenMedia: false,
       databaseRoot: root,
       databasePath: root + '/frameleaf-aaaaaaaaaaaa-postgres-ABcd12',
-      mounts: [{ type: 'volume', source: 'immich-media', target: '/data', readOnly: false }],
+      mounts: [
+        { type: 'volume', source: 'immich-media', target: '/data', readOnly: false },
+        { type: 'bind', source: '/fixtures/encoded', target: '/data/encoded-video', readOnly: false },
+        { type: 'bind', source: '/fixtures/external', target: '/gallery/family', readOnly: true },
+      ],
     };
     await renderCompose(release, installation, 'disposable-password', stack);
     const compose = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
@@ -160,14 +164,45 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
       {
         type: 'bind',
         source: installation.databasePath,
-        target: '/var/lib/postgresql/data',
+        target: '/var/lib/postgresql',
         bind: { create_host_path: false },
       },
     ]);
     assert.equal(compose.volumes.database, undefined);
+    assert.equal(compose.services.redis, undefined);
+    assert.equal(compose.services['immich-server'].environment.REDIS_HOSTNAME, undefined);
+    assert.deepEqual(compose.services['immich-server'].depends_on, { database: { condition: 'service_healthy' } });
     assert.equal(compose.services['immich-server'].environment.IMMICH_CONFIG_FILE, undefined);
     assert.equal(compose.services['immich-server'].environment.FRAMELEAF_MANAGER_ML_ENABLED, 'false');
     assert.deepEqual(compose.volumes['source-media-0'], { external: true, name: 'immich-media' });
+    assert.deepEqual(compose.services['immich-server'].volumes.slice(0, 3), [
+      { type: 'volume', source: 'source-media-0', target: '/data', read_only: false, volume: { nocopy: true } },
+      {
+        type: 'bind',
+        source: '/fixtures/encoded',
+        target: '/data/encoded-video',
+        read_only: false,
+        bind: { create_host_path: false },
+      },
+      {
+        type: 'bind',
+        source: '/fixtures/external',
+        target: '/gallery/family',
+        read_only: true,
+        bind: { create_host_path: false },
+      },
+    ]);
+    await assert.rejects(
+      renderCompose(
+        {
+          ...release,
+          nas: { ...release.nas, images: { ...release.nas.images, postgres: 'postgres:19' } },
+        },
+        installation,
+        'disposable-password',
+        stack,
+      ),
+    );
     const application = {
       authority: 'file' as const,
       environment: { IMMICH_MEDIA_LOCATION: '/custom/library', TZ: 'America/Edmonton' },
@@ -180,6 +215,17 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     const settings = JSON.parse(await readFile(join(stack, 'application-settings.json'), 'utf8'));
     assert.deepEqual(settings.image, application.settings.image);
     assert.equal(settings.machineLearning.enabled, false);
+    const literalInstallation = {
+      ...installation,
+      databasePath: installation.databasePath + '-$tenant',
+      mounts: [{ type: 'bind' as const, source: '/fixtures/$tenant/${library}', target: '/data', readOnly: false }],
+    };
+    await renderCompose(release, literalInstallation, 'secret$VALUE${TOKEN}$$tail', stack);
+    const literal = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+    assert.equal(literal.services.database.volumes[0].source, installation.databasePath + '-$$tenant');
+    assert.equal(literal.services['immich-server'].volumes[0].source, '/fixtures/$$tenant/$${library}');
+    assert.equal(literal.services.database.environment.POSTGRES_PASSWORD, 'secret$$VALUE$${TOKEN}$$$$tail');
+    assert.equal(literal.services['immich-server'].environment.DB_PASSWORD, 'secret$$VALUE$${TOKEN}$$$$tail');
     await assert.rejects(
       renderCompose(release, installation, 'new-database-password', stack, {
         ...application,
