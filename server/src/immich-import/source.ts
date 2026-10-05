@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { CONTENT_TABLES, canonicalJson, digest, frozenSource } from 'src/immich-import/adapters.js';
+import { CONTENT_TABLES, PATH_COLUMNS, canonicalJson, digest, frozenSource } from 'src/immich-import/adapters.js';
+import { assertMediaPolicy, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
@@ -20,6 +21,7 @@ export class ImmichSource {
   }
 
   async preflight(): Promise<string> {
+    assertMediaPolicy(this.config.mediaRoots, this.config.media);
     if (!this.config.writersStopped || !this.config.sourceId || this.config.mediaRoots.length === 0) {
       throw new ImportRefused('OFFLINE_SOURCE_AND_MEDIA_MAP_REQUIRED');
     }
@@ -64,6 +66,34 @@ export class ImmichSource {
         for (const { row } of batch) {
           hash.update(canonicalJson(row));
           hash.update('\n');
+          if (this.config.media?.mode === 'manager-in-place') {
+            for (const column of PATH_COLUMNS[table] ?? []) {
+              const path = row[column];
+              if (typeof path !== 'string' || !path) continue;
+              hash.update(canonicalJson({ column, path }));
+              try {
+                await verifyMediaFile(
+                  path,
+                  this.config.mediaRoots,
+                  undefined,
+                  undefined,
+                  this.config.media,
+                  (sha256) => {
+                    hash.update(sha256);
+                  },
+                );
+              } catch (error) {
+                if (
+                  (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
+                  (table !== 'asset_file' && table !== 'person')
+                ) {
+                  throw error;
+                }
+                hash.update('missing-regenerable-output');
+              }
+              hash.update('\n');
+            }
+          }
         }
       }
     }

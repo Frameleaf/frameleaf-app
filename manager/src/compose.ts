@@ -61,11 +61,11 @@ export async function renderCompose(
   const template = load(await readFile(join(release.directory, 'docker-compose.yml'), 'utf8')) as any;
   if (
     !template?.services ||
-    !['database', 'redis', 'immich-server', 'immich-machine-learning'].every((k) => template.services[k])
+    !['database', 'immich-server', 'immich-machine-learning'].every((k) => template.services[k])
   )
     throw new Refusal('unsupported_compose_bundle');
-  const { server, machineLearning, postgres, valkey } = release.nas.images;
-  [server, machineLearning, postgres, valkey].forEach((i) => imageDigest.parse(i));
+  const { server, machineLearning, postgres } = release.nas.images;
+  [server, machineLearning, postgres].forEach((i) => imageDigest.parse(i));
   const volumes: Record<string, unknown> = { 'model-cache': {} };
   const media = installation.mounts.map((m, i) => composeMount(m, volumes, i));
   const labels = { 'app.frameleaf.manager': installation.id };
@@ -77,7 +77,6 @@ export async function renderCompose(
     DB_USERNAME: 'frameleaf',
     DB_DATABASE_NAME: 'frameleaf',
     DB_PASSWORD: password,
-    REDIS_HOSTNAME: 'redis',
     FRAMELEAF_MANAGER_INSTALLATION: installation.id,
     FRAMELEAF_MANAGER_ORIGIN: installation.origin,
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
@@ -129,7 +128,7 @@ export async function renderCompose(
         {
           type: 'bind',
           source: installation.databasePath,
-          target: '/var/lib/postgresql/data',
+          target: '/var/lib/postgresql',
           bind: { create_host_path: false },
         },
       ],
@@ -139,12 +138,6 @@ export async function renderCompose(
         timeout: '5s',
         retries: 60,
       },
-    },
-    redis: {
-      image: valkey,
-      labels,
-      restart: 'unless-stopped',
-      healthcheck: { test: ['CMD', 'valkey-cli', 'ping'], interval: '5s', timeout: '5s', retries: 30 },
     },
     'immich-server': {
       image: server,
@@ -159,7 +152,7 @@ export async function renderCompose(
           host_ip: process.env.MANAGER_BIND_ADDRESS ?? '127.0.0.1',
         },
       ],
-      depends_on: { database: { condition: 'service_healthy' }, redis: { condition: 'service_healthy' } },
+      depends_on: { database: { condition: 'service_healthy' } },
       stop_grace_period: '60s',
       healthcheck: template.services['immich-server'].healthcheck,
     },
@@ -175,7 +168,7 @@ export async function renderCompose(
   const compose = JSON.parse(
     JSON.stringify(
       { name: installation.project, services, volumes, networks: { default: { labels } } },
-      (_key, value) => (typeof value === 'string' ? value.replaceAll('$', '$$') : value),
+      (_key, value) => (typeof value === 'string' ? value.replaceAll('$', () => '$$') : value),
     ),
   );
   await atomicJson(join(directory, 'compose.json'), compose);

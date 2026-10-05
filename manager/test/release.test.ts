@@ -1,109 +1,141 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { Releases } from '../src/releases.js';
 const require = createRequire(import.meta.url);
-const { verifyNasCertification, NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cjs');
-const { hash, SOURCE, REPOSITORY } = require('../../.github/frameleaf-release.cjs');
+const { verifyBundle, verifyNasManifest } = require('../../.github/verify-release-bundle.cjs');
+const {
+  createBundle,
+  INSTALL_FILES,
+  VARIANTS,
+  REPOSITORY,
+  ATTESTATION_TYPE,
+} = require('../../.github/frameleaf-release.cjs');
 
-test('a selected migration family still requires an exact signed report and successful trusted qualification', async () => {
-  const server = 'ghcr.io/frameleaf/frameleaf-server@sha256:' + 'a'.repeat(64);
-  const postgres = 'ghcr.io/frameleaf/frameleaf-postgres:14@sha256:' + 'b'.repeat(64);
-  const sourceCommit = 'a'.repeat(40),
-    reportCommit = 'b'.repeat(40);
-  const release = {
-    tag: 'frameleaf-v3.2.0-1',
-    sourceCommit,
-    certifiedBuildRun: SOURCE + '/actions/runs/1',
-    images: [{ image: 'ghcr.io/frameleaf/frameleaf-server', digest: 'sha256:' + 'a'.repeat(64), suffix: '' }],
-    dependencies: [{ reference: postgres, digest: 'sha256:' + 'b'.repeat(64) }],
-  };
-  const nas = {
-    ...release,
-    schemaVersion: 1,
-    images: { server, postgres },
-    migration: { officialImmich: ['v3.1.0'], priorFrameleaf: [] },
-  };
-  const report = {
-    schemaVersion: 1,
-    environment: 'sanitized-production-shaped',
-    sourceVersion: 'v3.1.0',
-    targetServer: server,
-    targetPostgres: postgres,
-    sourceCommit,
-    run: SOURCE + '/actions/runs/2',
-    sourcePostgres: { major: 14, extensions: [{ name: 'vector', version: '0.8.1' }] },
-    checks: { preflight: 'passed', backupRestore: 'passed', migration: 'passed', rollback: 'passed' },
-  };
-  const body = JSON.stringify(report);
-  const receipts = {
-    officialImmich: [
-      {
-        version: 'v3.1.0',
-        evidence: { commit: reportCommit, path: 'packaging/nas/qualification/manager-import.json', digest: hash(body) },
-      },
-    ],
-  };
-  const request = async (endpoint: string) => {
-    if (endpoint.startsWith('contents/')) return { encoding: 'base64', content: Buffer.from(body).toString('base64') };
-    if (endpoint === 'actions/runs/2')
-      return {
-        head_sha: sourceCommit,
-        head_branch: 'fork/main',
-        head_repository: { full_name: REPOSITORY },
-        event: 'push',
-        status: 'completed',
-        conclusion: 'success',
-        path: '.github/workflows/nas-qualification.yml',
-      };
-    if (endpoint === 'actions/runs/2/jobs?filter=latest&per_page=100')
-      return {
-        total_count: 1,
-        jobs: [
-          {
-            name: 'NAS qualification (officialImmich, v3.1.0)',
-            conclusion: 'success',
-            steps: ['Preflight', 'Backup and restore', 'Migration', 'Rollback'].map((name) => ({
-              name,
-              conclusion: 'success',
-            })),
-          },
-        ],
-      };
-    throw new Error('Unexpected verification request');
-  };
-  const run = () =>
-    JSON.stringify({
-      payload: Buffer.from(
-        JSON.stringify({
-          predicateType: NAS_ATTESTATION_TYPE,
-          predicate: report,
-          subject: [{ name: 'ghcr.io/frameleaf/frameleaf-server', digest: { sha256: 'a'.repeat(64) } }],
-        }),
-      ).toString('base64'),
+test('Manager acquires exactly the v3 release assets and uses the authenticated verifier', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'manager-release-'));
+  const tag = 'frameleaf-v3.2.0-1';
+  const sourceCommit = 'a'.repeat(40);
+  const postgres = 'ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:' + 'c'.repeat(64);
+  try {
+    await mkdir(join(root, 'docker'));
+    for (const name of INSTALL_FILES)
+      await writeFile(
+        join(root, 'docker', name),
+        name === 'example.env'
+          ? 'FRAMELEAF_VERSION=release\n'
+          : name.startsWith('docker-compose')
+            ? [
+                'services:',
+                '  immich-server:',
+                '    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
+                '  immich-machine-learning:',
+                '    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
+                '  database:',
+                `    image: ${postgres}`,
+                '',
+              ].join('\n')
+            : 'services: {}\n',
+      );
+    const manifest = {
+      schemaVersion: 3,
+      repository: REPOSITORY,
+      tag,
+      sourceCommit,
+      buildRun: 'https://github.com/Frameleaf/frameleaf-app/actions/runs/123',
+      dependencies: [{ reference: postgres.split('@')[0], digest: 'sha256:' + 'c'.repeat(64) }],
+      images: VARIANTS.map((spec: any) => ({
+        image: `ghcr.io/frameleaf/${spec.image}`,
+        suffix: spec.suffix,
+        platforms: spec.platforms,
+        digest: 'sha256:' + 'b'.repeat(64),
+        sourceCommit,
+      })),
+    };
+    const bundle = join(root, 'bundle');
+    await createBundle(bundle, root, tag, manifest);
+    const nas = JSON.parse(await readFile(join(bundle, 'nas-manifest.json'), 'utf8'));
+    const authenticated: string[] = [];
+    const run = (_binary: string, args: string[]) => {
+      const reference = args.at(-1)!;
+      authenticated.push(args[0]);
+      if (args[0] === 'verify') return '{}';
+      const [name, digest] = reference.split('@');
+      return JSON.stringify({
+        payload: Buffer.from(
+          JSON.stringify({
+            predicateType: ATTESTATION_TYPE,
+            predicate: manifest,
+            subject: [{ name, digest: { sha256: digest.slice(7) } }],
+          }),
+        ).toString('base64'),
+      });
+    };
+    const request = async () => ({
+      head_sha: sourceCommit,
+      head_branch: 'fork/main',
+      head_repository: { full_name: REPOSITORY },
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      path: '.github/workflows/docker.yml',
     });
-  const options = { request, run, families: ['officialImmich'] };
-  const result = await verifyNasCertification(nas, release, receipts, options);
-  assert.deepEqual(result, [{ family: 'officialImmich', version: 'v3.1.0', report }]);
-  // NAS callers retain their original both-family requirement.
-  await assert.rejects(verifyNasCertification(nas, release, receipts, { request, run }), /priorFrameleaf/);
-  for (const families of [[], ['anything'], ['officialImmich', 'officialImmich']])
-    await assert.rejects(verifyNasCertification(nas, release, receipts, { ...options, families }), /migration family/);
-  await assert.rejects(verifyNasCertification(nas, release, { officialImmich: [] }, options), /receipts differ/);
-  await assert.rejects(
-    verifyNasCertification(nas, release, receipts, {
-      ...options,
-      run: () => {
-        throw new Error('signature refused');
-      },
-    }),
-    /signature refused/,
-  );
-  await assert.rejects(
-    verifyNasCertification(nas, release, receipts, {
-      ...options,
-      request: async (endpoint: string) =>
-        endpoint.includes('/jobs?') ? { total_count: 0, jobs: [] } : request(endpoint),
-    }),
-    /successful migration qualification steps/,
-  );
+    assert.equal((await verifyBundle(bundle, tag, { authenticate: true, run, request })).tag, tag);
+    assert.equal(authenticated.filter((x) => x === 'verify').length, VARIANTS.length);
+    assert.equal(authenticated.filter((x) => x === 'verify-attestation').length, VARIANTS.length);
+    await assert.rejects(
+      verifyBundle(bundle, tag, {
+        authenticate: true,
+        run: () => {
+          throw new Error('signature refused');
+        },
+        request,
+      }),
+      /signature refused/,
+    );
+    await assert.rejects(
+      verifyBundle(bundle, tag, {
+        authenticate: true,
+        run,
+        request: async () => ({ ...(await request()), head_sha: 'd'.repeat(40) }),
+      }),
+      /Build provenance is not trusted/,
+    );
+    assert.throws(() => verifyNasManifest({ ...nas, schemaVersion: 1 }, manifest));
+    for (const image of ['postgres:19', postgres.replace(':19beta4-pgvector0.8.7', ':14')])
+      assert.throws(() => verifyNasManifest({ ...nas, images: { ...nas.images, postgres: image } }, manifest));
+
+    const names = [...INSTALL_FILES, 'nas-manifest.json', 'release-manifest.json', 'SHA256SUMS'];
+    const assets = await Promise.all(
+      names.map(async (name: string) => ({
+        name,
+        size: (await readFile(join(bundle, name))).length,
+        browser_download_url: `https://github.com/Frameleaf/frameleaf-app/releases/download/${tag}/${name}`,
+      })),
+    );
+    const downloaded: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string) => {
+      if (url.includes('api.github.com'))
+        return new Response(JSON.stringify({ assets, draft: false, prerelease: false }));
+      const name = url.split('/').at(-1)!;
+      downloaded.push(name);
+      return new Response(new Uint8Array(await readFile(join(bundle, name))));
+    });
+    const releases = new Releases(join(root, 'acquired'), 'seed');
+    // The worker's process boundary remains production-only; the same shared verifier is exercised above.
+    t.mock.method(releases, 'verify', async (directory: string, expectedTag: string) => ({
+      directory,
+      nas,
+      release: await verifyBundle(directory, expectedTag, { authenticate: true, run, request }),
+    }));
+    assert.equal((await releases.acquire(tag)).nas.schemaVersion, 3);
+    assert.deepEqual(downloaded, names);
+    assert.equal(nas.migration, undefined);
+    assert.equal(nas.images.valkey, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

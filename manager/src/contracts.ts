@@ -87,13 +87,18 @@ export type Installation = {
   databasePath: string;
 };
 export type NasManifest = {
-  schemaVersion: number;
+  schemaVersion: 3;
   tag: string;
   sourceCommit: string;
-  certifiedBuildRun: string;
-  images: { server: string; machineLearning: string; postgres: string; valkey: string };
+  buildRun: string;
+  images: {
+    server: string;
+    machineLearning: string;
+    machineLearningVariants: Record<string, string>;
+    postgres: string;
+  };
   platforms: string[];
-  migration: { officialImmich: string[]; priorFrameleaf: string[] };
+  minimumVersions: { synologyDsm: string; truenas: string; unraid: string };
 };
 export function publicSource(source: Source) {
   const { database, environment, settings, restart, ...safe } = source;
