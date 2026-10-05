@@ -29,6 +29,7 @@ export const JobRunStateSchema = z.enum([
 export const JobRunReasonSchema = z.enum([
   'worker_unavailable',
   'no_dispatch_backlog',
+  'first_setup_pending',
   'dependency_unavailable',
   'dependency_wait',
   'dependency_failed',

@@ -36,6 +36,7 @@ export type RunState =
 export type RunReason =
   | 'worker_unavailable'
   | 'no_dispatch_backlog'
+  | 'first_setup_pending'
   | 'dependency_unavailable'
   | 'dependency_wait'
   | 'dependency_failed'
@@ -174,6 +175,7 @@ type Aggregate = Omit<RunRead, keyof RunCounts | 'state' | 'reasons' | 'noDispat
   workerAvailable: boolean;
   noDispatchBacklog: boolean;
   librarySourceAttention?: boolean;
+  managerSetupPending?: boolean;
 };
 
 export const runReasons = (row: {
@@ -187,12 +189,15 @@ export const runReasons = (row: {
   enumerationDone: boolean;
   unfinishedStages: number;
   librarySourceAttention?: boolean;
+  managerSetupPending?: boolean;
 }): RunReason[] => {
   const reasons: RunReason[] = [];
   if (!row.enumerationDone) {
     reasons.push('enumerating');
   }
-  if ((!row.enumerationDone || row.unfinishedStages > 0) && !row.workerAvailable) {
+  const setupPending = row.managerSetupPending && (!row.enumerationDone || row.unfinishedStages > 0);
+  if (setupPending) reasons.push('first_setup_pending');
+  if ((!row.enumerationDone || row.unfinishedStages > 0) && !row.workerAvailable && !setupPending) {
     reasons.push('worker_unavailable');
   }
   if (row.noDispatchBacklog) {
@@ -235,6 +240,7 @@ export const runState = (
     | 'stageTotals'
     | 'readyStages'
     | 'librarySourceAttention'
+    | 'managerSetupPending'
   >,
 ): RunState => {
   const stages = row.stageTotals;
@@ -251,6 +257,7 @@ export const runState = (
   if (stages.active > 0) {
     return 'running';
   }
+  if (row.managerSetupPending) return 'blocked';
   if (stages.paused > 0 && stages.waiting + stages.retrying + stages.delayed === 0) {
     return 'paused';
   }
@@ -275,12 +282,18 @@ export const runState = (
   return 'running';
 };
 
-export async function listRuns(db: Kysely<any>, take: number, skip: number): Promise<RunRead[]> {
+export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
   const { rows } = await sql<Aggregate>`with runs as (
       select r.id, r.kind, r."createdAt", r."finishedAt", (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
         exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-          where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention') "librarySourceAttention"
+          where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention') "librarySourceAttention",
+        coalesce(r.kind='immich-import-derived'
+          and r.selection->'managerSetup'->>'installation' ~ '^[a-f0-9]{12}$'
+          and nullif(r.selection->'managerSetup'->>'operationId','') is not null
+          and r.selection->'managerSetup' ? 'startedAt'
+          and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending"
       from job_run r
+      ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
       order by (r."finishedAt" is not null), r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
       select s.* from stages s
@@ -309,7 +322,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
       coalesce(stage."dependencyFailed", false) "dependencyFailed",
       latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
-      coalesce(stage.ready > 0 and stage.active = 0 and
+      coalesce(stage.ready > 0 and stage.active = 0 and not r."managerSetupPending" and
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
