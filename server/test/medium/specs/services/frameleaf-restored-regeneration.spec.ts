@@ -101,10 +101,20 @@ it('releases a restored prepared import once with a real admin and effective set
     expect((await run()).selection.managerSetup.startedAt).toBeNull();
     await sql`UPDATE job_run SET "enumerationDone"=true WHERE id=${id}::uuid`.execute(db);
     // Reconstruction before workers preserves held memberships and original start authority.
+    const safeJob = randomUUID(), unsafeJob = randomUUID();
+    await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs",state,attempt,"retryBaseAttempt",token,"leaseExpiresAt")
+      VALUES (${safeJob}::uuid,'restore-regeneration',${JobName.AssetExtractMetadata},'{}',true,false,1000,'active',1,0,
+        ${randomUUID()}::uuid,now() + interval '1 minute'),
+      (${unsafeJob}::uuid,'restore-regeneration',${JobName.IntegrityDeleteReports},
+        ${JSON.stringify({ operationId: randomUUID() })}::text::jsonb,false,false,1000,'pending',0,0,NULL,NULL)`.execute(db);
     const repository = new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
     await repository.resetTransientExecutionState();
     await repository.resetTransientExecutionState(); // Lost offline acknowledgement, no new budget.
     expect(await selections()).toEqual(captured);
+    expect((await sql`SELECT state,attempt,"retryBaseAttempt",token,"leaseExpiresAt" FROM job WHERE id=${safeJob}::uuid`.execute(db)).rows)
+      .toEqual([{ state: 'pending', attempt: 1, retryBaseAttempt: 0, token: null, leaseExpiresAt: null }]);
+    expect((await sql`SELECT state,token,"leaseExpiresAt" FROM job WHERE id=${unsafeJob}::uuid`.execute(db)).rows)
+      .toEqual([{ state: 'needs_attention', token: null, leaseExpiresAt: null }]);
     await Promise.all([make().begin(), make().begin()]);
     const marker = (await run()).selection.managerSetup;
     expect(marker).toMatchObject({ installation: original, operationId, startedAt: expect.any(String) });
@@ -116,7 +126,7 @@ it('releases a restored prepared import once with a real admin and effective set
     expect((await run()).selection.managerSetup).toEqual(marker);
     expect((await make().status()).regeneration?.runId).toBe(id);
     expect((await sql`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows).toEqual([{ count: 1 }]);
-    expect((await sql`SELECT count(*)::int AS count FROM job`.execute(db)).rows).toEqual([{ count: 0 }]);
+    expect((await sql`SELECT count(*)::int AS count FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([{ count: 0 }]);
     expect((await make().status({ user: { isAdmin: false } } as AuthDto)).regeneration).toBeNull();
     // An entirely cancelled restored run stays cancelled and never gets a false start receipt.
     await sql`UPDATE job_selection SET state='cancelled' WHERE "runId"=${id}::uuid`.execute(db);
