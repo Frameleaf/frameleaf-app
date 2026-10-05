@@ -143,6 +143,7 @@ describe(LibraryScanService.name, () => {
           snapshot: { libraryId: library.id, trigger: 'manual' },
         }),
         expect.objectContaining({ key: 'libraryId', value: library.id }),
+        undefined,
       );
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanRun, data: {} });
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
@@ -236,6 +237,7 @@ describe(LibraryScanService.name, () => {
       expect(operations.createUnlessActive).toHaveBeenCalledWith(
         expect.objectContaining({ snapshot: { libraryId: library.id, trigger: 'automatic' } }),
         expect.anything(),
+        undefined,
       );
     });
 
@@ -464,7 +466,7 @@ describe(LibraryScanService.name, () => {
         expect.any(String),
         'token',
         expect.objectContaining({ errorCode: 'library_scan_interrupted' }),
-        { retry: false },
+        { retry: false, executor: undefined },
       );
     });
 
@@ -525,9 +527,15 @@ describe(LibraryScanService.name, () => {
       expect(mocks.asset.createAll).toHaveBeenCalledWith([
         expect.objectContaining({ originalPath: '/mnt/photos/new.jpg', libraryId: library.id, isExternal: true }),
       ]);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.SidecarCheck, data: { id: expect.any(String), source: 'upload' } },
-      ]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.job.commitLibraryScanBatch).toHaveBeenCalledWith(
+        { operationId: operation.id, libraryId: library.id },
+        2,
+        expect.any(Function),
+        false,
+      );
+      const accepted = await mocks.job.commitLibraryScanBatch.mock.results[0].value;
+      expect(accepted.value).toHaveLength(1);
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { isOffline: true, deletedAt: expect.any(Date) });
       expect(mocks.library.update).toHaveBeenCalledWith(library.id, { refreshedAt: expect.any(Date) });
       expect(operations.setBulkResult).toHaveBeenLastCalledWith(
@@ -536,8 +544,41 @@ describe(LibraryScanService.name, () => {
         expect.objectContaining({
           result: expect.objectContaining({ phase: 'done', added: 1, crawled: 2, checked: 1, offlined: 1 }),
         }),
+        undefined,
+        true,
       );
       expect(operations.complete).toHaveBeenCalledWith(operation.id, 'token', { resultAssetId: null });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('accepts a wide source in 250 item checkpoints and closes only after all crawl and check pages', async () => {
+      const page = Array.from({ length: 1000 }, (_, i) => `/mnt/photos/asset-${i}.jpg`);
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(page));
+      const accepted: Array<{ examined: number; sources: number; close: boolean }> = [];
+      mocks.job.commitLibraryScanBatch.mockImplementation(async (_identity, examined, work, close) => {
+        const batch = await work(undefined as never);
+        accepted.push({ examined, sources: batch.assetIds.length, close: close ?? false });
+        expect(examined).toBeLessThanOrEqual(250);
+        expect(batch.assetIds.length).toBeLessThanOrEqual(250);
+        return batch.value;
+      });
+      await sut.run(operationOf(), 'token');
+      expect(accepted).toEqual([
+        ...Array.from({ length: 4 }, () => ({ examined: 250, sources: 250, close: false })),
+        { examined: 0, sources: 0, close: true },
+      ]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.asset.detectOfflineExternalAssets).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a committed source when an asset notification fails, without replaying creation', async () => {
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/new.jpg']));
+      mocks.event.emit.mockRejectedValueOnce(new Error('notification unavailable'));
+      await sut.run(operationOf(), 'token');
+      expect(mocks.asset.createAll).toHaveBeenCalledTimes(1);
+      expect(mocks.job.commitLibraryScanBatch).toHaveBeenCalledTimes(2);
+      expect(operations.complete).toHaveBeenCalledTimes(1);
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
@@ -563,10 +604,15 @@ describe(LibraryScanService.name, () => {
 
       await sut.run(operationOf(), 'token');
 
-      expect(operations.fail).toHaveBeenCalledWith(expect.any(String), 'token', {
-        error: expect.stringContaining('/mnt/photos: Path does not exist'),
-        errorCode: 'library_source_unavailable',
-      });
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        {
+          error: expect.stringContaining('/mnt/photos: Path does not exist'),
+          errorCode: 'library_source_unavailable',
+        },
+        { retry: false, executor: undefined },
+      );
       expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
       expect(mocks.asset.detectOfflineExternalAssets).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
@@ -578,10 +624,15 @@ describe(LibraryScanService.name, () => {
 
       await sut.run(operationOf(), 'token');
 
-      expect(operations.fail).toHaveBeenCalledWith(expect.any(String), 'token', {
-        error: expect.stringContaining('Lacking read permission'),
-        errorCode: 'library_source_unavailable',
-      });
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        {
+          error: expect.stringContaining('Lacking read permission'),
+          errorCode: 'library_source_unavailable',
+        },
+        { retry: false, executor: undefined },
+      );
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
@@ -593,10 +644,15 @@ describe(LibraryScanService.name, () => {
       await sut.run(operationOf(), 'token');
 
       expect(mocks.library.countOnlineAssetsUnder).toHaveBeenCalledWith(library.id, '/mnt/photos');
-      expect(operations.fail).toHaveBeenCalledWith(expect.any(String), 'token', {
-        error: expect.stringContaining('/mnt/photos has no files but 120 indexed items'),
-        errorCode: 'library_source_empty',
-      });
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        {
+          error: expect.stringContaining('/mnt/photos has no files but 120 indexed items'),
+          errorCode: 'library_source_empty',
+        },
+        { retry: false, executor: undefined },
+      );
       expect(mocks.assetJob.getForSyncAssets).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
@@ -620,6 +676,7 @@ describe(LibraryScanService.name, () => {
         expect.any(String),
         'token',
         expect.objectContaining({ errorCode: 'library_source_unavailable' }),
+        { retry: false, executor: undefined },
       );
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
@@ -659,6 +716,7 @@ describe(LibraryScanService.name, () => {
         expect.any(String),
         'token',
         expect.objectContaining({ errorCode: 'library_source_empty' }),
+        { retry: false, executor: undefined },
       );
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
@@ -790,6 +848,7 @@ describe(LibraryScanService.name, () => {
         expect.any(String),
         'token',
         expect.objectContaining({ errorCode: 'library_scan_owner_inactive' }),
+        { retry: false, executor: undefined },
       );
       expect(mocks.asset.createAll).not.toHaveBeenCalled();
     });

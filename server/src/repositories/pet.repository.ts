@@ -5,7 +5,7 @@ import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { JobName, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
-import { selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
+import { selectionItemContext, selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -802,14 +802,15 @@ export class PetRepository {
   }
   // ---------------------------------------------------------- recognition runs (FL-58)
   async getRun(ownerId: string, requestedQueueRunId?: string): Promise<PetRecognitionRun | undefined> {
+    const itemContext = selectionItemContext(sql<string>`r.id`);
     // Only retained terminal evidence may settle a live domain run. Queue retries, pauses and
     // dependency deferrals remain authoritative; this read never enqueues or resets anything.
     await sql`update public.pet_recognition_run p set
-      status = case when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id
+      status = case when exists (select 1 ${itemContext} where i."runId" = r.id
         and ${selectionItemState} in ('failed', 'needs_attention', 'blocked')) then ${PetRecognitionRunStatus.Failed}
-        when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id and ${selectionItemState} = 'cancelled')
+        when exists (select 1 ${itemContext} where i."runId" = r.id and ${selectionItemState} = 'cancelled')
           then ${PetRecognitionRunStatus.Cancelled} else ${PetRecognitionRunStatus.Completed} end,
-      error = case when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id
+      error = case when exists (select 1 ${itemContext} where i."runId" = r.id
         and ${selectionItemState} in ('failed', 'needs_attention', 'blocked'))
           then 'Pet recognition queue run ended with errors; review the job run before retrying.' else null end,
       "finishedAt" = r."finishedAt", "updatedAt" = clock_timestamp()

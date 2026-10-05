@@ -7,6 +7,15 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     setup: vitest.fn(),
     ensureProducerRun: vitest.fn().mockResolvedValue(undefined),
     prepareCheckpoint: vitest.fn().mockImplementation((_key, prepare) => Promise.try(prepare)),
+    settleTerminalLibrarySources: vi.fn().mockResolvedValue(0),
+    prepareLibraryScanSource: vitest
+      .fn()
+      .mockImplementation(async (_libraryId, create) => (await create(undefined as never)).value),
+    ensureLibraryScanSource: vitest.fn().mockResolvedValue(undefined),
+    settleLibraryScanSource: vitest.fn().mockImplementation((_id, update) => update(undefined as never)),
+    commitLibraryScanBatch: vitest
+      .fn()
+      .mockImplementation(async (_identity, _examined, work) => (await work(undefined as never)).value),
     guardAssetSource: vitest.fn().mockResolvedValue(undefined),
     pinDestination: vitest.fn().mockImplementation((_workload, destinationId) => Promise.resolve(destinationId)),
     collectFollowups: vitest.fn().mockImplementation((action) => action()),
