@@ -9,6 +9,7 @@ import {
   tagAssets,
   upsertTags,
 } from '@immich/sdk';
+import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
@@ -34,11 +35,16 @@ describe('/tags', () => {
     userAsset = await utils.createAsset(user.accessToken);
   });
 
-  beforeEach(async () => {
-    //  tagging assets eventually triggers metadata extraction which can impact other tests
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
-    await utils.resetDatabase(['tag']);
-  });
+  // One metadata wait, the existing 8s reset, and 30s for requests and cancellation cleanup.
+  const tagResetTimeout = process.env.CI ? 98_000 : 48_000;
+  beforeEach(
+    withApiAssetReadiness(tagResetTimeout, async (signal) => {
+      //  tagging assets eventually triggers metadata extraction which can impact other tests
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', undefined, signal);
+      await utils.resetDatabase(['tag'], signal);
+    }),
+    tagResetTimeout,
+  );
 
   describe('POST /tags', () => {
     it('should work with tag.create', async () => {
