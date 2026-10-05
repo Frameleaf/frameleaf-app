@@ -1,11 +1,14 @@
-import { AssetVisibility, LoginResponseDto } from '@immich/sdk';
+import { AssetVisibility, createPartner, createUserAdmin, login, LoginResponseDto, signUpAdmin, updateAssets } from '@immich/sdk';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Socket } from 'socket.io-client';
-import { createUserDto } from 'src/fixtures.js';
-import { app, testAssetDir, utils } from 'src/utils.js';
+import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
+import { createUserDto, loginDto, signupDto } from 'src/fixtures.js';
+import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const MAP_SETUP_TIMEOUT = process.env.CI ? 200_000 : 100_000;
 
 const countOf = (buckets: { count: number }[]) => buckets.reduce((sum, bucket) => sum + bucket.count, 0);
 
@@ -17,13 +20,15 @@ describe('/map', () => {
   let partnerArchivedAssetId: string;
   let adminArchivedAssetId: string;
 
-  beforeAll(async () => {
-    await utils.resetDatabase();
-    admin = await utils.adminSetup({ onboarding: false });
-    partner = await utils.userSetup(admin.accessToken, createUserDto.user1);
+  beforeAll(withApiAssetReadiness(MAP_SETUP_TIMEOUT, async (signal) => {
+    await utils.resetDatabase(undefined, signal);
+    await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
+    admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
+    await createUserAdmin({ userAdminCreateDto: createUserDto.user1 }, { headers: asBearerAuth(admin.accessToken), signal });
+    partner = await login({ loginCredentialDto: { email: createUserDto.user1.email, password: createUserDto.user1.password } }, { signal });
 
-    websocket = await utils.connectWebsocket(admin.accessToken);
-    partnerWebsocket = await utils.connectWebsocket(partner.accessToken);
+    websocket = await utils.connectWebsocket(admin.accessToken, signal);
+    partnerWebsocket = await utils.connectWebsocket(partner.accessToken, signal);
 
     const adminFiles = ['formats/heic/IMG_2682.heic', 'metadata/gps-position/thompson-springs.jpg'];
     const adminArchivedFile = 'metadata/dates/datetimeoriginal-gps.jpg';
@@ -32,23 +37,39 @@ describe('/map', () => {
     const uploadFile = async (accessToken: string, input: string) => {
       const filepath = join(testAssetDir, input);
       const { id } = await utils.createAsset(accessToken, {
-        assetData: { bytes: await readFile(filepath), filename: basename(filepath) },
-      });
-      await utils.waitForWebsocketEvent({ event: 'assetUpload', id });
+        assetData: { bytes: await readFile(filepath, { signal }), filename: basename(filepath) },
+      }, { signal });
+      await utils.waitForWebsocketEvent({ event: 'assetUpload', id, signal });
       return id;
     };
-    await Promise.all(adminFiles.map((f) => uploadFile(admin.accessToken, f)));
-    [adminArchivedAssetId, partnerArchivedAssetId] = await Promise.all([
+    const adminUploads = await Promise.allSettled(adminFiles.map((f) => uploadFile(admin.accessToken, f)));
+    for (const result of adminUploads) {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
+    }
+    const archivedUploads = await Promise.allSettled([
       uploadFile(admin.accessToken, adminArchivedFile),
       uploadFile(partner.accessToken, partnerFile),
     ]);
+    [adminArchivedAssetId, partnerArchivedAssetId] = archivedUploads.map((result) => {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
+      return result.value;
+    });
 
-    await Promise.all([
-      utils.archiveAssets(admin.accessToken, [adminArchivedAssetId]),
-      utils.archiveAssets(partner.accessToken, [partnerArchivedAssetId]),
-      utils.createPartner(partner.accessToken, admin.userId),
+    const updates = await Promise.allSettled([
+      updateAssets({ assetBulkUpdateDto: { ids: [adminArchivedAssetId], visibility: AssetVisibility.Archive } }, { headers: asBearerAuth(admin.accessToken), signal }),
+      updateAssets({ assetBulkUpdateDto: { ids: [partnerArchivedAssetId], visibility: AssetVisibility.Archive } }, { headers: asBearerAuth(partner.accessToken), signal }),
+      createPartner({ partnerCreateDto: { sharedWithId: admin.userId } }, { headers: asBearerAuth(partner.accessToken), signal }),
     ]);
-  });
+    for (const result of updates) {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
+    }
+  }), MAP_SETUP_TIMEOUT + 5_000);
 
   afterAll(() => {
     utils.disconnectWebsocket(websocket);

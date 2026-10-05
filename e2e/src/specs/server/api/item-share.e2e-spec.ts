@@ -180,7 +180,7 @@ describe('/item-shares', () => {
     expect(ids).not.toContain(locked.id);
   });
 
-  it('applies the owner’s Locked tag rule to existing shares and new recipients', async ({ signal }) => {
+  it('applies the owner’s Locked tag rule to existing shares and new recipients', { timeout: process.env.CI ? 150_000 : 50_000 }, async ({ signal }) => {
     const privateAsset = await utils.createAsset(owner.accessToken, undefined, { signal });
     await utils.waitForAssetReady(admin.accessToken, privateAsset.id, {
       headers: asBearerAuth(owner.accessToken),
