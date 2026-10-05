@@ -1,13 +1,14 @@
 import { type ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { Server } from 'socket.io';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { closeSharedServicePool, createSharedServicePool, trackPoolClients } from 'src/utils/shared-service-pool.js';
 
 /** Uses the canonical PG19 medium-test template. No test performs application startup DDL. */
@@ -44,33 +45,56 @@ describe('PostgreSQL shared services', () => {
   });
   afterEach(async () => {
     vi.restoreAllMocks();
-    if (child && child.exitCode === null && child.signalCode === null) {
-      const exited = once(child, 'exit');
-      const timer = setTimeout(() => child?.kill('SIGKILL'), 5000);
-      child.send({ type: 'stop' });
+    try {
+      const peer = child;
+      if (peer && peer.exitCode === null && peer.signalCode === null) {
+        const exited = once(peer, 'exit');
+        const timer = setTimeout(() => peer.kill('SIGKILL'), 5000);
+        try {
+          if (peer.connected) {
+            peer.send({ type: 'stop' }, (error) => {
+              if (error) peer.kill('SIGTERM');
+            });
+          } else {
+            peer.kill('SIGTERM');
+          }
+          await exited;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    } finally {
+      child = undefined;
       try {
-        await exited;
+        if (server) {
+          await server.close();
+          expect(server.httpServer.listening).toBe(false);
+        }
       } finally {
-        clearTimeout(timer);
+        server = undefined;
+        try {
+          if (transport) {
+            await transport.close();
+            expect(transport.pool.totalCount).toBe(0);
+          }
+        } finally {
+          transport = undefined;
+          await Promise.all(repositories.map((repository) => repository.onModuleDestroy()));
+          await database.query(
+            'TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease, public.socket_io_attachments, public.frameleaf_websocket_worker',
+          );
+        }
       }
     }
-    child = undefined;
-    if (server) {
-      await new Promise<void>((resolve) => void server!.close(() => resolve()));
-      server = undefined;
-    }
-    await transport?.close();
-    transport = undefined;
-    await Promise.all(repositories.map((repository) => repository.onModuleDestroy()));
-    await database.query(
-      'TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease, public.socket_io_attachments, public.frameleaf_websocket_worker',
-    );
   }, 15_000);
   afterAll(async () => {
     await database?.end();
     if (admin) {
-      await admin.query(`DROP DATABASE "${databaseName}"`);
-      await admin.end();
+      try {
+        await admin.query(`DROP DATABASE "${databaseName}"`);
+      } finally {
+        await admin.end();
+      }
     }
   });
 
@@ -78,6 +102,15 @@ describe('PostgreSQL shared services', () => {
     const repository = new RateLimitRepository(config);
     repositories.push(repository);
     return repository;
+  };
+
+  const socketServer = async () => {
+    const http = createServer();
+    server = new Server(http, { transports: ['websocket'] });
+    const listening = once(http, 'listening');
+    http.listen(0, '127.0.0.1');
+    await listening;
+    return server;
   };
 
   it('increments one fixed window atomically across independent workers and releases without underflow', async () => {
@@ -95,6 +128,73 @@ describe('PostgreSQL shared services', () => {
     );
     await workers[1].release('counter');
     await expect(workers[2].hit('counter', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
+  });
+
+  it('reports the remaining window when an older waiting hit loses row creation to a newer hit', async () => {
+    const blocker = await database.connect();
+    let locked = false;
+    let pending: Promise<{ hit?: RateLimitHit; error?: unknown }> | undefined;
+    try {
+      await database.query(`CREATE FUNCTION public.wait_for_rate_winner() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.key = 'ordered-counter' AND pg_try_advisory_xact_lock(333, 1) THEN
+            PERFORM pg_advisory_xact_lock(333, 2);
+          END IF;
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER wait_for_rate_winner BEFORE INSERT ON public.frameleaf_rate_limit
+          FOR EACH ROW EXECUTE FUNCTION public.wait_for_rate_winner()`);
+      await blocker.query('BEGIN');
+      locked = true;
+      await blocker.query('SELECT pg_advisory_xact_lock(333, 2)');
+      // The first request owns (333, 1) and waits at (333, 2). The later request bypasses that barrier.
+      pending = admission()
+        .hit('ordered-counter', 600)
+        .then((hit) => ({ hit }))
+        .catch((error: unknown) => ({ error }));
+      const pid = await vi.waitFor(
+        async () => {
+          const waiting = await database.query<{ pid: number }>(`SELECT l.pid FROM pg_locks l
+            JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE l.locktype = 'advisory' AND l.classid = 333 AND l.objid = 2 AND l.objsubid = 2
+              AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND NOT l.granted AND a.application_name = 'frameleaf:admission'`);
+          expect(waiting.rows).toHaveLength(1);
+          return waiting.rows[0].pid;
+        },
+        { timeout: 1000, interval: 10 },
+      );
+      await expect(admission().hit('ordered-counter', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
+      const winner = await database.query<{ expiresAt: string; startedAfterWaiter: boolean }>(
+        `SELECT expires_at::text AS "expiresAt",
+           expires_at - interval '600 seconds' > a.query_start AS "startedAfterWaiter"
+         FROM public.frameleaf_rate_limit CROSS JOIN pg_stat_activity a
+         WHERE key = 'ordered-counter' AND a.pid = $1`,
+        [pid],
+      );
+      expect(winner.rows).toHaveLength(1);
+      expect(winner.rows[0].startedAfterWaiter).toBe(true);
+      await blocker.query('COMMIT');
+      locked = false;
+      const result = await pending;
+      expect(result.error).toBeUndefined();
+      expect(result.hit?.count).toBe(2);
+      expect(result.hit?.resetSeconds).toBeGreaterThanOrEqual(598);
+      expect(result.hit?.resetSeconds).toBeLessThanOrEqual(600);
+      const stored = await database.query(`SELECT count, expires_at::text AS "expiresAt"
+        FROM public.frameleaf_rate_limit WHERE key = 'ordered-counter'`);
+      expect(stored.rows).toEqual([{ count: 2, expiresAt: winner.rows[0].expiresAt }]);
+    } finally {
+      try {
+        if (locked) await blocker.query('ROLLBACK');
+      } finally {
+        blocker.release();
+        await pending;
+        await database.query(`DROP TRIGGER IF EXISTS wait_for_rate_winner ON public.frameleaf_rate_limit;
+          DROP FUNCTION IF EXISTS public.wait_for_rate_winner()`);
+      }
+    }
   });
 
   it('admits exactly one upload token, survives claimant exit, and fences stale token release after expiry', async () => {
@@ -151,7 +251,7 @@ describe('PostgreSQL shared services', () => {
   }, 5000);
 
   it('delivers rooms, binary attachments, channel messages and restart ACKs across OS processes and cleans stale attachments', async () => {
-    server = new Server();
+    server = await socketServer();
     server.on('AppRestart', (_state, ack) => ack('ok'));
     transport = new PostgresSocketTransport(config);
     await transport.attach(server);
@@ -211,7 +311,7 @@ describe('PostgreSQL shared services', () => {
   }, 35_000);
 
   it('rejects restart discovery with no live worker instead of accepting an empty ACK set', async () => {
-    server = new Server();
+    server = await socketServer();
     transport = new PostgresSocketTransport(config);
     await transport.attach(server, false);
     await expect(transport.discoverWorkers(server)).rejects.toThrow('No live websocket workers');
