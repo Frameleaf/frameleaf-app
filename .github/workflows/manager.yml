@@ -24,11 +24,6 @@ concurrency:
   group: manager-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  server-integration:
-    uses: ./.github/workflows/fork-integration.yml
-    permissions:
-      contents: read
-      packages: read
   manager:
     name: Manager (${{ matrix.architecture }})
     runs-on: ${{ matrix.runner }}
