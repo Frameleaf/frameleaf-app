@@ -10,6 +10,10 @@ import { selectionLineageSource } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueIntent } from 'src/queue/types.js';
 import { down, up } from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
+import {
+  down as downLibrarySources,
+  up as upLibrarySources,
+} from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -457,14 +461,20 @@ describe('durable selected-job descendant lineage', () => {
   it('preserves provable live ancestry across offline down/up replay', async () => {
     const f = await lateShare();
     await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
+    // Offline replay reverses the installed dependency order before restoring it forwards.
+    await downLibrarySources(db);
     await down(db);
     expect(
       (await sql`select stage from job_run_item where "runId" = ${f.runs[1]}::uuid and stage = 'child'`.execute(db))
         .rows,
     ).toEqual([{ stage: 'child' }]);
     await up(db);
+    await upLibrarySources(db);
     await f.drain();
     expect((await sql`select id from job_selection_lineage`.execute(db)).rows).toHaveLength(1);
+    expect((await sql`select "libraryChildOrigin" from job_selection_lineage`.execute(db)).rows).toEqual([
+      { libraryChildOrigin: false },
+    ]);
     expect((await f.store.listRuns(10, 0)).find((run) => run.id === f.runs[1])).toMatchObject({
       finishedAt: null,
       stageTotals: { total: 3, waiting: 1 },
@@ -476,6 +486,7 @@ describe('durable selected-job descendant lineage', () => {
     await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
     const child = await f.claimChild('child');
     await f.store.complete(child, []);
+    await downLibrarySources(db);
     await down(db);
     await sql`update job_run_item set "jobId" = null where "jobId" = ${child.id}::uuid`.execute(db);
     await sql`delete from job where id = ${child.id}::uuid`.execute(db);
@@ -485,6 +496,7 @@ describe('durable selected-job descendant lineage', () => {
   it('refuses to infer pre-protocol ancestry merely from equal root keys', async () => {
     const f = await lateShare();
     await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
+    await downLibrarySources(db);
     await down(db);
     await sql`update job set "parentId" = null where name = 'child'`.execute(db);
     await expect(db.transaction().execute(up)).rejects.toThrow('without retained parent-job edges');
@@ -513,6 +525,7 @@ describe('durable selected-job descendant lineage', () => {
     await f.store.complete(other, [{ ...sharedChild, parentId: other.id }]);
     expect((await sql`select id from job where name = 'child'`.execute(db)).rows).toHaveLength(1);
     expect((await sql`select "selectionId" from job_selection_lineage`.execute(db)).rows).toHaveLength(2);
+    await downLibrarySources(db);
     await down(db);
     await expect(db.transaction().execute(up)).rejects.toThrow('without retained parent-job edges');
     expect((await sql`select to_regclass('job_selection_lineage') relation`.execute(db)).rows).toEqual([
@@ -929,9 +942,9 @@ describe('durable selected-job descendant lineage', () => {
     expect(await f.store.claim(f.childQueue, f.worker)).toEqual([]);
     expect(await f.store.complete(f.prior, [])).toBe(false);
     await f.store.recoverExpired();
-    expect(
-      (await sql`select token from job_attempt where "jobId" = ${f.prior.id}::uuid`.execute(db)).rows,
-    ).toHaveLength(1);
+    expect((await sql`select token from job_attempt where "jobId" = ${f.prior.id}::uuid`.execute(db)).rows).toEqual([
+      { token: f.prior.token },
+    ]);
   });
 
   it.each(['publish', 'supersede', 'clear', 'restore', 'unsafe'] as const)(
@@ -1159,21 +1172,54 @@ describe('durable selected-job descendant lineage', () => {
         'Index Name'?: string;
         Plans?: Plan[];
       };
-      const examined = (p: Plan): number =>
-        (p['Relation Name'] ? (p['Actual Rows'] + (p['Rows Removed by Filter'] ?? 0)) * p['Actual Loops'] : 0) +
-        (p.Plans ?? []).reduce((total, child) => total + examined(child), 0);
+      const examined = (p: Plan, relation?: string): number =>
+        (p['Relation Name'] && (!relation || p['Relation Name'] === relation)
+          ? (p['Actual Rows'] + (p['Rows Removed by Filter'] ?? 0)) * p['Actual Loops']
+          : 0) + (p.Plans ?? []).reduce((total, child) => total + examined(child, relation), 0);
+      // Migration160 adds a header check excluding library-child sources. Keep its work separate
+      // from the unchanged <=250 lineage rows plus <=250 source-item lookups, never hide a scan.
+      expect((await sql`select count(*)::int count from job_selection`.execute(controlDb)).rows).toEqual([
+        { count: 1 },
+      ]);
+      const assertBoundedPlan = (plan: Plan) => {
+        const descendantRows = examined(plan, 'job_selection_lineage') + examined(plan, 'job_run_item');
+        const selectionRows = examined(plan, 'job_selection');
+        expect(descendantRows).toBeLessThanOrEqual(500);
+        expect(selectionRows).toBeLessThanOrEqual(1);
+        expect(examined(plan)).toBe(descendantRows + selectionRows);
+        return { descendantRows, selectionRows };
+      };
+      // Calibrate the counter against filtered rows and repeated lookups: a broad lineage scan
+      // still exceeds the descendant budget even when it emits only one row.
+      expect(
+        examined(
+          {
+            'Relation Name': 'job_selection_lineage',
+            'Actual Rows': 1,
+            'Rows Removed by Filter': 250_000,
+            'Actual Loops': 2,
+          },
+          'job_selection_lineage',
+        ),
+      ).toBe(500_002);
       const { rows: plans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
         ${selectionLineageSource(selection.id, '499750')}`.execute(controlDb);
-      const tailRows = examined(plans[0]['QUERY PLAN'][0].Plan);
-      expect(tailRows).toBeLessThanOrEqual(500);
+      const { descendantRows: tailRows, selectionRows: tailSelectionRows } = assertBoundedPlan(
+        plans[0]['QUERY PLAN'][0].Plan,
+      );
       expect(JSON.stringify(plans)).toContain('Index Scan');
       const { rows: firstPlans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
         ${selectionLineageSource(selection.id, '0')}`.execute(controlDb);
-      const firstRows = examined(firstPlans[0]['QUERY PLAN'][0].Plan);
-      expect(firstRows).toBeLessThanOrEqual(500);
+      const { descendantRows: firstRows, selectionRows: firstSelectionRows } = assertBoundedPlan(
+        firstPlans[0]['QUERY PLAN'][0].Plan,
+      );
       const { rows: emptyPlans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
         ${selectionLineageSource(selection.id, '500000')}`.execute(controlDb);
-      expect(examined(emptyPlans[0]['QUERY PLAN'][0].Plan)).toBe(0);
+      const { descendantRows: emptyTailRows, selectionRows: emptyTailSelectionRows } = assertBoundedPlan(
+        emptyPlans[0]['QUERY PLAN'][0].Plan,
+      );
+      expect(emptyTailRows).toBe(0);
+      expect(emptyTailSelectionRows).toBe(0);
       const {
         rows: [before],
       } = await sql<{ count: number }>`select count(*)::int count from job where queue = ${f.queue}`.execute(db);
@@ -1259,7 +1305,7 @@ describe('durable selected-job descendant lineage', () => {
       ).toEqual([{ itemKey: '000-future', state: 'pending' }]);
       expect((await sql`select id from job where name = 'future'`.execute(db)).rows).toHaveLength(1);
       process.stdout.write(
-        `${JSON.stringify({ retainedDescendants: 500_000, pages, maxCopied, maxPageMs, maxControlMs, firstRows, tailRows, emptyTailRows: examined(emptyPlans[0]['QUERY PLAN'][0].Plan), copyMs: performance.now() - started, statementTimeoutMs: 5000, lockTimeoutMs: 3000, mediaExecutions: 0 })}\n`,
+        `${JSON.stringify({ retainedDescendants: 500_000, pages, maxCopied, maxPageMs, maxControlMs, firstRows, tailRows, emptyTailRows, firstSelectionRows, tailSelectionRows, emptyTailSelectionRows, copyMs: performance.now() - started, statementTimeoutMs: 5000, lockTimeoutMs: 3000, mediaExecutions: 0 })}\n`,
       );
     } finally {
       await controlDb.destroy();

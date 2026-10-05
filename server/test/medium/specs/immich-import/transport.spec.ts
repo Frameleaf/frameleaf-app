@@ -146,8 +146,8 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       const f = await start();
       await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
       const writer = f.connect(f.sourceName, false);
+      const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
       try {
-        const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
         // The reader must refuse this live session even though its least-privilege role cannot
         // see the other role's backend type. Granting monitoring rights would mask the failure.
         expect(
@@ -164,6 +164,19 @@ describe('offline Immich import over PostgreSQL source and destination connectio
         await writer.close();
         f.connections.delete(writer);
       }
+      // Driver close observes the local socket, not the server's backend removal. Prove that
+      // this exact session has disappeared before asking the importer to admit the source once.
+      // Keep the least-privilege reader: no monitoring grants, backend termination or import retries.
+      await vi.waitFor(
+        async () => {
+          expect(
+            await f.source.db.query('SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND pid=$1', [
+              session.pid,
+            ]),
+          ).toEqual([]);
+        },
+        { timeout: 2000, interval: 50 },
+      );
       await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
       expect(await f.source.db.query('SELECT name FROM public."user" WHERE id=$1', [f.owner])).toEqual([
         { name: 'Owner' },
