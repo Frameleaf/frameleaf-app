@@ -166,24 +166,29 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       const alias = join(f.directory, 'alias');
       await symlink(source, alias);
       switch (kind) {
-        case 'same root':
+        case 'same root': {
           f.config.mediaRoots = [{ source, target: source }];
           break;
-        case 'symlink alias':
+        }
+        case 'symlink alias': {
           f.config.mediaRoots = [{ source, target: alias }];
           break;
-        case 'nested target':
+        }
+        case 'nested target': {
           f.config.mediaRoots = [{ source, target: nested }];
           break;
-        case 'nested source':
+        }
+        case 'nested source': {
           f.config.mediaRoots = [{ source: nested, target: source }];
           break;
-        case 'cross-map nesting':
+        }
+        case 'cross-map nesting': {
           f.config.mediaRoots = [
             { source, target },
             { source: target, target: nested },
           ];
           break;
+        }
       }
       await expect(f.importer().run()).rejects.toThrow('INDEPENDENT_COPY');
       await expectFresh(f);
