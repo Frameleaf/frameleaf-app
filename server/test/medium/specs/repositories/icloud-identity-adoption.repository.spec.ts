@@ -3883,7 +3883,7 @@ describe('iCloud exact identity adoption', () => {
             const workSignal = AbortSignal.any([signal, controller.signal]);
             let staging: ICloudScheduledStagingService | undefined;
             let validation: Awaited<ReturnType<ICloudScheduledStagingService['validate']>> | undefined;
-            let failed = false;
+            let cleanupFailure: { error: unknown } | undefined;
             const started = performance.now();
             let phase = 'setup';
             const logAbort = () =>
@@ -3896,7 +3896,13 @@ describe('iCloud exact identity adoption', () => {
             signal.addEventListener('abort', logAbort, { once: true });
             try {
               await operationExecution.run(
-                { signal: workSignal, settled: false, completed: new Map(), progress: () => {}, settle: async () => {} },
+                {
+                  signal: workSignal,
+                  settled: false,
+                  completed: new Map(),
+                  progress: () => {},
+                  settle: async () => {},
+                },
                 async () => {
                   workSignal.throwIfAborted();
                   const fixture = await createStageFixture(protectedOriginal);
@@ -3915,7 +3921,9 @@ describe('iCloud exact identity adoption', () => {
                     sourceResourceId: f.resource.id,
                     grantGeneration: Number(fixture.cohort.grantGeneration),
                   });
-                  expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow('icloud_session_invalid');
+                  expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow(
+                    'icloud_session_invalid',
+                  );
                   phase = 'resume';
                   expect((await repository.read(input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
                   expect(await staging.download(input, workSignal)).toEqual(receipt);
@@ -3925,12 +3933,17 @@ describe('iCloud exact identity adoption', () => {
                   validation = await staging.validate(input, workSignal);
                   phase = 'validation-result';
                   const outcome = await validation.result;
-                  expect(outcome).toMatchObject({ status: 'validated', verified: { status: 'healthy', sha256: f.sha256 } });
+                  expect(outcome).toMatchObject({
+                    status: 'validated',
+                    verified: { status: 'healthy', sha256: f.sha256 },
+                  });
                   phase = 'validation-settlement';
                   await validation.settled;
                   phase = 'evidence';
                   expect(
-                    (await readdir(join(fixture.root, input.resource.id))).filter((name) => name.startsWith('.validation-')),
+                    (await readdir(join(fixture.root, input.resource.id))).filter((name) =>
+                      name.startsWith('.validation-'),
+                    ),
                   ).toEqual([]);
                   expect(withSession).not.toHaveBeenCalled();
                   const { rows } = await sql<{ result: string; verifiedAt: Date | null }>`SELECT result,"verifiedAt"
@@ -3945,9 +3958,6 @@ describe('iCloud exact identity adoption', () => {
                   ).toEqual([]);
                 },
               );
-            } catch (error) {
-              failed = true;
-              throw error;
             } finally {
               phase = 'cleanup';
               try {
@@ -3959,12 +3969,13 @@ describe('iCloud exact identity adoption', () => {
                   await staging?.onShutdown();
                 }
               } catch (error) {
-                if (!failed && !signal.aborted) throw error;
+                cleanupFailure = { error };
               } finally {
                 signal.removeEventListener('abort', logAbort);
                 settled.resolve();
               }
             }
+            if (cleanupFailure && !signal.aborted) throw cleanupFailure.error;
           },
         );
 
