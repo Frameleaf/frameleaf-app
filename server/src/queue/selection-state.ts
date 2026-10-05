@@ -189,11 +189,14 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
 
 /** A sufficient unfinished proof shared by the cheap publication preflight and full settlement.
  * A retained pending alias whose detailed job is already terminal is not live execution.
+ * Keep both existence checks correlated: flattening them can scan all retained terminal jobs
+ * for every publication instead of stopping at one live item and its indexed job identity.
  */
 export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
   exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
     and (i."selectionId" is null or i."jobId" is not null)
-    and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')))`;
+    and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')
+      limit 1 offset 0) limit 1 offset 0)`;
 
 /** Probe per-run headers first. Separate frozen admission from derived library ownership so
  * PostgreSQL can use the sparse pending-manifest index without filtering retained terminal rows.
