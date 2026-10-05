@@ -55,6 +55,7 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     if (!Number.isSafeInteger(windowSeconds) || windowSeconds < 1) {
       throw new Error('Rate limit window must be a positive integer');
     }
+    // A newer statement can create the window while this one waits; report time remaining after that wait.
     const { rows } = await this.getClient().query<{ count: number; resetSeconds: number }>(
       `INSERT INTO public.frameleaf_rate_limit AS counter (key, count, expires_at)
        VALUES ($1, 1, statement_timestamp() + make_interval(secs => $2))
@@ -62,7 +63,7 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
          count = CASE WHEN counter.expires_at <= statement_timestamp() THEN 1 ELSE counter.count + 1 END,
          expires_at = CASE WHEN counter.expires_at <= statement_timestamp()
            THEN statement_timestamp() + make_interval(secs => $2) ELSE counter.expires_at END
-       RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM expires_at - statement_timestamp())))::integer AS "resetSeconds"`,
+       RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM expires_at - clock_timestamp())))::integer AS "resetSeconds"`,
       [key, windowSeconds],
     );
     this.cleanExpired();
