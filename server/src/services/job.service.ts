@@ -10,7 +10,13 @@ import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
-import { isFacialRecognitionEnabled, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
+import {
+  isFacialRecognitionEnabled,
+  isImageDescriptionEnabled,
+  isNsfwDetectionEnabled,
+  isOcrEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -354,11 +360,17 @@ export class JobService extends BaseService {
           break;
         }
 
-        const jobs: JobItem[] = [
-          { name: JobName.SmartSearch, data: item.data },
-          { name: JobName.AssetDetectFaces, data: item.data },
-          { name: JobName.Ocr, data: item.data },
-        ];
+        const { machineLearning } = await this.getConfig({ withCache: true });
+        const jobs: JobItem[] = [];
+        if (isSmartSearchEnabled(machineLearning)) {
+          jobs.push({ name: JobName.SmartSearch, data: item.data });
+        }
+        if (isFacialRecognitionEnabled(machineLearning)) {
+          jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
+        }
+        if (isOcrEnabled(machineLearning)) {
+          jobs.push({ name: JobName.Ocr, data: item.data });
+        }
 
         if (asset.type === AssetType.Video) {
           // Videos are scored for Best Photos too (via sampled frames).
@@ -371,7 +383,6 @@ export class JobService extends BaseService {
         if (asset.type === AssetType.Image) {
           jobs.push({ name: JobName.BestPhotosScore, data: item.data });
 
-          const { machineLearning } = await this.getConfig({ withCache: true });
           if (isImageDescriptionEnabled(machineLearning)) {
             jobs.push({ name: JobName.ImageDescription, data: item.data });
           } else if (isNsfwDetectionEnabled(machineLearning)) {
