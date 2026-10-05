@@ -49,13 +49,17 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install script test dependencies
-        run: pnpm --filter @immich/scripts --filter 'immich...' install --frozen-lockfile
+        run: pnpm --filter @immich/scripts --filter 'immich...' --filter 'immich-e2e...' install --frozen-lockfile
       - name: Run unit tests
         run: pnpm --filter @immich/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
       - name: Validate canonical restore fixture mutations
         run: node --test e2e/src/backup-fixture.test.mjs
+      - name: Validate E2E request and reset ownership
+        run: node --test --test-concurrency=1 e2e/src/harness-wait.test.mjs e2e/src/harness-reset.test.mjs e2e/src/harness-http.test.mjs
+      - name: Validate E2E test lifecycle ownership
+        run: pnpm --filter immich-e2e exec vitest run --config vitest.harness.config.ts
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate Frameleaf variable and command names
