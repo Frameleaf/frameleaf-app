@@ -107,7 +107,11 @@ export const tempDir = tmpdir();
 export const asBearerAuth = (accessToken: string) => ({ Authorization: `Bearer ${accessToken}` });
 export const asKeyAuth = (key: string) => ({ 'x-api-key': key });
 export const immichCli = (args: string[]) =>
-  executeCommand('pnpm', ['exec', 'immich', '-d', `/${tempDir}/immich/`, ...args], { cwd: '../packages/cli' }).promise;
+  executeCommand(
+    process.execPath,
+    [resolve(import.meta.dirname, '../../packages/cli/bin/immich'), '-d', `/${tempDir}/immich/`, ...args],
+    { cwd: '../packages/cli' },
+  ).promise;
 export const dockerExec = (args: string[]) =>
   executeCommand('docker', ['exec', '-i', 'immich-e2e-server', '/bin/bash', '-c', args.join(' ')]);
 export const immichAdmin = (args: string[]) => dockerExec([`frameleaf-admin ${args.join(' ')}`]);

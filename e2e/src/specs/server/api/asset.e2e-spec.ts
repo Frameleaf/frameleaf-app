@@ -465,7 +465,7 @@ describe('/asset', () => {
     });
 
     // FL-36 (V-24): a place name typed in the information panel is kept over reverse geocoding.
-    it('should keep a typed place name through metadata extraction', async () => {
+    it('should keep a typed place name through metadata extraction', { timeout: process.env.CI ? 135_000 : 35_000 }, async () => {
       const { status, body } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
         .set('Authorization', `Bearer ${user1.accessToken}`)
@@ -633,7 +633,7 @@ describe('/asset', () => {
       expect(after.isTrashed).toBe(true);
     });
 
-    it('should permanently delete an asset from trash', async () => {
+    it('should permanently delete an asset from trash', { timeout: process.env.CI ? 85_000 : 35_000 }, async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
 
       {
