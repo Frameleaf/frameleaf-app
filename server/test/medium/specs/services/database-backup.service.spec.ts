@@ -25,7 +25,7 @@ import { getKyselyDB } from 'test/utils.js';
  * neither a backup nor a `.tmp` file. `pg_dump` comes from PATH (any version that can read the test
  * database) in place of the image's `/usr/lib/postgresql/<major>/bin/pg_dump`.
  */
-const ROUTINE = /^immich-db-backup-\d{8}T\d{6}-v[\d.]+-pg[\d.]+\.sql\.gz$/;
+const ROUTINE = /^frameleaf-db-backup-\d{8}T\d{6}-v[\d.]+-pg\d+(?:\.\d+)*(?:(?:alpha|beta|rc)\d+)?\.sql\.gz$/;
 
 const currentDatabase = async (db: Kysely<DB>) =>
   (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows[0]!.name;
