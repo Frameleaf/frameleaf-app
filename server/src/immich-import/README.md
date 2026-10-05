@@ -81,8 +81,22 @@ Invoke `frameleaf-admin import-immich preflight --config /private/import.json`,
 then `run` (or `resume` for a partial journal), then `verify`, in the offline
 container. The existing admin module initializes the canonical PostgreSQL 19
 schema with inactive imports allowed, without starting ordinary API/workers.
-Verification durably dispatches derived work and activates the journal before
-Manager starts those workers. `status` requires only `DB_URL` and reports the
+Verification retains all five derived-work snapshots and activates the journal before
+Manager starts the app. In a Manager `new_import`, all five snapshots commit held in
+`enumerating` state, including empty snapshots. Their stable fingerprint-derived run
+records `selection.managerSetup` with installation and operation identity,
+`preparedAt` after the complete manifest audit, and `startedAt: null`. No worker can
+admit this retained work before first setup explicitly releases it. The setup service
+requires an admin, the chosen and validated initial ML settings, the matching activated
+journal, and all five captured stages; it stamps `startedAt` and releases the held
+snapshots atomically. A resumed import preserves that start and never revives cancelled
+or attention-required stages.
+
+The importer additionally requires `FRAMELEAF_MANAGER_ORIGIN=new_import`,
+`FRAMELEAF_MANAGER_INSTALLATION` matching the 12-hex-character deployment identity,
+and `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID` matching the validated config. The
+configuration digest must match the import journal. Environment markers alone cannot
+authorize a Manager hold or retrofit one onto previously admitted work. `status` requires only `DB_URL` and reports the
 journal state for restart reconciliation. An omitted media policy or explicit
 `{"mode":"independent-copy"}` preserves the unmanaged independent-copy contract.
 
