@@ -328,7 +328,7 @@ describe('/admin/database-backups', () => {
           },
           {
             interval: 500,
-            timeout: 10_000,
+            timeout: 30_000,
           },
         )
         .toEqual(

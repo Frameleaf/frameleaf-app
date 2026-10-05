@@ -6,6 +6,7 @@ import { settleMaintenanceCleanup } from './maintenance-cleanup.ts';
 
 const dump = `-- PostgreSQL database dump
 -- Dumped from database version 19beta4
+SELECT pg_catalog.set_config('search_path', '', false);
 CREATE TABLE public.frameleaf_migrations (name text);
 CREATE TABLE public."user" ("isAdmin" boolean);
 INSERT INTO public."user" VALUES (true);
@@ -20,7 +21,10 @@ test('SQL corruption preserves the canonical header, ledger, source data and com
 
 test('missing-admin control changes only the post-restore health condition', () => {
   const result = gunzipSync(amendBackupFixture(gzipSync(dump), 'empty')).toString();
-  assert.equal(result.replace('UPDATE public."user" SET "isAdmin" = false;\n\n', ''), dump);
+  const amendment = 'SET LOCAL search_path = pg_catalog, public;\nUPDATE public."user" SET "isAdmin" = false;';
+  assert.equal(result.replace(`${amendment}\n\n`, ''), dump);
+  assert.ok(result.indexOf(amendment) > result.indexOf("pg_catalog.set_config('search_path', '', false)"));
+  assert.ok(result.indexOf(amendment) < result.indexOf('-- PostgreSQL database dump complete'));
 });
 
 test('refuses broken gzip and noncanonical source fixtures instead of inventing restore headers', () => {
