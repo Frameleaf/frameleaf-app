@@ -7,6 +7,7 @@ import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DatabaseService } from 'src/services/database.service.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
@@ -36,6 +37,8 @@ export async function bootstrap() {
 
   logger.setContext('Bootstrap');
   app.useLogger(logger);
+  // Gateway attachment precedes AppBootstrap during listen(), so migrate and check import activation first.
+  await app.get(DatabaseService).initialize();
   app.useWebSocketAdapter(new WebSocketAdapter(app));
 
   await (host ? app.listen(0, host) : app.listen(0));

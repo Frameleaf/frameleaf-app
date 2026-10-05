@@ -12,6 +12,7 @@ import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ApiService } from 'src/services/api.service.js';
+import { DatabaseService } from 'src/services/database.service.js';
 import { useSwagger } from 'src/utils/misc.js';
 
 export async function configureExpress(
@@ -68,6 +69,11 @@ export async function configureExpress(
   }
 
   app.setGlobalPrefix('api', { exclude: excludePaths });
+  // Nest initializes gateways before AppBootstrap; their PostgreSQL transport needs the schema first.
+  // Maintenance deliberately remains available without the normal database/import activation gate.
+  if (ssr === ApiService) {
+    await app.get(DatabaseService).initialize();
+  }
   app.useWebSocketAdapter(new WebSocketAdapter(app));
 
   useSwagger(app, { write: configRepository.isDev() && permitSwaggerWrite });
