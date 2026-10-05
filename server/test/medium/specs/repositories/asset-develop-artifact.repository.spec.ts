@@ -45,9 +45,16 @@ const stored = async (assetId: string) =>
     ).rows[0].count,
   );
 const refusals = (results: PromiseSettledResult<boolean>[]) =>
-  results.flatMap((result) =>
-    result.status === 'rejected' ? [(result.reason as BadRequestException).getResponse() as { code: string }] : [],
-  );
+  results.flatMap((result) => {
+    if (result.status === 'fulfilled') {
+      return [];
+    }
+    // Database/admission failures must surface themselves, never count as a quota refusal.
+    if (!(result.reason instanceof BadRequestException)) {
+      throw result.reason;
+    }
+    return [result.reason.getResponse() as { code: string }];
+  });
 
 it('installs feature tables in the real canonical baseline', async () => {
   await expectCanonicalTables(db, ['asset_develop_artifact', 'asset_develop_revision']);
@@ -195,27 +202,36 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
   expect(unlink).not.toHaveBeenCalled();
 });
 
-// many uploads at once, each waiting its turn on the photo's lock: slow on a loaded runner
-it('holds the per-photo limit when more uploads than it allows arrive at once (FL-304)', async () => {
+it('holds the per-photo limit when concurrent uploads race for the remaining slots (FL-304)', async () => {
   const { ctx, sut } = setup();
   const { user } = await ctx.newUser();
   const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const artifact = (index: number) => {
+    const id = index.toString(16).padStart(64, '0');
+    return {
+      assetId: asset.id,
+      id,
+      ownerId: user.id,
+      kind: 'mask' as const,
+      path: `/thumbs/${asset.id}_develop_artifact_${id}.png`,
+      bytes: 100,
+      width: 10,
+      height: 10,
+    };
+  };
+  // Exercise the quota race below the separate database admission cap. There are still 80 distinct
+  // uploads in total, with 20 competing for four remaining slots and 16 exact business refusals.
+  const remaining = 4;
+  const existing = DEVELOP_ARTIFACT_PER_ASSET - remaining;
+  for (let index = 0; index < existing; index++) {
+    await expect(sut.addArtifact(artifact(index))).resolves.toBe(true);
+  }
   const results = await Promise.allSettled(
-    Array.from({ length: DEVELOP_ARTIFACT_PER_ASSET + 16 }, (_, index) => {
-      const id = index.toString(16).padStart(64, '0');
-      return sut.addArtifact({
-        assetId: asset.id,
-        id,
-        ownerId: user.id,
-        kind: 'mask',
-        path: `/thumbs/${asset.id}_develop_artifact_${id}.png`,
-        bytes: 100,
-        width: 10,
-        height: 10,
-      });
-    }),
+    Array.from({ length: remaining + 16 }, (_, index) => sut.addArtifact(artifact(existing + index))),
   );
-  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(DEVELOP_ARTIFACT_PER_ASSET);
+  expect(results.filter((result) => result.status === 'fulfilled')).toEqual(
+    Array.from({ length: remaining }, () => ({ status: 'fulfilled', value: true })),
+  );
   expect(refusals(results)).toHaveLength(16);
   expect(refusals(results).every(({ code }) => code === 'develop_artifact_limit')).toBe(true);
   await expect(stored(asset.id)).resolves.toBe(DEVELOP_ARTIFACT_PER_ASSET);

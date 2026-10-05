@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -154,13 +154,19 @@ describe('Locked album covers (FL-53)', () => {
       const { album: untouched } = await ctx.newAlbum({ ownerId: cover.ownerId, albumThumbnailAssetId: plain.id }, [
         plain.id,
       ]);
-      // data written before FL-53 and FL-34: the cover moved into the upstream Locked folder, kept its
-      // albums' covers, and the newer photo was in the folder too
+      // Seed the canonical lock without the writer's cover release, leaving stale references for
+      // this repair to find. The newer photo already has its own canonical lock from the fixture.
       await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', 'in', [cover.id, alreadyLocked.id])
+        .insertInto('asset_lock')
+        .values({ assetId: cover.id, reason: AssetLockReason.Marked, lockedBy: null })
         .execute();
+      await expect(
+        ctx.database
+          .selectFrom('asset_lock')
+          .select('assetId')
+          .where('assetId', 'in', [cover.id, alreadyLocked.id])
+          .execute(),
+      ).resolves.toHaveLength(2);
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(cover.id);
 
       await releaseLockedCoverReferences(ctx.database, [cover.id, alreadyLocked.id]);

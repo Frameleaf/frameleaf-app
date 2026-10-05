@@ -75,34 +75,39 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     await sql`UPDATE public.icloud_resource SET source=source || ${source}::jsonb WHERE id=${id}::uuid`.execute(db);
   }
 
-  it('uses native unlocked EXIF updates after extraction and does not invent caption/location/timezone', async () => {
-    const ctx = await setup();
-    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
-    expect(await target(ctx.assetId)).toEqual({
-      isFavorite: true,
-      visibility: 'locked',
-      fileCreatedAt: new Date('2020-03-04T12:34:56Z'),
-    });
-    // the lock's follow-up (new face thumbnails, replaced profile pictures) runs once it commits (FL-34)
-    expect(events.emit).toHaveBeenCalledWith('AssetLockAll', { assetIds: [ctx.assetId], userId: ctx.ownerId });
-    expect(
-      await first(
-        sql`SELECT "dateTimeOriginal","lockedProperties",description,latitude,longitude,"timeZone" FROM asset_exif WHERE "assetId"=${ctx.assetId}::uuid`,
-      ),
-    ).toEqual({
-      dateTimeOriginal: new Date('2020-03-04T12:34:56Z'),
-      lockedProperties: [],
-      description: 'local caption',
-      latitude: 51,
-      longitude: -114,
-      timeZone: null,
-    });
-    expect(await baseline(ctx.resourceId)).toMatchObject({
-      status: 'applied',
-      applied: { isFavorite: true, visibility: 'locked', fileCreatedAt: '2020-03-04T12:34:56.000Z' },
-    });
-    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
-  });
+  it.each([{ lockedProperties: null }, { lockedProperties: [] }])(
+    'uses native unlocked EXIF updates without inventing caption/location/timezone (locks=$lockedProperties)',
+    async ({ lockedProperties }) => {
+      const ctx = await setup();
+      // Both canonical representations mean unlocked; reconciliation must preserve the stored value.
+      await db.updateTable('asset_exif').set({ lockedProperties }).where('assetId', '=', ctx.assetId).execute();
+      expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+      expect(await target(ctx.assetId)).toEqual({
+        isFavorite: true,
+        visibility: 'locked',
+        fileCreatedAt: new Date('2020-03-04T12:34:56Z'),
+      });
+      // the lock's follow-up (new face thumbnails, replaced profile pictures) runs once it commits (FL-34)
+      expect(events.emit).toHaveBeenCalledWith('AssetLockAll', { assetIds: [ctx.assetId], userId: ctx.ownerId });
+      expect(
+        await first(
+          sql`SELECT "dateTimeOriginal","lockedProperties",description,latitude,longitude,"timeZone" FROM asset_exif WHERE "assetId"=${ctx.assetId}::uuid`,
+        ),
+      ).toEqual({
+        dateTimeOriginal: new Date('2020-03-04T12:34:56Z'),
+        lockedProperties,
+        description: 'local caption',
+        latitude: 51,
+        longitude: -114,
+        timeZone: null,
+      });
+      expect(await baseline(ctx.resourceId)).toMatchObject({
+        status: 'applied',
+        applied: { isFavorite: true, visibility: 'locked', fileCreatedAt: '2020-03-04T12:34:56.000Z' },
+      });
+      expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+    },
+  );
 
   it('removes a photo it moves into the Locked folder as the cover of every album (FL-53)', async () => {
     const ctx = await setup();
