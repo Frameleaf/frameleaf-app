@@ -1,0 +1,16 @@
+diff --git a/src/connection.js b/src/connection.js
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -254,3 +254,3 @@
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket ? socket.write(chunk, fn) : false
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+diff --git a/cjs/src/connection.js b/cjs/src/connection.js
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -254,3 +254,3 @@
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket ? socket.write(chunk, fn) : false
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)

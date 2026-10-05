@@ -1,5 +1,5 @@
 import { createPostgres } from '@frameleaf/sql-tools';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Stats } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -22,6 +22,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newRandomImage } from 'test/utils.js';
 
@@ -423,12 +424,17 @@ describe('sidecar writes (FL-195)', () => {
     // Each holder of the per-asset sidecar lock runs its queries on the lock's own connection. Had it
     // needed a second one, two writes on a two-connection pool would wait for each other forever.
     const suffix = `fl195_${Math.random().toString(36).slice(2, 7)}`;
-    await getKyselyDB(suffix);
-    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
-    url.pathname = `/immich_${suffix}`;
+    const clone = await getKyselyDB(suffix);
+    let database: string;
+    try {
+      database = (await sql<{ name: string }>`SELECT current_database() AS name`.execute(clone)).rows[0].name;
+    } finally {
+      await clone.destroy();
+    }
+    const url = canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, database);
     const narrow = new Kysely<DB>({
       dialect: new PostgresJSDialect({
-        postgres: createPostgres({ maxConnections: 2, connection: { connectionType: 'url', url: url.href } }),
+        postgres: createPostgres({ maxConnections: 2, connection: { connectionType: 'url', url } }),
       }),
     });
     try {
