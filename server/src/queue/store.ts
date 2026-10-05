@@ -22,7 +22,12 @@ import {
   recordSelectionLineage,
   supersedeSelectionLineage,
 } from 'src/queue/selection-lineage.js';
-import { libraryRunPending, unfinishedQueueItems, unfinishedRunItems } from 'src/queue/selection-state.js';
+import {
+  libraryRunPending,
+  unfinishedAdmittedRunItems,
+  unfinishedQueueItems,
+  unfinishedRunItems,
+} from 'src/queue/selection-state.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -35,6 +40,13 @@ import {
 } from 'src/queue/types.js';
 
 type Executor = Kysely<any> | Transaction<any>;
+
+/** Shared with the plan gate so the complete entitlement predicate remains measured even when
+ * an admitted-live preflight can avoid executing it during ordinary publication.
+ */
+export const settleRunQuery = (runIds: string[]) => sql`update job_run r set "finishedAt" = now()
+  where r.id = any(${runIds}::uuid[]) and "enumerationDone" and "finishedAt" is null
+    and not (${unfinishedRunItems(sql<string>`r.id`)})`;
 
 /**
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
@@ -708,9 +720,13 @@ export class SqlQueueStore {
 
   private async settleRuns(tx: Executor, runIds: string[]) {
     if (runIds.length === 0) return;
-    await sql`update job_run r set "finishedAt" = now()
-      where r.id = any(${[...new Set(runIds)]}::uuid[]) and "enumerationDone" and "finishedAt" is null
-      and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(tx);
+    // A positive live-work proof only postpones settlement. Every other case still evaluates
+    // the complete cold-selection, cancelled-origin, retained-owner and library lineage rules.
+    const { rows: candidates } = await sql<{
+      id: string;
+    }>`select candidate.id from unnest(${[...new Set(runIds)]}::uuid[]) candidate(id)
+      where not (${unfinishedAdmittedRunItems(sql<string>`candidate.id`)})`.execute(tx);
+    if (candidates.length > 0) await settleRunQuery(candidates.map(({ id }) => id)).execute(tx);
   }
 
   async setConcurrency(name: string, concurrency: number) {

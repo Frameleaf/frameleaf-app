@@ -2,6 +2,8 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { pruneQueueHistory } from 'src/queue/retention.js';
+import { unfinishedAdmittedRunItems, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QUEUE_TIMING, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -238,6 +240,59 @@ describe('durable bounded selection manifests', () => {
       total: 1,
       waiting: 1,
       stageTotals: { total: 2, waiting: 2 },
+    });
+  });
+
+  it('keeps cold and delayed work unfinished, then resolves stale and pruned completed ledgers', async () => {
+    await repository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      db.selectFrom(sql<{ id: string }>`(select unnest(array['one','two']) id)`.as('selected')).select('id'),
+    );
+    const runId = await snapshotRunId();
+    const pending = async () =>
+      (
+        await sql<{ admitted: boolean; full: boolean }>`select
+        ${unfinishedAdmittedRunItems(sql<string>`${runId}::uuid`)} admitted,
+        ${unfinishedRunItems(sql<string>`${runId}::uuid`)} full`.execute(db)
+      ).rows[0];
+    // No admitted execution is not sufficient to declare an unmaterialized selection complete.
+    expect(await pending()).toEqual({ admitted: false, full: true });
+    await store.finishEnumeration(runId);
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)?.finishedAt).toBeNull();
+    expect(await store.feedManifest(queue)).toBe(2);
+    await store.setConcurrency(queue, 1);
+    const [first] = await store.claim(queue, worker);
+    // Claim promotes the admitted siblings to waiting before taking its one active slot.
+    const { rows: delayed } = await sql<{ id: string }>`update job set "availableAt"=now()+interval '1 hour'
+      where queue=${queue} and state in ('pending','waiting') returning id`.execute(db);
+    expect(delayed).toHaveLength(1);
+    await store.pause(queue, true);
+    expect(await store.complete(first, [])).toBe(true);
+    expect(await pending()).toEqual({ admitted: true, full: true });
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)?.finishedAt).toBeNull();
+    await store.pause(queue, false);
+    expect(await store.claim(queue, worker)).toEqual([]);
+    await sql`update job set "availableAt"=now() where id=${delayed[0].id}::uuid
+      and state in ('pending','waiting')`.execute(db);
+    const [last] = await store.claim(queue, worker);
+    expect(await store.complete(last, [])).toBe(true);
+    expect(await pending()).toEqual({ admitted: false, full: false });
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+      state: 'completed',
+      completed: 2,
+      finishedAt: expect.any(Date),
+    });
+    // Shared/retained membership can lag its actual executor. Preserve the terminal-job override.
+    await sql`update job_run_item set state='pending' where "jobId"=${last.id}::uuid`.execute(db);
+    expect(await pending()).toEqual({ admitted: false, full: false });
+    // Real retention must keep completed outcomes after payload/job identity is gone.
+    await sql`update job set "finishedAt"=now()-interval '8 days' where queue=${queue}`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(2);
+    expect(await pending()).toEqual({ admitted: false, full: false });
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+      state: 'completed',
+      completed: 2,
+      stageTotals: { total: 2, completed: 2 },
     });
   });
 
