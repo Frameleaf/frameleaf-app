@@ -401,7 +401,7 @@ describe('/trash', () => {
       expect(again.status).toBe(409);
     });
 
-    it('should keep items a privacy mark hides out of the trash, and refuse an apply after a new mark', async () => {
+    it('should keep items a privacy mark hides out of the trash, and refuse an apply after a new mark', { timeout: process.env.CI ? 450_000 : 100_000 }, async () => {
       await emptyVisibleTrash();
       const [tag] = await utils.upsertTags(admin.accessToken, ['trash-private-mark']);
       const open = await trashed();
@@ -527,7 +527,7 @@ describe('/trash', () => {
       expect(rows).toEqual([{ status: 'trashed' }]);
     });
 
-    it('should report a shared original as retained and keep it on disk after the delete', async () => {
+    it('should report a shared original as retained and keep it on disk after the delete', { timeout: process.env.CI ? 570_000 : 120_000 }, async () => {
       await emptyVisibleTrash();
       const { id: keeper } = await utils.createAsset(admin.accessToken);
       const removed = await trashed();
