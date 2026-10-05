@@ -354,52 +354,59 @@ describe('/libraries', () => {
       await utils.resetAdminConfig(admin.accessToken);
     });
 
-    it('imports a file added to a watched folder and marks a deleted one offline', { timeout: process.env.CI ? 305_000 : 155_000 }, async ({ signal }) => {
-      const folder = `${testAssetDirInternal}/temp/fl78-watch`;
-      utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        name: 'FL-78 watch',
-        importPaths: [folder],
-      });
-      await scanLibraryAsset(library.id, signal);
+    it(
+      'imports a file added to a watched folder and marks a deleted one offline',
+      { timeout: process.env.CI ? 305_000 : 155_000 },
+      async ({ signal }) => {
+        const folder = `${testAssetDirInternal}/temp/fl78-watch`;
+        utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
+        const library = await utils.createLibrary(admin.accessToken, {
+          ownerId: admin.userId,
+          name: 'FL-78 watch',
+          importPaths: [folder],
+        });
+        await scanLibraryAsset(library.id, signal);
 
-      const config = await utils.getSystemConfig(admin.accessToken);
-      config.library.watch.enabled = true;
-      await updateConfig({ adminConfigDto: config }, { headers: asBearerAuth(admin.accessToken) });
-      // the watcher starts on the configuration event; give it a moment to be ready
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+        const config = await utils.getSystemConfig(admin.accessToken);
+        config.library.watch.enabled = true;
+        await updateConfig({ adminConfigDto: config }, { headers: asBearerAuth(admin.accessToken) });
+        // the watcher starts on the configuration event; give it a moment to be ready
+        await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // written inside the server container, where the watcher listens
-      const added = `${folder}/added.jpg`;
-      await dockerExec([`cp ${testAssetDirInternal}/albums/nature/tanners_ridge.jpg ${added}`]).promise;
+        // written inside the server container, where the watcher listens
+        const added = `${folder}/added.jpg`;
+        await dockerExec([`cp ${testAssetDirInternal}/albums/nature/tanners_ridge.jpg ${added}`]).promise;
 
-      const findAdded = async () => {
-        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id, originalPath: added });
-        return assets.items[0];
-      };
-      await expect
-        .poll(findAdded, { timeout: 45_000, interval: 1000 })
-        .toEqual(expect.objectContaining({ originalPath: added, isOffline: false }));
-      const { id } = await findAdded();
-      await utils.waitForAssetReady(admin.accessToken, id, { signal });
+        const findAdded = async () => {
+          const { assets } = await utils.searchAssets(admin.accessToken, {
+            libraryId: library.id,
+            originalPath: added,
+          });
+          return assets.items[0];
+        };
+        await expect
+          .poll(findAdded, { timeout: 45_000, interval: 1000 })
+          .toEqual(expect.objectContaining({ originalPath: added, isOffline: false }));
+        const { id } = await findAdded();
+        await utils.waitForAssetReady(admin.accessToken, id, { signal });
 
-      await dockerExec([`rm ${added}`]).promise;
+        await dockerExec([`rm ${added}`]).promise;
 
-      // a deleted file is not forgotten: its item stays, offline, until the file comes back
-      await expect
-        .poll(
-          async () => {
-            const asset = await utils.getAssetInfo(admin.accessToken, id);
-            return asset.isOffline;
-          },
-          {
-            timeout: 45_000,
-            interval: 1000,
-          },
-        )
-        .toBe(true);
-    });
+        // a deleted file is not forgotten: its item stays, offline, until the file comes back
+        await expect
+          .poll(
+            async () => {
+              const asset = await utils.getAssetInfo(admin.accessToken, id);
+              return asset.isOffline;
+            },
+            {
+              timeout: 45_000,
+              interval: 1000,
+            },
+          )
+          .toBe(true);
+      },
+    );
   });
 
   describe('FL-78: two-stage library removal', () => {

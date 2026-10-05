@@ -401,59 +401,63 @@ describe('/trash', () => {
       expect(again.status).toBe(409);
     });
 
-    it('should keep items a privacy mark hides out of the trash, and refuse an apply after a new mark', { timeout: process.env.CI ? 450_000 : 100_000 }, async () => {
-      await emptyVisibleTrash();
-      const [tag] = await utils.upsertTags(admin.accessToken, ['trash-private-mark']);
-      const open = await trashed();
-      const marked = await trashed();
-      const laterMarked = await trashed();
-      await utils.tagAssets(admin.accessToken, tag.id, [marked]);
+    it(
+      'should keep items a privacy mark hides out of the trash, and refuse an apply after a new mark',
+      { timeout: process.env.CI ? 450_000 : 100_000 },
+      async () => {
+        await emptyVisibleTrash();
+        const [tag] = await utils.upsertTags(admin.accessToken, ['trash-private-mark']);
+        const open = await trashed();
+        const marked = await trashed();
+        const laterMarked = await trashed();
+        await utils.tagAssets(admin.accessToken, tag.id, [marked]);
 
-      // FL-67: Locked rules change only from an unlocked session; the trash is then read locked again
-      const pin = { pinCode: '123456' };
-      const { body: authStatus } = await request(app).get('/auth/status').set('Authorization', bearer());
-      if (!authStatus.pinCode) {
-        await request(app).post('/auth/pin-code').set('Authorization', bearer()).send(pin).expect(204);
-      }
-      const unlocked = async (change: () => Promise<unknown>) => {
-        await request(app).post('/auth/session/unlock').set('Authorization', bearer()).send(pin).expect(204);
-        try {
-          await change();
-        } finally {
-          await request(app).post('/auth/session/lock').set('Authorization', bearer()).expect(204);
+        // FL-67: Locked rules change only from an unlocked session; the trash is then read locked again
+        const pin = { pinCode: '123456' };
+        const { body: authStatus } = await request(app).get('/auth/status').set('Authorization', bearer());
+        if (!authStatus.pinCode) {
+          await request(app).post('/auth/pin-code').set('Authorization', bearer()).send(pin).expect(204);
         }
-      };
-      const setLockedTags = (tagIds: string[]) =>
-        unlocked(() => utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds } } }));
-      await setLockedTags([tag.id]);
-
-      try {
-        const items = await request(app).get('/trash/items').set('Authorization', bearer());
-        const ids = items.body.items.map((item: { id: string }) => item.id);
-        expect(ids).toEqual(expect.arrayContaining([open, laterMarked]));
-        expect(ids).not.toContain(marked);
-
-        const chosen = await review({ action: 'delete', ids: [marked] });
-        expect(chosen.status).toBe(400);
-
-        const reviewed = await review({ action: 'empty' });
-        expect(reviewed.status).toBe(200);
-        expect(reviewed.body.count).toBe(2);
-
-        // another, unlocked tab marks a reviewed item: this session no longer sees it, so nothing changes
-        await unlocked(() => utils.tagAssets(admin.accessToken, tag.id, [laterMarked]));
-        const { status } = await apply({ action: 'empty', token: reviewed.body.token });
-        expect(status).toBe(409);
-        // only an unlocked session reads the marked items, to see they were left in the trash
-        await unlocked(async () => {
-          for (const id of [open, marked, laterMarked]) {
-            await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
+        const unlocked = async (change: () => Promise<unknown>) => {
+          await request(app).post('/auth/session/unlock').set('Authorization', bearer()).send(pin).expect(204);
+          try {
+            await change();
+          } finally {
+            await request(app).post('/auth/session/lock').set('Authorization', bearer()).expect(204);
           }
-        });
-      } finally {
-        await setLockedTags([]);
-      }
-    });
+        };
+        const setLockedTags = (tagIds: string[]) =>
+          unlocked(() => utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds } } }));
+        await setLockedTags([tag.id]);
+
+        try {
+          const items = await request(app).get('/trash/items').set('Authorization', bearer());
+          const ids = items.body.items.map((item: { id: string }) => item.id);
+          expect(ids).toEqual(expect.arrayContaining([open, laterMarked]));
+          expect(ids).not.toContain(marked);
+
+          const chosen = await review({ action: 'delete', ids: [marked] });
+          expect(chosen.status).toBe(400);
+
+          const reviewed = await review({ action: 'empty' });
+          expect(reviewed.status).toBe(200);
+          expect(reviewed.body.count).toBe(2);
+
+          // another, unlocked tab marks a reviewed item: this session no longer sees it, so nothing changes
+          await unlocked(() => utils.tagAssets(admin.accessToken, tag.id, [laterMarked]));
+          const { status } = await apply({ action: 'empty', token: reviewed.body.token });
+          expect(status).toBe(409);
+          // only an unlocked session reads the marked items, to see they were left in the trash
+          await unlocked(async () => {
+            for (const id of [open, marked, laterMarked]) {
+              await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
+            }
+          });
+        } finally {
+          await setLockedTags([]);
+        }
+      },
+    );
 
     it('should refuse a restore when the reviewed item was deleted after the review', async () => {
       const id = await trashed();
@@ -527,33 +531,37 @@ describe('/trash', () => {
       expect(rows).toEqual([{ status: 'trashed' }]);
     });
 
-    it('should report a shared original as retained and keep it on disk after the delete', { timeout: process.env.CI ? 470_000 : 120_000 }, async () => {
-      await emptyVisibleTrash();
-      const { id: keeper } = await utils.createAsset(admin.accessToken);
-      const removed = await trashed();
-      const solo = await trashed();
-      const { originalPath } = await utils.getAssetInfo(admin.accessToken, keeper);
-      const { originalPath: soloPath } = await utils.getAssetInfo(admin.accessToken, solo);
-      // another item still references the removed item's original (a deduplicated file)
-      const client = await utils.connectDatabase();
-      await client.query(`UPDATE "asset" SET "originalPath" = $1 WHERE "id" = $2`, [originalPath, removed]);
-      expect(await onDisk(originalPath)).toBe(true);
-      expect(await onDisk(soloPath)).toBe(true);
+    it(
+      'should report a shared original as retained and keep it on disk after the delete',
+      { timeout: process.env.CI ? 470_000 : 120_000 },
+      async () => {
+        await emptyVisibleTrash();
+        const { id: keeper } = await utils.createAsset(admin.accessToken);
+        const removed = await trashed();
+        const solo = await trashed();
+        const { originalPath } = await utils.getAssetInfo(admin.accessToken, keeper);
+        const { originalPath: soloPath } = await utils.getAssetInfo(admin.accessToken, solo);
+        // another item still references the removed item's original (a deduplicated file)
+        const client = await utils.connectDatabase();
+        await client.query(`UPDATE "asset" SET "originalPath" = $1 WHERE "id" = $2`, [originalPath, removed]);
+        expect(await onDisk(originalPath)).toBe(true);
+        expect(await onDisk(soloPath)).toBe(true);
 
-      const reviewed = await review({ action: 'delete', ids: [removed, solo] });
-      expect(reviewed.status).toBe(200);
-      expect(reviewed.body).toMatchObject({ count: 2, retainedOriginals: 1 });
-      expect(reviewed.body.retainedBytes).toBeLessThan(reviewed.body.bytes);
+        const reviewed = await review({ action: 'delete', ids: [removed, solo] });
+        expect(reviewed.status).toBe(200);
+        expect(reviewed.body).toMatchObject({ count: 2, retainedOriginals: 1 });
+        expect(reviewed.body.retainedBytes).toBeLessThan(reviewed.body.bytes);
 
-      await apply({ action: 'delete', ids: [removed, solo], token: reviewed.body.token }).expect(200);
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: removed });
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: solo });
-      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
+        await apply({ action: 'delete', ids: [removed, solo], token: reviewed.body.token }).expect(200);
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: removed });
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: solo });
+        await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
 
-      await expect(utils.getAssetInfo(admin.accessToken, keeper)).resolves.toMatchObject({ isTrashed: false });
-      expect(await onDisk(originalPath)).toBe(true);
-      expect(await onDisk(soloPath)).toBe(false);
-    });
+        await expect(utils.getAssetInfo(admin.accessToken, keeper)).resolves.toMatchObject({ isTrashed: false });
+        expect(await onDisk(originalPath)).toBe(true);
+        expect(await onDisk(soloPath)).toBe(false);
+      },
+    );
 
     it("should not review another account's items", async () => {
       const other = await utils.userSetup(admin.accessToken, {
