@@ -432,6 +432,11 @@ export class MetadataService extends BaseService {
 
       await this.assetRepository.upsertJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
 
+      if (data.source === 'motion-photo') {
+        // Encoding requires the EXIF/video rows accepted in this same publication.
+        await this.jobRepository.queue({ name: JobName.AssetEncodeVideo, data: { id: asset.id } });
+      }
+
       if (queueExecution.getStore()) {
         await this.jobRepository.queue({ name: JobName.AssetMetadataPostprocess, data });
       } else {
@@ -915,10 +920,10 @@ export class MetadataService extends BaseService {
             data: { id: asset.livePhotoVideoId, deleteOnDisk: true },
           });
         }
-        await this.jobRepository.queueAll([
-          { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
-          { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
-        ]);
+        await this.jobRepository.queue({
+          name: JobName.AssetExtractMetadata,
+          data: { id: motionAsset.id, source: 'motion-photo' },
+        });
       });
     } catch (error) {
       // A partial publication must roll back and consume the same single queue retry budget.
