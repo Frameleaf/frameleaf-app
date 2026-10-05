@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { encodeQr, qrPath } from './qr.mjs';
+  import { regenerationPresentation } from './regeneration';
   const qrSvg = (url: string) => { const code = encodeQr(url); return `<svg viewBox="0 0 ${code.size + 8} ${code.size + 8}" role="presentation"><rect width="100%" height="100%" fill="white"/><path d="${qrPath(code.modules)}" fill="#101416"/></svg>`; };
   let csrf = '', claimed = $state(false), signedIn = $state(false), busy = $state(false), error = $state('');
   let password = $state(''), name = $state(''), proof = $state(''), screen = $state('welcome');
@@ -53,6 +54,16 @@
   });
   $effect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('frameleaf-manager-theme', theme); });
 </script>
+
+{#snippet regeneration()}
+  {#if dashboard?.librarySetup?.regeneration}
+    {@const progress = regenerationPresentation(dashboard.librarySetup.regeneration)}
+    <section aria-live="polite"><h2>{progress.label}</h2><p>{progress.detail}</p>
+      <p class="hint">The first regeneration starts during setup and continues in the background. Finishing setup does not mark regeneration complete.</p>
+      {#if progress.attention}<p>Review processing findings and prerequisites in Frameleaf’s background activity.</p>{/if}
+    </section>
+  {/if}
+{/snippet}
 
 <svelte:head><title>Frameleaf Manager · {labels[screen]}</title></svelte:head>
 <header><img src={theme === 'dark' ? '/assets/frameleaf-logo-white.svg' : '/assets/frameleaf-logo-light.svg'} alt="Frameleaf" /><span class="divider"></span><span>Manager</span><div class="spacer"></div><span class="pill">Local server</span><button class="quiet" onclick={() => theme = theme === 'dark' ? 'light' : 'dark'} aria-label="Switch color theme">{theme === 'dark' ? 'Light' : 'Dark'} appearance</button></header>
@@ -107,9 +118,11 @@
   <div class="apps">{#each apps as app}<section><h2>Frameleaf for {app.name}</h2><img class="phone" src={app.image} alt={`Frameleaf ${app.name} library`} /><a class="qr" href={app.href} target="_blank" rel="noreferrer" aria-label={`Get Frameleaf for ${app.name}`}>{@html qrSvg(app.href)}</a><a href={app.href} target="_blank" rel="noreferrer">Get the {app.name} app ↗</a></section>{/each}</div>
   <section><h2>Link your server</h2><code>{dashboard.appUrl}</code><p>Sign in with your existing or new photo account. Your phone will sync your catalog, albums, search data and browsing previews while the server prepares the library. Keep the app open; if the phone pauses it, reopen to continue.</p><p class="hint">The official app pages show current availability. Original media is not downloaded as part of catalog setup.</p></section>
   <section aria-live="polite"><h2>{phases[dashboard.librarySetup?.phase] ?? 'Preparing your library'}</h2><div class="row"><span class:success={dashboard.librarySetup?.rescanComplete}>{dashboard.librarySetup?.rescanComplete ? '✓' : '○'}</span><span>Library rescan and verification</span></div><div class="row"><span class:success={dashboard.librarySetup?.canFinish}>{dashboard.librarySetup?.canFinish ? '✓' : '○'}</span><span>Phone catalog and browsing previews</span></div><p class="hint">Your phone syncs as the server works. Both screens show completion when the final library is ready on your phone.</p></section>
+  {@render regeneration()}
   <button class="primary" disabled={busy || !dashboard.librarySetup?.canFinish} onclick={() => run(async () => { await api('finish-setup', {}); await refresh(); screen = 'dashboard'; })}>Finish setup</button>
   {#if dashboard.librarySetup?.phase === 'needs-attention'}<p>Resolve the scan findings in Frameleaf’s Library Care, then run verification again.</p><button disabled={busy} onclick={() => run(async () => { await api('retry-setup', {}); await refresh(); })}>Verify the library again</button>{/if}
 {:else if screen === 'dashboard'}
+  {@render regeneration()}
   <p class="lede">Your server, at a glance.</p>{#if dashboard?.installation}<section><h2>{dashboard.installation.release}</h2>{#each dashboard.services as service}<div class="row"><span class:success={service.health === 'healthy'}>●</span><strong>{service.service}</strong><span>{service.running ? service.health : 'Stopped'}</span><button class="quiet" onclick={() => run(async () => logs = (await api('logs', { id: service.id })).logs)}>Logs</button></div>{/each}<h3>PostgreSQL on your host disk</h3><code>{dashboard.installation.databasePath}</code></section><div class="actions">{#each ['start', 'stop', 'restart', 'backup'] as action}<button disabled={busy} onclick={() => run(() => control(action))}>{action === 'backup' ? 'Back up database' : action[0].toUpperCase() + action.slice(1)}</button>{/each}<button disabled={busy} onclick={() => run(chooseUpdate)}>Updates</button><button onclick={() => screen = 'export'}>Export recovery configuration</button><button onclick={() => screen = 'apps'}>{dashboard.onboardingFinished ? 'Phone setup complete' : 'Connect your phone'}</button></div>{#if logs}<pre>{logs}</pre>{/if}{:else}<p>Set up an installation to see its services here.</p><button onclick={() => screen = 'welcome'}>Set up Frameleaf</button>{/if}
 {:else if screen === 'restore'}
   <p class="lede">Restore your database and configuration.</p><p>Your original library folders must be available at their preserved paths. Database backups do not contain photos or videos.</p>

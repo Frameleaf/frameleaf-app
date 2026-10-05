@@ -5669,6 +5669,7 @@
   "frameleaf_job_runs_reason_destination-consent": "The processing destination needs approval.",
   "frameleaf_job_runs_reason_destination-unavailable": "The processing destination is unavailable.",
   "frameleaf_job_runs_reason_enumerating": "Selection is still being counted.",
+  "frameleaf_job_runs_reason_first_setup_pending": "Imported regeneration is waiting for first setup prerequisites. No worker dispatch is expected yet.",
   "frameleaf_job_runs_reason_local-capacity": "Waiting for local image processing capacity.",
   "frameleaf_job_runs_reason_needs_attention": "Some stages need attention before work can continue.",
   "frameleaf_job_runs_reason_no_dispatch_backlog": "Work has been ready for more than two minutes without dispatch. Check worker availability and queue settings.",
