@@ -386,7 +386,10 @@ test("script wiring rejects missing contracts, skipped coverage and suppressed f
     assert.throws(() => assertScriptTestWiring(missing), name);
     for (const change of [{ if: "false" }, { "continue-on-error": true }]) {
       const changed = structuredClone(job);
-      Object.assign(changed.steps.find((step) => step.name === name), change);
+      Object.assign(
+        changed.steps.find((step) => step.name === name),
+        change,
+      );
       assert.throws(() => assertScriptTestWiring(changed), name);
     }
   }
@@ -1140,6 +1143,102 @@ test("all inline bash steps remain syntactically valid", () => {
   }
 });
 
+const assertIntegrationMlArchives = (w) => {
+  // The hard-cut stack cannot pair current code with a retired v1 release manifest.
+  const mlStep = w.jobs.build.steps.find(
+    (step) => step.id === "machine-learning",
+  );
+  assert.ok(mlStep, "Missing current-source ML build");
+  const ml = mlStep.with;
+  assert.equal(mlStep.if, undefined);
+  assert.equal(mlStep["continue-on-error"], undefined);
+  assert.equal(ml.push, undefined);
+  assert.match(mlStep.uses, /^docker\/build-push-action@[a-f0-9]{40}$/);
+  for (const id of ["build", "deploy-test"]) {
+    const checkout = w.jobs[id].steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    assert.equal(checkout.with.ref, "${{ github.sha }}");
+    assert.equal(checkout.with["persist-credentials"], false);
+  }
+  assert.equal(ml.context, "machine-learning");
+  assert.equal(ml.file, "machine-learning/Dockerfile");
+  assert.equal(ml.target, "prod");
+  assert.equal(ml.platforms, "${{ matrix.platform }}");
+  assert.match(ml["build-args"], /^DEVICE=cpu$/m);
+  assert.match(
+    ml.outputs,
+    /^type=oci,dest=\$\{\{ runner\.temp \}\}\/archive\/ml\/image\.tar,/,
+  );
+  assert.doesNotMatch(ml.outputs, /push=true|type=image|type=registry/);
+  assert.equal(ml["cache-to"], undefined);
+  assert.equal(ml.provenance, "mode=min");
+  assert.equal(ml.sbom, true);
+  assert.match(
+    ml.labels,
+    /^org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(ml.labels, /^org\.frameleaf\.build\.variant=cpu$/m);
+  const records = w.jobs.build.steps.find(
+    (step) => step.name === "Record the platform digests",
+  );
+  assert.equal(
+    records.env.ML_DIGEST,
+    "${{ steps.machine-learning.outputs.digest }}",
+  );
+  assert.match(
+    records.run,
+    /^\s*record "\$ML_DIGEST" "\$RUNNER_TEMP\/archive\/ml"$/m,
+  );
+  const resolveImages = w.jobs["deploy-test"].steps.find(
+    (step) => step.name === "Resolve the images under test",
+  );
+  assert.equal(resolveImages.env.SERVER_BUILT, "true");
+  assert.equal(resolveImages.env.ML_BUILT, "true");
+  const prepareMl = w.jobs["deploy-test"].steps.find(
+    (step) => step.name === "Prepare the CPU ML archive for deployment",
+  );
+  assert.match(
+    prepareMl.run,
+    /mv "\$RUNNER_TEMP\/server\/ml\/image\.tar" "\$RUNNER_TEMP\/ml\/image\.tar"/,
+  );
+  assert.ok(
+    w.jobs["deploy-test"].steps.indexOf(prepareMl) <
+      w.jobs["deploy-test"].steps.indexOf(resolveImages),
+  );
+  for (const step of [records, prepareMl, resolveImages]) {
+    assert.equal(step.if, undefined);
+    assert.equal(step["continue-on-error"], undefined);
+  }
+  assert.ok(
+    w.jobs.build.steps.indexOf(mlStep) < w.jobs.build.steps.indexOf(records),
+  );
+  const upload = w.jobs.build.steps.find((step) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
+  );
+  assert.equal(upload.with.path, "${{ runner.temp }}/archive/");
+  assert.equal(upload.with["if-no-files-found"], "error");
+  assert.ok(
+    w.jobs.build.steps.indexOf(records) < w.jobs.build.steps.indexOf(upload),
+  );
+  const download = w.jobs["deploy-test"].steps.find((step) =>
+    step.uses?.startsWith("actions/download-artifact@"),
+  );
+  assert.equal(
+    download.with.name,
+    "integration-archive-${{ matrix.architecture }}",
+  );
+  assert.equal(download.with.path, "${{ runner.temp }}/server");
+  assert.ok(
+    w.jobs["deploy-test"].steps.indexOf(download) <
+      w.jobs["deploy-test"].steps.indexOf(prepareMl),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(w.jobs["deploy-test"]),
+    /"ML_(?:IMAGE|RELEASE)"/,
+  );
+};
+
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
   // A workflow off the default branch cannot be dispatched: pushes to the integration branch build it.
@@ -1268,55 +1367,7 @@ test("integration image is a guarded manual pre-release that never writes releas
   assert.match(push, /^\s*push server "\$IMAGE" ""$/m);
   assert.match(push, /^\s*push database "\$DATABASE_IMAGE" \/postgres$/m);
 
-  // The hard-cut stack cannot pair current code with a retired v1 release manifest.
-  const ml = w.jobs.build.steps.find(
-    (step) => step.id === "machine-learning",
-  ).with;
-  assert.equal(ml.context, "machine-learning");
-  assert.equal(ml.file, "machine-learning/Dockerfile");
-  assert.equal(ml.target, "prod");
-  assert.equal(ml.platforms, "${{ matrix.platform }}");
-  assert.match(ml["build-args"], /^DEVICE=cpu$/m);
-  assert.match(
-    ml.outputs,
-    /^type=oci,dest=\$\{\{ runner\.temp \}\}\/archive\/ml\/image\.tar,/,
-  );
-  assert.doesNotMatch(ml.outputs, /push=true|type=image|type=registry/);
-  assert.equal(ml["cache-to"], undefined);
-  assert.equal(ml.provenance, "mode=min");
-  assert.equal(ml.sbom, true);
-  assert.match(
-    ml.labels,
-    /^org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}$/m,
-  );
-  assert.match(ml.labels, /^org\.frameleaf\.build\.variant=cpu$/m);
-  const records = w.jobs.build.steps.find(
-    (step) => step.name === "Record the platform digests",
-  );
-  assert.equal(
-    records.env.ML_DIGEST,
-    "${{ steps.machine-learning.outputs.digest }}",
-  );
-  assert.match(
-    records.run,
-    /^\s*record "\$ML_DIGEST" "\$RUNNER_TEMP\/archive\/ml"$/m,
-  );
-  const resolveImages = w.jobs["deploy-test"].steps.find(
-    (step) => step.name === "Resolve the images under test",
-  );
-  assert.equal(resolveImages.env.SERVER_BUILT, "true");
-  assert.equal(resolveImages.env.ML_BUILT, "true");
-  const prepareMl = w.jobs["deploy-test"].steps.find(
-    (step) => step.name === "Prepare the CPU ML archive for deployment",
-  );
-  assert.match(
-    prepareMl.run,
-    /mv "\$RUNNER_TEMP\/server\/ml\/image\.tar" "\$RUNNER_TEMP\/ml\/image\.tar"/,
-  );
-  assert.ok(
-    w.jobs["deploy-test"].steps.indexOf(prepareMl) <
-      w.jobs["deploy-test"].steps.indexOf(resolveImages),
-  );
+  assertIntegrationMlArchives(w);
   assert.doesNotMatch(push, /^\s*push (?:ml|machine-learning) /m);
 
   // The database image is built from docker/postgres on the same runners, tested by the same
@@ -1370,6 +1421,75 @@ test("integration image is a guarded manual pre-release that never writes releas
     JSON.stringify(w),
     /:latest|:release|:edge|frameleaf-v|commit-\$|type=registry[^"]*mode=max/,
   );
+});
+
+test("integration ML source contract rejects released reuse, skipped builds and incomplete archive handoff", () => {
+  const w = workflow("integration-image.yml");
+  assertIntegrationMlArchives(w);
+  const mlStep = (changed) =>
+    changed.jobs.build.steps.find((step) => step.id === "machine-learning");
+  const resolve = (changed) =>
+    changed.jobs["deploy-test"].steps.find(
+      (step) => step.name === "Resolve the images under test",
+    );
+  const prepare = (changed) =>
+    changed.jobs["deploy-test"].steps.find(
+      (step) => step.name === "Prepare the CPU ML archive for deployment",
+    );
+  for (const mutate of [
+    (changed) => {
+      resolve(changed).env.ML_BUILT = "released";
+    },
+    (changed) => {
+      mlStep(changed).if = "false";
+    },
+    (changed) => {
+      mlStep(changed)["continue-on-error"] = true;
+    },
+    (changed) => {
+      mlStep(changed).with.provenance = false;
+    },
+    (changed) => {
+      mlStep(changed).with.sbom = false;
+    },
+    (changed) => {
+      mlStep(changed).with.labels = mlStep(changed).with.labels.replace(
+        "${{ github.sha }}",
+        "old-source",
+      );
+    },
+    (changed) => {
+      mlStep(changed).with.outputs = "type=registry,push=true";
+    },
+    (changed) => {
+      mlStep(changed).with.push = true;
+    },
+    (changed) => {
+      prepare(changed).run =
+        'mv "$RUNNER_TEMP/server/image.tar" "$RUNNER_TEMP/ml/image.tar"';
+    },
+    (changed) => {
+      prepare(changed)["continue-on-error"] = true;
+    },
+    (changed) => {
+      changed.jobs.build.steps.find(
+        (step) => step.name === "Record the platform digests",
+      ).env.ML_DIGEST = "";
+    },
+    (changed) => {
+      changed.jobs.build.steps.find((step) =>
+        step.uses?.startsWith("actions/upload-artifact@"),
+      ).with.path = "${{ runner.temp }}/archive/postgres/";
+    },
+    (changed) => {
+      const steps = changed.jobs["deploy-test"].steps;
+      steps.push(...steps.splice(steps.indexOf(prepare(changed)), 1));
+    },
+  ]) {
+    const changed = structuredClone(w);
+    mutate(changed);
+    assert.throws(() => assertIntegrationMlArchives(changed));
+  }
 });
 
 test("only the integration image compiles the integration build channel (extra licence keys)", () => {

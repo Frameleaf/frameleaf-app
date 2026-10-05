@@ -13,6 +13,7 @@ const {
   trustedRun,
   requireTestQualification,
   chooseTag,
+  deployTestImages,
   verifyImage,
   createBundle,
   verifyDependencyImages,
@@ -24,6 +25,55 @@ const {
 const sha = "a".repeat(40);
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
 const clone = (v) => structuredClone(v);
+
+test("deployment images use current server and ML archives without published release lookup", async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "frameleaf-current-archives-"),
+  );
+  const fetch = t.mock.method(globalThis, "fetch", () => {
+    assert.fail(
+      "Current-source archive deployment must not read published releases",
+    );
+  });
+  const registry = {
+    read: () =>
+      assert.fail(
+        "Current-source archive deployment must not resolve registry images",
+      ),
+  };
+  try {
+    for (const directory of ["server", "ml"]) {
+      await fs.mkdir(path.join(root, directory));
+      await fs.writeFile(
+        path.join(root, directory, "image.tar"),
+        "fixture-only archive sentinel",
+      );
+    }
+    const envFile = path.join(root, "github-env");
+    const env = {
+      GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+      GITHUB_SHA: sha,
+      RUNNER_TEMP: root,
+      GITHUB_ENV: envFile,
+      SERVER_BUILT: "true",
+      ML_BUILT: "true",
+    };
+    await deployTestImages(env, registry);
+    assert.equal(
+      await fs.readFile(envFile, "utf8"),
+      `SERVER_ARCHIVE=${path.join(root, "server/image.tar")}\nML_ARCHIVE=${path.join(root, "ml/image.tar")}\n`,
+    );
+    assert.equal(fetch.mock.callCount(), 0);
+    await fs.unlink(path.join(root, "ml/image.tar"));
+    await fs.writeFile(envFile, "existing environment\n");
+    await assert.rejects(deployTestImages(env, registry), { code: "ENOENT" });
+    assert.equal(await fs.readFile(envFile, "utf8"), "existing environment\n");
+    assert.equal(fetch.mock.callCount(), 0);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 function fixture(spec = VARIANTS[0]) {
   const entries = new Map();
   const manifests = spec.platforms.map((platform, i) => {
