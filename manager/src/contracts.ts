@@ -80,6 +80,8 @@ export type Installation = {
   port: number;
   ml: boolean;
   origin: 'new_library' | 'new_import' | 'restored_library';
+  /** Original Manager import identity carried by reviewed canonical restore lineage. */
+  importInstallation?: string;
   mounts: Mount[];
   sourceId: string | null;
   mayHaveWrittenMedia: boolean;
