@@ -28,12 +28,12 @@ Database publication is serialized locally before acquiring a connection. Waitin
 
 The coordinator runs separately from media handlers. Claims last 60 seconds and renew every 15 seconds; reconciliation scans every 5 seconds and recovery sweeps every 30 seconds. Executor heartbeats prove responsiveness but do not count as media progress. Actual advancing bytes, frames or committed checkpoints extend the progress deadline. Repeated status messages do not.
 
-| Environment setting | Default | Accepted milliseconds |
-| --- | --- | --- |
-| `FRAMELEAF_JOB_DEADLINE_MS` | 600000 (10 minutes) | 1000–86400000 |
-| `FRAMELEAF_ML_DEADLINE_MS` | 1800000 (30 minutes, including response body) | 1000–86400000 |
-| `FRAMELEAF_JOB_IDLE_DEADLINE_MS` | 600000 (10 minutes without measurable progress) | 1000–86400000 |
-| `FRAMELEAF_JOB_CANCEL_GRACE_MS` | 10000 (10 seconds) | 1000–30000 |
+| Environment setting              | Default                                         | Accepted milliseconds |
+| -------------------------------- | ----------------------------------------------- | --------------------- |
+| `FRAMELEAF_JOB_DEADLINE_MS`      | 600000 (10 minutes)                             | 1000–86400000         |
+| `FRAMELEAF_ML_DEADLINE_MS`       | 1800000 (30 minutes, including response body)   | 1000–86400000         |
+| `FRAMELEAF_JOB_IDLE_DEADLINE_MS` | 600000 (10 minutes without measurable progress) | 1000–86400000         |
+| `FRAMELEAF_JOB_CANCEL_GRACE_MS`  | 10000 (10 seconds)                              | 1000–30000            |
 
 Use the same settings in all server containers. Invalid, infinite, fractional or out-of-range values stop startup with the setting's name. Existing tighter operation-specific limits still apply. A progressing video, hash or backup can run beyond the ordinary deadline. An opaque handler has a fixed deadline. When cancellation does not stop an executor within its grace period, the supervisor terminates it before replacement work can publish results.
 

@@ -148,10 +148,10 @@ The `UPLOAD_LOCATION` environment variable controls where files are stored:
 
 These variables have sensible defaults (for development) but can be customized:
 
-| Variable           | Default    | Description         |
-| ------------------ | ---------- | ------------------- |
-| `DB_PASSWORD`      | `postgres` | PostgreSQL password |
-| `DB_USERNAME`      | `postgres` | PostgreSQL username |
+| Variable           | Default     | Description         |
+| ------------------ | ----------- | ------------------- |
+| `DB_PASSWORD`      | `postgres`  | PostgreSQL password |
+| `DB_USERNAME`      | `postgres`  | PostgreSQL username |
 | `DB_DATABASE_NAME` | `frameleaf` | Database name       |
 
 ### Setting Environment Variables
