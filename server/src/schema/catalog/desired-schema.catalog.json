@@ -21195,99 +21195,6 @@
       "synchronize": true
     },
     {
-      "name": "album_source_asset",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "linkId",
-          "tableName": "album_source_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "album_source_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "addedAt",
-          "tableName": "album_source_asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "album_source_asset_asset_idx",
-          "definition": "CREATE INDEX album_source_asset_asset_idx ON public.album_source_asset USING btree (\"assetId\")",
-          "tableName": "album_source_asset",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "album_source_asset_pkey",
-          "definition": "PRIMARY KEY (\"linkId\", \"assetId\")",
-          "tableName": "album_source_asset",
-          "columnNames": [
-            "linkId",
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_source_asset_asset_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
-          "tableName": "album_source_asset",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_source_asset_link_fkey",
-          "definition": "FOREIGN KEY (\"linkId\") REFERENCES album_source_link(id) ON DELETE CASCADE",
-          "tableName": "album_source_asset",
-          "columnNames": [
-            "linkId"
-          ],
-          "referenceTableName": "album_source_link",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "album_source_link",
       "columns": [
         {
@@ -26654,6 +26561,21 @@
           "synchronize": true
         },
         {
+          "name": "icloud_resource_claim_order_idx",
+          "definition": "CREATE INDEX icloud_resource_claim_order_idx ON public.icloud_resource USING btree (\"connectionId\", (\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND), \"createdAt\", id) WHERE ((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
+          "tableName": "icloud_resource",
+          "columnNames": [
+            "connectionId",
+            "createdAt",
+            "id"
+          ],
+          "expression": "\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND",
+          "using": "btree",
+          "where": "((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "icloud_resource_audit_request_key",
           "definition": "CREATE UNIQUE INDEX icloud_resource_audit_request_key ON public.icloud_resource USING btree (\"auditRequestId\") WHERE (\"auditRequestId\" IS NOT NULL)",
           "tableName": "icloud_resource",
@@ -26690,6 +26612,18 @@
           ],
           "using": "btree",
           "where": "(\"assetId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "icloud_resource_reservation_contributors_idx",
+          "definition": "CREATE INDEX icloud_resource_reservation_contributors_idx ON public.icloud_resource USING btree (\"connectionId\") WHERE ((status <> ALL (ARRAY['finalized'::text, 'removed'::text])) AND ((\"reservedBytes\" > 0) OR (\"leaseExpiresAt\" IS NOT NULL)))",
+          "tableName": "icloud_resource",
+          "columnNames": [
+            "connectionId"
+          ],
+          "using": "btree",
+          "where": "((status <> ALL (ARRAY['finalized'::text, 'removed'::text])) AND ((\"reservedBytes\" > 0) OR (\"leaseExpiresAt\" IS NOT NULL)))",
           "unique": false,
           "synchronize": true
         },
@@ -27614,18 +27548,6 @@
       ],
       "indexes": [
         {
-          "name": "job_worker_reference",
-          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
-          "tableName": "job",
-          "columnNames": [
-            "workerId"
-          ],
-          "using": "btree",
-          "where": "(\"workerId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "job_dedup_live",
           "definition": "CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, \"dedupKey\") WHERE ((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
           "tableName": "job",
@@ -27662,6 +27584,18 @@
           ],
           "using": "btree",
           "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_worker_reference",
+          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
+          "tableName": "job",
+          "columnNames": [
+            "workerId"
+          ],
+          "using": "btree",
+          "where": "(\"workerId\" IS NOT NULL)",
           "unique": false,
           "synchronize": true
         },
@@ -28203,474 +28137,6 @@
           "columnNames": [
             "id"
           ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "job_run_item",
-      "columns": [
-        {
-          "type": "text",
-          "primary": false,
-          "name": "queue",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "state",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "'pending'::text",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "selection",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "itemKey",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "stage",
-          "tableName": "job_run_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "rootItemKey",
-          "tableName": "job_run_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "selectionId",
-          "tableName": "job_run_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "jobId",
-          "tableName": "job_run_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "job_unadmitted_queue",
-          "definition": "CREATE INDEX job_unadmitted_queue ON public.job_run_item USING btree (queue) WHERE ((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "queue"
-          ],
-          "using": "btree",
-          "where": "((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_manifest_pending",
-          "definition": "CREATE INDEX job_manifest_pending ON public.job_run_item USING btree (\"selectionId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "selectionId",
-            "itemKey"
-          ],
-          "using": "btree",
-          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_manifest_source_pending",
-          "definition": "CREATE INDEX job_manifest_source_pending ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "selectionId",
-            "runId",
-            "itemKey"
-          ],
-          "using": "btree",
-          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_run_item_job",
-          "definition": "CREATE INDEX job_run_item_job ON public.job_run_item USING btree (\"jobId\") WHERE (\"jobId\" IS NOT NULL)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "jobId"
-          ],
-          "using": "btree",
-          "where": "(\"jobId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_run_root_item",
-          "definition": "CREATE INDEX job_run_root_item ON public.job_run_item USING btree (\"runId\", \"rootItemKey\")",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "runId",
-            "rootItemKey"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_selection_membership",
-          "definition": "CREATE INDEX job_selection_membership ON public.job_run_item USING btree (\"selectionId\", \"itemKey\", stage) WHERE (\"selectionId\" IS NOT NULL)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "selectionId",
-            "itemKey",
-            "stage"
-          ],
-          "using": "btree",
-          "where": "(\"selectionId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_run_unfinished",
-          "definition": "CREATE INDEX job_run_unfinished ON public.job_run_item USING btree (\"runId\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "runId"
-          ],
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "job_run_item_state_check",
-          "definition": "CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
-          "tableName": "job_run_item",
-          "expression": "((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "job_run_item_pkey",
-          "definition": "PRIMARY KEY (\"runId\", \"itemKey\", stage)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "runId",
-            "itemKey",
-            "stage"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_run_item_queue_fkey",
-          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "queue"
-          ],
-          "referenceTableName": "job_queue",
-          "referenceColumnNames": [
-            "name"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_run_item_runId_fkey",
-          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "runId"
-          ],
-          "referenceTableName": "job_run",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_run_item_selectionId_fkey",
-          "definition": "FOREIGN KEY (\"selectionId\") REFERENCES job_selection(id)",
-          "tableName": "job_run_item",
-          "columnNames": [
-            "selectionId"
-          ],
-          "referenceTableName": "job_selection",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "job_selection",
-      "columns": [
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "safeToRetry",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "state",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "queue",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "deadlineMs",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "sensitive",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "producerId",
-          "tableName": "job_selection",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "stage",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "job_selection",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "job_selection_feed",
-          "definition": "CREATE INDEX job_selection_feed ON public.job_selection USING btree (queue, \"createdAt\", id) WHERE (state = 'ready'::text)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "queue",
-            "createdAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "(state = 'ready'::text)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_selection_enumerating",
-          "definition": "CREATE INDEX job_selection_enumerating ON public.job_selection USING btree (queue) WHERE (state = 'enumerating'::text)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "queue"
-          ],
-          "using": "btree",
-          "where": "(state = 'enumerating'::text)",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "job_selection_state_check",
-          "definition": "CHECK ((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text])))",
-          "tableName": "job_selection",
-          "expression": "((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "job_selection_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "job_selection_producerId_stage_key",
-          "definition": "UNIQUE (\"producerId\", stage)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "producerId",
-            "stage"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "job_selection_runId_stage_key",
-          "definition": "UNIQUE (\"runId\", stage)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "runId",
-            "stage"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_selection_producerId_fkey",
-          "definition": "FOREIGN KEY (\"producerId\") REFERENCES job(id) ON DELETE SET NULL",
-          "tableName": "job_selection",
-          "columnNames": [
-            "producerId"
-          ],
-          "referenceTableName": "job",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_selection_queue_fkey",
-          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "queue"
-          ],
-          "referenceTableName": "job_queue",
-          "referenceColumnNames": [
-            "name"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_selection_runId_fkey",
-          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
-          "tableName": "job_selection",
-          "columnNames": [
-            "runId"
-          ],
-          "referenceTableName": "job_run",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
           "synchronize": true
         }
       ],
@@ -36788,9 +36254,1409 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "job_selection",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "safeToRetry",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "appendSequence",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryOperationId",
+          "tableName": "job_selection",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "state",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sourceKind",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "default": "'frozen'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "capturedAt",
+          "tableName": "job_selection",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "queue",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "deadlineMs",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "sensitive",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "producerId",
+          "tableName": "job_selection",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "librarySharesExecution",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "sourceClosedAt",
+          "tableName": "job_selection",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "stage",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "job_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryFrozenProducerId",
+          "tableName": "job_selection",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_selection_feed",
+          "definition": "CREATE INDEX job_selection_feed ON public.job_selection USING btree (queue, \"createdAt\", id) WHERE (state = 'ready'::text)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = 'ready'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_live",
+          "definition": "CREATE INDEX job_selection_live ON public.job_selection USING btree (queue, id) WHERE (state = ANY (ARRAY['ready'::text, 'enumerating'::text]))",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['ready'::text, 'enumerating'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_enumerating",
+          "definition": "CREATE INDEX job_selection_enumerating ON public.job_selection USING btree (queue) WHERE (state = 'enumerating'::text)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue"
+          ],
+          "using": "btree",
+          "where": "(state = 'enumerating'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_operation_source",
+          "definition": "CREATE INDEX job_library_operation_source ON public.job_selection USING btree (\"libraryOperationId\", \"sourceKind\") WHERE (\"libraryOperationId\" IS NOT NULL)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "libraryOperationId",
+            "sourceKind"
+          ],
+          "using": "btree",
+          "where": "(\"libraryOperationId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "job_selection_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "job_selection_producerId_stage_key",
+          "definition": "UNIQUE (\"producerId\", stage)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "producerId",
+            "stage"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "job_selection_runId_stage_key",
+          "definition": "UNIQUE (\"runId\", stage)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "runId",
+            "stage"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_producerId_fkey",
+          "definition": "FOREIGN KEY (\"producerId\") REFERENCES job(id) ON DELETE SET NULL",
+          "tableName": "job_selection",
+          "columnNames": [
+            "producerId"
+          ],
+          "referenceTableName": "job",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_queue_fkey",
+          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue"
+          ],
+          "referenceTableName": "job_queue",
+          "referenceColumnNames": [
+            "name"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "job_run",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_selection_state_check",
+          "definition": "CHECK ((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text, 'cancelled'::text])))",
+          "tableName": "job_selection",
+          "expression": "((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text, 'cancelled'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_selection_library_source",
+          "definition": "CHECK ((((\"sourceKind\" = 'frozen'::text) AND (\"libraryOperationId\" IS NULL)) OR ((\"sourceKind\" = ANY (ARRAY['library-initial'::text, 'library-child'::text])) AND (\"libraryOperationId\" IS NOT NULL) AND (\"libraryOperationId\" = \"runId\") AND (\"producerId\" IS NULL))))",
+          "tableName": "job_selection",
+          "expression": "((((\"sourceKind\" = 'frozen'::text) AND (\"libraryOperationId\" IS NULL)) OR ((\"sourceKind\" = ANY (ARRAY['library-initial'::text, 'library-child'::text])) AND (\"libraryOperationId\" IS NOT NULL) AND (\"libraryOperationId\" = \"runId\") AND (\"producerId\" IS NULL))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_selection_append_sequence",
+          "definition": "CHECK ((\"appendSequence\" >= 0))",
+          "tableName": "job_selection",
+          "expression": "((\"appendSequence\" >= 0))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_run_item",
+      "columns": [
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "libraryCleanupId",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true,
+          "identity": true,
+          "identityMode": "always"
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "queue",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "librarySourceKey",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "state",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryOriginAfter",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "libraryExecutionItemKey",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "selection",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryProducerId",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryParentId",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "itemKey",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "libraryIntent",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "stage",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryExecutionRunId",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "libraryOriginComplete",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rootItemKey",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "selectionVersion",
+          "tableName": "job_run_item",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "selectionId",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "jobId",
+          "tableName": "job_run_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_unadmitted_queue",
+          "definition": "CREATE INDEX job_unadmitted_queue ON public.job_run_item USING btree (queue) WHERE ((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "queue"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_source_parent",
+          "definition": "CREATE INDEX job_library_source_parent ON public.job_run_item USING btree (\"libraryParentId\") WHERE (\"libraryParentId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "libraryParentId"
+          ],
+          "using": "btree",
+          "where": "(\"libraryParentId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_manifest_pending",
+          "definition": "CREATE INDEX job_manifest_pending ON public.job_run_item USING btree (\"selectionId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_origin_request",
+          "definition": "CREATE INDEX job_library_origin_request ON public.job_run_item USING btree (COALESCE(\"libraryProducerId\", \"jobId\"), \"runId\") WHERE (\"rootItemKey\" IS NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId"
+          ],
+          "expression": "COALESCE(\"libraryProducerId\", \"jobId\")",
+          "using": "btree",
+          "where": "(\"rootItemKey\" IS NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_manifest_source_pending",
+          "definition": "CREATE INDEX job_manifest_source_pending ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_redact_all_cursor",
+          "definition": "CREATE INDEX job_library_redact_all_cursor ON public.job_run_item USING btree (\"libraryCleanupId\") WHERE ((\"jobId\" IS NULL) AND ((\"libraryIntent\" ->> 'sensitive'::text) = 'true'::text) AND ((\"libraryIntent\" ? 'options'::text) OR ((\"libraryIntent\" -> 'data'::text) <> '{}'::jsonb)))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "libraryCleanupId"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND ((\"libraryIntent\" ->> 'sensitive'::text) = 'true'::text) AND ((\"libraryIntent\" ? 'options'::text) OR ((\"libraryIntent\" -> 'data'::text) <> '{}'::jsonb)))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_item_job",
+          "definition": "CREATE INDEX job_run_item_job ON public.job_run_item USING btree (\"jobId\") WHERE (\"jobId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "jobId"
+          ],
+          "using": "btree",
+          "where": "(\"jobId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_origin_pending",
+          "definition": "CREATE INDEX job_library_origin_pending ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE ((\"libraryIntent\" IS NOT NULL) AND (NOT \"libraryOriginComplete\"))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "((\"libraryIntent\" IS NOT NULL) AND (NOT \"libraryOriginComplete\"))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_source",
+          "definition": "CREATE INDEX job_selection_source ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE (\"selectionId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "(\"selectionId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_root_item",
+          "definition": "CREATE INDEX job_run_root_item ON public.job_run_item USING btree (\"runId\", \"rootItemKey\")",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId",
+            "rootItemKey"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_execution_owner",
+          "definition": "CREATE INDEX job_library_execution_owner ON public.job_run_item USING btree (\"libraryExecutionRunId\", \"libraryExecutionItemKey\", stage) WHERE (\"libraryExecutionRunId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "libraryExecutionRunId",
+            "libraryExecutionItemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "where": "(\"libraryExecutionRunId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_unfinished_execution",
+          "definition": "CREATE INDEX job_run_unfinished_execution ON public.job_run_item USING btree (\"runId\") WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])) AND ((\"selectionId\" IS NULL) OR (\"jobId\" IS NOT NULL)))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId"
+          ],
+          "using": "btree",
+          "where": "((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])) AND ((\"selectionId\" IS NULL) OR (\"jobId\" IS NOT NULL)))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_membership",
+          "definition": "CREATE INDEX job_selection_membership ON public.job_run_item USING btree (\"selectionId\", \"itemKey\", stage) WHERE (\"selectionId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "itemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "where": "(\"selectionId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_feeder_ready",
+          "definition": "CREATE INDEX job_library_feeder_ready ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text) AND (\"libraryIntent\" IS NOT NULL) AND \"libraryOriginComplete\")",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text) AND (\"libraryIntent\" IS NOT NULL) AND \"libraryOriginComplete\")",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_redact_cursor",
+          "definition": "CREATE INDEX job_library_redact_cursor ON public.job_run_item USING btree (queue, \"libraryCleanupId\") WHERE ((\"jobId\" IS NULL) AND ((\"libraryIntent\" ->> 'sensitive'::text) = 'true'::text) AND ((\"libraryIntent\" ? 'options'::text) OR ((\"libraryIntent\" -> 'data'::text) <> '{}'::jsonb)))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "queue",
+            "libraryCleanupId"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND ((\"libraryIntent\" ->> 'sensitive'::text) = 'true'::text) AND ((\"libraryIntent\" ? 'options'::text) OR ((\"libraryIntent\" -> 'data'::text) <> '{}'::jsonb)))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_canonical_job",
+          "definition": "CREATE INDEX job_library_canonical_job ON public.job_run_item USING btree (\"jobId\", \"runId\", \"itemKey\", stage) WHERE ((\"jobId\" IS NOT NULL) AND (\"libraryIntent\" IS NOT NULL))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "jobId",
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NOT NULL) AND (\"libraryIntent\" IS NOT NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_initial_outcome",
+          "definition": "CREATE INDEX job_library_initial_outcome ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\", stage) WHERE ((\"libraryIntent\" IS NOT NULL) AND ((\"jobId\" IS NOT NULL) OR (state <> 'pending'::text) OR (\"libraryExecutionRunId\" IS NOT NULL)))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "where": "((\"libraryIntent\" IS NOT NULL) AND ((\"jobId\" IS NOT NULL) OR (state <> 'pending'::text) OR (\"libraryExecutionRunId\" IS NOT NULL)))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_unfinished",
+          "definition": "CREATE INDEX job_run_unfinished ON public.job_run_item USING btree (\"runId\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_library_source_identity",
+          "definition": "CREATE UNIQUE INDEX job_library_source_identity ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"librarySourceKey\") WHERE (\"librarySourceKey\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
+            "librarySourceKey"
+          ],
+          "using": "btree",
+          "where": "(\"librarySourceKey\" IS NOT NULL)",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "job_unadmitted_execution_queue",
+          "definition": "CREATE INDEX job_unadmitted_execution_queue ON public.job_run_item USING btree (queue) WHERE ((\"jobId\" IS NULL) AND (\"selectionId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "queue"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (\"selectionId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "job_run_item_state_check",
+          "definition": "CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
+          "tableName": "job_run_item",
+          "expression": "((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "job_run_item_pkey",
+          "definition": "PRIMARY KEY (\"runId\", \"itemKey\", stage)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_run_item_queue_fkey",
+          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "queue"
+          ],
+          "referenceTableName": "job_queue",
+          "referenceColumnNames": [
+            "name"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_run_item_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "job_run",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_run_item_selectionId_fkey",
+          "definition": "FOREIGN KEY (\"selectionId\") REFERENCES job_selection(id)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId"
+          ],
+          "referenceTableName": "job_selection",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_run_item_libraryParentId_fkey",
+          "definition": "FOREIGN KEY (\"libraryParentId\") REFERENCES job(id) ON DELETE SET NULL",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "libraryParentId"
+          ],
+          "referenceTableName": "job",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_library_execution_identity",
+          "definition": "CHECK (((\"libraryExecutionRunId\" IS NULL) = (\"libraryExecutionItemKey\" IS NULL)))",
+          "tableName": "job_run_item",
+          "expression": "(((\"libraryExecutionRunId\" IS NULL) = (\"libraryExecutionItemKey\" IS NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_run_item_library_intent",
+          "definition": "CHECK (((\"librarySourceKey\" IS NULL) = (\"libraryIntent\" IS NULL)))",
+          "tableName": "job_run_item",
+          "expression": "(((\"librarySourceKey\" IS NULL) = (\"libraryIntent\" IS NULL)))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_selection_run",
+      "columns": [
+        {
+          "type": "text",
+          "primary": false,
+          "name": "copyAfter",
+          "tableName": "job_selection_run",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "copyComplete",
+          "tableName": "job_selection_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "selectionId",
+          "tableName": "job_selection_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "libraryVersion",
+          "tableName": "job_selection_run",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "job_selection_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "lineageAfter",
+          "tableName": "job_selection_run",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_selection_run_selection",
+          "definition": "CREATE INDEX job_selection_run_selection ON public.job_selection_run USING btree (\"selectionId\", \"runId\")",
+          "tableName": "job_selection_run",
+          "columnNames": [
+            "selectionId",
+            "runId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_run_copy",
+          "definition": "CREATE INDEX job_selection_run_copy ON public.job_selection_run USING btree (\"selectionId\", \"runId\") WHERE (NOT \"copyComplete\")",
+          "tableName": "job_selection_run",
+          "columnNames": [
+            "selectionId",
+            "runId"
+          ],
+          "using": "btree",
+          "where": "(NOT \"copyComplete\")",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "job_selection_run_pkey",
+          "definition": "PRIMARY KEY (\"runId\", \"selectionId\")",
+          "tableName": "job_selection_run",
+          "columnNames": [
+            "runId",
+            "selectionId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_run_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id) ON DELETE CASCADE",
+          "tableName": "job_selection_run",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "job_run",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_run_selectionId_fkey",
+          "definition": "FOREIGN KEY (\"selectionId\") REFERENCES job_selection(id) ON DELETE CASCADE",
+          "tableName": "job_selection_run",
+          "columnNames": [
+            "selectionId"
+          ],
+          "referenceTableName": "job_selection",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_selection_lineage",
+      "columns": [
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "id",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true,
+          "identity": true,
+          "identityMode": "always"
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "stage",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "superseded",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "itemKey",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "selectionId",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "libraryChildOrigin",
+          "tableName": "job_selection_lineage",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_selection_lineage_page",
+          "definition": "CREATE INDEX job_selection_lineage_page ON public.job_selection_lineage USING btree (\"selectionId\", id)",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "selectionId",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_generic_lineage",
+          "definition": "CREATE INDEX job_selection_generic_lineage ON public.job_selection_lineage USING btree (\"selectionId\", id) WHERE (NOT \"libraryChildOrigin\")",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "selectionId",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(NOT \"libraryChildOrigin\")",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_lineage_source",
+          "definition": "CREATE INDEX job_selection_lineage_source ON public.job_selection_lineage USING btree (\"runId\", \"itemKey\", stage)",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "job_selection_lineage_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "job_selection_lineage_selectionId_itemKey_stage_key",
+          "definition": "UNIQUE (\"selectionId\", \"itemKey\", stage)",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "selectionId",
+            "itemKey",
+            "stage"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_lineage_selectionId_fkey",
+          "definition": "FOREIGN KEY (\"selectionId\") REFERENCES job_selection(id) ON DELETE CASCADE",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "selectionId"
+          ],
+          "referenceTableName": "job_selection",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_selection_lineage_runId_itemKey_stage_fkey",
+          "definition": "FOREIGN KEY (\"runId\", \"itemKey\", stage) REFERENCES job_run_item(\"runId\", \"itemKey\", stage) ON DELETE CASCADE",
+          "tableName": "job_selection_lineage",
+          "columnNames": [
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "referenceTableName": "job_run_item",
+          "referenceColumnNames": [
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_library_source_producer",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "producerId",
+          "tableName": "job_library_source_producer",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "selectionId",
+          "tableName": "job_library_source_producer",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_library_source_producer_job",
+          "definition": "CREATE INDEX job_library_source_producer_job ON public.job_library_source_producer USING btree (\"producerId\", \"selectionId\")",
+          "tableName": "job_library_source_producer",
+          "columnNames": [
+            "producerId",
+            "selectionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "job_library_source_producer_pkey",
+          "definition": "PRIMARY KEY (\"selectionId\", \"producerId\")",
+          "tableName": "job_library_source_producer",
+          "columnNames": [
+            "selectionId",
+            "producerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_library_source_producer_selectionId_fkey",
+          "definition": "FOREIGN KEY (\"selectionId\") REFERENCES job_selection(id) ON DELETE CASCADE",
+          "tableName": "job_library_source_producer",
+          "columnNames": [
+            "selectionId"
+          ],
+          "referenceTableName": "job_selection",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album_source_asset",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "linkId",
+          "tableName": "album_source_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "album_source_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "addedAt",
+          "tableName": "album_source_asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "membershipUpdateId",
+          "tableName": "album_source_asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_source_asset_asset_idx",
+          "definition": "CREATE INDEX album_source_asset_asset_idx ON public.album_source_asset USING btree (\"assetId\")",
+          "tableName": "album_source_asset",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "album_source_asset_pkey",
+          "definition": "PRIMARY KEY (\"linkId\", \"assetId\")",
+          "tableName": "album_source_asset",
+          "columnNames": [
+            "linkId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_source_asset_asset_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "album_source_asset",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_source_asset_link_fkey",
+          "definition": "FOREIGN KEY (\"linkId\") REFERENCES album_source_link(id) ON DELETE CASCADE",
+          "tableName": "album_source_asset",
+          "columnNames": [
+            "linkId"
+          ],
+          "referenceTableName": "album_source_link",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
+    {
+      "name": "job_run_item_libraryCleanupId_seq",
+      "dataType": "bigint",
+      "start": "1",
+      "min": "1",
+      "max": "9223372036854775807",
+      "increment": "1",
+      "cache": "1",
+      "cycle": false,
+      "identity": true,
+      "synchronize": true,
+      "owner": {
+        "tableName": "job_run_item",
+        "columnName": "libraryCleanupId"
+      }
+    },
+    {
+      "name": "job_selection_lineage_id_seq",
+      "dataType": "bigint",
+      "start": "1",
+      "min": "1",
+      "max": "9223372036854775807",
+      "increment": "1",
+      "cache": "1",
+      "cycle": false,
+      "identity": true,
+      "synchronize": true,
+      "owner": {
+        "tableName": "job_selection_lineage",
+        "columnName": "id"
+      }
+    },
     {
       "name": "naturalearth_countries_id_seq",
       "dataType": "integer",
