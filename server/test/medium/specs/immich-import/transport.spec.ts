@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, symlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { clusterId } from 'src/immich-import/adapters.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
 import { assertImmichImportActivated } from 'src/immich-import/state.js';
@@ -139,6 +140,56 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     await expectFresh(f);
     await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
   }, 120_000);
+
+  it.each(['same root', 'symlink alias', 'nested target', 'nested source', 'cross-map nesting'] as const)(
+    'refuses empty-library independent-copy admission with %s',
+    async (kind) => {
+      const f = await start();
+      const source = f.config.mediaRoots[0].source;
+      const target = f.config.mediaRoots[0].target;
+      await f.mutateSource(async (db) => {
+        await db.query('TRUNCATE public.asset CASCADE');
+        await db.query(
+          `INSERT INTO public.library(name,"ownerId","importPaths","exclusionPatterns")
+          VALUES ('Empty external library',$1,ARRAY[$2::text],ARRAY[]::text[])`,
+          [f.owner, source],
+        );
+      });
+      expect(await f.source.db.query('SELECT id FROM public.asset')).toEqual([]);
+      expect(await f.source.db.query('SELECT "profileImagePath" FROM public."user"')).toEqual([
+        { profileImagePath: '' },
+        { profileImagePath: '' },
+      ]);
+      await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
+      const nested = join(source, 'nested');
+      await mkdir(nested);
+      const alias = join(f.directory, 'alias');
+      await symlink(source, alias);
+      switch (kind) {
+        case 'same root':
+          f.config.mediaRoots = [{ source, target: source }];
+          break;
+        case 'symlink alias':
+          f.config.mediaRoots = [{ source, target: alias }];
+          break;
+        case 'nested target':
+          f.config.mediaRoots = [{ source, target: nested }];
+          break;
+        case 'nested source':
+          f.config.mediaRoots = [{ source: nested, target: source }];
+          break;
+        case 'cross-map nesting':
+          f.config.mediaRoots = [
+            { source, target },
+            { source: target, target: nested },
+          ];
+          break;
+      }
+      await expect(f.importer().run()).rejects.toThrow('INDEPENDENT_COPY');
+      await expectFresh(f);
+    },
+    120_000,
+  );
 
   it.each(['idle', 'uncommitted writer'] as const)(
     'rejects another %s session, then admits after it disconnects',

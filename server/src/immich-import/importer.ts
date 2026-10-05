@@ -9,7 +9,7 @@ import {
 } from 'src/immich-import/adapters.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
-import { assertMediaPolicy, mapMediaPath, pathChecksum, verifyMediaFile } from 'src/immich-import/media.js';
+import { mapMediaPath, pathChecksum, verifyMediaFile, verifyMediaRoots } from 'src/immich-import/media.js';
 import { ImmichSource } from 'src/immich-import/source.js';
 import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
@@ -45,7 +45,7 @@ export class ImmichImportService {
   }
 
   async preflight() {
-    assertMediaPolicy(this.config.mediaRoots, this.config.media);
+    await verifyMediaRoots(this.config.mediaRoots, this.config.media);
     const fingerprint = await this.source.preflight();
     await this.assertDistinctDestination();
     await assertCanonicalDestination(this.destination);
@@ -163,6 +163,7 @@ export class ImmichImportService {
       await this.destination.query('REINDEX INDEX public.face_index');
       // Recheck after verification/dispatch: an intact ledger does not authorize schema drift.
       await assertCanonicalDestination(this.destination);
+      await verifyMediaRoots(this.config.mediaRoots, this.config.media);
       await this.destination.query(
         "UPDATE public.frameleaf_immich_import SET status='activated',verified_at=now() WHERE status='verifying'",
       );

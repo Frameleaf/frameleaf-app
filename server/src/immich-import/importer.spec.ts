@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from 'src/immich-import/adapters.js';
@@ -9,9 +9,16 @@ import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types
 
 vi.mock('src/immich-import/destination-schema.js', () => ({ assertCanonicalDestination: vi.fn() }));
 
-beforeEach(() => {
+let admissionDirectory: string;
+beforeEach(async () => {
+  admissionDirectory = await mkdtemp(join(tmpdir(), 'import-admission-'));
+  await mkdir(join(admissionDirectory, 'source'));
+  await mkdir(join(admissionDirectory, 'target'));
+  config.mediaRoots = [{ source: join(admissionDirectory, 'source'), target: join(admissionDirectory, 'target') }];
   vi.mocked(assertCanonicalDestination).mockReset().mockResolvedValue(undefined);
 });
+
+afterEach(async () => rm(admissionDirectory, { recursive: true, force: true }));
 
 const config: ImportConfig = {
   version: '3.2.4',
@@ -52,6 +59,34 @@ const createImporter = (run?: ImportRow, populated = false) => {
 };
 
 describe('import admission and activation gates', () => {
+  it('checks empty media roots before consulting source or writing a journal', async () => {
+    const { importer, statements } = createImporter();
+    importer.config.mediaRoots = [{ source: admissionDirectory, target: admissionDirectory }];
+    await expect(importer.preflight()).rejects.toThrow('INDEPENDENT_COPY');
+    expect(importer.source.preflight).not.toHaveBeenCalled();
+    expect(statements).toEqual([]);
+  });
+
+  it('rechecks empty roots after dispatch before activation when a destination becomes a source alias', async () => {
+    const { importer, statements } = createImporter({
+      status: 'verifying',
+      source_fingerprint: 'same-source',
+      config_fingerprint: digest(config),
+    });
+    vi.spyOn(importer.source, 'batches').mockImplementation(async function* () {});
+    const query = importer.destination.query.bind(importer.destination);
+    vi.spyOn(importer.destination, 'query').mockImplementation((statement, values) =>
+      statement.includes('dispatched_at IS NULL') ? Promise.resolve([{ count: '0' }]) : query(statement, values),
+    );
+    const dispatch = vi.fn(async () => {
+      await rm(config.mediaRoots[0].target, { recursive: true });
+      await symlink(config.mediaRoots[0].source, config.mediaRoots[0].target);
+    });
+    await expect(importer.verify(dispatch)).rejects.toThrow('INDEPENDENT_COPY');
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(statements.some((statement) => statement.includes("SET status='activated'"))).toBe(false);
+  });
+
   it('refuses destination drift before journal writes', async () => {
     const { importer, statements } = createImporter();
     vi.mocked(assertCanonicalDestination).mockRejectedValueOnce(new Error('DESTINATION_SCHEMA_NOT_CANONICAL'));

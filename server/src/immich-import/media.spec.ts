@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertMediaPolicy, mapMediaPath, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, mapMediaPath, verifyMediaFile, verifyMediaRoots } from 'src/immich-import/media.js';
 
 describe('offline media verification', () => {
   let directory: string;
@@ -19,6 +19,50 @@ describe('offline media verification', () => {
     operationId: 'operation-1',
     deploymentId: 'deployment-1',
   };
+
+  it('validates empty independent roots and preserves same-path nested Manager mounts', async () => {
+    const source = join(directory, 'source');
+    const target = join(directory, 'target');
+    await expect(verifyMediaRoots([{ source, target }])).resolves.toBeUndefined();
+    await expect(verifyMediaRoots([{ source, target }], { mode: 'independent-copy' })).resolves.toBeUndefined();
+    await expect(verifyMediaRoots([{ source, target: source }])).rejects.toThrow('INDEPENDENT_COPY');
+    await symlink(source, join(directory, 'alias'));
+    await expect(verifyMediaRoots([{ source, target: join(directory, 'alias') }])).rejects.toThrow('INDEPENDENT_COPY');
+    const nested = join(source, 'nested');
+    await mkdir(nested);
+    await expect(verifyMediaRoots([{ source, target: nested }])).rejects.toThrow('INDEPENDENT_COPY');
+    await expect(verifyMediaRoots([{ source: nested, target: source }])).rejects.toThrow('INDEPENDENT_COPY');
+    await expect(
+      verifyMediaRoots([
+        { source, target },
+        { source: target, target: nested },
+      ]),
+    ).rejects.toThrow('INDEPENDENT_COPY');
+    await expect(
+      verifyMediaRoots(
+        [
+          { source, target: source },
+          { source: nested, target: nested },
+        ],
+        manager,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects noncanonical, overlapping and nondirectory roots without requiring a media row', async () => {
+    const source = join(directory, 'source');
+    const target = join(directory, 'target');
+    await expect(verifyMediaRoots([{ source: 'relative', target }])).rejects.toThrow('UNSAFE_MEDIA_ROOT');
+    await expect(verifyMediaRoots([{ source: `${source}/../source`, target }])).rejects.toThrow('UNSAFE_MEDIA_ROOT');
+    await expect(
+      verifyMediaRoots([
+        { source, target },
+        { source, target },
+      ]),
+    ).rejects.toThrow('AMBIGUOUS');
+    await writeFile(join(directory, 'file'), 'not a directory');
+    await expect(verifyMediaRoots([{ source, target: join(directory, 'file') }])).rejects.toThrow('DIRECTORY');
+  });
 
   it('retains Manager media at exactly the same path while checking original bytes', async () => {
     const root = join(directory, 'source');
