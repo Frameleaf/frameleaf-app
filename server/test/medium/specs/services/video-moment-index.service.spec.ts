@@ -26,6 +26,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { VIDEO_MOMENT_FRAME_COUNT, sourceFingerprint } from 'src/utils/enrichment-plan.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newEmbedding } from 'test/small.factory.js';
@@ -74,6 +75,7 @@ const setup = () => {
   const jobs = automock(JobRepository, { args: [undefined, undefined, undefined, { setContext: () => {} }] });
   jobs.queue.mockResolvedValue();
   jobs.queueAll.mockResolvedValue();
+  useRealJobPublication(database, jobs);
   const sut = new VideoMomentIndexService(
     ctx.getMock(LoggingRepository),
     ctx.get(AccessRepository),

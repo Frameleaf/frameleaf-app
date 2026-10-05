@@ -1,6 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
-import { AssetLockReason, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobStatus } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  JobStatus,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -19,6 +27,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { withoutHiddenContent, withoutNsfwAssets } from 'src/utils/database.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -50,7 +59,15 @@ const readPrivacy = async (assetId: string) => {
 const setup = async (visibility = AssetVisibility.Timeline) => {
   const { sut, ctx } = newMediumService(ImageEnrichmentService, {
     database,
-    real: [AccessRepository, AssetRepository, DatabaseRepository, ConfigRepository, PersonRepository, UserRepository],
+    real: [
+      AccessRepository,
+      AssetRepository,
+      DatabaseRepository,
+      ConfigRepository,
+      PersonRepository,
+      TagRepository,
+      UserRepository,
+    ],
     // detection is routed to an ML destination (FL-110, after PR127); the mock routes it to a healthy local one
     mock: [
       EventRepository,
@@ -64,6 +81,12 @@ const setup = async (visibility = AssetVisibility.Timeline) => {
     ],
   });
   Object.assign(sut, { db: database });
+  useRealJobPublication(database, ctx.getMock(JobRepository), [sut]);
+  // Real tag edits queue a sidecar write; unexpected follow-up kinds still fail this fixture.
+  ctx.getMock(JobRepository).queue.mockImplementation((item) => {
+    expect(item).toEqual({ name: JobName.SidecarWrite, data: { id: expect.any(String) } });
+    return Promise.resolve();
+  });
   // FL-90: marking an asset sensitive moves it to Locked, which announces AssetLocked.
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   const { user } = await ctx.newUser();
