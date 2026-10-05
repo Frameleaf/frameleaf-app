@@ -228,6 +228,36 @@ describe('large durable queue query work', () => {
         waiting: 240,
         stageTotals: { total: size * 4, completed: size * 4 - 240, waiting: 240 },
       });
+      // A busy run can outpace ANALYZE while its ready buffer stays bounded. Seed retained
+      // outcomes rather than executing media, and retain the pre-completion ledger statistics.
+      await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"jobId",state)
+        select ${runId}::uuid,lpad(n::text,8,'0'),lpad(n::text,8,'0'),'growth',${queue},'{}',
+          md5(${runId} || ':growth:' || n::text)::uuid,'pending' from generate_series(1,10000) n`.execute(db);
+      await sql`insert into job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs",state,"runId","itemKey","rootItemKey")
+        select md5(${runId} || ':growth:' || n::text)::uuid,${queue},'growth','{}',true,false,60000,
+          case when n<=1000 then 'pending' else 'completed' end,${runId}::uuid,lpad(n::text,8,'0'),lpad(n::text,8,'0')
+        from generate_series(1,10000) n`.execute(db);
+      await sql`analyze job_run_item`.execute(db);
+      await sql`update job_run_item set state='completed' where "runId"=${runId}::uuid
+        and stage='growth' and "itemKey">lpad('1000',8,'0')`.execute(db);
+      const beforeGrowth = captured.length;
+      await store.finishEnumeration(runId);
+      const growthProof = captured
+        .slice(beforeGrowth)
+        .find((query) => query.sql.includes('select candidate.id from unnest'));
+      expect(growthProof).toBeDefined();
+      const growthPlan = await explain(growthProof!);
+      expect(examined(growthPlan), `live proof examined rows with stale statistics at ${size}`).toBeLessThanOrEqual(
+        100,
+      );
+      expect(
+        growthPlan['Shared Hit Blocks'] + growthPlan['Shared Read Blocks'],
+        `live proof buffers at ${size}`,
+      ).toBeLessThanOrEqual(100);
+      expect(
+        (await sql<{ finishedAt: Date | null }>`select "finishedAt" from job_run where id=${runId}::uuid`.execute(db))
+          .rows[0].finishedAt,
+      ).toBeNull();
     },
     180_000,
   );
