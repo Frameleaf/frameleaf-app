@@ -4,13 +4,13 @@ on:
     branches: [master/frameleaf-implementation, fork/main]
     paths:
       [
-        "manager/**",
-        ".github/verify-release-bundle*",
-        ".github/workflows/manager.yml",
-        "server/src/*/frameleaf-library-setup*",
-        "server/test/medium/specs/services/frameleaf-library-setup*",
-        "open-api/**",
-        "packages/sdk/**",
+        'manager/**',
+        '.github/verify-release-bundle*',
+        '.github/workflows/manager.yml',
+        'server/src/*/frameleaf-library-setup*',
+        'server/test/medium/specs/services/frameleaf-library-setup*',
+        'open-api/**',
+        'packages/sdk/**',
       ]
   workflow_dispatch:
 permissions:

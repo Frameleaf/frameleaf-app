@@ -126,7 +126,9 @@ export class Backups {
     await mkdir(emptyDirectory, { mode: 0o700 });
     await this.execute(
       'restic',
-      this.args(['restore', `${snapshot}:${entry.paths[0]}`, '--target', emptyDirectory, '--verify']),
+      // backup('.') stores checkpoint files at the snapshot root. paths[] is source metadata,
+      // not a subtree in that snapshot; selecting it makes otherwise valid recovery fail.
+      this.args(['restore', snapshot, '--target', emptyDirectory, '--verify']),
       { timeout: 7_200_000 },
     );
   }
