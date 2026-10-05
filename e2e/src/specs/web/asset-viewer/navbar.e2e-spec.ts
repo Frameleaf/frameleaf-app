@@ -6,8 +6,9 @@ import {
   SharedLinkType,
   updateMyPreferences,
 } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 test.describe('Asset Viewer Navbar', () => {
   let admin: LoginResponseDto;
@@ -19,8 +20,9 @@ test.describe('Asset Viewer Navbar', () => {
     admin = await utils.adminSetup();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ assetReady }) => {
     asset = await utils.createAsset(admin.accessToken);
+    await utils.waitForAssetReady(admin.accessToken, asset.id, { signal: assetReady.signal });
   });
 
   test.describe('shared link without metadata', () => {
@@ -40,12 +42,23 @@ test.describe('Asset Viewer Navbar', () => {
       });
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
+      const preview = page.getByTestId('preview').filter({ visible: true });
+      await expect
+        .poll(() =>
+          preview.evaluate(
+            (image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+          ),
+        )
+        .toBe(true);
 
       // FL-35: zoom moved to the footer, as in the template (MediaViewer.jsx:1765-1790). A link that hides
       // metadata never allows downloads (the server turns allowDownload off with it), so there is no
       // Download and no "Send a copy…" (FL-54 needs downloads and metadata).
       const expected = ['Copy image'];
-      const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
+      const actions = page.getByTestId('asset-viewer-navbar-actions');
+      await expect(actions.getByRole('button', { name: 'Copy image', exact: true })).toBeVisible();
+      await expect(actions.getByRole('button')).toHaveCount(expected.length);
+      const buttons = await actions.getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
       for (const [i, button] of buttons.entries()) {
@@ -62,11 +75,22 @@ test.describe('Asset Viewer Navbar', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
+      const preview = page.getByTestId('preview').filter({ visible: true });
+      await expect
+        .poll(() =>
+          preview.evaluate(
+            (image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+          ),
+        )
+        .toBe(true);
 
       // FL-56: a public link offers no Share of its own, whoever is signed in, the owner included; and the
       // item the link serves follows the link's own rules: no Download on a link without metadata.
       const expected = ['Copy image'];
-      const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
+      const actions = page.getByTestId('asset-viewer-navbar-actions');
+      await expect(actions.getByRole('button', { name: 'Copy image', exact: true })).toBeVisible();
+      await expect(actions.getByRole('button')).toHaveCount(expected.length);
+      const buttons = await actions.getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
       for (const [i, button] of buttons.entries()) {

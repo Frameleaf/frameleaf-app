@@ -386,6 +386,9 @@ export class JobRepository {
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);
   }
+  hasUnfinishedWork(name: QueueName): Promise<boolean> {
+    return this.store.hasUnfinishedWork(name);
+  }
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
   }

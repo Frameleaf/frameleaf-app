@@ -88,6 +88,73 @@ describe(QueueService.name, () => {
   });
 
   describe('getAllJobStatus', () => {
+    it('reports durable unfinished work even with an empty execution buffer', async () => {
+      const statistics = factory.queueStatistics();
+      mocks.job.getJobCounts.mockResolvedValue(statistics);
+      mocks.job.isPaused.mockResolvedValue(true);
+      mocks.job.hasUnfinishedWork.mockResolvedValue(true);
+
+      await expect(sut.get(factory.auth(), QueueName.Library)).resolves.toEqual({
+        name: QueueName.Library,
+        isPaused: true,
+        statistics,
+        hasUnfinishedWork: true,
+      });
+      expect(mocks.job.hasUnfinishedWork).toHaveBeenCalledExactlyOnceWith(QueueName.Library);
+    });
+
+    it('bounds queue snapshots to four and retains queue order', async () => {
+      const names = Object.values(QueueName);
+      const releases: (() => void)[] = [];
+      let active = 0;
+      let maximum = 0;
+      mocks.job.getJobCounts.mockImplementation(async () => {
+        maximum = Math.max(maximum, ++active);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        active--;
+        return factory.queueStatistics();
+      });
+      mocks.job.isPaused.mockResolvedValue(false);
+      mocks.job.hasUnfinishedWork.mockResolvedValue(false);
+      const result = sut.getAll(factory.auth());
+      for (let offset = 0; offset < names.length; offset += 4) {
+        await vi.waitFor(() => expect(releases).toHaveLength(Math.min(offset + 4, names.length)));
+        expect(maximum).toBeLessThanOrEqual(4);
+        for (const release of releases.slice(offset, offset + 4).reverse()) {
+          release();
+        }
+      }
+      expect((await result).map(({ name }) => name)).toEqual(names);
+      expect(maximum).toBe(4);
+    });
+
+    it('settles its admitted snapshot batch before propagating an error and starts no later batch', async () => {
+      const error = new Error('database unavailable');
+      const releases: (() => void)[] = [];
+      mocks.job.getJobCounts.mockImplementation(async (name) => {
+        if (name === Object.values(QueueName)[0]) {
+          throw error;
+        }
+        await new Promise<void>((resolve) => releases.push(resolve));
+        return factory.queueStatistics();
+      });
+      mocks.job.isPaused.mockResolvedValue(false);
+      mocks.job.hasUnfinishedWork.mockResolvedValue(false);
+      let returned = false;
+      const result = sut.getAll(factory.auth()).catch((caught) => {
+        returned = true;
+        throw caught;
+      });
+      const rejected = expect(result).rejects.toBe(error);
+      await vi.waitFor(() => expect(releases).toHaveLength(3));
+      expect(returned).toBe(false);
+      for (const release of releases) {
+        release();
+      }
+      await rejected;
+      expect(mocks.job.getJobCounts).toHaveBeenCalledTimes(4);
+    });
+
     it('should get all job statuses', async () => {
       const stats = factory.queueStatistics({ active: 1 });
       const expected = { jobCounts: stats, queueStatus: { isActive: true, isPaused: true } };

@@ -11125,6 +11125,8 @@ export type PushStatusResponseDto = {
     registered: boolean;
 };
 export type QueueResponseDto = {
+    /** Whether durable work remains, including delayed, paused and unadmitted work */
+    hasUnfinishedWork: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
     name: QueueName;

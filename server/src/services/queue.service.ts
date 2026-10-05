@@ -199,7 +199,18 @@ export class QueueService extends BaseService {
   }
 
   async getAll(_auth: AuthDto): Promise<QueueResponseDto[]> {
-    return Promise.all(Object.values(QueueName).map((name) => this.getByName(name)));
+    const names = Object.values(QueueName);
+    const queues: QueueResponseDto[] = [];
+    for (let offset = 0; offset < names.length; offset += 4) {
+      // Wait for this batch to settle on failure too, so a failed request cannot leave
+      // its sibling snapshots consuming the database pool after the response ends.
+      const results = await Promise.allSettled(names.slice(offset, offset + 4).map((name) => this.getByName(name)));
+      for (const result of results) {
+        if (result.status === 'rejected') throw result.reason;
+        queues.push(result.value);
+      }
+    }
+    return queues;
   }
 
   async getAllLegacy(auth: AuthDto): Promise<QueuesResponseLegacyDto> {
@@ -340,11 +351,10 @@ export class QueueService extends BaseService {
   }
 
   private async getByName(name: QueueName): Promise<QueueResponseDto> {
-    const [statistics, isPaused] = await Promise.all([
-      this.jobRepository.getJobCounts(name),
-      this.jobRepository.isPaused(name),
-    ]);
-    return { name, isPaused, statistics };
+    const statistics = await this.jobRepository.getJobCounts(name);
+    const isPaused = await this.jobRepository.isPaused(name);
+    const hasUnfinishedWork = await this.jobRepository.hasUnfinishedWork(name);
+    return { name, isPaused, statistics, hasUnfinishedWork };
   }
 
   private async start(name: QueueName, { force }: QueueCommandDto): Promise<void> {

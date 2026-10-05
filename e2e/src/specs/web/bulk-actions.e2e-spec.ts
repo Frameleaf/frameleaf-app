@@ -1,6 +1,9 @@
 import { LoginResponseDto, createPartner, deleteAssets, setUserOnboarding } from '@immich/sdk';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { Client } from 'pg';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
+import { playwrightDbHost } from '../../../playwright.config.js';
 
 const isFavorite = async (accessToken: string, id: string) => {
   const asset = await utils.getAssetInfo(accessToken, id);
@@ -87,7 +90,11 @@ test.describe('Bulk actions', () => {
     await expect(isFavorite(partner.accessToken, theirs.id)).resolves.toBe(false);
   });
 
-  test('reports an item that went away after it was selected and changes the rest', async ({ context, page }) => {
+  test('reports an item that went away after it was selected and changes the rest', async ({
+    context,
+    page,
+    assetReady,
+  }) => {
     const [kept, gone] = await Promise.all([
       utils.createAsset(admin.accessToken),
       utils.createAsset(admin.accessToken),
@@ -107,7 +114,50 @@ test.describe('Bulk actions', () => {
       { headers: asBearerAuth(admin.accessToken) },
     );
 
+    // DELETE first marks the row; wait for physical removal without updating the browser's stale selection.
+    // The asset API's missing-row access denial is 400, not a deletion-specific 404.
+    const db = new Client({
+      host: playwrightDbHost,
+      port: 5435,
+      user: 'postgres',
+      password: 'postgres',
+      database: 'frameleaf',
+      connectionTimeoutMillis: 1000,
+      statement_timeout: 1000,
+      query_timeout: 1500,
+      options: '-c default_transaction_read_only=on',
+    });
+    let closing: Promise<void> | undefined;
+    const close = () => (closing ??= db.end());
+    assetReady.onCleanup(close);
+    let connectionError: Error | undefined;
+    db.on('error', (error) => {
+      connectionError = error;
+    });
+    try {
+      assetReady.signal.throwIfAborted();
+      await db.connect();
+      await expect
+        .poll(async () => {
+          assetReady.signal.throwIfAborted();
+          if (connectionError) {
+            throw connectionError;
+          }
+          const { rows } = await db.query<{ goneExists: boolean; keptExists: boolean }>(
+            `SELECT
+               EXISTS (SELECT 1 FROM asset WHERE id = $1 AND "ownerId" = $3) AS "goneExists",
+               EXISTS (SELECT 1 FROM asset WHERE id = $2 AND "ownerId" = $3) AS "keptExists"`,
+            [gone.id, kept.id, admin.userId],
+          );
+          return rows[0];
+        })
+        .toEqual({ goneExists: false, keptExists: true });
+    } finally {
+      await close();
+    }
+
     const bar = page.getByRole('region', { name: 'Selected items' });
+    await expect(bar.getByText('2 selected', { exact: true })).toBeVisible();
     await bar.getByRole('button', { name: 'Favorite', exact: true }).click();
 
     await expect(page.getByText('Favorite: 1 of 2 updated, 1 failed, 0 skipped')).toBeVisible();
@@ -150,12 +200,21 @@ test.describe('Everything matching', () => {
   test('archives the Timeline count the server took, leaves the partner’s source, and undoes it', async ({
     context,
     page,
+    assetReady,
   }) => {
     test.setTimeout(90_000);
     const own = await Promise.all([1, 2, 3].map(() => utils.createAsset(admin.accessToken)));
     const theirs = await utils.createAsset(partner.accessToken);
     // FL-326: the partner's item is in this Timeline as the viewer's own copy, so the count takes it
     own.push({ ...theirs, id: await utils.waitForPartnerCopy(admin.userId, theirs.id) });
+    // Finish ingestion before the archive records updateIds; Undo must still refuse genuinely newer writes.
+    await utils.waitForAssetReady(admin.accessToken, theirs.id, {
+      headers: asBearerAuth(partner.accessToken),
+      signal: assetReady.signal,
+    });
+    for (const asset of own) {
+      await utils.waitForAssetReady(admin.accessToken, asset.id, { signal: assetReady.signal });
+    }
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/photos');
