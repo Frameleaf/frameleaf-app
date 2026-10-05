@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
+import { ownedWait } from 'src/harness-context.js';
+import { requestOnce } from 'src/harness-wait.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -463,42 +465,91 @@ describe('/libraries', () => {
       expect(body).toEqual(errorDto.badRequest('Type the library name to confirm'));
     });
 
-    it('reviews, then removes the library with the token and typed name, keeping the source files', async () => {
-      const hostFile = `${testAssetDir}/temp/fl78-removal/asset.png`;
-      utils.createImageFile(hostFile);
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        name: 'FL-78 removal',
-        importPaths: [`${testAssetDirInternal}/temp/fl78-removal`],
-      });
-      await utils.scan(admin.accessToken, library.id);
+    // Three queue/scan budgets (60s CI / 10s local), four 5s requests, and 10s setup/assertions.
+    it(
+      'reviews, then removes the library with the token and typed name, keeping the source files',
+      { timeout: process.env.CI ? 210_000 : 60_000 },
+      async ({ signal }) => {
+        const fixtureFolder = `temp/fl78-removal-${randomUUID()}`;
+        const hostFile = `${testAssetDir}/${fixtureFolder}/asset.png`;
+        utils.createImageFile(hostFile);
+        try {
+          const created = await ownedWait(
+            'Creating removal fixture library',
+            5000,
+            (context) =>
+              requestOnce(context, () =>
+                request(app)
+                  .post('/libraries')
+                  .set('Authorization', `Bearer ${admin.accessToken}`)
+                  .send({
+                    ownerId: admin.userId,
+                    name: 'FL-78 removal',
+                    importPaths: [`${testAssetDirInternal}/${fixtureFolder}`],
+                  }),
+              ),
+            signal,
+          );
+          expect(created.status).toBe(201);
+          const library = created.body as LibraryResponseDto;
+          await utils.scan(admin.accessToken, library.id, signal);
 
-      const { reviewToken, ...consequences } = await removalReview(admin.accessToken, library.id);
-      expect(reviewToken).toEqual(expect.any(String));
-      expect(consequences).toMatchObject({
-        libraryId: library.id,
-        name: 'FL-78 removal',
-        total: 1,
-        originalsKept: true,
-      });
+          const reviewed = await ownedWait(
+            'Reviewing fixture library removal',
+            5000,
+            (context) =>
+              requestOnce(context, () =>
+                request(app)
+                  .get(`/libraries/${library.id}/removal`)
+                  .set('Authorization', `Bearer ${admin.accessToken}`),
+              ),
+            signal,
+          );
+          expect(reviewed.status).toBe(200);
+          const { reviewToken, ...consequences } = reviewed.body as LibraryRemovalReviewDto;
+          expect(reviewToken).toEqual(expect.any(String));
+          expect(consequences).toMatchObject({
+            libraryId: library.id,
+            name: 'FL-78 removal',
+            total: 1,
+            originalsKept: true,
+          });
 
-      const { status } = await request(app)
-        .post(`/libraries/${library.id}/removal`)
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ reviewToken, confirmName: 'FL-78 removal' });
-      expect(status).toBe(204);
+          const { status } = await ownedWait(
+            'Confirming fixture library removal',
+            5000,
+            (context) =>
+              requestOnce(context, () =>
+                request(app)
+                  .post(`/libraries/${library.id}/removal`)
+                  .set('Authorization', `Bearer ${admin.accessToken}`)
+                  .send({ reviewToken, confirmName: 'FL-78 removal' }),
+              ),
+            signal,
+          );
+          expect(status).toBe(204);
 
-      await utils.waitForQueueFinish(admin.accessToken, 'library');
-      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
+          await utils.waitForQueueFinish(admin.accessToken, 'library', undefined, signal);
+          await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask', undefined, signal);
 
-      const { body: libraries } = await request(app)
-        .get('/libraries')
-        .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect((libraries as LibraryResponseDto[]).map(({ id }) => id)).not.toContain(library.id);
+          const { body: libraries } = await ownedWait(
+            'Reading libraries after fixture removal',
+            5000,
+            (context) =>
+              requestOnce(context, () =>
+                request(app).get('/libraries').set('Authorization', `Bearer ${admin.accessToken}`),
+              ),
+            signal,
+          );
+          expect((libraries as LibraryResponseDto[]).map(({ id }) => id)).not.toContain(library.id);
 
-      // the removal only ever forgets the indexed entries; the file stays in its folder
-      expect(existsSync(hostFile)).toBe(true);
-    });
+          // Assert source protection before this test removes its own fixture file.
+          expect(existsSync(hostFile)).toBe(true);
+        } finally {
+          utils.removeImageFile(hostFile);
+        }
+      },
+    );
   });
 
   describe("FL-78: a deleted owner's libraries are not scanned", () => {
