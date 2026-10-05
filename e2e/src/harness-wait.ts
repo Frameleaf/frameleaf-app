@@ -1,3 +1,4 @@
+import type { ClientRequest } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 export type WaitContext = { signal: AbortSignal; remaining: () => number };
@@ -72,6 +73,7 @@ export const waitUntil = async <T>(
 type AbortableRequest<T> = PromiseLike<T> & {
   timeout: (options: { deadline: number }) => unknown;
   abort: () => unknown;
+  once?: (event: 'request', listener: (request: { req: ClientRequest }) => void) => unknown;
 };
 
 /** One owned request; mutations must never acquire the read-only poller's retry policy. */
@@ -79,7 +81,15 @@ export const requestOnce = async <T>(context: WaitContext, create: () => Abortab
   context.remaining();
   const pending = create();
   pending.timeout({ deadline: context.remaining() });
-  const abort = () => pending.abort();
+  let transportClosed: Promise<void> | undefined;
+  pending.once?.('request', ({ req }) => {
+    transportClosed = new Promise<void>((resolve) => {
+      req.once('close', resolve);
+    });
+  });
+  const abort = () => {
+    pending.abort();
+  };
   context.signal.addEventListener('abort', abort, { once: true });
   try {
     context.remaining();
@@ -87,7 +97,11 @@ export const requestOnce = async <T>(context: WaitContext, create: () => Abortab
     context.remaining();
     return result;
   } finally {
-    context.signal.removeEventListener('abort', abort);
+    try {
+      await transportClosed;
+    } finally {
+      context.signal.removeEventListener('abort', abort);
+    }
   }
 };
 
@@ -102,25 +116,34 @@ export const pollRequest = async <T>(
 ) => {
   let lastConnectionError: unknown;
   try {
-    const result = await waitUntil<{ value: T } | { unavailable: true }>(context, async () => {
-      try {
-        return { value: await requestOnce(context, create) };
-      } catch (error) {
-        context.remaining();
-        if (!['ECONNREFUSED', 'ECONNRESET'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {
-          throw error;
+    const result = await waitUntil<{ value: T } | { unavailable: true }>(
+      context,
+      async () => {
+        try {
+          return { value: await requestOnce(context, create) };
+        } catch (error) {
+          context.remaining();
+          if (!['ECONNREFUSED', 'ECONNRESET'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {
+            throw error;
+          }
+          lastConnectionError = error;
+          return { unavailable: true };
         }
-        lastConnectionError = error;
-        return { unavailable: true };
-      }
-    }, (value) => 'value' in value && accept(value.value), interval);
+      },
+      (value) => 'value' in value && accept(value.value),
+      interval,
+    );
     if ('value' in result) {
       return result.value;
     }
     throw new Error('HTTP poll accepted an unavailable response');
   } catch (error) {
     if (lastConnectionError && context.signal.aborted) {
-      throw new AggregateError([context.signal.reason, lastConnectionError], 'HTTP polling stopped before the server became available', { cause: context.signal.reason });
+      throw new AggregateError(
+        [context.signal.reason, lastConnectionError],
+        'HTTP polling stopped before the server became available',
+        { cause: error },
+      );
     }
     throw error;
   }
@@ -140,13 +163,13 @@ export class EventJournal {
       this.events.set(event, ids);
     }
     ids.add(id);
-    for (const waiter of [...this.waiters]) {
+    for (const waiter of this.waiters) {
       waiter.check();
     }
   }
 
   clear() {
-    for (const waiter of [...this.waiters]) {
+    for (const waiter of this.waiters) {
       waiter.cancel(new Error('Event history reset'));
     }
     this.events.clear();
