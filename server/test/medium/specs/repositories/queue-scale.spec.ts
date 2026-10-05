@@ -10,6 +10,10 @@ type PlanNode = {
   'Node Type': string;
   'Relation Name'?: string;
   'Index Name'?: string;
+  Alias?: string;
+  'Parent Relationship'?: string;
+  'Index Cond'?: string;
+  Filter?: string;
   'Actual Rows': number;
   'Actual Loops': number;
   'Rows Removed by Filter'?: number;
@@ -18,6 +22,8 @@ type PlanNode = {
   'Shared Read Blocks': number;
   Plans?: PlanNode[];
 };
+// Plan expressions include resolved bind literals; never print selected IDs or payload constants.
+const redactPlanExpression = (value?: string) => value?.replaceAll(/'(?:''|[^'])*'/g, "'?'");
 const nodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
 const examined = (plan: PlanNode) =>
   nodes(plan)
@@ -173,6 +179,10 @@ describe('large durable queue query work', () => {
               .map((node) => ({
                 relation: node['Relation Name'] ?? node['Node Type'],
                 index: node['Index Name'],
+                alias: node.Alias,
+                relationship: node['Parent Relationship'],
+                indexCondition: redactPlanExpression(node['Index Cond']),
+                filter: redactPlanExpression(node.Filter),
                 rows: node['Actual Rows'],
                 filtered: node['Rows Removed by Filter'] ?? 0,
                 joinFiltered: node['Rows Removed by Join Filter'] ?? 0,
