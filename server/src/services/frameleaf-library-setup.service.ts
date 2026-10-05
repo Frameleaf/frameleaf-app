@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { ImmichWorker, JobName, QueueName, SyncEntityType } from 'src/enum.js';
 import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
@@ -167,9 +168,30 @@ export class FrameleafLibrarySetupService {
     return { journal, run };
   }
 
-  /** Release the existing import run once; queue admission and retry budgets remain unchanged. */
+  /** Restored authority comes only from Manager's private, reviewed canonical recovery metadata. */
+  private importInstallation(state: SetupState): string | null {
+    if (state.origin === 'new_import') return state.installation;
+    const installation = process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION;
+    return state.origin === 'restored_library' && installation && /^[a-f0-9]{12}$/.test(installation)
+      ? installation
+      : null;
+  }
+
+  private async processingSettingsReady(state: SetupState): Promise<boolean> {
+    if (state.origin === 'new_import') return !!state.processingChoiceApplied;
+    if (state.origin !== 'restored_library') return false;
+    try {
+      // Read the effective restored configuration, including file authority, without overwriting it.
+      const { config } = await this.config.getAdminConfigWithRevision();
+      return AdminConfigDto.schema.safeParse(config).success;
+    } catch {
+      return false;
+    }
+  }
+
   private async startImportedRegeneration(state: SetupState, db: Kysely<DB>) {
-    if (state.origin !== 'new_import' || !state.processingChoiceApplied || !(await this.users.hasAdmin())) return;
+    const installation = this.importInstallation(state);
+    if (!installation || !(await this.users.hasAdmin()) || !(await this.processingSettingsReady(state))) return;
     // Lock the run before selections, matching importer capture and cancellation/release.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
     const imported = await this.importedRun(db, true);
@@ -182,13 +204,19 @@ export class FrameleafLibrarySetupService {
       run.kind !== IMPORT_DERIVED_RUN_KIND ||
       run.selection.source !== journal.source_fingerprint ||
       run.selection.config !== journal.config_fingerprint ||
-      marker?.installation !== state.installation ||
+      marker?.installation !== installation ||
       !marker.operationId ||
       !marker.preparedAt ||
       marker.startedAt ||
       !run.enumerationDone
     )
       return;
+    if (state.origin === 'restored_library') {
+      const summary = (await listRuns(db, 1, 0, run.id))[0];
+      if (!summary || ['completed', 'cancelled', 'completed_with_errors', 'needs_attention'].includes(summary.state)) {
+        return;
+      }
+    }
     const stages = [...IMPORT_DERIVED_STAGES.map(([, stage]) => stage), JobName.PersonGenerateThumbnail];
     const {
       rows: [prepared],
@@ -207,21 +235,26 @@ export class FrameleafLibrarySetupService {
   }
 
   private async regenerationStatus(state: SetupState) {
-    if (state.origin !== 'new_import') return null;
+    if (state.origin === 'new_library') return null;
     const imported = await this.importedRun();
     const run = imported?.run;
     const marker = run?.selection.managerSetup;
+    const installation = this.importInstallation(state);
+    // Canonical fresh/independent-copy libraries have no Manager-held import to recover.
+    if (state.origin === 'restored_library' && !marker && !installation) return null;
     const matches =
       !!run &&
       run.kind === IMPORT_DERIVED_RUN_KIND &&
       run.selection.source === imported!.journal.source_fingerprint &&
       run.selection.config === imported!.journal.config_fingerprint &&
-      (!marker || marker.installation === state.installation);
+      !!installation &&
+      (marker ? marker.installation === installation : state.origin === 'new_import');
     const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
     const pending =
       !!marker &&
       !marker.startedAt &&
-      !['cancelled', 'completed_with_errors', 'needs_attention'].includes(summary?.state ?? '');
+      !['completed', 'cancelled', 'completed_with_errors', 'needs_attention'].includes(summary?.state ?? '');
+    const settingsReady = await this.processingSettingsReady(state);
     return {
       runId: run?.id ?? null,
       state: matches ? (pending ? 'pending_first_setup' : (summary?.state ?? 'unavailable')) : 'needs_attention',
@@ -235,7 +268,7 @@ export class FrameleafLibrarySetupService {
       reasons: matches
         ? pending
           ? [
-              state.processingChoiceApplied
+              settingsReady
                 ? imported?.journal.status === 'activated'
                   ? marker.preparedAt
                     ? state.phase === 'awaiting-account'
