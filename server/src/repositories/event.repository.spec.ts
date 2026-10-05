@@ -37,6 +37,17 @@ const setupServices = (worker: ImmichWorker) => {
 
 describe(EventRepository.name, () => {
   describe('setup', () => {
+    it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+      'publishes the restart notification before the %s worker exits',
+      (worker) => {
+        const restart = setupServices(worker).labels('AppRestart');
+        expect(restart).toContain('NotificationService.onAppRestart');
+        expect(restart).toContain('MaintenanceService.onRestart');
+        expect(restart.indexOf('NotificationService.onAppRestart')).toBeLessThan(
+          restart.indexOf('MaintenanceService.onRestart'),
+        );
+      },
+    );
     // FL-179: Studio revocation is an access boundary, so its priority (-1) must place it ahead of every
     // other AssetDelete handler in the order the handlers are emitted, on every worker that runs them.
     it.each([ImmichWorker.Microservices, ImmichWorker.Api])(

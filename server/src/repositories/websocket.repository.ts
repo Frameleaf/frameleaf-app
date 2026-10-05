@@ -13,6 +13,7 @@ import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { NotificationDto } from 'src/dtos/notification.dto.js';
 import { ReleaseEventV1, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
 import { SyncAssetEditV1, SyncAssetExifV1, SyncAssetV2 } from 'src/dtos/sync.dto.js';
+import { withSocketPublication } from 'src/middleware/websocket.adapter.js';
 import { type AppRestartEvent, type ArgsOf, EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
@@ -157,6 +158,36 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
 
   clientBroadcast<T extends keyof ClientEventMap>(event: T, ...data: ClientEventMap[T]) {
     this.server?.emit(event, ...data);
+  }
+
+  async clientBroadcastAndFlush(event: 'AppRestartV1', ...data: ClientEventMap['AppRestartV1']): Promise<void> {
+    const server = this.requireServer();
+    await withSocketPublication(server, () =>
+      server.sockets.adapter.broadcast(
+        { type: 2, nsp: server.sockets.name, data: [event, ...data] },
+        { rooms: new Set(), except: new Set(), flags: {} },
+      ),
+    );
+  }
+
+  async serverSendAndFlush(event: 'AppRestart', ...args: ArgsOf<'AppRestart'>): Promise<void> {
+    const server = this.requireServer();
+    await withSocketPublication(server, () => {
+      server.serverSideEmit(event, ...args);
+    });
+  }
+
+  async acknowledgeRestart(ack?: (ok: 'ok') => void): Promise<void> {
+    if (ack) {
+      await withSocketPublication(this.requireServer(), () => ack('ok'));
+    }
+  }
+
+  private requireServer(): Server {
+    if (!this.server) {
+      throw new Error('Websocket server is unavailable for restart publication');
+    }
+    return this.server;
   }
 
   serverSend<T extends ServerEvents>(event: T, ...args: ArgsOf<T>): void {

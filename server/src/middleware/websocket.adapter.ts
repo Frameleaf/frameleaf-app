@@ -11,6 +11,16 @@ import { closeSharedServicePool, createSharedServicePool, trackPoolClients } fro
 const CHANNEL = 'frameleaf-socket.io';
 const HEARTBEAT_MS = 1000;
 const DISCOVERY_MS = 5000;
+const transports = new WeakMap<Server, PostgresSocketTransport>();
+
+/** Own the small restart/ACK messages whose Socket.IO emit methods discard publication promises. */
+export const withSocketPublication = async (server: Server, action: () => unknown): Promise<void> => {
+  const transport = transports.get(server);
+  if (!transport) {
+    throw new Error('PostgreSQL websocket transport is unavailable');
+  }
+  await transport.publish(action);
+};
 
 /** Adapter 0.5.0 has no readiness promise. Observe successful LISTEN, never a guessed startup sleep. */
 export class PostgresSocketTransport {
@@ -24,11 +34,33 @@ export class PostgresSocketTransport {
   private stopped = false;
   private server?: Server;
   private initialization?: Promise<void>;
+  private readonly publications = new Set<Promise<unknown>>();
+  private publicationFailures = 0;
+  private publicationError?: unknown;
 
   constructor(config: ConfigRepository) {
     // LISTEN reserves one client. Two others handle publishing/attachments without pool starvation.
     this.pool = createSharedServicePool(config, 'websocket', 3);
     this.clients = trackPoolClients(this.pool);
+    this.pool.query = new Proxy(this.pool.query, {
+      apply: (target, receiver, args) => {
+        const result = Reflect.apply(target, receiver, args);
+        if (args[0] === 'SELECT pg_notify($1, $2)' && result instanceof Promise) {
+          this.publications.add(result);
+          // Record rejection on the original promise before the adapter's swallowing handler.
+          // eslint-disable-next-line unicorn/prefer-then-catch
+          void result.then(
+            () => this.publications.delete(result),
+            (error: unknown) => {
+              this.publicationFailures++;
+              this.publicationError = error;
+              this.publications.delete(result);
+            },
+          );
+        }
+        return result;
+      },
+    });
     this.pool.on('connect', (client: PoolClient) => {
       const query = client.query;
       client.query = new Proxy(query, {
@@ -55,6 +87,7 @@ export class PostgresSocketTransport {
 
   attach(server: Server, registerWorker = true) {
     this.server = server;
+    transports.set(server, this);
     server.adapter(
       createAdapter(this.pool, {
         channelPrefix: CHANNEL,
@@ -87,6 +120,19 @@ export class PostgresSocketTransport {
     // Native IoAdapter creation is synchronous; asynchronous failures still surface in diagnostics.
     void ready.catch((error: Error) => console.error('Websocket transport startup failed:', error.message));
     return ready;
+  }
+
+  /** Bound by the existing pool acquisition/query deadlines; no connection is held by this barrier. */
+  async publish(action: () => unknown): Promise<void> {
+    if (this.stopped) {
+      throw new Error('PostgreSQL websocket transport is stopping');
+    }
+    const failures = this.publicationFailures;
+    await action();
+    await Promise.all(this.publications);
+    if (this.publicationFailures !== failures) {
+      throw this.publicationError;
+    }
   }
 
   private async waitForListener(channel: string): Promise<void> {
@@ -142,6 +188,9 @@ export class PostgresSocketTransport {
 
   async close() {
     this.stopped = true;
+    if (this.server && transports.get(this.server) === this) {
+      transports.delete(this.server);
+    }
     clearInterval(this.heartbeat);
     await this.initialization?.catch(() => {
       // A failed startup must still close all resources.

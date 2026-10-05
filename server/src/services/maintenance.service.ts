@@ -74,11 +74,11 @@ export class MaintenanceService extends BaseService {
     );
   }
 
-  @OnEvent({ name: 'AppRestart', server: true })
-  onRestart(event: ArgOf<'AppRestart'>, ack?: (ok: 'ok') => void): void {
+  @OnEvent({ name: 'AppRestart', server: true, priority: 100 })
+  async onRestart(event: ArgOf<'AppRestart'>, ack?: (ok: 'ok') => void): Promise<void> {
     this.logger.log(`Restarting due to event... ${JSON.stringify(event)}`);
 
-    ack?.('ok');
+    await this.websocketRepository.acknowledgeRestart(ack);
     this.appRepository.exitApp();
   }
 
