@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 
@@ -39,6 +40,40 @@ it('finishes verification after one durable transfer and reports its run without
     expect(output).toHaveBeenCalledWith(JSON.stringify({ status: 'activated', derivedRunId: 'retained-import-run' }));
     expect(fixture.close).toHaveBeenCalledTimes(2);
   } finally {
+    output.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
+
+it('refuses Manager in-place verification without matching operation authority', async () => {
+  vi.stubEnv('DB_URL', 'postgres://fixture/destination');
+  vi.stubEnv('FRAMELEAF_IMPORT_SOURCE_URL', 'postgres://fixture/source');
+  vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', 'different-operation');
+  vi.mocked(readFile).mockResolvedValueOnce(
+    JSON.stringify({
+      version: '3.2.4',
+      sourceId: 'offline-source',
+      writersStopped: true,
+      mediaRoots: [{ source: '/media', target: '/media' }],
+      media: {
+        mode: 'manager-in-place',
+        authority: 'frameleaf-manager',
+        operationId: 'operation-1',
+        deploymentId: 'deployment-1',
+      },
+    }),
+  );
+  fixture.verify.mockClear();
+  const output = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const previousExitCode = process.exitCode;
+  try {
+    const command = new ImportImmichCommand({ dispatchImportedWork: vi.fn() } as unknown as JobRepository);
+    await command.run(['verify'], { config: 'fixture.json' });
+    expect(fixture.verify).not.toHaveBeenCalled();
+    expect(output).toHaveBeenCalledWith('Immich import refused: MANAGER_OPERATION_AUTHORITY_REQUIRED');
+    expect(process.exitCode).toBe(1);
+  } finally {
+    process.exitCode = previousExitCode;
     output.mockRestore();
     vi.unstubAllEnvs();
   }

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
 import { Docker } from './docker.js';
-import { Discovery } from './discovery.js';
+import { Discovery, COMPATIBLE_SETTINGS } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
@@ -51,6 +51,7 @@ const Recovery = z
   .object({
     schemaVersion: z.literal(2),
     mediaIncluded: z.literal(false),
+    databaseFormat: z.enum(['frameleaf-canonical', 'immich-source']),
     databasePassword: z.string().min(32).max(256),
     application: ApplicationConfig,
     dumpSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -148,9 +149,8 @@ export class Operations {
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
     );
     await storagePath(this.store.directory, [this.store.directory], (source?.summary.databaseBytes ?? 1024 ** 3) * 3);
-    let release = await this.releases.acquire(input.tag);
+    const release = await this.releases.acquire(input.tag);
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
-    if (source) release = await this.releases.qualify(release, source);
     const review: Review = {
       id: randomUUID(),
       expires: Date.now() + 900_000,
@@ -270,7 +270,7 @@ export class Operations {
           this.directory(),
           this.application(),
         );
-        await this.docker.compose(this.directory(), installation.project, 'up', ['database', 'redis']);
+        await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       }
       if (restoring) await this.applyRestore(operation, review as RestoreReview);
       else await this.install(operation, review as Review);
@@ -365,10 +365,39 @@ export class Operations {
     }
     await this.step(operation, 'start-database', async () => {
       await this.databaseStorage.verify(installation);
-      await this.docker.compose(this.directory(), installation.project, 'up', ['database', 'redis']);
+      await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       return true;
     });
     if (source) {
+      await this.step(operation, 'capture-fenced-settings', async () => {
+        await this.fencing.verify(source);
+        const settings =
+          source.settingsAuthority === 'database'
+            ? JSON.parse(
+                await this.docker.sql(
+                  source.database,
+                  `SELECT coalesce((SELECT value FROM public.system_metadata WHERE key='system-config'), '{}'::jsonb);`,
+                ),
+              )
+            : source.settings;
+        if (
+          settings &&
+          (typeof settings !== 'object' ||
+            Array.isArray(settings) ||
+            Object.keys(settings).some((key) => !COMPATIBLE_SETTINGS.includes(key)))
+        )
+          throw new Refusal('incompatible_fenced_settings');
+        const application = ApplicationConfig.parse({ ...this.application(), settings });
+        this.store.set('application-config', application);
+        await renderCompose(
+          review.release,
+          installation,
+          this.store.get<string>('database-password')!,
+          this.directory(),
+          application,
+        );
+        return application;
+      });
       const dump = join(this.store.directory, 'imports', `${operation.id}.dump`);
       await this.step(operation, 'copy-current-database', async () => {
         await this.fencing.verify(source);
@@ -396,19 +425,59 @@ export class Operations {
           const checkpoint = await this.checkpoint(operation, dump);
           return this.backups.snapshot(checkpoint, operation.id);
         });
-      await this.step(operation, 'restore-new-database', async () => {
+      await this.step(operation, 'configure-offline-import', async () => {
         await this.fencing.verify(source);
+        await this.configureImport(operation, review, installation);
+        return true;
+      });
+      await this.step(operation, 'import-canonical-database', async () => {
+        await this.fencing.verify(source);
+        const state = await this.runImport(operation, review, installation, 'status');
+        if (state.status === 'abandoned') throw new Refusal('import_abandoned_requires_fresh_database');
+        if (state.status !== 'activated') {
+          await this.runImport(operation, review, installation, state.status === 'fresh' ? 'run' : 'resume');
+          await this.fencing.verify(source);
+          await this.runImport(operation, review, installation, 'verify');
+        }
+        return true;
+      });
+      await this.step(operation, 'verify-import', async () => {
+        await this.fencing.verify(source);
+        const state = await this.runImport(operation, review, installation, 'status');
+        if (state.status !== 'activated') throw new Refusal('import_verification_failed');
         const db = await this.targetDatabase();
-        const tableCount = Number(
+        const result = JSON.parse(
           await this.docker.sql(
             db,
-            `SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';`,
+            `SELECT json_build_object('users',(SELECT count(*) FROM public.user),
+          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album));`,
           ),
         );
-        if (tableCount > 0) throw new Refusal('target_database_not_empty_recovery_required');
-        const receipt = operation.receipts['copy-current-database'] as { sha256: string };
-        if ((await fileHash(dump)) !== receipt.sha256) throw new Refusal('import_dump_changed');
-        await this.docker.restore(db, dump);
+        const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };
+        if (['users', 'assets', 'albums'].some((k) => result[k] !== receipt.summary[k]))
+          throw new Refusal('import_verification_failed');
+        // The frozen importer owns canonical row/permission/checksum verification. Manager owns cutover.
+        return { countsMatch: true, activated: true };
+      });
+      await this.step(operation, 'import-settings', async () => {
+        if (source.settingsAuthority === 'database') {
+          const captured = operation.receipts['capture-fenced-settings'] as ApplicationConfig;
+          const settings = JSON.stringify({
+            ...captured.settings,
+            machineLearning: {
+              ...(captured.settings?.machineLearning as Record<string, unknown> | undefined),
+              enabled: installation.ml,
+              urls: ['http://immich-machine-learning:3003'],
+            },
+          }).replaceAll("'", "''");
+          await this.docker.sql(
+            await this.targetDatabase(),
+            `INSERT INTO public.system_metadata (key,value) VALUES ('system-config','${settings}'::jsonb)
+             ON CONFLICT (key) DO UPDATE SET value=excluded.value;`,
+          );
+        }
+        const reader = this.store.get<{ name: string }>(`import-reader:${operation.id}`)!;
+        await this.docker.sql(source.database, `ALTER ROLE "${reader.name}" NOLOGIN;`);
         return true;
       });
     }
@@ -418,28 +487,118 @@ export class Operations {
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
       this.store.set('installation', installation);
-      // The existing application boot runs official-origin adoption under its migration lock.
       await this.docker.compose(this.directory(), installation.project, 'up');
       return true;
     });
-    await this.step(operation, 'verify-import', async () => {
-      if (!source) return true;
-      await this.fencing.verify(source, installation);
-      const db = await this.targetDatabase();
-      const result = JSON.parse(
-        await this.docker.sql(
-          db,
-          `SELECT json_build_object(
-        'users',(SELECT count(*) FROM public.user),'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album),
-        'adopted', EXISTS(SELECT 1 FROM immich_fork.migration_audit WHERE name='official-origin-adoption' AND status='applied'));`,
-        ),
-      );
-      const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };
-      if (!result.adopted || ['users', 'assets', 'albums'].some((k) => result[k] !== receipt.summary[k]))
-        throw new Refusal('import_verification_failed');
-      return { countsMatch: true, adopted: true };
-    });
     await this.step(operation, 'prepare-library', async () => this.libraryStatus(true));
+  }
+  private async runImport(
+    operation: Operation,
+    review: Review,
+    installation: Installation,
+    action: 'status' | 'run' | 'resume' | 'verify',
+  ) {
+    await this.fencing.verify(review.source!);
+    // Refresh only transport addresses; logical config and source identities remain journal-pinned.
+    await this.configureImport(operation, review, installation);
+    return this.docker.importCommand(this.directory(), installation.project, operation.id, action);
+  }
+  private async configureImport(operation: Operation, review: Review, installation: Installation): Promise<void> {
+    const source = review.source!;
+    if (
+      (await this.docker.inventory()).some(
+        (c) => c.Config.Labels?.['app.frameleaf.manager.import'] === operation.id && c.State.Running,
+      )
+    )
+      throw new Refusal('import_still_running_retry_when_stopped');
+    let reader = this.store.get<{ name: string; password: string }>(`import-reader:${operation.id}`);
+    if (!reader) {
+      reader = {
+        name: `frameleaf_import_${randomBytes(12).toString('hex')}`,
+        password: randomBytes(32).toString('hex'),
+      };
+      this.store.set(`import-reader:${operation.id}`, reader);
+    }
+    // Only role grants are changed on the stopped source. No content, schema or source migration runs.
+    const database = source.database.name.replaceAll('"', '""');
+    await this.docker.sql(
+      source.database,
+      `DO $role$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${reader.name}') THEN
+        CREATE ROLE "${reader.name}" LOGIN PASSWORD '${reader.password}' NOSUPERUSER NOBYPASSRLS NOINHERIT;
+      END IF; END $role$;
+      GRANT CONNECT ON DATABASE "${database}" TO "${reader.name}";
+      GRANT USAGE ON SCHEMA public TO "${reader.name}";
+      GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${reader.name}";
+      GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO "${reader.name}";`,
+    );
+    const container = await this.docker.inspect(source.database.container);
+    const network = Object.entries(container.NetworkSettings.Networks).find(([, value]) => value.IPAddress);
+    if (!network) throw new Refusal('source_database_network_unavailable');
+    const destination = await this.docker.inspect((await this.targetDatabase()).container);
+    const destinationIp = destination.NetworkSettings.Networks[`${installation.project}_default`]?.IPAddress;
+    if (!destinationIp) throw new Refusal('target_database_network_unavailable');
+    const url = (host: string, name: string, user: string, password: string, port: number) => {
+      const value = new URL(`postgresql://${host}:${port}`);
+      value.username = user;
+      value.password = password;
+      value.pathname = `/${encodeURIComponent(name)}`;
+      return value.toString();
+    };
+    const config = {
+      version: source.version.replace(/^v/, ''),
+      sourceId: source.id,
+      writersStopped: true,
+      media: {
+        mode: 'manager-in-place',
+        authority: 'frameleaf-manager',
+        operationId: operation.id,
+        deploymentId: installation.id,
+      },
+      mediaRoots: installation.mounts.map((mount) => ({ source: mount.target, target: mount.target })),
+    };
+    await atomicJson(join(this.directory(), 'import.json'), config);
+    const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
+    const app = compose.services['immich-server'];
+    app.environment = {
+      DB_URL: url(destinationIp, 'frameleaf', 'frameleaf', this.store.get<string>('database-password')!, 5432),
+      FRAMELEAF_IMPORT_SOURCE_URL: url(
+        network[1].IPAddress,
+        source.database.name,
+        reader.name,
+        reader.password,
+        source.database.port,
+      ),
+      FRAMELEAF_IMPORT_MANAGER_OPERATION_ID: operation.id,
+      ...(source.environment.IMMICH_MEDIA_LOCATION
+        ? { IMMICH_MEDIA_LOCATION: source.environment.IMMICH_MEDIA_LOCATION }
+        : {}),
+    };
+    // Dedicated CLI container can read every reviewed media mapping, but cannot mutate any media.
+    app.volumes = app.volumes.map((mount: Record<string, unknown>) => ({ ...mount, read_only: true }));
+    app.volumes.push({
+      type: 'bind',
+      source: join(this.directory(), 'import.json').replaceAll('$', () => '$$'),
+      target: '/run/frameleaf/import.json',
+      read_only: true,
+      bind: { create_host_path: false },
+    });
+    app.labels['app.frameleaf.manager.import'] = operation.id;
+    app.networks = ['default', 'import-source'];
+    delete app.ports;
+    delete app.depends_on;
+    delete app.healthcheck;
+    app.restart = 'no';
+    app.logging = { driver: 'none' };
+    compose.networks['import-source'] = { external: true, name: network[0].replaceAll('$', () => '$$') };
+    // Compose interpolates strings even in JSON. The generated runtime-only credentials stay private.
+    const escaped = JSON.parse(
+      JSON.stringify(app.environment, (_key, value) =>
+        typeof value === 'string' ? value.replaceAll('$', () => '$$') : value,
+      ),
+    );
+    app.environment = escaped;
+    await atomicJson(join(this.directory(), 'import-compose.json'), compose);
   }
   async libraryStatus(begin = false): Promise<unknown> {
     const installation = this.installation();
@@ -469,7 +628,7 @@ export class Operations {
           m.Type === 'bind' &&
           m.Source === installation.databasePath &&
           m.RW &&
-          m.Destination === '/var/lib/postgresql/data',
+          m.Destination === '/var/lib/postgresql',
       )
     )
       throw new Refusal('managed_database_unavailable');
@@ -527,6 +686,7 @@ export class Operations {
         dumpSha256: receipt.sha256,
         databasePassword: this.store.get('database-password'),
         mediaIncluded: false,
+        databaseFormat: dump ? 'immich-source' : 'frameleaf-canonical',
       }),
     );
     return path;
@@ -563,7 +723,7 @@ export class Operations {
     const current = this.installation();
     if (!current || current.release === tag) throw new Refusal('select_a_new_release');
     const compatibility = await this.docker.compatibility();
-    let release = await this.releases.acquire(tag);
+    const release = await this.releases.acquire(tag);
     const existingCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
     if (existingCompose.services.database.image !== release.nas.images.postgres)
       throw new Refusal('database_image_change_requires_restore');
@@ -574,7 +734,7 @@ export class Operations {
       'extensions',(SELECT json_agg(json_build_object('name',extname,'version',extversion) ORDER BY extname) FROM pg_extension));`,
       ),
     );
-    release = await this.releases.qualifyMigration(release, 'priorFrameleaf', current.release, postgres);
+    if (postgres.major !== 19) throw new Refusal('canonical_postgres_19_required');
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
     const id = randomUUID();
     this.store.set(`update:${id}`, {
@@ -651,6 +811,8 @@ export class Operations {
       checkpoint = join(this.store.directory, `restore-${id}`);
     await this.backups.restore(snapshot, checkpoint);
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
+    if (recovery.databaseFormat !== 'frameleaf-canonical')
+      throw new Refusal('immich_source_checkpoint_requires_source_recovery');
     await this.fencing.assertMedia(recovery.installation.mounts);
     const containers = await this.docker.inventory();
     for (const mount of recovery.installation.mounts) {
@@ -735,7 +897,7 @@ export class Operations {
     });
     await this.step(operation, 'start-database', async () => {
       await this.databaseStorage.verify(installation);
-      await this.docker.compose(this.directory(), installation.project, 'up', ['database', 'redis']);
+      await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       return true;
     });
     await this.step(operation, 'restore-new-database', async () => {
@@ -832,6 +994,19 @@ export class Operations {
           await this.docker.restartPolicy(container.Id, 'no');
           await this.docker.stop(container.Id);
         }
+        return true;
+      });
+      await this.step(operation, 'cancel-import-reader', async () => {
+        const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
+        const reader = this.store.get<{ name: string }>(`import-reader:${operation.id}`);
+        if (source && reader)
+          await this.docker.sql(
+            source.database,
+            `DO $role$ BEGIN
+          IF EXISTS (SELECT FROM pg_roles WHERE rolname='${reader.name}') THEN
+            ALTER ROLE "${reader.name}" NOLOGIN;
+          END IF; END $role$;`,
+          );
         return true;
       });
       await this.step(operation, 'cancel-source', async () => {

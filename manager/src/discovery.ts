@@ -14,7 +14,7 @@ const SECRETS = [
   'IMMICH_CONFIG_FILE',
 ];
 const SAFE_ENV = ['TZ', 'IMMICH_MEDIA_LOCATION', 'IMMICH_LOG_LEVEL'];
-const COMPATIBLE_SETTINGS = [
+export const COMPATIBLE_SETTINGS = [
   'ffmpeg',
   'image',
   'job',

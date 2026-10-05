@@ -85,6 +85,10 @@ export class Backups {
     for (const file of await readdir(checkpointDirectory))
       if (!permitted.has(file) || !(await stat(join(checkpointDirectory, file))).isFile())
         throw new Refusal('invalid_database_checkpoint');
+    const recovery = JSON.parse(await readFile(join(checkpointDirectory, 'recovery.json'), 'utf8'));
+    const format = recovery?.databaseFormat;
+    if (!['frameleaf-canonical', 'immich-source'].includes(format))
+      throw new Refusal('unknown_checkpoint_database_format');
     const existing = JSON.parse(
       await this.execute('restic', this.args(['snapshots', '--tag', `frameleaf-manager-database,${operationId}`])),
     );
@@ -93,7 +97,9 @@ export class Backups {
       if (
         !/^[a-f0-9]{64}$/.test(existing[0].id) ||
         existing[0].paths?.length !== 1 ||
-        existing[0].paths[0] !== checkpointDirectory
+        existing[0].paths[0] !== checkpointDirectory ||
+        !existing[0].tags?.includes(format) ||
+        existing[0].tags?.includes(format === 'frameleaf-canonical' ? 'immich-source' : 'frameleaf-canonical')
       )
         throw new Refusal('invalid_operation_backup');
       await this.execute('restic', this.args(['check', '--read-data']), { timeout: 7_200_000 });
@@ -101,7 +107,7 @@ export class Backups {
     }
     const output = await this.execute(
       'restic',
-      this.args(['backup', '--tag', 'frameleaf-manager-database', '--tag', operationId, '.']),
+      this.args(['backup', '--tag', 'frameleaf-manager-database', '--tag', operationId, '--tag', format, '.']),
       { cwd: checkpointDirectory, timeout: 7_200_000 },
     );
     const summary = output
@@ -115,9 +121,16 @@ export class Backups {
   }
   async list(): Promise<{ id: string; time: string; paths: string[] }[]> {
     const snapshots = JSON.parse(
-      await this.execute('restic', this.args(['snapshots', '--tag', 'frameleaf-manager-database'])),
+      await this.execute('restic', this.args(['snapshots', '--tag', 'frameleaf-manager-database,frameleaf-canonical'])),
     );
-    return snapshots.map((s: any) => ({ id: s.id, time: s.time, paths: s.paths }));
+    return snapshots
+      .filter(
+        (s: any) =>
+          s.tags?.includes('frameleaf-manager-database') &&
+          s.tags.includes('frameleaf-canonical') &&
+          !s.tags.includes('immich-source'),
+      )
+      .map((s: any) => ({ id: s.id, time: s.time, paths: s.paths }));
   }
   async restore(snapshot: string, emptyDirectory: string): Promise<void> {
     const entry = (await this.list()).find((s) => s.id === snapshot);

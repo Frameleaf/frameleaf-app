@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { frozenSource } from 'src/immich-import/adapters.js';
 import { ImmichSource } from 'src/immich-import/source.js';
 import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types.js';
@@ -63,6 +66,34 @@ const makeSource = (
 };
 
 describe('source preflight', () => {
+  it('pins in-place media bytes even when upstream identifies an external asset by its path', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'frameleaf-manager-import-'));
+    try {
+      const path = join(directory, 'photo.jpg');
+      await writeFile(path, 'first');
+      const { source: fixtureSource } = makeSource();
+      const source = new ImmichSource(fixtureSource.db, {
+        ...config,
+        mediaRoots: [{ source: directory, target: directory }],
+        media: {
+          mode: 'manager-in-place',
+          authority: 'frameleaf-manager',
+          operationId: 'operation-1',
+          deploymentId: 'deployment-1',
+        },
+      });
+      vi.spyOn(source, 'batches').mockImplementation(async function* (table) {
+        if (table === 'asset') yield [{ row: { originalPath: path, checksumAlgorithm: 'sha1-path' }, cursor: ['1'] }];
+      });
+      const before = await source.preflight();
+      expect(await source.preflight()).toBe(before);
+      await writeFile(path, 'other');
+      expect(await source.preflight()).not.toBe(before);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('uses only explicit SELECTs and binds schema and instance identity to the fingerprint', async () => {
     const { source, statements } = makeSource();
     const first = await source.preflight();

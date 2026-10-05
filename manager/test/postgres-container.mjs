@@ -32,7 +32,7 @@ const pg = (name, path, id) =>
     '--label',
     'com.docker.compose.service=database',
     '--mount',
-    `type=bind,source=${path},target=/var/lib/postgresql/data`,
+    `type=bind,source=${path},target=/var/lib/postgresql`,
     '-e',
     'POSTGRES_USER=frameleaf',
     '-e',
@@ -100,6 +100,8 @@ try {
   );
   const firstContainer = pg(names.first, first, firstId);
   await ready(names.first);
+  assert.equal(sql(names.first, 'SHOW data_directory'), '/var/lib/postgresql/19/docker');
+  assert.equal(sql(names.first, 'SHOW server_version_num').slice(0, 2), '19');
   sql(
     names.first,
     "CREATE TABLE manager_storage_probe (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO manager_storage_probe VALUES (1, 'disk persistence');",
@@ -107,7 +109,7 @@ try {
   const installation = { id: firstId, databaseRoot: root, databasePath: first };
   evaluate(
     storage +
-      `import assert from 'node:assert/strict'; import { access } from 'node:fs/promises'; import { constants } from 'node:fs'; await assert.rejects(access(${JSON.stringify(first)}, constants.R_OK | constants.W_OK | constants.X_OK)); await storage.verify(${JSON.stringify(installation)});`,
+      `import assert from 'node:assert/strict'; import { access } from 'node:fs/promises'; import { constants } from 'node:fs'; await assert.rejects(access(${JSON.stringify(join(first, '19', 'docker'))}, constants.R_OK | constants.W_OK | constants.X_OK)); await storage.verify(${JSON.stringify(installation)});`,
   );
   evidence.checks.privateInitializedPostgresWithDroppedManagerCapabilities = 'passed';
   const dump = join(state, 'database.dump');
@@ -138,7 +140,7 @@ try {
     const checkpoint=${JSON.stringify(checkpoint)}, repository=${JSON.stringify(backup)}, recovered=${JSON.stringify(recovered)};
     const backups = new Backups(repository, ${JSON.stringify(join(state, 'restic-key'))}, execute);
     await mkdir(checkpoint); await copyFile(${JSON.stringify(dump)}, checkpoint+'/database.dump');
-    await writeFile(checkpoint+'/recovery.json', JSON.stringify({ mediaIncluded: false, fixtureSecret: 'disposable-recovery-secret' }));
+    await writeFile(checkpoint+'/recovery.json', JSON.stringify({ mediaIncluded: false, databaseFormat: 'frameleaf-canonical', fixtureSecret: 'disposable-recovery-secret' }));
     const hash = await fileHash(checkpoint+'/database.dump');
     await backups.initialize(); const snapshot = await backups.snapshot(checkpoint, 'fixture-database-backup');
     assert.equal(await backups.snapshot(checkpoint, 'fixture-database-backup'), snapshot);
@@ -170,7 +172,7 @@ try {
   evidence.checks.logicalRestoreUsesFreshHostDirectoryAndPreservesSource = 'passed';
   for (const name of [names.first, names.second]) {
     const container = JSON.parse(docker('inspect', name))[0];
-    const mount = container.Mounts.find((m) => m.Destination === '/var/lib/postgresql/data');
+    const mount = container.Mounts.find((m) => m.Destination === '/var/lib/postgresql');
     assert.equal(mount.Type, 'bind');
     assert.ok(mount.Source.startsWith(root + '/frameleaf-'));
   }

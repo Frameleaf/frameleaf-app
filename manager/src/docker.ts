@@ -281,6 +281,59 @@ export class Docker {
       { cwd: directory, timeout: 1_200_000 },
     );
   }
+  /** Fixed offline command only; container identity survives a Manager restart. */
+  async importCommand(
+    directory: string,
+    project: string,
+    operationId: string,
+    action: 'status' | 'preflight' | 'run' | 'resume' | 'verify',
+  ): Promise<Record<string, any>> {
+    if (
+      !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
+      !/^[a-f0-9-]{36}$/.test(operationId) ||
+      !['status', 'preflight', 'run', 'resume', 'verify'].includes(action)
+    )
+      throw new Refusal('invalid_import_command');
+    const name = `${project}-import-${operationId}`;
+    const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);
+    if (existing) {
+      if (existing.Config.Labels['app.frameleaf.manager.import'] !== operationId)
+        throw new Refusal('import_container_identity_changed');
+      if (existing.State.Running) throw new Refusal('import_still_running_retry_when_stopped');
+      await this.execute('docker', ['rm', existing.Id]);
+    }
+    const output = await this.execute(
+      'docker',
+      [
+        'compose',
+        '--project-name',
+        project,
+        '--file',
+        'import-compose.json',
+        'run',
+        '--name',
+        name,
+        '--no-deps',
+        '-T',
+        '--entrypoint',
+        'node',
+        'immich-server',
+        'dist/main.js',
+        'frameleaf-admin',
+        'import-immich',
+        action,
+        '--config',
+        '/run/frameleaf/import.json',
+      ],
+      { cwd: directory, timeout: 86_400_000 },
+    );
+    const line = output
+      .trim()
+      .split('\n')
+      .findLast((line) => line.startsWith('{'));
+    if (!line) throw new Refusal('invalid_import_response');
+    return JSON.parse(line);
+  }
   async logs(id: string): Promise<string> {
     containerId.parse(id);
     return this.execute('docker', ['logs', '--tail', '200', '--since', '1h', id]);

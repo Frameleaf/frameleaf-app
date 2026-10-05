@@ -275,10 +275,10 @@ export class FrameleafLibrarySetupService {
           state.quietSince ??= Date.now();
           if (Date.now() - state.quietSince >= 10_000) {
             if (state.origin === 'new_import') {
-              const audit = await sql<{ ok: boolean }>`SELECT EXISTS(SELECT 1 FROM immich_fork.migration_audit
-                WHERE name='official-origin-adoption' AND status='applied') AS ok`.execute(db);
+              const audit = await sql<{ ok: boolean }>`SELECT EXISTS(SELECT 1 FROM public.frameleaf_immich_import
+                WHERE status='activated') AS ok`.execute(db);
               if (!audit.rows[0]?.ok) {
-                throw new BadRequestException('Import adoption is not verified');
+                throw new BadRequestException('Import activation is not verified');
               }
             }
             state.revision = (await this.checkpoints.getNow()).nowId;
