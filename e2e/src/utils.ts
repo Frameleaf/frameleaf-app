@@ -759,7 +759,8 @@ export const utils = {
       ...dto,
     };
 
-    const assetData = dto?.assetData?.bytes || makeRandomImage();
+    // Large enough for the real person-thumbnail crop used by createFace fixtures.
+    const assetData = dto?.assetData?.bytes || makeRandomImage(32, 32);
     const filename = dto?.assetData?.filename || 'example.png';
 
     if (dto?.assetData?.bytes) {
@@ -913,10 +914,25 @@ export const utils = {
     return row.id as string;
   },
 
-  createFace: async ({ assetId, personGroupId }: { assetId: string; personGroupId: string }) => {
+  createFace: async ({
+    assetId,
+    personGroupId,
+    imageWidth = 32,
+    imageHeight = 32,
+  }: {
+    assetId: string;
+    personGroupId: string;
+    imageWidth?: number;
+    imageHeight?: number;
+  }) => {
     const db = await utils.connectDatabase();
 
-    await db.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
+    await db.query(
+      `INSERT INTO asset_face ("assetId", "personGroupId", "imageWidth", "imageHeight",
+         "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2")
+       VALUES ($1, $2, $3, $4, 0, 0, $3, $4)`,
+      [assetId, personGroupId, imageWidth, imageHeight],
+    );
   },
 
   /**
