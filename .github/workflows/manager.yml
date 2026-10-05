@@ -1,0 +1,67 @@
+name: Frameleaf Manager
+on:
+  pull_request:
+    branches: [master/frameleaf-implementation, fork/main]
+    paths: ['manager/**', '.github/verify-release-bundle*', '.github/workflows/manager.yml', 'server/src/*/frameleaf-library-setup*']
+  push:
+    branches: [codex/FL-334-frameleaf-manager]
+permissions:
+  contents: read
+concurrency:
+  group: manager-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  server-integration:
+    uses: ./.github/workflows/fork-integration.yml
+    permissions:
+      contents: read
+      packages: read
+  manager:
+    name: Manager (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Install independent Manager dependencies
+        run: npm ci --prefix manager --ignore-scripts
+      - name: Types and Svelte
+        run: npm run check --prefix manager
+      - name: Security, ownership, recovery and policy tests
+        env:
+          NODE_PATH: ${{ github.workspace }}/manager/node_modules
+        run: npm test --prefix manager
+      - name: Shared release verification tests
+        env:
+          NODE_PATH: ${{ github.workspace }}/manager/node_modules
+        run: node --test .github/verify-release-bundle.test.cjs
+      - name: Build standalone UI and API
+        run: npm run build --prefix manager
+      - name: Build Manager container without publishing
+        run: docker build --file manager/Dockerfile --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-manager:test .
+      - name: HTTPS claim, session and restart integration
+        run: node manager/test/container.mjs
+      - name: Build PostgreSQL from the owned pinned source
+        run: docker build --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
+      - name: Real disk PostgreSQL, encrypted Restic recovery and logical restore
+        run: node manager/test/postgres-container.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: manager-evidence-${{ matrix.architecture }}
+          path: |
+            manager-evidence.json
+            manager-postgres-evidence.json
+          if-no-files-found: error
