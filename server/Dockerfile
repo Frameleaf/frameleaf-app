@@ -406,7 +406,7 @@ COPY ./studio ./studio/
 COPY ./web/src/lib/frameleaf/studio ./web/src/lib/frameleaf/studio/
 RUN node studio/tools/engine.mjs prepare && \
   npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund && \
-  node studio/tools/adapter.mjs build
+  RAYON_NUM_THREADS=2 TOKIO_WORKER_THREADS=2 node studio/tools/adapter.mjs build
 
 FROM sdk AS web
 
