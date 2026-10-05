@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, SystemMetadataKey } from 'src/enum.js';
 import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -147,3 +148,51 @@ it('releases a restored prepared import once with a real admin and effective set
     await db.destroy();
   }
 });
+
+it.each(['bound-missing-run', 'bound-missing-marker', 'unbound-markerless'] as const)(
+  'reports a broken trusted restore binding without adopting independent-copy work: %s',
+  async (scenario) => {
+    const db = await getKyselyDB(`fl333_restore_${scenario.replaceAll('-', '_')}`);
+    const previous = {
+      installation: process.env.FRAMELEAF_MANAGER_INSTALLATION,
+      origin: process.env.FRAMELEAF_MANAGER_ORIGIN,
+      imported: process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION,
+    };
+    const source = 'bound-source', config = 'bound-config';
+    const id = importDerivedRunId(source, config);
+    const service = new FrameleafLibrarySetupService(
+      db, {} as never, {} as never, {} as never,
+      { hasAdmin: vi.fn().mockResolvedValue(false) } as never, {} as never, {} as never,
+      { getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults) }) } as never,
+    );
+    try {
+      process.env.FRAMELEAF_MANAGER_INSTALLATION = 'aaaabbbbcccc';
+      process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
+      if (scenario === 'unbound-markerless') delete process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION;
+      else process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION = 'ddddeeeeffff';
+      await sql`INSERT INTO frameleaf_immich_import(source_fingerprint,config_fingerprint,source_version,status)
+        VALUES (${source},${config},'frozen-fixture','activated')`.execute(db);
+      if (scenario !== 'bound-missing-run') {
+        await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone")
+          VALUES (${id}::uuid,${IMPORT_DERIVED_RUN_KIND},${JSON.stringify({ source, config })}::text::jsonb,true)`.execute(db);
+      }
+      const status = await service.status();
+      if (scenario === 'unbound-markerless') expect(status.regeneration).toBeNull();
+      else expect(status.regeneration).toMatchObject({
+        runId: scenario === 'bound-missing-run' ? null : id,
+        state: 'needs_attention', reasons: ['import_not_prepared'], startedAt: null,
+      });
+      const { rows } = await sql`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db);
+      expect(rows).toEqual(scenario === 'bound-missing-run' ? [] : [{ selection: { source, config } }]);
+      expect((await sql`SELECT count(*)::int AS count FROM job`.execute(db)).rows).toEqual([{ count: 0 }]);
+    } finally {
+      for (const [name, value] of [
+        ['FRAMELEAF_MANAGER_INSTALLATION', previous.installation], ['FRAMELEAF_MANAGER_ORIGIN', previous.origin],
+        ['FRAMELEAF_MANAGER_IMPORT_INSTALLATION', previous.imported],
+      ]) {
+        if (value === undefined) delete process.env[name!]; else process.env[name!] = value;
+      }
+      await db.destroy();
+    }
+  },
+);
