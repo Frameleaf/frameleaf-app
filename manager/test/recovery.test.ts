@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile, utimes } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -118,7 +118,7 @@ test('checkpoint retry replaces a partial published copy and never accepts a cha
   }
 });
 test('native backup reuse uses filename time and SQL library identity, not refreshed mtime', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'manager-backup-'));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'manager-backup-')));
   const identity = { id: 'f269b8ab-c83b-4fef-b3c8-216bf92b90cc', createdAt: Date.UTC(2026, 0, 1) };
   const filename = (time: number) => {
     const d = new Date(time),
