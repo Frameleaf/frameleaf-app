@@ -28,7 +28,7 @@ pnpmfileChecksum: sha256-un98do36L0wZyqsjcLozQ3YUadCAn2yz5bXcBbOuyDA=
 
 patchedDependencies:
   '@immich/ui@0.86.0': 5ce02ddac7fa744f7120fcdc10f350a632e1421f74cf141f42c5cf7c1948fe16
-  postgres@3.4.9: d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938
+  postgres@3.4.9: 11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629
 
 importers:
 
@@ -437,13 +437,13 @@ importers:
         version: 0.29.5
       kysely-postgres-js:
         specifier: ^3.0.0
-        version: 3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938))
+        version: 3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629))
       pg-connection-string:
         specifier: ^2.11.0
         version: 2.14.0
       postgres:
         specifier: ^3.4.8
-        version: 3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938)
+        version: 3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629)
 
   server:
     dependencies:
@@ -563,7 +563,7 @@ importers:
         version: 0.29.5
       kysely-postgres-js:
         specifier: ^3.0.0
-        version: 3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938))
+        version: 3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629))
       lodash-es:
         specifier: ^4.18.1
         version: 4.18.1
@@ -602,7 +602,7 @@ importers:
         version: 4.0.7
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938)
+        version: 3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629)
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -22883,11 +22883,11 @@ snapshots:
       type-is: 2.1.0
       vary: 1.1.2
 
-  kysely-postgres-js@3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938)):
+  kysely-postgres-js@3.0.0(kysely@0.29.5)(postgres@3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629)):
     dependencies:
       kysely: 0.29.5
     optionalDependencies:
-      postgres: 3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938)
+      postgres: 3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629)
 
   kysely@0.29.5: {}
 
@@ -25005,7 +25005,7 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  postgres@3.4.9(patch_hash=d4b2f6f47af2137fc47028332e87bfd93c18f24a1899791304138b213b031938): {}
+  postgres@3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629): {}
 
   potpack@2.1.0: {}
 

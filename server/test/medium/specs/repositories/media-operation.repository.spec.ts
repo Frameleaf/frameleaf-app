@@ -1338,9 +1338,14 @@ describe(MediaOperationRepository.name, () => {
         remoteJobId: 'cloud-9',
       });
       const first = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
-      await lapse(ctx, operation.id);
-      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+      // A known owner yields its remote identity explicitly. Lease recovery must never replay
+      // ambiguous remote work merely to manufacture a replacement for this cancellation race.
+      expect(first).toBeDefined();
+      await expect(sut.requeue(operation.id, first!.claimToken, { delayMs: 0 })).resolves.toBe(true);
       const second = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b');
+      expect(second).toBeDefined();
+      expect(second!.claimToken).not.toBe(first!.claimToken);
+      expect(second!.operation.remoteJobId).toBe('cloud-9');
       await sut.requestCancel(operation.id, user.id);
 
       // Worker A wakes up, finds its requeue refused and tries to settle the cancel: refused too.
@@ -1360,6 +1365,28 @@ describe(MediaOperationRepository.name, () => {
         claimToken: null,
       });
       await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(0);
+    });
+
+    it('retains an ambiguous remote execution without admitting a replacement after lease loss', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, {
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-lost',
+      });
+      const first = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      expect(first).toBeDefined();
+      await lapse(ctx, operation.id);
+      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+      expect(await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b')).toBeUndefined();
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Failed,
+        claimToken: null,
+        autoRetries: 0,
+        remoteJobId: 'cloud-lost',
+      });
+      await expect(sut.acknowledgeCancel(operation.id, first!.claimToken, { released: true })).resolves.toBe(false);
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
     });
 
     it('resumes a lost claim once even when maxAttempts requests a larger retry budget', async () => {

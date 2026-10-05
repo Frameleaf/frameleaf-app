@@ -167,6 +167,17 @@ describe('large durable queue query work', () => {
             examined: examined(plan),
             buffers: plan['Shared Hit Blocks'] + plan['Shared Read Blocks'],
             indexes: nodes(plan).flatMap((node) => (node['Index Name'] ? [node['Index Name']] : [])),
+            // Attribute a failed work bound without dumping the entire plan or any item identities.
+            scans: nodes(plan)
+              .filter((node) => node['Relation Name'] || node['Node Type'] === 'CTE Scan')
+              .map((node) => ({
+                relation: node['Relation Name'] ?? node['Node Type'],
+                index: node['Index Name'],
+                rows: node['Actual Rows'],
+                filtered: node['Rows Removed by Filter'] ?? 0,
+                joinFiltered: node['Rows Removed by Join Filter'] ?? 0,
+                loops: node['Actual Loops'],
+              })),
           }),
         );
         expect(examined(plan), `${name} examined rows at ${size} retained roots`).toBeLessThanOrEqual(budget);

@@ -187,7 +187,9 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
-/** Probe per-run headers first, never repeatedly filter a large terminal manifest's retained rows. */
+/** Probe per-run headers first. Separate frozen admission from derived library ownership so
+ * PostgreSQL can use the sparse pending-manifest index without filtering retained terminal rows.
+ */
 export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
   ${libraryRunPending(runId)}
   or exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
@@ -197,13 +199,17 @@ export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
     where m."runId" = ${runId} and not m."copyComplete"
       and (s."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)})))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
-    where membership."runId" = ${runId}
-      and (snapshot."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`)})) and snapshot.state in ('enumerating','ready')
+    where membership."runId" = ${runId} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
       and (snapshot.state = 'enumerating' or exists (select 1 from job_run_item i
-        where i."selectionId" = snapshot.id and i."runId" = case when snapshot."sourceKind" = 'frozen' then membership."runId" else snapshot."runId" end
-          and ((snapshot."sourceKind"='frozen' and i."jobId" is null and i.state='pending') or (snapshot."sourceKind"!='frozen'
-            and (${libraryRootEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`, sql<string>`i."rootItemKey"`, { selectionId: sql<string>`i."selectionId"`, itemKey: sql<string>`i."itemKey"`, stage: sql<string>`i.stage` })})
-            and (${libraryCanonicalState('i')}) in ('pending','waiting','active')))))) `;
+        where i."selectionId" = snapshot.id and i."runId" = membership."runId"
+          and i."jobId" is null and i.state = 'pending')))
+  or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
+    where membership."runId" = ${runId} and snapshot."sourceKind" != 'frozen'
+      and (${libraryMembershipEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`)}) and snapshot.state in ('enumerating','ready')
+      and (snapshot.state = 'enumerating' or exists (select 1 from job_run_item i
+        where i."selectionId" = snapshot.id and i."runId" = snapshot."runId"
+          and (${libraryRootEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`, sql<string>`i."rootItemKey"`, { selectionId: sql<string>`i."selectionId"`, itemKey: sql<string>`i."itemKey"`, stage: sql<string>`i.stage` })})
+          and (${libraryCanonicalState('i')}) in ('pending','waiting','active')))) `;
 
 /** A terminal snapshot has no dispatch work even though its immutable rows retain pending admission state. */
 export const unfinishedQueueItems = (queue: string) => sql<boolean>`
