@@ -687,7 +687,13 @@ describe('PostgreSQL queue', () => {
     }
   }, 15_000);
 
-  it('executes 15,000 selected media through synthetic metadata, thumbnail, video and ML stages via the production facade', async () => {
+  it('executes 15,000 selected media through synthetic metadata, thumbnail, video and ML stages via the production facade', async ({
+    signal,
+    onTestFinished,
+  }) => {
+    const caseQueue = queue;
+    const caseWorkerA = workerA;
+    const caseWorkerB = workerB;
     // These handlers model scheduling/publication only: they do not decode media, run FFmpeg or call ML.
     // The separate child-process/ML-body fault cases below exercise those cancellation boundaries.
     const table = `queue_fixture_${randomUUID().replaceAll('-', '')}`;
@@ -709,12 +715,12 @@ describe('PostgreSQL queue', () => {
       if (!heartbeatBusy) {
         heartbeatBusy = Promise.all([
           store.heartbeat(
-            workerA,
-            activeClaims.filter((claim) => claim.workerId === workerA),
+            caseWorkerA,
+            activeClaims.filter((claim) => claim.workerId === caseWorkerA),
           ),
           store.heartbeat(
-            workerB,
-            activeClaims.filter((claim) => claim.workerId === workerB),
+            caseWorkerB,
+            activeClaims.filter((claim) => claim.workerId === caseWorkerB),
           ),
         ])
           .then(() => {})
@@ -726,7 +732,16 @@ describe('PostgreSQL queue', () => {
           });
       }
     }, 10_000);
+    const controllers = new Set<AbortController>();
+    const abort = () => {
+      for (const controller of controllers) controller.abort(signal.reason);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    const settled = Promise.withResolvers<void>();
+    // Timeout fails the case, but must not leave its facade consuming later cases' claims.
+    onTestFinished(() => settled.promise, 15_000);
     try {
+      signal.throwIfAborted();
       const artifacts = publicationDatabase(db);
       const makeExecutor = () => {
         const next: JobRepository = new JobRepository(
@@ -738,7 +753,7 @@ describe('PostgreSQL queue', () => {
         );
         next['handlers'][JobName.AssetExtractMetadataQueueAll] = {
           jobName: JobName.AssetExtractMetadataQueueAll,
-          queueName: queue as QueueName,
+          queueName: caseQueue as QueueName,
           label: 'synthetic-metadata-selection',
           handler: async () => {
             const checkpoint = await next.prepareCheckpoint('selection', async () => {
@@ -761,7 +776,7 @@ describe('PostgreSQL queue', () => {
         for (const [position, name] of stages.entries()) {
           next['handlers'][name] = {
             jobName: name,
-            queueName: queue as QueueName,
+            queueName: caseQueue as QueueName,
             label: `synthetic-${name}`,
             handler: async (data) => {
               const { id } = data as { id: string };
@@ -794,26 +809,39 @@ describe('PostgreSQL queue', () => {
       const runId = await executor.createRun('synthetic-four-stage-pipeline', { requested: 15_000 }, () =>
         executor.queue({ name: JobName.AssetExtractMetadataQueueAll, data: {} }),
       );
-      await store.setConcurrency(queue, concurrency);
+      await store.setConcurrency(caseQueue, concurrency);
       const readRun = async () => (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
       expect(await readRun()).toMatchObject({ total: 0, enumerationDone: false, stageTotals: { total: 1 } });
       const scheduled = async () =>
         (
           await sql<{ count: number }>`select count(*)::int count from job
-        where queue = ${queue} and state in ('pending','waiting','active')`.execute(db)
+        where queue = ${caseQueue} and state in ('pending','waiting','active')`.execute(db)
         ).rows[0].count;
       let batches = 0;
       let replacements = 0;
       let maximumScheduled = 0;
       for (;;) {
+        signal.throwIfAborted();
         if (heartbeatError) throw heartbeatError;
-        expect(await store.feedManifest(queue)).toBeLessThanOrEqual(250);
-        activeClaims = await store.claim(queue, batches % 2 ? workerA : workerB);
+        expect(await store.feedManifest(caseQueue)).toBeLessThanOrEqual(250);
+        activeClaims = await store.claim(caseQueue, batches % 2 ? caseWorkerA : caseWorkerB);
         maximumScheduled = Math.max(maximumScheduled, await scheduled());
         expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
         expect(activeClaims.length).toBeLessThanOrEqual(concurrency);
         // The facade and store remain production code; only the four handlers are synthetic.
-        await Promise.all(activeClaims.map((claim) => executor['execute'](claim, new AbortController())));
+        await Promise.all(
+          activeClaims.map(async (claim) => {
+            const controller = new AbortController();
+            controllers.add(controller);
+            if (signal.aborted) controller.abort(signal.reason);
+            try {
+              await executor['execute'](claim, controller);
+            } finally {
+              controllers.delete(controller);
+            }
+          }),
+        );
+        signal.throwIfAborted();
         const completedProducer = activeClaims.some(
           (claim) => claim.name === JobName.AssetExtractMetadataQueueAll && claim.attempt === 2,
         );
@@ -831,10 +859,10 @@ describe('PostgreSQL queue', () => {
         maximumScheduled = Math.max(maximumScheduled, await scheduled());
         expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
         // Accelerate the retry clock only. No terminal states or item outcomes are fabricated.
-        await sql`update job set "availableAt" = now() where queue = ${queue} and state = 'pending' and attempt > 0`.execute(
+        await sql`update job set "availableAt" = now() where queue = ${caseQueue} and state = 'pending' and attempt > 0`.execute(
           db,
         );
-        const counts = await store.counts(queue);
+        const counts = await store.counts(caseQueue);
         const {
           rows: [backlog],
         } = await sql<{ count: number }>`select count(*)::int count from job_run_item
@@ -903,8 +931,13 @@ describe('PostgreSQL queue', () => {
       expect(poison.count).toBe(0);
     } finally {
       clearInterval(heartbeat);
-      await heartbeatBusy;
-      await sql`drop table ${sql.id(checkpoints)}, ${sql.id(table)}`.execute(db);
+      try {
+        await heartbeatBusy;
+        await sql`drop table ${sql.id(checkpoints)}, ${sql.id(table)}`.execute(db);
+      } finally {
+        signal.removeEventListener('abort', abort);
+        settled.resolve();
+      }
     }
   }, 900_000);
 

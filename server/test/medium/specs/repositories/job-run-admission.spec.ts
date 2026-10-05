@@ -496,7 +496,11 @@ describe('atomic initial run admission', () => {
             .where('runId', '=', originalId)
             .where('rootItemKey', '=', originalId)
             .execute(),
-        ).toEqual([{ state: 'cancelled', jobId: null }]);
+        ).toEqual([{ state: 'pending', jobId: null }]);
+        // Cold rows remain immutable; the terminal header supplies their cancelled outcome.
+        expect(await db.selectFrom('job_selection').select('state').where('runId', '=', originalId).execute()).toEqual([
+          { state: 'cancelled' },
+        ]);
         expect(await store.feedManifest(queue)).toBe(0);
       }
       expect(await store.claim(queue, workerId)).toEqual([]);
