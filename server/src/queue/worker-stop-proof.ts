@@ -8,7 +8,10 @@ export const WORKER_PROOF_RETRY_MS = 30_000;
 /** Supervisor-only metadata transport. It never borrows an executor pool or retries media work. */
 export class WorkerStopProofRecorder {
   private pool: Pool;
-  private pending = new Map<string, { proof: WorkerStoppedProof; attempted: boolean }>();
+  private pending = new Map<string, { proof: WorkerStoppedProof; attempted: boolean; republishing?: boolean }>();
+  // One microservices worker runs at a time. Carry only its latest confirmed stop across the
+  // maintenance cycle, until normal bootstrap republishes it into the restored database.
+  private retained?: WorkerStoppedProof;
   private flushing?: Promise<void>;
   private retry?: NodeJS.Timeout;
   private closed = false;
@@ -53,10 +56,20 @@ export class WorkerStopProofRecorder {
 
   async record(proof: WorkerStoppedProof): Promise<void> {
     if (this.closed) return;
-    const entry = this.pending.get(proof.workerId) ?? { proof, attempted: false };
+    const entry = this.pending.get(proof.workerId) ?? { proof: { ...proof }, attempted: false };
+    this.retained = entry.proof;
     this.pending.set(proof.workerId, entry);
     await this.flush();
     // A proof arriving during another write must get its own first bounded attempt before exit.
+    if (!entry.attempted) await this.flush();
+  }
+
+  /** Called after maintenance ends, before starting a replacement executor. No new stop is inferred. */
+  async republish(): Promise<void> {
+    if (this.closed || !this.retained) return;
+    const entry = { proof: this.retained, attempted: false, republishing: true };
+    this.pending.set(entry.proof.workerId, entry);
+    await this.flush();
     if (!entry.attempted) await this.flush();
   }
 
@@ -99,8 +112,11 @@ export class WorkerStopProofRecorder {
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
         [JSON.stringify(proofs)],
       );
-      for (const entry of entries)
-        if (this.pending.get(entry.proof.workerId) === entry) this.pending.delete(entry.proof.workerId);
+      for (const entry of entries) {
+        if (this.pending.get(entry.proof.workerId) !== entry) continue;
+        this.pending.delete(entry.proof.workerId);
+        if (entry.republishing && this.retained === entry.proof) this.retained = undefined;
+      }
     } catch {
       failed = true;
       this.diagnostic();

@@ -1,5 +1,6 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { JobName, QueueName } from 'src/enum.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -873,6 +874,10 @@ export class SqlQueueStore {
  * Operation-owned jobs are never resumed here; the media-operation dispatcher owns their retry.
  */
 export async function resetQueueAfterRestore(db: Executor) {
+  // Older dumps serialized this audited local job as unsafe. Its current handler publishes a
+  // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
+  const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;
+  const repeatable = sql`("safeToRetry" or ${backup}) and not (data ? 'operationId')`;
   const { rows: deferred } =
     await sql<LineageItemIdentity>`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
     select 1 from job j where (j.state = 'active' or (not j."safeToRetry" and j.state in ('pending','waiting')))
@@ -881,16 +886,17 @@ export async function resetQueueAfterRestore(db: Executor) {
       or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
         as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
     returning i."runId", i."itemKey", i.stage`.execute(db);
-  await sql`update job_attempt a set outcome = case when j."safeToRetry" and not (j.data ? 'operationId')
+  await sql`update job_attempt a set outcome = case when ${repeatable}
       and j.attempt < j."retryBaseAttempt" + 2 then 'restored_retry' else 'restored_needs_attention' end,
       "finishedAt" = now() from job j where a."jobId" = j.id and a."finishedAt" is null`.execute(db);
   const { rows: restored } = await sql<{
     id: string;
-  }>`update job set state = case when "safeToRetry" and not (data ? 'operationId')
+  }>`update job set state = case when ${repeatable}
         and attempt < "retryBaseAttempt" + 2 then 'pending' else 'needs_attention' end,
+    "safeToRetry" = "safeToRetry" or (${backup} and not (data ? 'operationId')),
     token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null,
     "availableAt" = now() + interval '30 seconds', "latestPending" = null,
-    "finishedAt" = case when "safeToRetry" and not (data ? 'operationId') and attempt < "retryBaseAttempt" + 2 then null else now() end,
+    "finishedAt" = case when ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
     error = 'Restore revoked the previous execution claim',
     data = case when sensitive then '{}'::jsonb else data end
     where state = 'active' or ((not "safeToRetry" or data ? 'operationId') and state in ('pending','waiting')) returning id`.execute(
