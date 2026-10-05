@@ -30,13 +30,27 @@ import { getKyselyDB } from 'test/utils.js';
 describe('queue connection recovery and repeated database pressure', () => {
   let admin: Kysely<DB>;
   let url: string;
-  const queueReliabilityPool = (name: string, max: number) =>
+  const queueReliabilityPool = (
+    name: string,
+    max: number,
+    observe?: (event: 'begin' | 'rollback' | 'commit' | 'connection-closed') => void,
+  ) =>
     new Kysely<DB>({
       dialect: new PostgresJSDialect({
         postgres: postgres(url, {
           max,
           connect_timeout: 3,
           connection: { application_name: name, statement_timeout: 5000, lock_timeout: 2000 },
+          ...(observe && {
+            debug: (_connection: number, query: string) => {
+              // Classify transaction commands only; never log SQL, bindings, URLs or backend identifiers.
+              const command = query.trim().toLowerCase();
+              if (['begin', 'rollback', 'commit'].includes(command)) {
+                observe(command as 'begin' | 'rollback' | 'commit');
+              }
+            },
+            onclose: () => observe('connection-closed'),
+          }),
         }),
       }),
     });
@@ -62,7 +76,16 @@ describe('queue connection recovery and repeated database pressure', () => {
   afterAll(async () => admin?.destroy());
 
   it('reconnects after real backend termination and reconciles rollback plus one retry without a NOTIFY listener', async () => {
-    const connection = queueReliabilityPool('reliability-reconnect', 1);
+    const started = performance.now();
+    let diagnosticsEnabled = false;
+    let diagnosticCount = 0;
+    const phase = (event: string) => {
+      // Immediate, finite evidence survives a stuck rollback without adding a race, timer or fallback connection.
+      if (diagnosticsEnabled && diagnosticCount++ < 32) {
+        console.info('queue-reconnect-diagnostic', { event, elapsedMs: Math.round(performance.now() - started) });
+      }
+    };
+    const connection = queueReliabilityPool('reliability-reconnect', 1, (event) => phase(`driver:${event}`));
     const store = new SqlQueueStore(connection);
     const queue = `disconnect-${randomUUID()}`;
     const worker = randomUUID();
@@ -85,15 +108,24 @@ describe('queue connection recovery and repeated database pressure', () => {
         parentId: lost.id,
       });
       const entered = Promise.withResolvers<number>();
+      diagnosticsEnabled = true;
+      phase('publication-starting');
       const interrupted = store
         .complete(lost, [child], async (tx) => {
           await sql`update job set error = 'uncommitted adoption' where id = ${lost.id}::uuid`.execute(tx);
           const { rows } = await sql<{ pid: number }>`select pg_backend_pid() pid`.execute(tx);
+          phase('publication-entered');
           entered.resolve(rows[0].pid);
           await sql`select pg_sleep(30)`.execute(tx);
         })
-        .then(() => ({ failed: false }))
-        .catch(() => ({ failed: true }));
+        .then(() => {
+          phase('publication-resolved');
+          return { failed: false };
+        })
+        .catch(() => {
+          phase('publication-rejected');
+          return { failed: true };
+        });
       const oldPid = await Promise.race([
         entered.promise,
         interrupted.then(() => {
@@ -108,15 +140,19 @@ describe('queue connection recovery and repeated database pressure', () => {
         },
         { timeout: 2000, interval: 20 },
       );
+      phase('old-backend-sleep-confirmed');
       const { rows: killed } = await sql<{
         stopped: boolean;
       }>`select pg_terminate_backend(${oldPid}, 5000) stopped`.execute(admin);
       expect(killed).toEqual([{ stopped: true }]);
+      phase('old-backend-stop-confirmed');
       expect(await interrupted).toEqual({ failed: true }); // The old SQL executor has actually stopped.
+      phase('publication-failure-observed');
 
       // Reuse the same pool/store: a fresh facade alone must not conceal a poisoned connection.
       const { rows: reconnected } = await sql<{ pid: number }>`select pg_backend_pid() pid`.execute(connection);
       expect(reconnected[0].pid).not.toBe(oldPid);
+      phase('same-pool-reconnected');
       const { rows: rolledBack } = await sql<{ state: string; error: string | null; token: string }>`
         select state, error, token from job where id = ${lost.id}::uuid`.execute(connection);
       expect(rolledBack[0]).toEqual({
@@ -125,6 +161,7 @@ describe('queue connection recovery and repeated database pressure', () => {
         token: lost.token,
       });
       expect((await sql`select id from job where "parentId" = ${lost.id}::uuid`.execute(connection)).rows).toEqual([]);
+      phase('rollback-and-child-absence-confirmed');
       await recordStoppedAttempt(connection, lost.id, lost.token);
       await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second' where id = ${lost.id}::uuid`.execute(
         connection,
@@ -132,6 +169,7 @@ describe('queue connection recovery and repeated database pressure', () => {
       // Explicit scan calls model the fallback coordinator scan; there is no LISTEN client in this fixture.
       await store.recoverExpired();
       await store.recoverExpired();
+      phase('recovery-scans-completed');
       const staleAdoption = vi.fn();
       expect(await store.complete(lost, [child], staleAdoption)).toBe(false);
       expect(staleAdoption).not.toHaveBeenCalled();
@@ -163,15 +201,21 @@ describe('queue connection recovery and repeated database pressure', () => {
       expect(attempts).toHaveLength(4);
       expect(attempts.find(({ jobId }) => jobId === lost.id)?.count).toBe(2);
       expect(attempts.filter(({ jobId }) => jobId !== lost.id).every(({ count }) => count === 1)).toBe(true);
+      phase('single-retry-and-final-accounting-confirmed');
     } finally {
+      phase('pool-close-starting');
       await connection.destroy();
+      phase('pool-close-completed');
     }
   }, 30_000);
 
   it('bounds three 1,250-item runs while real upload admission and owner-scoped metadata search stay responsive', async () => {
     const execution = queueReliabilityPool('reliability-queue', 1);
+    const coordinator = queueReliabilityPool('reliability-coordinator', 1);
     const api = queueReliabilityPool('reliability-api', 2);
-    const store = new SqlQueueStore(execution);
+    // Match the production boundary: publication backlog cannot consume the control connection.
+    const store = new SqlQueueStore(coordinator);
+    const publications = new SqlQueueStore(execution);
     const queue = `pressure-${randomUUID()}`;
     const worker = randomUUID();
     const config = new ConfigRepository();
@@ -286,21 +330,23 @@ describe('queue connection recovery and repeated database pressure', () => {
             expect(performance.now() - started).toBeLessThan(5000);
           };
           const outcomes = await Promise.allSettled([
-            ...claims.slice(1).map(async (claim) => expect(await store.complete(claim, [])).toBe(true)),
+            ...claims.slice(1).map(async (claim) => expect(await publications.complete(claim, [])).toBe(true)),
             interact(),
             control(),
           ]);
           for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
-          expect(await store.complete(claims[0], [])).toBe(true);
+          expect(await publications.complete(claims[0], [])).toBe(true);
           observeQueuePressureMemory(); // The queue and real upload/search operations have settled.
           const { rows: pools } = await sql<{ name: string; count: number; transactions: number }>`
             select application_name name, count(*)::int count,
               count(*) filter(where state = 'idle in transaction')::int transactions from pg_stat_activity
-            where datname = current_database() and application_name in ('reliability-queue','reliability-api','frameleaf:admission')
+            where datname = current_database() and application_name in ('reliability-queue','reliability-coordinator','reliability-api','frameleaf:admission')
             group by application_name`.execute(admin);
-          expect(pools).toHaveLength(3);
+          expect(pools).toHaveLength(4);
           for (const pool of pools) {
-            expect(pool.count).toBeLessThanOrEqual(pool.name === 'reliability-queue' ? 1 : 2);
+            expect(pool.count).toBeLessThanOrEqual(
+              ['reliability-queue', 'reliability-coordinator'].includes(pool.name) ? 1 : 2,
+            );
             expect(pool.transactions).toBe(0);
           }
           const run = (await store.listRuns(100, 0)).find((value) => value.id === runId)!;
@@ -342,7 +388,7 @@ describe('queue connection recovery and repeated database pressure', () => {
       let cleanupComplete = false;
       try {
         await admission.onModuleDestroy();
-        await Promise.all([execution.destroy(), api.destroy()]);
+        await Promise.all([execution.destroy(), coordinator.destroy(), api.destroy()]);
         cleanupComplete = true;
       } finally {
         const afterCleanup = observeQueuePressureMemory();
@@ -357,7 +403,7 @@ describe('queue connection recovery and repeated database pressure', () => {
             rounds: 3,
             itemsPerRound: 1250,
             claimLimit: 64,
-            connectionLimits: { queue: 1, api: 2, admission: 2 },
+            connectionLimits: { queue: 1, coordinator: 1, api: 2, admission: 2 },
             samples: memorySamples,
             completedRounds: roundMemory.length,
             cleanupComplete,
@@ -377,7 +423,7 @@ describe('queue connection recovery and repeated database pressure', () => {
     await vi.waitFor(
       async () => {
         const { rows } = await sql<{ count: number }>`select count(*)::int count from pg_stat_activity
-        where datname = current_database() and application_name in ('reliability-queue','reliability-api','frameleaf:admission')`.execute(
+        where datname = current_database() and application_name in ('reliability-queue','reliability-coordinator','reliability-api','frameleaf:admission')`.execute(
           admin,
         );
         expect(rows).toEqual([{ count: 0 }]);

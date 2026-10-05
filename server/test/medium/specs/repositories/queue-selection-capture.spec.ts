@@ -7,6 +7,7 @@ import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
 import * as selectionHeaders from 'src/schema/migrations/1791101300000-SelectionOutcomeHeaders.js';
 import * as selectionLineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
+import * as librarySources from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('selection capture isolation', () => {
@@ -423,6 +424,7 @@ describe('selection capture isolation', () => {
     expect(await store.fail(claim, 'manual review required')).toBe(true);
     expect(await capturedKeys(runs[1])).toEqual([]);
     await db.transaction().execute(async (tx) => {
+      await librarySources.down(tx);
       await selectionLineage.down(tx);
       await selectionHeaders.down(tx);
     });
@@ -435,6 +437,7 @@ describe('selection capture isolation', () => {
       await db.transaction().execute(async (tx) => {
         await selectionHeaders.up(tx);
         await selectionLineage.up(tx);
+        await librarySources.up(tx);
       });
     }
     const summaries = await store.listRuns(100, 0);
