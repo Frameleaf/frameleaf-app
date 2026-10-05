@@ -174,6 +174,43 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it.each(['motion-photo', 'upload', 'copy'] as const)(
+      'publishes the requested motion encode only after accepting metadata (%s)',
+      async (source) => {
+        const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+        mocks.media.probePackets.mockResolvedValue(emptyPackets);
+        await sut.handleMetadataExtraction({ id: asset.id, source });
+        if (source === 'motion-photo') {
+          expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+            name: JobName.AssetEncodeVideo,
+            data: { id: asset.id },
+          });
+          expect(mocks.asset.upsertExif.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.job.queue.mock.invocationCallOrder[0],
+          );
+          expect(mocks.asset.upsertJobStatus.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.job.queue.mock.invocationCallOrder[0],
+          );
+        } else {
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('does not release a motion encode when metadata persistence fails', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+      mocks.media.probePackets.mockResolvedValue(emptyPackets);
+      mocks.asset.upsertExif.mockRejectedValue(new Error('metadata persistence failed'));
+      await expect(sut.handleMetadataExtraction({ id: asset.id, source: 'motion-photo' })).rejects.toThrow(
+        'metadata persistence failed',
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('prepares metadata without mutation and rejects a source replaced before adoption', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -1119,10 +1156,12 @@ describe(MetadataService.name, () => {
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
-        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
-      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should extract the EmbeddedVideo tag from Samsung JPEG motion photos', async () => {
@@ -1171,10 +1210,12 @@ describe(MetadataService.name, () => {
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
-        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
-      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should extract the motion photo video from the XMP directory entry ', async () => {
@@ -1223,10 +1264,12 @@ describe(MetadataService.name, () => {
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetExtractMetadata, data: { id: motionAsset.id } },
-        { name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } },
-      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should delete old motion photo video assets if they do not match what is extracted', async () => {
