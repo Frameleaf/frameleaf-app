@@ -1,7 +1,8 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { listRunItems, listRuns } from 'src/queue/run-query.js';
-import { SqlQueueStore } from 'src/queue/store.js';
+import { unfinishedQueueItems } from 'src/queue/selection-state.js';
+import { SqlQueueStore, settleRunQuery } from 'src/queue/store.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -147,17 +148,26 @@ describe('large durable queue query work', () => {
       expect((await sql`select state from job where "parentId"=${failed.id}::uuid`.execute(db)).rows).toEqual([
         { state: 'blocked' },
       ]);
+      const beforeUnfinished = captured.length;
       expect(await store.hasUnfinishedWork(queue)).toBe(true);
+      // Capture this public operation directly rather than depending on its predicate's SQL spelling.
+      expect(captured).toHaveLength(beforeUnfinished + 1);
+      const unfinished = captured[beforeUnfinished];
+      const expectedUnfinished = sql`select ${unfinishedQueueItems(queue)} unfinished`.compile(db);
+      expect(unfinished).toMatchObject({ sql: expectedUnfinished.sql, parameters: expectedUnfinished.parameters });
 
       const queries = [...captured];
       const capacity = queries.find((query) => query.sql.includes("count(*) filter (where state = 'active')"))!;
-      const settle = queries.find((query) => query.sql.includes('update job_run r set "finishedAt"'))!;
+      const preflight = queries.find((query) => query.sql.includes('select candidate.id from unnest'))!;
+      // Measure the actual full production statement even when the sufficient live-work proof
+      // avoids it during these tail publications. Do not replace its former failing budget.
+      const settle = settleRunQuery([runId]).compile(db);
       const mirror = queries.find((query) => query.sql.includes('update job_run_item i set "jobId" = source.'))!;
       const inspection = queries.find((query) => query.sql.includes('selected."rootItemKey") id'))!;
       const dependency = queries.find((query) => query.sql.includes('with recursive blocked as'))!;
-      const unfinished = queries.find((query) => query.sql.includes("state = 'enumerating') unfinished"))!;
       for (const [name, query, budget, bufferBudget] of [
         ['capacity', capacity, 2000, 500],
+        ['settlement preflight', preflight, 100, 100],
         ['settlement', settle, 100, 100],
         ['membership mirror', mirror, 3000, 25_000],
         ['root inspection', inspection, 1000, 1000],

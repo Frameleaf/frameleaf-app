@@ -187,22 +187,30 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
+/** A sufficient unfinished proof shared by the cheap publication preflight and full settlement.
+ * A retained pending alias whose detailed job is already terminal is not live execution.
+ */
+export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
+  exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
+    and (i."selectionId" is null or i."jobId" is not null)
+    and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')))`;
+
 /** Probe per-run headers first. Separate frozen admission from derived library ownership so
  * PostgreSQL can use the sparse pending-manifest index without filtering retained terminal rows.
  */
 export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
   ${libraryRunPending(runId)}
-  or exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
-    and (i."selectionId" is null or i."jobId" is not null)
-    and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')))
+  or (${unfinishedAdmittedRunItems(runId)})
   or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
     where m."runId" = ${runId} and not m."copyComplete"
       and (s."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)})))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
     where membership."runId" = ${runId} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
-      and (snapshot.state = 'enumerating' or exists (select 1 from job_run_item i
+      and (snapshot.state = 'enumerating' or exists (select 1 from (
+        select i."itemKey" from job_run_item i
         where i."selectionId" = snapshot.id and i."runId" = membership."runId"
-          and i."jobId" is null and i.state = 'pending')))
+          and i."jobId" is null and i.state = 'pending'
+        order by i."itemKey" limit 1 offset 0) pending_manifest)))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
     where membership."runId" = ${runId} and snapshot."sourceKind" != 'frozen'
       and (${libraryMembershipEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`)}) and snapshot.state in ('enumerating','ready')
