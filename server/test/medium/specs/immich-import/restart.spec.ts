@@ -12,10 +12,10 @@ import { connectImportDatabase } from 'src/immich-import/database.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
 import { assertImmichImportActivated } from 'src/immich-import/state.js';
-import { ImportDatabase, ImportRow, quote } from 'src/immich-import/types.js';
+import { ImportDatabase, ImportMediaPolicy, ImportRow, quote } from 'src/immich-import/types.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 
-// Hosted PG19 only: real pinned baseline, constraints/triggers, checkpoints and file copies.
+// Hosted PG19 only: real pinned baseline, constraints/triggers, checkpoints and media verification.
 // Source transport/fingerprinting is deterministic here; source-schema/read-only tests cover admission.
 describe('Immich import into the canonical Frameleaf baseline', () => {
   const owner1 = 'bcab63f5-8747-4227-a821-d013a353e704';
@@ -101,7 +101,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     await admin?.end();
   });
 
-  const configure = (version = '3.0.0') => {
+  const configure = (version = '3.0.0', media?: ImportMediaPolicy) => {
     const source: ImportDatabase = {
       query: (sql) =>
         Promise.resolve(
@@ -113,7 +113,13 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
       version,
       sourceId: 'hosted-fixture',
       writersStopped: true,
-      mediaRoots: [{ source: join(directory, 'source'), target: join(directory, 'destination') }],
+      ...(media && { media }),
+      mediaRoots: [
+        {
+          source: join(directory, 'source'),
+          target: join(directory, media?.mode === 'manager-in-place' ? 'source' : 'destination'),
+        },
+      ],
     });
     // Keep real destination preflight, frozen adapters, mapping, verification and activation.
     vi.spyOn(importer.source, 'preflight').mockResolvedValue('same-offline-source');
@@ -332,6 +338,60 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     },
     30_000,
   );
+
+  it('activates a 3.1.0 Manager import with unchanged media locations and access associations', async () => {
+    configure('3.1.0', {
+      mode: 'manager-in-place',
+      authority: 'frameleaf-manager',
+      operationId: 'hosted-in-place-operation',
+      deploymentId: 'hosted-managed-deployment',
+    });
+    addLibrary();
+    // No independent destination original exists. This exercises real PG19 destination transport,
+    // canonical schema, row/media verification and activation; source admission and dispatch remain stand-ins.
+    await rm(targetPath);
+    const before = await stat(sourcePath, { bigint: true });
+    await importer.run();
+    await expect(assertImmichImportActivated(connection.db)).rejects.toThrow('NOT_ACTIVATED');
+    await importer.verify(acknowledgeWork);
+    expect((await importer.status()).status).toBe('activated');
+    await expect(assertImmichImportActivated(connection.db)).resolves.toBeUndefined();
+    await expect(assertCanonicalDestination(connection.db)).resolves.toBeUndefined();
+    expect(await connection.db.query('SELECT id,"ownerId","originalPath",visibility FROM public.asset')).toEqual([
+      { id: assetId, ownerId: owner1, originalPath: sourcePath, visibility: 'locked' },
+    ]);
+    expect(await connection.db.query('SELECT id,password,"pinCode","isAdmin" FROM public."user" ORDER BY id')).toEqual([
+      { id: owner1, password: 'password-hash-one', pinCode: 'pin-hash-one', isAdmin: true },
+      { id: owner2, password: 'password-hash-two', pinCode: null, isAdmin: false },
+    ]);
+    expect(
+      await connection.db.query('SELECT "albumId","userId",role FROM public.album_user ORDER BY "userId"'),
+    ).toEqual([
+      { albumId, userId: owner1, role: 'owner' },
+      { albumId, userId: owner2, role: 'viewer' },
+    ]);
+    expect(await connection.db.query('SELECT "albumId","assetId" FROM public.album_asset')).toEqual([
+      { albumId, assetId },
+    ]);
+    expect(await connection.db.query('SELECT "sharedById","sharedWithId","inTimeline" FROM public.partner')).toEqual([
+      { sharedById: owner1, sharedWithId: owner2, inTimeline: false },
+    ]);
+    expect(
+      await connection.db.query(
+        'SELECT "userId","albumId","allowUpload","allowDownload","showExif" FROM public.shared_link',
+      ),
+    ).toEqual([{ userId: owner1, albumId, allowUpload: false, allowDownload: false, showExif: false }]);
+    const after = await stat(sourcePath, { bigint: true });
+    expect([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs]).toEqual([
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtimeNs,
+      before.ctimeNs,
+    ]);
+    expect(await readFile(sourcePath)).toEqual(original);
+    await expect(stat(targetPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30_000);
 
   it('rolls back failed batches/checkpoints, resumes a committed checkpoint once and leaves abandonment inactive', async () => {
     configure();

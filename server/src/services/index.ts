@@ -39,6 +39,7 @@ import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { FrameleafServerSetupService } from 'src/services/frameleaf-server-setup.service.js';
@@ -145,6 +146,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  FrameleafLibrarySetupService,
   ICloudAuditService,
   ICloudScheduledStagingService,
   ICloudScheduledWorkerService,

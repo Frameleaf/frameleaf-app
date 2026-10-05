@@ -2,6 +2,7 @@ import { Command, CommandRunner, Option } from 'nest-commander';
 import { readFile } from 'node:fs/promises';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
+import { assertMediaPolicy } from 'src/immich-import/media.js';
 import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -46,6 +47,12 @@ export class ImportImmichCommand extends CommandRunner {
       }
       const config = JSON.parse(await readFile(options.config, 'utf8')) as ImportConfig;
       validateImportConfig(config);
+      if (
+        config.media?.mode === 'manager-in-place' &&
+        process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID !== config.media.operationId
+      ) {
+        throw new ImportRefused('MANAGER_OPERATION_AUTHORITY_REQUIRED');
+      }
       source = connectImportDatabase(sourceUrl, true);
       const importer = new ImmichImportService(target.db, source.db, config);
       switch (action) {
@@ -106,6 +113,7 @@ export const validateImportConfig = (config: ImportConfig): void => {
   ) {
     throw new ImportRefused('INVALID_IMPORT_CONFIGURATION');
   }
+  assertMediaPolicy(config.mediaRoots, config.media);
   if (
     config.embeddings &&
     Object.values(config.embeddings).some((model) => typeof model !== 'string' || model.length === 0)
