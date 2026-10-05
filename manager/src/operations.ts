@@ -63,6 +63,7 @@ const Recovery = z
         port: z.number().int().min(1024).max(65535),
         ml: z.boolean(),
         origin: z.enum(['new_library', 'new_import', 'restored_library']),
+        importInstallation: z.string().regex(/^[a-f0-9]{12}$/).optional(),
         sourceId: z.string().nullable(),
         mayHaveWrittenMedia: z.boolean(),
         databaseRoot: z.string().min(1).max(4096),
@@ -890,6 +891,12 @@ export class Operations {
           sourceId: null,
           mayHaveWrittenMedia: false,
           origin: 'restored_library',
+          importInstallation:
+            review.recovery.installation.origin === 'new_import'
+              ? review.recovery.installation.id
+              : review.recovery.installation.origin === 'restored_library'
+                ? review.recovery.installation.importInstallation
+                : undefined,
         };
         intent = { installation, password: randomBytes(48).toString('base64url') };
         operation.receipts['configuration-intent'] = intent;
@@ -924,6 +931,12 @@ export class Operations {
       )
         throw new Refusal('target_database_not_empty_recovery_required');
       await this.docker.restore(database, file);
+      return true;
+    });
+    await this.step(operation, 'reconstruct-execution-state', async () => {
+      // The admin CLI has no workers. Reconcile copied claims before any restored worker starts.
+      // Lost acknowledgements can safely rerun the existing reset policy while workers remain stopped.
+      await this.docker.restoreCommand(this.directory(), installation.project, operation.id);
       return true;
     });
     await this.step(operation, 'start-frameleaf', async () => {
