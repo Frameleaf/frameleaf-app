@@ -226,7 +226,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     const sentinels: string[] = [];
     for (const side of BUDDY_SIDES) {
       const url = `http://127.0.0.1:${side === 'a' ? 3285 : 3286}`;
-      const db = postgres(`postgres://postgres:postgres@127.0.0.1:${side === 'a' ? 5535 : 5536}/immich`, { max: 2 });
+      const db = postgres(`postgres://postgres:postgres@127.0.0.1:${side === 'a' ? 5535 : 5536}/frameleaf`, { max: 2 });
       const app = { side, url, db, admin: { token: '', id: '' }, member: { token: '', id: '' } };
       apps.push(app);
       expect((await db`show fsync`)[0].fsync).toBe('on');
