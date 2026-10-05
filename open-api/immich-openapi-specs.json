@@ -36621,6 +36621,281 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/server/library-setup": {
+      "get": {
+        "operationId": "getLibrarySetupStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Library preparation for this authenticated device",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sync.stream",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-setup/begin": {
+      "post": {
+        "operationId": "beginLibrarySetup",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start the managed library rescan",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-setup/finish": {
+      "post": {
+        "operationId": "finishLibrarySetup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishLibrarySetupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Finish after catalog and browsing previews are cached",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sync.stream",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-setup/manager": {
+      "get": {
+        "operationId": "getManagerLibrarySetup",
+        "parameters": [
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated setup status",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "beginManagerLibrarySetup",
+        "parameters": [
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated rescan",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-setup/sync": {
+      "post": {
+        "operationId": "syncLibrarySetup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WarmLibrarySetupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Warm the authenticated device catalog during setup",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sync.stream",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/media-types": {
       "get": {
         "description": "Retrieve all media types supported by the server.",
@@ -69645,6 +69920,32 @@
         ],
         "type": "object"
       },
+      "FinishLibrarySetupDto": {
+        "additionalProperties": false,
+        "properties": {
+          "previewsReady": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "receipt": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "revision": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "previewsReady",
+          "receipt",
+          "revision"
+        ],
+        "type": "object"
+      },
       "FolderSummaryResponseDto": {
         "properties": {
           "count": {
@@ -74336,6 +74637,80 @@
           "owner_deleted"
         ],
         "type": "string"
+      },
+      "LibrarySetupStatusDto": {
+        "properties": {
+          "canFinish": {
+            "type": "boolean"
+          },
+          "installation": {
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "new_import",
+              "new_library",
+              "restored_library"
+            ],
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "awaiting-account",
+              "rescanning",
+              "verifying",
+              "needs-attention",
+              "complete"
+            ],
+            "type": "string"
+          },
+          "rescanComplete": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "setupRequired": {
+            "type": "boolean"
+          },
+          "sync": {
+            "properties": {
+              "authenticated": {
+                "type": "boolean"
+              },
+              "catalogComplete": {
+                "type": "boolean"
+              },
+              "previewsReady": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "authenticated",
+              "catalogComplete",
+              "previewsReady"
+            ],
+            "type": "object"
+          },
+          "verificationPassed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canFinish",
+          "installation",
+          "origin",
+          "phase",
+          "rescanComplete",
+          "revision",
+          "setupRequired",
+          "sync",
+          "verificationPassed"
+        ],
+        "type": "object"
       },
       "LibraryStatsResponseDto": {
         "properties": {
@@ -118232,6 +118607,15 @@
           "fast"
         ],
         "type": "string"
+      },
+      "WarmLibrarySetupDto": {
+        "additionalProperties": false,
+        "properties": {
+          "reset": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "WorkerCredentialState": {
         "description": "How a worker credential is held",
