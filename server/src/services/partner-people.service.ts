@@ -79,7 +79,9 @@ export class PartnerPeopleService extends BaseService {
       copies.push({ sourceFaceId: face.id, faceId: randomUUID(), personGroupId });
     }
 
-    return this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+    const count = await this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+    await this.queueMissingThumbnails(input.targetOwnerId, [...new Set(mapped.values())]);
+    return count;
   }
 
   /**
@@ -117,10 +119,7 @@ export class PartnerPeopleService extends BaseService {
       kind: 'created',
       correctionId: null,
     });
-    await this.jobRepository.queue({
-      name: JobName.PersonGenerateThumbnail,
-      data: { ownerId: auth.user.id, personGroupId },
-    });
+    await this.queueMissingThumbnails(auth.user.id, [personGroupId]);
   }
 
   /**
@@ -260,11 +259,24 @@ export class PartnerPeopleService extends BaseService {
       fallbackName: '',
     });
     await save(personGroupId, 'created');
-    await this.jobRepository.queue({
-      name: JobName.PersonGenerateThumbnail,
-      data: { ownerId: targetOwnerId, personGroupId },
-    });
     return personGroupId;
+  }
+
+  /** Select only after face writes settle; the recipient's existing featured face stays their choice. */
+  private async queueMissingThumbnails(ownerId: string, personGroupIds: string[]) {
+    if (personGroupIds.length === 0) {
+      return;
+    }
+    const selected = await this.personRepository
+      .selectionForThumbnails(false, ownerId)
+      .where('person.personGroupId', 'in', personGroupIds)
+      .where('person.faceAssetId', 'is', null)
+      .execute();
+    if (selected.length > 0) {
+      await this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queueAll(selected.map(({ data }) => ({ name: JobName.PersonGenerateThumbnail, data }))),
+      );
+    }
   }
 
   /** The recipient's closest own person within the recognition threshold, if any. */

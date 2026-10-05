@@ -39,9 +39,16 @@ describe(PartnerPeopleService.name, () => {
   let mocks: ServiceMocks;
   let links: PartnerPersonLink[];
   let people: Map<string, ReturnType<typeof person>>;
+  const thumbnailSelection = { where: vi.fn(), execute: vi.fn() };
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerPeopleService));
+    thumbnailSelection.where.mockReset().mockReturnValue(thumbnailSelection);
+    thumbnailSelection.execute.mockReset().mockResolvedValue([]);
+    mocks.person.selectionForThumbnails.mockReturnValue(thumbnailSelection as never);
+    mocks.job.collectFollowups.mockImplementation(async (collect) => {
+      await collect();
+    });
     links = [];
     people = new Map([[`${A}/${PG_A}`, person(A, PG_A, { name: 'Emma', birthDate: '2015-04-01' })]]);
     mocks.user.get.mockImplementation((id) =>
@@ -133,6 +140,18 @@ describe(PartnerPeopleService.name, () => {
     });
 
     it('creates a new person with an origin when nothing matches', async () => {
+      let copiedFaceId: string | undefined;
+      mocks.person.copyFacesToAsset.mockImplementation((_target, faces) => {
+        expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        copiedFaceId = faces[0].faceId;
+        thumbnailSelection.execute.mockResolvedValue([
+          { data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: copiedFaceId } },
+        ]);
+        return Promise.resolve(faces.length);
+      });
+
       await sut.copyFaces(copyInput);
 
       expect(mocks.person.createGroup).toHaveBeenCalledWith(B);
@@ -152,11 +171,55 @@ describe(PartnerPeopleService.name, () => {
         expect.objectContaining({ sourceFaceId: FACE_1, personGroupId: NEW_PG }),
         expect.objectContaining({ sourceFaceId: FACE_2, personGroupId: null }),
       ]);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.PersonGenerateThumbnail,
-        data: { ownerId: B, personGroupId: NEW_PG },
-      });
+      expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, B);
+      expect(thumbnailSelection.where).toHaveBeenCalledWith('person.personGroupId', 'in', [NEW_PG]);
+      expect(thumbnailSelection.where).toHaveBeenCalledWith('person.faceAssetId', 'is', null);
+      expect(mocks.job.collectFollowups).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: copiedFaceId },
+        },
+      ]);
+      expect(copiedFaceId).not.toBe(FACE_1);
+      expect(mocks.person.update).not.toHaveBeenCalled();
       expect(mocks.person.recordFaceCorrections).not.toHaveBeenCalled();
+    });
+
+    it('does not enqueue a portrait when the copy transaction fails', async () => {
+      const error = new Error('Face copy failed');
+      mocks.person.copyFacesToAsset.mockRejectedValue(error);
+
+      await expect(sut.copyFaces(copyInput)).rejects.toBe(error);
+
+      expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('does not enqueue a portrait without an eligible recipient face', async () => {
+      await expect(sut.copyFaces(copyInput)).resolves.toBe(2);
+
+      expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, B);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('uses an existing eligible face when an idempotent copy adds no rows', async () => {
+      const existingFaceId = newUuid();
+      mocks.person.copyFacesToAsset.mockResolvedValue(0);
+      thumbnailSelection.execute.mockResolvedValue([
+        { data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: existingFaceId } },
+      ]);
+
+      await expect(sut.copyFaces(copyInput)).resolves.toBe(0);
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: existingFaceId },
+        },
+      ]);
     });
 
     it('keeps the root owner of a person copied on (A to B to C)', async () => {
@@ -221,6 +284,7 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('undoPartnerMerge', () => {
+    const mergedFaceIds = [newUuid(), newUuid()];
     const entry = {
       id: 'correction-1',
       ownerId: B,
@@ -245,11 +309,19 @@ describe(PartnerPeopleService.name, () => {
         partnerSharedById: A,
         correctionId: 'correction-1',
       });
-      mocks.person.getPartnerMergedFaceIds.mockResolvedValue([FACE_1, FACE_2]);
+      mocks.person.getPartnerMergedFaceIds.mockResolvedValue(mergedFaceIds);
       mocks.person.undoPartnerMerge.mockResolvedValue(true);
     });
 
     it("moves the merged faces to a new person of the partner's person, with an origin", async () => {
+      mocks.person.undoPartnerMerge.mockImplementation(() => {
+        expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
+        thumbnailSelection.execute.mockResolvedValue([
+          { data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: mergedFaceIds[0] } },
+        ]);
+        return Promise.resolve(true);
+      });
+
       await sut.undoPartnerMerge(authStub.user1, entry);
 
       expect(mocks.person.getPartnerMergedFaceIds).toHaveBeenCalledWith(B, PG_A, PG_B);
@@ -259,8 +331,22 @@ describe(PartnerPeopleService.name, () => {
       expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
         expect.objectContaining({ ownerId: B, personGroupId: NEW_PG, sourcePersonGroupId: PG_A }),
       );
-      expect(mocks.person.undoPartnerMerge).toHaveBeenCalledWith('correction-1', [FACE_1, FACE_2], NEW_PG);
+      expect(mocks.person.undoPartnerMerge).toHaveBeenCalledWith('correction-1', mergedFaceIds, NEW_PG);
       expect(links[0]).toMatchObject({ personGroupId: NEW_PG, kind: 'created', correctionId: null });
+      expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, B);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: mergedFaceIds[0] },
+        },
+      ]);
+    });
+
+    it('does not enqueue a portrait when the undone faces are not eligible', async () => {
+      await sut.undoPartnerMerge(authStub.user1, entry);
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('refuses an undo that was already done', async () => {
@@ -278,6 +364,8 @@ describe(PartnerPeopleService.name, () => {
     it('reports a lost race as already undone', async () => {
       mocks.person.undoPartnerMerge.mockResolvedValue(false);
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });
 

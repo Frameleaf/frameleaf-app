@@ -373,7 +373,7 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true);
   }
-  selectionForThumbnails(force: boolean) {
+  selectionForThumbnails(force: boolean, ownerId?: string) {
     return this.db
       .selectFrom('person')
       .innerJoinLateral(
@@ -383,6 +383,7 @@ export class PersonRepository {
             .innerJoin('asset', 'asset.id', 'asset_face.assetId')
             .select(['asset_face.id', 'asset_face.assetId'])
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+            .$if(ownerId !== undefined, (qb) => qb.where('asset.ownerId', '=', ownerId!))
             .where('asset_face.deletedAt', 'is', null)
             .where('asset_face.isVisible', '=', true)
             .where((eb) => isNotLockedAsset(eb))
@@ -396,12 +397,15 @@ export class PersonRepository {
       .select([
         sql<string>`person."ownerId"::text || '/' || person."personGroupId"::text`.as('id'),
         'face.assetId as rootItemKey',
-        sql<
-          Record<string, unknown>
-        >`jsonb_build_object('ownerId', person."ownerId", 'personGroupId', person."personGroupId", 'selectionFaceId', face.id)`.as(
+        sql<{
+          ownerId: string;
+          personGroupId: string;
+          selectionFaceId: string;
+        }>`jsonb_build_object('ownerId', person."ownerId", 'personGroupId', person."personGroupId", 'selectionFaceId', face.id)`.as(
           'data',
         ),
       ])
+      .$if(ownerId !== undefined, (qb) => qb.where('person.ownerId', '=', ownerId!))
       .$if(!force, (qb) => qb.where('person.thumbnailPath', '=', ''));
   }
   getAll(options: GetAllPeopleOptions = {}) {
