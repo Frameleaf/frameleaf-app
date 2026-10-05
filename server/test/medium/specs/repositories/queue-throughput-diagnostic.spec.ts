@@ -28,10 +28,49 @@ const add = (target: Metric, duration: number) => {
 
 // Finite structural classes only: no query text, parameters, URLs, errors or identifiers in receipts.
 const queryClass = (text: string) => {
-  const q = text.toLowerCase();
+  const q = text.toLowerCase().trimStart();
   if (/^(begin|commit|rollback)\b/.test(q)) return q.split(/\s/, 1)[0];
   if (q.includes('select name from job_queue') && q.includes('for no key update')) return 'queue-lock';
   if (q.startsWith('set ')) return 'session-setting';
+
+  // Match outer statement shapes before broad table classes. Feeder CTEs contain the
+  // same library/lineage predicates as publication, but run once per queue visit.
+  // Keep discriminators near the start for the activity observer's truncated SQL.
+  if (q.startsWith('insert into system_metadata (key,value)') && q.includes("'stoppedat'"))
+    return 'attempt-stopped-evidence';
+  if (q.startsWith('with cursor as materialized (') && q.includes('"librarycleanupid"'))
+    return 'feeder-library-redaction';
+  if (q.startsWith('with cursor as (') && q.includes('select distinct m."runid"')) return 'feeder-library-settlement';
+  if (q.startsWith('with candidates as materialized (') && q.includes('"produceritemkey"'))
+    return 'feeder-library-participants';
+  if (q.startsWith('select s.id, s."runid" from job_selection s') && q.includes("'library-child'"))
+    return 'feeder-library-origins';
+  if (q.startsWith('with candidate as (') && q.includes('s."appendsequence" from job_selection_run m'))
+    return 'feeder-library-retirement';
+  if (q.startsWith('select m."runid", m."selectionid", s."runid"')) return 'feeder-sharing-probe';
+
+  // These are separate SQL commands even for an ordinary non-library media item.
+  if (q.startsWith('select 1 from job_selection_run membership')) return 'selection-sharing-check';
+  if (q.startsWith('select 1 where exists (') && q.includes('from job_library_source_producer link'))
+    return 'library-attachment-check';
+  if (q.startsWith('select 1 from job_selection where "producerid"') && q.includes('"capturedat" is null'))
+    return 'selection-capture-check';
+  if (q.startsWith('update job_selection set state = case')) return 'selection-header-finish';
+  if (q.startsWith('select 1 from job_run_item i join job j on j.id = i."jobid"')) return 'selection-coordinator-check';
+  if (q.startsWith('with owners as materialized (') && q.includes('"libraryexecutionrunid"'))
+    return 'library-followup-parents';
+  if (q.startsWith('select 1 from job_run_item i join job_selection s') && q.includes('i."libraryintent" is not null'))
+    return 'library-followup-recognition';
+  if (q.startsWith('select 1 from job_library_source_producer where')) return 'library-producer-probe';
+  if (q.startsWith('select "runid", "itemkey", "rootitemkey" from job_run_item')) return 'lineage-membership-probe';
+  if (q.startsWith('update job_run_item i set state = j.state from job j')) return 'item-state-sync';
+  if (q.startsWith('update job_run_item i set selection =') && q.includes('j.sensitive'))
+    return 'item-library-redaction';
+  if (q.startsWith('update job_run_item shadow') && q.includes('join job_selection_lineage origin'))
+    return 'lineage-mirror';
+  if (q.startsWith('with origins as (') && q.includes('insert into job_selection_lineage')) return 'lineage-record';
+  if (q.startsWith('select candidate.id from unnest(')) return 'settlement-live-proof';
+
   if (q.includes('insert into system_metadata')) return 'operational-evidence';
   if (q.includes('queue_profile_output')) return 'output-adoption';
   if (q.includes('update job_run r set "finishedat"')) return 'settlement';
