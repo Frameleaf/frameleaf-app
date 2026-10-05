@@ -239,16 +239,16 @@ export class FrameleafLibrarySetupService {
     const imported = await this.importedRun();
     const run = imported?.run;
     const marker = run?.selection.managerSetup;
-    // Canonical fresh/independent-copy libraries have no Manager-held import to recover.
-    if (state.origin === 'restored_library' && !marker) return null;
     const installation = this.importInstallation(state);
+    // Canonical fresh/independent-copy libraries have no Manager-held import to recover.
+    if (state.origin === 'restored_library' && !marker && !installation) return null;
     const matches =
       !!run &&
       run.kind === IMPORT_DERIVED_RUN_KIND &&
       run.selection.source === imported!.journal.source_fingerprint &&
       run.selection.config === imported!.journal.config_fingerprint &&
       !!installation &&
-      (!marker || marker.installation === installation);
+      (marker ? marker.installation === installation : state.origin === 'new_import');
     const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
     const pending =
       !!marker &&
