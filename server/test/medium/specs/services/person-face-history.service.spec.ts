@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
-import { AssetFileType, JobName, SourceType } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, SourceType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -13,10 +13,13 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PersonService } from 'src/services/person.service.js';
+import { JobOf } from 'src/types.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -38,6 +41,7 @@ const setup = async () => {
       CryptoRepository,
       DatabaseRepository,
       PersonRepository,
+      SearchRepository,
       AssetRepository,
       AssetEditRepository,
       SystemMetadataRepository,
@@ -45,6 +49,7 @@ const setup = async () => {
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
   });
   const jobs = ctx.getMock(JobRepository);
+  useRealJobPublication(database, jobs, [sut]);
   jobs.queue.mockResolvedValue();
   jobs.queueAll.mockResolvedValue();
   jobs.waitForQueueCompletion.mockResolvedValue();
@@ -56,6 +61,8 @@ const setup = async () => {
   const { asset } = await ctx.newAsset({ ownerId: user.id });
   await ctx.newExif({ assetId: asset.id, description: '' });
   await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/preview.jpg' });
+  // The producer selects generated previews through their durable job-status row.
+  await ctx.newJobStatus({ assetId: asset.id });
   const { person: ada } = await ctx.newPerson({ ownerId: user.id, name: 'Ada' });
   const { person: bea } = await ctx.newPerson({ ownerId: user.id, name: 'Bea' });
 
@@ -114,16 +121,48 @@ const reason = async (promise: Promise<unknown>) => {
 
 describe('face decisions through reprocessing (FL-57)', () => {
   it('keeps a correction and its history through forced recognition and forced detection, then undoes it', async () => {
-    const { sut, auth, ada, bea, face, neighbour, detect, facesOf } = await setup();
+    const { sut, ctx, auth, ada, bea, face, neighbour, detect, facesOf } = await setup();
 
     await sut.reassignFacesById(auth, bea.personGroupId, { id: face.id });
 
     await sut.handleQueueRecognizeFaces({ force: true });
+    // Capture is durable but does not execute the per-face reset before worker admission.
+    expect((await facesOf()).find(({ id }) => id === neighbour.id)?.personGroupId).toBe(ada.personGroupId);
+    const { rows: recognition } = await sql<{
+      rootItemKey: string;
+      selection: JobOf<JobName.FacialRecognition>;
+    }>`select "rootItemKey", selection from job_run_item where stage = ${JobName.FacialRecognition}`.execute(
+      ctx.database,
+    );
+    expect(recognition).toHaveLength(2);
+    expect(recognition).toEqual(
+      expect.arrayContaining(
+        [face.id, neighbour.id].map((id) => ({
+          rootItemKey: face.assetId,
+          selection: { id, deferred: false, force: true },
+        })),
+      ),
+    );
+    for (const { selection } of recognition) {
+      await sut.handleRecognizeFaces(selection);
+    }
     let faces = await facesOf();
     expect(faces.find(({ id }) => id === face.id)?.personGroupId).toBe(bea.personGroupId);
     expect(faces.find(({ id }) => id === neighbour.id)?.personGroupId).toBeNull();
+    expect(faces.find(({ id }) => id === neighbour.id)?.correctedAt).toBeNull();
 
     await sut.handleQueueDetectFaces({ force: true });
+    expect((await facesOf()).map(({ id }) => id)).toEqual([face.id, neighbour.id]);
+    const { rows: detection } = await sql<{
+      rootItemKey: string;
+      selection: JobOf<JobName.AssetDetectFaces>;
+    }>`select "rootItemKey", selection from job_run_item where stage = ${JobName.AssetDetectFaces}`.execute(
+      ctx.database,
+    );
+    expect(detection).toEqual([{ rootItemKey: face.assetId, selection: { id: face.assetId } }]);
+    // Only actual per-asset publication removes an absent undecided face; the owner's decision stays.
+    detect([]);
+    await sut.handleDetectFaces(detection[0].selection);
     faces = await facesOf();
     expect(faces.map(({ id }) => id)).toEqual([face.id]);
 
@@ -154,6 +193,59 @@ describe('face decisions through reprocessing (FL-57)', () => {
     expect((await facesOf())[0].personGroupId).toBe(ada.personGroupId);
     await expect(reason(sut.undoCorrection(auth, corrections[0].id))).resolves.toBe('already-undone');
   });
+
+  it.each(['reassigned', 'unassigned', 'hidden', 'deleted', 'manual-source'] as const)(
+    'refuses a forced reset after the face is %s between reading and publication',
+    async (change) => {
+      const { sut, ctx, bea, face, neighbour, jobs } = await setup();
+      const people = ctx.get(PersonRepository);
+      const read = people.getFaceForFacialRecognitionJob.bind(people);
+      const neighbourBefore = await ctx.database
+        .selectFrom('asset_face')
+        .selectAll()
+        .where('id', '=', neighbour.id)
+        .executeTakeFirstOrThrow();
+      let changed: unknown;
+      vi.spyOn(people, 'getFaceForFacialRecognitionJob').mockImplementationOnce(async (id) => {
+        const snapshot = await read(id);
+        // A real owner write lands after the initial read, before the guarded single-face reset.
+        if (change === 'reassigned' || change === 'unassigned') {
+          await people.setFacePerson(id, change === 'reassigned' ? bea.personGroupId : null);
+        } else {
+          await ctx.database
+            .updateTable('asset_face')
+            .set(
+              change === 'hidden'
+                ? { isVisible: false }
+                : change === 'deleted'
+                  ? { deletedAt: new Date() }
+                  : { sourceType: SourceType.Manual },
+            )
+            .where('id', '=', id)
+            .execute();
+        }
+        changed = await ctx.database
+          .selectFrom('asset_face')
+          .selectAll()
+          .where('id', '=', id)
+          .executeTakeFirstOrThrow();
+        return snapshot;
+      });
+      const search = vi.spyOn(ctx.get(SearchRepository), 'searchFaces');
+
+      await expect(sut.handleRecognizeFaces({ id: face.id, force: true })).resolves.toBe(JobStatus.Skipped);
+
+      await expect(
+        ctx.database.selectFrom('asset_face').selectAll().where('id', '=', face.id).executeTakeFirstOrThrow(),
+      ).resolves.toEqual(changed);
+      await expect(
+        ctx.database.selectFrom('asset_face').selectAll().where('id', '=', neighbour.id).executeTakeFirstOrThrow(),
+      ).resolves.toEqual(neighbourBefore);
+      expect(search).not.toHaveBeenCalled();
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+    },
+  );
 
   it('applies a decision again to the face that replaced the corrected one, and not to recognition', async () => {
     const { sut, ctx, auth, bea, face, detect, facesOf, jobs } = await setup();

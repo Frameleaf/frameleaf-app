@@ -1210,7 +1210,9 @@ export class PersonService extends BaseService {
       }
 
       if (force && face.personGroupId) {
-        await this.personRepository.setFacePerson(id, null);
+        if (!(await this.personRepository.resetFaceRecognition(id))) {
+          return JobStatus.Skipped;
+        }
         face.personGroupId = null;
       }
 

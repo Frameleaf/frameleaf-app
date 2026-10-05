@@ -11,6 +11,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -204,6 +205,7 @@ const versionedService = () =>
       DuplicateRepository,
       UserRepository,
       MediaRepository,
+      MediaOperationRepository,
       // FL-113: the editor reads the ffmpeg settings to explain HDR handling.
       ConfigRepository,
       SystemMetadataRepository,
