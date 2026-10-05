@@ -70,7 +70,7 @@ export class ImportImmichCommand extends CommandRunner {
           break;
         }
         case 'verify': {
-          await importer.verify(() => this.jobs.dispatchImportedWork());
+          await importer.verify((config) => this.jobs.dispatchImportedWork(config));
           break;
         }
         case 'abandon': {

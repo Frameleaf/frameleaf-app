@@ -114,7 +114,7 @@ export class ImmichImportService {
     });
   }
 
-  async verify(dispatchWork: () => Promise<unknown>): Promise<void> {
+  async verify(dispatchWork: (config: ImportConfig) => Promise<unknown>): Promise<void> {
     await this.exclusive(async () => {
       const report = await this.preflight();
       if (report.status !== 'verifying') {
@@ -151,7 +151,7 @@ export class ImmichImportService {
         throw new ImportRefused('SOURCE_CHANGED_DURING_VERIFICATION');
       }
       await this.queueMissingDerivedWork();
-      await dispatchWork();
+      await dispatchWork(this.config);
       const [pending] = await this.destination.query(
         'SELECT count(*)::text AS count FROM public.frameleaf_immich_import_work WHERE dispatched_at IS NULL',
       );

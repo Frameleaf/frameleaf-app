@@ -1,7 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
-import { ImportRefused } from 'src/immich-import/types.js';
+import { digest } from 'src/immich-import/adapters.js';
+import { assertMediaPolicy } from 'src/immich-import/media.js';
+import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -22,7 +24,24 @@ export const importDerivedRunId = (sourceFingerprint: string, configFingerprint:
 export async function transferImportedWork(
   db: Kysely<any>,
   intentFor: (name: JobName) => QueueIntent,
+  config?: ImportConfig,
 ): Promise<string> {
+  const media = config?.media;
+  const managed = media?.mode === 'manager-in-place';
+  if (managed) {
+    if (!config) throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
+    assertMediaPolicy(config.mediaRoots, media);
+    if (
+      !/^[a-f0-9]{12}$/.test(media.deploymentId) ||
+      process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import' ||
+      process.env.FRAMELEAF_MANAGER_INSTALLATION !== media.deploymentId ||
+      process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID !== media.operationId
+    ) {
+      throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
+    }
+  } else if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import') {
+    throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
+  }
   const runId = await db.transaction().execute(async (tx) => {
     const {
       rows: [journal],
@@ -32,11 +51,25 @@ export async function transferImportedWork(
       config_fingerprint: string;
     }>`select status, source_fingerprint, config_fingerprint from frameleaf_immich_import for update`.execute(tx);
     if (journal?.status !== 'verifying') throw new ImportRefused('DERIVED_WORK_REQUIRES_VERIFYING_IMPORT');
+    if (config && digest(config) !== journal.config_fingerprint) {
+      throw new ImportRefused('DERIVED_WORK_CONFIG_MISMATCH');
+    }
     const id = importDerivedRunId(journal.source_fingerprint, journal.config_fingerprint);
     const {
       rows: [existing],
-    } = await sql<{ kind: string; selection: { source: string; config: string } | null }>`
-      select kind, selection from job_run where id = ${id}::uuid`.execute(tx);
+    } = await sql<{
+      kind: string;
+      selection: {
+        source: string;
+        config: string;
+        managerSetup?: {
+          installation: string;
+          operationId: string;
+          preparedAt: string | null;
+          startedAt: string | null;
+        };
+      } | null;
+    }>`select kind, selection from job_run where id = ${id}::uuid for update`.execute(tx);
     if (
       existing &&
       (existing.kind !== IMPORT_DERIVED_RUN_KIND ||
@@ -45,18 +78,50 @@ export async function transferImportedWork(
     ) {
       throw new ImportRefused('DERIVED_RUN_IDENTITY_MISMATCH');
     }
+    const setup = existing?.selection?.managerSetup;
+    if (
+      existing &&
+      (managed
+        ? !setup ||
+          setup.installation !== media.deploymentId ||
+          setup.operationId !== media.operationId ||
+          (setup.preparedAt !== null &&
+            (typeof setup.preparedAt !== 'string' || !Number.isFinite(Date.parse(setup.preparedAt)))) ||
+          (setup.startedAt !== null &&
+            (!setup.preparedAt || typeof setup.startedAt !== 'string' || !Number.isFinite(Date.parse(setup.startedAt))))
+        : !!setup)
+    ) {
+      // Never retrofit a hold onto an older ready run which could already have been dispatched.
+      throw new ImportRefused('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+    }
     // A legacy hot-queue dispatch cannot be proved by this protocol. Never give it a new budget.
     if (!existing) {
       const { rows } =
         await sql`select 1 from frameleaf_immich_import_work where dispatched_at is not null limit 1`.execute(tx);
       if (rows.length > 0) throw new ImportRefused('DERIVED_WORK_ACKNOWLEDGEMENT_WITHOUT_RUN');
+      const selection = {
+        source: journal.source_fingerprint,
+        config: journal.config_fingerprint,
+        ...(managed && {
+          managerSetup: {
+            installation: media.deploymentId,
+            operationId: media.operationId,
+            preparedAt: null,
+            startedAt: null,
+          },
+        }),
+      };
       await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
-        jsonb_build_object('source', ${journal.source_fingerprint}::text, 'config', ${journal.config_fingerprint}::text))`.execute(
-        tx,
-      );
+        ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
     }
     return id;
   });
+
+  // Evaluated while freezeSelection holds the run lock, also used by first-setup release.
+  const readiness = managed
+    ? sql<'enumerating' | 'ready'>`case when (select selection #>> '{managerSetup,startedAt}' from job_run
+        where id = ${runId}::uuid) is not null then 'ready' else 'enumerating' end`
+    : undefined;
 
   const stages = IMPORT_DERIVED_STAGES.map(([kind, name]) => ({ kind, intent: intentFor(name) }));
   for (const { kind, intent } of stages) {
@@ -68,6 +133,7 @@ export async function transferImportedWork(
       db.selectFrom('frameleaf_immich_import_work').select('asset_id as id').where('kind', '=', kind),
       undefined,
       runId,
+      readiness,
     );
   }
 
@@ -75,7 +141,7 @@ export async function transferImportedWork(
   // asset thumbnails: matching an existing imported face does not create this follow-up work.
   const people = new PersonRepository(db).selectionForThumbnails(false);
   const personIntent = intentFor(JobName.PersonGenerateThumbnail);
-  await freezeSelection(db, personIntent, people, undefined, runId);
+  await freezeSelection(db, personIntent, people, undefined, runId, readiness);
   const { rows: missingPeople } = await sql`select 1 from (${people}) p where not exists (
     select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
     where i."runId" = ${runId}::uuid and s."runId" = i."runId"
@@ -116,5 +182,11 @@ export async function transferImportedWork(
   const { rows } = await sql`select 1 from frameleaf_immich_import_work w
     where w.dispatched_at is null or not ${retained} limit 1`.execute(db);
   if (rows.length > 0) throw new ImportRefused('DERIVED_WORK_MANIFEST_MISMATCH');
+  if (managed) {
+    // Preparation is distinct from start. Only first setup can release this retained run after
+    // activation and validated initial settings; a resumed transfer never clears either timestamp.
+    await sql`update job_run set selection = jsonb_set(selection, '{managerSetup,preparedAt}', to_jsonb(clock_timestamp()))
+      where id = ${runId}::uuid and selection #>> '{managerSetup,preparedAt}' is null`.execute(db);
+  }
   return runId;
 }
