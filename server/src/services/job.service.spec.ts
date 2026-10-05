@@ -231,6 +231,47 @@ describe(JobService.name, () => {
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });
     }
+
+    it.each([
+      { disabled: 'enabled', type: AssetType.Image, jobs: [JobName.BestPhotosScore] },
+      {
+        disabled: 'clip',
+        type: AssetType.Image,
+        jobs: [JobName.AssetDetectFaces, JobName.Ocr, JobName.BestPhotosScore],
+      },
+      {
+        disabled: 'facialRecognition',
+        type: AssetType.Image,
+        jobs: [JobName.SmartSearch, JobName.Ocr, JobName.BestPhotosScore],
+      },
+      {
+        disabled: 'ocr',
+        type: AssetType.Image,
+        jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.BestPhotosScore],
+      },
+      { disabled: 'enabled', type: AssetType.Video, jobs: [JobName.AssetEncodeVideo, JobName.BestPhotosScore] },
+    ])('skips disabled $disabled automatic upload ML for $type', async ({ disabled, type, jobs }) => {
+      const asset = AssetFactory.create({ id: 'asset-1', type });
+      const data = { id: asset.id, source: 'upload' } as const;
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          enabled: disabled !== 'enabled',
+          clip: { enabled: disabled !== 'clip' },
+          facialRecognition: { enabled: disabled !== 'facialRecognition' },
+          ocr: { enabled: disabled !== 'ocr' },
+          imageDescription: { enabled: false },
+          nsfwDetection: { enabled: false },
+        },
+      });
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.ThumbnailGeneration, { name: JobName.AssetGenerateThumbnails, data });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(jobs.map((name) => ({ name, data })));
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
+    });
   });
 
   describe('a handler that throws (FL-71)', () => {
