@@ -25,7 +25,7 @@ async function bootstrap() {
   appRepository.setCloseFn((graceMs) => closeGracefully({ http, close: () => app.close(), graceMs }));
   stop = () => appRepository.stop(0);
 
-  void configureExpress(app, {
+  await configureExpress(app, {
     ssr: ApiService,
   });
 }
