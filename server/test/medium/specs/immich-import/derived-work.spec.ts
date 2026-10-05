@@ -1,7 +1,8 @@
 import { Kysely, KyselyPlugin, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { QueueName } from 'src/enum.js';
+import { JobName, QueueName } from 'src/enum.js';
 import { IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { assertImmichImportActivated } from 'src/immich-import/state.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -28,6 +29,12 @@ const repositoryFor = (db: Kysely<any>) => {
       handler: vi.fn(),
     };
   }
+  repository['handlers'][JobName.PersonGenerateThumbnail] = {
+    queueName: QueueName.ThumbnailGeneration,
+    jobName: JobName.PersonGenerateThumbnail,
+    label: 'import person fixture',
+    handler: vi.fn(),
+  };
   return repository;
 };
 
@@ -107,7 +114,7 @@ describe('offline import derived-work durable ownership', () => {
     expect(await repository.dispatchImportedWork()).toBe(runId);
     expect(await counts()).toEqual({
       runs: 1,
-      stages: 4,
+      stages: 5,
       roots: 2,
       memberships: 8,
       acknowledged: 8,
@@ -125,6 +132,12 @@ describe('offline import derived-work durable ownership', () => {
     ]);
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
     expect((await counts()).memberships).toBe(8);
+    expect(
+      (
+        await sql`select state, "capturedAt" is not null as captured from job_selection
+      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db)
+      ).rows,
+    ).toEqual([{ state: 'ready', captured: true }]);
   });
 
   it('reuses frozen memberships after a crash before the first journal acknowledgement', async () => {
@@ -138,7 +151,7 @@ describe('offline import derived-work durable ownership', () => {
       'lost capture acknowledgement',
     );
     const before = (await sql`select id from job_selection order by id`.execute(db)).rows;
-    expect(await counts()).toMatchObject({ stages: 4, memberships: 12, pending: 12, acknowledged: 0, jobs: 0 });
+    expect(await counts()).toMatchObject({ stages: 5, memberships: 12, pending: 12, acknowledged: 0, jobs: 0 });
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
     expect((await sql`select id from job_selection order by id`.execute(db)).rows).toEqual(before);
     expect(await counts()).toMatchObject({ memberships: 12, pending: 0, acknowledged: 12, jobs: 0 });
@@ -160,7 +173,7 @@ describe('offline import derived-work durable ownership', () => {
     expect((await sql`select id from job_selection where id = ${captured.id}::uuid`.execute(db)).rows).toHaveLength(1);
     expect(await counts()).toMatchObject({
       runs: 1,
-      stages: 4,
+      stages: 5,
       memberships: 12,
       pending: 0,
       acknowledged: 12,
@@ -300,7 +313,7 @@ describe('offline import derived-work durable ownership', () => {
     const transferredMs = performance.now() - started;
     expect(await counts()).toEqual({
       runs: 1,
-      stages: 4,
+      stages: 5,
       roots: 500_000,
       memberships: 2_000_000,
       acknowledged: 2_000_000,
@@ -331,6 +344,171 @@ describe('offline import derived-work durable ownership', () => {
     );
   }, 300_000);
 });
+
+it.each(['independent-copy', 'manager-in-place'] as const)(
+  'activates an empty external library in %s mode with no thumbnail work',
+  async (mode) => {
+    const fixture = new PostgresImportFixture();
+    let db: Kysely<any> | undefined;
+    try {
+      await fixture.initialize();
+      if (mode === 'manager-in-place') {
+        const source = fixture.config.mediaRoots[0].source;
+        fixture.config.mediaRoots = [{ source, target: source }];
+        fixture.config.media = {
+          mode,
+          authority: 'frameleaf-manager',
+          operationId: 'fixture-operation',
+          deploymentId: 'fixture-deployment',
+        };
+      } else {
+        fixture.config.media = { mode };
+      }
+      await fixture.mutateSource(async (source) => {
+        await source.query('TRUNCATE public.asset CASCADE');
+        await source.query(
+          `INSERT INTO public.library(name,"ownerId","importPaths","exclusionPatterns")
+        VALUES ('Empty external library',$1,ARRAY[$2::text],ARRAY[]::text[])`,
+          [fixture.owner, fixture.config.mediaRoots[0].source],
+        );
+      });
+      db = new Kysely(getKyselyConfig({ connectionType: 'url', url: fixture.url(fixture.destinationName) }));
+      await fixture.importer().run();
+      await fixture.importer().verify(() => repositoryFor(db!).dispatchImportedWork());
+      await expect(assertImmichImportActivated(fixture.destination.db)).resolves.toBeUndefined();
+      expect(await fixture.destination.db.query('SELECT "importPaths" FROM public.library')).toEqual([
+        { importPaths: [fixture.config.mediaRoots[0].target] },
+      ]);
+      expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
+        expect.objectContaining({ enumerationDone: true, state: 'completed', total: 0 }),
+      ]);
+      expect((await sql`select count(*)::int as count from job_selection`.execute(db)).rows).toEqual([{ count: 5 }]);
+      expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
+    } finally {
+      await db?.destroy();
+      await fixture.close();
+    }
+  },
+  120_000,
+);
+
+it.each(['independent-copy', 'manager-in-place'] as const)(
+  'retains owner-scoped person thumbnail repairs and featured faces across a lost %s handoff acknowledgement',
+  async (mode) => {
+    const fixture = new PostgresImportFixture();
+    let db: Kysely<any> | undefined;
+    const person = randomUUID();
+    const face = randomUUID();
+    const protectedPerson = randomUUID();
+    const protectedFace = randomUUID();
+    try {
+      await fixture.initialize();
+      if (mode === 'manager-in-place') {
+        const source = fixture.config.mediaRoots[0].source;
+        fixture.config.mediaRoots = [{ source, target: source }];
+        fixture.config.media = {
+          mode,
+          authority: 'frameleaf-manager',
+          operationId: 'fixture-operation',
+          deploymentId: 'fixture-deployment',
+        };
+      } else {
+        fixture.config.media = { mode };
+      }
+      await fixture.mutateSource(async (source) => {
+        await source.query("UPDATE public.asset SET visibility='timeline' WHERE id=$1", [fixture.asset]);
+        await source.query('INSERT INTO public.person_group(id,"clusterGroupId") VALUES ($1,$3),($2,$3)', [
+          person,
+          protectedPerson,
+          fixture.group,
+        ]);
+        await source.query(
+          `INSERT INTO public.asset_face(id,"assetId","personGroupId","imageWidth","imageHeight",
+        "boundingBoxX1","boundingBoxY1","boundingBoxX2","boundingBoxY2","isVisible")
+        VALUES ($1,$3,$4,100,100,10,10,50,50,true),($2,$3,$5,100,100,10,10,50,50,false)`,
+          [face, protectedFace, fixture.asset, person, protectedPerson],
+        );
+        await source.query(
+          `INSERT INTO public.person("ownerId","personGroupId","faceAssetId","thumbnailPath","isHidden")
+        VALUES ($1,$3,$4,$5,true),($2,$3,$4,$5,false),($1,$6,$7,$5,true)`,
+          [
+            fixture.owner,
+            fixture.reader,
+            person,
+            face,
+            join(fixture.config.mediaRoots[0].source, 'missing-person.jpg'),
+            protectedPerson,
+            protectedFace,
+          ],
+        );
+      });
+      db = new Kysely(getKyselyConfig({ connectionType: 'url', url: fixture.url(fixture.destinationName) }));
+      await fixture.importer().run();
+      const fault = observe({
+        afterCapture: () => {
+          throw new Error('lost handoff acknowledgement');
+        },
+      });
+      await expect(
+        fixture.importer().verify(() => repositoryFor(db!.withPlugin(fault.plugin)).dispatchImportedWork()),
+      ).rejects.toThrow('lost handoff acknowledgement');
+      await expect(assertImmichImportActivated(fixture.destination.db)).rejects.toThrow('NOT_ACTIVATED');
+      const before = (
+        await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item
+      where stage = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
+      ).rows;
+      expect(before).toHaveLength(2);
+      for (const ownerId of [fixture.owner, fixture.reader]) {
+        const id = `${ownerId}/${person}`;
+        expect(before).toContainEqual(
+          expect.objectContaining({
+            itemKey: id,
+            rootItemKey: fixture.asset,
+            selection: { id, ownerId, personGroupId: person, selectionFaceId: face },
+          }),
+        );
+      }
+      // A retained stage with altered face identity cannot acknowledge the import's repair obligation.
+      await sql`update job_run_item set selection = jsonb_set(selection, '{selectionFaceId}', to_jsonb(${protectedFace}::text))
+      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db);
+      await expect(repositoryFor(db).dispatchImportedWork()).rejects.toThrow('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
+      await sql`update job_run_item set selection = jsonb_set(selection, '{selectionFaceId}', to_jsonb(${face}::text))
+      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db);
+      await fixture.restartConnections();
+      await fixture.importer().verify(() => repositoryFor(db!).dispatchImportedWork());
+      await expect(assertImmichImportActivated(fixture.destination.db)).resolves.toBeUndefined();
+      expect(
+        (
+          await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item
+      where stage = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
+        ).rows,
+      ).toEqual(before);
+      expect(
+        await fixture.destination.db.query(
+          'SELECT "faceAssetId","thumbnailPath","isHidden" FROM public.person WHERE "ownerId"=$1 AND "personGroupId"=$2',
+          [fixture.owner, person],
+        ),
+      ).toEqual([{ faceAssetId: face, thumbnailPath: '', isHidden: true }]);
+      expect(
+        await fixture.destination.db.query('SELECT id,"personGroupId","isVisible" FROM public.asset_face WHERE id=$1', [
+          face,
+        ]),
+      ).toEqual([{ id: face, personGroupId: person, isVisible: true }]);
+      expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
+      expect(
+        (
+          await sql`select count(*)::int as count from job_run_item where stage != ${JobName.PersonGenerateThumbnail}`.execute(
+            db,
+          )
+        ).rows,
+      ).toEqual([{ count: 4 }]);
+    } finally {
+      await db?.destroy();
+      await fixture.close();
+    }
+  },
+  120_000,
+);
 
 it('verifies and activates a real offline source after durable transfer while all workers are stopped', async () => {
   const fixture = new PostgresImportFixture();

@@ -60,6 +60,42 @@ export const assertMediaPolicy = (roots: MediaRootMap[], policy?: ImportMediaPol
   }
 };
 
+/** Empty libraries need the same recovery-copy boundary as libraries with current media files. */
+export const verifyMediaRoots = async (roots: MediaRootMap[], policy?: ImportMediaPolicy): Promise<void> => {
+  assertMediaPolicy(roots, policy);
+  if (policy?.mode === 'manager-in-place') return;
+  if (
+    roots.length === 0 ||
+    roots.some((root) => [root.source, root.target].some((path) => !isAbsolute(path) || path !== resolve(path)))
+  ) {
+    throw new ImportRefused('UNSAFE_MEDIA_ROOT');
+  }
+  const resolved = await Promise.all(
+    roots.map(async (root) => ({ source: await realpath(root.source), target: await realpath(root.target) })),
+  );
+  for (const root of resolved) {
+    if (!(await stat(root.source)).isDirectory() || !(await stat(root.target)).isDirectory()) {
+      throw new ImportRefused('MEDIA_ROOT_MUST_BE_DIRECTORY');
+    }
+    if (resolved.some((other) => beneath(other.source, root.target) || beneath(root.target, other.source))) {
+      throw new ImportRefused('DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY');
+    }
+  }
+  // Overlapping source maps are ambiguous; overlapping destinations can alias future library files.
+  for (const maps of [roots, resolved]) {
+    if (
+      maps.some((root, index) =>
+        maps.some(
+          (other, otherIndex) =>
+            index !== otherIndex && (beneath(root.source, other.source) || beneath(root.target, other.target)),
+        ),
+      )
+    ) {
+      throw new ImportRefused('AMBIGUOUS_OR_UNMAPPED_MEDIA_ROOT');
+    }
+  }
+};
+
 export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
 const sameFile = (left: BigIntStats, right: BigIntStats): boolean => left.dev === right.dev && left.ino === right.ino;
 const unchanged = (before: BigIntStats, after: BigIntStats): boolean =>
@@ -87,24 +123,12 @@ export const verifyMediaFile = async (
   policy?: ImportMediaPolicy,
   onVerified?: (sha256: string) => void,
 ): Promise<string> => {
-  assertMediaPolicy(roots, policy);
+  await verifyMediaRoots(roots, policy);
   const inPlace = policy?.mode === 'manager-in-place';
   const mapping = mapMediaPath(path, roots, policy);
-  const resolvedRoots = await Promise.all(
-    roots.map(async (root) => ({
-      source: await realpath(root.source),
-      target: await realpath(root.target),
-    })),
-  );
-  // Check every map, including aliases between different maps. Nested roots also allow later storage
-  // operations to enter the source tree, even when this particular file is a distinct inode.
-  if (
-    !inPlace &&
-    resolvedRoots.some((target) =>
-      resolvedRoots.some((source) => beneath(source.source, target.target) || beneath(target.target, source.source)),
-    )
-  ) {
-    throw new ImportRefused('DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY');
+  if (inPlace) {
+    // Preserve the existing per-file Manager check that every declared mount resolves.
+    await Promise.all(roots.flatMap((root) => [realpath(root.source), realpath(root.target)]));
   }
   const [source, target, sourceRoot, targetRoot] = await Promise.all([
     realpath(mapping.source),

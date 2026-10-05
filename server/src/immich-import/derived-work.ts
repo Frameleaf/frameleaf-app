@@ -4,6 +4,7 @@ import { JobName } from 'src/enum.js';
 import { ImportRefused } from 'src/immich-import/types.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 
 export const IMPORT_DERIVED_RUN_KIND = 'immich-import-derived';
 export const IMPORT_DERIVED_STAGES = [
@@ -69,6 +70,21 @@ export async function transferImportedWork(
       runId,
     );
   }
+
+  // The verified destination is the imported cohort. Missing people thumbnails are separate from
+  // asset thumbnails: matching an existing imported face does not create this follow-up work.
+  const people = new PersonRepository(db).selectionForThumbnails(false);
+  const personIntent = intentFor(JobName.PersonGenerateThumbnail);
+  await freezeSelection(db, personIntent, people, undefined, runId);
+  const { rows: missingPeople } = await sql`select 1 from (${people}) p where not exists (
+    select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
+    where i."runId" = ${runId}::uuid and s."runId" = i."runId"
+      and i.stage = ${personIntent.name} and s.stage = i.stage
+      and i.queue = ${personIntent.queue} and s.queue = i.queue
+      and s."capturedAt" is not null and i."itemKey" = p.id and i."rootItemKey" = p."rootItemKey"::text
+      and i.selection = ${JSON.stringify(personIntent.data)}::text::jsonb || p.data || jsonb_build_object('id', p.id)
+  ) limit 1`.execute(db);
+  if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
 
   const stageNames = sql.join(stages.map(({ kind, intent }) => sql`(${kind}, ${intent.name}, ${intent.queue})`));
   const retained = sql`exists (

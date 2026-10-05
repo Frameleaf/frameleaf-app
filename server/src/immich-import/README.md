@@ -42,6 +42,13 @@ canonical public schema and pgvector HNSW indexes.
    command-line arguments or configuration JSON. This command emits only bounded
    status and classified failures, never raw database errors or source records.
 
+Default and explicit `independent-copy` imports validate every media root before
+preflight and again before activation, even with no current media rows. Roots must
+be absolute normalized directory paths with unambiguous mappings. Resolved source
+and destination trees must be disjoint across all mappings; symlink aliases and
+nesting are refused. Existing per-file checksum and independent-inode checks remain.
+The separate Manager policy below retains same-path and nested-mount behavior.
+
 ## Manager-authoritative in-place imports
 
 Manager uses the same frozen source reader and canonical destination bootstrap.
@@ -109,6 +116,13 @@ album roles, partner permissions, shared links, tags, memories, edits and media
 metadata are preserved. Instance-level plugin/workflow definitions, notification
 history and source audit/sync history are outside this content import.
 
+This is a regenerate-only production path for all frozen releases, not compatible
+vector-value transfer. Their `smart_search` rows contain only `assetId, embedding`,
+and `face_search` rows only `faceId, embedding`. A compatible dimensionality or
+selected model name cannot establish which model produced an old row. Transferring
+those values would require independently verifiable provenance tied to the actual
+rows and source snapshot; the current frozen sources supply none.
+
 ## Commands
 
 Run these through the Frameleaf administration CLI with the offline importer
@@ -167,6 +181,13 @@ the destination HNSW indexes. `status` reports the retained `derivedRunId`. Jour
 are bounded to 250 rows per transaction and require matching retained memberships; a restart
 reuses the same run and snapshots, including empty stages. Legacy acknowledgements without
 that proof fail closed. Verification creates no hot queue executions and does not wait for workers.
+Missing person thumbnails have their own persisted stage, keyed by owner and person
+group, alongside the four asset stages. It reuses the canonical thumbnail selector,
+retains its selected face and asset root, and verifies that payload on handoff resume.
+Ineligible faces remain excluded, and the ordinary thumbnail worker retains its
+featured-face, protected-content and publication checks. An empty person stage does
+not prevent the run completing. This handoff promises durable repair ownership, not
+that rendering has already finished.
 After activation, the coordinator admits manifest work in batches of 250 up to 1,000 live
 jobs per queue, refilling when that queue reaches 500. It activates only when every gate has passed;
 derived jobs need to be durably retained, not already executed. Worker/API startup must call
@@ -204,5 +225,6 @@ the ledger intact, including drift during dispatch. The matrix uses deterministi
 source transport/fingerprints and a dispatcher acknowledgement stand-in; it does
 not prove real source-role admission, production queue dispatch, password login or
 completed ML regeneration. Separate source catalog/admission tests remain required.
-These tests require the reviewed frozen artifact bundle and hosted execution. No
-tests or builds were run on the operator's Mac.
+These tests require the reviewed frozen artifact bundle and PostgreSQL 19. Source
+coverage is distinct from executed validation; retain exact-candidate test results
+under the repository validation policy.
