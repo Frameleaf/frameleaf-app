@@ -40,7 +40,7 @@ describe('offline media verification', () => {
       { source: '/data/library', target: '/data/library' },
     ];
     expect(mapMediaPath('/data/library/photo.jpg', roots, manager).root).toBe(roots[1]);
-    expect(mapMediaPath('/data/library/photo.jpg', [...roots].reverse(), manager).root).toBe(roots[1]);
+    expect(mapMediaPath('/data/library/photo.jpg', roots.toReversed(), manager).root).toBe(roots[1]);
     expect(mapMediaPath('/data/photo.jpg', roots, manager).root).toBe(roots[0]);
     expect(() => mapMediaPath('/data/library/photo.jpg', roots)).toThrow('AMBIGUOUS');
     expect(() => mapMediaPath('/data/library/photo.jpg', [...roots, roots[1]], manager)).toThrow('AMBIGUOUS');

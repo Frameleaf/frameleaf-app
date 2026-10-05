@@ -83,7 +83,8 @@ describe('source preflight', () => {
         },
       });
       vi.spyOn(source, 'batches').mockImplementation(async function* (table) {
-        if (table === 'asset') yield [{ row: { originalPath: path, checksumAlgorithm: 'sha1-path' }, cursor: ['1'] }];
+        if (table === 'asset')
+          yield await Promise.resolve([{ row: { originalPath: path, checksumAlgorithm: 'sha1-path' }, cursor: ['1'] }]);
       });
       const before = await source.preflight();
       expect(await source.preflight()).toBe(before);
