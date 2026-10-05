@@ -3,8 +3,8 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import { ImmichWorker, QueueName, SyncEntityType } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
@@ -79,7 +79,7 @@ export class FrameleafLibrarySetupService {
   }
 
   private async write(key: string, value: unknown, db = this.db) {
-    await sql`INSERT INTO system_metadata (key, value) VALUES (${key}, ${JSON.stringify(value)}::jsonb)
+    await sql`INSERT INTO system_metadata (key, value) VALUES (${key}, ${JSON.stringify(value)}::text::jsonb)
       ON CONFLICT (key) DO UPDATE SET value = excluded.value`.execute(db);
   }
 
@@ -141,7 +141,7 @@ export class FrameleafLibrarySetupService {
     this.timer ??= setInterval(() => {
       if (!this.active) {
         this.active = this.status()
-          .catch(() => undefined)
+          .catch(() => {})
           .finally(() => {
             this.active = undefined;
           });
@@ -183,12 +183,13 @@ export class FrameleafLibrarySetupService {
             (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
         }
         const ids = Object.values(state.scans);
-        const records = ids.length
-          ? await sql<{
-              id: string;
-              status: string;
-            }>`SELECT id,status FROM media_operation WHERE id=ANY(${ids}::uuid[])`.execute(db)
-          : { rows: [] };
+        const records =
+          ids.length > 0
+            ? await sql<{
+                id: string;
+                status: string;
+              }>`SELECT id,status FROM media_operation WHERE id=ANY(${ids}::uuid[])`.execute(db)
+            : { rows: [] };
         const scansFinished = state.libraries.every((id) =>
           records.rows.some((r) => r.id === state.scans[id] && r.status === 'completed'),
         );
@@ -224,15 +225,16 @@ export class FrameleafLibrarySetupService {
             const eligible = await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=${operationId}::uuid
               AND kind='media_health' AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan'
               AND NOT (snapshot ? 'changedSince') AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
-            if (!eligible.rows.length) {
+            if (eligible.rows.length === 0) {
               continue; // Wait for an incompatible active scan before admitting ours.
             }
             state.health[ownerId] = operationId;
           }
         }
         const healthIds = Object.values(state.health);
-        const health = healthIds.length
-          ? await sql<{ id: string; status: string; verified: boolean; problems: boolean }>`
+        const health =
+          healthIds.length > 0
+            ? await sql<{ id: string; status: string; verified: boolean; problems: boolean }>`
           SELECT op.id, op.status,
             (missing.status='completed' AND corrupt.status='completed') AS verified,
             (missing."foundAssets">0 OR corrupt."foundAssets">0) AS problems
@@ -241,7 +243,7 @@ export class FrameleafLibrarySetupService {
           LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
           WHERE op.id=ANY(${healthIds}::uuid[]) AND op.kind='media_health' AND op.snapshot->>'mode'='scan'
             AND NOT (op.snapshot ? 'changedSince') AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
-          : { rows: [] };
+            : { rows: [] };
         if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status) || record.problems)) {
           state.phase = 'needs-attention';
         }
