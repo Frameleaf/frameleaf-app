@@ -1,4 +1,5 @@
 import {
+  AssetDevelopRevisionStatus,
   AssetMediaResponseDto,
   getAssetDevelop,
   getDevelopPresets,
@@ -7,8 +8,9 @@ import {
   setupPinCode,
   unlockAuthSession,
 } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test, withAssetReadySetup } from 'src/web-test.js';
 
 /**
  * FL-113 (VID-105): the full-screen photo quick editor against a real server.
@@ -20,12 +22,15 @@ test.describe('Quick editor', () => {
   let admin: LoginResponseDto;
   let asset: AssetMediaResponseDto;
 
-  test.beforeAll(async () => {
-    utils.initSdk();
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    asset = await utils.createAsset(admin.accessToken);
-  });
+  test.beforeAll(
+    withAssetReadySetup(async (signal) => {
+      utils.initSdk();
+      await utils.resetDatabase();
+      admin = await utils.adminSetup();
+      asset = await utils.createAsset(admin.accessToken);
+      await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+    }),
+  );
 
   test.beforeEach(async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
@@ -74,7 +79,7 @@ test.describe('Quick editor', () => {
     await reopened.getByRole('button', { name: 'Versions' }).click();
     await expect(reopened.getByRole('menuitemradio', { name: /Version 1/ })).toBeVisible();
   });
-  test('saves a named preset and reapplies it to another photo after reload (FL-64)', async ({ page }) => {
+  test('saves a named preset and reapplies it to another photo after reload (FL-64)', async ({ page, assetReady }) => {
     const headers = asBearerAuth(admin.accessToken);
     const editor = page.getByRole('dialog', { name: /Edit/ });
     await editor.getByRole('slider', { name: 'Exposure' }).fill('0.75');
@@ -95,6 +100,7 @@ test.describe('Quick editor', () => {
     await expect(editor).toBeHidden();
 
     const other = await utils.createAsset(admin.accessToken);
+    await utils.waitForAssetReady(admin.accessToken, other.id, { signal: assetReady.signal });
     await page.goto(`/photos/${other.id}`);
     await page.reload();
     await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
@@ -119,6 +125,31 @@ test.describe('Quick editor', () => {
     const saved = await getAssetDevelop({ id: other.id }, { headers });
     expect(saved.revisions).toHaveLength(1);
     expect(saved.revisions[0].recipe).toMatchObject({ exposure: 0.75, contrast: 25 });
+    const savedRevisionId = saved.revisions[0].id;
+    let pendingRead: ReturnType<typeof getAssetDevelop> | undefined;
+    assetReady.onCleanup(async () => {
+      await pendingRead?.catch(() => {});
+    });
+    // Save queues rendering; reopening uses the published current recipe, not merely a saved row.
+    await expect
+      .poll(async () => {
+        assetReady.signal.throwIfAborted();
+        pendingRead = getAssetDevelop({ id: other.id }, { headers, signal: assetReady.signal });
+        const state = await pendingRead;
+        return {
+          currentRevisionId: state.currentRevisionId,
+          revision: state.revisions.find((revision) => revision.id === savedRevisionId),
+        };
+      })
+      .toMatchObject({
+        currentRevisionId: savedRevisionId,
+        revision: {
+          id: savedRevisionId,
+          status: AssetDevelopRevisionStatus.Rendered,
+          isCurrent: true,
+          recipe: { exposure: 0.75, contrast: 25 },
+        },
+      });
     await page.reload();
     await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
     await page.keyboard.press('e');
@@ -136,12 +167,15 @@ test.describe('Quick editor and Studio continuity', () => {
   let admin: LoginResponseDto;
   let asset: AssetMediaResponseDto;
 
-  test.beforeAll(async () => {
-    utils.initSdk();
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    asset = await utils.createAsset(admin.accessToken);
-  });
+  test.beforeAll(
+    withAssetReadySetup(async (signal) => {
+      utils.initSdk();
+      await utils.resetDatabase();
+      admin = await utils.adminSetup();
+      asset = await utils.createAsset(admin.accessToken);
+      await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+    }),
+  );
 
   test('keeps the draft across Studio and back', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);

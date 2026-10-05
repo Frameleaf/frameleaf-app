@@ -6,12 +6,13 @@ import {
   createStudioProject,
   removeUserFromAlbum,
 } from '@immich/sdk';
-import { Browser, Page, expect, test } from '@playwright/test';
+import { Browser, Page, expect } from '@playwright/test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
+import { test, withAssetReadySetup } from 'src/web-test.js';
 
 /**
  * FL-112, the `authorizationFailure` conformance axis: owner, shared, viewer, sensitive and revoked,
@@ -194,75 +195,78 @@ test.describe('Studio authorization gates (FL-112)', () => {
     expectNoTrace(answer, label);
   };
 
-  test.beforeAll(async () => {
-    utils.initSdk();
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    [owner, editor, viewer, revoked] = await Promise.all([
-      utils.userSetup(admin.accessToken, createUserDto.user1),
-      utils.userSetup(admin.accessToken, createUserDto.user2),
-      utils.userSetup(admin.accessToken, createUserDto.user3),
-      utils.userSetup(admin.accessToken, createUserDto.user4),
-    ]);
-    secretFileName = `fl112-secret-${randomUUID().slice(0, 8)}.png`;
-    plain = await utils.createAsset(owner.accessToken, { assetData: { filename: 'fl112-plain.png' } });
-    secret = await utils.createAsset(owner.accessToken, { assetData: { filename: secretFileName } });
-    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+  test.beforeAll(
+    withAssetReadySetup(async (signal) => {
+      utils.initSdk();
+      await utils.resetDatabase();
+      admin = await utils.adminSetup();
+      [owner, editor, viewer, revoked] = await Promise.all([
+        utils.userSetup(admin.accessToken, createUserDto.user1),
+        utils.userSetup(admin.accessToken, createUserDto.user2),
+        utils.userSetup(admin.accessToken, createUserDto.user3),
+        utils.userSetup(admin.accessToken, createUserDto.user4),
+      ]);
+      secretFileName = `fl112-secret-${randomUUID().slice(0, 8)}.png`;
+      plain = await utils.createAsset(owner.accessToken, { assetData: { filename: 'fl112-plain.png' } });
+      secret = await utils.createAsset(owner.accessToken, { assetData: { filename: secretFileName } });
+      await utils.waitForAssetReady(admin.accessToken, plain.id, { headers: asBearerAuth(owner.accessToken), signal });
+      await utils.waitForAssetReady(admin.accessToken, secret.id, { headers: asBearerAuth(owner.accessToken), signal });
 
-    // the shared space: an album holding the plain item, with an editor, a viewer and a member to revoke
-    // a shared space (album kind "space"): a project can only be shared with one of those
-    const album = await utils.createAlbum(owner.accessToken, {
-      albumName: 'FL-112 space',
-      kind: AlbumKind.Space,
-      assetIds: [plain.id],
-      albumUsers: [
-        { userId: editor.userId, role: AlbumUserRole.Editor },
-        { userId: viewer.userId, role: AlbumUserRole.Viewer },
-        { userId: revoked.userId, role: AlbumUserRole.Viewer },
-      ],
-    });
-    spaceId = album.id;
-    // a shared space invites; nobody is a member until they accept
-    for (const member of [editor, viewer, revoked]) {
-      await acceptSharedSpaceInvitation({ id: spaceId }, { headers: asBearerAuth(member.accessToken) });
-    }
-
-    // the Locked item, as the owner locks it; the owner's sessions stay locked afterwards
-    const headers = asBearerAuth(owner.accessToken);
-    const api = (path: string, method: string, body: unknown) =>
-      fetch(`${app}${path}`, {
-        method,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      // the shared space: an album holding the plain item, with an editor, a viewer and a member to revoke
+      // a shared space (album kind "space"): a project can only be shared with one of those
+      const album = await utils.createAlbum(owner.accessToken, {
+        albumName: 'FL-112 space',
+        kind: AlbumKind.Space,
+        assetIds: [plain.id],
+        albumUsers: [
+          { userId: editor.userId, role: AlbumUserRole.Editor },
+          { userId: viewer.userId, role: AlbumUserRole.Viewer },
+          { userId: revoked.userId, role: AlbumUserRole.Viewer },
+        ],
       });
-    for (const [path, body] of [
-      ['/auth/pin-code', { pinCode }],
-      ['/auth/session/unlock', { pinCode }],
-      ['/assets/lock', { ids: [secret.id] }],
-      ['/auth/session/lock', {}],
-    ] as const) {
-      const response = await api(path, 'POST', body);
-      expect(response.status, path).toBe(204);
-    }
+      spaceId = album.id;
+      // a shared space invites; nobody is a member until they accept
+      for (const member of [editor, viewer, revoked]) {
+        await acceptSharedSpaceInvitation({ id: spaceId }, { headers: asBearerAuth(member.accessToken) });
+      }
 
-    const create = async (name: string, clips: { assetId: string }[]) =>
-      createStudioProject(
-        {
-          studioProjectCreateDto: {
-            name,
-            clientId: randomUUID(),
-            requestKey: randomUUID(),
-            spaceId,
-            envelope: envelope(clips),
-          } as never,
-        },
-        { headers },
-      );
-    const project = await create(PROJECT_NAME, [clip(plain.id)]);
-    const sensitive = await create(SENSITIVE_NAME, [clip(plain.id), clip(secret.id)]);
-    projectId = project.id;
-    sensitiveId = sensitive.id;
-  });
+      // the Locked item, as the owner locks it; the owner's sessions stay locked afterwards
+      const headers = asBearerAuth(owner.accessToken);
+      const api = (path: string, method: string, body: unknown) =>
+        fetch(`${app}${path}`, {
+          method,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      for (const [path, body] of [
+        ['/auth/pin-code', { pinCode }],
+        ['/auth/session/unlock', { pinCode }],
+        ['/assets/lock', { ids: [secret.id] }],
+        ['/auth/session/lock', {}],
+      ] as const) {
+        const response = await api(path, 'POST', body);
+        expect(response.status, path).toBe(204);
+      }
+
+      const create = async (name: string, clips: { assetId: string }[]) =>
+        createStudioProject(
+          {
+            studioProjectCreateDto: {
+              name,
+              clientId: randomUUID(),
+              requestKey: randomUUID(),
+              spaceId,
+              envelope: envelope(clips),
+            } as never,
+          },
+          { headers },
+        );
+      const project = await create(PROJECT_NAME, [clip(plain.id)]);
+      const sensitive = await create(SENSITIVE_NAME, [clip(plain.id), clip(secret.id)]);
+      projectId = project.id;
+      sensitiveId = sensitive.id;
+    }),
+  );
 
   test.afterAll(async () => {
     mkdirSync(dirname(OUT), { recursive: true });

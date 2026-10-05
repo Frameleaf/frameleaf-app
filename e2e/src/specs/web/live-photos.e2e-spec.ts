@@ -6,10 +6,11 @@ import {
   updateConfig,
   VideoCodec,
 } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 /**
  * FL-144: Playwright's Linux arm64 Chromium has no H.264 decoder (the server's default transcode
@@ -38,6 +39,7 @@ const withVp9TranscodeTarget = async (accessToken: string, run: () => Promise<vo
 test('reviews a separated Live Photo, confirms its link and plays motion after reload (FL-70)', async ({
   context,
   page,
+  assetReady,
 }) => {
   test.setTimeout(270_000);
   utils.initSdk();
@@ -54,16 +56,13 @@ test('reviews a separated Live Photo, confirms its link and plays motion after r
         ),
       },
     });
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', 60_000);
-    // AssetEncodeVideo is only queued once AssetGenerateThumbnails completes (job.service.ts
-    // JobName.AssetGenerateThumbnails handler), not directly off metadataExtraction, so wait for
-    // that first or the videoConversion queue can read as empty before the job even exists.
-    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration', 60_000);
-    // The H.264 original is not an accepted codec under the VP9 override above, so a transcode is
-    // required; wait for it to finish before the browser ever requests playback.
-    // VP9 software encoding (libvpx) is considerably slower than the default H.264 target,
-    // so give this one job more room than the usual 60s CI budget.
-    await utils.waitForQueueFinish(admin.accessToken, 'videoConversion', 180_000);
+    await utils.waitForAssetReady(admin.accessToken, photo.id, { signal: assetReady.signal });
+    // Preserve the VP9 budget while including the storage-template and thumbnail prerequisites.
+    await utils.waitForAssetReady(admin.accessToken, video.id, {
+      video: true,
+      timeout: 180_000,
+      signal: assetReady.signal,
+    });
     await utils.setAuthCookies(context, admin.accessToken);
     const cookies = await page.context().cookies(baseUrl);
     const playbackResponse = await page.request.get(`${app}/assets/${video.id}/video/playback`, {

@@ -99031,6 +99031,10 @@
       },
       "QueueResponseDto": {
         "properties": {
+          "hasUnfinishedWork": {
+            "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+            "type": "boolean"
+          },
           "isPaused": {
             "description": "Whether the queue is paused",
             "type": "boolean"
@@ -99043,6 +99047,7 @@
           }
         },
         "required": [
+          "hasUnfinishedWork",
           "isPaused",
           "name",
           "statistics"

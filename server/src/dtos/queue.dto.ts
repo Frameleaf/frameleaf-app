@@ -116,6 +116,7 @@ const QueueResponseSchema = z
   .object({
     name: QueueNameSchema,
     isPaused: z.boolean().describe('Whether the queue is paused'),
+    hasUnfinishedWork: z.boolean().describe('Whether durable work remains, including delayed, paused and unadmitted work'),
     statistics: QueueStatisticsSchema,
   })
   .meta({ id: 'QueueResponseDto' });
