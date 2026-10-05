@@ -379,10 +379,10 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     databasePath: '/fixture/database',
     mounts: media,
     sourceId: app.Id,
-    mayHaveWrittenMedia: true,
+    mayHaveWrittenMedia: false,
   } as Installation;
   const target = container('c'),
-    server = container('d');
+    server = container('d', false, 'no');
   target.Mounts = [{ Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql', RW: true }];
   for (const [c, service] of [
     [target, 'database'],
@@ -394,6 +394,9 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     sql: async () => JSON.stringify({ users: 1, assets: 2, albums: 1 }),
     importCommand: async () => ({ status: 'activated' }),
     node: async () => '{}',
+    compose: async () => {
+      server.State.Running = true;
+    },
   } as unknown as Docker;
   store.set('installation', installation);
   store.set(`review:review`, { source, backup: { verified: true }, input: {} });
@@ -410,14 +413,15 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     'configure-offline-import',
     'import-canonical-database',
     'import-settings',
-    'start-frameleaf',
   ];
   operation.receipts.configure = installation;
   operation.receipts['copy-current-database'] = { summary: { users: 1, assets: 2, albums: 1 } };
   operation.state = 'interrupted';
   store.save(operation);
   try {
-    const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
+    const operations = new Operations(store, docker, { eligible: async () => {} } as never, {} as never, [], {
+      verify: async () => {},
+    } as never);
     // This case isolates fenced-count selection; transport reconciliation has separate coverage.
     Object.assign(operations, { runImport: async () => ({ status: 'activated' }) });
     operations.resume(operation.id);
