@@ -23,7 +23,7 @@ const execFile = promisify(execFileCallback);
 // release-5.6.1: https://github.com/darktable-org/darktable/tree/03179f8e080aa9cedebfe14b098b7ba88940a292
 // The deployment image must pin this source and its dependencies; --version verifies the release, not build provenance.
 export const DARKTABLE_RENDERER_VERSION =
-  'frameleaf-darktable/2;darktable/5.6.1;03179f8e080aa9cedebfe14b098b7ba88940a292;lens-calibration/1;mask-geometry/1';
+  'frameleaf-darktable/2;darktable/5.6.1;03179f8e080aa9cedebfe14b098b7ba88940a292;lens-calibration/1;mask-geometry/1;omp-thread-limit/1';
 export const DARKTABLE_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 1024 ** 3;
 // ponytail: one native render per worker process; use shared admission if the deployment needs a global ceiling.
@@ -32,7 +32,13 @@ let nativeRenderActive = false;
 /** An aborted execFile promise can reject before close; keep admission until the child is actually gone. */
 async function runDarktable(args: string[], signal: AbortSignal) {
   signal.throwIfAborted();
-  const execution = execFile('darktable-cli', args, { signal, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+  const execution = execFile('darktable-cli', args, {
+    signal,
+    killSignal: 'SIGKILL',
+    maxBuffer: 1024 * 1024,
+    // Pin native OpenMP concurrency for repeatable pixels without changing the worker environment.
+    env: { ...process.env, OMP_THREAD_LIMIT: '1' },
+  });
   trackQueueChild(execution.child);
   const closed = new Promise<void>((resolve) => execution.child.once('close', () => resolve()));
   // Node 24 execFile does not forward killSignal to spawn's AbortSignal handler.
