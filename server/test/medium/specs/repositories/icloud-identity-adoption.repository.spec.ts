@@ -84,6 +84,7 @@ import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-work
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { operationExecution } from 'src/utils/execution-signal.js';
 import { appleFingerprintHash, identityRoleOf } from 'src/utils/icloud-identity.js';
 import * as privateCopyFiles from 'src/utils/icloud-private-copy.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
@@ -104,6 +105,7 @@ describe('iCloud exact identity adoption', () => {
   let integrity: MediaIntegrityService;
   let service: ICloudIdentityAdoptionService;
   let captureCompiledQuery: ((query: CompiledQuery) => void) | undefined;
+  let stagedProofSettled: Promise<void> | undefined;
   const directories = new Set<string>();
   const connections = new Set<string>();
   beforeAll(async () => {
@@ -131,6 +133,9 @@ describe('iCloud exact identity adoption', () => {
     service = new ICloudIdentityAdoptionService(repository, integrity);
   });
   afterEach(async () => {
+    // Vitest runs onTestFinished after this hook; timed-out staging must settle before deletion.
+    await stagedProofSettled;
+    stagedProofSettled = undefined;
     captureCompiledQuery = undefined;
     await service.onShutdown();
     vi.restoreAllMocks();
@@ -3869,47 +3874,97 @@ describe('iCloud exact identity adoption', () => {
           15_000, // Real staging/decode setup plus the unchanged 2s readonly refusal and descriptor settlement.
         );
 
-        it.each([false, true])(
+        it.for([false, true])(
           'creates only actual completed stream evidence, resumes same obligation and validates real private bytes; protected=%s',
-          async (protectedOriginal) => {
-            const fixture = await createStageFixture(protectedOriginal);
-            const { f, input, staging, transport, stored, withSession, repository, key } = fixture;
-            const receipt = await staging.download(input);
-            expect(transport.download).toHaveBeenCalledTimes(1);
-            expect(stored).toHaveBeenCalledTimes(1);
-            expect(receipt.payload.binding).toMatchObject({
-              ownerId: f.user.id,
-              connectionId: f.connection.id,
-              auditRequestId: input.authority.auditRequestId,
-              resourceId: input.resource.id,
-              cohortId: fixture.cohort.id,
-              sourceResourceId: f.resource.id,
-              grantGeneration: Number(fixture.cohort.grantGeneration),
-            });
-            expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow('icloud_session_invalid');
-            expect((await repository.read(input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
-            expect(await staging.download(input)).toEqual(receipt);
-            expect(transport.download).toHaveBeenCalledTimes(1);
-            expect(stored).toHaveBeenCalledTimes(1);
-            const validation = await staging.validate(input);
-            const outcome = await validation.result;
-            expect(outcome).toMatchObject({ status: 'validated', verified: { status: 'healthy', sha256: f.sha256 } });
-            await validation.settled;
-            expect(
-              (await readdir(join(fixture.root, input.resource.id))).filter((name) => name.startsWith('.validation-')),
-            ).toEqual([]);
-            expect(withSession).not.toHaveBeenCalled();
-            const { rows } = await sql<{ result: string; verifiedAt: Date | null }>`SELECT result,"verifiedAt"
-            FROM public.icloud_identity_audit WHERE id=${input.authority.auditRequestId}::uuid`.execute(db);
-            expect(rows[0]).toEqual({ result: 'queued', verifiedAt: null });
-            expect(
-              await db
-                .selectFrom('asset_integrity_verification')
-                .select('assetId')
-                .where('assetId', '=', f.asset.id)
-                .execute(),
-            ).toEqual([]);
-            await staging.onShutdown();
+          async (protectedOriginal, { signal }) => {
+            const settled = Promise.withResolvers<void>();
+            stagedProofSettled = settled.promise;
+            const controller = new AbortController();
+            const workSignal = AbortSignal.any([signal, controller.signal]);
+            let staging: ICloudScheduledStagingService | undefined;
+            let validation: Awaited<ReturnType<ICloudScheduledStagingService['validate']>> | undefined;
+            let failed = false;
+            const started = performance.now();
+            let phase = 'setup';
+            const logAbort = () =>
+              console.info(
+                'iCloud staged proof aborted',
+                protectedOriginal,
+                phase,
+                Math.round(performance.now() - started),
+              );
+            signal.addEventListener('abort', logAbort, { once: true });
+            try {
+              await operationExecution.run(
+                { signal: workSignal, settled: false, completed: new Map(), progress: () => {}, settle: async () => {} },
+                async () => {
+                  workSignal.throwIfAborted();
+                  const fixture = await createStageFixture(protectedOriginal);
+                  staging = fixture.staging;
+                  const { f, input, transport, stored, withSession, repository, key } = fixture;
+                  phase = 'download';
+                  const receipt = await staging.download(input, workSignal);
+                  expect(transport.download).toHaveBeenCalledTimes(1);
+                  expect(stored).toHaveBeenCalledTimes(1);
+                  expect(receipt.payload.binding).toMatchObject({
+                    ownerId: f.user.id,
+                    connectionId: f.connection.id,
+                    auditRequestId: input.authority.auditRequestId,
+                    resourceId: input.resource.id,
+                    cohortId: fixture.cohort.id,
+                    sourceResourceId: f.resource.id,
+                    grantGeneration: Number(fixture.cohort.grantGeneration),
+                  });
+                  expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow('icloud_session_invalid');
+                  phase = 'resume';
+                  expect((await repository.read(input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
+                  expect(await staging.download(input, workSignal)).toEqual(receipt);
+                  expect(transport.download).toHaveBeenCalledTimes(1);
+                  expect(stored).toHaveBeenCalledTimes(1);
+                  phase = 'validation-setup';
+                  validation = await staging.validate(input, workSignal);
+                  phase = 'validation-result';
+                  const outcome = await validation.result;
+                  expect(outcome).toMatchObject({ status: 'validated', verified: { status: 'healthy', sha256: f.sha256 } });
+                  phase = 'validation-settlement';
+                  await validation.settled;
+                  phase = 'evidence';
+                  expect(
+                    (await readdir(join(fixture.root, input.resource.id))).filter((name) => name.startsWith('.validation-')),
+                  ).toEqual([]);
+                  expect(withSession).not.toHaveBeenCalled();
+                  const { rows } = await sql<{ result: string; verifiedAt: Date | null }>`SELECT result,"verifiedAt"
+                  FROM public.icloud_identity_audit WHERE id=${input.authority.auditRequestId}::uuid`.execute(db);
+                  expect(rows[0]).toEqual({ result: 'queued', verifiedAt: null });
+                  expect(
+                    await db
+                      .selectFrom('asset_integrity_verification')
+                      .select('assetId')
+                      .where('assetId', '=', f.asset.id)
+                      .execute(),
+                  ).toEqual([]);
+                },
+              );
+            } catch (error) {
+              failed = true;
+              throw error;
+            } finally {
+              phase = 'cleanup';
+              try {
+                controller.abort();
+                validation?.cancel();
+                try {
+                  await validation?.settled;
+                } finally {
+                  await staging?.onShutdown();
+                }
+              } catch (error) {
+                if (!failed && !signal.aborted) throw error;
+              } finally {
+                signal.removeEventListener('abort', logAbort);
+                settled.resolve();
+              }
+            }
           },
         );
 
