@@ -5,7 +5,9 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
-import { ImmichWorker, QueueName, SyncEntityType } from 'src/enum.js';
+import { ImmichWorker, JobName, QueueName, SyncEntityType } from 'src/enum.js';
+import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import { listRuns } from 'src/queue/run-query.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -28,6 +30,12 @@ type SetupState = {
   health: Record<string, string>;
   owners: string[];
   healthAfter: string | null;
+  processingChoiceApplied?: boolean;
+};
+type ImportRunSelection = {
+  source: string;
+  config: string;
+  managerSetup?: { installation: string; operationId: string; preparedAt: string | null; startedAt: string | null };
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
 const KEY = 'frameleaf-manager-library-setup';
@@ -101,10 +109,16 @@ export class FrameleafLibrarySetupService {
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
       if (previous && previous.phase !== 'awaiting-account' && !(retry && previous.phase === 'needs-attention')) {
+        await this.startImportedRegeneration(previous, db);
         return;
       }
       const ml = process.env.FRAMELEAF_MANAGER_ML_ENABLED;
-      if (!previous && identity.origin !== 'restored_library' && ml !== undefined) {
+      let processingChoiceApplied = previous?.processingChoiceApplied ?? false;
+      if (
+        (!previous || (identity.origin === 'new_import' && !processingChoiceApplied)) &&
+        identity.origin !== 'restored_library' &&
+        ml !== undefined
+      ) {
         if (!['true', 'false'].includes(ml)) {
           throw new BadRequestException('Invalid Manager processing choice');
         }
@@ -112,6 +126,7 @@ export class FrameleafLibrarySetupService {
         config.machineLearning.enabled = ml === 'true';
         config.machineLearning.urls = ['http://immich-machine-learning:3003'];
         await this.config.updateAdminConfigWithRevision({ config, expectedRevision: revision });
+        processingChoiceApplied = true;
       }
       const hasAdmin = await this.users.hasAdmin();
       const libraries = hasAdmin ? await this.libraries.getAll() : [];
@@ -119,7 +134,8 @@ export class FrameleafLibrarySetupService {
       // Commit intent independently of queue submission so a process restart can resume it.
       const state: SetupState = {
         ...identity,
-        phase: hasAdmin ? 'rescanning' : 'awaiting-account',
+        phase:
+          hasAdmin && (identity.origin !== 'new_import' || processingChoiceApplied) ? 'rescanning' : 'awaiting-account',
         startedAt: new Date().toISOString(),
         libraries: libraries.map((l) => l.id),
         scans: {},
@@ -128,9 +144,76 @@ export class FrameleafLibrarySetupService {
         healthAfter: null,
         revision: null,
         quietSince: null,
+        processingChoiceApplied,
       };
       await this.write(this.key(), state, db);
+      await this.startImportedRegeneration(state, db);
     });
+  }
+
+  private async importedRun(db = this.db, lock = false) {
+    const { rows: [journal] } = await sql<{ status: string; source_fingerprint: string; config_fingerprint: string }>`
+      SELECT status,source_fingerprint,config_fingerprint FROM frameleaf_immich_import`.execute(db);
+    if (!journal) return null;
+    const id = importDerivedRunId(journal.source_fingerprint, journal.config_fingerprint);
+    const { rows: [run] } = await sql<{ id: string; kind: string; selection: ImportRunSelection; enumerationDone: boolean }>`
+      SELECT id,kind,selection,"enumerationDone" FROM job_run WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
+    return { journal, run };
+  }
+
+  /** Release the existing import run once; queue admission and retry budgets remain unchanged. */
+  private async startImportedRegeneration(state: SetupState, db: Kysely<DB>) {
+    if (state.origin !== 'new_import' || !state.processingChoiceApplied || !(await this.users.hasAdmin())) return;
+    // Lock the run before selections, matching importer capture and cancellation/release.
+    // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
+    const imported = await this.importedRun(db, true);
+    if (!imported) return;
+    const { journal, run } = imported;
+    const marker = run?.selection.managerSetup;
+    if (
+      journal.status !== 'activated' || !run || run.kind !== IMPORT_DERIVED_RUN_KIND ||
+      run.selection.source !== journal.source_fingerprint || run.selection.config !== journal.config_fingerprint ||
+      marker?.installation !== state.installation || !marker.operationId || !marker.preparedAt ||
+      marker.startedAt || !run.enumerationDone
+    ) return;
+    const stages = [...IMPORT_DERIVED_STAGES.map(([, stage]) => stage), JobName.PersonGenerateThumbnail];
+    const { rows: [prepared] } = await sql<{ ready: boolean }>`SELECT
+      (SELECT count(*) FROM job_selection WHERE "runId"=${run.id}::uuid
+        AND stage=ANY(${stages}::text[]) AND "capturedAt" IS NOT NULL)=${stages.length}
+      AND NOT EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${run.id}::uuid AND "capturedAt" IS NULL) AS ready`.execute(db);
+    if (!prepared?.ready) return;
+    const startedAt = new Date().toISOString();
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(startedAt)}::text::jsonb)
+      WHERE id=${run.id}::uuid`.execute(db);
+    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${run.id}::uuid
+      AND "capturedAt" IS NOT NULL AND state='enumerating'`.execute(db);
+  }
+
+  private async regenerationStatus(state: SetupState) {
+    if (state.origin !== 'new_import') return null;
+    const imported = await this.importedRun();
+    const run = imported?.run;
+    const marker = run?.selection.managerSetup;
+    const matches = !!run && run.kind === IMPORT_DERIVED_RUN_KIND &&
+      run.selection.source === imported!.journal.source_fingerprint && run.selection.config === imported!.journal.config_fingerprint &&
+      (!marker || marker.installation === state.installation);
+    const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
+    const pending = !!marker && !marker.startedAt &&
+      !['cancelled', 'completed_with_errors', 'needs_attention'].includes(summary?.state ?? '');
+    return {
+      runId: run?.id ?? null,
+      state: !matches ? 'needs_attention' : pending ? 'pending_first_setup' : summary?.state ?? 'unavailable',
+      preparedAt: marker?.preparedAt ?? null,
+      startedAt: marker?.startedAt ?? null,
+      completed: summary?.completed ?? 0,
+      total: summary?.total ?? 0,
+      failed: summary?.failed ?? 0,
+      blocked: summary?.blocked ?? 0,
+      needsAttention: summary?.needsAttention ?? 0,
+      reasons: !matches ? ['import_not_prepared'] : pending ?
+        [!state.processingChoiceApplied ? 'settings_not_ready' : imported?.journal.status !== 'activated' ? 'import_not_activated' :
+          !marker.preparedAt ? 'snapshot_not_prepared' : state.phase === 'awaiting-account' ? 'account_not_ready' : 'first_setup_pending'] : summary?.reasons ?? [],
+    };
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -313,6 +396,7 @@ export class FrameleafLibrarySetupService {
       rescanComplete: state.phase === 'complete',
       verificationPassed: state.phase === 'complete',
       canFinish: state.phase === 'complete' && phoneReady,
+      regeneration: !auth || auth.user.isAdmin ? await this.regenerationStatus(state) : null,
       sync: {
         authenticated: !!auth?.session,
         catalogComplete: phone?.revision === state.revision && !!state.revision,

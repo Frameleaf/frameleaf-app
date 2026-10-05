@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
-import { QueueName, SyncEntityType } from 'src/enum.js';
+import { JobName, QueueName, SyncEntityType } from 'src/enum.js';
+import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -12,6 +13,108 @@ import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-set
 import { SyncService } from 'src/services/sync.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
+
+it('starts the retained import regeneration during first setup once ready, resumes the same run and reports background errors', async () => {
+  const db = await getKyselyDB('fl333_manager_regeneration');
+  const previous = {
+    installation: process.env.FRAMELEAF_MANAGER_INSTALLATION,
+    origin: process.env.FRAMELEAF_MANAGER_ORIGIN,
+    ml: process.env.FRAMELEAF_MANAGER_ML_ENABLED,
+  };
+  const installation = '333333334444';
+  const key = `frameleaf-manager-library-setup:${installation}`;
+  const source = 'verified-source', configFingerprint = 'verified-config';
+  const id = importDerivedRunId(source, configFingerprint);
+  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const users = { hasAdmin: vi.fn().mockResolvedValue(false), getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }) };
+  const config = {
+    getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: { machineLearning: { enabled: true, urls: [] } }, revision: 'first' }),
+    updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
+  };
+  const make = () => new FrameleafLibrarySetupService(
+    db, { getAll: vi.fn().mockResolvedValue([]) } as never, {} as never,
+    { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+    users as never, {} as never, {} as never, config as never,
+  );
+  const run = async () => (await sql<{ selection: { managerSetup: { startedAt: string | null } } }>`
+    SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)).rows[0];
+  const selections = async () => (await sql<{ stage: string; state: string }>`
+    SELECT stage,state FROM job_selection WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db)).rows;
+  try {
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = installation;
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    await sql`INSERT INTO frameleaf_immich_import(source_fingerprint,config_fingerprint,source_version,status)
+      VALUES (${source},${configFingerprint},'frozen-fixture','verifying')`.execute(db);
+    await sql`INSERT INTO job_queue(name) VALUES ('manager-regeneration')`.execute(db);
+    await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone") VALUES (${id}::uuid,${IMPORT_DERIVED_RUN_KIND},
+      ${JSON.stringify({ source, config: configFingerprint, managerSetup: { installation, operationId: randomUUID(), preparedAt: null, startedAt: null } })}::text::jsonb,false)`.execute(db);
+    for (const name of stages) {
+      await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
+        VALUES (${randomUUID()}::uuid,${id}::uuid,${name},'manager-regeneration',true,false,1000,
+        ${name === JobName.AssetGenerateThumbnails ? 'cancelled' : 'enumerating'},
+        ${name === JobName.PersonGenerateThumbnail ? null : new Date()})`.execute(db);
+    }
+    const service = make();
+    await service.begin();
+    expect((await service.status()).regeneration).toMatchObject({ runId: id, state: 'pending_first_setup', startedAt: null, reasons: ['settings_not_ready'] });
+    expect(config.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    process.env.FRAMELEAF_MANAGER_ML_ENABLED = 'invalid';
+    await expect(service.begin()).rejects.toThrow('Invalid Manager processing choice');
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
+    process.env.FRAMELEAF_MANAGER_ML_ENABLED = 'false';
+    await service.begin(); // Choice persisted; account and activated/prepared import still required.
+    expect(config.updateAdminConfigWithRevision).toHaveBeenCalledTimes(1);
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
+    users.hasAdmin.mockResolvedValue(true);
+    await service.begin();
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
+    await sql`UPDATE frameleaf_immich_import SET status='activated'`.execute(db);
+    await sql`UPDATE job_run SET "enumerationDone"=true,selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(db);
+    await service.begin(); // The fifth, person-thumbnail capture is incomplete.
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
+    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([]);
+    await sql`UPDATE job_selection SET "capturedAt"=now() WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(db);
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,installation}','"555555556666"'::jsonb) WHERE id=${id}::uuid`.execute(db);
+    await service.begin();
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
+    expect((await service.status()).regeneration).toMatchObject({ state: 'needs_attention', reasons: ['import_not_prepared'] });
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,installation}',${JSON.stringify(installation)}::text::jsonb) WHERE id=${id}::uuid`.execute(db);
+    await Promise.all([service.begin(), make().begin()]);
+    const startedAt = (await run()).selection.managerSetup.startedAt;
+    expect(startedAt).toEqual(expect.any(String));
+    expect(await selections()).toEqual(stages.toSorted().map((stage) => ({ stage, state: stage === JobName.AssetGenerateThumbnails ? 'cancelled' : 'ready' })));
+    await make().begin(true); // Restart/retry must not mint a run or revive cancellation.
+    expect((await run()).selection.managerSetup.startedAt).toBe(startedAt);
+    expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows[0].count).toBe(1);
+    expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job`.execute(db)).rows[0].count).toBe(0);
+    // Existing phone/setup completion is independent of this durable run's work.
+    const revision = randomUUID(), sessionId = randomUUID();
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ phase: 'complete', revision })}::text::jsonb WHERE key=${key}`.execute(db);
+    await sql`INSERT INTO system_metadata(key,value) VALUES (${key + ':phone:' + sessionId},${JSON.stringify({ revision, tokenHash: 'fixture', finished: true })}::text::jsonb)`.execute(db);
+    const selectionId = (await sql<{ id: string }>`SELECT id FROM job_selection WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(db)).rows[0].id;
+    await sql`INSERT INTO job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state)
+      VALUES (${id}::uuid,'private-person','private-asset',${JobName.PersonGenerateThumbnail},'manager-regeneration','{}',${selectionId}::uuid,'pending')`.execute(db);
+    const jobId = randomUUID();
+    await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","runId","itemKey","dependencyReason")
+      VALUES (${jobId}::uuid,'manager-regeneration',${JobName.PersonGenerateThumbnail},'{}',true,false,1000,${id}::uuid,'private-person','destination-unavailable')`.execute(db);
+    await sql`UPDATE job_run_item SET "jobId"=${jobId}::uuid WHERE "runId"=${id}::uuid AND "itemKey"='private-person'`.execute(db);
+    const pending = await make().status();
+    expect(pending.canFinish).toBe(true);
+    expect(pending.regeneration).toMatchObject({ runId: id, state: 'blocked', startedAt, blocked: 1 });
+    await sql`UPDATE job SET state='failed',"finishedAt"=now() WHERE id=${jobId}::uuid`.execute(db);
+    expect((await make().status()).regeneration).toMatchObject({ runId: id, state: 'completed_with_errors', failed: 1 });
+    const privateStatus = await make().status({ user: { isAdmin: false }, session: { id: sessionId } } as AuthDto);
+    expect(privateStatus.regeneration).toBeNull();
+    expect(privateStatus.canFinish).toBe(true);
+    expect(JSON.stringify(pending.regeneration)).not.toMatch(/private-person|private-asset|verified-source|verified-config/);
+  } finally {
+    for (const [name, value] of [['FRAMELEAF_MANAGER_INSTALLATION', previous.installation], ['FRAMELEAF_MANAGER_ORIGIN', previous.origin], ['FRAMELEAF_MANAGER_ML_ENABLED', previous.ml]]) {
+      if (value === undefined) delete process.env[name!]; else process.env[name!] = value;
+    }
+    await db.destroy();
+  }
+});
 
 it('applies the initial machine learning choice once through normal settings and preserves restored settings', async () => {
   const db = await getKyselyDB('fl334_manager_settings');
@@ -41,6 +144,7 @@ it('applies the initial machine learning choice once through normal settings and
     process.env.FRAMELEAF_MANAGER_ML_ENABLED = 'false';
     await service.begin();
     await service.begin(); // Still waiting for an account; do not overwrite later administrator choices.
+    expect((await service.status()).regeneration).toBeNull(); // A fresh installation has no import run to start.
     expect(config.updateAdminConfigWithRevision).toHaveBeenCalledExactlyOnceWith({
       config: {
         machineLearning: { enabled: false, urls: ['http://immich-machine-learning:3003'] },

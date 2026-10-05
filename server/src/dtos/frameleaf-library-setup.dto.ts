@@ -11,6 +11,18 @@ export class LibrarySetupStatusDto extends createZodDto(
     rescanComplete: z.boolean(),
     verificationPassed: z.boolean(),
     canFinish: z.boolean(),
+    regeneration: z.object({
+      runId: z.uuid().nullable(),
+      state: z.string(),
+      preparedAt: z.string().nullable(),
+      startedAt: z.string().nullable(),
+      completed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      blocked: z.number().int().nonnegative(),
+      needsAttention: z.number().int().nonnegative(),
+      reasons: z.array(z.string()),
+    }).nullable().optional(),
     sync: z.object({ authenticated: z.boolean(), catalogComplete: z.boolean(), previewsReady: z.boolean() }),
   }),
 ) {}
