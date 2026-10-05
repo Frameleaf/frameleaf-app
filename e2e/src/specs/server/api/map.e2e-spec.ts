@@ -1,4 +1,12 @@
-import { AssetVisibility, createPartner, createUserAdmin, login, LoginResponseDto, signUpAdmin, updateAssets } from '@immich/sdk';
+import {
+  AssetVisibility,
+  createPartner,
+  createUserAdmin,
+  login,
+  LoginResponseDto,
+  signUpAdmin,
+  updateAssets,
+} from '@immich/sdk';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Socket } from 'socket.io-client';
@@ -20,56 +28,78 @@ describe('/map', () => {
   let partnerArchivedAssetId: string;
   let adminArchivedAssetId: string;
 
-  beforeAll(withApiAssetReadiness(MAP_SETUP_TIMEOUT, async (signal) => {
-    await utils.resetDatabase(undefined, signal);
-    await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
-    admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
-    await createUserAdmin({ userAdminCreateDto: createUserDto.user1 }, { headers: asBearerAuth(admin.accessToken), signal });
-    partner = await login({ loginCredentialDto: { email: createUserDto.user1.email, password: createUserDto.user1.password } }, { signal });
+  beforeAll(
+    withApiAssetReadiness(MAP_SETUP_TIMEOUT, async (signal) => {
+      await utils.resetDatabase(undefined, signal);
+      await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
+      admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
+      await createUserAdmin(
+        { userAdminCreateDto: createUserDto.user1 },
+        { headers: asBearerAuth(admin.accessToken), signal },
+      );
+      partner = await login(
+        { loginCredentialDto: { email: createUserDto.user1.email, password: createUserDto.user1.password } },
+        { signal },
+      );
 
-    websocket = await utils.connectWebsocket(admin.accessToken, signal);
-    partnerWebsocket = await utils.connectWebsocket(partner.accessToken, signal);
+      websocket = await utils.connectWebsocket(admin.accessToken, signal);
+      partnerWebsocket = await utils.connectWebsocket(partner.accessToken, signal);
 
-    const adminFiles = ['formats/heic/IMG_2682.heic', 'metadata/gps-position/thompson-springs.jpg'];
-    const adminArchivedFile = 'metadata/dates/datetimeoriginal-gps.jpg';
-    const partnerFile = 'metadata/gps-position/thompson-springs.jpg';
-    utils.resetEvents();
-    const uploadFile = async (accessToken: string, input: string) => {
-      const filepath = join(testAssetDir, input);
-      const { id } = await utils.createAsset(accessToken, {
-        assetData: { bytes: await readFile(filepath, { signal }), filename: basename(filepath) },
-      }, { signal });
-      await utils.waitForWebsocketEvent({ event: 'assetUpload', id, signal });
-      return id;
-    };
-    const adminUploads = await Promise.allSettled(adminFiles.map((f) => uploadFile(admin.accessToken, f)));
-    for (const result of adminUploads) {
-      if (result.status === 'rejected') {
-        throw result.reason;
+      const adminFiles = ['formats/heic/IMG_2682.heic', 'metadata/gps-position/thompson-springs.jpg'];
+      const adminArchivedFile = 'metadata/dates/datetimeoriginal-gps.jpg';
+      const partnerFile = 'metadata/gps-position/thompson-springs.jpg';
+      utils.resetEvents();
+      const uploadFile = async (accessToken: string, input: string) => {
+        const filepath = join(testAssetDir, input);
+        const { id } = await utils.createAsset(
+          accessToken,
+          {
+            assetData: { bytes: await readFile(filepath, { signal }), filename: basename(filepath) },
+          },
+          { signal },
+        );
+        await utils.waitForWebsocketEvent({ event: 'assetUpload', id, signal });
+        return id;
+      };
+      const adminUploads = await Promise.allSettled(adminFiles.map((f) => uploadFile(admin.accessToken, f)));
+      for (const result of adminUploads) {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
       }
-    }
-    const archivedUploads = await Promise.allSettled([
-      uploadFile(admin.accessToken, adminArchivedFile),
-      uploadFile(partner.accessToken, partnerFile),
-    ]);
-    [adminArchivedAssetId, partnerArchivedAssetId] = archivedUploads.map((result) => {
-      if (result.status === 'rejected') {
-        throw result.reason;
-      }
-      return result.value;
-    });
+      const archivedUploads = await Promise.allSettled([
+        uploadFile(admin.accessToken, adminArchivedFile),
+        uploadFile(partner.accessToken, partnerFile),
+      ]);
+      [adminArchivedAssetId, partnerArchivedAssetId] = archivedUploads.map((result) => {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
+        return result.value;
+      });
 
-    const updates = await Promise.allSettled([
-      updateAssets({ assetBulkUpdateDto: { ids: [adminArchivedAssetId], visibility: AssetVisibility.Archive } }, { headers: asBearerAuth(admin.accessToken), signal }),
-      updateAssets({ assetBulkUpdateDto: { ids: [partnerArchivedAssetId], visibility: AssetVisibility.Archive } }, { headers: asBearerAuth(partner.accessToken), signal }),
-      createPartner({ partnerCreateDto: { sharedWithId: admin.userId } }, { headers: asBearerAuth(partner.accessToken), signal }),
-    ]);
-    for (const result of updates) {
-      if (result.status === 'rejected') {
-        throw result.reason;
+      const updates = await Promise.allSettled([
+        updateAssets(
+          { assetBulkUpdateDto: { ids: [adminArchivedAssetId], visibility: AssetVisibility.Archive } },
+          { headers: asBearerAuth(admin.accessToken), signal },
+        ),
+        updateAssets(
+          { assetBulkUpdateDto: { ids: [partnerArchivedAssetId], visibility: AssetVisibility.Archive } },
+          { headers: asBearerAuth(partner.accessToken), signal },
+        ),
+        createPartner(
+          { partnerCreateDto: { sharedWithId: admin.userId } },
+          { headers: asBearerAuth(partner.accessToken), signal },
+        ),
+      ]);
+      for (const result of updates) {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
       }
-    }
-  }), MAP_SETUP_TIMEOUT + 5_000);
+    }),
+    MAP_SETUP_TIMEOUT + 5_000,
+  );
 
   afterAll(() => {
     utils.disconnectWebsocket(websocket);
