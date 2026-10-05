@@ -171,22 +171,27 @@ describe('offline import derived-work durable ownership', () => {
       await seed(1);
       let code = 'MANAGER_SETUP_AUTHORITY_REQUIRED';
       switch (invalid) {
-        case 'missing config':
+        case 'missing config': {
           code = 'MANAGER_SETUP_CONFIG_REQUIRED';
           break;
-        case 'wrong installation':
+        }
+        case 'wrong installation': {
           vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef654321');
           break;
-        case 'wrong operation':
+        }
+        case 'wrong operation': {
           vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', 'another-operation');
           break;
-        case 'wrong origin':
+        }
+        case 'wrong origin': {
           vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_library');
           break;
-        case 'changed config':
+        }
+        case 'changed config': {
           config.sourceId = 'changed';
           code = 'DERIVED_WORK_CONFIG_MISMATCH';
           break;
+        }
       }
       await expect(repository.dispatchImportedWork(invalid === 'missing config' ? undefined : config)).rejects.toThrow(
         code,

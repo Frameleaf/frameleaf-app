@@ -224,7 +224,7 @@ export class FrameleafLibrarySetupService {
       !['cancelled', 'completed_with_errors', 'needs_attention'].includes(summary?.state ?? '');
     return {
       runId: run?.id ?? null,
-      state: !matches ? 'needs_attention' : pending ? 'pending_first_setup' : (summary?.state ?? 'unavailable'),
+      state: matches ? (pending ? 'pending_first_setup' : (summary?.state ?? 'unavailable')) : 'needs_attention',
       preparedAt: marker?.preparedAt ?? null,
       startedAt: marker?.startedAt ?? null,
       completed: summary?.completed ?? 0,
@@ -232,21 +232,21 @@ export class FrameleafLibrarySetupService {
       failed: summary?.failed ?? 0,
       blocked: summary?.blocked ?? 0,
       needsAttention: summary?.needsAttention ?? 0,
-      reasons: !matches
-        ? ['import_not_prepared']
-        : pending
+      reasons: matches
+        ? pending
           ? [
-              !state.processingChoiceApplied
-                ? 'settings_not_ready'
-                : imported?.journal.status !== 'activated'
-                  ? 'import_not_activated'
-                  : !marker.preparedAt
-                    ? 'snapshot_not_prepared'
-                    : state.phase === 'awaiting-account'
+              state.processingChoiceApplied
+                ? imported?.journal.status === 'activated'
+                  ? marker.preparedAt
+                    ? state.phase === 'awaiting-account'
                       ? 'account_not_ready'
-                      : 'first_setup_pending',
+                      : 'first_setup_pending'
+                    : 'snapshot_not_prepared'
+                  : 'import_not_activated'
+                : 'settings_not_ready',
             ]
-          : (summary?.reasons ?? []),
+          : (summary?.reasons ?? [])
+        : ['import_not_prepared'],
     };
   }
 
