@@ -1696,8 +1696,26 @@ describe(PersonService.name, () => {
       });
       await execution.adoptions[0]({} as never);
       expect(mocks.person.setFacePerson).not.toHaveBeenCalled();
+      expect(mocks.person.resetFaceRecognition).not.toHaveBeenCalled();
       expect(mocks.person.createGroup).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
+    });
+
+    it('skips a refused forced reset before searching, assigning or queuing recognition work', async () => {
+      const asset = AssetFactory.create();
+      const face = AssetFaceFactory.from({ assetId: asset.id }).person().build();
+      mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(face, asset));
+      mocks.person.resetFaceRecognition.mockResolvedValue(false);
+      mocks.search.searchFaces.mockResolvedValue([]);
+
+      await expect(sut.handleRecognizeFaces({ id: face.id, force: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.person.resetFaceRecognition).toHaveBeenCalledExactlyOnceWith(face.id);
+      expect(mocks.person.setFacePerson).not.toHaveBeenCalled();
+      expect(mocks.search.searchFaces).not.toHaveBeenCalled();
+      expect(mocks.person.createGroup).not.toHaveBeenCalled();
+      expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('should fail if face does not exist', async () => {

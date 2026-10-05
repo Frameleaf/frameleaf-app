@@ -20,15 +20,16 @@ import { BaseService } from 'src/services/base.service.js';
 import { PetRecognitionService, clearPetPromptCache } from 'src/services/pet-recognition.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { PET_NEGATIVE_PROMPTS, PET_SPECIES_PROMPTS } from 'src/utils/pets.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
-/** A fake 512-wide CLIP space: each prompt owns an axis, and axis 500 is what photos of one cat share. */
+/** A fake 768-wide CLIP space: each prompt owns an axis, and axis 500 is what photos of one cat share. */
 const vector = (...axes: number[]) => {
-  const values = Array.from({ length: 512 }, (_, i) => (axes.includes(i) ? 1 : 0));
+  const values = Array.from({ length: 768 }, (_, i) => (axes.includes(i) ? 1 : 0));
   const norm = Math.hypot(...values);
   return `[${values.map((value) => value / norm).join(',')}]`;
 };
@@ -43,6 +44,7 @@ const setup = () => {
     mock: [LoggingRepository, MlDestinationRepository, MachineLearningRepository, JobRepository],
   });
   const pets = new PetRepository(defaultDatabase, LoggingRepository.create());
+  useRealJobPublication(defaultDatabase, ctx.getMock(JobRepository));
   const machineLearning = ctx.getMock(MachineLearningRepository);
   const destinations = ctx.getMock(MlDestinationRepository);
   const destination = {

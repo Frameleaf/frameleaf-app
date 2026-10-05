@@ -1847,6 +1847,20 @@ export class PersonRepository {
       return true;
     });
   }
+  /** Reset one automatic assignment without creating or overwriting an owner decision. */
+  async resetFaceRecognition(id: string): Promise<boolean> {
+    const { numUpdatedRows } = await this.db
+      .updateTable('asset_face')
+      .set({ personGroupId: null })
+      .where('id', '=', id)
+      .where('sourceType', '=', SourceType.MachineLearning)
+      .where('isVisible', '=', true)
+      .where('deletedAt', 'is', null)
+      .where('correctedAt', 'is', null)
+      .executeTakeFirst();
+    return Number(numUpdatedRows) === 1;
+  }
+
   /** Sets a face's person as an explicit decision (FL-57), or clears it (`null`). */
   async setFacePerson(id: string, personGroupId: string | null): Promise<void> {
     await this.db

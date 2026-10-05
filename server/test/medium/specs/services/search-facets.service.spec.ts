@@ -268,7 +268,7 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     const searchRepository = ctx.get(SearchRepository);
     for (const visibility of [undefined, undefined, AssetVisibility.Locked]) {
       const asset = await newItem(ctx, user.id, {}, { visibility });
-      await searchRepository.upsert(asset.id, newEmbedding());
+      await searchRepository.upsert(asset.id, newEmbedding(768));
     }
     await newItem(ctx, user.id); // no embedding yet, so smart search cannot rank it
 

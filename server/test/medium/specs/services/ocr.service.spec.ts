@@ -11,17 +11,20 @@ import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(OcrService, {
+  const service = newMediumService(OcrService, {
     database: db || defaultDatabase,
     real: [AssetRepository, AssetJobRepository, ConfigRepository, OcrRepository, SystemMetadataRepository],
     mock: [JobRepository, LoggingRepository, MachineLearningRepository, MlDestinationRepository],
   });
+  useRealJobPublication(service.ctx.database, service.ctx.getMock(JobRepository), [service.sut]);
+  return service;
 };
 
 beforeAll(async () => {

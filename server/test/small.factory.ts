@@ -10,8 +10,8 @@ export const newUuids = () => Array.from({ length: 100 }, () => 0).map(() => new
 export const newDate = () => new Date();
 export const newUuidV7 = () => v7();
 export const newSha1 = () => Buffer.from('this is a fake hash');
-export const newEmbedding = () => {
-  const embedding = Array.from({ length: 512 }, () => 0).map(() => Math.random());
+export const newEmbedding = (dimensions = 512) => {
+  const embedding = Array.from({ length: dimensions }, () => 0).map(() => Math.random());
   return '[' + embedding + ']';
 };
 

@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
@@ -28,6 +28,8 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PersonService } from 'src/services/person.service.js';
+import { JobOf } from 'src/types.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -52,6 +54,7 @@ const setup = (db?: Kysely<DB>) => {
   });
   // FL-57: face changes queue the refresh of generated text that may name the wrong people
   service.ctx.getMock(JobRepository).queue.mockResolvedValue();
+  useRealJobPublication(service.ctx.database, service.ctx.getMock(JobRepository), [service.sut]);
   return service;
 };
 
@@ -494,7 +497,7 @@ describe(PersonService.name, () => {
   });
 
   describe('handleQueueRecognizeFaces', () => {
-    it('should delete all people and queue faces for recognition', async () => {
+    it('freezes all faces for forced recognition without deleting people before admission', async () => {
       const { sut, ctx } = setup();
       const jobRepo = ctx.getMock(JobRepository);
       ctx.getMock(StorageRepository).unlink.mockResolvedValue();
@@ -516,17 +519,65 @@ describe(PersonService.name, () => {
 
       await sut.handleQueueRecognizeFaces({ force: true });
 
-      await expect(ctx.database.selectFrom('person').selectAll().execute()).resolves.toHaveLength(0);
-      // the database is shared with earlier tests, whose faces are queued too
-      expect(jobRepo.queueAll).toHaveBeenCalledWith(
+      await expect(
+        ctx.database
+          .selectFrom('person')
+          .select(['ownerId', 'personGroupId'])
+          .where('ownerId', 'in', [user.id, user1.id])
+          .orderBy('ownerId')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { ownerId: user.id, personGroupId: person.personGroupId },
+          { ownerId: user1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.ownerId.localeCompare(b.ownerId)),
+      );
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select(['id', 'personGroupId'])
+          .where('id', 'in', [assetFace.id, assetFaceUser1.id])
+          .orderBy('id')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { id: assetFace.id, personGroupId: person.personGroupId },
+          { id: assetFaceUser1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.id.localeCompare(b.id)),
+      );
+      const { rows } = await sql<{
+        itemKey: string;
+        rootItemKey: string;
+        selection: JobOf<JobName.FacialRecognition>;
+        state: string;
+        jobId: string | null;
+      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
+        where stage = ${JobName.FacialRecognition}
+        and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
+      // Other earlier fixtures can also be selected, but both owners' roots must be durable and unadmitted.
+      expect(rows).toHaveLength(2);
+      expect(rows).toEqual(
         expect.arrayContaining([
-          { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
-          { name: JobName.FacialRecognition, data: { id: assetFaceUser1.id, deferred: false } },
+          {
+            itemKey: assetFace.id,
+            rootItemKey: asset.id,
+            selection: { id: assetFace.id, deferred: false, force: true },
+            state: 'pending',
+            jobId: null,
+          },
+          {
+            itemKey: assetFaceUser1.id,
+            rootItemKey: assetUser1.id,
+            selection: { id: assetFaceUser1.id, deferred: false, force: true },
+            state: 'pending',
+            jobId: null,
+          },
         ]),
       );
+      expect(jobRepo.queueAll).not.toHaveBeenCalled();
     });
 
-    it('should only delete all people of a specified cluster group and queue their faces for recognition', async () => {
+    it('freezes only the specified cluster group without changing either owner before admission', async () => {
       const { sut, ctx } = setup();
       const jobRepo = ctx.getMock(JobRepository);
       ctx.getMock(StorageRepository).unlink.mockResolvedValue();
@@ -548,16 +599,52 @@ describe(PersonService.name, () => {
 
       await sut.handleQueueRecognizeFaces({ force: true, clusterGroupId: user.clusterGroupId });
 
-      await expect(ctx.database.selectFrom('person').selectAll().execute()).resolves.toHaveLength(1);
-      expect(jobRepo.queueAll).toHaveBeenCalledWith(
-        expect.objectContaining([{ name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } }]),
+      await expect(
+        ctx.database
+          .selectFrom('person')
+          .select(['ownerId', 'personGroupId'])
+          .where('ownerId', 'in', [user.id, user1.id])
+          .orderBy('ownerId')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { ownerId: user.id, personGroupId: person.personGroupId },
+          { ownerId: user1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.ownerId.localeCompare(b.ownerId)),
       );
-      expect(jobRepo.queueAll).not.toHaveBeenCalledWith(
-        expect.objectContaining([
-          { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
-          { name: JobName.FacialRecognition, data: { id: assetFaceUser1.id, deferred: false } },
-        ]),
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select(['id', 'personGroupId'])
+          .where('id', 'in', [assetFace.id, assetFaceUser1.id])
+          .orderBy('id')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { id: assetFace.id, personGroupId: person.personGroupId },
+          { id: assetFaceUser1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.id.localeCompare(b.id)),
       );
+      const { rows } = await sql<{
+        itemKey: string;
+        rootItemKey: string;
+        selection: JobOf<JobName.FacialRecognition>;
+        state: string;
+        jobId: string | null;
+      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
+        where stage = ${JobName.FacialRecognition}
+        and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
+      expect(rows).toEqual([
+        {
+          itemKey: assetFace.id,
+          rootItemKey: asset.id,
+          selection: { id: assetFace.id, deferred: false, force: true },
+          state: 'pending',
+          jobId: null,
+        },
+      ]);
+      expect(rows.some(({ itemKey }) => itemKey === assetFaceUser1.id)).toBe(false);
+      expect(jobRepo.queueAll).not.toHaveBeenCalled();
     });
   });
 

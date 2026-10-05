@@ -24,6 +24,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -56,6 +57,7 @@ const setup = (db?: Kysely<DB>) => {
       StackRepository,
       UserRepository,
       MapRepository,
+      MediaOperationRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository, WebsocketRepository],
   });
@@ -356,8 +358,13 @@ describe(AssetService.name, () => {
 
       await sut.handleAssetDeletion({ id: asset1.id, deleteOnDisk: true });
 
-      // new primary asset is picked
-      await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toMatchObject({ primaryAssetId: asset2.id });
+      // The surviving primary is eligible; SQL does not promise an order between the two survivors.
+      const remainingStack = await ctx.get(StackRepository).getById(stack.id);
+      expect(remainingStack).toBeDefined();
+      expect([asset2.id, asset3.id]).toContain(remainingStack!.primaryAssetId);
+      await expect(
+        ctx.database.selectFrom('asset').select('id').where('stackId', '=', stack.id).orderBy('id').execute(),
+      ).resolves.toEqual([asset2.id, asset3.id].toSorted().map((id) => ({ id })));
     });
 
     it('should delete a stacked primary asset (3 trashed assets)', async () => {

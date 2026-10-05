@@ -633,7 +633,7 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
   it('reads coverage and cameras over the same visible items, never counting a hidden one', async () => {
     const { db, ctx, sut } = await setup();
     const { user } = await ctx.newUser();
-    const vector = `[${Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0)).join(',')}]`;
+    const vector = `[${Array.from({ length: 768 }, (_, index) => (index === 0 ? 1 : 0)).join(',')}]`;
     const checked = await newItem(ctx, user.id, { originalFileName: 'a.jpg' }, { model: 'EOS R5' });
     const indexed = await newItem(ctx, user.id, { originalFileName: 'b.jpg' }, { model: 'EOS R5' });
     await newItem(ctx, user.id, { originalFileName: 'c.jpg' }, { make: null, model: null });

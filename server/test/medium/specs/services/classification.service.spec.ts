@@ -35,7 +35,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 // Unit vectors: cosine similarity is 1 for the same index and 0 otherwise; `mix` sits in between.
-const DIMENSIONS = 512;
+const DIMENSIONS = 768;
 const unitVector = (index: number) =>
   `[${Array.from({ length: DIMENSIONS }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
 const mix = (index: number, other: number, weight: number) => {
