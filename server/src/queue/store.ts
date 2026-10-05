@@ -340,10 +340,13 @@ export class SqlQueueStore {
           order by "createdAt", id limit ${capacity} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
-      for (const claim of rows) {
+      if (rows.length > 0) {
+        const jobIds = rows.map((claim) => claim.id);
+        // The bounded page is already active and locked in this transaction. Audit and
+        // synchronize the same identities together before returning any claim to an executor.
         await sql`insert into job_attempt("jobId", attempt, token, "workerId")
-          values (${claim.id}::uuid, ${claim.attempt}, ${claim.token}::uuid, ${workerId}::uuid)`.execute(tx);
-        await this.syncItem(claim.id, tx);
+          select id, attempt, token, "workerId" from job where id = any(${jobIds}::uuid[])`.execute(tx);
+        await this.syncItem(jobIds, tx);
       }
       return rows;
     });
@@ -683,9 +686,10 @@ export class SqlQueueStore {
     );
   }
 
-  private async syncItem(jobId: string, tx: Executor) {
+  private async syncItem(jobId: string | string[], tx: Executor) {
+    const jobIds = Array.isArray(jobId) ? jobId : [jobId];
     const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
-      where j.id = ${jobId}::uuid and i."jobId" = j.id
+      where j.id = any(${jobIds}::uuid[]) and i."jobId" = j.id
         and not exists (select 1 from job_selection s where s.id = i."selectionId"
           and s."sourceKind" != 'frozen' and i."runId" != s."runId")
         and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
@@ -693,8 +697,8 @@ export class SqlQueueStore {
             where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
           and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))
       returning i."runId"`.execute(tx);
-    await redactLibraryPayloads(tx, jobId);
-    const mirrored = await mirrorSelectionLineage(tx, { jobIds: [jobId] });
+    await redactLibraryPayloads(tx, jobIds);
+    const mirrored = await mirrorSelectionLineage(tx, { jobIds });
     return [...rows, ...mirrored].map((item) => item.runId);
   }
 
