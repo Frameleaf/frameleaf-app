@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setImmediate } from 'node:timers/promises';
 import { frozenSource } from 'src/immich-import/adapters.js';
 import { ImmichSource } from 'src/immich-import/source.js';
 import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types.js';
@@ -83,8 +84,8 @@ describe('source preflight', () => {
         },
       });
       vi.spyOn(source, 'batches').mockImplementation(async function* (table) {
-        if (table === 'asset')
-          yield await Promise.resolve([{ row: { originalPath: path, checksumAlgorithm: 'sha1-path' }, cursor: ['1'] }]);
+        await setImmediate(); // Preserve the asynchronous source cursor boundary.
+        if (table === 'asset') yield [{ row: { originalPath: path, checksumAlgorithm: 'sha1-path' }, cursor: ['1'] }];
       });
       const before = await source.preflight();
       expect(await source.preflight()).toBe(before);
