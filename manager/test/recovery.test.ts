@@ -22,7 +22,7 @@ function container(id: string, running = true, policy = 'unless-stopped'): Conta
     Name: `/worker-${id}`,
     Image: `sha256:${id.repeat(64)}`,
     State: { Running: running },
-    Config: { Image: 'ghcr.io/immich-app/immich-server:v3.1.0', Env: [], Labels: {}, Entrypoint: null, Cmd: null },
+    Config: { Image: 'fixture.invalid/source-server:v3.1.0', Env: [], Labels: {}, Entrypoint: null, Cmd: null },
     HostConfig: { RestartPolicy: { Name: policy, MaximumRetryCount: 0 }, NetworkMode: 'bridge', PortBindings: {} },
     Mounts: [{ Type: 'bind', Source: '/fixture/media', Destination: '/data', RW: true }],
     NetworkSettings: { Networks: { private: { IPAddress: '172.19.0.2', Aliases: ['app'] } } },
@@ -272,6 +272,39 @@ test('a completed Restic snapshot is reused after a lost acknowledgement', async
     assert.equal(await new Backups('/repo', '/key', execute).snapshot(directory, 'operation'), 'a'.repeat(64));
     assert.equal(backups, 0);
     assert.equal(checks, 1);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('relative checkpoint backups restore the snapshot root, not their absolute source metadata path', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-restore-'));
+  const snapshot = 'a'.repeat(64),
+    destination = join(directory, 'empty');
+  const calls: string[][] = [];
+  const execute = async (_binary: string, args: string[]) => {
+    calls.push(args);
+    if (args.includes('snapshots')) return JSON.stringify([{ id: snapshot, paths: ['/old/host/checkpoint'] }]);
+    return '';
+  };
+  try {
+    await new Backups('/repo', '/key', execute).restore(snapshot, destination);
+    assert.deepEqual(calls[1], [
+      '--repo',
+      '/repo',
+      '--password-file',
+      '/key',
+      '--json',
+      'restore',
+      snapshot,
+      '--target',
+      destination,
+      '--verify',
+    ]);
+    await assert.rejects(
+      new Backups('/repo', '/key', execute).restore('b'.repeat(64), join(directory, 'unknown')),
+      /unknown_snapshot/,
+    );
   } finally {
     await rm(directory, { recursive: true });
   }

@@ -129,8 +129,14 @@ try {
   // Recovery must work from the encrypted repository and exported key into an empty folder.
   evaluate(`import assert from 'node:assert/strict'; import { mkdir, copyFile, writeFile, rm, readFile } from 'node:fs/promises';
     import { Backups } from '/app/manager/build/backups.js'; import { fileHash } from '/app/manager/build/files.js';
+    import { command } from '/app/manager/build/docker.js';
+    const execute = async (binary, args, options) => {
+      const operation = args.find(value => ['init', 'cat', 'snapshots', 'backup', 'check', 'restore'].includes(value));
+      try { return await command(binary, args, options); }
+      catch { throw new Error('Disposable Restic fixture failed at ' + operation); }
+    };
     const checkpoint=${JSON.stringify(checkpoint)}, repository=${JSON.stringify(backup)}, recovered=${JSON.stringify(recovered)};
-    const backups = new Backups(repository, ${JSON.stringify(join(state, 'restic-key'))});
+    const backups = new Backups(repository, ${JSON.stringify(join(state, 'restic-key'))}, execute);
     await mkdir(checkpoint); await copyFile(${JSON.stringify(dump)}, checkpoint+'/database.dump');
     await writeFile(checkpoint+'/recovery.json', JSON.stringify({ mediaIncluded: false, fixtureSecret: 'disposable-recovery-secret' }));
     const hash = await fileHash(checkpoint+'/database.dump');
@@ -138,7 +144,7 @@ try {
     assert.equal(await backups.snapshot(checkpoint, 'fixture-database-backup'), snapshot);
     const key = await backups.recoveryKey();
     await rm(checkpoint, { recursive: true }); await rm(${JSON.stringify(dump)});
-    const replacement = new Backups(repository, ${JSON.stringify(join(state, 'replacement-key'))});
+    const replacement = new Backups(repository, ${JSON.stringify(join(state, 'replacement-key'))}, execute);
     await replacement.unlock(key); await replacement.restore(snapshot, recovered);
     assert.equal(await fileHash(recovered+'/database.dump'), hash);
     assert.equal(JSON.parse(await readFile(recovered+'/recovery.json', 'utf8')).fixtureSecret, 'disposable-recovery-secret');
