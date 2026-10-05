@@ -60,6 +60,7 @@ export interface JobTable {
   progressAt: Timestamp | null;
   progressUnits: Generated<string>;
   cancelRequestedAt: Timestamp | null;
+  cancelReason: 'deadline' | 'request' | null;
   dependencyReason: string | null;
   error: string | null;
 }

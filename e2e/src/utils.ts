@@ -411,7 +411,7 @@ export const utils = {
                   drain: async () => {
                     await query(
                       context,
-                      `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()) WHERE state = 'active'`,
+                      `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
                     );
                     await waitUntil(
                       context,

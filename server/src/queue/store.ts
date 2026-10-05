@@ -42,6 +42,16 @@ import {
 
 type Executor = Kysely<any> | Transaction<any>;
 
+// An unclaimed row no longer carries its token. Retained attempts, not its state, prove it stopped.
+const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
+  select 1 from job_attempt a where a."jobId" = j.id and a.attempt = j.attempt))
+  and not exists (select 1 from job_attempt a where a."jobId" = j.id
+    and (a.outcome is distinct from 'completed' or a."finishedAt" is null)
+    and not exists (select 1 from system_metadata m where m.key = 'frameleaf-attempt-evidence:' || a.token::text
+      and m.value->>'jobId' = j.id::text and m.value ? 'stoppedAt')
+    and not exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
+      and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')))`;
+
 /** Shared with the plan gate so the complete entitlement predicate remains measured even when
  * an admitted-live preflight can avoid executing it during ordinary publication.
  */
@@ -301,6 +311,15 @@ export class SqlQueueStore {
 
   async claim(queue: string, workerId: string, maxClaims = QUEUE_BATCH): Promise<QueueClaim[]> {
     if (!Number.isSafeInteger(maxClaims) || maxClaims <= 0) return [];
+    // The partial index keeps this empty probe independent of the remaining media backlog.
+    const { rows: cancelled } = await sql<{ id: string }>`select id from job where queue = ${queue}
+      and state in ('pending','waiting') and "cancelRequestedAt" is not null
+      and "cancelReason" is distinct from 'deadline' order by "createdAt", id limit ${QUEUE_BATCH}`.execute(this.db);
+    for (const { id } of cancelled) {
+      await this.fail({ id, queue, token: null }, 'Job cancellation requested', undefined, {
+        queuedCancellation: true,
+      });
+    }
     return this.db.transaction().execute(async (tx) => {
       const {
         rows: [config],
@@ -322,6 +341,7 @@ export class SqlQueueStore {
         for (let slots = QUEUE_HIGH_WATER - counts.ready; slots > 0; slots -= QUEUE_BATCH) {
           await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
+            and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
           order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
@@ -335,9 +355,10 @@ export class SqlQueueStore {
       const { rows } = await sql<QueueClaim>`
         update job set state = 'active', token = gen_random_uuid(), "workerId" = ${workerId}::uuid,
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
-          "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "dependencyReason" = null
+          "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
         where id in (
           select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
+            and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
           order by "createdAt", id limit ${capacity} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
@@ -478,7 +499,7 @@ export class SqlQueueStore {
     return this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
-        "workerId" = null, "cancelRequestedAt" = null, "finishedAt" = null, error = null,
+        "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
         "availableAt" = clock_timestamp() + interval '30 seconds'
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
@@ -492,48 +513,68 @@ export class SqlQueueStore {
   }
 
   async fail(
-    claim: QueueClaim,
+    claim: Pick<QueueClaim, 'id' | 'queue'> & { token: string | null },
     reason: string,
     diagnostic?: (tx: Transaction<any>) => Promise<void>,
-    options: { expiredRecovery?: boolean; publication?: QueuePublication } = {},
+    options: {
+      expiredRecovery?: boolean;
+      stopRequestedOnly?: boolean;
+      queuedCancellation?: boolean;
+      publication?: QueuePublication;
+    } = {},
   ) {
     return withSelectionSharing(
       this.db,
       async (tx) => {
         await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
-        let unconfirmedStop = false;
-        let operationId: string | null = null;
-        if (options.expiredRecovery) {
-          const {
-            rows: [expired],
-          } = await sql<{
-            stopped: boolean;
-            graceElapsed: boolean;
-            operationId: string | null;
-          }>`select data->>'operationId' "operationId",
+        const owned = options.queuedCancellation
+          ? sql`queue = ${claim.queue} and state in ('pending','waiting') and token is null and "cancelRequestedAt" is not null
+              and "cancelReason" is distinct from 'deadline'`
+          : sql`token = ${claim.token}::uuid and state = 'active'
+              and (${!options.expiredRecovery} or "leaseExpiresAt" <= clock_timestamp())`;
+        // Unknown/legacy causes are explicit requests: ambiguity must never authorize a replay.
+        const {
+          rows: [job],
+        } = await sql<{
+          stopped: boolean;
+          graceElapsed: boolean;
+          stopRequested: boolean;
+          cancelled: boolean;
+          operationId: string | null;
+        }>`select data->>'operationId' "operationId",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
-          (exists (select 1 from system_metadata m
+          "cancelRequestedAt" is not null "stopRequested",
+          ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
+          ${
+            options.queuedCancellation
+              ? stoppedJobAttempts
+              : sql`(exists (select 1 from system_metadata m
             where m.key = 'frameleaf-attempt-evidence:' || j.token::text
               and m.value->>'jobId' = j.id::text and m.value ? 'stoppedAt')
           or exists (select 1 from system_metadata m
             where m.key = 'frameleaf-worker-stopped:' || j."workerId"::text
-              and m.value->>'workerId' = j."workerId"::text and m.value ? 'stoppedAt')) stopped
-          from job j where id = ${claim.id}::uuid and token = ${claim.token}::uuid
-            and state = 'active' and "leaseExpiresAt" <= clock_timestamp() for update`.execute(tx);
-          if (!expired) return false;
-          operationId = expired.operationId;
-          // Allow one sweep for the independent supervisor's bounded proof write. The expired
-          // token already fences publication. A timestamp alone never permits another executor.
-          if (!expired.stopped && !expired.graceElapsed) {
+              and m.value->>'workerId' = j."workerId"::text and m.value ? 'stoppedAt'))`
+          } stopped
+          from job j where id = ${claim.id}::uuid and ${owned} for update`.execute(tx);
+        if (!job || (options.stopRequestedOnly && !job.stopRequested)) return false;
+        let unconfirmedStop = false;
+        if (options.expiredRecovery || job.stopRequested) {
+          // Allow one sweep after expiry for the supervisor's bounded proof write. Cancellation
+          // and expiry already fence publication; neither alone permits another executor.
+          if (!job.stopped && !job.graceElapsed && !options.queuedCancellation) {
             await sql`update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", clock_timestamp()),
-            error = 'Waiting for confirmation that the expired executor has stopped'
+            "cancelReason" = case when "cancelRequestedAt" is null then 'deadline' else "cancelReason" end,
+            error = 'Waiting for confirmation that the executor has stopped'
             where id = ${claim.id}::uuid`.execute(tx);
             return false;
           }
-          unconfirmedStop = !expired.stopped;
+          unconfirmedStop = !job.stopped;
           if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
         }
-        if (diagnostic) {
+        const operationId =
+          options.expiredRecovery || (options.queuedCancellation && unconfirmedStop) ? job.operationId : null;
+        if (job.cancelled && !unconfirmedStop) reason = 'Job cancellation requested';
+        if (diagnostic && !job.stopRequested) {
           const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
           and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
             tx,
@@ -546,18 +587,22 @@ export class SqlQueueStore {
           if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
         }
         const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
-        state = case when ${unconfirmedStop} or not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
+        state = case when ${unconfirmedStop} then 'needs_attention' when ${job.cancelled} then 'cancelled'
+          when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when ${unconfirmedStop} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${unconfirmedStop} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
-        where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
+        where id = ${claim.id}::uuid and ${owned}
         returning id, state, "latestPending"`.execute(tx);
         if (rows.length === 0) {
           return false;
         }
         await sql`update job_attempt set outcome = ${rows[0].state}, "finishedAt" = now(),
-        error = (select error from job where id = ${claim.id}::uuid) where token = ${claim.token}::uuid`.execute(tx);
+        error = (select error from job where id = ${claim.id}::uuid) where "jobId" = ${claim.id}::uuid
+          and ${options.queuedCancellation ? sql`"finishedAt" is null` : sql`token = ${claim.token}::uuid`}`.execute(
+          tx,
+        );
         if (operationId) {
           if (unconfirmedStop) {
             // The media-operation dispatcher must not acquire a second retry budget or replay
@@ -620,7 +665,7 @@ export class SqlQueueStore {
     const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::text::jsonb,
       "rootItemKey" = ${latest.rootItemKey ?? null}, "safeToRetry" = ${latest.safeToRetry}, sensitive = ${latest.sensitive}, "deadlineMs" = ${latest.deadlineMs},
       "availableAt" = now() + ${latest.options?.delay ?? 0} * interval '1 millisecond',
-      "retryBaseAttempt" = attempt, "finishedAt" = null, "cancelRequestedAt" = null, error = null,
+      "retryBaseAttempt" = attempt, "finishedAt" = null, "cancelRequestedAt" = null, "cancelReason" = null, error = null,
       "workerId" = null, "latestPending" = null
       where id = ${previousId}::uuid and "runId" = ${latest.runId ?? null}::uuid
       and "itemKey" = ${latest.itemKey ?? null} and name = ${latest.name} returning id`.execute(tx);
@@ -662,7 +707,8 @@ export class SqlQueueStore {
   /** Only the coordinator observes persisted deadlines; no handler event-loop timer is trusted. */
   async deadlines(workerId: string) {
     const { rows } = await sql<{ id: string; token: string; cancelRequestedAt: Date | null }>`
-      update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", now())
+      update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", now()),
+        "cancelReason" = case when "cancelRequestedAt" is null then 'deadline' else "cancelReason" end
       where state = 'active' and "workerId" = ${workerId}::uuid and (
         "cancelRequestedAt" is not null or "leaseExpiresAt" <= now() or
         ("progressUnits" = 0 and "startedAt" + "deadlineMs" * interval '1 millisecond' <= now()) or
@@ -878,28 +924,33 @@ export async function resetQueueAfterRestore(db: Executor) {
   // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
   const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;
   const repeatable = sql`("safeToRetry" or ${backup}) and not (data ? 'operationId')`;
+  const cancelled = sql`("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline')`;
   const { rows: deferred } =
     await sql<LineageItemIdentity>`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
-    select 1 from job j where (j.state = 'active' or (not j."safeToRetry" and j.state in ('pending','waiting')))
+    select 1 from job j where (j.state = 'active' or ((not j."safeToRetry" or ${cancelled}) and j.state in ('pending','waiting')))
     and j."latestPending" ->> 'name' = i.stage and (
       (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
       or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
         as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
     returning i."runId", i."itemKey", i.stage`.execute(db);
-  await sql`update job_attempt a set outcome = case when ${repeatable}
+  await sql`update job_attempt a set outcome = case when ${cancelled} then
+      case when ${stoppedJobAttempts} then 'restored_cancelled' else 'restored_needs_attention' end when ${repeatable}
       and j.attempt < j."retryBaseAttempt" + 2 then 'restored_retry' else 'restored_needs_attention' end,
       "finishedAt" = now() from job j where a."jobId" = j.id and a."finishedAt" is null`.execute(db);
   const { rows: restored } = await sql<{
     id: string;
-  }>`update job set state = case when ${repeatable}
+  }>`update job j set state = case when ${cancelled} then
+      case when ${stoppedJobAttempts} then 'cancelled' else 'needs_attention' end when ${repeatable}
         and attempt < "retryBaseAttempt" + 2 then 'pending' else 'needs_attention' end,
     "safeToRetry" = "safeToRetry" or (${backup} and not (data ? 'operationId')),
-    token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null,
+    token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null,
     "availableAt" = now() + interval '30 seconds', "latestPending" = null,
-    "finishedAt" = case when ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
-    error = 'Restore revoked the previous execution claim',
+    "finishedAt" = case when not ${cancelled} and ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
+    error = case when ${cancelled} and not ${stoppedJobAttempts}
+      then 'Executor stop could not be confirmed; review the worker before retrying'
+      else 'Restore revoked the previous execution claim' end,
     data = case when sensitive then '{}'::jsonb else data end
-    where state = 'active' or ((not "safeToRetry" or data ? 'operationId') and state in ('pending','waiting')) returning id`.execute(
+    where state = 'active' or ((not "safeToRetry" or data ? 'operationId' or ${cancelled}) and state in ('pending','waiting')) returning id`.execute(
     db,
   );
   await sql`update job_run_item i set state = j.state from job j where i."jobId" = j.id`.execute(db);
