@@ -90,15 +90,15 @@ describe('/search', () => {
         await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
       }
 
-      // note: the coordinates here are not the actual coordinates of the images and are random for most of them
+      // Synthetic coordinates use six decimal places for exact EXIF round-trip assertions.
       const coordinates = [
         { latitude: 48.85341, longitude: 2.3488 }, // paris
         { latitude: 35.6895, longitude: 139.69171 }, // tokyo
         { latitude: 52.52437, longitude: 13.41053 }, // berlin
-        { latitude: 1.3146631, longitude: 103.8454093 }, // singapore
+        { latitude: 1.314663, longitude: 103.845409 }, // singapore
         { latitude: 41.01384, longitude: 28.94966 }, // istanbul
         { latitude: 5.55602, longitude: -0.1969 }, // accra
-        { latitude: 37.5442706, longitude: -4.7277528 }, // andalusia
+        { latitude: 37.544271, longitude: -4.727753 }, // andalusia
         { latitude: 23.13302, longitude: -82.38304 }, // havana
         { latitude: 41.69411, longitude: 44.83368 }, // tbilisi
         { latitude: 31.22222, longitude: 121.45806 }, // shanghai
@@ -107,7 +107,7 @@ describe('/search', () => {
         { latitude: 47.04057, longitude: 9.06804 }, // glarus
         { latitude: 32.77152, longitude: -89.11673 }, // philadelphia
         { latitude: 31.63416, longitude: -7.99994 }, // marrakesh
-        { latitude: 38.5237354, longitude: -78.4886194 }, // tanners ridge
+        { latitude: 38.523735, longitude: -78.488619 }, // tanners ridge
         { latitude: 59.93863, longitude: 30.31413 }, // st. petersburg
         { latitude: 0, longitude: 0 }, // null island
       ];
