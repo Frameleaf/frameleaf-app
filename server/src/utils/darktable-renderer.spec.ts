@@ -144,6 +144,43 @@ describe('pinned darktable adapter', () => {
     await expect(readFile(join(nativeDirectory!, 'developed.png'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it.each([undefined, '8'])(
+    'limits all three native children without changing the inherited parent limit %s',
+    async (inheritedLimit) => {
+      vi.stubEnv('OMP_THREAD_LIMIT', inheritedLimit);
+      vi.stubEnv('FRAMELEAF_NATIVE_ENV_TEST', 'preserved');
+      const execute = mocks.exec.getMockImplementation()!;
+      const parentLimits: Array<string | undefined> = [];
+      mocks.exec.mockImplementation((...args) => {
+        parentLimits.push(process.env.OMP_THREAD_LIMIT);
+        return execute(...args);
+      });
+      try {
+        await renderDarktable(input, recipe);
+        expect(mocks.exec).toHaveBeenCalledTimes(3);
+        expect(mocks.exec.mock.calls[0][1]).toEqual(['--version']);
+        expect(mocks.exec.mock.calls[1][1][1]).toMatch(/bootstrap\.png$/);
+        expect(mocks.exec.mock.calls[2][1][1]).toMatch(/developed\.png$/);
+        expect(parentLimits).toEqual([inheritedLimit, inheritedLimit, inheritedLimit]);
+        expect(process.env.OMP_THREAD_LIMIT).toBe(inheritedLimit);
+        for (const call of mocks.exec.mock.calls) {
+          const environment = call[2].env as NodeJS.ProcessEnv | undefined;
+          expect(environment?.OMP_THREAD_LIMIT).toBe('1');
+          expect(environment).not.toBe(process.env);
+          expect(environment?.FRAMELEAF_NATIVE_ENV_TEST).toBe('preserved');
+          // Check every inherited field without printing environment values on failure.
+          expect(
+            Object.entries(process.env).every(
+              ([key, value]) => key === 'OMP_THREAD_LIMIT' || environment?.[key] === value,
+            ),
+          ).toBe(true);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it('does not invoke native rendering after a version mismatch', async () => {
     mocks.exec.mockResolvedValue({ stdout: 'darktable 5.4.1\n' });
     await expect(renderDarktable(input, recipe)).rejects.toThrow('requires darktable 5.6.1');
