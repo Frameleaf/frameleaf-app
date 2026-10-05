@@ -619,7 +619,7 @@ describe('PostgreSQL queue', () => {
         expect(abort.signal.aborted).toBe(false); // the database sees it before the coordinator's message
         if (outcome === 'failed') throw new Error('fixture handler failure');
         if (outcome === 'deferred') execution.dependencyReason = 'destination-unavailable';
-        if (outcome === 'aborted') abort.abort(new Error('fixture cancellation'));
+        else if (outcome === 'aborted') abort.abort(new Error('fixture cancellation'));
       });
       const executor = new JobRepository(
         {} as never,
