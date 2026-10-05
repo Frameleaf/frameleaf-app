@@ -145,6 +145,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  FrameleafLibrarySetupService,
   ICloudAuditService,
   ICloudScheduledStagingService,
   ICloudScheduledWorkerService,
@@ -291,3 +292,4 @@ export const services = [
   WorkflowExecutionService,
   WorkflowService,
 ];
+import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
