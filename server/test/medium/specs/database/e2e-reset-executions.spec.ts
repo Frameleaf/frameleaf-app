@@ -3,6 +3,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// Exercise the exact E2E predicate and admission function, not a test copy of its SQL.
+// eslint-disable-next-line no-restricted-imports
+import {
+  type ResetExecutionBlocker,
+  assertResetExecutionsStopped,
+  drainAfterExecutorStop,
+  getResetExecutionBlocker,
+} from '../../../../../e2e/src/harness-reset-executions.mjs';
 import { ChecksumAlgorithm, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -13,14 +21,6 @@ import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { JOB_QUEUE_CLAIMANT, JOB_QUEUE_EXECUTOR } from 'src/utils/edit-operation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-// Exercise the exact E2E predicate and admission function, not a test copy of its SQL.
-// eslint-disable-next-line no-restricted-imports
-import {
-  assertResetExecutionsStopped,
-  drainAfterExecutorStop,
-  getResetExecutionBlocker,
-  type ResetExecutionBlocker,
-} from '../../../../../e2e/src/harness-reset-executions.mjs';
 
 describe('E2E fixture reset executor-stop authority', () => {
   let db: Kysely<DB>;
@@ -29,7 +29,7 @@ describe('E2E fixture reset executor-stop authority', () => {
   let worker: string;
   let directory: string;
   const bytes = 'The executor may still be reading this original';
-  const executionQuery = (text: string) => db.executeQuery(CompiledQuery.raw<ResetExecutionBlocker>(text));
+  const executionQuery = (text: string) => db.executeQuery<ResetExecutionBlocker>(CompiledQuery.raw(text));
 
   beforeEach(async () => {
     // The guard is deliberately instance-wide. Each control needs its own retained history.
@@ -82,7 +82,7 @@ describe('E2E fixture reset executor-stop authority', () => {
       {
         queue,
         name: 'reset-stop-control',
-        data: { id: asset.id, ...(operation ? { operationId: operation.id } : {}) },
+        data: { id: asset.id, ...(operation && { operationId: operation.id }) },
         safeToRetry: true,
         sensitive: options.sensitive ?? false,
         deadlineMs: 60_000,
@@ -102,8 +102,10 @@ describe('E2E fixture reset executor-stop authority', () => {
       ]);
       expect(await store.hasUnfinishedWork(queue)).toBe(false);
       expect(
-        (await sql`select outcome, "finishedAt" is not null as finished from job_attempt
-          where token = ${claim.token}::uuid`.execute(db)).rows,
+        (
+          await sql`select outcome, "finishedAt" is not null as finished from job_attempt
+          where token = ${claim.token}::uuid`.execute(db)
+        ).rows,
       ).toEqual([{ outcome: 'needs_attention', finished: true }]);
     };
 
@@ -165,34 +167,46 @@ describe('E2E fixture reset executor-stop authority', () => {
     { admin: false, cleared: false },
     { admin: true, cleared: true },
     { admin: false, cleared: true },
-  ])('refuses unconfirmed recovery before mutation (admin=$admin, previously cleared=$cleared)', async ({ admin, cleared }) => {
-    const state = await fixture({ admin });
-    await state.expire();
-    if (cleared) {
-      await store.clear(queue, ['needs_attention']);
-    }
-    await expect(state.reset()).rejects.toThrow('executor stop is unconfirmed for retained attempt');
-    await state.expectIntact();
-    expect((await sql`select state from job where id = ${state.claim.id}::uuid`.execute(db)).rows).toEqual([
-      { state: cleared ? 'cancelled' : 'needs_attention' },
-    ]);
-    expect((await sql`select key from system_metadata where key like 'frameleaf-%-stopped:%'
-      or key like 'frameleaf-attempt-evidence:%'`.execute(db)).rows).toEqual([]);
-  });
+  ])(
+    'refuses unconfirmed recovery before mutation (admin=$admin, previously cleared=$cleared)',
+    async ({ admin, cleared }) => {
+      const state = await fixture({ admin });
+      await state.expire();
+      if (cleared) {
+        await store.clear(queue, ['needs_attention']);
+      }
+      await expect(state.reset()).rejects.toThrow('executor stop is unconfirmed for retained attempt');
+      await state.expectIntact();
+      expect((await sql`select state from job where id = ${state.claim.id}::uuid`.execute(db)).rows).toEqual([
+        { state: cleared ? 'cancelled' : 'needs_attention' },
+      ]);
+      expect(
+        (
+          await sql`select key from system_metadata where key like 'frameleaf-%-stopped:%'
+      or key like 'frameleaf-attempt-evidence:%'`.execute(db)
+        ).rows,
+      ).toEqual([]);
+    },
+  );
 
-  it.each([false, true])('retains a linked failed/null-claim operation and its originals (sensitive=$0)', async (sensitive) => {
-    const state = await fixture({ admin: false, linked: true, sensitive });
-    await state.expire();
-    await expect(state.reset()).rejects.toThrow('executor stop is unconfirmed');
-    await state.expectIntact();
-    // Even after this attempt's real stop is acknowledged, the domain's unresolved error is
-    // not silently erased. Sensitive recovery/old clear may have removed its correlation.
-    await recordStoppedAttempt(db, state.claim.id, state.claim.token);
-    await store.clear(queue, ['needs_attention']);
-    expect((await sql`select data from job where id = ${state.claim.id}::uuid`.execute(db)).rows).toEqual([{ data: {} }]);
-    await expect(state.reset()).rejects.toThrow(`retained operation ${state.operation!.id}`);
-    await state.expectIntact();
-  });
+  it.each([false, true])(
+    'retains a linked failed/null-claim operation and its originals (sensitive=$0)',
+    async (sensitive) => {
+      const state = await fixture({ admin: false, linked: true, sensitive });
+      await state.expire();
+      await expect(state.reset()).rejects.toThrow('executor stop is unconfirmed');
+      await state.expectIntact();
+      // Even after this attempt's real stop is acknowledged, the domain's unresolved error is
+      // not silently erased. Sensitive recovery/old clear may have removed its correlation.
+      await recordStoppedAttempt(db, state.claim.id, state.claim.token);
+      await store.clear(queue, ['needs_attention']);
+      expect((await sql`select data from job where id = ${state.claim.id}::uuid`.execute(db)).rows).toEqual([
+        { data: {} },
+      ]);
+      await expect(state.reset()).rejects.toThrow(`retained operation ${state.operation!.id}`);
+      await state.expectIntact();
+    },
+  );
 
   it('rejects unrelated tokens, jobs and worker identities, not just absent proof keys', async () => {
     const state = await fixture();
@@ -201,7 +215,9 @@ describe('E2E fixture reset executor-stop authority', () => {
     await recordStoppedAttempt(db, randomUUID(), state.claim.token);
     await sql`insert into system_metadata (key, value) values
       (${'frameleaf-worker-stopped:' + randomUUID()}, ${JSON.stringify({ workerId: worker, stoppedAt: Date.now() })}::text::jsonb),
-      (${'frameleaf-worker-stopped:' + worker}, ${JSON.stringify({ workerId: randomUUID(), stoppedAt: Date.now() })}::text::jsonb)`.execute(db);
+      (${'frameleaf-worker-stopped:' + worker}, ${JSON.stringify({ workerId: randomUUID(), stoppedAt: Date.now() })}::text::jsonb)`.execute(
+      db,
+    );
     await expect(state.reset()).rejects.toThrow('executor stop is unconfirmed for retained attempt');
     await state.expectIntact();
     await sql`update system_metadata set value = jsonb_build_object('jobId', ${state.claim.id}::text)
@@ -244,7 +260,11 @@ describe('E2E fixture reset executor-stop authority', () => {
   it('waits for an active cancellation request without clearing payloads or starting mutation', async () => {
     const state = await fixture();
     await sql`update job set "cancelRequestedAt" = now() where id = ${state.claim.id}::uuid`.execute(db);
-    expect(await getResetExecutionBlocker(executionQuery)).toEqual({ kind: 'attempt', id: state.claim.id, active: true });
+    expect(await getResetExecutionBlocker(executionQuery)).toEqual({
+      kind: 'attempt',
+      id: state.claim.id,
+      active: true,
+    });
     await expect(state.reset()).rejects.toThrow('still waiting for an active executor');
     await state.expectIntact();
   });
