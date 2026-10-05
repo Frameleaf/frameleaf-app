@@ -707,7 +707,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     }
 
     case JobRepository: {
-      return automock(JobRepository, {
+      const mock = automock(JobRepository, {
         args: [
           undefined,
           undefined,
@@ -717,6 +717,8 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
           },
         ],
       });
+      mock.collectFollowups.mockImplementation((action) => action());
+      return mock;
     }
 
     case LoggingRepository as unknown as ClassConstructor<T>: {
