@@ -31,7 +31,11 @@ export async function supersedeSelectionLineage(
     select * from source union
     select m."runId", origin."itemKey", origin.stage from retired origin
       join job_selection_run m on m."selectionId" = origin."selectionId"
-  ) update job_run_item shadow set state = 'cancelled', "jobId" = null from identities previous
+  ) update job_run_item shadow set state = 'cancelled', "jobId" = null,
+      selection = case when shadow."libraryIntent"->>'sensitive' = 'true' then '{}'::jsonb else shadow.selection end,
+      "libraryIntent" = case when shadow."libraryIntent"->>'sensitive' = 'true'
+        then shadow."libraryIntent" - 'options' || jsonb_build_object('data', '{}'::jsonb) else shadow."libraryIntent" end
+    from identities previous
     where (shadow."runId", shadow."itemKey", shadow.stage) = (previous."runId", previous."itemKey", previous.stage)
       and shadow.state in ('pending','waiting')
       and (shadow."jobId" is null or shadow."jobId" = any(${'jobIds' in source ? source.jobIds : []}::uuid[]))
@@ -89,7 +93,9 @@ export async function recordSelectionLineage(tx: Executor, parentId: string, chi
         o."selectionId", child."runId", child."itemKey", child.stage
       from jsonb_to_recordset(${JSON.stringify(page)}::text::jsonb) as selected("runId" uuid, "itemKey" text, stage text)
       join job_run_item child on (child."runId", child."itemKey", child.stage) = (selected."runId", selected."itemKey", selected.stage)
+      left join job_selection child_source on child_source.id = child."selectionId"
       join origins o on o."runId" = child."runId" and o."rootItemKey" is not distinct from child."rootItemKey"
+      where child_source."sourceKind" is distinct from 'library-child'
       order by o."selectionId", child."itemKey", child.stage, child."runId"
       on conflict ("selectionId", "itemKey", stage) do nothing returning "selectionId"
     ), pending as (
@@ -110,5 +116,6 @@ export const selectionLineageSource = (selectionId: string, after: string, limit
     case when l.superseded then 'cancelled' else i.state end state
   from job_selection_lineage l join job_run_item i
     on (i."runId", i."itemKey", i.stage) = (l."runId", l."itemKey", l.stage)
-  where l."selectionId" = ${selectionId}::uuid and l.id > ${after}::bigint
+  where l."selectionId" = ${selectionId}::uuid and l.id > ${after}::bigint and not l."libraryChildOrigin"
+    and not exists (select 1 from job_selection s where s.id = i."selectionId" and s."sourceKind" = 'library-child')
   order by l.id limit ${limit}`;

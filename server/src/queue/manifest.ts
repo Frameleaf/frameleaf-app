@@ -1,8 +1,22 @@
 import { Kysely, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName } from 'src/enum.js';
+import {
+  attachLibraryParticipants,
+  discoverLibraryChildOrigins,
+  libraryManifestIntent,
+  libraryProducerAttachmentPending,
+  redactLibrarySourcePage,
+} from 'src/queue/library-admission.js';
 import { selectionLineageSource } from 'src/queue/selection-lineage.js';
-import { unfinishedRunItems } from 'src/queue/selection-state.js';
+import {
+  libraryFeederEligible,
+  libraryMembershipEntitled,
+  libraryOwnerState,
+  libraryRootEntitled,
+  libraryRunPending,
+  unfinishedRunItems,
+} from 'src/queue/selection-state.js';
 import {
   QUEUE_BATCH,
   QUEUE_HIGH_WATER,
@@ -195,6 +209,7 @@ export async function withSelectionSharing<T>(
 
 /** Caller holds the producer's queue guard. Only headers are attached, never selected rows. */
 export async function attachSelectionMemberships(tx: Executor, producerId: string) {
+  await attachLibraryParticipants(tx, { producerId });
   await sql`with attached as (insert into job_selection_run("runId", "selectionId", "copyComplete")
     select membership."runId", snapshot.id, membership."runId" = snapshot."runId"
     from job_selection snapshot join job_run_item membership on membership."jobId" = snapshot."producerId"
@@ -208,7 +223,11 @@ export async function attachSelectionMemberships(tx: Executor, producerId: strin
 /** The immutable source identity uses a keyset, including after its execution outcomes become terminal. */
 export const selectionCopySource = (runId: string, selectionId: string, after: string | null) => sql`
   select * from job_run_item where "selectionId" = ${selectionId}::uuid and "runId" = ${runId}::uuid
-    ${after === null ? sql`` : sql`and "itemKey" > ${after}`} order by "itemKey" limit ${QUEUE_BATCH}`;
+    ${after === null ? sql`` : sql`and "itemKey" > ${after}`}
+    and not exists (select 1 from job_run_item unproven where unproven."selectionId" = ${selectionId}::uuid
+      and unproven."runId" = ${runId}::uuid and unproven."libraryIntent" is not null and not unproven."libraryOriginComplete"
+      and unproven."itemKey" <= job_run_item."itemKey")
+    order by "itemKey" limit ${QUEUE_BATCH}`;
 
 /** The producer job is locked by the caller. This check never reads its selected media rows. */
 export async function assertSelectionsShared(tx: Executor, producerId: string) {
@@ -216,13 +235,38 @@ export async function assertSelectionsShared(tx: Executor, producerId: string) {
     join job_selection snapshot on snapshot.id = membership."selectionId"
     where snapshot."producerId" = ${producerId}::uuid and snapshot."capturedAt" is not null
       and not membership."copyComplete" limit 1`.execute(tx);
-  if (rows.length > 0) throw new SelectionSharingRequired(producerId);
+  const { rows: libraryPending } = await sql`select 1 where ${libraryProducerAttachmentPending(producerId)}`.execute(
+    tx,
+  );
+  if (rows.length > 0 || libraryPending.length > 0) throw new SelectionSharingRequired(producerId);
 }
 
 /** Each call copies at most one page. Outcome mirroring and publication share the same short guard. */
 export async function shareSelectionPage(db: Executor, filter: { producerId: string } | { queue: string }) {
   const copy = async (tx: Executor) => {
     await sql`select name from job_queue order by name for no key update`.execute(tx);
+    if ('queue' in filter && (await redactLibrarySourcePage(tx, filter.queue))) return true;
+    if (await discoverLibraryChildOrigins(tx, filter)) return true;
+    if (await attachLibraryParticipants(tx, filter)) return true;
+    // Retire cancelled origin acknowledgements one mapping at a time, even while the source is
+    // open. Their execution ownership stays canonical; no future child entitlement is created.
+    const { rows: retired } = await sql<{ runId: string }>`with candidate as (
+      select m."runId", m."selectionId", s."appendSequence" from job_selection_run m
+        join job_selection s on s.id = m."selectionId"
+      where s."sourceKind" != 'frozen' and not m."copyComplete"
+        and not (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)})
+        and ${'producerId' in filter ? sql`exists (select 1 from job_library_source_producer link where link."selectionId" = s."libraryOperationId" and link."producerId" = ${filter.producerId}::uuid)` : sql`s.queue = ${filter.queue}`}
+      order by m."selectionId", m."runId" limit 1 for update of m
+    ) update job_selection_run m set "copyComplete" = true, "libraryVersion" = c."appendSequence"
+      from candidate c where m."runId" = c."runId" and m."selectionId" = c."selectionId" returning m."runId"`.execute(
+      tx,
+    );
+    if (retired.length > 0) {
+      await sql`update job_run r set "enumerationDone" = true where r.id = ${retired[0].runId}::uuid
+        and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(tx);
+      return true;
+    }
+
     const {
       rows: [membership],
     } = await sql<{
@@ -232,13 +276,29 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       producerId: string | null;
       copyAfter: string | null;
       lineageAfter: string;
+      appendSequence: string;
+      sourceKind: string;
     }>`
-      select m."runId", m."selectionId", s."runId" "sourceRunId", s."producerId", m."copyAfter", m."lineageAfter"
+      select m."runId", m."selectionId", s."runId" "sourceRunId", s."producerId", m."copyAfter", m."lineageAfter", s."appendSequence", s."sourceKind"
       from job_selection_run m join job_selection s on s.id = m."selectionId"
-      where not m."copyComplete" and s."capturedAt" is not null
-        and ${'producerId' in filter ? sql`s."producerId" = ${filter.producerId}::uuid` : sql`s.queue = ${filter.queue}`}
+      where (not m."copyComplete" or (m."runId" != s."runId" and m."libraryVersion" < s."appendSequence"))
+        and (s."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)}))
+        and s."capturedAt" is not null and (s."sourceKind" = 'frozen' or s."sourceClosedAt" is not null)
+        and ${
+          'producerId' in filter
+            ? sql`(s."producerId" = ${filter.producerId}::uuid or exists (select 1 from job_library_source_producer link where link."producerId" = ${filter.producerId}::uuid and link."selectionId" = s."libraryOperationId")
+          or exists (select 1 from job_selection_lineage origin join job_run_item i on (i."runId",i."itemKey",i.stage)=(origin."runId",origin."itemKey",origin.stage)
+            join job_selection original on original.id=origin."selectionId" where i."selectionId"=s.id and not origin.superseded
+              and coalesce(original."libraryFrozenProducerId",original."producerId")=${filter.producerId}::uuid))`
+            : sql`s.queue = ${filter.queue}`
+        }
       order by m."selectionId", m."runId" limit 1 for update of m`.execute(tx);
-    if (!membership) return false;
+    if (!membership) {
+      // Linked library aliases read the canonical executor outcome. Settle their retained run
+      // headers in ordinary bounded visits, rather than updating every alias on job completion.
+      if ('queue' in filter) await settleLibraryRunPage(tx, filter.queue);
+      return false;
+    }
     const {
       rows: [page],
     } = await sql<{ after: string | null; size: number }>`with page as materialized (
@@ -246,13 +306,14 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
     ), copied as (
       insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId")
       select ${membership.runId}::uuid, "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId"
-      from page on conflict do nothing returning 1
+      from page where ${membership.sourceKind === 'frozen' ? sql`true` : libraryRootEntitled(sql<string>`${membership.runId}::uuid`, sql<string>`${membership.sourceRunId}::uuid`, sql<string>`page."rootItemKey"`, { selectionId: sql<string>`${membership.selectionId}::uuid`, itemKey: sql<string>`page."itemKey"`, stage: sql<string>`page.stage` })}
+      on conflict do nothing returning 1
     ) select max("itemKey") "after", count(*)::int size from page where (select count(*) from copied) >= 0`.execute(tx);
     // A child's key may sort before the frozen-root cursor. Its separately sequenced origin is
     // appended under this same publication guard, including while root copying is incomplete.
     const remaining = QUEUE_BATCH - page.size;
     const history =
-      remaining > 0
+      remaining > 0 && membership.sourceKind === 'frozen'
         ? (
             await sql<{ after: string | null; size: number }>`with page as materialized (
       ${selectionLineageSource(membership.selectionId, membership.lineageAfter, remaining)}
@@ -265,9 +326,18 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
             )
           ).rows[0]
         : undefined;
-    const complete = !!history && history.size < remaining;
+    const { rows: unproven } =
+      await sql`select 1 from job_run_item where "selectionId" = ${membership.selectionId}::uuid
+      and "runId" = ${membership.sourceRunId}::uuid and "libraryIntent" is not null and not "libraryOriginComplete" limit 1`.execute(
+        tx,
+      );
+    const complete =
+      membership.sourceKind === 'frozen'
+        ? !!history && history.size < remaining
+        : page.size < QUEUE_BATCH && unproven.length === 0;
     await sql`update job_selection_run set "copyAfter" = coalesce(${page.after}, "copyAfter"),
-      "lineageAfter" = coalesce(${history?.after ?? null}::bigint, "lineageAfter"), "copyComplete" = ${complete}
+      "lineageAfter" = coalesce(${history?.after ?? null}::bigint, "lineageAfter"), "copyComplete" = ${complete},
+      "libraryVersion" = case when ${complete} then ${membership.appendSequence}::bigint else "libraryVersion" end
       where "selectionId" = ${membership.selectionId}::uuid and "runId" = ${membership.runId}::uuid`.execute(tx);
     if (complete) {
       await sql`update job_run_item i set "selectionVersion" = (select count(*) from job_selection
@@ -278,9 +348,12 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
               where m."runId" = i."runId" and s."producerId" = i."jobId" and not m."copyComplete")`.execute(tx);
       await sql`update job_run r set "enumerationDone" = true where r.id = ${membership.runId}::uuid
         and not exists (select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
-          and i.state in ('pending','waiting','active'))
+          and i.state in ('pending','waiting','active')
+          and not exists (select 1 from job_library_source_producer link join job j on j.id = link."producerId"
+            where link."producerId" = i."jobId" and j.state not in ('pending','waiting','active')))
         and not exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-          where m."runId" = r.id and (not m."copyComplete" or s.state = 'enumerating'))`.execute(tx);
+          where m."runId" = r.id and (not m."copyComplete" or s.state = 'enumerating'))
+        and not (${libraryRunPending(sql<string>`r.id`)})`.execute(tx);
       await sql`update job_run r set "finishedAt" = now() where r.id = ${membership.runId}::uuid
         and r."enumerationDone" and r."finishedAt" is null and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(
         tx,
@@ -291,6 +364,28 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
     return true;
   };
   return db.isTransaction ? copy(db) : db.transaction().execute(copy);
+}
+
+/** One queue visit probes at most 250 associated run headers. A durable cursor revisits live
+ * prefixes after a pass, so unfinished aliases cannot starve later completed participants.
+ */
+async function settleLibraryRunPage(tx: Executor, queue: string) {
+  const key = `frameleaf-library-settle/${queue}`;
+  await sql`with cursor as (
+    select (value->>'after')::uuid after from system_metadata where key=${key}
+  ), candidates as materialized (
+    select distinct m."runId" from job_selection_run m join job_selection s on s.id=m."selectionId"
+      where s.queue=${queue} and (s."sourceKind"!='frozen' or s."librarySharesExecution")
+        and ((select after from cursor) is null or m."runId">(select after from cursor))
+      order by m."runId" limit ${QUEUE_BATCH}
+  ), settled as (
+    update job_run r set "enumerationDone"=true,"finishedAt"=coalesce(r."finishedAt",now())
+      where r.id in (select "runId" from candidates) and r."finishedAt" is null
+        and not (${unfinishedRunItems(sql<string>`r.id`)}) returning id
+  ) insert into system_metadata(key,value) select ${key},case when count(*)=${QUEUE_BATCH}
+      then jsonb_build_object('after',max("runId"::text)) else '{}'::jsonb end from candidates
+      where (select count(*) from settled)>=0
+    on conflict(key) do update set value=excluded.value`.execute(tx);
 }
 
 /** Handler preparation may drain captured pages, yielding the SQL/publication guard after each page. */
@@ -314,10 +409,15 @@ export async function finishSelections(tx: Executor, producerId: string, succeed
     await sql`update job_selection_run m set "copyComplete" = true from job_selection s
     where m."selectionId" = s.id and s."producerId" = ${producerId}::uuid and s."capturedAt" is null`.execute(tx);
   await sql`update job_run r set "enumerationDone" = not exists (
-      select 1 from job_selection_run m where m."runId" = r.id and not m."copyComplete") where r.id in
-    (select "runId" from job_run_item where "jobId" = ${producerId}::uuid and "rootItemKey" is null)
+      select 1 from job_selection_run m where m."runId" = r.id and not m."copyComplete")
+      and not (${libraryRunPending(sql<string>`r.id`)}) where r.id in
+    (select i."runId" from job_run_item i join job j on j.id = i."jobId"
+      where i."jobId" = ${producerId}::uuid and i."rootItemKey" is null
+        and (i."runId" = j."runId" or not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)))
     and not exists(select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
-      and i.state in ('pending','waiting','active'))`.execute(tx);
+      and i.state in ('pending','waiting','active')
+          and not exists (select 1 from job_library_source_producer link join job j on j.id = link."producerId"
+            where link."producerId" = i."jobId" and j.state not in ('pending','waiting','active')))`.execute(tx);
 }
 
 export async function resumeSelections(tx: Executor, producerId: string) {
@@ -362,6 +462,11 @@ export async function feedManifest(
       safeToRetry: boolean;
       sensitive: boolean;
       deadlineMs: number;
+      libraryIntent: QueueIntent | null;
+      libraryParentId: string | null;
+      libraryExecutionRunId: string | null;
+      libraryExecutionItemKey: string | null;
+      executionRootItemKey: string | null;
     };
     const rows: ManifestItem[] = [];
     let afterSelection: string | undefined;
@@ -370,38 +475,60 @@ export async function feedManifest(
     for (let visited = 0; visited < capacity && rows.length < capacity; visited++) {
       const {
         rows: [selection],
-      } = await sql<{ id: string; runId: string }>`
-        select s.id, s."runId" from job_selection s
+      } = await sql<{ id: string; runId: string; sourceKind: string }>`
+        select s.id, s."runId", s."sourceKind" from job_selection s
         where s.queue = ${queue} and s.state = 'ready'
+          and (s."sourceKind" = 'frozen' or (s."sourceClosedAt" is not null and s."capturedAt" is not null))
           ${afterSelection ? sql`and (s."createdAt", s.id) > (select "createdAt", id from job_selection where id = ${afterSelection}::uuid)` : sql``}
-          and exists (select 1 from job_run_item i where i."selectionId" = s.id and i."runId" = s."runId"
-            and i."jobId" is null and i.state = 'pending')
+          and ((s."sourceKind"='frozen' and exists (select 1 from job_run_item i where i."selectionId"=s.id and i."runId"=s."runId"
+            and i."jobId" is null and i.state='pending'))
+            or (s."sourceKind"!='frozen' and exists (select 1 from job_run_item i where i."selectionId"=s.id and i."runId"=s."runId"
+              and i."jobId" is null and i.state='pending' and i."libraryIntent" is not null and i."libraryOriginComplete" and (${libraryFeederEligible('i')}))))
         order by s."createdAt", s.id limit 1`.execute(tx);
       if (!selection) break;
       const { rows: page } = await sql<ManifestItem>`
-        select i.*, s."safeToRetry", s.sensitive, s."deadlineMs" from job_run_item i
+        select i.*, s."safeToRetry", s.sensitive, s."deadlineMs", owner."rootItemKey" "executionRootItemKey" from job_run_item i
         join job_selection s on s.id = i."selectionId"
+        left join job_run_item owner on (owner."runId",owner."itemKey",owner.stage)=(i."libraryExecutionRunId",i."libraryExecutionItemKey",i.stage)
         where i."selectionId" = ${selection.id}::uuid and i."runId" = ${selection.runId}::uuid
           and i."jobId" is null and i.state = 'pending'
+          ${selection.sourceKind === 'frozen' ? sql`` : sql`and i."libraryIntent" is not null and i."libraryOriginComplete" and (${libraryFeederEligible('i')})`}
         order by i."itemKey" limit ${capacity - rows.length} for update of i skip locked`.execute(tx);
       rows.push(...page);
       afterSelection = selection.id;
     }
     await enqueue(
-      rows.map((row) => ({
-        queue: row.queue,
-        name: row.stage,
-        data: row.selection,
-        options: getManifestJobOptions(row.stage, row.selection),
-        safeToRetry: row.safeToRetry,
-        sensitive: row.sensitive,
-        deadlineMs: row.deadlineMs,
-        runId: row.runId,
-        itemKey: row.itemKey,
-        rootItemKey: row.rootItemKey,
-      })),
+      rows
+        .filter(
+          (row) =>
+            !row.libraryExecutionRunId ||
+            (row.libraryExecutionRunId === row.runId && row.libraryExecutionItemKey === row.itemKey),
+        )
+        .map(
+          (row) =>
+            libraryManifestIntent(row) ?? {
+              queue: row.queue,
+              name: row.stage,
+              data: row.selection,
+              options: getManifestJobOptions(row.stage, row.selection),
+              safeToRetry: row.safeToRetry,
+              sensitive: row.sensitive,
+              deadlineMs: row.deadlineMs,
+              runId: row.runId,
+              itemKey: row.itemKey,
+              rootItemKey: row.rootItemKey,
+            },
+        ),
       tx,
     );
+    // Shared physical ownership is a retained manifest tuple, not a synthetic handler dedup key.
+    // Link/settle only this bounded canonical page; secondary sources never enqueue its owner again.
+    await sql`update job_run_item i set "jobId"=owner."jobId",state=${libraryOwnerState('owner', 'owner_source', 'j')}
+      from job_run_item owner left join job j on j.id=owner."jobId"
+      left join job_selection owner_source on owner_source.id=owner."selectionId"
+      where (i."runId",i."itemKey",i.stage) in (select * from unnest(${rows.map((row) => row.runId)}::uuid[],${rows.map((row) => row.itemKey)}::text[],${rows.map((row) => row.stage)}::text[]))
+        and (owner."runId",owner."itemKey",owner.stage)=(coalesce(i."libraryExecutionRunId",i."runId"),coalesce(i."libraryExecutionItemKey",i."itemKey"),i.stage)
+        and i.state!='cancelled'`.execute(tx);
     // Admission owns deduplication and links each source membership. Mirror that
     // linkage to shared producer runs, including an already-active execution.
     await sql`update job_run_item i set "jobId" = source."jobId", state = j.state
@@ -410,7 +537,9 @@ export async function feedManifest(
         select * from unnest(${rows.map((row) => row.runId)}::uuid[], ${rows.map((row) => row.itemKey)}::text[], ${rows.map((row) => row.stage)}::text[])
       ) and source.state != 'cancelled'
         and i."selectionId" = source."selectionId" and i."itemKey" = source."itemKey" and i.stage = source.stage
-        and i.state != 'cancelled'`.execute(tx);
+        and i.state != 'cancelled'
+        and not exists (select 1 from job_selection s where s.id = i."selectionId"
+          and s."sourceKind" != 'frozen' and i."runId" != s."runId")`.execute(tx);
     const {
       rows: [after],
     } = await sql<{ count: number }>`select count(*)::int count from job

@@ -22,6 +22,7 @@ import {
   UserStatus,
 } from 'src/enum.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
+import { QUEUE_BATCH } from 'src/queue/types.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -83,6 +84,12 @@ export class LibraryScanRefusal extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+class LibraryBatchStopped extends Error {
+  constructor(readonly written: MediaOperationWriteState | undefined) {
+    super('Library scan domain claim changed before acceptance');
   }
 }
 
@@ -185,20 +192,24 @@ export class LibraryScanService {
       throw new BadRequestException('Add at least one import folder before scanning');
     }
 
-    const outcome = await this.operations.createUnlessActive(
-      {
-        ownerId: options.ownerId,
-        kind: KIND,
-        destination: MediaOperationDestination.Local,
-        destinationDetail: null,
-        label: library.name,
-        snapshot: { libraryId: library.id, trigger: options.trigger } satisfies LibraryScanSnapshot,
-        settings: {},
-        estimate: null,
-        result: emptyLibraryScanResult() as unknown as Record<string, unknown>,
-      },
-      { key: SUBJECT_KEY, value: library.id, lock: DatabaseLock.Library },
-    );
+    const outcome = await this.jobRepository.prepareLibraryScanSource(library.id, async (tx) => {
+      const value = await this.operations.createUnlessActive(
+        {
+          ownerId: options.ownerId,
+          kind: KIND,
+          destination: MediaOperationDestination.Local,
+          destinationDetail: null,
+          label: library.name,
+          snapshot: { libraryId: library.id, trigger: options.trigger } satisfies LibraryScanSnapshot,
+          settings: {},
+          estimate: null,
+          result: emptyLibraryScanResult() as unknown as Record<string, unknown>,
+        },
+        { key: SUBJECT_KEY, value: library.id, lock: DatabaseLock.Library },
+        tx,
+      );
+      return { operationId: 'active' in value ? value.active.id : value.created.id, value };
+    });
 
     if ('active' in outcome) {
       return { operation: outcome.active, created: false };
@@ -332,6 +343,7 @@ export class LibraryScanService {
       return;
     }
     try {
+      await this.jobRepository.settleTerminalLibrarySources();
       if (await this.operations.hasClaimable([KIND])) {
         await this.wake();
       }
@@ -375,7 +387,7 @@ export class LibraryScanService {
     try {
       snapshot = parseLibraryScanSnapshot(operation.snapshot);
     } catch (error) {
-      await this.operations.fail(operation.id, claimToken, {
+      await this.failSource(operation.id, claimToken, {
         error: bulkErrorMessage(error),
         errorCode: 'library_scan_snapshot_invalid',
       });
@@ -402,7 +414,7 @@ export class LibraryScanService {
       const refusal = error instanceof LibraryScanRefusal ? error : undefined;
       const message = bulkErrorMessage(error);
       this.logger.warn(`Scan ${operation.id} of library ${snapshot.libraryId} failed: ${message}`);
-      await this.operations.fail(operation.id, claimToken, {
+      await this.failSource(operation.id, claimToken, {
         error: message,
         errorCode: refusal?.code ?? 'library_scan_failed',
       });
@@ -412,18 +424,19 @@ export class LibraryScanService {
         // Scan work and its source iterator have stopped. Give only this claim-fenced terminal
         // write a separate bounded SQL lifetime; ordinary writes retain the cancelled signal.
         await withExecutionCleanup(() =>
-          this.operations.fail(
-            operation.id,
-            claimToken,
-            {
-              error: 'The library queue attempt was interrupted',
-              errorCode: 'library_scan_interrupted',
-            },
-            { retry: false },
-          ),
+          this.failSource(operation.id, claimToken, {
+            error: 'The library queue attempt was interrupted',
+            errorCode: 'library_scan_interrupted',
+          }),
         );
       }
     }
+  }
+
+  private failSource(operationId: string, claimToken: string, failure: { error: string; errorCode: string }) {
+    return this.jobRepository.settleLibraryScanSource(operationId, (executor) =>
+      this.operations.fail(operationId, claimToken, failure, { retry: false, executor }),
+    );
   }
 
   private async scan(
@@ -456,6 +469,8 @@ export class LibraryScanService {
       return;
     }
     result = { ...result, fingerprint };
+    // Recovery/tick wakes may claim another operation; they cannot invent an origin association.
+    await this.jobRepository.ensureLibraryScanSource({ operationId: operation.id, libraryId: library.id }, false);
 
     const roots = [...new Set(library.importPaths.map((importPath) => normalizeImportPath(importPath)))];
     await this.requireSources(roots, signal);
@@ -483,26 +498,22 @@ export class LibraryScanService {
       result = checked;
     }
 
+    const finished = { ...result, phase: 'done' as const };
     if (
       signal.aborted ||
-      !(await this.applyBatch(operation, claimToken, library, result, signal, (_assets, repository) =>
-        repository.update(library.id, { refreshedAt: new Date() }),
+      !(await this.applyBatch(
+        operation,
+        claimToken,
+        library,
+        result,
+        signal,
+        (_assets, repository) => repository.update(library.id, { refreshedAt: new Date() }),
+        { checkpoint: () => finished, close: true },
       ))
     ) {
       return;
     }
-    result = { ...result, phase: 'done' };
-    const units = libraryScanUnits(result);
-    const written = await this.operations.setBulkResult(id, claimToken, {
-      result: result as unknown as Record<string, unknown>,
-      processedUnits: units.processed,
-      totalUnits: units.total,
-      progress: 99,
-      leaseMs: LIBRARY_SCAN_LEASE_MS,
-    });
-    if (!written) {
-      return;
-    }
+    result = finished;
 
     if (await this.operations.beginValidation(id, claimToken)) {
       await this.operations.complete(id, claimToken, { resultAssetId: null });
@@ -554,22 +565,16 @@ export class LibraryScanService {
         }
       }
 
-      const added = await this.importFiles(operation, claimToken, library, batch, result, signal);
-      if (added === undefined) return;
-      result = { ...result, crawled: result.crawled + batch.length, added: result.added + added };
-      if (!(await this.write(operation, claimToken, result, signal, batch.length))) {
-        return;
+      for (let offset = 0; offset < batch.length; offset += QUEUE_BATCH) {
+        const slice = batch.slice(offset, offset + QUEUE_BATCH);
+        const added = await this.importFiles(operation, claimToken, library, slice, result, signal);
+        if (added === undefined) return;
+        result = { ...result, crawled: result.crawled + slice.length, added: result.added + added };
       }
     }
 
     await this.requireNonemptySources(library, roots, signal, found);
     if (signal.aborted) return;
-    // Only the current claim for these exact settings may mark excluded items offline.
-    const excluded = await this.applyBatch(operation, claimToken, library, result, signal, (assets) =>
-      assets.detectOfflineExternalAssets(library.id, library.importPaths, library.exclusionPatterns),
-    );
-    if (!excluded) return;
-    result = { ...result, offlined: result.offlined + Number(excluded.numUpdatedRows ?? 0) };
 
     result = {
       ...result,
@@ -609,26 +614,26 @@ export class LibraryScanService {
       // only missing when its folder is demonstrably there.
       await this.requireSources(roots, signal);
 
-      const counts = await this.checkAssets(
-        operation,
-        claimToken,
-        library,
-        page.map(({ id }) => id),
-        roots,
-        result,
-        signal,
-      );
-      if (!counts) return;
-      result = {
-        ...result,
-        cursor: page.at(-1)!.id,
-        checked: result.checked + page.length,
-        updated: result.updated + counts.updated,
-        offlined: result.offlined + counts.offlined,
-        onlined: result.onlined + counts.onlined,
-      };
-      if (!(await this.write(operation, claimToken, result, signal, page.length))) {
-        return;
+      for (let offset = 0; offset < page.length; offset += QUEUE_BATCH) {
+        const slice = page.slice(offset, offset + QUEUE_BATCH);
+        const counts = await this.checkAssets(
+          operation,
+          claimToken,
+          library,
+          slice.map(({ id }) => id),
+          roots,
+          result,
+          signal,
+        );
+        if (!counts) return;
+        result = {
+          ...result,
+          cursor: slice.at(-1)!.id,
+          checked: result.checked + slice.length,
+          updated: result.updated + counts.updated,
+          offlined: result.offlined + counts.offlined,
+          onlined: result.onlined + counts.onlined,
+        };
       }
     }
   }
@@ -683,19 +688,49 @@ export class LibraryScanService {
     await this.requireSources(roots, signal);
     await this.requireNonemptySources(library, roots, signal);
     if (signal.aborted) return;
-    const counts = await this.applyBatch(operation, claimToken, library, result, signal, async (assets) => {
-      const now = new Date();
-      if (toOffline.length > 0) await assets.updateAll(toOffline, { isOffline: true, deletedAt: now });
-      if (trashedToOffline.length > 0) await assets.updateAll(trashedToOffline, { isOffline: true });
-      if (toOnline.length > 0) await assets.updateAll(toOnline, { isOffline: false, deletedAt: null });
-      if (trashedToOnline.length > 0) await assets.updateAll(trashedToOnline, { isOffline: false });
-      return {
-        offlined: toOffline.length + trashedToOffline.length,
-        onlined: toOnline.length + trashedToOnline.length,
-        updated: toUpdate.length,
-      };
-    });
-    if (counts && toUpdate.length > 0) await this.queuePostSyncJobs(toUpdate);
+    const counts = await this.applyBatch(
+      operation,
+      claimToken,
+      library,
+      result,
+      signal,
+      async (assets) => {
+        const excluded = await assets.getExcludedExternalAssetIds(
+          library.id,
+          assetIds,
+          library.importPaths,
+          library.exclusionPatterns,
+        );
+        const excludedSet = new Set(excluded);
+        const offline = [...excluded, ...toOffline.filter((id) => !excludedSet.has(id))];
+        const trashedOffline = trashedToOffline.filter((id) => !excludedSet.has(id));
+        const online = toOnline.filter((id) => !excludedSet.has(id));
+        const trashedOnline = trashedToOnline.filter((id) => !excludedSet.has(id));
+        toUpdate.splice(0, toUpdate.length, ...toUpdate.filter((id) => !excludedSet.has(id)));
+        const now = new Date();
+        if (offline.length > 0) await assets.updateAll(offline, { isOffline: true, deletedAt: now });
+        if (trashedOffline.length > 0) await assets.updateAll(trashedOffline, { isOffline: true });
+        if (online.length > 0) await assets.updateAll(online, { isOffline: false, deletedAt: null });
+        if (trashedOnline.length > 0) await assets.updateAll(trashedOnline, { isOffline: false });
+        return {
+          offlined: offline.length + trashedOffline.length,
+          onlined: online.length + trashedOnline.length,
+          updated: toUpdate.length,
+        };
+      },
+      {
+        examined: assetIds.length,
+        sourceIds: () => toUpdate,
+        checkpoint: (counts) => ({
+          ...result,
+          cursor: assetIds.at(-1)!,
+          checked: result.checked + assetIds.length,
+          updated: result.updated + counts.updated,
+          offlined: result.offlined + counts.offlined,
+          onlined: result.onlined + counts.onlined,
+        }),
+      },
+    );
     return counts;
   }
 
@@ -738,33 +773,41 @@ export class LibraryScanService {
     }
 
     signal.throwIfAborted();
-    const assetIds = await this.applyBatch(operation, claimToken, library, result, signal, async (assets) => {
-      const fresh = new Set(
-        await assets.filterNewExternalAssetPaths(
-          library.id,
-          rows.map((row) => row.originalPath),
-        ),
-      );
-      return assets.createAll(rows.filter((row) => fresh.has(row.originalPath)));
-    });
+    const assetIds = await this.applyBatch(
+      operation,
+      claimToken,
+      library,
+      result,
+      signal,
+      async (assets) => {
+        const fresh = new Set(
+          await assets.filterNewExternalAssetPaths(
+            library.id,
+            rows.map((row) => row.originalPath),
+          ),
+        );
+        return assets.createAll(rows.filter((row) => fresh.has(row.originalPath)));
+      },
+      {
+        examined: paths.length,
+        sourceIds: (ids) => ids,
+        checkpoint: (ids) => ({ ...result, crawled: result.crawled + paths.length, added: result.added + ids.length }),
+      },
+    );
     if (!assetIds) return;
     if (assetIds.length === 0) return 0;
     signal.throwIfAborted();
     await Promise.all(
-      assetIds.map((assetId) =>
-        this.eventRepository.emit('AssetCreate', { asset: { id: assetId, ownerId: library.ownerId } }),
-      ),
+      assetIds.map(async (assetId) => {
+        try {
+          await this.eventRepository.emit('AssetCreate', { asset: { id: assetId, ownerId: library.ownerId } });
+        } catch (error) {
+          this.logger.warn(`Scan asset notification failed after durable acceptance: ${bulkErrorMessage(error)}`);
+        }
+      }),
     );
     signal.throwIfAborted();
-    await this.queuePostSyncJobs(assetIds);
     return assetIds.length;
-  }
-
-  private async queuePostSyncJobs(assetIds: string[]) {
-    // a sidecar discovery, which in turn queues metadata extraction
-    await this.jobRepository.queueAll(
-      assetIds.map((assetId) => ({ name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } })),
-    );
   }
 
   /** Every folder must be a readable directory now, or the scan fails naming the ones that are not. */
@@ -827,19 +870,65 @@ export class LibraryScanService {
     result: LibraryScanResult,
     signal: AbortSignal,
     mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
+    options: {
+      examined?: number;
+      sourceIds?: (value: T) => string[];
+      checkpoint?: (value: T) => LibraryScanResult;
+      close?: boolean;
+    } = {},
   ): Promise<T | undefined> {
     signal.throwIfAborted();
-    const outcome = await this.libraryRepository.withScanClaim(
-      { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
-      async (assets, repository) => {
-        // Locks may have waited after the preflight check. Abort before and after mutation so
-        // withScanClaim rolls back a cancelled in-flight transaction.
-        signal.throwIfAborted();
-        const value = await mutate(assets, repository);
-        signal.throwIfAborted();
-        return value;
-      },
-    );
+    let outcome: { value: T } | { stopReason: LibraryScanStopReason } | undefined;
+    try {
+      outcome = await this.jobRepository.commitLibraryScanBatch(
+        { operationId: operation.id, libraryId: library.id },
+        options.examined ?? 0,
+        async (tx) => {
+          let sourceIds: string[] = [];
+          const outcome = await this.libraryRepository.withScanClaim(
+            { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
+            async (assets, repository) => {
+              // Locks may have waited after the preflight check. Abort before and after mutation so
+              // withScanClaim rolls back a cancelled in-flight transaction.
+              signal.throwIfAborted();
+              const value = await mutate(assets, repository);
+              const checkpoint = options.checkpoint?.(value) ?? result;
+              const units = libraryScanUnits(checkpoint);
+              const written = await this.operations.setBulkResult(
+                operation.id,
+                claimToken,
+                {
+                  result: checkpoint as unknown as Record<string, unknown>,
+                  processedUnits: units.processed,
+                  totalUnits: units.total,
+                  progress: libraryScanProgress(checkpoint),
+                  leaseMs: LIBRARY_SCAN_LEASE_MS,
+                },
+                tx,
+                true,
+              );
+              if (
+                !written ||
+                written.cancelRequestedAt ||
+                written.pauseRequestedAt ||
+                written.status !== MediaOperationStatus.Rendering
+              )
+                throw new LibraryBatchStopped(written);
+              sourceIds = options.sourceIds?.(value) ?? [];
+              signal.throwIfAborted();
+              return value;
+            },
+            tx,
+          );
+          return { value: outcome, assetIds: sourceIds, accepted: !!outcome && 'value' in outcome };
+        },
+        options.close ?? false,
+      );
+    } catch (error) {
+      if (!(error instanceof LibraryBatchStopped)) throw error;
+      await this.proceed(operation, claimToken, error.written, result);
+      return;
+    }
     if (!outcome) {
       await this.write(operation, claimToken, result, signal);
       return;
@@ -848,6 +937,7 @@ export class LibraryScanService {
       await this.stopSelf(operation, claimToken, result, outcome.stopReason);
       return;
     }
+    if (!signal.aborted) advanceJobProgress(options.examined ?? 0);
     return outcome.value;
   }
 
@@ -921,6 +1011,7 @@ export class LibraryScanService {
       // not cancelling after all: the claim was simply lost, and recovery will judge the job
       return;
     }
+    await this.jobRepository.settleLibraryScanSource(operation.id, () => Promise.resolve());
     const stopReason = await this.whyStopped(parseLibraryScanSnapshot(operation.snapshot).libraryId, result);
     await this.operations.setFinishedResult(operation.id, { ...result, stopReason } as Record<string, unknown>);
     this.logger.log(`Scan ${operation.id} cancelled${stopReason ? ` (${stopReason})` : ''}`);
@@ -937,6 +1028,7 @@ export class LibraryScanService {
     if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) {
       return;
     }
+    await this.jobRepository.settleLibraryScanSource(operation.id, () => Promise.resolve());
     await this.operations.setFinishedResult(operation.id, { ...result, stopReason: reason } as Record<string, unknown>);
     this.logger.log(`Scan ${operation.id} stopped (${reason})`);
   }

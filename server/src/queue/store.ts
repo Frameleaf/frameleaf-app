@@ -1,6 +1,11 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  publishLibraryFollowups,
+  redactLibraryPayloads,
+  redactLibrarySourcePage,
+} from 'src/queue/library-admission.js';
+import {
   QueuePublication,
   assertSelectionsShared,
   attachSelectionMemberships,
@@ -17,7 +22,7 @@ import {
   recordSelectionLineage,
   supersedeSelectionLineage,
 } from 'src/queue/selection-lineage.js';
-import { unfinishedQueueItems, unfinishedRunItems } from 'src/queue/selection-state.js';
+import { libraryRunPending, unfinishedQueueItems, unfinishedRunItems } from 'src/queue/selection-state.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -77,7 +82,8 @@ export class SqlQueueStore {
         }>`
           select j.id, j.state, j."latestPending",
             (j.data ? '_producerCheckpoints' or exists (
-              select 1 from job_selection s where s."producerId" = j.id)) as "ownsProducerState"
+              select 1 from job_selection s where s."producerId" = j.id) or exists (
+              select 1 from job_library_source_producer link where link."producerId" = j.id)) as "ownsProducerState"
           from job j where j.queue = ${intent.queue} and j."dedupKey" = ${key}
           and j.state in ('pending','waiting','active') for update of j
         `.execute(db);
@@ -140,6 +146,16 @@ export class SqlQueueStore {
               where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
               db,
             );
+            // This metadata marks only accepted immutable roots sharing a library executor.
+            // It drives bounded header settlement, never grants whole-operation child entitlement.
+            await sql`update job_selection source set "librarySharesExecution"=true,
+                "libraryFrozenProducerId"=coalesce(source."libraryFrozenProducerId",source."producerId")
+              from job_run_item selected where selected."selectionId"=source.id and source."sourceKind"='frozen'
+                and selected."runId"=${intent.runId}::uuid and selected."itemKey"=${intent.itemKey}
+                and selected.stage=${intent.name} and selected.state!='cancelled'
+                and exists (select 1 from job_run_item canonical join job_selection library on library.id=canonical."selectionId"
+                  where canonical."jobId"=${existing.id}::uuid and canonical."runId"=library."runId"
+                    and library."sourceKind"!='frozen')`.execute(db);
             if (!intent.rootItemKey) await attachSelectionMemberships(db, existing.id);
           }
           await this.adoptIntentMemberships(intent, db, { id: existing.id, state: existing.state });
@@ -193,7 +209,8 @@ export class SqlQueueStore {
           and i.state not in ('completed','failed','needs_attention','cancelled','blocked'))
       and not exists (
         select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-          where m."runId" = r.id and (s.state = 'enumerating' or not m."copyComplete"))`.execute(db);
+          where m."runId" = r.id and (s.state = 'enumerating' or not m."copyComplete"))
+      and not (${libraryRunPending(sql<string>`r.id`)})`.execute(db);
     // settleRuns separately requires every retained descendant stage to be terminal, including
     // manifest items not yet admitted to job. Never infer completion from the live job table.
   }
@@ -380,14 +397,29 @@ export class SqlQueueStore {
           tx,
         );
         const affectedRuns = await this.syncItem(claim.id, tx);
+        // Preserve the accepted independent-run contract before library inheritance can rewrite
+        // accounting. Independent work keeps its declared run/item/root and complete options.
+        const independent = followups.filter((intent) => intent.runId && intent.runId !== claim.runId);
+        const inheritedFollowups = followups.filter((intent) => !intent.runId || intent.runId === claim.runId);
+        const libraryPublication = await publishLibraryFollowups(tx, claim.id, inheritedFollowups);
+        const libraryProducer =
+          (
+            await sql`select 1 from job_library_source_producer where "producerId" = ${claim.id}::uuid limit 1`.execute(
+              tx,
+            )
+          ).rows.length > 0;
         const { rows: lineage } = await sql<{
           runId: string;
           itemKey: string;
           rootItemKey: string | null;
         }>`select "runId", "itemKey", "rootItemKey" from job_run_item
-        where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
+        where "jobId" = ${claim.id}::uuid and state != 'cancelled'
+          and not ${libraryPublication || libraryProducer}
+          and not exists (select 1 from job_selection s where s."producerId"=${claim.id}::uuid and s."librarySharesExecution")`.execute(
+          tx,
+        );
         const lineageChildren: QueueIntent[] = [];
-        const inherited = followups.map((intent) => {
+        const inherited = (libraryPublication ? independent : followups).map((intent) => {
           if (lineage.length === 0 || (intent.runId && intent.runId !== claim.runId)) {
             return intent;
           }
@@ -641,7 +673,15 @@ export class SqlQueueStore {
 
   private async syncItem(jobId: string, tx: Executor) {
     const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
-      where j.id = ${jobId}::uuid and i."jobId" = j.id returning i."runId"`.execute(tx);
+      where j.id = ${jobId}::uuid and i."jobId" = j.id
+        and not exists (select 1 from job_selection s where s.id = i."selectionId"
+          and s."sourceKind" != 'frozen' and i."runId" != s."runId")
+        and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
+          and not exists (select 1 from job_run_item canonical join job_selection s on s.id=canonical."selectionId"
+            where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
+          and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))
+      returning i."runId"`.execute(tx);
+    await redactLibraryPayloads(tx, jobId);
     const mirrored = await mirrorSelectionLineage(tx, { jobIds: [jobId] });
     return [...rows, ...mirrored].map((item) => item.runId);
   }
@@ -774,6 +814,7 @@ export class SqlQueueStore {
         )),
       );
       await this.finishSupersededProducers(cancelledLatest, tx);
+      await redactLibrarySourcePage(tx, queue);
       await this.settleRuns(tx, affectedRuns);
     });
   }
@@ -836,6 +877,7 @@ export async function resetQueueAfterRestore(db: Executor) {
     db,
   );
   await sql`update job_run_item i set state = j.state from job j where i."jobId" = j.id`.execute(db);
+  for (const { id } of restored) await redactLibraryPayloads(db, id, false);
   await mirrorSelectionLineage(db, { items: deferred });
   await mirrorSelectionLineage(db, { jobIds: restored.map(({ id }) => id) });
   const { rows: stoppedProducers } = await sql<{
@@ -850,6 +892,7 @@ export async function resetQueueAfterRestore(db: Executor) {
   await sql`update job_selection set state = 'needs_attention' where not "safeToRetry" and state != 'cancelled'`.execute(
     db,
   );
+  await redactLibrarySourcePage(db);
   await sql`update job_run r set "finishedAt" = now() where "enumerationDone" and "finishedAt" is null
     and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(db);
   await sql`update job_worker set state = 'lost'`.execute(db);

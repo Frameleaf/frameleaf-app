@@ -2624,6 +2624,33 @@ export class AssetRepository {
       )
       .executeTakeFirstOrThrow();
   }
+  /** Same exclusion semantics as detectOfflineExternalAssets, restricted to one accepted library page. */
+  async getExcludedExternalAssetIds(
+    libraryId: string,
+    ids: string[],
+    importPaths: string[],
+    exclusionPatterns: string[],
+  ): Promise<string[]> {
+    if (ids.length > 250) throw new Error('Library exclusion checks are limited to 250 assets');
+    if (ids.length === 0) return [];
+    const paths = importPaths.map((importPath) => `${importPath}%`);
+    const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', anyUuid(ids))
+      .where('libraryId', '=', asUuid(libraryId))
+      .where('isOffline', '=', false)
+      .where('isExternal', '=', true)
+      .where((eb) =>
+        eb.or([
+          eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
+          eb.or(exclusions.map((pattern) => eb('originalPath', '~', pattern))),
+        ]),
+      )
+      .execute();
+    return rows.map(({ id }) => id);
+  }
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
   async filterNewExternalAssetPaths(libraryId: string, paths: string[]): Promise<string[]> {
     const result = await this.db

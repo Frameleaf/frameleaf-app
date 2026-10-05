@@ -11,8 +11,8 @@ import { PetRecognitionRun, PetRepository } from 'src/repositories/pet.repositor
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
+import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
 
 /** Real queue transitions and transactions; fixture setup replaces media/ML work only. */
 describe('pet run reconciliation with canonical queue outcomes', () => {
@@ -24,9 +24,12 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
   let workerId: string;
 
   beforeAll(async () => {
-    db = await getKyselyDB();
+    db = await getLibraryQueueDB();
     store = new SqlQueueStore(db);
     pets = new PetRepository(db, LoggingRepository.create());
+  });
+  afterAll(async () => {
+    await db.destroy();
   });
   beforeEach(async () => {
     queue = `pet-reconciliation-${randomUUID()}`;
@@ -69,6 +72,57 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     expect(next.attempt).toBe(2);
     return next;
   };
+
+  it('executes the production status query for an owner with no queue or domain run', async () => {
+    const ownerId = await newOwner();
+    expect(await pets.getRun(ownerId)).toBeUndefined();
+    const domain = await pets.startRun(ownerId, 'local');
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: PetRecognitionRunStatus.Queued });
+  });
+
+  it.each([
+    ['pending', 'needs_attention', PetRecognitionRunStatus.Failed],
+    ['pending', 'cancelled', PetRecognitionRunStatus.Cancelled],
+    ['completed', 'needs_attention', PetRecognitionRunStatus.Completed],
+  ] as const)(
+    'reconciles a retained %s shared executor under a %s cold header',
+    async (itemState, headerState, expected) => {
+      const ownerId = await newOwner(),
+        domain = await pets.startRun(ownerId, 'local');
+      const executorRun = await store.createRun('library-executor-status-fixture', {});
+      const secondaryRun = await store.createRun('library-secondary-status-fixture', {});
+      const ownerSource = randomUUID(),
+        secondarySource = randomUUID();
+      for (const [source, run, state] of [
+        [ownerSource, executorRun, headerState],
+        [secondarySource, secondaryRun, 'ready'],
+      ] as const) {
+        await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,
+        "sourceKind","libraryOperationId","capturedAt","sourceClosedAt")
+        values (${source}::uuid,${run}::uuid,'library-child/pet-status',${queue},true,false,60000,${state},
+          'library-child',${run}::uuid,now(),now())`.execute(db);
+        await sql`insert into job_selection_run("selectionId","runId","copyComplete") values (${source}::uuid,${run}::uuid,true)`.execute(
+          db,
+        );
+      }
+      await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state)
+      values (${executorRun}::uuid,'owner','media-root',${JobName.PetRecognition},${queue},'{}'::jsonb,${ownerSource}::uuid,${itemState})`.execute(
+        db,
+      );
+      await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state,"libraryExecutionRunId","libraryExecutionItemKey")
+      values (${secondaryRun}::uuid,'secondary','media-root',${JobName.PetRecognition},${queue},'{}'::jsonb,${secondarySource}::uuid,'pending',${executorRun}::uuid,'owner')`.execute(
+        db,
+      );
+      await sql`update job_run set "enumerationDone"=true,"finishedAt"=now() where id=${secondaryRun}::uuid`.execute(
+        db,
+      );
+      await pets.linkRun(domain.id, secondaryRun);
+      // No detailed job exists: outcome and source decision must survive payload/job retention.
+      expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
+      expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
+      expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toEqual([]);
+    },
+  );
 
   it('rolls back the replacement domain run, canonical run, linkage and admission together', async () => {
     const ownerId = await newOwner();

@@ -480,6 +480,7 @@ export class MediaOperationRepository {
       value: string;
       lock: DatabaseLock;
     },
+    executor?: Transaction<DB>,
   ): Promise<
     | {
         created: MediaOperation;
@@ -488,7 +489,7 @@ export class MediaOperationRepository {
         active: MediaOperation;
       }
   > {
-    return this.db.transaction().execute(async (trx) => {
+    const create = async (trx: Transaction<DB>) => {
       await sql`SELECT pg_advisory_xact_lock(${subject.lock}::int, hashtext(${subject.value}))`.execute(trx);
       const active = await trx
         .selectFrom('media_operation')
@@ -509,7 +510,8 @@ export class MediaOperationRepository {
         .executeTakeFirstOrThrow();
       this.changed(created as unknown as MediaOperationChange);
       return { created: created as unknown as MediaOperation };
-    });
+    };
+    return executor ? create(executor) : this.db.transaction().execute(create);
   }
   /**
    * The newest job of one kind for each of these subjects, named by a snapshot key (FL-78: each
@@ -987,8 +989,10 @@ export class MediaOperationRepository {
       progress: number;
       leaseMs: number;
     },
+    executor?: Kysely<DB>,
+    requireActiveClaim = false,
   ): Promise<MediaOperationWriteState | undefined> {
-    const row = await this.write((db) =>
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set({
@@ -1003,9 +1007,15 @@ export class MediaOperationRepository {
         .where('claimToken', '=', claimToken)
         .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .$if(requireActiveClaim, (qb) =>
+          qb
+            .where('status', '=', MediaOperationStatus.Rendering)
+            .where('cancelRequestedAt', 'is', null)
+            .where('pauseRequestedAt', 'is', null),
+        )
         .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
-        .executeTakeFirst(),
-    );
+        .executeTakeFirst();
+    const row = await (executor ? write(executor) : this.write(write));
     return row
       ? {
           status: row.status as MediaOperationStatus,
@@ -1183,13 +1193,16 @@ export class MediaOperationRepository {
     },
     options: {
       retry?: boolean;
+      executor?: Kysely<DB>;
     } = {},
   ): Promise<MediaOperationFailOutcome> {
+    const write = <T>(query: (db: Kysely<DB>) => Promise<T>) =>
+      options.executor ? query(options.executor) : this.write(query);
     // A failure retrying cannot help (FL-43: an edited item that left the library) is reported at once.
     const requeued =
       options.retry === false
         ? undefined
-        : await this.write((db) =>
+        : await write((db) =>
             db
               .updateTable('media_operation')
               .set({
@@ -1216,7 +1229,7 @@ export class MediaOperationRepository {
       this.changed(requeued);
       return 'retrying';
     }
-    const result = await this.write((db) =>
+    const result = await write((db) =>
       db
         .updateTable('media_operation')
         .set({

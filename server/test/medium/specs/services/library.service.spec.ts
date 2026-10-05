@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,8 +14,10 @@ import {
   LibraryImportPathReason,
   MediaOperationKind,
   MediaOperationStatus,
+  QueueName,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -32,9 +34,9 @@ import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
+import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 import { MediumTestContext, testAssetsDir } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
-import { getKyselyDB } from 'test/utils.js';
 
 // `validateImportPath` checks candidate paths against the media location
 StorageCore.setMediaLocation('/photos');
@@ -76,6 +78,31 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
     const jobs = this.getMock(JobRepository);
     jobs.queue.mockResolvedValue();
     jobs.queueAll.mockResolvedValue();
+
+    // Retain strict legacy queue mocks, but execute the source acceptance/domain fence in PostgreSQL.
+    const atomicJobs = new JobRepository(
+      {} as never,
+      {} as never,
+      {} as never,
+      this.getMock(LoggingRepository) as never,
+      database,
+    );
+    atomicJobs['handlers'][JobName.SidecarCheck] = {
+      jobName: JobName.SidecarCheck,
+      queueName: QueueName.Sidecar,
+      label: 'Library regression source',
+      handler: () => Promise.resolve(JobStatus.Success),
+    };
+    let initialized: Promise<void> | undefined;
+    jobs.prepareLibraryScanSource.mockImplementation(async (...args) => {
+      initialized ??= new SqlQueueStore(database).initialize([QueueName.Library, QueueName.Sidecar]);
+      await initialized;
+      return atomicJobs.prepareLibraryScanSource(...args);
+    });
+    jobs.ensureLibraryScanSource.mockImplementation(atomicJobs.ensureLibraryScanSource.bind(atomicJobs));
+    jobs.commitLibraryScanBatch.mockImplementation(atomicJobs.commitLibraryScanBatch.bind(atomicJobs));
+    jobs.settleLibraryScanSource.mockImplementation(atomicJobs.settleLibraryScanSource.bind(atomicJobs));
+    jobs.settleTerminalLibrarySources.mockImplementation(atomicJobs.settleTerminalLibrarySources.bind(atomicJobs));
 
     this.getMock(EventRepository).emit.mockResolvedValue();
     this.getMock(WebsocketRepository).serverSend.mockReturnValue();
@@ -141,8 +168,10 @@ const setup = (db?: Kysely<DB>) => {
 };
 
 beforeAll(async () => {
-  defaultDatabase = await getKyselyDB();
+  defaultDatabase = await getLibraryQueueDB();
 });
+
+afterAll(async () => defaultDatabase.destroy());
 
 describe(LibraryService.name, () => {
   let tempDir: string;
@@ -418,7 +447,30 @@ describe(LibraryService.name, () => {
         const controller = new AbortController();
         const stopped = new Error('Stopped queue attempt');
         const progress = vi.fn();
-        const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+        const store = new SqlQueueStore(defaultDatabase),
+          worker = newUuid();
+        const scanQueue = `${QueueName.Library}-${operation.id}`;
+        await store.initialize([scanQueue], worker);
+        await store.enqueue([
+          {
+            name: JobName.LibraryScanRun,
+            queue: scanQueue,
+            data: {},
+            safeToRetry: false,
+            sensitive: false,
+            deadlineMs: 300_000,
+          },
+        ]);
+        const [claim] = await store.claim(scanQueue, worker);
+        const context: QueueExecution = {
+          claim,
+          signal: controller.signal,
+          progressUnits: 0,
+          progress,
+          followups: [],
+          adoptions: [],
+          buffering: true,
+        };
         const waiting = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         let closed = false;
@@ -996,7 +1048,6 @@ describe(LibraryService.name, () => {
 
     it('should queue sidecar checks for assets whose file changed', async () => {
       const { ctx } = setup();
-      const jobs = ctx.getMock(JobRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const rawPath = await copyTestAsset('formats/raw/Nikon/D80/glarus.nef', join(importPath, 'glarus.nef'));
 
@@ -1015,12 +1066,17 @@ describe(LibraryService.name, () => {
         expect.objectContaining({ status: MediaOperationStatus.Completed }),
       );
 
-      expect(jobs.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.SidecarCheck,
-          data: { id: asset.id, source: 'upload' },
-        },
+      const { rows: intents } = await sql`select "libraryIntent" from job_run_item
+        where "rootItemKey"=${asset.id} and stage=${JobName.SidecarCheck}`.execute(ctx.database);
+      expect(intents).toEqual([
+        expect.objectContaining({
+          libraryIntent: expect.objectContaining({
+            name: JobName.SidecarCheck,
+            data: { id: asset.id, source: 'upload' },
+          }),
+        }),
       ]);
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
     });
 
     it('should not queue sidecar checks for unchanged assets', async () => {
