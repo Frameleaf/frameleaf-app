@@ -2,7 +2,7 @@ import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 import { commandsAndQuestions } from 'src/commands/index.js';
 
 it('registers stopped-worker restore reconstruction in the real admin command registry', () => {
-  expect(commandsAndQuestions.filter(command => command === RestoreStateCommand)).toHaveLength(1);
+  expect(commandsAndQuestions.filter((command) => command === RestoreStateCommand)).toHaveLength(1);
 });
 
 it('reconstructs execution state offline after canonical initialization and sanitizes failures', async () => {
