@@ -506,6 +506,13 @@ export class Operations {
   private async configureImport(operation: Operation, review: Review, installation: Installation): Promise<void> {
     const source = review.source!;
     if (
+      operation.kind !== 'import' ||
+      installation.origin !== 'new_import' ||
+      !/^[a-f0-9]{12}$/.test(installation.id) ||
+      installation.sourceId !== source.id
+    )
+      throw new Refusal('invalid_import_authority');
+    if (
       (await this.docker.inventory()).some(
         (c) => c.Config.Labels?.['app.frameleaf.manager.import'] === operation.id && c.State.Running,
       )
@@ -569,7 +576,9 @@ export class Operations {
         reader.password,
         source.database.port,
       ),
-      FRAMELEAF_IMPORT_MANAGER_OPERATION_ID: operation.id,
+      FRAMELEAF_MANAGER_ORIGIN: installation.origin,
+      FRAMELEAF_MANAGER_INSTALLATION: config.media.deploymentId,
+      FRAMELEAF_IMPORT_MANAGER_OPERATION_ID: config.media.operationId,
       ...(source.environment.IMMICH_MEDIA_LOCATION
         ? { IMMICH_MEDIA_LOCATION: source.environment.IMMICH_MEDIA_LOCATION }
         : {}),
