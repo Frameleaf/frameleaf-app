@@ -14,6 +14,25 @@ describe(MaintenanceService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it('does not exit until the restart acknowledgement is committed', async () => {
+    let committed!: () => void;
+    mocks.websocket.acknowledgeRestart.mockImplementation(() => new Promise<void>((resolve) => (committed = resolve)));
+    const ack = vi.fn();
+    const restart = sut.onRestart({ isMaintenanceMode: true }, ack);
+    expect(mocks.websocket.acknowledgeRestart).toHaveBeenCalledWith(ack);
+    expect(mocks.app.exitApp).not.toHaveBeenCalled();
+    committed();
+    await restart;
+    expect(mocks.app.exitApp).toHaveBeenCalledOnce();
+  });
+
+  it('reports an acknowledgement publication failure without exiting', async () => {
+    const error = new Error('ack failed');
+    mocks.websocket.acknowledgeRestart.mockRejectedValueOnce(error);
+    await expect(sut.onRestart({ isMaintenanceMode: false }, vi.fn())).rejects.toBe(error);
+    expect(mocks.app.exitApp).not.toHaveBeenCalled();
+  });
+
   describe('getMaintenanceMode', () => {
     it('should return false if state unknown', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null);

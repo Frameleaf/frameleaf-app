@@ -60,6 +60,32 @@ describe(NotificationService.name, () => {
     mocks.access.asset.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
   });
 
+  it('awaits client restart publication before sending and awaiting the worker restart', async () => {
+    let delivered!: () => void;
+    let committed!: () => void;
+    mocks.websocket.clientBroadcastAndFlush.mockImplementation(
+      () => new Promise<void>((resolve) => (delivered = resolve)),
+    );
+    mocks.websocket.serverSendAndFlush.mockImplementation(() => new Promise<void>((resolve) => (committed = resolve)));
+    let settled = false;
+    const restart = sut.onAppRestart({ isMaintenanceMode: true }).then(() => (settled = true));
+    expect(mocks.websocket.serverSendAndFlush).not.toHaveBeenCalled();
+    delivered();
+    await Promise.resolve();
+    expect(mocks.websocket.serverSendAndFlush).toHaveBeenCalledWith('AppRestart', { isMaintenanceMode: true });
+    expect(settled).toBe(false);
+    committed();
+    await restart;
+    expect(settled).toBe(true);
+  });
+
+  it('does not send the worker restart after client publication fails', async () => {
+    const error = new Error('publication unavailable');
+    mocks.websocket.clientBroadcastAndFlush.mockRejectedValueOnce(error);
+    await expect(sut.onAppRestart({ isMaintenanceMode: true })).rejects.toBe(error);
+    expect(mocks.websocket.serverSendAndFlush).not.toHaveBeenCalled();
+  });
+
   it('should work', () => {
     expect(sut).toBeDefined();
   });

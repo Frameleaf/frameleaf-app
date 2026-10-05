@@ -90,4 +90,44 @@ describe(PostgresSocketTransport.name, () => {
     await expect(transport.discoverWorkers(server())).rejects.toThrow('No live websocket workers');
     await transport.close();
   });
+
+  it('waits for restart publication instead of returning with an in-flight PostgreSQL message', async () => {
+    const transport = new PostgresSocketTransport({} as ConfigRepository);
+    let commit!: () => void;
+    fixture.query.mockImplementationOnce(() => new Promise<void>((resolve) => (commit = resolve)));
+    let finished = false;
+    const publication = transport
+      .publish(() => {
+        void transport.pool.query('SELECT pg_notify($1, $2)', ['channel', 'restart']);
+      })
+      .then(() => (finished = true));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    expect(fixture.close).not.toHaveBeenCalled();
+    commit();
+    await publication;
+    expect(finished).toBe(true);
+    await transport.close();
+  });
+
+  it('reports a publication error even when the adapter swallows its query rejection', async () => {
+    const transport = new PostgresSocketTransport({} as ConfigRepository);
+    const error = new Error('notify failed');
+    fixture.query.mockRejectedValueOnce(error);
+    await expect(
+      transport.publish(async () => {
+        await transport.pool.query('SELECT pg_notify($1, $2)', ['channel', 'restart']).catch(() => {});
+      }),
+    ).rejects.toBe(error);
+    await transport.close();
+  });
+
+  it('does not initiate publication after transport shutdown', async () => {
+    const transport = new PostgresSocketTransport({} as ConfigRepository);
+    await transport.close();
+    const action = vi.fn();
+    await expect(transport.publish(action)).rejects.toThrow('is stopping');
+    expect(action).not.toHaveBeenCalled();
+  });
 });
