@@ -104,7 +104,7 @@ test.describe('Face tagging (FL-38)', () => {
     // person starts with a face on a group photo.
     const group = await createPhoto('group.png');
     for (const person of [emma, jamie, priya]) {
-      await utils.createFace({ assetId: group.id, personGroupId: person.id });
+      await utils.createFace({ assetId: group.id, personGroupId: person.id, imageWidth: 400, imageHeight: 300 });
     }
   });
 
