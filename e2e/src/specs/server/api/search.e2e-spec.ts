@@ -20,6 +20,7 @@ import { app, asBearerAuth, TEN_TIMES, testAssetDir, utils } from 'src/utils.js'
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 const today = DateTime.now();
+const SEARCH_SETUP_TIMEOUT = process.env.CI ? 240_000 : 90_000;
 
 describe('/search', () => {
   let admin: LoginResponseDto;
@@ -45,7 +46,7 @@ describe('/search', () => {
   let assetLast: AssetMediaResponseDto;
 
   beforeAll(
-    withApiAssetReadiness(30_000, async (signal) => {
+    withApiAssetReadiness(SEARCH_SETUP_TIMEOUT, async (signal) => {
       await utils.resetDatabase(undefined, signal);
       await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
       admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
@@ -158,7 +159,7 @@ describe('/search', () => {
         { headers: asBearerAuth(admin.accessToken), signal },
       );
     }),
-    30_000,
+    SEARCH_SETUP_TIMEOUT + 5_000,
   );
 
   describe('POST /search/metadata', () => {

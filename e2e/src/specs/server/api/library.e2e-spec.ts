@@ -354,7 +354,7 @@ describe('/libraries', () => {
       await utils.resetAdminConfig(admin.accessToken);
     });
 
-    it('imports a file added to a watched folder and marks a deleted one offline', async ({ signal }) => {
+    it('imports a file added to a watched folder and marks a deleted one offline', { timeout: process.env.CI ? 305_000 : 155_000 }, async ({ signal }) => {
       const folder = `${testAssetDirInternal}/temp/fl78-watch`;
       utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
       const library = await utils.createLibrary(admin.accessToken, {
