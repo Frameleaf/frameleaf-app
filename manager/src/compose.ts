@@ -81,6 +81,10 @@ export async function renderCompose(
     FRAMELEAF_MANAGER_ORIGIN: installation.origin,
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
   };
+  if (installation.origin === 'restored_library' && installation.importInstallation) {
+    if (!/^[a-f0-9]{12}$/.test(installation.importInstallation)) throw new Refusal('invalid_restore_import_identity');
+    environment.FRAMELEAF_MANAGER_IMPORT_INSTALLATION = installation.importInstallation;
+  }
   media.push({
     type: 'bind',
     source: join(directory, 'manager-token'),

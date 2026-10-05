@@ -11,6 +11,7 @@ import {
 import { DisableOAuthLogin, EnableOAuthLogin } from 'src/commands/oauth-login.js';
 import { DisablePasswordLoginCommand, EnablePasswordLoginCommand } from 'src/commands/password-login.js';
 import { PromptPasswordResetQuestions, ResetAdminPasswordCommand } from 'src/commands/reset-admin-password.command.js';
+import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 import { SchemaCheck } from 'src/commands/schema-check.js';
 import { SetupCodeCommand } from 'src/commands/setup-code.command.js';
 import { VersionCommand } from 'src/commands/version.command.js';
@@ -18,6 +19,7 @@ import { VersionCommand } from 'src/commands/version.command.js';
 // Frameleaf administration commands.
 export const commandsAndQuestions = [
   ImportImmichCommand,
+  RestoreStateCommand,
   // FL-164: bare-metal restore from a cloud backup bucket
   ...cloudBackupCommands,
   ResetAdminPasswordCommand,
