@@ -60,8 +60,10 @@ it('releases a restored prepared import once with a real admin and effective set
       }>`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
     ).rows[0];
   const selections = async () =>
-    (await sql`SELECT stage,state,"capturedAt" FROM job_selection WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db))
-      .rows;
+    (
+      await sql<{ stage: string; state: string; capturedAt: Date | null }>`
+        SELECT stage,state,"capturedAt" FROM job_selection WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db)
+    ).rows;
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'ddddeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
