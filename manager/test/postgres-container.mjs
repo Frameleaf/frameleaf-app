@@ -1,6 +1,6 @@
 // Hosted Linux only. Real PostgreSQL, private disposable host folders and the launcher's capabilities.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,6 +50,9 @@ async function ready(name) {
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
+  const logs = spawnSync('docker', ['logs', '--tail', '40', name], {encoding:'utf8'});
+  const diagnostic = `${logs.stdout ?? ''}${logs.stderr ?? ''}`.replaceAll('disposable-fixture-password', '[redacted]');
+  console.error(diagnostic.slice(-8000));
   throw new Error('PostgreSQL fixture did not become ready');
 }
 const evidence = { schemaVersion: 1, commit: process.env.GITHUB_SHA, architecture: process.arch, checks: {} };
@@ -98,6 +101,7 @@ try {
   const first = evaluate(
     storage + `process.stdout.write(await storage.allocate(${JSON.stringify(root)}, '${firstId}', 1));`,
   );
+  evaluate(`import assert from 'node:assert/strict'; import {stat} from 'node:fs/promises'; assert.equal((await stat(${JSON.stringify(first)})).mode & 0o777, 0o711);`);
   const firstContainer = pg(names.first, first, firstId);
   await ready(names.first);
   assert.equal(sql(names.first, 'SHOW data_directory'), '/var/lib/postgresql/19/docker');
