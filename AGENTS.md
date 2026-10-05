@@ -1,3 +1,14 @@
+# Local Tests and CI Validation
+
+All CI tests and validation commands for this repository are allowed to run on
+this machine, including unit, integration, and end-to-end tests, linting,
+typechecking, builds, and CI workflow emulation. This authorization also applies
+to this repository's worktrees.
+
+This supersedes any earlier guidance that prohibits local tests or requires
+validation to run exclusively in GitHub Actions. Agents may run these checks
+locally without additional permission.
+
 # Frameleaf agent instructions
 
 This file routes repository work. Read the linked detail relevant to the task rather than loading every workstream. The user's current instructions take precedence over older planning notes.
