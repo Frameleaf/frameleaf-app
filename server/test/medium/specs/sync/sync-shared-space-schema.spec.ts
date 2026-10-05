@@ -1,7 +1,7 @@
 import { schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { writeFile } from 'node:fs/promises';
-import { getFrameleafBaselineSchema } from 'src/schema/frameleaf-schema.js';
+import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 import { DB } from 'src/schema/index.js';
 import { canonicalDatabaseUrl, expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -24,7 +24,7 @@ it('installs canonical sync objects and matches the registered schema', async ()
     db,
   );
   expect(order.rows[0].present).toBe(true);
-  const source = getFrameleafBaselineSchema();
+  const source = getFrameleafSchema();
   const target = await schemaFromDatabase({
     connection: {
       connectionType: 'url',

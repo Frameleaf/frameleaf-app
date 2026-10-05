@@ -179,10 +179,6 @@ const lockBehindTheRelease = (db: Kysely<DB>, assetId: string) =>
     .onConflict((oc) => oc.column('assetId').doNothing())
     .execute();
 
-/** Data saved before FL-53 and before FL-34: the upstream Locked folder, covers kept. */
-const lockInOldFolder = (db: Kysely<DB>, assetId: string) =>
-  db.updateTable('asset').set({ visibility: AssetVisibility.Locked }).where('id', '=', assetId).execute();
-
 const membershipOf = (db: Kysely<DB>, assetId: string) =>
   db.selectFrom('album_asset').select('albumId').where('assetId', '=', assetId).execute();
 
@@ -340,7 +336,10 @@ describe('Locked cover references (FL-53)', () => {
       const { ctx } = context;
       const seeded = await seed(context);
       const untouched = await seed(context);
-      await lockInOldFolder(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await expect(visibilityOf(ctx.database, [seeded.cover.id])).resolves.toEqual({
+        [seeded.cover.id]: AssetVisibility.Locked,
+      });
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ personFace: seeded.lockedFace.id, petFeatured: seeded.cover.id }),
       );
@@ -371,8 +370,8 @@ describe('Locked cover references (FL-53)', () => {
       const context = setup();
       const { ctx } = context;
       const seeded = await seed(context);
-      await lockInOldFolder(ctx.database, seeded.cover.id);
-      await lockInOldFolder(ctx.database, seeded.fallback.id);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.fallback.id);
 
       await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
@@ -392,7 +391,7 @@ describe('Locked cover references (FL-53)', () => {
         personGroupId: seeded.person.personGroupId,
       });
       await markBestPhoto(ctx.database, best);
-      await lockInOldFolder(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
 
       await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
@@ -405,7 +404,7 @@ describe('Locked cover references (FL-53)', () => {
       const context = setup();
       const { ctx } = context;
       const seeded = await seed(context);
-      await lockInOldFolder(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
 
       await ctx.database.updateTable('asset').set({ is_nsfw: true }).where('id', '=', seeded.fallback.id).execute();
       await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
@@ -438,7 +437,7 @@ describe('Locked cover references (FL-53)', () => {
           { petId: seeded.pet.id, assetId: seeded.fallback.id },
         ])
         .execute();
-      await lockInOldFolder(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
 
       await releaseLockedCoverReferences(ctx.database, [seeded.cover.id]);
 
