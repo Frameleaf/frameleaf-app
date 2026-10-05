@@ -128,7 +128,12 @@ describe('/search', () => {
       await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', undefined, signal);
       for (const i of coordinates.keys()) {
         const current = await getAssetInfo({ id: assets[i].id }, { headers: asBearerAuth(admin.accessToken), signal });
-        expect(current.exifInfo).toMatchObject(coordinates[i]);
+        // Metadata intentionally discards Null Island coordinates.
+        const expected =
+          coordinates[i].latitude === 0 && coordinates[i].longitude === 0
+            ? { latitude: null, longitude: null }
+            : coordinates[i];
+        expect(current.exifInfo).toMatchObject(expected);
       }
 
       [

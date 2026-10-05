@@ -566,9 +566,9 @@ export const utils = {
         if (selected.includes('system_metadata')) {
           // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
           // stable server identity and future operational metadata survive ordinary test resets.
+          // MediaLocation must survive too: a restarted worker needs it to validate files created after reset.
           await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
             [
-              'MediaLocation',
               'facial-recognition-state',
               'memories-state',
               'admin-onboarding',

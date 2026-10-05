@@ -2176,19 +2176,28 @@ describe(MediaService.name, () => {
     });
 
     it('should skip a person not found', async () => {
-      await sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should skip a person without a face asset id', async () => {
       const person = PersonFactory.create({ faceAssetId: null });
-      await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should skip a person with face not found', async () => {
-      await sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should generate a thumbnail', async () => {

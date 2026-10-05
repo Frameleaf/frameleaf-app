@@ -180,6 +180,25 @@ describe(PersonRepository.name, () => {
   });
 
   describe('getDataForThumbnailGenerationJob', () => {
+    it('makes the original featured-face source ineligible after reassignment', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { person: target } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      await sut.update({ ownerId: user.id, personGroupId: person.personGroupId, faceAssetId: assetFace.id });
+
+      const source = { ownerId: user.id, personGroupId: person.personGroupId };
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeDefined();
+      await expect(sut.reassignFace(assetFace.id, target.personGroupId)).resolves.toBe(1);
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeUndefined();
+      await expect(sut.getDataForThumbnailGenerationJob(source, assetFace.id)).resolves.toBeUndefined();
+      await expect(
+        sut.getDataForThumbnailGenerationJob({ ownerId: user.id, personGroupId: target.personGroupId }, assetFace.id),
+      ).resolves.toBeDefined();
+    });
+
     it('should not return the edited preview path', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
