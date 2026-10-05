@@ -8,6 +8,7 @@ import {
   login,
   type SessionResponseDto,
 } from '@immich/sdk';
+import { randomUUID } from 'node:crypto';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
@@ -272,35 +273,43 @@ describe('/admin/users', () => {
       await utils.waitForWebsocketEvent({ event: 'userDelete', id: user.userId, timeout: 5000 });
     });
 
-    it('should hard delete a user with stacked assets', async () => {
-      const user = await utils.userSetup(admin.accessToken, createUserDto.create('hard-delete-1'));
+    // Parallel uploads, one queue drain, the 5s delete event, and the existing 30s request/cleanup allowance.
+    it(
+      'should hard delete a user with stacked assets',
+      { timeout: process.env.CI ? 155_000 : 55_000 },
+      async ({ signal }) => {
+        const user = await utils.userSetup(
+          admin.accessToken,
+          createUserDto.create(`hard-delete-stacked-${randomUUID()}`),
+        );
 
-      const [asset1, asset2] = await Promise.all([
-        utils.createAsset(user.accessToken),
-        utils.createAsset(user.accessToken),
-      ]);
+        const [asset1, asset2] = await Promise.all([
+          utils.createAsset(user.accessToken, undefined, { signal }),
+          utils.createAsset(user.accessToken, undefined, { signal }),
+        ]);
 
-      await createStack(
-        { stackCreateDto: { assetIds: [asset1.id, asset2.id] } },
-        { headers: asBearerAuth(user.accessToken) },
-      );
+        await createStack(
+          { stackCreateDto: { assetIds: [asset1.id, asset2.id] } },
+          { headers: asBearerAuth(user.accessToken), signal },
+        );
 
-      await utils.waitForAllQueuesFinish(admin.accessToken);
+        await utils.waitForAllQueuesFinish(admin.accessToken, signal);
 
-      const { status, body } = await request(app)
-        .delete(`/admin/users/${user.userId}`)
-        .send({ force: true })
-        .set('Authorization', `Bearer ${admin.accessToken}`);
+        const { status, body } = await request(app)
+          .delete(`/admin/users/${user.userId}`)
+          .send({ force: true })
+          .set('Authorization', `Bearer ${admin.accessToken}`);
 
-      expect(status).toBe(200);
-      expect(body).toMatchObject({
-        id: user.userId,
-        updatedAt: expect.any(String),
-        deletedAt: expect.any(String),
-      });
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+          id: user.userId,
+          updatedAt: expect.any(String),
+          deletedAt: expect.any(String),
+        });
 
-      await utils.waitForWebsocketEvent({ event: 'userDelete', id: user.userId, timeout: 5000 });
-    });
+        await utils.waitForWebsocketEvent({ event: 'userDelete', id: user.userId, timeout: 5000, signal });
+      },
+    );
   });
 
   describe('POST /admin/users/:id/restore', () => {
