@@ -73643,6 +73643,7 @@
               "enum": [
                 "worker_unavailable",
                 "no_dispatch_backlog",
+                "first_setup_pending",
                 "dependency_unavailable",
                 "dependency_wait",
                 "dependency_failed",
@@ -73848,6 +73849,7 @@
               "enum": [
                 "worker_unavailable",
                 "no_dispatch_backlog",
+                "first_setup_pending",
                 "dependency_unavailable",
                 "dependency_wait",
                 "dependency_failed",
@@ -74663,6 +74665,72 @@
               "complete"
             ],
             "type": "string"
+          },
+          "regeneration": {
+            "nullable": true,
+            "properties": {
+              "blocked": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "completed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failed": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "needsAttention": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "preparedAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "runId": {
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "startedAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "runId",
+              "state",
+              "preparedAt",
+              "startedAt",
+              "completed",
+              "total",
+              "failed",
+              "blocked",
+              "needsAttention",
+              "reasons"
+            ],
+            "type": "object"
           },
           "rescanComplete": {
             "type": "boolean"
