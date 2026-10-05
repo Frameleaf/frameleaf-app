@@ -65,14 +65,19 @@ describe('PostgreSQL queue', () => {
   });
 
   it('restores safe work within its existing retry budget and never independently resumes operation jobs', async () => {
-    await store.setConcurrency(queue, 3);
+    await store.setConcurrency(queue, 4);
     await store.enqueue([
       intent({ data: { kind: 'safe' } }),
       intent({ safeToRetry: false, data: { kind: 'unsafe' } }),
       intent({ data: { kind: 'operation', operationId: randomUUID() } }),
+      intent({ data: { kind: 'cancelled' } }),
     ]);
     const claims = await store.claim(queue, workerA);
-    expect(claims).toHaveLength(3);
+    expect(claims).toHaveLength(4);
+    const cancelled = claims.find(({ data }) => data.kind === 'cancelled')!;
+    await sql`update job set "cancelRequestedAt" = now(), "cancelReason" = 'request'
+      where id = ${cancelled.id}::uuid`.execute(db);
+    await recordStoppedAttempt(db, cancelled.id, cancelled.token);
     await resetQueueAfterRestore(db);
     await resetQueueAfterRestore(db); // resumed recovery must be idempotent
     const { rows } = await sql<{ kind: string; state: string; token: string | null; attempt: number }>`select
@@ -82,6 +87,7 @@ describe('PostgreSQL queue', () => {
         { kind: 'safe', state: 'pending', token: null, attempt: 1 },
         { kind: 'unsafe', state: 'needs_attention', token: null, attempt: 1 },
         { kind: 'operation', state: 'needs_attention', token: null, attempt: 1 },
+        { kind: 'cancelled', state: 'cancelled', token: null, attempt: 1 },
       ]),
     );
     for (const claim of claims) {
@@ -588,6 +594,234 @@ describe('PostgreSQL queue', () => {
     expect(await store.claim(queue, workerA)).toEqual([]);
   });
 
+  it.each(['completed', 'failed', 'deferred', 'aborted', 'unsafe'] as const)(
+    'settles explicit cancellation before the coordinator observes a %s handler return',
+    async (outcome) => {
+      const runId = await store.createRun('cancel-before-abort', {});
+      await store.enqueue([
+        intent({ runId, itemKey: 'parent', rootItemKey: 'parent', sensitive: true, safeToRetry: outcome !== 'unsafe' }),
+      ]);
+      const [claim] = await store.claim(queue, workerA);
+      await store.enqueue([intent({ runId, itemKey: 'child', rootItemKey: 'parent', parentId: claim.id })]);
+      await store.finishEnumeration(runId);
+      const abort = new AbortController();
+      const adopted = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      const diagnosed = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      const notified = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      const handler = vi.fn(async () => {
+        const execution = queueExecution.getStore()!;
+        execution.adoptions.push(adopted);
+        execution.failureDiagnostics = [diagnosed];
+        execution.afterCommit = [notified];
+        execution.followups.push(intent({ name: 'unpublished-followup' }));
+        await sql`update job set "cancelRequestedAt" = now(), "cancelReason" = 'request'
+          where id = ${claim.id}::uuid`.execute(db);
+        expect(abort.signal.aborted).toBe(false); // the database sees it before the coordinator's message
+        if (outcome === 'failed') throw new Error('fixture handler failure');
+        if (outcome === 'deferred') execution.dependencyReason = 'destination-unavailable';
+        if (outcome === 'aborted') abort.abort(new Error('fixture cancellation'));
+      });
+      const executor = new JobRepository(
+        {} as never,
+        {} as never,
+        { emit: handler } as never,
+        { setContext: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+        db,
+      );
+      const complete = vi.spyOn(executor['store'], 'complete');
+      await executor['execute'](claim, abort);
+      expect(handler).toHaveBeenCalledOnce();
+      if (outcome === 'completed' || outcome === 'unsafe') {
+        expect(complete).toHaveBeenCalledOnce();
+        await expect(complete.mock.results[0].value).resolves.toBe(false);
+      }
+      expect(adopted).not.toHaveBeenCalled();
+      expect(diagnosed).not.toHaveBeenCalled();
+      expect(notified).not.toHaveBeenCalled();
+      const { rows: jobs } = await sql`select state, token, attempt, "retryBaseAttempt", data
+        from job where id = ${claim.id}::uuid`.execute(db);
+      expect(jobs).toEqual([{ state: 'cancelled', token: null, attempt: 1, retryBaseAttempt: 0, data: {} }]);
+      const { rows: attempts } = await sql`select outcome, "finishedAt" is not null finished
+        from job_attempt where token = ${claim.token}::uuid`.execute(db);
+      expect(attempts).toEqual([{ outcome: 'cancelled', finished: true }]);
+      const { rows: proofs } = await sql`select value->>'jobId' "jobId", value ? 'stoppedAt' stopped
+        from system_metadata where key = ${'frameleaf-attempt-evidence:' + claim.token}`.execute(db);
+      expect(proofs).toEqual([{ jobId: claim.id, stopped: true }]);
+      const { rows: items } = await sql`select "itemKey", state from job_run_item
+        where "runId" = ${runId}::uuid order by "itemKey"`.execute(db);
+      expect(items).toEqual([
+        { itemKey: 'child', state: 'blocked' },
+        { itemKey: 'parent', state: 'cancelled' },
+      ]);
+      const { rows: runs } = await sql`select "finishedAt" is not null finished from job_run
+        where id = ${runId}::uuid`.execute(db);
+      expect(runs).toEqual([{ finished: true }]);
+      expect(await store.complete(claim, [intent()], adopted)).toBe(false);
+      expect(await store.retryFailed(queue)).toBe(0);
+      expect(await store.claim(queue, workerB)).toEqual([]);
+      expect(await store.hasUnfinishedWork(queue)).toBe(false);
+    },
+  );
+
+  it.each([null, 'request'])(
+    'requires matching stopped proof for cancellation cause %s, including after expiry',
+    async (cause) => {
+      await store.enqueue([intent()]);
+      const [claim] = await store.claim(queue, workerA);
+      await sql`update job set "cancelRequestedAt" = now(), "cancelReason" = ${cause}
+        where id = ${claim.id}::uuid`.execute(db);
+      await recordStoppedAttempt(db, claim.id, randomUUID());
+      await sql`insert into system_metadata(key,value) values (${'frameleaf-worker-stopped:' + workerB},
+        ${JSON.stringify({ workerId: workerB, stoppedAt: Date.now() })}::text::jsonb)`.execute(db);
+      expect(await store.fail(claim, 'cancel', undefined, { stopRequestedOnly: true })).toBe(false);
+      expect((await store.counts(queue)).active).toBe(1);
+      await recordStoppedAttempt(db, claim.id, claim.token);
+      expect(await store.fail({ ...claim, token: randomUUID() }, 'stale', undefined, { stopRequestedOnly: true })).toBe(
+        false,
+      );
+      await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(db);
+      await store.recoverExpired();
+      const { rows } = await sql`select state, attempt from job where id = ${claim.id}::uuid`.execute(db);
+      expect(rows).toEqual([{ state: 'cancelled', attempt: 1 }]);
+      expect(await store.claim(queue, workerB)).toEqual([]);
+    },
+  );
+
+  it('fences deadline output immediately, retries once after stopped proof, and lets an explicit request win', async () => {
+    await store.enqueue([intent()]);
+    const [first] = await store.claim(queue, workerA);
+    const adopted = vi.fn();
+    await sql`update job set "startedAt" = now() - interval '1 hour' where id = ${first.id}::uuid`.execute(db);
+    expect((await store.deadlines(workerA)).map(({ id }) => id)).toContain(first.id);
+    expect(await store.complete(first, [intent()], adopted)).toBe(false);
+    expect(await store.fail(first, 'deadline', undefined, { stopRequestedOnly: true })).toBe(false);
+    await recordStoppedAttempt(db, first.id, first.token);
+    expect(await store.fail(first, 'deadline', undefined, { stopRequestedOnly: true })).toBe(true);
+    expect(adopted).not.toHaveBeenCalled();
+    const { rows: delayed } = await sql`select state, "cancelReason",
+      "availableAt" = a."finishedAt" + interval '30 seconds' delayed
+      from job j join job_attempt a on a."jobId" = j.id where j.id = ${first.id}::uuid`.execute(db);
+    expect(delayed).toEqual([{ state: 'pending', cancelReason: 'deadline', delayed: true }]);
+    await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
+    const [second] = await store.claim(queue, workerB);
+    expect(second.attempt).toBe(2);
+    const { rows: renewed } = await sql`select "cancelRequestedAt", "cancelReason" from job
+      where id = ${second.id}::uuid`.execute(db);
+    expect(renewed).toEqual([{ cancelRequestedAt: null, cancelReason: null }]);
+    await sql`update job set "startedAt" = now() - interval '1 hour' where id = ${second.id}::uuid`.execute(db);
+    await store.deadlines(workerB);
+    await recordStoppedAttempt(db, second.id, second.token);
+    await store.fail(second, 'second deadline', undefined, { stopRequestedOnly: true });
+    expect((await store.counts(queue)).failed).toBe(1);
+    expect(await store.claim(queue, workerA)).toEqual([]);
+
+    await store.enqueue([intent()]);
+    const [requested] = await store.claim(queue, workerA);
+    await sql`update job set "startedAt" = now() - interval '1 hour' where id = ${requested.id}::uuid`.execute(db);
+    await store.deadlines(workerA);
+    await sql`update job set "cancelReason" = 'request' where id = ${requested.id}::uuid`.execute(db);
+    await store.deadlines(workerA); // later deadline scans cannot overwrite the explicit request
+    await recordStoppedAttempt(db, requested.id, requested.token);
+    await store.fail(requested, 'deadline and request', undefined, { stopRequestedOnly: true });
+    const { rows: cancelled } = await sql`select state, "cancelReason" from job
+      where id = ${requested.id}::uuid`.execute(db);
+    expect(cancelled).toEqual([{ state: 'cancelled', cancelReason: 'request' }]);
+    expect(await store.claim(queue, workerB)).toEqual([]);
+  });
+
+  it('does not replay legacy queued cancellations, including after restore or without matching stopped proof', async () => {
+    const fixtures = [
+      { cause: null, proof: true, state: 'pending' },
+      { cause: null, proof: false, state: 'waiting' },
+      { cause: 'request', proof: true, state: 'waiting' },
+      { cause: 'request', proof: false, state: 'pending' },
+      { cause: 'deadline', proof: true, state: 'pending' },
+    ] as const;
+    for (const restore of [false, true]) {
+      const runId = await store.createRun('queued-cancellation', { restore });
+      await store.setConcurrency(queue, fixtures.length);
+      await store.enqueue(
+        fixtures.map((fixture, index) =>
+          intent({
+            runId,
+            itemKey: String(index),
+            rootItemKey: String(index),
+            sensitive: fixture.cause !== 'deadline',
+          }),
+        ),
+      );
+      const claims = await store.claim(queue, workerA);
+      expect(claims).toHaveLength(fixtures.length);
+      for (const claim of claims) {
+        const fixture = fixtures[Number(claim.itemKey)];
+        // Reproduce the former recovery result: attempt finished, token cleared, cancellation retained.
+        await sql`update job set state = ${fixture.state}, token = null, "leaseExpiresAt" = null,
+          "availableAt" = now(), "cancelRequestedAt" = now(), "cancelReason" = ${fixture.cause}
+          where id = ${claim.id}::uuid`.execute(db);
+        await sql`update job_attempt set outcome = 'pending', "finishedAt" = now()
+          where token = ${claim.token}::uuid`.execute(db);
+        await recordStoppedAttempt(db, claim.id, fixture.proof ? claim.token : randomUUID());
+      }
+      const unrelatedWorker = randomUUID();
+      await sql`insert into system_metadata(key,value) values (${'frameleaf-worker-stopped:' + unrelatedWorker},
+        ${JSON.stringify({ workerId: unrelatedWorker, stoppedAt: Date.now() })}::text::jsonb)`.execute(db);
+      await store.finishEnumeration(runId);
+      if (restore) {
+        await resetQueueAfterRestore(db);
+        await resetQueueAfterRestore(db);
+      }
+      const next = await store.claim(queue, workerB);
+      expect(next).toHaveLength(1);
+      expect(next[0]).toMatchObject({ itemKey: '4', attempt: 2 }); // only the deadline retains its retry
+      await store.complete(next[0], []);
+      const { rows } = await sql`select "itemKey", state, attempt, data from job
+        where "runId" = ${runId}::uuid and "itemKey" != '4' order by "itemKey"`.execute(db);
+      expect(rows).toEqual(
+        fixtures.slice(0, 4).map((fixture, index) => ({
+          itemKey: String(index),
+          state: fixture.proof ? 'cancelled' : 'needs_attention',
+          attempt: 1,
+          data: {},
+        })),
+      );
+      expect(
+        (
+          await sql`select "itemKey", state from job_run_item where "runId" = ${runId}::uuid
+        order by "itemKey"`.execute(db)
+        ).rows,
+      ).toEqual([
+        ...fixtures.slice(0, 4).map((fixture, index) => ({
+          itemKey: String(index),
+          state: fixture.proof ? 'cancelled' : 'needs_attention',
+        })),
+        { itemKey: '4', state: 'completed' },
+      ]);
+      const { rows: attempts } = await sql`select count(*)::int count, bool_and(a.outcome = 'pending') unchanged
+        from job_attempt a join job j on j.id = a."jobId"
+        where j."runId" = ${runId}::uuid and j."itemKey" != '4'`.execute(db);
+      expect(attempts).toEqual([{ count: 4, unchanged: true }]);
+      const { rows: missingProof } = await sql`select count(*)::int count from system_metadata m join job_attempt a
+        on m.key = 'frameleaf-attempt-evidence:' || a.token::text join job j on j.id = a."jobId"
+        where j."runId" = ${runId}::uuid and j."itemKey" in ('1','3')`.execute(db);
+      expect(missingProof).toEqual([{ count: 0 }]);
+      const { rows: attention } = await sql<{ error: string }>`select error from job
+        where "runId" = ${runId}::uuid and state = 'needs_attention'`.execute(db);
+      expect(attention).toHaveLength(2);
+      expect(
+        attention.every(({ error }) =>
+          error.includes(restore ? 'Executor stop could not be confirmed' : 'sensitive details omitted'),
+        ),
+      ).toBe(true);
+      for (const claim of claims) expect(await store.complete(claim, [])).toBe(false);
+      expect(await store.claim(queue, workerA)).toEqual([]);
+      expect(await store.retryFailed(queue)).toBe(0);
+      expect(await store.hasUnfinishedWork(queue)).toBe(false);
+      expect(
+        (await sql`select "finishedAt" is not null finished from job_run where id = ${runId}::uuid`.execute(db)).rows,
+      ).toEqual([{ finished: true }]);
+    }
+  });
+
   it('never replays an ambiguous external effect and keeps sensitive payloads out of failed history', async () => {
     await store.enqueue([intent({ safeToRetry: false, sensitive: true, data: { password: 'fixture-only' } })]);
     const [claim] = await store.claim(queue, workerA);
@@ -603,6 +837,47 @@ describe('PostgreSQL queue', () => {
     expect(await store.retryFailed(queue)).toBe(0);
     expect(await store.claim(queue, workerB)).toEqual([]);
   });
+
+  it.each([true, false])(
+    'preserves deferred latest-request safety after a confirmed cancellation (safe=%s)',
+    async (safeToRetry) => {
+      const runId = await store.createRun('cancelled-predecessor', {});
+      const latestRun = await store.createRun('latest-after-cancel', {});
+      const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
+      await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
+      const [old] = await store.claim(queue, workerA);
+      await store.enqueue([
+        intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options, safeToRetry }),
+        intent({ runId, itemKey: 'dependent', rootItemKey: 'old', parentId: old.id }),
+      ]);
+      await store.finishEnumeration(runId);
+      await store.finishEnumeration(latestRun);
+      await sql`update job set "cancelRequestedAt" = now(), "cancelReason" = 'request'
+        where id = ${old.id}::uuid`.execute(db);
+      await recordStoppedAttempt(db, old.id, old.token);
+      expect(await store.fail(old, 'cancel', undefined, { stopRequestedOnly: true })).toBe(true);
+      const { rows: original } = await sql`select "itemKey", state from job_run_item
+        where "runId" = ${runId}::uuid order by "itemKey"`.execute(db);
+      expect(original).toEqual([
+        { itemKey: 'dependent', state: 'blocked' },
+        { itemKey: 'old', state: 'cancelled' },
+      ]);
+      const { rows: latest } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+      expect(latest).toEqual([{ state: safeToRetry ? 'pending' : 'needs_attention' }]);
+      const claims = await store.claim(queue, workerB);
+      if (safeToRetry) {
+        expect(claims).toHaveLength(1);
+        expect(claims[0]).toMatchObject({ runId: latestRun, attempt: 1, itemKey: 'latest' });
+        expect(claims[0].id).not.toBe(old.id);
+        await store.complete(claims[0], []);
+      } else {
+        expect(claims).toEqual([]);
+      }
+      const { rows: attempts } = await sql`select outcome from job_attempt where "jobId" = ${old.id}::uuid`.execute(db);
+      expect(attempts).toEqual([{ outcome: 'cancelled' }]);
+      expect(await store.claim(queue, workerA)).toEqual([]);
+    },
+  );
 
   it('settles unconfirmed termination for attention without replaying the latest request or stopping independent items', async () => {
     const runId = await store.createRun('stop-unconfirmed', {});
@@ -620,6 +895,8 @@ describe('PostgreSQL queue', () => {
     await recordStoppedAttempt(db, old.id, randomUUID());
     await sql`insert into system_metadata(key,value) values (${'frameleaf-worker-stopped:' + workerB},
       ${JSON.stringify({ workerId: workerB, stoppedAt: Date.now() })}::text::jsonb)`.execute(db);
+    await sql`update job set "cancelRequestedAt" = now(), "cancelReason" = 'request'
+      where id = ${old.id}::uuid`.execute(db);
     await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${old.id}::uuid`.execute(
       db,
     );

@@ -29,6 +29,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryService } from 'src/services/library.service.js';
+import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { withExecutionCleanup } from 'src/utils/execution-signal.js';
 import { emptyLibraryScanResult, libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { explainLibrarySettlement, getLibraryQueueDB } from 'test/medium/library-queue-database.js';
@@ -884,7 +885,8 @@ describe('library atomic source admission', () => {
         }
         case 'cancelled': {
           await sql`update job set "cancelRequestedAt"=now() where id=${child.id}::uuid`.execute(db);
-          await store.fail(child, 'cancelled');
+          await recordStoppedAttempt(db, child.id, child.token);
+          expect(await store.fail(child, 'cancelled')).toBe(true);
 
           break;
         }

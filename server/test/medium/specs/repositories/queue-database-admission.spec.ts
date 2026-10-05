@@ -366,7 +366,7 @@ describe('queue database admission', () => {
     const abort = new AbortController();
     try {
       const execution = sut['execute'](claim, abort);
-      await sql`update job set "leaseExpiresAt" = now() - interval '31 seconds', "cancelRequestedAt" = now()
+      await sql`update job set "leaseExpiresAt" = now() - interval '31 seconds'
         where id = ${claim.id}::uuid`.execute(db);
       abort.abort(new Error('Expired while waiting for local capacity'));
       await execution;

@@ -62,7 +62,9 @@ export async function createQueueSchema(db: Kysely<any>) {
       "availableAt" timestamptz not null default now(), "createdAt" timestamptz not null default now(),
       "startedAt" timestamptz, "finishedAt" timestamptz, "leaseExpiresAt" timestamptz,
       "progressAt" timestamptz, "progressUnits" bigint not null default 0,
-      "cancelRequestedAt" timestamptz, "dependencyReason" text, error text,
+      "cancelRequestedAt" timestamptz,
+      "cancelReason" text constraint job_cancel_reason_check check ("cancelReason" in ('deadline','request')),
+      "dependencyReason" text, error text,
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked')),
       check ((state = 'active') = (token is not null)),
       foreign key ("runId", "itemKey", name) references job_run_item("runId", "itemKey", stage)
@@ -84,6 +86,8 @@ export async function createQueueSchema(db: Kysely<any>) {
       where "dedupKey" is not null and state in ('pending','waiting','active');
     create unique index job_run_stage on job("runId", "itemKey", name) where "runId" is not null;
     create index job_claim on job(queue, "availableAt", "createdAt") where state in ('pending','waiting');
+    create index job_cancel_pending on job(queue, "createdAt", id) where state in ('pending','waiting')
+      and "cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline';
     create index job_lease on job("leaseExpiresAt") where state = 'active';
     create index job_parent on job("parentId") where "parentId" is not null;
     create index job_worker_reference on job("workerId") where "workerId" is not null;

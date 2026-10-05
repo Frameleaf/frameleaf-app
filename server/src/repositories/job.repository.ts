@@ -210,6 +210,7 @@ export class JobRepository {
     const admission = queueAdmission(this.store.db);
     let releaseExecution: (() => void) | undefined;
     let started = false;
+    let settled = false;
     const context: QueueExecution = {
       claim,
       signal: abort.signal,
@@ -240,13 +241,15 @@ export class JobRepository {
       }
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
-        await admission.publication.run(abort.signal, () => this.store.defer(claim, context.dependencyReason!));
+        settled = await admission.publication.run(abort.signal, () =>
+          this.store.defer(claim, context.dependencyReason!),
+        );
         return;
       }
       if (context.outcome === 'failed') {
         throw new Error('Handler returned Failed');
       }
-      const accepted = await queueExecution.run(context, () =>
+      settled = await queueExecution.run(context, () =>
         this.store.complete(
           claim,
           context.followups,
@@ -262,7 +265,7 @@ export class JobRepository {
           (publish) => admission.publication.run(abort.signal, publish),
         ),
       );
-      if (accepted) {
+      if (settled) {
         // Notification failure cannot change an already committed outcome or replay media work.
         await deliverJobObservers(context.afterCommit ?? [], () =>
           this.logger.warn('Accepted job observer delivery unavailable'),
@@ -277,13 +280,13 @@ export class JobRepository {
       try {
         if (!started || context.dependencyReason) {
           // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
-          // A rejected fence remains active for existing lease recovery; never invent a new claim.
-          await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
+          // A rejected fence can only settle below with matching stop proof; never invent a new claim.
+          settled = await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
             this.store.defer(claim, context.dependencyReason ?? 'local-capacity'),
           );
           return;
         }
-        await this.store.fail(
+        settled = await this.store.fail(
           claim,
           error instanceof Error ? error.message : 'Job failed',
           context.failureDiagnostics?.length
@@ -302,6 +305,19 @@ export class JobRepository {
         this.logger.error('Could not persist job outcome; lease recovery is pending');
       }
     } finally {
+      if (!settled) {
+        try {
+          // The database fence can observe cancellation before the coordinator's abort arrives.
+          // Settle only this stopped claim, never publish its rejected output or rerun its handler.
+          await this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
+            stopRequestedOnly: true,
+            publication: (publish) =>
+              admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
+          });
+        } catch {
+          this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
+        }
+      }
       releaseExecution?.();
     }
   }
