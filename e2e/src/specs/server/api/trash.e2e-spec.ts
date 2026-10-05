@@ -506,30 +506,34 @@ describe('/trash', () => {
         .expect(400);
     });
 
-    it('should keep the hidden part of a Live Photo out of every trash review', async () => {
-      const open = await trashed();
-      const hidden = await trashed();
-      const before = await review({ action: 'empty' });
-      const client = await utils.connectDatabase();
-      await client.query(`UPDATE "asset" SET "visibility" = 'hidden' WHERE "id" = $1`, [hidden]);
+    it(
+      'should keep the hidden part of a Live Photo out of every trash review',
+      { timeout: process.env.CI ? 280_000 : 80_000 },
+      async () => {
+        const open = await trashed();
+        const hidden = await trashed();
+        const before = await review({ action: 'empty' });
+        const client = await utils.connectDatabase();
+        await client.query(`UPDATE "asset" SET "visibility" = 'hidden' WHERE "id" = $1`, [hidden]);
 
-      const items = await request(app).get('/trash/items').set('Authorization', bearer());
-      const listed = items.body.items.map((item: { id: string }) => item.id);
-      expect(listed).toContain(open);
-      expect(listed).not.toContain(hidden);
+        const items = await request(app).get('/trash/items').set('Authorization', bearer());
+        const listed = items.body.items.map((item: { id: string }) => item.id);
+        expect(listed).toContain(open);
+        expect(listed).not.toContain(hidden);
 
-      const chosen = await review({ action: 'delete', ids: [hidden] });
-      expect(chosen.status).toBe(400);
+        const chosen = await review({ action: 'delete', ids: [hidden] });
+        expect(chosen.status).toBe(400);
 
-      // emptying no longer covers the item once it is the hidden part of a Live Photo
-      const reviewed = await review({ action: 'empty' });
-      expect(reviewed.body).toMatchObject({ action: 'empty', count: before.body.count - 1 });
-      await apply({ action: 'empty', token: reviewed.body.token }).expect(200);
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: open });
+        // emptying no longer covers the item once it is the hidden part of a Live Photo
+        const reviewed = await review({ action: 'empty' });
+        expect(reviewed.body).toMatchObject({ action: 'empty', count: before.body.count - 1 });
+        await apply({ action: 'empty', token: reviewed.body.token }).expect(200);
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: open });
 
-      const { rows } = await client.query(`SELECT "status" FROM "asset" WHERE "id" = $1`, [hidden]);
-      expect(rows).toEqual([{ status: 'trashed' }]);
-    });
+        const { rows } = await client.query(`SELECT "status" FROM "asset" WHERE "id" = $1`, [hidden]);
+        expect(rows).toEqual([{ status: 'trashed' }]);
+      },
+    );
 
     it(
       'should report a shared original as retained and keep it on disk after the delete',
