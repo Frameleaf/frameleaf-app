@@ -45,6 +45,18 @@ describe('database backup names', () => {
     });
   });
 
+  it('recognizes only UUID attempt labels as routine and preserves restore version/time parsing', () => {
+    const attempt = 'frameleaf-db-backup-20261001T101500-9278736b-d61f-4b66-8de9-41d17a5e59ca-v3.1.0-pg19.1.sql.gz';
+    expect(isValidDatabaseRoutineBackupName(attempt)).toBeTruthy();
+    expect(isValidDatabaseBackupName(attempt)).toBeTruthy();
+    expect(findDatabaseBackupVersion(attempt)).toBe('3.1.0');
+    expect(getDatabaseBackupTime(attempt)?.toISO()).toBe(getDatabaseBackupTime(routine)?.toISO());
+    expect(isValidDatabaseRoutineBackupName(`${attempt}.tmp`)).toBeFalsy();
+    expect(isValidDatabaseRoutineBackupName(`restore-point-${attempt}`)).toBeFalsy();
+    expect(isValidDatabaseRoutineBackupName(`cloud-backup-${attempt}`)).toBeFalsy();
+    expect(isValidDatabaseRoutineBackupName(preUpgrade)).toBeFalsy();
+  });
+
   describe('isDatabaseBackupDumpName', () => {
     it.each([
       [routine, true],

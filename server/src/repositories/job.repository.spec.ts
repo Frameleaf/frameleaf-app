@@ -81,6 +81,16 @@ describe(JobRepository.name, () => {
     expect(enqueue.mock.calls[1][0][0].safeToRetry).toBe(false);
   });
 
+  it('admits routine database backups with the audited one-retry policy', async () => {
+    sut['handlers'][JobName.DatabaseBackup]!.queueName = QueueName.BackupDatabase;
+    await sut.queue({ name: JobName.DatabaseBackup });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      name: JobName.DatabaseBackup,
+      queue: QueueName.BackupDatabase,
+      safeToRetry: true,
+    });
+  });
+
   it('never automatically replays notification side effects and redacts sensitive history', async () => {
     await sut.queue({ name: JobName.SendMail, data: {} } as never);
     expect(enqueue.mock.calls[0][0][0]).toMatchObject({ safeToRetry: false, sensitive: true });

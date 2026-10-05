@@ -88,6 +88,9 @@ class Workers {
       this.startWorker(ImmichWorker.Maintenance);
     } else {
       await this.waitForFreeLock();
+      // A restore replaces system_metadata. Republish only the actual preceding worker/child
+      // stop proof, after restore has released its lock and before admitting replacement work.
+      await this.workerStopProofs.republish();
       if (this.stopper.stopping) {
         return;
       }
