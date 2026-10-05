@@ -1387,8 +1387,15 @@ export class MediaOperationRepository {
       .orderBy('createdAt', 'asc')
       .execute();
   }
-  async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
-    const row = await this.db.transaction().execute((tx) => this.requestCancelWithin(tx, id, ownerId, claimToken));
+  async requestCancel(
+    id: string,
+    ownerId: string,
+    claimToken?: string,
+    queuedOnly = false,
+  ): Promise<MediaOperation | undefined> {
+    const row = await this.db
+      .transaction()
+      .execute((tx) => this.requestCancelWithin(tx, id, ownerId, claimToken, queuedOnly));
     this.notifyCancellation(row);
     return row;
   }
@@ -1398,6 +1405,7 @@ export class MediaOperationRepository {
     id: string,
     ownerId: string,
     claimToken?: string,
+    queuedOnly = false,
   ): Promise<MediaOperation | undefined> {
     return (await tx
       .updateTable('media_operation')
@@ -1436,6 +1444,8 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
       .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
+      // Unsafe edit executors may start between the owner's read and this write.
+      .$if(queuedOnly, (qb) => qb.where('status', '=', MediaOperationStatus.Queued).where('claimToken', 'is', null))
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .returningAll()
       .executeTakeFirst()) as unknown as MediaOperation | undefined;

@@ -1743,6 +1743,31 @@ describe(MediaOperationRepository.name, () => {
       });
     });
 
+    it('cancels an unsafe edit only while queued and unclaimed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { operation } = await newEdit(ctx, sut, user.id);
+
+      await expect(sut.requestCancel(operation.id, other.id, undefined, true)).resolves.toBeUndefined();
+      await expect(sut.requestCancel(operation.id, user.id, undefined, true)).resolves.toMatchObject({
+        status: MediaOperationStatus.Cancelled,
+        claimToken: null,
+        cancelAcknowledgedAt: expect.any(Date),
+      });
+      await expect(sut.beginJobQueueRun(operation.id, LEASE_MS)).resolves.toBeUndefined();
+
+      const { operation: active } = await newEdit(ctx, sut, user.id);
+      const run = await sut.beginJobQueueRun(active.id, LEASE_MS);
+      expect(run).toBeDefined();
+      await expect(sut.requestCancel(active.id, user.id, undefined, true)).resolves.toBeUndefined();
+      await expect(sut.getForOwner(active.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Preparing,
+        claimToken: run!.claimToken,
+        cancelRequestedAt: null,
+      });
+    });
+
     it('never runs an edit cancelled while it waited, whichever reaches the row first', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
