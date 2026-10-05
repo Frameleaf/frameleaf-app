@@ -218,12 +218,24 @@ export class PostgresImportFixture {
     await this.source.close();
     this.connections.delete(this.source);
     const writer = this.connect(this.sourceName, false);
+    const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
     try {
       await body(writer.db);
     } finally {
       await writer.close();
       this.connections.delete(writer);
       this.source = this.connect(this.sourceName, true, true);
+      // Driver close observes the local socket, not PostgreSQL backend removal.
+      await vi.waitFor(
+        async () => {
+          expect(
+            await this.source.db.query('SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND pid=$1', [
+              session.pid,
+            ]),
+          ).toEqual([]);
+        },
+        { timeout: 2000, interval: 50 },
+      );
     }
   }
 
