@@ -59,11 +59,18 @@ it('terminates a real PostgreSQL session when cleanup hangs, releasing its advis
     await restarted.promise;
     reserved.release();
     await expect(client.reserve()).rejects.toThrow('requires worker restart');
-    const [{ count }] = await observer.unsafe<{ count: number }[]>(
-      'SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid = $1',
-      [pid],
+    // Closing the local socket requests a worker restart; PostgreSQL may observe that close later.
+    // Confirm this exact backend has stopped before checking lock release or admitting fresh work.
+    await vi.waitFor(
+      async () => {
+        const [{ count }] = await observer.unsafe<{ count: number }[]>(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid = $1',
+          [pid],
+        );
+        expect(count).toBe(0);
+      },
+      { timeout: 1000, interval: 20 },
     );
-    expect(count).toBe(0);
     const after = await observer.unsafe<{ acquired: boolean }[]>('SELECT pg_try_advisory_lock(-333, $1) AS acquired', [
       key,
     ]);
