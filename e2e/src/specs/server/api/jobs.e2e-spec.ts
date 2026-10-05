@@ -1,11 +1,4 @@
-import {
-  JobName,
-  LoginResponseDto,
-  QueueCommand,
-  QueueName,
-  getQueue,
-  updateConfig,
-} from '@immich/sdk';
+import { JobName, LoginResponseDto, QueueCommand, QueueName, getQueue, updateConfig } from '@immich/sdk';
 import { createHash, randomUUID } from 'node:crypto';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -264,14 +257,18 @@ describe('/jobs', () => {
           await db.query('BEGIN');
           transaction = true;
           await db.query("SET LOCAL statement_timeout = '1s'; SET LOCAL lock_timeout = '1s'");
-          const { rows: [queue] } = await db.query('SELECT paused FROM job_queue WHERE name = $1 FOR NO KEY UPDATE', [QueueName.ThumbnailGeneration]);
+          const { rows: queueRows } = await db.query('SELECT paused FROM job_queue WHERE name = $1 FOR NO KEY UPDATE', [
+            QueueName.ThumbnailGeneration,
+          ]);
+          const [queue] = queueRows;
           originallyPaused = queue.paused;
           await db.query('UPDATE job_queue SET paused = true WHERE name = $1', [QueueName.ThumbnailGeneration]);
           controller.signal.throwIfAborted();
           // New, uniquely owned rows only. The queue stays paused through requeue and teardown,
           // so the synthetic original path is never dispatched to a real media handler.
           seedAttempted = true;
-          const { rows: [inserted] } = await db.query(`
+          const { rows: insertedRows } = await db.query(
+            `
             WITH fixture_asset AS (
               INSERT INTO asset (id, "ownerId", type, "originalPath", "originalFileName", checksum,
                 "checksumAlgorithm", "fileCreatedAt", "fileModifiedAt", "localDateTime")
@@ -304,8 +301,21 @@ describe('/jobs', () => {
                 (2, $6::uuid, interval '2 seconds', interval '1 second', 'failed')) a(attempt, token, started, finished, outcome)
               RETURNING "jobId"
             ) SELECT id, (SELECT count(*)::integer FROM fixture_attempts) attempts FROM fixture_job`,
-          [assetId, jobId, runId, workerId, randomUUID(), randomUUID(), admin.userId, QueueName.ThumbnailGeneration,
-            JobName.AssetGenerateThumbnails, createHash('sha256').update(`seeded-terminal-api:${assetId}`).digest(), failure]);
+            [
+              assetId,
+              jobId,
+              runId,
+              workerId,
+              randomUUID(),
+              randomUUID(),
+              admin.userId,
+              QueueName.ThumbnailGeneration,
+              JobName.AssetGenerateThumbnails,
+              createHash('sha256').update(`seeded-terminal-api:${assetId}`).digest(),
+              failure,
+            ],
+          );
+          const [inserted] = insertedRows;
           expect(inserted).toEqual({ id: jobId, attempts: 2 });
           controller.signal.throwIfAborted();
           await db.query('COMMIT');
@@ -320,8 +330,10 @@ describe('/jobs', () => {
           if (transaction && db) {
             try {
               await db.query('ROLLBACK');
-            } catch (cleanup) {
-              throw new AggregateError([error, cleanup], 'Terminal fixture setup and rollback failed', { cause: error });
+            } catch (error_) {
+              throw new AggregateError([error, error_], 'Terminal fixture setup and rollback failed', {
+                cause: error_,
+              });
             }
           }
           throw error;
@@ -336,37 +348,58 @@ describe('/jobs', () => {
     afterAll(async () => {
       // If the hook deadline won, first join its bounded request/SQL settlement. Never
       // run teardown SQL concurrently with an old setup continuation on this connection.
-      await setup?.catch(() => {});
-      if (!db) return;
+      try {
+        await setup;
+      } catch {
+        // The setup hook reports its failure; still join it before owned cleanup.
+      }
+      if (!db) {
+        return;
+      }
       let cleanupError: unknown;
       let cleanupFailed = false;
       try {
         if (seedAttempted && !seeded) {
           // Resolve an ambiguous COMMIT using the exact fixture identity. All fixture
           // rows and the pause change share one transaction, so absence means rollback.
-          const { rows: [current] } = await db.query('SELECT EXISTS (SELECT 1 FROM job WHERE id = $1) present', [jobId]);
+          const { rows: currentRows } = await db.query('SELECT EXISTS (SELECT 1 FROM job WHERE id = $1) present', [
+            jobId,
+          ]);
+          const [current] = currentRows;
           seeded = current.present;
         }
         if (seeded) {
           await db.query('BEGIN');
           try {
             await db.query("SET LOCAL statement_timeout = '1s'; SET LOCAL lock_timeout = '1s'");
-            const { rows: [queue] } = await db.query('SELECT paused FROM job_queue WHERE name = $1 FOR NO KEY UPDATE', [QueueName.ThumbnailGeneration]);
+            const { rows: queueRows } = await db.query(
+              'SELECT paused FROM job_queue WHERE name = $1 FOR NO KEY UPDATE',
+              [QueueName.ThumbnailGeneration],
+            );
+            const [queue] = queueRows;
             expect(queue.paused).toBe(true);
-            const removed = await db.query(`DELETE FROM job WHERE id = $1 AND "workerId" = $2 AND attempt = 2
-              AND token IS NULL AND state IN ('failed', 'pending') RETURNING id`, [jobId, workerId]);
+            const removed = await db.query(
+              `DELETE FROM job WHERE id = $1 AND "workerId" = $2 AND attempt = 2
+              AND token IS NULL AND state IN ('failed', 'pending') RETURNING id`,
+              [jobId, workerId],
+            );
             expect(removed.rows).toEqual([{ id: jobId }]);
             await db.query('DELETE FROM job_run_item WHERE "runId" = $1 AND "jobId" = $2', [runId, jobId]);
             await db.query('DELETE FROM job_run WHERE id = $1', [runId]);
             await db.query('DELETE FROM job_worker WHERE id = $1', [workerId]);
             await db.query('DELETE FROM asset WHERE id = $1 AND "ownerId" = $2', [assetId, admin.userId]);
-            await db.query('UPDATE job_queue SET paused = $2 WHERE name = $1', [QueueName.ThumbnailGeneration, originallyPaused]);
+            await db.query('UPDATE job_queue SET paused = $2 WHERE name = $1', [
+              QueueName.ThumbnailGeneration,
+              originallyPaused,
+            ]);
             await db.query('COMMIT');
           } catch (error) {
             try {
               await db.query('ROLLBACK');
-            } catch (cleanup) {
-              throw new AggregateError([error, cleanup], 'Terminal fixture cleanup and rollback failed', { cause: error });
+            } catch (error_) {
+              throw new AggregateError([error, error_], 'Terminal fixture cleanup and rollback failed', {
+                cause: error_,
+              });
             }
             throw error;
           }
@@ -379,7 +412,11 @@ describe('/jobs', () => {
         await utils.disconnectDatabase(db);
       } catch (closeError) {
         if (cleanupFailed) {
-          throw new AggregateError([cleanupError, closeError], 'Terminal fixture cleanup and owned connection close failed', { cause: cleanupError });
+          throw new AggregateError(
+            [cleanupError, closeError],
+            'Terminal fixture cleanup and owned connection close failed',
+            { cause: closeError },
+          );
         }
         throw closeError;
       }
@@ -423,16 +460,36 @@ describe('/jobs', () => {
 
       expect(status).toBe(200);
       expect(body).toEqual({ count: failed });
-      const current = await getQueue({ name: QueueName.ThumbnailGeneration }, { headers: asBearerAuth(admin.accessToken), signal });
+      const current = await getQueue(
+        { name: QueueName.ThumbnailGeneration },
+        { headers: asBearerAuth(admin.accessToken), signal },
+      );
       expect(current.isPaused).toBe(true);
       expect(current.hasUnfinishedWork).toBe(true);
       expect(current.statistics).toMatchObject({ failed: 0, paused: 1, active: 0 });
-      const { rows: [retried] } = await db!.query(`SELECT j.state, j.attempt, j."retryBaseAttempt", j.token,
+      const { rows: retriedRows } = await db!.query(
+        `SELECT j.state, j.attempt, j."retryBaseAttempt", j.token,
         i.state AS "itemState", r."finishedAt" AS "runFinishedAt" FROM job j
-        JOIN job_run_item i ON i."jobId" = j.id JOIN job_run r ON r.id = i."runId" WHERE j.id = $1`, [jobId]);
-      expect(retried).toEqual({ state: 'pending', attempt: 2, retryBaseAttempt: 2, token: null, itemState: 'pending', runFinishedAt: null });
-      const { rows: attempts } = await db!.query('SELECT attempt, outcome FROM job_attempt WHERE "jobId" = $1 ORDER BY attempt', [jobId]);
-      expect(attempts).toEqual([{ attempt: 1, outcome: 'pending' }, { attempt: 2, outcome: 'failed' }]);
+        JOIN job_run_item i ON i."jobId" = j.id JOIN job_run r ON r.id = i."runId" WHERE j.id = $1`,
+        [jobId],
+      );
+      const [retried] = retriedRows;
+      expect(retried).toEqual({
+        state: 'pending',
+        attempt: 2,
+        retryBaseAttempt: 2,
+        token: null,
+        itemState: 'pending',
+        runFinishedAt: null,
+      });
+      const { rows: attempts } = await db!.query(
+        'SELECT attempt, outcome FROM job_attempt WHERE "jobId" = $1 ORDER BY attempt',
+        [jobId],
+      );
+      expect(attempts).toEqual([
+        { attempt: 1, outcome: 'pending' },
+        { attempt: 2, outcome: 'failed' },
+      ]);
     });
   });
 });

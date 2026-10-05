@@ -11,18 +11,36 @@ export const test = base.extend<{
     async ({}, use) => {
       const controller = new AbortController();
       const cleanups: (() => Promise<void>)[] = [];
+      let primary: unknown;
+      let failed = false;
       try {
-        await use({ signal: controller.signal, onCleanup: (cleanup) => cleanups.push(cleanup) });
-      } finally {
-        controller.abort();
-        const results = await Promise.allSettled([
-          utils.settlePendingWaits(controller.signal),
-          ...cleanups.map((cleanup) => cleanup()),
-        ]);
-        const failed = results.find((result) => result.status === 'rejected');
-        if (failed?.status === 'rejected') {
-          throw failed.reason;
+        await use({
+          signal: controller.signal,
+          onCleanup: (cleanup) => {
+            cleanups.push(cleanup);
+          },
+        });
+      } catch (error) {
+        primary = error;
+        failed = true;
+      }
+      controller.abort();
+      const results = await Promise.allSettled([
+        utils.settlePendingWaits(controller.signal),
+        ...cleanups.map(async (cleanup) => cleanup()),
+      ]);
+      const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+      if (errors.length > 0) {
+        if (failed) {
+          throw new AggregateError([primary, ...errors], 'Browser test and owned cleanup failed', { cause: primary });
         }
+        if (errors.length === 1) {
+          throw errors[0];
+        }
+        throw new AggregateError(errors, 'Browser owned cleanup failed', { cause: errors[0] });
+      }
+      if (failed) {
+        throw primary;
       }
     },
     { auto: true },
@@ -30,7 +48,8 @@ export const test = base.extend<{
 });
 
 /** beforeAll cannot use a test-scoped fixture, so its existing hook deadline owns this signal. */
-export const withAssetReadySetup = (setup: (signal: AbortSignal) => Promise<void>) =>
+export const withAssetReadySetup =
+  (setup: (signal: AbortSignal) => Promise<void>) =>
   // eslint-disable-next-line no-empty-pattern
   async ({}, testInfo: TestInfo) => {
     const controller = new AbortController();

@@ -78,11 +78,7 @@ describe('/libraries', () => {
         importPaths: [`${testAssetDirInternal}/temp/directoryA`],
       });
 
-      const asset = await scanLibraryAsset(
-        library.id,
-        signal,
-        `${testAssetDirInternal}/temp/directoryA/assetA.png`,
-      );
+      const asset = await scanLibraryAsset(library.id, signal, `${testAssetDirInternal}/temp/directoryA/assetA.png`);
       expect(asset.exifInfo).not.toBe(null);
       expect(asset.exifInfo?.dateTimeOriginal).not.toBe(null);
       expect(asset.thumbhash).not.toBe(null);

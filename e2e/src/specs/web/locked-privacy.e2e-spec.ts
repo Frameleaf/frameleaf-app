@@ -185,11 +185,7 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test("never shows another account's Locked item, administrator included", async ({
-    context,
-    page,
-    assetReady,
-  }) => {
+  test("never shows another account's Locked item, administrator included", async ({ context, page, assetReady }) => {
     const { locked } = await setup(assetReady.signal);
     await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers: asBearerAuth(admin.accessToken) });
     await utils.setAuthCookies(context, admin.accessToken);

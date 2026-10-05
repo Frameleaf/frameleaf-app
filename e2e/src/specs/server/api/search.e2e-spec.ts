@@ -82,13 +82,7 @@ describe('/search', () => {
       const assets: AssetMediaResponseDto[] = [];
       for (const { filename, dto } of files) {
         const bytes = await readFile(join(testAssetDir, filename), { signal });
-        assets.push(
-          await utils.createAsset(
-            admin.accessToken,
-            { assetData: { bytes, filename }, ...dto },
-            { signal },
-          ),
-        );
+        assets.push(await utils.createAsset(admin.accessToken, { assetData: { bytes, filename }, ...dto }, { signal }));
       }
 
       for (const asset of assets) {
