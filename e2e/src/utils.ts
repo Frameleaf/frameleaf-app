@@ -76,8 +76,16 @@ import { loginDto, signupDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { ownedWait, settlePendingWaits } from 'src/harness-context.js';
 import { assertResetExecutionsStopped, drainAfterExecutorStop } from 'src/harness-reset-executions.mjs';
-import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline, type EventType, type WaitContext } from 'src/harness-wait.js';
 import { resetWhilePaused, type QueuePauseSnapshot } from 'src/harness-reset.js';
+import {
+  EventJournal,
+  pollRequest,
+  requestOnce,
+  waitUntil,
+  withDeadline,
+  type EventType,
+  type WaitContext,
+} from 'src/harness-wait.js';
 import request from 'supertest';
 import { playwrightDbHost, playwrightHost, playwriteBaseUrl } from '../playwright.config';
 
@@ -158,18 +166,24 @@ const readQueue = async (accessToken: string, name: QueueName, context: WaitCont
   const queue = await getQueue({ name }, { headers: asBearerAuth(accessToken), signal: context.signal });
   context.remaining();
   if (typeof queue.hasUnfinishedWork !== 'boolean') {
-    throw new Error(`Queue ${name} did not report authoritative unfinished work`);
+    throw new TypeError(`Queue ${name} did not report authoritative unfinished work`);
   }
   return queue;
 };
 
 const waitForQueue = (accessToken: string, name: QueueName, context: WaitContext) =>
-  waitUntil(context, (current) => readQueue(accessToken, name, current), (queue) => {
-    if (queue.statistics.failed > 0) {
-      throw new Error(`Queue ${name} has ${queue.statistics.failed} failed or blocked jobs; it did not complete successfully`);
-    }
-    return !queue.hasUnfinishedWork;
-  });
+  waitUntil(
+    context,
+    (current) => readQueue(accessToken, name, current),
+    (queue) => {
+      if (queue.statistics.failed > 0) {
+        throw new Error(
+          `Queue ${name} has ${queue.statistics.failed} failed or blocked jobs; it did not complete successfully`,
+        );
+      }
+      return !queue.hasUnfinishedWork;
+    },
+  );
 
 /** Whether the server is in (or restarting out of) maintenance mode. */
 const isInMaintenance = async () => {
@@ -194,10 +208,13 @@ export const utils = {
     if (connecting) {
       return connecting;
     }
-    const pending = ownedWait('Connecting test database', 8_000, async (context) => {
+    const pending = ownedWait('Connecting test database', 8000, async (context) => {
       for (let attempt = 1; attempt <= 5; attempt++) {
         context.remaining();
-        const nextClient = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: Math.min(1_000, context.remaining()) });
+        const nextClient = new pg.Client({
+          connectionString: dbUrl,
+          connectionTimeoutMillis: Math.min(1000, context.remaining()),
+        });
         const forget = () => {
           if (client === nextClient) {
             client = null;
@@ -212,8 +229,8 @@ export const utils = {
         } catch (error) {
           try {
             await nextClient.end();
-          } catch (cleanup) {
-            throw new AggregateError([error, cleanup], 'Test database connection and cleanup failed', { cause: error });
+          } catch (error_) {
+            throw new AggregateError([error, error_], 'Test database connection and cleanup failed', { cause: error_ });
           }
           context.remaining();
           if (attempt === 5 || !isTransientDatabaseError(error)) {
@@ -235,7 +252,7 @@ export const utils = {
   },
 
   disconnectDatabase: async (expected?: pg.Client | null) => {
-    const owned = expected === undefined ? client ?? (connecting ? await connecting : null) : expected;
+    const owned = expected === undefined ? (client ?? (connecting ? await connecting : null)) : expected;
     if (!owned) {
       return;
     }
@@ -251,171 +268,258 @@ export const utils = {
    */
   drainQueues: async (mutate?: (db: pg.Client, context: WaitContext) => Promise<void>, signal?: AbortSignal) => {
     if (resetting || resetFailure) {
-      throw new Error(resetting ? 'Another database reset is still running' : 'Previous database reset did not settle safely', { cause: resetFailure });
+      throw new Error(
+        resetting ? 'Another database reset is still running' : 'Previous database reset did not settle safely',
+        { cause: resetFailure },
+      );
     }
     resetting = true;
     try {
-      await ownedWait('Resetting test database', 8_000, async (total) => {
-        const cleanupDeadline = performance.now() + 8_000;
-        const cleanupBudget = () => {
-          const remaining = Math.floor(cleanupDeadline - performance.now());
-          if (remaining <= 0) {
-            throw new Error('Reset cleanup deadline expired');
-          }
-          return Math.min(2_000, remaining);
-        };
-        const db = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 1_000, statement_timeout: 1_000, lock_timeout: 1_000 });
-        // This client belongs only to this reset; it is never the shared assertion client.
-        db.on('error', () => {});
-        let primary: unknown;
-        let failed = false;
-        const sessions = new Map<string, { token: string; hashed: Buffer }>();
-        const query = async (context: WaitContext, text: string, values?: unknown[]) => {
-          const timeout = Math.min(1_000, context.remaining());
-          await db.query(`SELECT set_config('statement_timeout', $1, false), set_config('lock_timeout', $1, false)`, [`${timeout}ms`]);
-          context.remaining();
-          return db.query(text, values);
-        };
-        try {
-          await db.connect();
-          await withDeadline('Quiescing test database', Math.min(6_000, total.remaining()), async (context) => {
-            const ownerToken = async (ownerId: string) => {
-              const existing = sessions.get(ownerId);
-              if (existing) {
-                return existing.token;
-              }
-              const token = randomBytes(32).toString('hex');
-              const hashed = createHash('sha256').update(token).digest();
-              // Record ownership before the write so an ambiguous insert is still cleaned up.
-              sessions.set(ownerId, { token, hashed });
-              await query(context, `INSERT INTO "session" ("userId", token) VALUES ($1, $2)`, [ownerId, hashed]);
-              return token;
-            };
-            const unfinishedOperations = async (id?: string) => {
-              const { rows } = await query(context, `SELECT id, "ownerId", status, "cancelRequestedAt",
+      await ownedWait(
+        'Resetting test database',
+        8000,
+        async (total) => {
+          const cleanupDeadline = performance.now() + 8000;
+          const cleanupBudget = () => {
+            const remaining = Math.floor(cleanupDeadline - performance.now());
+            if (remaining <= 0) {
+              throw new Error('Reset cleanup deadline expired');
+            }
+            return Math.min(2000, remaining);
+          };
+          const db = new pg.Client({
+            connectionString: dbUrl,
+            connectionTimeoutMillis: 1000,
+            statement_timeout: 1000,
+            lock_timeout: 1000,
+          });
+          // This client belongs only to this reset; it is never the shared assertion client.
+          db.on('error', () => {});
+          let primary: unknown;
+          let failed = false;
+          const sessions = new Map<string, { token: string; hashed: Buffer }>();
+          const query = async (context: WaitContext, text: string, values?: unknown[]) => {
+            const timeout = Math.min(1000, context.remaining());
+            await db.query(`SELECT set_config('statement_timeout', $1, false), set_config('lock_timeout', $1, false)`, [
+              `${timeout}ms`,
+            ]);
+            context.remaining();
+            return db.query(text, values);
+          };
+          try {
+            await db.connect();
+            await withDeadline(
+              'Quiescing test database',
+              Math.min(6000, total.remaining()),
+              async (context) => {
+                const ownerToken = async (ownerId: string) => {
+                  const existing = sessions.get(ownerId);
+                  if (existing) {
+                    return existing.token;
+                  }
+                  const token = randomBytes(32).toString('hex');
+                  const hashed = createHash('sha256').update(token).digest();
+                  // Record ownership before the write so an ambiguous insert is still cleaned up.
+                  sessions.set(ownerId, { token, hashed });
+                  await query(context, `INSERT INTO "session" ("userId", token) VALUES ($1, $2)`, [ownerId, hashed]);
+                  return token;
+                };
+                const unfinishedOperations = async (id?: string) => {
+                  const { rows } = await query(
+                    context,
+                    `SELECT id, "ownerId", status, "cancelRequestedAt",
                 "claimToken" IS NOT NULL AS claimed,
                 "remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL AS "remotePending"
                 FROM media_operation WHERE ($1::uuid IS NULL OR id = $1::uuid) AND (
                   status NOT IN ('completed', 'cancelled', 'failed') OR "claimToken" IS NOT NULL
                   OR ("remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL))
-                ORDER BY id LIMIT 251`, [id ?? null]);
-              if (rows.length > 250) {
-                throw new Error('Reset refused: more than 250 unfinished media operations require owner cleanup');
-              }
-              return rows;
-            };
-            const cancelOperations = async () => {
-              const operations = await unfinishedOperations();
-              for (const operation of operations) {
-                if (['completed', 'cancelled', 'failed'].includes(operation.status)) {
-                  throw new Error(`Reset refused: media operation ${operation.id} still has ${operation.remotePending ? 'unreleased remote work' : 'an unsettled worker claim'}`);
-                }
-                if (operation.cancelRequestedAt !== null) {
-                  continue;
-                }
-                try {
-                  await cancelMediaOperation({ id: operation.id }, {
-                    headers: asBearerAuth(await ownerToken(operation.ownerId)), signal: context.signal,
-                  });
-                } catch (error) {
-                  // A normal completion may win the cancellation race. It is safe only once the
-                  // actual row has no live claim or retained remote-cleanup obligation.
-                  let remaining;
-                  try {
-                    remaining = await unfinishedOperations(operation.id);
-                  } catch (probe) {
-                    throw new AggregateError([error, probe], `Reset could not confirm media operation ${operation.id} stopped`, { cause: error });
+                ORDER BY id LIMIT 251`,
+                    [id ?? null],
+                  );
+                  if (rows.length > 250) {
+                    throw new Error('Reset refused: more than 250 unfinished media operations require owner cleanup');
                   }
-                  if (remaining.length) {
-                    throw new Error(`Reset refused: owner cancellation of media operation ${operation.id} (${operation.status}) was not accepted`, { cause: error });
+                  return rows;
+                };
+                const cancelOperations = async () => {
+                  const operations = await unfinishedOperations();
+                  for (const operation of operations) {
+                    if (['completed', 'cancelled', 'failed'].includes(operation.status)) {
+                      throw new Error(
+                        `Reset refused: media operation ${operation.id} still has ${operation.remotePending ? 'unreleased remote work' : 'an unsettled worker claim'}`,
+                      );
+                    }
+                    if (operation.cancelRequestedAt !== null) {
+                      continue;
+                    }
+                    try {
+                      await cancelMediaOperation(
+                        { id: operation.id },
+                        {
+                          headers: asBearerAuth(await ownerToken(operation.ownerId)),
+                          signal: context.signal,
+                        },
+                      );
+                    } catch (error) {
+                      // A normal completion may win the cancellation race. It is safe only once the
+                      // actual row has no live claim or retained remote-cleanup obligation.
+                      let remaining;
+                      try {
+                        remaining = await unfinishedOperations(operation.id);
+                      } catch (error_) {
+                        throw new AggregateError(
+                          [error, error_],
+                          `Reset could not confirm media operation ${operation.id} stopped`,
+                          { cause: error_ },
+                        );
+                      }
+                      if (remaining.length > 0) {
+                        throw new Error(
+                          `Reset refused: owner cancellation of media operation ${operation.id} (${operation.status}) was not accepted`,
+                          { cause: error },
+                        );
+                      }
+                    }
                   }
-                }
-              }
-              return operations.length > 0;
-            };
-            const { rows: admins } = await query(context, `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`);
-            const token = admins.length ? await ownerToken(admins[0].id) : undefined;
-            await resetWhilePaused({
-              pause: async () => {
-                await query(context, 'BEGIN');
-                try {
-                  const { rows } = await query(context, 'SELECT name, paused FROM job_queue ORDER BY name FOR UPDATE');
-                  await query(context, 'UPDATE job_queue SET paused = true');
-                  await query(context, 'COMMIT');
-                  return rows as QueuePauseSnapshot;
-                } catch (error) {
-                  await db.query('ROLLBACK');
-                  throw error;
-                }
-              },
-              drain: async () => {
-                await query(context, `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()) WHERE state = 'active'`);
-                await waitUntil(context, async () => {
-                  // Independent bulk/render/import workers do not claim from job_queue. Cancel
-                  // through the owner's real API, preserving edit refusal and remote cleanup.
-                  await cancelOperations();
-                  return drainAfterExecutorStop((text) => query(context, text), async () => {
-                    if (!token) {
-                      // Initial startup has no administrator session. Both stop proof and durable
-                      // accounting still apply; lack of an administrator grants no reset authority.
-                      const { rows } = await query(context, `SELECT
+                  return operations.length > 0;
+                };
+                const { rows: admins } = await query(
+                  context,
+                  `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
+                );
+                const token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
+                await resetWhilePaused({
+                  pause: async () => {
+                    await query(context, 'BEGIN');
+                    try {
+                      const { rows } = await query(
+                        context,
+                        'SELECT name, paused FROM job_queue ORDER BY name FOR UPDATE',
+                      );
+                      await query(context, 'UPDATE job_queue SET paused = true');
+                      await query(context, 'COMMIT');
+                      return rows as QueuePauseSnapshot;
+                    } catch (error) {
+                      await db.query('ROLLBACK');
+                      throw error;
+                    }
+                  },
+                  drain: async () => {
+                    await query(
+                      context,
+                      `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()) WHERE state = 'active'`,
+                    );
+                    await waitUntil(
+                      context,
+                      async () => {
+                        // Independent bulk/render/import workers do not claim from job_queue. Cancel
+                        // through the owner's real API, preserving edit refusal and remote cleanup.
+                        await cancelOperations();
+                        return drainAfterExecutorStop(
+                          (text) => query(context, text),
+                          async () => {
+                            if (!token) {
+                              // Initial startup has no administrator session. Both stop proof and durable
+                              // accounting still apply; lack of an administrator grants no reset authority.
+                              const { rows } = await query(
+                                context,
+                                `SELECT
                         EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
                         OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
                         OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
                           WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
-                        OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`);
-                      return rows[0].unfinished || (await unfinishedOperations()).length > 0;
-                    }
-                    const headers = asBearerAuth(token);
-                    for (const name of Object.values(QueueName)) {
-                      context.remaining();
-                      await emptyQueue({ name, queueDeleteDto: { failed: true } }, { headers, signal: context.signal });
-                    }
-                    let unfinished = false;
-                    for (const name of Object.values(QueueName)) {
-                      unfinished ||= (await readQueue(token, name, context)).hasUnfinishedWork;
-                    }
-                    return unfinished || (await unfinishedOperations()).length > 0;
-                  });
-                }, (unfinished) => !unfinished, 100);
+                        OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
+                              );
+                              if (rows[0].unfinished) {
+                                return true;
+                              }
+                              const operations = await unfinishedOperations();
+                              return operations.length > 0;
+                            }
+                            const headers = asBearerAuth(token);
+                            for (const name of Object.values(QueueName)) {
+                              context.remaining();
+                              await emptyQueue(
+                                { name, queueDeleteDto: { failed: true } },
+                                { headers, signal: context.signal },
+                              );
+                            }
+                            let unfinished = false;
+                            for (const name of Object.values(QueueName)) {
+                              if (unfinished) {
+                                continue;
+                              }
+                              const queue = await readQueue(token, name, context);
+                              unfinished = queue.hasUnfinishedWork;
+                            }
+                            if (unfinished) {
+                              return true;
+                            }
+                            const operations = await unfinishedOperations();
+                            return operations.length > 0;
+                          },
+                        );
+                      },
+                      (unfinished) => !unfinished,
+                      100,
+                    );
+                  },
+                  mutate: async () => {
+                    context.remaining();
+                    // Recheck retained attempts after terminal clearing and immediately before the
+                    // callback that can delete fixtures. Cleared state/data never substitute for proof.
+                    await assertResetExecutionsStopped((text) => query(context, text));
+                    await mutate?.(db, context);
+                  },
+                  restore: (snapshot) =>
+                    withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
+                      await query(
+                        cleanup,
+                        `UPDATE job_queue q SET paused = original.paused
+                  FROM jsonb_to_recordset($1::jsonb) AS original(name text, paused boolean) WHERE q.name = original.name`,
+                        [JSON.stringify(snapshot)],
+                      );
+                    }),
+                });
               },
-              mutate: async () => {
-                context.remaining();
-                // Recheck retained attempts after terminal clearing and immediately before the
-                // callback that can delete fixtures. Cleared state/data never substitute for proof.
-                await assertResetExecutionsStopped((text) => query(context, text));
-                await mutate?.(db, context);
-              },
-              restore: (snapshot) => withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
-                await query(cleanup, `UPDATE job_queue q SET paused = original.paused
-                  FROM jsonb_to_recordset($1::jsonb) AS original(name text, paused boolean) WHERE q.name = original.name`, [JSON.stringify(snapshot)]);
-              }),
-            });
-          }, total.signal);
-        } catch (error) {
-          failed = true;
-          primary = error;
-        }
-        try {
-          if (sessions.size) {
-            await withDeadline('Removing reset session', cleanupBudget(),
-              (cleanup) => query(cleanup, 'DELETE FROM "session" WHERE token = ANY($1::bytea[])', [[...sessions.values()].map(({ hashed }) => hashed)]));
-          }
-        } catch (cleanup) {
-          primary = failed ? new AggregateError([primary, cleanup], 'Reset and temporary session cleanup failed', { cause: primary }) : cleanup;
-          failed = true;
-        } finally {
-          try {
-            await db.end();
-          } catch (cleanup) {
-            primary = failed ? new AggregateError([primary, cleanup], 'Reset and owned connection cleanup failed', { cause: primary }) : cleanup;
+              total.signal,
+            );
+          } catch (error) {
             failed = true;
+            primary = error;
           }
-        }
-        if (failed) {
-          throw primary;
-        }
-      }, signal);
+          try {
+            if (sessions.size > 0) {
+              await withDeadline('Removing reset session', cleanupBudget(), (cleanup) =>
+                query(cleanup, 'DELETE FROM "session" WHERE token = ANY($1::bytea[])', [
+                  sessions
+                    .values()
+                    .map(({ hashed }) => hashed)
+                    .toArray(),
+                ]),
+              );
+            }
+          } catch (error) {
+            primary = failed
+              ? new AggregateError([primary, error], 'Reset and temporary session cleanup failed', { cause: error })
+              : error;
+            failed = true;
+          } finally {
+            try {
+              await db.end();
+            } catch (error) {
+              primary = failed
+                ? new AggregateError([primary, error], 'Reset and owned connection cleanup failed', { cause: error })
+                : error;
+              failed = true;
+            }
+          }
+          if (failed) {
+            throw primary;
+          }
+        },
+        signal,
+      );
     } catch (error) {
       // Do not let a retry/new test mutate data after uncertain cancellation or cleanup.
       resetFailure = error;
@@ -428,31 +532,68 @@ export const utils = {
   resetDatabase: async (tables?: string[], signal?: AbortSignal) => {
     const partial = tables !== undefined;
     const selected = tables ?? [
-      'stack', 'library', 'shared_link', 'person', 'person_group', 'cluster_group',
-      'album', 'asset', 'asset_face', 'activity', 'api_key', 'session', 'user',
-      'system_metadata', 'tag', 'integrity_report',
+      'stack',
+      'library',
+      'shared_link',
+      'person',
+      'person_group',
+      'cluster_group',
+      'album',
+      'asset',
+      'asset_face',
+      'activity',
+      'api_key',
+      'session',
+      'user',
+      'system_metadata',
+      'tag',
+      'integrity_report',
     ];
     if (selected.some((table) => !/^[a-z_]+$/.test(table))) {
       throw new Error('Invalid reset table name');
     }
     await utils.drainQueues(async (db, context) => {
-      const timeout = Math.min(1_000, context.remaining());
+      const timeout = Math.min(1000, context.remaining());
       await db.query('BEGIN');
       try {
-        await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [`${timeout}ms`]);
+        await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [
+          `${timeout}ms`,
+        ]);
         if (selected.includes('system_metadata')) {
           // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
           // stable server identity and future operational metadata survive ordinary test resets.
-          await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [[
-            'MediaLocation', 'facial-recognition-state', 'memories-state', 'admin-onboarding',
-            'maintenance-mode', 'system-config', 'version-check-state', 'physical-deduplication-migration',
-            'frameleaf-cloud-link', 'frameleaf-service-discovery', 'frameleaf-ml-wallet', 'frameleaf-license',
-            'frameleaf-pricing', 'frameleaf-ml-suspension', 'frameleaf-cloud-backup', 'frameleaf-remote-access',
-            'frameleaf-remote-access-test', 'hardware-check', 'frameleaf-cloud-migration-notice',
-            'frameleaf-cloud-description-queue', 'frameleaf-cloud-description-estimates', 'frameleaf-cloud-ml-job-estimates',
-            'integrity-checksum-checkpoint', 'locked-detections-state', 'system-config-history',
-            'integrity-check-runs', 'backup-restore-verification', 'frameleaf-setup',
-          ]]);
+          await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
+            [
+              'MediaLocation',
+              'facial-recognition-state',
+              'memories-state',
+              'admin-onboarding',
+              'maintenance-mode',
+              'system-config',
+              'version-check-state',
+              'physical-deduplication-migration',
+              'frameleaf-cloud-link',
+              'frameleaf-service-discovery',
+              'frameleaf-ml-wallet',
+              'frameleaf-license',
+              'frameleaf-pricing',
+              'frameleaf-ml-suspension',
+              'frameleaf-cloud-backup',
+              'frameleaf-remote-access',
+              'frameleaf-remote-access-test',
+              'hardware-check',
+              'frameleaf-cloud-migration-notice',
+              'frameleaf-cloud-description-queue',
+              'frameleaf-cloud-description-estimates',
+              'frameleaf-cloud-ml-job-estimates',
+              'integrity-checksum-checkpoint',
+              'locked-detections-state',
+              'system-config-history',
+              'integrity-check-runs',
+              'backup-restore-verification',
+              'frameleaf-setup',
+            ],
+          ]);
         }
         const dataTables = selected.filter((table) => table !== 'system_metadata');
         if (partial) {
@@ -460,7 +601,7 @@ export const utils = {
             context.remaining();
             await db.query(`DELETE FROM "${table}"`);
           }
-        } else if (dataTables.length) {
+        } else if (dataTables.length > 0) {
           context.remaining();
           await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
         }
@@ -469,8 +610,8 @@ export const utils = {
       } catch (error) {
         try {
           await db.query('ROLLBACK');
-        } catch (cleanup) {
-          throw new AggregateError([error, cleanup], 'Fixture reset and rollback failed', { cause: error });
+        } catch (error_) {
+          throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
         }
         throw error;
       }
@@ -488,53 +629,58 @@ export const utils = {
   connectWebsocket: async (accessToken: string, signal?: AbortSignal) => {
     let websocket: Socket | undefined;
     try {
-      return await ownedWait('Websocket connection', 10_000, async (context) => {
-        const socket = io(baseUrl, {
-          path: '/api/socket.io',
-          transports: ['websocket'],
-          extraHeaders: asBearerAuth(accessToken),
-          autoConnect: false,
-          reconnection: false,
-          forceNew: true,
-          timeout: context.remaining(),
-        });
-        websocket = socket;
-        return new Promise<Socket>((resolve, reject) => {
-          const cleanup = () => {
-            context.signal.removeEventListener('abort', abort);
-            socket.off('connect', connected).off('connect_error', failed);
-          };
-          const failed = (error: Error) => {
-            cleanup();
-            socket.removeAllListeners();
-            socket.disconnect();
-            reject(error);
-          };
-          const abort = () => failed(context.signal.reason);
-          const connected = () => {
+      return await ownedWait(
+        'Websocket connection',
+        10_000,
+        async (context) => {
+          const socket = io(baseUrl, {
+            path: '/api/socket.io',
+            transports: ['websocket'],
+            extraHeaders: asBearerAuth(accessToken),
+            autoConnect: false,
+            reconnection: false,
+            forceNew: true,
+            timeout: context.remaining(),
+          });
+          websocket = socket;
+          return new Promise<Socket>((resolve, reject) => {
+            const cleanup = () => {
+              context.signal.removeEventListener('abort', abort);
+              socket.off('connect', connected).off('connect_error', failed);
+            };
+            const failed = (error: Error) => {
+              cleanup();
+              socket.removeAllListeners();
+              socket.disconnect();
+              reject(error);
+            };
+            const abort = () => failed(context.signal.reason);
+            const connected = () => {
+              if (context.signal.aborted) {
+                abort();
+                return;
+              }
+              cleanup();
+              resolve(socket);
+            };
+            context.signal.addEventListener('abort', abort, { once: true });
+            socket
+              .once('connect', connected)
+              .once('connect_error', failed)
+              .on('on_upload_success', (data: AssetResponseDto) => onEvent({ event: 'assetUpload', id: data.id }))
+              .on('on_asset_update', (data: AssetResponseDto) => onEvent({ event: 'assetUpdate', id: data.id }))
+              .on('on_asset_hidden', (assetId: string) => onEvent({ event: 'assetHidden', id: assetId }))
+              .on('on_asset_delete', (assetId: string) => onEvent({ event: 'assetDelete', id: assetId }))
+              .on('on_user_delete', (userId: string) => onEvent({ event: 'userDelete', id: userId }));
             if (context.signal.aborted) {
               abort();
-              return;
+            } else {
+              socket.connect();
             }
-            cleanup();
-            resolve(socket);
-          };
-          context.signal.addEventListener('abort', abort, { once: true });
-          socket
-            .once('connect', connected)
-            .once('connect_error', failed)
-            .on('on_upload_success', (data: AssetResponseDto) => onEvent({ event: 'assetUpload', id: data.id }))
-            .on('on_asset_update', (data: AssetResponseDto) => onEvent({ event: 'assetUpdate', id: data.id }))
-            .on('on_asset_hidden', (assetId: string) => onEvent({ event: 'assetHidden', id: assetId }))
-            .on('on_asset_delete', (assetId: string) => onEvent({ event: 'assetDelete', id: assetId }))
-            .on('on_user_delete', (userId: string) => onEvent({ event: 'userDelete', id: userId }));
-          if (context.signal.aborted) {
-            abort();
-          } else {
-            socket.connect();
-          }
-        });
-      }, signal);
+          });
+        },
+        signal,
+      );
     } catch (error) {
       // Cover a connection granted at the deadline, after its connect callback removed
       // the listener but before ownedWait accepted the result.
@@ -555,8 +701,12 @@ export const utils = {
   },
 
   waitForWebsocketEvent: ({ event, id, total, timeout = 10_000, signal }: WaitOptions): Promise<void> =>
-    ownedWait(`Waiting for ${event} event`, timeout,
-      (context) => events.wait({ event, id, total, signal: context.signal }), signal),
+    ownedWait(
+      `Waiting for ${event} event`,
+      timeout,
+      (context) => events.wait({ event, id, total, signal: context.signal }),
+      signal,
+    ),
 
   settlePendingWaits,
 
@@ -629,10 +779,16 @@ export const utils = {
       void builder.field(key, String(value));
     }
 
-    const { body, status } = await ownedWait('Uploading test asset', options.timeout ?? queueWaitTimeout(),
-      (context) => requestOnce<request.Response>(context, () => builder), options.signal);
-    if ((status !== 201 || body.status !== AssetMediaStatus.Created) &&
-        (status !== 200 || body.status !== AssetMediaStatus.Duplicate)) {
+    const { body, status } = await ownedWait(
+      'Uploading test asset',
+      options.timeout ?? queueWaitTimeout(),
+      (context) => requestOnce<request.Response>(context, () => builder),
+      options.signal,
+    );
+    if (
+      (status !== 201 || body.status !== AssetMediaStatus.Created) &&
+      (status !== 200 || body.status !== AssetMediaStatus.Duplicate)
+    ) {
       throw new Error(`Asset upload failed: HTTP ${status}, status ${String(body.status)}`);
     }
     if (typeof body.id !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(body.id)) {
@@ -1215,40 +1371,67 @@ export const utils = {
   },
 
   isQueueEmpty: (accessToken: string, queue: keyof QueuesResponseLegacyDto, signal?: AbortSignal) =>
-    ownedWait(`Reading queue ${queue}`, queueWaitTimeout(), async (context) => {
-      const snapshot = await readQueue(accessToken, queue as QueueName, context);
-      if (snapshot.statistics.failed > 0) {
-        throw new Error(`Queue ${queue} has failed or blocked jobs; it did not complete successfully`);
-      }
-      return !snapshot.hasUnfinishedWork;
-    }, signal),
+    ownedWait(
+      `Reading queue ${queue}`,
+      queueWaitTimeout(),
+      async (context) => {
+        const snapshot = await readQueue(accessToken, queue as QueueName, context);
+        if (snapshot.statistics.failed > 0) {
+          throw new Error(`Queue ${queue} has failed or blocked jobs; it did not complete successfully`);
+        }
+        return !snapshot.hasUnfinishedWork;
+      },
+      signal,
+    ),
 
   /**
    * Completion includes delayed, paused and unadmitted durable work. A dependency refusal
    * is not success; its queued work remains visible until completed or explicitly cancelled.
    */
   waitForAllQueuesFinish: (accessToken: string, signal?: AbortSignal) =>
-    ownedWait('Waiting for all queues', queueWaitTimeout(), (context) => waitUntil(context, async () => {
-      let unfinished = false;
-      for (const name of Object.values(QueueName)) {
-        const queue = await readQueue(accessToken, name, context);
-        if (queue.statistics.failed > 0) {
-          throw new Error(`Queue ${name} has failed or blocked jobs; it did not complete successfully`);
-        }
-        unfinished ||= queue.hasUnfinishedWork;
-      }
-      return unfinished;
-    }, (unfinished) => !unfinished), signal),
+    ownedWait(
+      'Waiting for all queues',
+      queueWaitTimeout(),
+      (context) =>
+        waitUntil(
+          context,
+          async () => {
+            let unfinished = false;
+            for (const name of Object.values(QueueName)) {
+              const queue = await readQueue(accessToken, name, context);
+              if (queue.statistics.failed > 0) {
+                throw new Error(`Queue ${name} has failed or blocked jobs; it did not complete successfully`);
+              }
+              unfinished ||= queue.hasUnfinishedWork;
+            }
+            return unfinished;
+          },
+          (unfinished) => !unfinished,
+        ),
+      signal,
+    ),
 
   waitForQueueFinish: (accessToken: string, queue: keyof QueuesResponseLegacyDto, ms?: number, signal?: AbortSignal) =>
-    ownedWait(`Waiting for queue ${queue}`, ms ?? queueWaitTimeout(),
-      (context) => waitForQueue(accessToken, queue as QueueName, context), signal),
+    ownedWait(
+      `Waiting for queue ${queue}`,
+      ms ?? queueWaitTimeout(),
+      (context) => waitForQueue(accessToken, queue as QueueName, context),
+      signal,
+    ),
 
   /** Used only when a test intentionally parks pending work and asserts that it remains paused. */
   waitForQueueIdle: (accessToken: string, queue: keyof QueuesResponseLegacyDto, signal?: AbortSignal) =>
-    ownedWait(`Waiting for queue ${queue} to stop executing`, queueWaitTimeout(), (context) =>
-      waitUntil(context, (current) => readQueue(accessToken, queue as QueueName, current),
-        ({ statistics }) => statistics.active === 0 && statistics.waiting === 0), signal),
+    ownedWait(
+      `Waiting for queue ${queue} to stop executing`,
+      queueWaitTimeout(),
+      (context) =>
+        waitUntil(
+          context,
+          (current) => readQueue(accessToken, queue as QueueName, current),
+          ({ statistics }) => statistics.active === 0 && statistics.waiting === 0,
+        ),
+      signal,
+    ),
 
   cliLogin: async (accessToken: string) => {
     const { secret } = await utils.createApiKey(accessToken, [Permission.All]);
@@ -1257,46 +1440,83 @@ export const utils = {
   },
 
   scan: (accessToken: string, id: string, signal?: AbortSignal) =>
-    ownedWait(`Scanning library ${id}`, queueWaitTimeout(), async (context) => {
-      await scanLibrary({ id }, { headers: asBearerAuth(accessToken), signal: context.signal });
-      for (const queue of [QueueName.Library, QueueName.Sidecar, QueueName.MetadataExtraction,
-        QueueName.StorageTemplateMigration, QueueName.ThumbnailGeneration, QueueName.VideoConversion]) {
-        await waitForQueue(accessToken, queue, context);
-      }
-    }, signal),
-
-  waitForAssetReady: (accessToken: string, id: string, options: {
-    video?: boolean; headers?: Record<string, string>; signal?: AbortSignal; timeout?: number;
-  } = {}) => ownedWait(`Waiting for asset ${id}`, options.timeout ?? queueWaitTimeout(), async (context) => {
-    for (const queue of [QueueName.MetadataExtraction, QueueName.StorageTemplateMigration,
-      QueueName.ThumbnailGeneration, ...(options.video ? [QueueName.VideoConversion] : [])]) {
-      await waitForQueue(accessToken, queue, context);
-    }
-    const headers = options.headers ?? asBearerAuth(accessToken);
-    const asset = await getAssetInfo({ id }, { headers, signal: context.signal });
-    context.remaining();
-    if (asset.id !== id) {
-      throw new Error('Asset readiness returned another asset');
-    }
-    const preview = await viewAsset({ id, size: AssetMediaSize.Preview }, { headers, signal: context.signal });
-    context.remaining();
-    if (preview.size === 0 || !preview.type.startsWith('image/')) {
-      throw new Error(`Asset ${id} did not publish a readable preview`);
-    }
-    return asset;
-  }, options.signal),
-
-  poll: (cb: () => request.Test, validate: (value: request.Response) => boolean,
-    map?: (value: request.Response) => any, signal?: AbortSignal) =>
-    ownedWait('Polling test endpoint', 5_000, async (context) => {
-      const value = await pollRequest<request.Response>(context, cb, (response) => {
-        if (response.status >= 500) {
-          throw new Error(`Polling test endpoint failed: HTTP ${response.status}`);
+    ownedWait(
+      `Scanning library ${id}`,
+      queueWaitTimeout(),
+      async (context) => {
+        await scanLibrary({ id }, { headers: asBearerAuth(accessToken), signal: context.signal });
+        for (const queue of [
+          QueueName.Library,
+          QueueName.Sidecar,
+          QueueName.MetadataExtraction,
+          QueueName.StorageTemplateMigration,
+          QueueName.ThumbnailGeneration,
+          QueueName.VideoConversion,
+        ]) {
+          await waitForQueue(accessToken, queue, context);
         }
-        return validate(response);
-      });
-      return map ? map(value) : value;
-    }, signal),
+      },
+      signal,
+    ),
+
+  waitForAssetReady: (
+    accessToken: string,
+    id: string,
+    options: {
+      video?: boolean;
+      headers?: Record<string, string>;
+      signal?: AbortSignal;
+      timeout?: number;
+    } = {},
+  ) =>
+    ownedWait(
+      `Waiting for asset ${id}`,
+      options.timeout ?? queueWaitTimeout(),
+      async (context) => {
+        for (const queue of [
+          QueueName.MetadataExtraction,
+          QueueName.StorageTemplateMigration,
+          QueueName.ThumbnailGeneration,
+          ...(options.video ? [QueueName.VideoConversion] : []),
+        ]) {
+          await waitForQueue(accessToken, queue, context);
+        }
+        const headers = options.headers ?? asBearerAuth(accessToken);
+        const asset = await getAssetInfo({ id }, { headers, signal: context.signal });
+        context.remaining();
+        if (asset.id !== id) {
+          throw new Error('Asset readiness returned another asset');
+        }
+        const preview = await viewAsset({ id, size: AssetMediaSize.Preview }, { headers, signal: context.signal });
+        context.remaining();
+        if (preview.size === 0 || !preview.type.startsWith('image/')) {
+          throw new Error(`Asset ${id} did not publish a readable preview`);
+        }
+        return asset;
+      },
+      options.signal,
+    ),
+
+  poll: (
+    cb: () => request.Test,
+    validate: (value: request.Response) => boolean,
+    map?: (value: request.Response) => any,
+    signal?: AbortSignal,
+  ) =>
+    ownedWait(
+      'Polling test endpoint',
+      5000,
+      async (context) => {
+        const value = await pollRequest<request.Response>(context, cb, (response) => {
+          if (response.status >= 500) {
+            throw new Error(`Polling test endpoint failed: HTTP ${response.status}`);
+          }
+          return validate(response);
+        });
+        return map ? map(value) : value;
+      },
+      signal,
+    ),
 };
 
 // eslint-disable-next-line unicorn/no-top-level-side-effects

@@ -19,11 +19,13 @@ export const resetWhilePaused = async (driver: {
   }
   try {
     await driver.restore(snapshot);
-  } catch (cleanup) {
+  } catch (error) {
     if (failed) {
-      throw new AggregateError([primary, cleanup], 'Reset failed and queue state could not be restored', { cause: primary });
+      throw new AggregateError([primary, error], 'Reset failed and queue state could not be restored', {
+        cause: error,
+      });
     }
-    throw cleanup;
+    throw error;
   }
   if (failed) {
     throw primary;
