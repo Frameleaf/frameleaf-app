@@ -27544,6 +27544,15 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "cancelReason",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -27663,6 +27672,20 @@
           "where": "(\"parentId\" IS NOT NULL)",
           "unique": false,
           "synchronize": true
+        },
+        {
+          "name": "job_cancel_pending",
+          "definition": "CREATE INDEX job_cancel_pending ON public.job USING btree (queue, \"createdAt\", id) WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
+          "unique": false,
+          "synchronize": true
         }
       ],
       "triggers": [],
@@ -27775,6 +27798,14 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_cancel_reason_check",
+          "definition": "CHECK ((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
+          "tableName": "job",
+          "expression": "((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
           "synchronize": true
         }
       ],

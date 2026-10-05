@@ -1,9 +1,9 @@
 {
-  "sourceCommit": "4be7a8763eab7fce25dc5ced43bc3aa1c50ce5a8",
+  "sourceCommit": "22c7d77a27b5d7a30ca5350eae0942326b01a496",
   "sourceHashes": {
     "src/enum.ts": "c5a83a1b935fe387d0eceb01b611b37ca7316cd7ac044a9e62efaabe9c849041",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
-    "src/queue/schema.ts": "b2ede96db343cae3089b1d098627a48d3466aee1a76e268aaff3018ac3018200",
+    "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
     "src/schema/frameleaf-feature-schema.ts": "6adef467cdeb4226aabe7e39159752ac6d6a9b5f3787f7277f21cb6479d9c90c",
     "src/schema/functions.ts": "af2278831932f313f85c307c9e2b50255536ad33e420830b0e378e00ea5ec9ad",
@@ -126,6 +126,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "c830f88e010c33650e64951b1ce938abe9b4a60c1578ab8a56c5dc73378bfe89",
-  "rawMetadataSha256": "c7f48284971540cc2968dfab13780e99243e990e694447dad7598ef1b5dd7efe"
+  "dumpSha256": "778531c452aebf6e8e6942a9cd14bbfc498d49f11be41145c058785705338f80",
+  "rawMetadataSha256": "76ae977214482744746f1cb56ff60cefeec082d8a2959094a5e29b8533e2a6dd"
 }
