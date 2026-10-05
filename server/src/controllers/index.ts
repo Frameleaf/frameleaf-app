@@ -35,6 +35,7 @@ import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
 import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controller.js';
+import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { FrameleafServerSetupController } from 'src/controllers/frameleaf-server-setup.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
@@ -97,6 +98,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  FrameleafLibrarySetupController,
   PhotographyWorkspaceController,
   PhotographyWorkflowController,
   AssetUploadResourceController,

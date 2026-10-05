@@ -9,11 +9,15 @@ export interface ImportDatabase {
   readSchema?(): Promise<DatabaseSchema>;
 }
 export type MediaRootMap = { source: string; target: string };
+export type ImportMediaPolicy =
+  | { mode: 'independent-copy' }
+  | { mode: 'manager-in-place'; authority: 'frameleaf-manager'; operationId: string; deploymentId: string };
 export type ImportConfig = {
   version: string;
   sourceId: string;
   writersStopped: boolean;
   mediaRoots: MediaRootMap[];
+  media?: ImportMediaPolicy;
   // Retained for configuration compatibility only. Operator claims never authorize embedding transfer.
   embeddings?: { sourceClipModel: string; targetClipModel: string; sourceFaceModel: string; targetFaceModel: string };
 };

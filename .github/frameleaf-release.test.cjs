@@ -1364,3 +1364,24 @@ test("dependency reads use an anonymous registry token, as an installation would
   assert.equal(tokenRequests.length, 1);
   assert.equal(tokenRequests[0].Authorization, undefined);
 });
+
+test("public provenance reads omit missing tokens while authenticated calls retain them", async (t) => {
+  const { github } = require("./frameleaf-release.cjs");
+  const previous = process.env.GITHUB_TOKEN;
+  const headers = [];
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    headers.push(options.headers);
+    return new Response("{}", { status: 200 });
+  });
+  try {
+    delete process.env.GITHUB_TOKEN;
+    await github("actions/runs/123");
+    assert.equal(headers[0].Authorization, undefined);
+    process.env.GITHUB_TOKEN = "test-token";
+    await github("actions/runs/123");
+    assert.equal(headers[1].Authorization, "Bearer test-token");
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});

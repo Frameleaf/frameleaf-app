@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { BigIntStats, constants } from 'node:fs';
 import { FileHandle, open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { ImportRefused, MediaRootMap } from 'src/immich-import/types.js';
+import { ImportMediaPolicy, ImportRefused, MediaRootMap } from 'src/immich-import/types.js';
 
 const beneath = (root: string, candidate: string): boolean => {
   const path = relative(root, candidate);
@@ -11,22 +11,53 @@ const beneath = (root: string, candidate: string): boolean => {
 export const mapMediaPath = (
   path: string,
   roots: MediaRootMap[],
+  policy?: ImportMediaPolicy,
 ): { source: string; target: string; root: MediaRootMap } => {
+  assertMediaPolicy(roots, policy);
   if (!isAbsolute(path) || path !== resolve(path)) {
     throw new ImportRefused('UNSAFE_MEDIA_PATH');
   }
   const matches = roots.filter(
     (root) => isAbsolute(root.source) && isAbsolute(root.target) && beneath(resolve(root.source), path),
   );
-  if (matches.length !== 1) {
+  // Docker resolves a nested mount before its parent. Keep that boundary for containment checks.
+  const longestRoot = Math.max(0, ...matches.map((root) => root.source.length));
+  const selected =
+    policy?.mode === 'manager-in-place' ? matches.filter((root) => root.source.length === longestRoot) : matches;
+  if (selected.length !== 1) {
     throw new ImportRefused('AMBIGUOUS_OR_UNMAPPED_MEDIA_ROOT');
   }
-  const root = matches[0];
+  const root = selected[0];
   const target = resolve(root.target, relative(root.source, path));
   if (!beneath(resolve(root.target), target)) {
     throw new ImportRefused('MEDIA_ROOT_ESCAPE');
   }
   return { source: path, target, root };
+};
+
+/** Manager identity is an orchestration contract, not a substitute for fencing or filesystem checks. */
+export const assertMediaPolicy = (roots: MediaRootMap[], policy?: ImportMediaPolicy): void => {
+  if (!policy || policy.mode === 'independent-copy') return;
+  if (
+    policy.mode !== 'manager-in-place' ||
+    policy.authority !== 'frameleaf-manager' ||
+    typeof policy.operationId !== 'string' ||
+    !policy.operationId.trim() ||
+    typeof policy.deploymentId !== 'string' ||
+    !policy.deploymentId.trim()
+  ) {
+    throw new ImportRefused('INVALID_MANAGER_MEDIA_AUTHORITY');
+  }
+  if (
+    roots.some(
+      (root) => !isAbsolute(root.source) || root.source !== resolve(root.source) || root.target !== root.source,
+    )
+  ) {
+    throw new ImportRefused('MANAGER_MEDIA_LOCATIONS_MUST_BE_UNCHANGED');
+  }
+  if (new Set(roots.map((root) => root.target)).size !== roots.length) {
+    throw new ImportRefused('AMBIGUOUS_OR_UNMAPPED_MEDIA_ROOT');
+  }
 };
 
 export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
@@ -47,14 +78,18 @@ const fileDigests = async (file: FileHandle): Promise<{ sha1: string; sha256: st
   return { sha1: sha1.digest('hex'), sha256: sha256.digest('hex') };
 };
 
-/** Only independently copied destination files can become managed originals. Opens and hashes are read-only. */
+/** Opens and hashes are read-only in both independent-copy and Manager in-place modes. */
 export const verifyMediaFile = async (
   path: string,
   roots: MediaRootMap[],
   checksum?: string,
   algorithm?: string,
+  policy?: ImportMediaPolicy,
+  onVerified?: (sha256: string) => void,
 ): Promise<string> => {
-  const mapping = mapMediaPath(path, roots);
+  assertMediaPolicy(roots, policy);
+  const inPlace = policy?.mode === 'manager-in-place';
+  const mapping = mapMediaPath(path, roots, policy);
   const resolvedRoots = await Promise.all(
     roots.map(async (root) => ({
       source: await realpath(root.source),
@@ -64,6 +99,7 @@ export const verifyMediaFile = async (
   // Check every map, including aliases between different maps. Nested roots also allow later storage
   // operations to enter the source tree, even when this particular file is a distinct inode.
   if (
+    !inPlace &&
     resolvedRoots.some((target) =>
       resolvedRoots.some((source) => beneath(source.source, target.target) || beneath(target.target, source.source)),
     )
@@ -87,7 +123,10 @@ export const verifyMediaFile = async (
         sourceFile.stat({ bigint: true }),
         targetFile.stat({ bigint: true }),
       ]);
-      if (source === target || sameFile(before, targetBefore) || targetBefore.nlink !== 1n) {
+      if (inPlace && (source !== target || !sameFile(before, targetBefore))) {
+        throw new ImportRefused('MANAGER_MEDIA_LOCATIONS_MUST_BE_UNCHANGED');
+      }
+      if (!inPlace && (source === target || sameFile(before, targetBefore) || targetBefore.nlink !== 1n)) {
         throw new ImportRefused('DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY');
       }
       if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
@@ -127,6 +166,7 @@ export const verifyMediaFile = async (
           throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
         }
       }
+      onVerified?.(sourceDigest.sha256);
       return mapping.target;
     } finally {
       await targetFile.close();

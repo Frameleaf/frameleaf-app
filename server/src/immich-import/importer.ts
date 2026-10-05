@@ -9,7 +9,7 @@ import {
 } from 'src/immich-import/adapters.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
-import { mapMediaPath, pathChecksum, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, mapMediaPath, pathChecksum, verifyMediaFile } from 'src/immich-import/media.js';
 import { ImmichSource } from 'src/immich-import/source.js';
 import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
@@ -45,6 +45,7 @@ export class ImmichImportService {
   }
 
   async preflight() {
+    assertMediaPolicy(this.config.mediaRoots, this.config.media);
     const fingerprint = await this.source.preflight();
     await this.assertDistinctDestination();
     await assertCanonicalDestination(this.destination);
@@ -314,6 +315,7 @@ export class ImmichImportService {
             this.config.mediaRoots,
             table === 'asset' ? String(row.checksum) : undefined,
             table === 'asset' ? String(row.checksumAlgorithm) : undefined,
+            this.config.media,
           );
         } catch (error) {
           // Missing regenerable output is allowed; originals and profile images are never silently dropped.
@@ -336,7 +338,9 @@ export class ImmichImportService {
       row.checksum = String.raw`\x${pathChecksum(row.originalPath)}`;
     }
     if (table === 'library') {
-      row.importPaths = (row.importPaths as string[]).map((path) => mapMediaPath(path, this.config.mediaRoots).target);
+      row.importPaths = (row.importPaths as string[]).map(
+        (path) => mapMediaPath(path, this.config.mediaRoots, this.config.media).target,
+      );
     }
     return row;
   }

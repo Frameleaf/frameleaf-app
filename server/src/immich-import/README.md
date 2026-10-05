@@ -23,7 +23,8 @@ canonical public schema and pgvector HNSW indexes.
    Every content and operational table must be empty. Only the canonical migration
    ledger, seeded queue configuration, import journal and documented reference
    tables may already exist. Start neither the API nor workers during import.
-4. Make original files available read-only at the source roots. Independently copy
+4. Choose the media policy below. For unmanaged imports, make original files
+   available read-only at the source roots. Independently copy
    the corresponding files into separate Frameleaf media roots. Read-only source
    mounts are an operator prerequisite; the importer does not inspect mount flags.
    Identical resolved paths, overlapping source/destination trees, and
@@ -40,6 +41,43 @@ canonical public schema and pgvector HNSW indexes.
    credentials as `DB_URL` through the process environment. Do not put URLs in
    command-line arguments or configuration JSON. This command emits only bounded
    status and classified failures, never raw database errors or source records.
+
+## Manager-authoritative in-place imports
+
+Manager uses the same frozen source reader and canonical destination bootstrap.
+Its configuration includes `media: {"mode":"manager-in-place", "authority":"frameleaf-manager",
+"operationId":"<stable import operation>", "deploymentId":"<managed deployment>"}`.
+Every `mediaRoots` entry must use exactly the same absolute normalized `source`
+and `target` path. Nested Manager roots select the most specific mount, matching
+Docker mount precedence; duplicate destinations are refused. Manager mounts the existing media at those exact container
+paths, read-only during import; it does not copy or back up media. Root mappings,
+media mode, deployment and operation identity are included in the existing
+configuration fingerprint. They cannot change on resume or verification.
+
+Manager must fence all source and destination writers, close its source admin
+connection before import, and retain the fence across interrupted operations.
+Set `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID` to the same operation identity in the
+one-shot importer container. This is an explicit orchestration contract, not a
+credential or proof that fencing occurred. Source database read-only-role,
+session, structure and content checks still apply unchanged.
+
+In-place verification requires identical resolved paths and device/inode identity,
+checks containment, regular-file type, complete content hashes, original checksums
+and before/after file metadata. The source fingerprint additionally includes the
+SHA-256 of every present referenced media file, including legacy path-checksummed
+external originals. Changed media therefore invalidates a resumed operation.
+Missing regenerable files are recorded consistently; originals cannot be missing.
+The importer never writes media. After activation Frameleaf becomes the media
+writer; restarting Immich against these originals is not a safe rollback.
+
+Invoke `frameleaf-admin import-immich preflight --config /private/import.json`,
+then `run` (or `resume` for a partial journal), then `verify`, in the offline
+container. The existing admin module initializes the canonical PostgreSQL 19
+schema with inactive imports allowed, without starting ordinary API/workers.
+Verification durably dispatches derived work and activates the journal before
+Manager starts those workers. `status` requires only `DB_URL` and reports the
+journal state for restart reconciliation. An omitted media policy or explicit
+`{"mode":"independent-copy"}` preserves the unmanaged independent-copy contract.
 
 Example configuration (write it to a private file):
 
