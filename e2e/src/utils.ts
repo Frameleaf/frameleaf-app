@@ -863,11 +863,9 @@ export const utils = {
    * writes it, which no endpoint can create on demand.
    */
   setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'immich-locked-folder') => {
-    if (!client) {
-      return;
-    }
+    const db = await utils.connectDatabase();
 
-    await client.query(
+    await db.query(
       `INSERT INTO asset_lock ("assetId", reason, "previousVisibility") VALUES ($1, $2, $3)
        ON CONFLICT ("assetId") DO UPDATE SET reason = excluded.reason, "previousVisibility" = excluded."previousVisibility"`,
       [assetId, reason, reason === 'immich-locked-folder' ? 'locked' : null],
@@ -892,11 +890,9 @@ export const utils = {
     sourceAssetIds: string[];
     version: number;
   }) => {
-    if (!client) {
-      return '';
-    }
+    const db = await utils.connectDatabase();
 
-    const { rows } = await client.query(
+    const { rows } = await db.query(
       `INSERT INTO studio_export_version
          ("ownerId", "projectId", revision, "revisionDigest", state, version, scope, destination, settings,
           "resultAssetId", privacy, "publishedAt")
@@ -907,7 +903,7 @@ export const utils = {
     );
     const [row] = rows;
     for (const assetId of sourceAssetIds) {
-      await client.query(
+      await db.query(
         `INSERT INTO studio_export_version_source
            ("versionId", key, kind, "resourceId", "assetId", "ownerId", "sourceAccess", locked)
          VALUES ($1, $2, 'library-asset', $3::text, $3::uuid, $4, 'owner', false)`,
@@ -918,11 +914,9 @@ export const utils = {
   },
 
   createFace: async ({ assetId, personGroupId }: { assetId: string; personGroupId: string }) => {
-    if (!client) {
-      return;
-    }
+    const db = await utils.connectDatabase();
 
-    await client.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
+    await db.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
   },
 
   /**
@@ -939,21 +933,19 @@ export const utils = {
     personGroupId: string;
     seed: number;
   }) => {
-    if (!client) {
-      return;
-    }
+    const db = await utils.connectDatabase();
 
     const embedding = Array.from({ length: 512 }, (_, index) => (index === seed % 512 ? 1 : 0.001));
-    const { rows } = await client.query<{ id: string }>(
+    const { rows } = await db.query<{ id: string }>(
       'INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2) RETURNING id',
       [assetId, personGroupId],
     );
     const faceId = rows[0].id;
-    await client.query('INSERT INTO face_search ("faceId", embedding) VALUES ($1, $2)', [
+    await db.query('INSERT INTO face_search ("faceId", embedding) VALUES ($1, $2)', [
       faceId,
       `[${embedding.join(',')}]`,
     ]);
-    await client.query('UPDATE "person" SET "faceAssetId" = $1 WHERE "personGroupId" = $2', [faceId, personGroupId]);
+    await db.query('UPDATE "person" SET "faceAssetId" = $1 WHERE "personGroupId" = $2', [faceId, personGroupId]);
     return faceId;
   },
 
@@ -971,11 +963,9 @@ export const utils = {
     imageHeight: number;
     box: { x1: number; y1: number; x2: number; y2: number };
   }) => {
-    if (!client) {
-      return;
-    }
+    const db = await utils.connectDatabase();
 
-    const { rows } = await client.query<{ id: string }>(
+    const { rows } = await db.query<{ id: string }>(
       `INSERT INTO asset_face ("assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'machine-learning') RETURNING id`,
       [assetId, personGroupId, imageWidth, imageHeight, box.x1, box.y1, box.x2, box.y2],
@@ -984,11 +974,9 @@ export const utils = {
   },
 
   setPersonThumbnail: async (personId: string) => {
-    if (!client) {
-      return;
-    }
+    const db = await utils.connectDatabase();
 
-    await client.query(`UPDATE "person" set "thumbnailPath" = '/my/awesome/thumbnail.jpg' where "personGroupId" = $1`, [
+    await db.query(`UPDATE "person" set "thumbnailPath" = '/my/awesome/thumbnail.jpg' where "personGroupId" = $1`, [
       personId,
     ]);
   },
