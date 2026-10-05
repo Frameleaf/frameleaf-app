@@ -70,8 +70,7 @@ test.describe('Face tagging (FL-38)', () => {
     const asset = await utils.createAsset(admin.accessToken, {
       assetData: { bytes: makeImage(photos++), filename },
     });
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
-    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    await utils.waitForAssetReady(admin.accessToken, asset.id);
     return asset;
   };
 
