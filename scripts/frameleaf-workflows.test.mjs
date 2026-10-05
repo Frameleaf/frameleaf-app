@@ -284,15 +284,17 @@ const assertScriptTestWiring = (job) => {
   const install = scripts.findIndex(
     (step) =>
       step.run ===
-      "pnpm --filter @immich/scripts --filter 'immich...' install --frozen-lockfile",
+      "pnpm --filter @immich/scripts --filter 'immich...' --filter 'immich-e2e...' install --frozen-lockfile",
   );
   assert.ok(
     install >= 0,
-    "Required locked install must include the server dependency closure",
+    "Required locked install must include the server and E2E dependency closures",
   );
   for (const command of [
     "pnpm --filter @immich/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs",
+    "node --test --test-concurrency=1 e2e/src/harness-wait.test.mjs e2e/src/harness-reset.test.mjs e2e/src/harness-http.test.mjs",
+    "pnpm --filter immich-e2e exec vitest run --config vitest.harness.config.ts",
     "node --test scripts/frameleaf-branding.test.mjs",
     "node --test scripts/frameleaf-legacy-names.test.mjs",
   ]) {
@@ -320,6 +322,7 @@ test("script wiring rejects missing contracts, skipped coverage and suppressed f
   ).run;
   for (const change of [
     { run: installCommand.replace("'immich...'", "immich") },
+    { run: installCommand.replace(" --filter 'immich-e2e...'", "") },
     { run: installCommand.replace(" --frozen-lockfile", "") },
     { run: installCommand.replace("--filter @immich/scripts ", "") },
     { run: `${installCommand} || true` },
@@ -373,6 +376,19 @@ test("script wiring rejects missing contracts, skipped coverage and suppressed f
       change,
     );
     assert.throws(() => assertScriptTestWiring(changed));
+  }
+  for (const name of [
+    "Validate E2E request and reset ownership",
+    "Validate E2E test lifecycle ownership",
+  ]) {
+    const missing = structuredClone(job);
+    missing.steps = missing.steps.filter((step) => step.name !== name);
+    assert.throws(() => assertScriptTestWiring(missing), name);
+    for (const change of [{ if: "false" }, { "continue-on-error": true }]) {
+      const changed = structuredClone(job);
+      Object.assign(changed.steps.find((step) => step.name === name), change);
+      assert.throws(() => assertScriptTestWiring(changed), name);
+    }
   }
   const reordered = structuredClone(job);
   const install = reordered.steps.findIndex(
