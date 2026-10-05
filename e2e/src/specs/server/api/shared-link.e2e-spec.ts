@@ -483,8 +483,6 @@ describe('/shared-links', () => {
           allowUpload: true,
         }),
       ]);
-      // file routes answer a file not yet generated with 404, like a refusal
-      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
     });
 
     describe('allowDownload=false', () => {
@@ -509,7 +507,11 @@ describe('/shared-links', () => {
         expect(archive.status).toBe(400);
       });
 
-      it('still shows the shared item', async () => {
+      it('still shows the shared item', async ({ signal }) => {
+        await utils.waitForAssetReady(admin.accessToken, owned.id, {
+          headers: asBearerAuth(user1.accessToken),
+          signal,
+        });
         const { status } = await request(app).get(`/assets/${owned.id}/thumbnail`).query({ key: noDownload.key });
         expect(status).toBe(200);
       });
