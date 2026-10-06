@@ -366,7 +366,7 @@ jobs:
       - name: Run ci-medium
         run: mise run ci-medium
         if: ${{ !cancelled() }}
-    timeout-minutes: 60
+    timeout-minutes: 90
   e2e-tests-server-cli:
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
