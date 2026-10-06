@@ -54,11 +54,15 @@ test.describe('Database Backups', () => {
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance, { timeout: 60_000 });
   });
 
   // FL-81: the restore runs on the server, so a dropped connection or a reload mid-restore picks the
-  // progress back up (status is re-read on load) and still returns to the app when the restore ends.
+  // progress back up (status is re-read on load), then offers the explicit return when the restore ends.
   test('a restore survives a dropped connection and a reload', async ({ context, page }) => {
     test.setTimeout(90_000);
 
@@ -78,6 +82,10 @@ test.describe('Database Backups', () => {
     await context.setOffline(false);
     await page.reload();
 
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance, { timeout: 60_000 });
   });
 
@@ -112,6 +120,10 @@ test.describe('Database Backups', () => {
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('IM CORRUPTED')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'End maintenance' }).click();
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance);
   });
 
@@ -129,6 +141,10 @@ test.describe('Database Backups', () => {
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'End maintenance' }).click();
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance);
   });
 
@@ -158,6 +174,10 @@ test.describe('Database Backups', () => {
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL('/photos', { timeout: 60_000 });
   });
 });
