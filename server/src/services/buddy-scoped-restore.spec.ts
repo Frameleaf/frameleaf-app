@@ -256,10 +256,9 @@ it('authorizes a hidden Live Photo component only through its selected, still-au
 
 it('retains a terminal restore diagnostic without exposing exception text or details', async () => {
   const sentinel = 'private-buddy-sentinel';
-  const error = Object.assign(new Error(`${sentinel}/path?token=${sentinel}`), {
+  const error = Object.assign(new Error(`${sentinel}/path?token=${sentinel}`, { cause: new Error(sentinel) }), {
     code: '23505',
     detail: sentinel,
-    cause: new Error(sentinel),
   });
   const logger = { error: vi.fn() };
   const fail = vi.fn().mockResolvedValue('failed');
