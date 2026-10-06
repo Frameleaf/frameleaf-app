@@ -3,19 +3,36 @@
   import { Route } from '$lib/route';
   import { websocketStore } from '$lib/stores/websocket';
   import { handleError } from '$lib/utils/handle-error';
+  import { waitForOnboardingMaintenance } from '$lib/utils/onboarding-maintenance';
   import { startDatabaseRestoreFlow } from '@frameleaf/sdk';
   import { Button, Heading, Stack } from '@frameleaf/ui';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
+  let restart: AbortController | undefined;
+  onDestroy(() => restart?.abort());
+
   async function switchToMaintenance() {
+    if (restart) {
+      return;
+    }
+    const owner = new AbortController();
+    restart = owner;
     try {
+      await startDatabaseRestoreFlow({ signal: owner.signal });
+      owner.signal.throwIfAborted();
       websocketStore.serverRestarting.set({
         isMaintenanceMode: true,
       });
-
-      await startDatabaseRestoreFlow();
+      await waitForOnboardingMaintenance(owner.signal);
     } catch (error) {
+      if (owner.signal.aborted) {
+        return;
+      }
+      websocketStore.serverRestarting.set(undefined);
       handleError(error, $t('admin.maintenance_start_error'));
+    } finally {
+      restart = undefined;
     }
   }
 </script>
