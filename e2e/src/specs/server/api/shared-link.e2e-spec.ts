@@ -7,6 +7,7 @@ import {
   createAlbum,
   deleteUserAdmin,
 } from '@frameleaf/sdk';
+import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
 import { createUserDto, uuidDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { errorDto } from 'src/responses.js';
@@ -448,42 +449,48 @@ describe('/shared-links', () => {
     let noUpload: SharedLinkResponseDto;
     let withUpload: SharedLinkResponseDto;
 
-    beforeAll(async () => {
-      [owned, outside] = await Promise.all([
-        utils.createAsset(user1.accessToken),
-        utils.createAsset(user1.accessToken),
-      ]);
-      [shared, other] = await Promise.all([
-        createAlbum(
-          { createAlbumDto: { albumName: 'guest album', assetIds: [owned.id] } },
-          { headers: asBearerAuth(user1.accessToken) },
-        ),
-        createAlbum(
-          { createAlbumDto: { albumName: 'private album', assetIds: [outside.id] } },
-          { headers: asBearerAuth(user1.accessToken) },
-        ),
-      ]);
-      [noDownload, noUpload, withUpload] = await Promise.all([
-        utils.createSharedLink(user1.accessToken, {
-          type: SharedLinkType.Album,
-          albumId: shared.id,
-          allowDownload: false,
-          allowUpload: false,
-        }),
-        utils.createSharedLink(user1.accessToken, {
-          type: SharedLinkType.Album,
-          albumId: shared.id,
-          allowDownload: true,
-          allowUpload: false,
-        }),
-        utils.createSharedLink(user1.accessToken, {
-          type: SharedLinkType.Album,
-          albumId: shared.id,
-          allowDownload: true,
-          allowUpload: true,
-        }),
-      ]);
-    });
+    beforeAll(
+      withApiAssetReadiness(10_000, async (signal) => {
+        [owned, outside] = await Promise.all([
+          utils.createAsset(user1.accessToken, undefined, { signal }),
+          utils.createAsset(user1.accessToken, undefined, { signal }),
+        ]);
+        await utils.waitForAssetReady(admin.accessToken, owned.id, {
+          headers: asBearerAuth(user1.accessToken),
+          signal,
+        });
+        [shared, other] = await Promise.all([
+          createAlbum(
+            { createAlbumDto: { albumName: 'guest album', assetIds: [owned.id] } },
+            { headers: asBearerAuth(user1.accessToken) },
+          ),
+          createAlbum(
+            { createAlbumDto: { albumName: 'private album', assetIds: [outside.id] } },
+            { headers: asBearerAuth(user1.accessToken) },
+          ),
+        ]);
+        [noDownload, noUpload, withUpload] = await Promise.all([
+          utils.createSharedLink(user1.accessToken, {
+            type: SharedLinkType.Album,
+            albumId: shared.id,
+            allowDownload: false,
+            allowUpload: false,
+          }),
+          utils.createSharedLink(user1.accessToken, {
+            type: SharedLinkType.Album,
+            albumId: shared.id,
+            allowDownload: true,
+            allowUpload: false,
+          }),
+          utils.createSharedLink(user1.accessToken, {
+            type: SharedLinkType.Album,
+            albumId: shared.id,
+            allowDownload: true,
+            allowUpload: true,
+          }),
+        ]);
+      }),
+    );
 
     describe('allowDownload=false', () => {
       it('refuses the original of a shared item', async () => {
@@ -507,11 +514,7 @@ describe('/shared-links', () => {
         expect(archive.status).toBe(400);
       });
 
-      it('still shows the shared item', async ({ signal }) => {
-        await utils.waitForAssetReady(admin.accessToken, owned.id, {
-          headers: asBearerAuth(user1.accessToken),
-          signal,
-        });
+      it('still shows the shared item', async () => {
         const { status } = await request(app).get(`/assets/${owned.id}/thumbnail`).query({ key: noDownload.key });
         expect(status).toBe(200);
       });
