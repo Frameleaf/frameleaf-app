@@ -2435,11 +2435,33 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
-    it('should skip assets that no longer exist', async () => {
-      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
+    it('should skip assets that no longer exist on the sidecar lock connection', async () => {
+      const connection = { lockConnection: true } as never;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => fn(connection));
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(void 0);
-      await expect(sut.handleSidecarWrite({ id: 'asset-123' })).resolves.toBe(JobStatus.Failed);
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(void 0);
+      await expect(sut.handleSidecarWrite({ id: 'asset-123' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith('asset-123', connection);
+      expect(mocks.assetJob.getForSidecarCheckJob).toHaveBeenCalledWith('asset-123', connection);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).not.toHaveBeenCalled();
       expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('should fail an existing asset missing EXIF on the sidecar lock connection', async () => {
+      const asset = AssetFactory.from().build();
+      const connection = { lockConnection: true } as never;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => fn(connection));
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(void 0);
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(forSidecarJob(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith(asset.id, connection);
+      expect(mocks.assetJob.getForSidecarCheckJob).toHaveBeenCalledWith(asset.id, connection);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).not.toHaveBeenCalled();
+      expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
     });
 
     it('should skip jobs with no metadata', async () => {
