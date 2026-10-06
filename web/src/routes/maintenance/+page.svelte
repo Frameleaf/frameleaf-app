@@ -76,10 +76,12 @@
 
   // Status is only pushed over the websocket, and an update sent before the socket joins its room
   // is lost, so a restore that fails in that window would show its progress forever. While a
-  // restore runs without an error, re-read the status as well.
-  const restoreRunning = $derived(view.kind === 'restoring');
+  // restore runs or maintenance is ending, re-read until the normal server reports inactive.
+  const statusRefreshNeeded = $derived(
+    view.kind === 'restoring' || ($status?.action === MaintenanceAction.End && $status.active),
+  );
   $effect(() => {
-    if (!restoreRunning) {
+    if (!statusRefreshNeeded) {
       return;
     }
     const timer = setInterval(check, 2000);
