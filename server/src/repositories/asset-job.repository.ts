@@ -65,8 +65,8 @@ export class AssetJobRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  getForSidecarCheckJob(id: string) {
-    return this.db
+  getForSidecarCheckJob(id: string, kysely: Kysely<DB> = this.db) {
+    return kysely
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .select(['id', 'ownerId', 'originalPath', 'physicalOriginalFileId'])
