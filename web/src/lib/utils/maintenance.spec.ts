@@ -1,6 +1,32 @@
-import { maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
+import { getMaintenanceStatus, MaintenanceAction } from '@immich/sdk';
+import { get } from 'svelte/store';
+import { maintenanceStore } from '$lib/stores/maintenance.store';
+import { websocketStore } from '$lib/stores/websocket';
+import { loadMaintenanceStatus, maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
+
+vi.mock('@immich/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@immich/sdk')>()),
+  getMaintenanceStatus: vi.fn(),
+}));
 
 describe('maintenance', () => {
+  describe(loadMaintenanceStatus.name, () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each([true, false])('only updates restart readiness for inactive End (active=%s)', async (active) => {
+      const status = { active, action: MaintenanceAction.End };
+      vi.mocked(getMaintenanceStatus).mockResolvedValue(status);
+      const restart = vi.spyOn(websocketStore.serverRestarting, 'set');
+      await loadMaintenanceStatus();
+      expect(get(maintenanceStore.status)).toEqual(status);
+      if (active) {
+        expect(restart).not.toHaveBeenCalled();
+      } else {
+        expect(restart).toHaveBeenCalledExactlyOnceWith({ isMaintenanceMode: false });
+      }
+    });
+  });
+
   describe(maintenanceReturnUrl.name, () => {
     beforeEach(() => {
       // @ts-expect-error - override location for testing
