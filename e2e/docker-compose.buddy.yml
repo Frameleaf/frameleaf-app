@@ -17,7 +17,7 @@ x-app: &app
     FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
     FRAMELEAF_BUDDY_BACKUP: 'true'
     FRAMELEAF_IDENTITY_DIR: /buddy-identity
-    FRAMELEAF_CLOUD_URL: http://host.docker.internal:30186
+    FRAMELEAF_CLOUD_URL: ${FRAMELEAF_CLOUD_URL:-http://host.docker.internal:30186}
     NODE_EXTRA_CA_CERTS: /buddy-ca.crt
   extra_hosts:
     - host.docker.internal:host-gateway
