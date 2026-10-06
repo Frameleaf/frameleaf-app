@@ -2728,7 +2728,9 @@ describe(MediaService.name, () => {
       expect(getFilterOption(command.outputOptions)).toContain(
         'tpad=stop_mode=clone:stop_duration=0.2539,setpts=0.5*PTS',
       );
-      expect(command.outputOptions).toEqual(expect.arrayContaining(['-filter:a', 'atempo=2', '-fps_mode', 'passthrough']));
+      expect(command.outputOptions).toEqual(
+        expect.arrayContaining(['-filter:a', 'atempo=2', '-fps_mode', 'passthrough']),
+      );
       expect(command.outputOptions).not.toContain('-shortest');
       const fallback = (sut as any).getVideoEditSoftwareFallbackCommandPlan(
         defaults.ffmpeg,
