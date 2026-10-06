@@ -29,10 +29,12 @@ import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -3549,6 +3551,85 @@ describe(MediaService.name, () => {
         data: { files: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'] },
       });
     });
+
+    it.each([
+      [true, true],
+      [false, true],
+      [true, false],
+    ])(
+      'distinguishes deferred supersession from source/claim refusal (superseded=%s, claim=%s)',
+      async (superseded, claim) => {
+        const asset = AssetFactory.create({ type: AssetType.Video });
+        const version = versionFor(asset, 'save');
+        let requestedId = version.id;
+        mocks.assetEdit.publishVideoVersion.mockImplementation(async () => ({
+          published: requestedId === version.id,
+          releasedPaths: [],
+          ...(requestedId !== version.id && superseded && { superseded: true }),
+        }));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+        mocks.mediaOperation.complete.mockResolvedValue(claim);
+        const tracker = new EditOperationTracker(mocks.mediaOperation, mocks.job, mocks.logger);
+        const context = {
+          claim: { id: 'job', token: 'attempt', name: JobName.AssetVideoEditGeneration },
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          afterCommit: [],
+          followups: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+        const candidates = ['/attempt/master.mp4', '/attempt/master.mp4.lineage.json', '/attempt/proxy.mp4'];
+        await queueExecution.run(context, () =>
+          tracker.execute('op-1', async (run) => {
+            const accepted = await (sut as any).publishVideoVersion(
+              version,
+              { masterPath: candidates[0], files: [], width: 1080, height: 1920, duration: 1000 },
+              run,
+              candidates,
+            );
+            return accepted ? JobStatus.Success : JobStatus.Skipped;
+          }),
+        );
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        // The next Save replaces the requested version after rendering, before deferred adoption.
+        requestedId = newUuid();
+        const transaction = {} as never;
+        const adoption = queueExecution.run(context, () =>
+          publicationTransaction.run(transaction, async () => {
+            for (const adopt of context.adoptions) await adopt(transaction);
+          }),
+        );
+        if (!superseded) {
+          await expect(adoption).rejects.toThrow('Video version changed before publication');
+          expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+          expect(context.afterCommit).toEqual([]);
+        } else if (!claim) {
+          await expect(adoption).rejects.toThrow('Edit operation lost its claim before publication');
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        } else {
+          await expect(adoption).resolves.toBeUndefined();
+          expect(mocks.mediaOperation.complete).toHaveBeenCalledExactlyOnceWith(
+            'op-1',
+            'token-1',
+            { resultAssetId: null, result: EDIT_NOTHING_PUBLISHED },
+            transaction,
+            true,
+          );
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+          for (const notify of context.afterCommit ?? []) await notify();
+          expect(mocks.storage.unlink.mock.calls.map(([file]) => file)).toEqual(candidates);
+        }
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
 
     it('defers version references and released-file intents until queue publication', async () => {
       const asset = {

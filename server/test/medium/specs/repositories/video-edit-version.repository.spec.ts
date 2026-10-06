@@ -72,7 +72,20 @@ it('stores original-derived recipes and publishes only the requested version whi
   expect(first.sourcePath).toBe(asset.originalPath);
   await sut.replaceAll(asset.id, [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }]);
   const second = (await sut.getRequestedVideoVersion(asset.id))!;
-  expect(await publish(sut, first, rendered(asset.id, first.id))).toBe(false);
+  expect(await sut.publishVideoVersion(first, rendered(asset.id, first.id))).toEqual({
+    published: false,
+    releasedPaths: [],
+    superseded: true,
+  });
+  expect(
+    await sut.publishVideoVersion(
+      { ...first, ownerId: '00000000-0000-4000-8000-000000000000' },
+      rendered(asset.id, first.id),
+    ),
+  ).toEqual({ published: false, releasedPaths: [] });
+  expect(
+    await sut.publishVideoVersion({ ...first, sourceChecksum: Buffer.from('changed') }, rendered(asset.id, first.id)),
+  ).toEqual({ published: false, releasedPaths: [] });
   expect(await publish(sut, second, rendered(asset.id, second.id))).toBe(true);
   expect(await publish(sut, second, rendered(asset.id, 'duplicate'))).toBe(false);
   const files = await db.selectFrom('asset_file').selectAll().where('assetId', '=', asset.id).execute();
