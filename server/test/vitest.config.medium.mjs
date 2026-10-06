@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     name: 'server:medium',
+    fileParallelism: false,
     root: serverRoot,
     globals: true,
     include: ['test/medium/**/*.spec.ts'],
