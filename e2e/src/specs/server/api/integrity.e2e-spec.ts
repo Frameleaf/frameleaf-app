@@ -22,7 +22,7 @@ import { resetWhilePaused } from 'src/harness-reset.js';
 import { withDeadline } from 'src/harness-wait.js';
 import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // Reset 8s + authentication 30s + snapshot 5s + pause 10s + three uploads
 // (60s CI / 10s local each) + backup 18s + empty 10s. Reserve another
@@ -43,6 +43,8 @@ describe('/admin/integrity', () => {
 
   let user2: LoginResponseDto;
   let asset2: AssetMediaResponseDto;
+  let fixtureRestorationFailed = false;
+  let fixtureRestorationFailure: unknown;
 
   beforeAll(
     withApiAssetReadiness(INTEGRITY_SETUP_WORK_TIMEOUT, async (signal) => {
@@ -274,9 +276,31 @@ describe('/admin/integrity', () => {
     INTEGRITY_SETUP_TIMEOUT,
   );
 
-  afterEach(async () => {
-    await utils.deleteFolder(`/data/upload/${admin.userId}`);
-    await utils.copyFolder(`/data/bak/${admin.userId}`, `/data/upload/${admin.userId}`);
+  beforeEach(() => {
+    if (fixtureRestorationFailed) {
+      throw fixtureRestorationFailure;
+    }
+  });
+
+  afterEach(async ({ signal }) => {
+    if (fixtureRestorationFailed) {
+      throw fixtureRestorationFailure;
+    }
+    try {
+      // A timed-out test signal cannot own this join. Refuse fixture replacement
+      // unless admitted server work settles within the existing reset work budget.
+      await withDeadline('Settle integrity work before fixture restoration', 8_000, async (context) => {
+        await utils.settlePendingWaits(signal);
+        context.remaining();
+        return utils.waitForQueue(admin.accessToken, QueueName.IntegrityCheck, context);
+      });
+      await utils.deleteFolder(`/data/upload/${admin.userId}`);
+      await utils.copyFolder(`/data/bak/${admin.userId}`, `/data/upload/${admin.userId}`);
+    } catch (error) {
+      fixtureRestorationFailed = true;
+      fixtureRestorationFailure = error;
+      throw error;
+    }
   });
 
   describe('GET /runs (FL-81)', async () => {

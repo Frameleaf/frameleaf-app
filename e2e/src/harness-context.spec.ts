@@ -43,6 +43,24 @@ it('does not carry the unawaited request into the next test', () => {
   expect(state.active).toBe(0);
 });
 
+it('joins implicit test-owned transports before test-finished cleanup', async ({ signal }) => {
+  const release = Promise.withResolvers<void>();
+  const pending = ownedWait('admitted test request', 1_000, () => release.promise);
+  let settled = false;
+  const settlement = settlePendingWaits(signal).then(() => {
+    settled = true;
+  });
+  try {
+    await sleep(0);
+    expect(settled).toBe(false);
+  } finally {
+    release.resolve();
+    await pending;
+    await settlement;
+  }
+  expect(settled).toBe(true);
+});
+
 it('lets a caller abort and await exactly the requests it owns', async () => {
   const controller = new AbortController();
   const started = Promise.withResolvers<void>();

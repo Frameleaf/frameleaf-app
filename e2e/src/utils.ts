@@ -794,6 +794,7 @@ export const utils = {
     ),
 
   settlePendingWaits,
+  waitForQueue,
 
   initSdk: () => {
     setBaseUrl(app);
@@ -1153,7 +1154,10 @@ export const utils = {
     tagAssets({ id: tagId, bulkIdsDto: { ids: assetIds } }, { headers: asBearerAuth(accessToken) }),
 
   createJob: async (accessToken: string, jobCreateDto: JobCreateDto) =>
-    createJob({ jobCreateDto }, { headers: asBearerAuth(accessToken) }),
+    ownedWait('Create job', queueWaitTimeout(), async (context) => {
+      context.remaining();
+      return createJob({ jobCreateDto }, { headers: asBearerAuth(accessToken), signal: context.signal });
+    }),
 
   queueCommand: async (accessToken: string, name: QueueName, queueCommandDto: QueueCommandDto) =>
     runQueueCommandLegacy({ name, queueCommandDto }, { headers: asBearerAuth(accessToken) }),
