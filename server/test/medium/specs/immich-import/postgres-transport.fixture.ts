@@ -40,6 +40,7 @@ export class PostgresImportFixture {
   private readonly credential = randomUUID();
   private readonly admin: ReturnType<typeof postgres>;
   private roleCreated = false;
+  private readonly writerPids: { initial?: number; mutation?: number } = {};
 
   constructor(readonly version = '3.2.4') {
     const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
@@ -59,6 +60,36 @@ export class PostgresImportFixture {
 
   connect(name: string, readOnly: boolean, sourceRole = false) {
     const connection = connectImportDatabase(this.url(name, sourceRole), readOnly);
+    if (readOnly && sourceRole) {
+      const query = connection.db.query;
+      connection.db.query = async (statement, parameters) => {
+        const result = await query(statement, parameters);
+        if (
+          result.length > 0 &&
+          statement.startsWith('SELECT 1 FROM pg_stat_activity WHERE datname = current_database()')
+        ) {
+          // Observe only this fixture's source after the unchanged admission query found another session.
+          // Never log SQL text, credentials, connection addresses or other databases.
+          try {
+            const backends = await this.admin.unsafe(
+              'SELECT pid, backend_type, usename AS role FROM pg_stat_activity WHERE datname=$1 ORDER BY pid',
+              [name],
+            );
+            console.warn(
+              'Import source session evidence',
+              JSON.stringify({
+                writerPids: this.writerPids,
+                readerRole: this.role,
+                backends: backends.map(({ pid, backend_type, role }) => ({ pid, backend_type, role })),
+              }),
+            );
+          } catch {
+            console.warn('Import source session evidence unavailable');
+          }
+        }
+        return result;
+      };
+    }
     this.connections.add(connection);
     return connection;
   }
@@ -106,6 +137,8 @@ export class PostgresImportFixture {
         GRANT USAGE ON SCHEMA public TO ${quote(this.role)};
         GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${quote(this.role)};
         GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO ${quote(this.role)}`);
+      const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
+      this.writerPids.initial = Number(session.pid);
     } finally {
       await writer.close();
       this.connections.delete(writer);
@@ -219,6 +252,7 @@ export class PostgresImportFixture {
     this.connections.delete(this.source);
     const writer = this.connect(this.sourceName, false);
     const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
+    this.writerPids.mutation = Number(session.pid);
     try {
       await body(writer.db);
     } finally {
