@@ -41,6 +41,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   let lastBeat = 0;
   let progressBusy = false;
   let nextQueue = 0;
+  let reconciliationDue = true;
   const progress = new Map<string, number>();
 
   parentPort!.on('message', (message: QueueWorkerMessage) => {
@@ -72,6 +73,8 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   });
 
   const tick = coalescedTask(async () => {
+    const reconcile = reconciliationDue;
+    reconciliationDue = false;
     try {
       if (!ready) {
         await store.initialize(queues, workerId);
@@ -107,12 +110,16 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         parentPort!.postMessage({ type: 'cancel', id: deadline.id });
       }
       if (!stopping) {
+        // Ordinary wakes discover work once, rather than running idle sharing/claim transactions
+        // across the catalogue. Full scans also advance terminal alias cleanup and redaction.
+        const outstanding = reconcile ? undefined : new Set(await store.queuesWithUnfinishedWork(queues));
         const start = nextQueue;
         for (let offset = 0; offset < queues.length; offset++) {
           const capacity = QUEUE_EXECUTION_CAPACITY - active.size;
           if (capacity <= 0) break;
           const index = (start + offset) % queues.length;
           const queue = queues[index];
+          if (outstanding && !outstanding.has(queue)) continue;
           // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
           nextQueue = (index + 1) % queues.length;
           await store.feedManifest(queue);
@@ -125,6 +132,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         }
       }
     } catch {
+      if (reconcile) reconciliationDue = true;
       // The watchdog owns the outage decision. Do not leak connection strings or job payloads.
       parentPort!.postMessage({ type: 'unavailable' });
     }
@@ -132,6 +140,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const notifications = queueNotifications(listener, () => void tick());
   notifications.connect();
   const scan = setInterval(() => {
+    reconciliationDue = true;
     notifications.connect();
     void tick();
   }, QUEUE_TIMING.scan);
