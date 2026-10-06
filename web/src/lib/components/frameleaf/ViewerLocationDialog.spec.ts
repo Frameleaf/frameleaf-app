@@ -1,11 +1,11 @@
-import { updateAsset } from '@immich/sdk';
+import { updateAsset } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import ViewerLocationDialog from './ViewerLocationDialog.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return { ...sdk, updateAsset: vi.fn() };
 });
 vi.mock('$lib/components/shared-components/map/Map.svelte', () => ({ default: () => {} }));

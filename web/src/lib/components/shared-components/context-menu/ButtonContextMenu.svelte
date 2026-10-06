@@ -10,7 +10,7 @@
     type Align,
   } from '$lib/utils/context-menu';
   import { generateId } from '$lib/utils/generate-id';
-  import { IconButton, type Color, type Size, type Variants } from '@immich/ui';
+  import { IconButton, type Color, type Size, type Variants } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
 

@@ -1,4 +1,4 @@
-import type { ServerAppReleasesResponseDto } from '@immich/sdk';
+import type { ServerAppReleasesResponseDto } from '@frameleaf/sdk';
 
 /**
  * Mobile applications and Obtainium setup (FL-82), ported from the design template's

@@ -17,8 +17,8 @@
   import { keepThisDeleteOthers } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { updateStack, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
-  import { Button, Icon, modalManager } from '@immich/ui';
+  import { updateStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
+  import { Button, Icon, modalManager } from '@frameleaf/ui';
   import { mdiCrownOutline, mdiLayersTripleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

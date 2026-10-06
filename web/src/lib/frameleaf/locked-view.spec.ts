@@ -1,4 +1,4 @@
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
 import {
   DEFAULT_LOCKED_FILTER,
   LOCKED_FILTERS,

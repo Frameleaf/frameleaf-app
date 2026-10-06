@@ -6,7 +6,7 @@
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { fileUploadHandler } from '$lib/utils/file-uploader';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiCloudUploadOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';

@@ -3,7 +3,7 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
   type AssetDevelopRevisionResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   anyRevisionBusy,
   changeDraft,

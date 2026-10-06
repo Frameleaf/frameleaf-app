@@ -10,8 +10,8 @@
   import { summarizePermissions } from '$lib/frameleaf/personal-access';
   import { handleDeleteApiKey, handleRotateApiKey } from '$lib/services/api-key.service';
   import { locale } from '$lib/stores/preferences.store';
-  import { getApiKeys, Permission, type ApiKeyResponseDto } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
+  import { getApiKeys, Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
+  import { modalManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
   import './access.css';

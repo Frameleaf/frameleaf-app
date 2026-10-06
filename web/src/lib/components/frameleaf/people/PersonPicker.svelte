@@ -11,7 +11,7 @@
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { isUnnamedPerson } from '$lib/frameleaf/people';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllPeople, searchPerson, type PersonResponseDto } from '@immich/sdk';
+  import { getAllPeople, searchPerson, type PersonResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

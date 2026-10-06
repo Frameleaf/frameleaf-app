@@ -8,7 +8,7 @@ import {
   CloudMlJobCostOutcome,
   type CloudMlJobActivityDto,
   type MediaOperationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { bulkActionTitleKey } from '$lib/frameleaf/bulk-actions';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';

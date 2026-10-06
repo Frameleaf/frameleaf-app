@@ -9,7 +9,7 @@ import {
   updateAssets,
   updateConfig,
   VideoCodec,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, Page } from '@playwright/test';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';

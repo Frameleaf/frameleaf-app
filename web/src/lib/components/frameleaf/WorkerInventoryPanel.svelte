@@ -50,8 +50,8 @@
     type MlWorkload,
     type WorkerInventoryEntryDto,
     type WorkerInventoryResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCloudOutline, mdiDesktopTowerMonitor, mdiMemory, mdiServerOutline } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';

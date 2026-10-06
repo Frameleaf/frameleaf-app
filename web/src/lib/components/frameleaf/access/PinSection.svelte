@@ -9,8 +9,8 @@
   import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import type { PinDialogMode } from '$lib/frameleaf/personal-access';
-  import { getAuthStatus } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
+  import { getAuthStatus } from '@frameleaf/sdk';
+  import { modalManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';

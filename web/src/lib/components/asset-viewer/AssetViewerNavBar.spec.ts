@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';

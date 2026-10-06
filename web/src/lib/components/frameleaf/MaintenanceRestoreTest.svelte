@@ -15,8 +15,8 @@
     getBackupRestoreVerification,
     recordBackupRestoreVerification,
     type BackupRestoreVerificationResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

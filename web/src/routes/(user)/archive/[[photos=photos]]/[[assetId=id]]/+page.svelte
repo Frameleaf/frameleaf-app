@@ -9,7 +9,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility } from '@immich/sdk';
+  import { AssetVisibility } from '@frameleaf/sdk';
   import { mdiArchiveOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

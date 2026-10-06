@@ -1,4 +1,4 @@
-import type { TagResponseDto } from '@immich/sdk';
+import type { TagResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,7 @@ const sdk = vi.hoisted(() => ({
   searchAssets: vi.fn(),
   updateTag: vi.fn(),
 }));
-vi.mock('@immich/sdk', async (importOriginal) => ({ ...(await importOriginal<object>()), ...sdk }));
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({ ...(await importOriginal<object>()), ...sdk }));
 vi.mock('$lib/utils', () => ({ getAssetUrls: ({ id }: { id: string }) => ({ thumbnail: `/thumb/${id}` }) }));
 
 const tag = (partial: Partial<TagResponseDto> & { id: string; name: string }): TagResponseDto =>

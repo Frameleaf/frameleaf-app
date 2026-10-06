@@ -1,4 +1,4 @@
-import { SuppressionScope, type TagResponseDto, type UserPreferencesResponseDto } from '@immich/sdk';
+import { SuppressionScope, type TagResponseDto, type UserPreferencesResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canCreateTag,

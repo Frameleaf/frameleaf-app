@@ -2,7 +2,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
-  import { Theme, themeManager } from '@immich/ui';
+  import { Theme, themeManager } from '@frameleaf/ui';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -101,7 +101,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    /* @immich/ui sets body pointer-events:none while a body-mounted modal is open. */
+    /* @frameleaf/ui sets body pointer-events:none while a body-mounted modal is open. */
     pointer-events: auto;
     place-content: center;
     justify-items: center;

@@ -8,7 +8,7 @@
   import LibraryCareToggles from '$lib/components/frameleaf/settings/LibraryCareToggles.svelte';
   import { utilitiesUrl, utilityToolsFor, type UtilityId } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

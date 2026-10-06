@@ -1,4 +1,4 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetTypeEnum } from '@frameleaf/sdk';
 import {
   bumpPlaybackRevision,
   markDevelopPlaybackUnresolved,

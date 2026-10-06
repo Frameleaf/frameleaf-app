@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetVisibility } from '@frameleaf/sdk';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 

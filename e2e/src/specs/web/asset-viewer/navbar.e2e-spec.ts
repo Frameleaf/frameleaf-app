@@ -5,7 +5,7 @@ import {
   LoginResponseDto,
   SharedLinkType,
   updateMyPreferences,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 import { test } from 'src/web-test.js';

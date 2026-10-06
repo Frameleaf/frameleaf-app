@@ -14,8 +14,8 @@
   import { deleteAssets as deleteAssetsUtil, type OnUndoDelete } from '$lib/utils/actions';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
-  import { IconButton } from '@immich/ui';
+  import { AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import { IconButton } from '@frameleaf/ui';
   import { mdiDeleteForeverOutline, mdiDeleteOutline, mdiDeleteRestore } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction, PreAction } from './action';

@@ -1,4 +1,4 @@
-import { AssetOrder, AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetOrder, AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { SvelteURL } from 'svelte/reactivity';

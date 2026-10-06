@@ -16,8 +16,8 @@
   import { checkForUpdates, releaseNotesUrl, type UpdateCheckResult } from '$lib/frameleaf/version-check';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiCheckCircle, mdiInformationOutline, mdiProgressClock, mdiUpdate } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

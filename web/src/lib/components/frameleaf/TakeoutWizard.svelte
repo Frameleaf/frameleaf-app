@@ -65,7 +65,7 @@
     type TakeoutPairResponseDto,
     type TakeoutResponseDto,
     type TakeoutRootDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

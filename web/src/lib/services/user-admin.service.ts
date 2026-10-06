@@ -8,8 +8,8 @@ import {
   type UserAdminDeleteDto,
   type UserAdminResponseDto,
   type UserAdminUpdateDto,
-} from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { modalManager, toastManager, type ActionItem } from '@frameleaf/ui';
 import {
   mdiDeleteRestore,
   mdiInformationOutline,

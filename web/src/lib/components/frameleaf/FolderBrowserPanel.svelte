@@ -44,8 +44,8 @@
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiChevronRight,
     mdiFileDocumentOutline,

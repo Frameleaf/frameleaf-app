@@ -7,7 +7,12 @@
   import { defaultIconFor, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { emptyRule, ruleProblem, toCreate, type RuleDraft } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
-  import { AlbumKind, type AlbumResponseDto, type ClassificationRuleCreateDto, type CreateAlbumDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    type AlbumResponseDto,
+    type ClassificationRuleCreateDto,
+    type CreateAlbumDto,
+  } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

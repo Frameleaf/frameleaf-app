@@ -1,11 +1,11 @@
-import { getMaintenanceStatus, MaintenanceAction } from '@immich/sdk';
+import { getMaintenanceStatus, MaintenanceAction } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { websocketStore } from '$lib/stores/websocket';
 import { loadMaintenanceStatus, maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getMaintenanceStatus: vi.fn(),
 }));
 

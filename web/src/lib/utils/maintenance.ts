@@ -1,4 +1,4 @@
-import { getMaintenanceStatus, MaintenanceAction, maintenanceLogin } from '@immich/sdk';
+import { getMaintenanceStatus, MaintenanceAction, maintenanceLogin } from '@frameleaf/sdk';
 import { isLicenseRelay } from '$lib/frameleaf/license-relay';
 import { Route } from '$lib/route';
 import { maintenanceStore } from '$lib/stores/maintenance.store';

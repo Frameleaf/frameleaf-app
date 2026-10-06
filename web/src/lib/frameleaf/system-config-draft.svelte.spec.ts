@@ -1,11 +1,11 @@
-import type { AdminConfigDto, AdminConfigRevisionResponseDto, AdminConfigRevisionUpdateDto } from '@immich/sdk';
+import type { AdminConfigDto, AdminConfigRevisionResponseDto, AdminConfigRevisionUpdateDto } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cloneConfig } from '$lib/frameleaf/system-config-draft';
 import { SystemConfigDraftStore, type SystemConfigDraftStorage } from '$lib/frameleaf/system-config-draft.svelte';
 import { adminConfigFixture, adminConfigWith } from '@test-data/factories/admin-config-factory';
 
-vi.mock('@immich/sdk', async (originalImport) => ({
-  ...(await originalImport<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (originalImport) => ({
+  ...(await originalImport<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => typeof error === 'object' && error !== null && 'status' in error,
 }));
 

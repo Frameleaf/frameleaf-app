@@ -9,15 +9,15 @@ import {
   VideoEditVersionPurpose,
   VideoEditVersionStatus,
   type VideoEditVersionResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { websocketEvents } from '$lib/stores/websocket';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoVersionsMenu from './VideoVersionsMenu.svelte';
 
-vi.mock('@immich/sdk', async () => ({
-  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+vi.mock('@frameleaf/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
   getVideoEditVersions: vi.fn(),
   exportVideoEditVersion: vi.fn(),
   restoreVideoEditVersion: vi.fn(),
@@ -28,8 +28,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} 
 vi.mock('$lib/stores/websocket', () => ({ websocketEvents: { on: vi.fn() } }));
 
 const { modalShow } = vi.hoisted(() => ({ modalShow: vi.fn() }));
-vi.mock('@immich/ui', async () => ({
-  ...(await vi.importActual<typeof import('@immich/ui')>('@immich/ui')),
+vi.mock('@frameleaf/ui', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui')),
   modalManager: { show: modalShow },
 }));
 

@@ -1,4 +1,4 @@
-import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@immich/sdk';
+import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { CloudManager } from '$lib/managers/cloud-manager.svelte';

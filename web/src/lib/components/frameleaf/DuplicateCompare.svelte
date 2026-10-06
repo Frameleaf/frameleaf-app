@@ -13,8 +13,8 @@
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { computeDifferingMetadataFields, getAllMetadataItems } from '$lib/utils/duplicate-utils';
-  import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetTypeEnum } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMagnifyMinusOutline, mdiMagnifyPlusOutline, mdiOpenInNew, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

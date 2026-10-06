@@ -1,4 +1,4 @@
-import { AssetDevelopMaskKind, AssetDevelopPreset } from '@immich/sdk';
+import { AssetDevelopMaskKind, AssetDevelopPreset } from '@frameleaf/sdk';
 import {
   MAX_MASKS,
   carriedMaskCount,

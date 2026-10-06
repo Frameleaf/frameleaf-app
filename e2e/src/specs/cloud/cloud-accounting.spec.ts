@@ -1,4 +1,4 @@
-import { CloudRouteMode, LoginResponseDto, Permission, updateConfig } from '@immich/sdk';
+import { CloudRouteMode, LoginResponseDto, Permission, updateConfig } from '@frameleaf/sdk';
 import { app, asBearerAuth, asKeyAuth, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';

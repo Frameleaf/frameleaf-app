@@ -8,7 +8,7 @@ import {
   type SearchFacetsResponseDto,
   type SearchFilter,
   type SearchHistogramBucketDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import {
   discoveryTextField,

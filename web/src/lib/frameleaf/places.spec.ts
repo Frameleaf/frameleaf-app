@@ -1,4 +1,4 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { buildPlacesTree, filterPlacesTree, stateMapDots } from '$lib/frameleaf/places';
 

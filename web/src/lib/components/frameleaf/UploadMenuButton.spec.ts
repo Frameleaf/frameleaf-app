@@ -1,5 +1,5 @@
-import { AlbumKind, AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
-import { getAllAlbums } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
+import { getAllAlbums } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
@@ -12,8 +12,8 @@ import UploadMenuButton from './UploadMenuButton.svelte';
  * groups albums; it is not itself a place photos go, see BulkAlbumDialog).
  */
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));

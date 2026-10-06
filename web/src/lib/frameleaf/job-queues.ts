@@ -16,7 +16,7 @@ import {
   type QueueResponseDto,
   type QueueStatisticsDto,
   type ServerFeaturesDto as FeatureFlags,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   mdiAccountMultipleOutline,
   mdiAccountOutline,

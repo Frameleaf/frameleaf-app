@@ -61,8 +61,8 @@
     type AssetResponseDto,
     type PersonResponseDto,
     type StackResponseDto,
-  } from '@immich/sdk';
-  import { modalManager, toastManager, type ActionItem } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { modalManager, toastManager, type ActionItem } from '@frameleaf/ui';
   import {
     mdiAccountCircleOutline,
     mdiCogOutline,

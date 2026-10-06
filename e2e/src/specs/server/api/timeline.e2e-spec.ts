@@ -1,4 +1,4 @@
-import { AssetVisibility, LoginResponseDto } from '@immich/sdk';
+import { AssetVisibility, LoginResponseDto } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';

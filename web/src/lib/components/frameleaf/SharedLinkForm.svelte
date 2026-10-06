@@ -5,8 +5,8 @@
   import { sharedLinkBadges, relativeTime, type SharedLinkBadgeId } from '$lib/frameleaf/shared-link-badges';
   import { asUrl, handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiClockOutline,
     mdiContentCopy,

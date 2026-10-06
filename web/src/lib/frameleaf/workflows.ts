@@ -6,7 +6,7 @@ import type {
   WorkflowStepDto,
   WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /**
  * Workflows (FL-82), ported from the design template's `workflow-schema.mjs` and `WorkflowDesigner.jsx`.

@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@frameleaf/sdk';
 import { BrowserContext, expect, test } from '@playwright/test';
 import { SeededRandom, selectRandom, toAssetResponseDto } from 'src/ui/generators/timeline';
 import { setupSocketMock } from 'src/ui/mock-network/socket-network.js';

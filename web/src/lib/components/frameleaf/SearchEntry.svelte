@@ -27,7 +27,7 @@
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Icon, themeManager, ThemePreference } from '@immich/ui';
+  import { Icon, themeManager, ThemePreference } from '@frameleaf/ui';
   import { handlePromiseError } from '$lib/utils';
   import { mdiMagnify, mdiThemeLightDark } from '@mdi/js';
   import { onDestroy } from 'svelte';

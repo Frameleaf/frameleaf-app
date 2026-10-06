@@ -31,8 +31,8 @@
     getVersionHistory,
     Permission,
     type ServerAppReleasesResponseDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiDevices } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';

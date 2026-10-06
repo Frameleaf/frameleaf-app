@@ -57,8 +57,8 @@
     type AlbumResponseDto,
     type CreateAlbumDto,
     type MapMarkerResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountCircleOutline,
     mdiAccountMultipleOutline,

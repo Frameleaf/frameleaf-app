@@ -1,4 +1,4 @@
-import type { TagResponseDto, TagStatisticsResponseDto } from '@immich/sdk';
+import type { TagResponseDto, TagStatisticsResponseDto } from '@frameleaf/sdk';
 
 /**
  * Client-side tag tree adapter for the Frameleaf Tags browser (FL-46).

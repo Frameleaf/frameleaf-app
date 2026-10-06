@@ -5,7 +5,7 @@ import {
   QueueCommand,
   QueueName,
   scanLibrary,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync, rmSync } from 'node:fs';
 import { asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';

@@ -10,7 +10,7 @@
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import { bytesToGiB, msToMinutes } from '$lib/frameleaf/render-workers';
   import { locale } from '$lib/stores/preferences.store';
-  import type { RenderWorkerLimitDto, RenderWorkerLimitsResponseDto, UserAdminResponseDto } from '@immich/sdk';
+  import type { RenderWorkerLimitDto, RenderWorkerLimitsResponseDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

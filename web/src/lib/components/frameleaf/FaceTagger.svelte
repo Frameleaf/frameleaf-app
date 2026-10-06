@@ -73,8 +73,8 @@
     type AssetFaceResponseDto,
     type AssetResponseDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiCheck, mdiClose } from '@mdi/js';
   import { onDestroy, onMount, tick } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';

@@ -1,4 +1,4 @@
-import { checkVersionNow, getVersionCheck, ReleaseType } from '@immich/sdk';
+import { checkVersionNow, getVersionCheck, ReleaseType } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,7 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import AboutDialog from './AboutDialog.svelte';
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   checkVersionNow: vi.fn(),
   getVersionCheck: vi.fn(),

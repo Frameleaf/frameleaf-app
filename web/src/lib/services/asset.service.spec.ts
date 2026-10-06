@@ -1,5 +1,5 @@
-import { AssetTypeEnum, getAssetInfo, type AlbumResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { AssetTypeEnum, getAssetInfo, type AlbumResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
 import { vitest } from 'vitest';
@@ -15,7 +15,7 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
-vitest.mock('@immich/ui', () => ({
+vitest.mock('@frameleaf/ui', () => ({
   toastManager: {
     primary: vitest.fn(),
   },
@@ -26,7 +26,7 @@ vitest.mock('$lib/utils/i18n', () => ({
   getPreferredLocale: vitest.fn(),
 }));
 
-vitest.mock('@immich/sdk');
+vitest.mock('@frameleaf/sdk');
 
 vitest.mock('$lib/utils/asset-utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/utils/asset-utils')>()),
@@ -225,7 +225,7 @@ describe('AssetService', () => {
         const asset = assetFactory.build({ originalFileName: 'shared.heic', livePhotoVideoId: null });
         await handleDownloadAsset(asset, { edited: false });
         expect(downloadAssetFile).not.toHaveBeenCalled();
-        // `@immich/sdk` is mocked here, so only the file name is meaningful.
+        // `@frameleaf/sdk` is mocked here, so only the file name is meaningful.
         expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'shared.heic');
       } finally {
         isSharedLink.mockRestore();

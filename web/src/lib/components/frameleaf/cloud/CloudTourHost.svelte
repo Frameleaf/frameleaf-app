@@ -31,7 +31,7 @@
     markCloudTourSeen,
     type CloudTourEnding as SdkCloudTourEnding,
     type CloudTourResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

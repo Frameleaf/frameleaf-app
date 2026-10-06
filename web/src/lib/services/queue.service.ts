@@ -7,8 +7,8 @@ import {
   updateQueue,
   type QueueResponseDto,
   retryFailedQueueJobs,
-} from '@immich/sdk';
-import { type IconLike } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { type IconLike } from '@frameleaf/ui';
 import {
   mdiContentDuplicate,
   mdiDatabaseOutline,

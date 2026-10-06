@@ -22,7 +22,7 @@ import {
   type PreservationScopeDto,
   type PreservationSupportDto,
   type SearchFilter,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
 import {

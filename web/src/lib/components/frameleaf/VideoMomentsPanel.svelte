@@ -51,8 +51,8 @@
     type VideoMomentFrameDto,
     type VideoMomentSearchHitDto,
     type VideoMomentsResponseDto,
-  } from '@immich/sdk';
-  import { Button, Icon, LoadingSpinner, Text } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, Icon, LoadingSpinner, Text } from '@frameleaf/ui';
   import { mdiClose, mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';

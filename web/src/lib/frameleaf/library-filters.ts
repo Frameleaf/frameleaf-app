@@ -1,4 +1,4 @@
-import type { SearchFilter } from '@immich/sdk';
+import type { SearchFilter } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 

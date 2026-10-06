@@ -1,4 +1,4 @@
-import { defaults, getBaseUrl } from '@immich/sdk';
+import { defaults, getBaseUrl } from '@frameleaf/sdk';
 import type { Watermark } from './workflow-api';
 
 export const shootStages = ['Imported', 'Selected', 'Edited', 'Proofing', 'Delivered'] as const;

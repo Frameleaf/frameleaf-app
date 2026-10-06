@@ -11,7 +11,7 @@ import {
   checkBulkUpload,
   defaults,
   getSupportedMediaTypes,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import createFetchMock from 'vitest-fetch-mock';
 
 import {
@@ -24,7 +24,7 @@ import {
   UploadOptionsDto,
 } from 'src/commands/asset';
 
-vi.mock('@immich/sdk');
+vi.mock('@frameleaf/sdk');
 
 describe('getAlbumName', () => {
   it('should return a non-undefined value', () => {

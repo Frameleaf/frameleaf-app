@@ -26,7 +26,7 @@ import {
   AssetTypeEnum,
   type AssetResponseDto,
   type StudioRestoredVersionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { restorationFileUrl } from '$lib/frameleaf/restoration';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { getAssetMediaUrl, getAssetPlaybackUrl, getStudioHdrVideoUrl } from '$lib/utils';

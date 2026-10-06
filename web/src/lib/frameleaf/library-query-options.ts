@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, type IdsFilter } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type IdsFilter } from '@frameleaf/sdk';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 import { activeFilterFields, discoveryUrl } from '$lib/components/discovery/query';
 import { createLibrarySession, writeLibraryView } from '$lib/frameleaf/library-session';

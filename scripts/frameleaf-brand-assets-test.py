@@ -132,7 +132,7 @@ class BrandAssetContractTests(unittest.TestCase):
         def mutation(root):
             path = root / "server/package.json"
             value = json.loads(path.read_text())
-            value["name"] = "frameleaf"
+            value["name"] = "immich"
             path.write_text(json.dumps(value))
         self.assert_invalid(mutation)
 
@@ -140,8 +140,8 @@ class BrandAssetContractTests(unittest.TestCase):
         def json_decoy(root):
             path = root / "packages/sdk/package.json"
             value = json.loads(path.read_text())
-            value["name"] = "@frameleaf/sdk"
-            value["compatibilityComment"] = '"name": "@immich/sdk"'
+            value["name"] = "@immich/sdk"
+            value["compatibilityComment"] = '"name": "@frameleaf/sdk"'
             path.write_text(json.dumps(value))
 
         def toml_decoy(root):
@@ -150,7 +150,7 @@ class BrandAssetContractTests(unittest.TestCase):
 
         def svelte_decoy(root):
             path = root / "web/src/routes/+layout.svelte"
-            path.write_text(path.read_text().replace("from '@immich/sdk'", "from '@frameleaf/sdk'\n  // import x from '@immich/sdk'"))
+            path.write_text(path.read_text().replace("from '@frameleaf/sdk'", "from '@immich/sdk'\n  // import x from '@frameleaf/sdk'"))
 
         for mutation in (json_decoy, toml_decoy, svelte_decoy):
             with self.subTest(mutation=mutation):

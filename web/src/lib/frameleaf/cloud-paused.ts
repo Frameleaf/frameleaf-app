@@ -1,4 +1,4 @@
-import { isHttpError } from '@immich/sdk';
+import { isHttpError } from '@frameleaf/sdk';
 
 /** FC-62: the codes Frameleaf Cloud answers (503) while staff pause new work of this kind. */
 const PAUSED_CODES: ReadonlySet<unknown> = new Set(['capacity', 'service-paused', 'relay-unavailable']);

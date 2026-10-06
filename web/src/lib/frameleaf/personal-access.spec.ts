@@ -1,4 +1,4 @@
-import { Permission, type SessionResponseDto } from '@immich/sdk';
+import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canSubmitPin,

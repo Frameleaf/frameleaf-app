@@ -21,8 +21,8 @@
     getMemoryExports,
     saveMemoryExportToLibrary,
     type MemoryExportResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiDownload,
     mdiImagePlusOutline,

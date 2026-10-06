@@ -1,4 +1,4 @@
-import type { AssetFaceResponseDto } from '@immich/sdk';
+import type { AssetFaceResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';

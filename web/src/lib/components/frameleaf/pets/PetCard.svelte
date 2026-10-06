@@ -3,8 +3,8 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import PetThumbnail from '$lib/components/frameleaf/pets/PetThumbnail.svelte';
   import { petAgeInYears, speciesLabelKey } from '$lib/frameleaf/pets';
-  import type { PetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCakeVariantOutline,
     mdiDotsVertical,
@@ -22,7 +22,7 @@
   /**
    * Frameleaf Pets grid card (FL-58), mirroring `people/PersonCard.svelte` so the two
    * grids read the same way. Every action calls the caller's handler; the Pets page wires
-   * those to the `@immich/sdk` pet services. This component performs no network call.
+   * those to the `@frameleaf/sdk` pet services. This component performs no network call.
    *
    * The count under the name is the number of photos the owner has confirmed, not the
    * number a model proposed: a proposal is not a fact about the library until someone

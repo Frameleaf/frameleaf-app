@@ -1,4 +1,4 @@
-import { AssetVisibility, updateAsset, type AssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
 import {
   canCopyImageToClipboard,
   copyAssetImageToClipboard,
@@ -8,8 +8,8 @@ import {
   toggleArchive,
 } from './asset-utils';
 
-vi.mock('@immich/sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frameleaf/sdk')>();
   return {
     ...actual,
     updateAsset: vi.fn(),

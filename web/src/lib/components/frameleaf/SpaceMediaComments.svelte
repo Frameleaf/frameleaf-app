@@ -21,8 +21,8 @@
     updateSharedSpaceComment,
     type SharedSpaceCommentResponseDto,
     type SharedSpaceMemberResponseDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiChevronDown,
     mdiChevronUp,

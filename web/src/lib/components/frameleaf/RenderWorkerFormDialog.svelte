@@ -25,7 +25,7 @@
   } from '$lib/frameleaf/render-workers';
   import { handleCreateRenderWorker, handleUpdateRenderWorker } from '$lib/services/render-worker.service';
   import { copyToClipboard } from '$lib/utils';
-  import { MediaOperationDestination, MediaOperationKind, type RenderWorkerDto } from '@immich/sdk';
+  import { MediaOperationDestination, MediaOperationKind, type RenderWorkerDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let {

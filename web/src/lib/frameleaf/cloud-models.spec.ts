@@ -4,7 +4,7 @@ import {
   MlWorkload,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {

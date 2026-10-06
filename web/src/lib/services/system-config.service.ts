@@ -1,5 +1,5 @@
-import { getConfig, updateConfig, type ServerFeaturesDto, type AdminConfigDto } from '@immich/sdk';
-import { toastManager, type ActionItem } from '@immich/ui';
+import { getConfig, updateConfig, type ServerFeaturesDto, type AdminConfigDto } from '@frameleaf/sdk';
+import { toastManager, type ActionItem } from '@frameleaf/ui';
 import { mdiContentCopy, mdiDownload, mdiUpload } from '@mdi/js';
 import { isEqual } from 'lodash-es';
 import type { MessageFormatter } from 'svelte-i18n';
