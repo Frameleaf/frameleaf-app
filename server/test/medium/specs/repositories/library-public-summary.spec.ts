@@ -86,14 +86,15 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     expect(await store.complete(producer, [])).toBe(true);
     // Deliberate SQL-only fixture population with production-width item/hash keys and
     // copied-origin rows (no canonical intent). Not an append/checkpoint/media acceptance.
-    for (let after = 0; after < 500_000; after += 250)
+    // Synthetic construction uses 1000-row statements to avoid 4000 serial round trips before read timing.
+    for (let after = 0; after < 500_000; after += 1000)
       for (const run of [id, origin])
         await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId","librarySourceKey","libraryIntent","libraryOriginComplete")
           select ${run}::uuid,'library/'||${id}::text||'/'||lpad(n::text,20,'0'),md5(n::text)::uuid::text,${JobName.SidecarCheck},${QueueName.Sidecar},jsonb_build_object('id',md5(n::text)::uuid::text,'source','upload'),${id}::uuid,
             case when ${run === id} then md5(n::text)||md5(n::text) end,
             case when ${run === id} then jsonb_build_object('name',${JobName.SidecarCheck}::text,'queue',${QueueName.Sidecar}::text,'data',jsonb_build_object('id',md5(n::text)::uuid::text,'source','upload'),
               'safeToRetry',false,'sensitive',false,'deadlineMs',300000,'runId',${id}::text,'itemKey','library/'||${id}::text||'/'||lpad(n::text,20,'0'),'rootItemKey',md5(n::text)::uuid::text) end,${run === id}
-          from generate_series(${after + 1}::int,${after + 250}::int) n`.execute(db);
+          from generate_series(${after + 1}::int,${after + 1000}::int) n`.execute(db);
     await sql`update job_selection set state='ready',"sourceClosedAt"=now(),"capturedAt"=now(),"appendSequence"=500000 where id=${id}::uuid`.execute(
       db,
     );
