@@ -265,6 +265,7 @@ describe('large durable queue query work', () => {
       );
       await sql`update job_run_item set state='completed' where "runId"=${runId}::uuid
         and stage='stage-0' and "itemKey" <= ${String(size - 250).padStart(8, '0')}`.execute(db);
+      await sql`vacuum analyze job`.execute(db);
       await sql`vacuum analyze job_run_item`.execute(db);
       captured.length = 0;
 
