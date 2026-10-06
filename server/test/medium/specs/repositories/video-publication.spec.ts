@@ -9,7 +9,7 @@ import { QUEUE_TIMING, QueueExecution } from 'src/queue/types.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
-import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, editOperationCreate } from 'src/utils/edit-operation.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -83,8 +83,10 @@ describe('retained video publication under queue and operation claims', () => {
       followups: [],
     };
     const tracker = new EditOperationTracker(operations, {} as never, { log: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    let run: EditOperationRun | undefined;
     await queueExecution.run(context, () =>
-      tracker.execute(operation.id, async () => {
+      tracker.execute(operation.id, async (activeRun) => {
+        run = activeRun;
         await publishJobResult(async () => {
           if (!(await edits.publishVideoVersion(candidate, result('candidate'))).published) {
             throw new Error('Video version changed before publication');
@@ -102,7 +104,7 @@ describe('retained video publication under queue and operation claims', () => {
         ),
       );
     const files = () => db.selectFrom('asset_file').select('path').where('assetId', '=', asset.id).execute();
-    return { asset, edits, previous, candidate, operations, operation, claim, commit, files, result };
+    return { asset, edits, previous, candidate, operations, operation, claim, context, run, commit, files, result };
   };
 
   it('keeps the previous projection until the version, references, job and operation commit together', async () => {
@@ -117,6 +119,52 @@ describe('retained video publication under queue and operation claims', () => {
     expect((await fixture.edits.getVideoVersion(fixture.asset.id, fixture.previous.id))?.masterPath).toBe(
       fixture.result('previous').masterPath,
     );
+  });
+
+  it('keeps the same operation claim usable when queue publication rolls back after adoption', async () => {
+    const fixture = await prepare();
+    const run = fixture.run!;
+    expect(run).toBeDefined();
+    expect(run.done).toBe(false);
+    fixture.context.adoptions.push(async (tx) => {
+      // The real operation transition has succeeded inside the publication transaction.
+      // Expire only its queue lease so the store's final guard rolls that transaction back.
+      expect(
+        await tx
+          .selectFrom('media_operation')
+          .select(['status', 'claimToken'])
+          .where('id', '=', run.id)
+          .executeTakeFirst(),
+      ).toEqual({ status: MediaOperationStatus.Completed, claimToken: null });
+      await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+        where id = ${fixture.claim.id}::uuid and token = ${fixture.claim.token}::uuid`.execute(tx);
+    });
+    await expect(fixture.commit()).rejects.toThrow('Publication lease expired before commit');
+    expect(await fixture.files()).toEqual([{ path: fixture.result('previous').files[0].path }]);
+    expect((await fixture.edits.getVideoVersion(fixture.asset.id, fixture.candidate.id))?.masterPath).toBeNull();
+    expect(await fixture.operations.getForWorker(run.id)).toMatchObject({
+      status: MediaOperationStatus.Validating,
+      claimToken: run.claimToken,
+      resultAssetId: null,
+      attempt: 1,
+      autoRetries: 0,
+    });
+    const {
+      rows: [job],
+    } = await sql`select state,token,attempt from job where id = ${fixture.claim.id}::uuid`.execute(db);
+    expect(job).toEqual({ state: 'active', token: fixture.claim.token, attempt: 1 });
+    // Rollback cannot grant a different claimant authority or silently settle this owner.
+    const failure = { error: 'Publication lease expired before commit', errorCode: 'publication_lease_expired' };
+    expect(await fixture.operations.fail(run.id, randomUUID(), failure, { retry: false })).toBe(false);
+    expect(await run.fail(failure.error, failure.errorCode, { retry: false })).toBe('failed');
+    expect(await fixture.operations.getForWorker(run.id)).toMatchObject({
+      status: MediaOperationStatus.Failed,
+      claimToken: null,
+      resultAssetId: null,
+      errorCode: failure.errorCode,
+      attempt: 1,
+      autoRetries: 0,
+    });
   });
 
   it.each(['expired operation', 'expired queue', 'superseded version'] as const)(
