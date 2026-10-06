@@ -57,6 +57,9 @@ describe('maintenance page state (FL-80 MS-1)', () => {
         { signedIn: false },
       ),
     ).toEqual({ kind: 'restore-failed', error: 'IM CORRUPTED' });
+    expect(maintenancePageState({ active: true, action: MaintenanceAction.End }, { signedIn: true })).toEqual({
+      kind: 'maintenance',
+    });
     expect(maintenancePageState({ active: false, action: MaintenanceAction.End }, { signedIn: false })).toEqual({
       kind: 'finished',
     });
