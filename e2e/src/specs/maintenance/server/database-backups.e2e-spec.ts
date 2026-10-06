@@ -1,9 +1,24 @@
 import { LoginResponseDto, ManualJobName } from '@frameleaf/sdk';
+import { ownedWait } from 'src/harness-context.js';
+import { pollRequest } from 'src/harness-wait.js';
 import { settleMaintenanceCleanup } from 'src/maintenance-cleanup.js';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Use the existing maintenance exit startup profile, with requests owned by the current test.
+const waitForServerRestart = () =>
+  ownedWait('Waiting for the server to leave maintenance', 60_000, (context) =>
+    pollRequest(
+      context,
+      () => request(app).get('/server/config'),
+      ({ status, body }) => {
+        if (status >= 500) throw new Error(`Server restart failed: HTTP ${status}`);
+        return status === 200 && !body.maintenanceMode;
+      },
+    ),
+  );
 
 describe('/admin/database-backups', () => {
   let cookie: string | undefined;
@@ -352,14 +367,8 @@ describe('/admin/database-backups', () => {
         }),
       );
 
-      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({
-        action: 'end',
-      });
-
-      await utils.poll(
-        () => request(app).get('/server/config'),
-        ({ status, body }) => status === 200 && !body.maintenanceMode,
-      );
+      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
+      await waitForServerRestart();
     });
 
     it.sequential('rollback to restore point if backup is missing admin', { timeout: 60_000 }, async () => {
@@ -423,14 +432,8 @@ describe('/admin/database-backups', () => {
         }),
       );
 
-      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({
-        action: 'end',
-      });
-
-      await utils.poll(
-        () => request(app).get('/server/config'),
-        ({ status, body }) => status === 200 && !body.maintenanceMode,
-      );
+      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
+      await waitForServerRestart();
     });
 
     // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
@@ -465,11 +468,8 @@ describe('/admin/database-backups', () => {
           }),
         );
 
-      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' });
-      await utils.poll(
-        () => request(app).get('/server/config'),
-        ({ status, body }) => status === 200 && !body.maintenanceMode,
-      );
+      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
+      await waitForServerRestart();
     });
 
     // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
