@@ -70,6 +70,10 @@ test.describe('Maintenance', () => {
     await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'End maintenance' })).toBeVisible();
     await page.getByRole('button', { name: 'End maintenance' }).click();
+    await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL('**/auth/login');
   });
 
