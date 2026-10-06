@@ -368,6 +368,7 @@ export class MaintenanceWorkerService {
     // also set here, before the first await, for a restore resumed from the stored state on start
     this.#restoring = true;
     let held: HeldLock | null = null;
+    let failure: string | undefined;
     const assert = async () => {
       if (!held || !(await held.verify()))
         throw new Error('Recovery lost its maintenance lock; retry in maintenance mode');
@@ -427,17 +428,16 @@ export class MaintenanceWorkerService {
       });
     } catch (error) {
       this.logger.error(`Encountered error running action: ${error}`);
-      this.setStatus({
-        active: true,
-        action: action.action,
-        task: 'error',
-        error: '' + error,
-      });
+      failure = '' + error;
     } finally {
       try {
         await held?.release();
       } finally {
         this.#restoring = false;
+        // A terminal error permits End; publish it only after the restore reservation has settled.
+        if (failure !== undefined) {
+          this.setStatus({ active: true, action: action.action, task: 'error', error: failure });
+        }
       }
     }
   }
