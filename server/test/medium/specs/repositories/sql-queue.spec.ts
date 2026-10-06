@@ -101,9 +101,10 @@ describe('PostgreSQL queue', () => {
     expect(await store.claim(queue, workerB)).toEqual([]);
   });
 
-  it('reconstructs legacy backup safety without another retry budget or operation-owned replay', async () => {
+  it('discards active snapshot backup invocations without replay or fabricated completion', async () => {
     const backupQueue = QueueName.BackupDatabase;
     const testId = randomUUID();
+    const runId = await store.createRun('snapshot-backup', {});
     const backup = (kind: string, data: Record<string, unknown> = {}): QueueIntent =>
       intent({
         name: JobName.DatabaseBackup,
@@ -114,9 +115,15 @@ describe('PostgreSQL queue', () => {
     await store.initialize([backupQueue]);
     await store.setConcurrency(backupQueue, 3);
     try {
-      await store.enqueue([backup('retry'), backup('exhausted'), backup('operation', { operationId: randomUUID() })]);
+      await store.enqueue([
+        { ...backup('retry'), safeToRetry: true, runId, itemKey: 'backup' },
+        backup('exhausted'),
+        backup('operation', { operationId: randomUUID() }),
+      ]);
+      await store.finishEnumeration(runId);
       const originals = await store.claim(backupQueue, workerA);
       expect(originals).toHaveLength(3);
+      const first = originals.find((claim) => claim.data.kind === 'retry')!;
       const exhausted = originals.find((claim) => claim.data.kind === 'exhausted')!;
       await sql`update job set "safeToRetry" = true where id = ${exhausted.id}::uuid`.execute(db);
       await store.fail(exhausted, 'first attempt failed');
@@ -136,11 +143,11 @@ describe('PostgreSQL queue', () => {
         ).rows,
       ).toEqual(
         expect.arrayContaining([
-          { kind: 'retry', state: 'pending', attempt: 1, retryBaseAttempt: 0, safeToRetry: true, token: null },
+          { kind: 'retry', state: 'cancelled', attempt: 1, retryBaseAttempt: 0, safeToRetry: true, token: null },
           { kind: 'not-started', state: 'pending', attempt: 0, retryBaseAttempt: 0, safeToRetry: true, token: null },
           {
             kind: 'exhausted',
-            state: 'needs_attention',
+            state: 'cancelled',
             attempt: 2,
             retryBaseAttempt: 0,
             safeToRetry: true,
@@ -167,23 +174,34 @@ describe('PostgreSQL queue', () => {
       for (const stale of [...originals, second]) expect(await store.complete(stale, [])).toBe(false);
       expect(
         (
-          await sql`select a.outcome from job_attempt a join job j on j.id = a."jobId"
-        where j.data->>'testId' = ${testId} and j.data->>'kind' = 'retry'`.execute(db)
+          await sql`select a.outcome, a.token, a."workerId", a."finishedAt" is not null settled
+        from job_attempt a join job j on j.id = a."jobId"
+        where j.data->>'testId' = ${testId} and j.data->>'kind' in ('retry','exhausted')
+        order by j.data->>'kind', a.attempt`.execute(db)
         ).rows,
-      ).toEqual([{ outcome: 'restored_retry' }]);
+      ).toEqual([
+        { outcome: 'pending', token: exhausted.token, workerId: workerA, settled: true },
+        { outcome: 'restored_discarded_backup', token: second.token, workerId: workerA, settled: true },
+        { outcome: 'restored_discarded_backup', token: first.token, workerId: workerA, settled: true },
+      ]);
+      expect((await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
+        { state: 'cancelled' },
+      ]);
+      expect(
+        (await sql`select "finishedAt" is not null settled from job_run where id = ${runId}::uuid`.execute(db)).rows,
+      ).toEqual([{ settled: true }]);
+      expect(
+        (
+          await sql`select key from system_metadata where key = ${'frameleaf-worker-stopped:' + workerA}
+        or key = any(${[...originals, second].map(({ token }) => 'frameleaf-attempt-evidence:' + token)}::text[])`.execute(db)
+        ).rows,
+      ).toEqual([]);
       await sql`update job set "availableAt" = now() where data->>'testId' = ${testId}`.execute(db);
       const retries = await store.claim(backupQueue, workerB);
-      expect(retries).toHaveLength(2);
-      for (const claim of retries) {
-        if (claim.data.kind === 'retry') {
-          expect(claim.attempt).toBe(2);
-          await store.fail(claim, 'one retry exhausted');
-        } else {
-          expect(claim.data.kind).toBe('not-started');
-          expect(claim.attempt).toBe(1);
-          expect(await store.complete(claim, [])).toBe(true);
-        }
-      }
+      expect(retries).toHaveLength(1);
+      expect(retries[0].data.kind).toBe('not-started');
+      expect(retries[0].attempt).toBe(1);
+      expect(await store.complete(retries[0], [])).toBe(true);
       expect(await store.claim(backupQueue, workerB)).toEqual([]);
       expect(
         (
@@ -192,7 +210,7 @@ describe('PostgreSQL queue', () => {
         ).rows,
       ).toEqual(
         expect.arrayContaining([
-          { kind: 'retry', state: 'failed' },
+          { kind: 'retry', state: 'cancelled' },
           { kind: 'not-started', state: 'completed' },
         ]),
       );

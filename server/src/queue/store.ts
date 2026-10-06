@@ -924,6 +924,9 @@ export async function resetQueueAfterRestore(db: Executor) {
   // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
   const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;
   const repeatable = sql`("safeToRetry" or ${backup}) and not (data ? 'operationId')`;
+  // A restored dump already fulfilled its active backup invocation. Discard that transient
+  // request without claiming handler success or manufacturing evidence that its executor stopped.
+  const discardBackup = sql`(state = 'active' and ${backup} and not (data ? 'operationId'))`;
   const cancelled = sql`("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline')`;
   const { rows: deferred } =
     await sql<LineageItemIdentity>`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
@@ -933,20 +936,21 @@ export async function resetQueueAfterRestore(db: Executor) {
       or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
         as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
     returning i."runId", i."itemKey", i.stage`.execute(db);
-  await sql`update job_attempt a set outcome = case when ${cancelled} then
+  await sql`update job_attempt a set outcome = case when ${discardBackup} then 'restored_discarded_backup' when ${cancelled} then
       case when ${stoppedJobAttempts} then 'restored_cancelled' else 'restored_needs_attention' end when ${repeatable}
       and j.attempt < j."retryBaseAttempt" + 2 then 'restored_retry' else 'restored_needs_attention' end,
       "finishedAt" = now() from job j where a."jobId" = j.id and a."finishedAt" is null`.execute(db);
   const { rows: restored } = await sql<{
     id: string;
-  }>`update job j set state = case when ${cancelled} then
+  }>`update job j set state = case when ${discardBackup} then 'cancelled' when ${cancelled} then
       case when ${stoppedJobAttempts} then 'cancelled' else 'needs_attention' end when ${repeatable}
         and attempt < "retryBaseAttempt" + 2 then 'pending' else 'needs_attention' end,
     "safeToRetry" = "safeToRetry" or (${backup} and not (data ? 'operationId')),
     token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null,
     "availableAt" = now() + interval '30 seconds', "latestPending" = null,
-    "finishedAt" = case when not ${cancelled} and ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
-    error = case when ${cancelled} and not ${stoppedJobAttempts}
+    "finishedAt" = case when not ${discardBackup} and not ${cancelled} and ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
+    error = case when ${discardBackup} then 'Restore discarded the snapshot backup invocation'
+      when ${cancelled} and not ${stoppedJobAttempts}
       then 'Executor stop could not be confirmed; review the worker before retrying'
       else 'Restore revoked the previous execution claim' end,
     data = case when sensitive then '{}'::jsonb else data end
