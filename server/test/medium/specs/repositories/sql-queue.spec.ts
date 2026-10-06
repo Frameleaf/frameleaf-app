@@ -21,6 +21,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { feedManifest } from 'src/queue/manifest.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
@@ -43,6 +44,7 @@ describe('PostgreSQL queue', () => {
   let queue: string;
   let workerA: string;
   let workerB: string;
+  let capturedQueries: string[] | undefined;
   const intent = (extra: Partial<QueueIntent> = {}): QueueIntent => ({
     queue,
     name: 'thumbnail',
@@ -53,7 +55,9 @@ describe('PostgreSQL queue', () => {
     ...extra,
   });
   beforeAll(async () => {
-    db = await getKyselyDB();
+    db = await getKyselyDB(undefined, (event) => {
+      if (event.level === 'query') capturedQueries?.push(event.query.sql);
+    });
     store = new SqlQueueStore(db);
   });
   beforeEach(async () => {
@@ -62,6 +66,53 @@ describe('PostgreSQL queue', () => {
     workerB = randomUUID();
     await store.initialize([queue], workerA);
     await store.initialize([], workerB);
+  });
+
+  it('finishes an empty manifest page without linkage updates or a recount and clears filling state', async () => {
+    const enqueue = vi.fn(() => Promise.resolve());
+    await sql`update job_queue set "manifestFilling" = true where name = ${queue}`.execute(db);
+    capturedQueries = [];
+    try {
+      expect(await feedManifest(db, queue, enqueue)).toBe(0);
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(capturedQueries.filter((query) => query.startsWith('update job_run_item'))).toEqual([]);
+      expect(capturedQueries.filter((query) => query.includes('select count(*)::int count from job'))).toHaveLength(1);
+      expect((await sql`select "manifestFilling" from job_queue where name = ${queue}`.execute(db)).rows).toEqual([
+        { manifestFilling: false },
+      ]);
+      capturedQueries = [];
+      expect(await feedManifest(db, queue, enqueue)).toBe(0);
+      expect(capturedQueries.filter((query) => query.startsWith('update job_queue'))).toEqual([]);
+    } finally {
+      capturedQueries = undefined;
+    }
+  });
+
+  it('stops after an empty promotion page while still claiming waiting work and preserving pending eligibility', async () => {
+    capturedQueries = [];
+    try {
+      expect(await store.claim(queue, workerA)).toEqual([]);
+      expect(capturedQueries.filter((query) => query.startsWith("update job set state = 'waiting'"))).toHaveLength(1);
+      await store.enqueue([intent(), intent({ options: { delay: 30_000 } })]);
+      const { rows: waiting } = await sql<{ id: string }>`update job set state = 'waiting'
+        where queue = ${queue} and "availableAt" <= now() returning id`.execute(db);
+      await store.enqueue([intent({ parentId: waiting[0].id })]);
+      capturedQueries = [];
+      const [claim] = await store.claim(queue, workerA);
+      expect(claim.id).toBe(waiting[0].id);
+      expect(claim.attempt).toBe(1);
+      expect(capturedQueries.filter((query) => query.startsWith("update job set state = 'waiting'"))).toHaveLength(1);
+      expect((await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows).toHaveLength(
+        2,
+      );
+      expect(await store.complete(claim, [])).toBe(true);
+      expect(await store.claim(queue, workerB)).toHaveLength(1);
+      expect((await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows).toHaveLength(
+        1,
+      );
+    } finally {
+      capturedQueries = undefined;
+    }
   });
 
   it('restores safe work within its existing retry budget and never independently resumes operation jobs', async () => {
