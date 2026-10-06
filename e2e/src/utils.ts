@@ -1515,7 +1515,7 @@ export const utils = {
       signal,
     ),
 
-  waitForAssetReady: (
+  waitForAssetReady: async (
     accessToken: string,
     id: string,
     options: {
@@ -1527,40 +1527,42 @@ export const utils = {
   ) => {
     const started = performance.now();
     let phase = 'start';
-    return ownedWait(
-      `Waiting for asset ${id}`,
-      options.timeout ?? queueWaitTimeout(),
-      async (context) => {
-        for (const queue of [
-          QueueName.MetadataExtraction,
-          QueueName.StorageTemplateMigration,
-          QueueName.ThumbnailGeneration,
-          ...(options.video ? [QueueName.VideoConversion] : []),
-        ]) {
-          phase = `queue ${queue}`;
-          await waitForQueue(accessToken, queue, context);
-        }
-        const headers = options.headers ?? asBearerAuth(accessToken);
-        phase = 'asset info';
-        const asset = await getAssetInfo({ id }, { headers, signal: context.signal });
-        context.remaining();
-        if (asset.id !== id) {
-          throw new Error('Asset readiness returned another asset');
-        }
-        phase = 'preview';
-        const preview = await viewAsset({ id, size: AssetMediaSize.Preview }, { headers, signal: context.signal });
-        context.remaining();
-        if (preview.size === 0 || !preview.type.startsWith('image/')) {
-          throw new Error(`Asset ${id} did not publish a readable preview`);
-        }
-        return asset;
-      },
-      options.signal,
-    ).catch((error: unknown) => {
+    try {
+      return await ownedWait(
+        `Waiting for asset ${id}`,
+        options.timeout ?? queueWaitTimeout(),
+        async (context) => {
+          for (const queue of [
+            QueueName.MetadataExtraction,
+            QueueName.StorageTemplateMigration,
+            QueueName.ThumbnailGeneration,
+            ...(options.video ? [QueueName.VideoConversion] : []),
+          ]) {
+            phase = `queue ${queue}`;
+            await waitForQueue(accessToken, queue, context);
+          }
+          const headers = options.headers ?? asBearerAuth(accessToken);
+          phase = 'asset info';
+          const asset = await getAssetInfo({ id }, { headers, signal: context.signal });
+          context.remaining();
+          if (asset.id !== id) {
+            throw new Error('Asset readiness returned another asset');
+          }
+          phase = 'preview';
+          const preview = await viewAsset({ id, size: AssetMediaSize.Preview }, { headers, signal: context.signal });
+          context.remaining();
+          if (preview.size === 0 || !preview.type.startsWith('image/')) {
+            throw new Error(`Asset ${id} did not publish a readable preview`);
+          }
+          return asset;
+        },
+        options.signal,
+      );
+    } catch (error: unknown) {
       throw new Error(`Asset readiness failed: phase=${phase}; elapsedMs=${Math.round(performance.now() - started)}`, {
         cause: error,
       });
-    });
+    }
   },
 
   poll: (
