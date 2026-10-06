@@ -339,13 +339,14 @@ export class SqlQueueStore {
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
         for (let slots = QUEUE_HIGH_WATER - counts.ready; slots > 0; slots -= QUEUE_BATCH) {
-          await sql`update job set state = 'waiting' where id in (
+          const { numAffectedRows } = await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
           order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
         )`.execute(tx);
+          if (numAffectedRows === 0n) break;
         }
       }
       const capacity = Math.min(QUEUE_BATCH, maxClaims, config.concurrency - counts.active);
