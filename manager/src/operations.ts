@@ -535,6 +535,8 @@ export class Operations {
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${reader.name}') THEN
         CREATE ROLE "${reader.name}" LOGIN PASSWORD '${reader.password}' NOSUPERUSER NOBYPASSRLS NOINHERIT;
       END IF; END $role$;
+      ALTER ROLE "${reader.name}" INHERIT;
+      GRANT pg_read_all_stats TO "${reader.name}";
       GRANT CONNECT ON DATABASE "${database}" TO "${reader.name}";
       GRANT USAGE ON SCHEMA public TO "${reader.name}";
       GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${reader.name}";

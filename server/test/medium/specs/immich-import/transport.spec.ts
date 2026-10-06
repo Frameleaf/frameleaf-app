@@ -76,6 +76,9 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     expect(
       await f.source.db.query(`SELECT current_user AS name, current_setting('transaction_read_only') AS readonly`),
     ).toEqual([{ name: f.role, readonly: 'on' }]);
+    expect(
+      await f.source.db.query("SELECT pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AS statistics"),
+    ).toEqual([{ statistics: true }]);
     await expect(
       f.source.db.query('UPDATE public."user" SET name=\'mutated\' WHERE id=$1', [f.owner]),
     ).rejects.toThrow();
@@ -196,19 +199,29 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     120_000,
   );
 
-  it.each(['idle', 'uncommitted writer'] as const)(
-    'rejects another %s session, then admits after it disconnects',
-    async (kind) => {
+  it.each([
+    ['idle', true],
+    ['uncommitted writer', true],
+    ['idle', false],
+    ['uncommitted writer', false],
+  ] as const)(
+    'rejects another %s session (statistics access=%s), then admits after it disconnects',
+    async (kind, statistics) => {
       const f = await start();
       await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
       const writer = f.connect(f.sourceName, false);
       const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
       try {
-        // The reader must refuse this live session even though its least-privilege role cannot
-        // see the other role's backend type. Granting monitoring rights would mask the failure.
+        if (!statistics) {
+          await writer.db.query(`REVOKE pg_read_all_stats FROM ${quote(f.role)}`);
+        }
+        expect(
+          await f.source.db.query("SELECT pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AS statistics"),
+        ).toEqual([{ statistics }]);
+        // Known client backends and unknown session types must both block admission.
         expect(
           await f.source.db.query('SELECT backend_type FROM pg_stat_activity WHERE pid=$1', [session.pid]),
-        ).toEqual([{ backend_type: null }]);
+        ).toEqual([{ backend_type: statistics ? 'client backend' : null }]);
         if (kind === 'uncommitted writer') {
           await writer.db.query('BEGIN');
           await writer.db.query('UPDATE public."user" SET name=\'pending writer\' WHERE id=$1', [f.owner]);
@@ -217,12 +230,17 @@ describe('offline Immich import over PostgreSQL source and destination connectio
         await expectFresh(f);
       } finally {
         if (kind === 'uncommitted writer') await writer.db.query('ROLLBACK');
+        if (!statistics) {
+          // Restore supported authority before the positive control, so unrelated autovacuum
+          // is classified rather than waited out. Reuse the writer; do not reconnect the reader.
+          await writer.db.query(`GRANT pg_read_all_stats TO ${quote(f.role)}`);
+        }
         await writer.close();
         f.connections.delete(writer);
       }
       // Driver close observes the local socket, not the server's backend removal. Prove that
       // this exact session has disappeared before asking the importer to admit the source once.
-      // Keep the least-privilege reader: no monitoring grants, backend termination or import retries.
+      // No backend termination or import retries.
       await vi.waitFor(
         async () => {
           expect(

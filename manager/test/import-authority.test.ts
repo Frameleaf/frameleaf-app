@@ -251,10 +251,22 @@ test('repeated import configuration refreshes both database IPs without changing
   try {
     await f.internal.configureImport(f.operation, { source: f.source }, f.installation);
     const config = await readFile(join(f.operations.directory(), 'import.json'), 'utf8');
-    const reader = f.store.get(`import-reader:${f.operation.id}`);
+    const reader = f.store.get<{ name: string }>(`import-reader:${f.operation.id}`)!;
     f.upstream.NetworkSettings.Networks['source-$tenant'].IPAddress = '172.19.0.17';
     f.destination.NetworkSettings.Networks[`${f.installation.project}_default`].IPAddress = '172.20.0.18';
     await f.internal.configureImport(f.operation, { source: f.source }, f.installation);
+    const grants = f.events.filter((event) => event.includes('GRANT SELECT ON ALL TABLES'));
+    assert.equal(grants.length, 2);
+    for (const grant of grants) {
+      // Replayed setup also upgrades a reader created with NOINHERIT by an earlier Manager.
+      // This spelling works on PG14 as well as newer role-membership implementations.
+      const inherit = grant.indexOf(`ALTER ROLE "${reader.name}" INHERIT;`);
+      const statistics = grant.indexOf(`GRANT pg_read_all_stats TO "${reader.name}";`);
+      assert.ok(inherit >= 0 && statistics > inherit);
+      assert.ok(grant.includes('NOSUPERUSER NOBYPASSRLS NOINHERIT'));
+      assert.equal(grant.includes('pg_monitor'), false);
+      assert.equal(grant.includes('WITH INHERIT'), false);
+    }
     assert.equal(await readFile(join(f.operations.directory(), 'import.json'), 'utf8'), config);
     assert.deepEqual(f.store.get(`import-reader:${f.operation.id}`), reader);
     const compose = JSON.parse(await readFile(join(f.operations.directory(), 'import-compose.json'), 'utf8'));
