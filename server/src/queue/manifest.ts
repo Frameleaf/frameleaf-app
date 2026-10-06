@@ -515,6 +515,12 @@ export async function feedManifest(
       rows.push(...page);
       afterSelection = selection.id;
     }
+    if (rows.length === 0) {
+      if (config.manifestFilling) {
+        await sql`update job_queue set "manifestFilling" = false where name = ${queue}`.execute(tx);
+      }
+      return 0;
+    }
     await enqueue(
       rows
         .filter(
