@@ -35,11 +35,12 @@ describe('/tags', () => {
     userAsset = await utils.createAsset(user.accessToken);
   });
 
-  // One metadata wait, the existing 8s reset, and 30s for requests and cancellation cleanup.
+  // Ordered sidecar/metadata waits share this hook's budget; the existing reset limits remain unchanged.
   const tagResetTimeout = process.env.CI ? 98_000 : 48_000;
   beforeEach(
     withApiAssetReadiness(tagResetTimeout, async (signal) => {
-      //  tagging assets eventually triggers metadata extraction which can impact other tests
+      // Sidecar completion enqueues metadata; wait for the producer before its consumer.
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar', undefined, signal);
       await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', undefined, signal);
       await utils.resetDatabase(['tag'], signal);
     }),
