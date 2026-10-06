@@ -47,7 +47,7 @@ export const loadMaintenanceStatus = async () => {
       const status = await getMaintenanceStatus();
       maintenanceStore.status.set(status);
 
-      if (status.action === MaintenanceAction.End) {
+      if (status.action === MaintenanceAction.End && !status.active) {
         websocketStore.serverRestarting.set({
           isMaintenanceMode: false,
         });

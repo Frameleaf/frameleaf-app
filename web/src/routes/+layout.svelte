@@ -266,6 +266,10 @@
   });
 
   const onWebsocketConnect = async () => {
+    // The maintenance page owns its finished state and explicit return action.
+    if (location.pathname.startsWith(Route.maintenanceMode())) {
+      return;
+    }
     const isRestarting = get(serverRestarting);
     if (isRestarting && maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location)) {
       const { maintenanceMode } = await getServerConfig();
