@@ -103,6 +103,8 @@ const simpleInitialState = sql<boolean>`(${initialCanonicalWithoutExecution}) or
 const materializedInitialEntitlementContext = sql`left join initial_entitlements initial_entitlement
   on initial_entitlement."runId"=i."runId" and initial_entitlement."selectionId"=snapshot.id`;
 
+// Classify simple initial rows after the scoped joins. Pushing that correlated predicate
+// below them estimates one cold row and repeats queue/entitlement lookups for every root.
 const stagesFor = (
   filter: RawBuilder<boolean>,
   runScope: RawBuilder<string>,
@@ -127,16 +129,19 @@ const stagesFor = (
     and parent.id = j."parentId" limit 1) p on true
   where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
   ) union all (
+  select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState"
+  from (
   select i."runId",i."rootItemKey",i.stage,
     case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
       when i.state='pending' and snapshot.state in ('needs_attention','cancelled') then snapshot.state else i.state end state,
     null::timestamptz "availableAt",null::int attempt,null::int "retryBaseAttempt",null::text "dependencyReason",q.paused,
-    null::timestamptz "meaningfulAt",null::text "parentState"
+    null::timestamptz "meaningfulAt",null::text "parentState",(${simpleInitialState}) "simpleInitial"
   from job_run_item i join job_selection snapshot on snapshot.id=i."selectionId"
   ${initialCanonicalOutcomeContext}
   ${materializedInitialEntitlementContext}
   left join job_queue q on q.name=i.queue
-  where ${filter} and (${simpleInitialState}) offset 0
+  where ${filter} offset 0
+  ) initial_candidates where "simpleInitial" offset 0
   )) effective`;
 
 const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,

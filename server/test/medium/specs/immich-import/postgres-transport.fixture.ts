@@ -240,10 +240,24 @@ export class PostgresImportFixture {
   }
 
   async restartConnections() {
+    const [session] = await this.source.db.query('SELECT pg_backend_pid() AS pid');
     for (const connection of [this.source, this.destination]) {
       await connection.close();
       this.connections.delete(connection);
     }
+    // As in mutateSource, socket close does not prove PostgreSQL removed the old backend.
+    // Observe only that source PID using the fixture's existing observer before reconnecting.
+    await vi.waitFor(
+      async () => {
+        expect(
+          await this.admin.unsafe('SELECT pid FROM pg_stat_activity WHERE datname=$1 AND pid=$2', [
+            this.sourceName,
+            Number(session.pid),
+          ]),
+        ).toHaveLength(0);
+      },
+      { timeout: 2000, interval: 50 },
+    );
     this.source = this.connect(this.sourceName, true, true);
     this.destination = this.connect(this.destinationName, false);
   }

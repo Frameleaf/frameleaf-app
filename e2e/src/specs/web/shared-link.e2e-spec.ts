@@ -8,10 +8,11 @@ import {
   removeSharedLink,
   updateSharedLink,
 } from '@immich/sdk';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { createUserDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { asBearerAuth, utils } from 'src/utils.js';
+import { test, withAssetReadySetup } from 'src/web-test.js';
 
 /** A fresh album link and a way to revoke it from the owner's side while a viewer has it open. */
 const revokeLater = async (accessToken: string, albumId: string) => {
@@ -64,41 +65,45 @@ test.describe('Shared Links', () => {
   let individualSharedLink: SharedLinkResponseDto;
   let viewOnlySharedLink: SharedLinkResponseDto;
 
-  test.beforeAll(async () => {
-    utils.initSdk();
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    asset = await utils.createAsset(admin.accessToken);
-    asset2 = await utils.createAsset(admin.accessToken);
-    album = await createAlbum(
-      {
-        createAlbumDto: {
-          albumName: 'Test Album',
-          assetIds: [asset.id],
+  test.beforeAll(
+    withAssetReadySetup(async (signal) => {
+      utils.initSdk();
+      await utils.resetDatabase(undefined, signal);
+      admin = await utils.adminSetup();
+      asset = await utils.createAsset(admin.accessToken, undefined, { signal });
+      asset2 = await utils.createAsset(admin.accessToken, undefined, { signal });
+      await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+      await utils.waitForAssetReady(admin.accessToken, asset2.id, { signal });
+      album = await createAlbum(
+        {
+          createAlbumDto: {
+            albumName: 'Test Album',
+            assetIds: [asset.id],
+          },
         },
-      },
-      { headers: asBearerAuth(admin.accessToken) },
-    );
-    sharedLink = await utils.createSharedLink(admin.accessToken, {
-      type: SharedLinkType.Album,
-      albumId: album.id,
-    });
-    sharedLinkPassword = await utils.createSharedLink(admin.accessToken, {
-      type: SharedLinkType.Album,
-      albumId: album.id,
-      password: 'test-password',
-    });
-    individualSharedLink = await utils.createSharedLink(admin.accessToken, {
-      type: SharedLinkType.Individual,
-      assetIds: [asset.id, asset2.id],
-    });
-    viewOnlySharedLink = await utils.createSharedLink(admin.accessToken, {
-      type: SharedLinkType.Album,
-      albumId: album.id,
-      allowDownload: false,
-      allowUpload: true,
-    });
-  });
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      sharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+      });
+      sharedLinkPassword = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        password: 'test-password',
+      });
+      individualSharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset.id, asset2.id],
+      });
+      viewOnlySharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        allowDownload: false,
+        allowUpload: true,
+      });
+    }),
+  );
 
   test('download from a shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLink.key}`);
