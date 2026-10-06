@@ -1557,10 +1557,9 @@ export const utils = {
       },
       options.signal,
     ).catch((error: unknown) => {
-      throw new Error(
-        `Asset readiness failed: phase=${phase}; elapsedMs=${Math.round(performance.now() - started)}`,
-        { cause: error },
-      );
+      throw new Error(`Asset readiness failed: phase=${phase}; elapsedMs=${Math.round(performance.now() - started)}`, {
+        cause: error,
+      });
     });
   },
 
