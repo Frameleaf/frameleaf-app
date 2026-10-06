@@ -81,8 +81,9 @@ class OcrModelFile(NamedTuple):
     """Where an OCR model file lives on the model source.
 
     `repo` is a repository under the model source organisation, and the file is
-    `<detection|recognition>/model.onnx` in it. `sha256` pins the exact PP-OCRv5
-    export (RapidOCR 3.8.0 ONNX), so a mirror that serves other bytes is rejected.
+    `<detection|recognition>/model.onnx` in it. `sha256` pins the exact export
+    (RapidOCR's ONNX: 3.8.0 for PP-OCRv5, 3.10.0 for PP-OCRv6), so a mirror that
+    serves other bytes is rejected.
     """
 
     repo: str
@@ -99,6 +100,11 @@ def _ocr_lang(lang: str, sha256: str) -> tuple[OcrModelFile, OcrModelFile]:
     return _OCR_DET_MOBILE, OcrModelFile(f"{lang}__PP-OCRv5_mobile", sha256)
 
 
+def _ocr_v6(size: str, detection_sha256: str, recognition_sha256: str) -> tuple[OcrModelFile, OcrModelFile]:
+    """PP-OCRv6 ships a detector and a recogniser per size; both files live in `frameleaf/PP-OCRv6_<size>`."""
+    return OcrModelFile(f"PP-OCRv6_{size}", detection_sha256), OcrModelFile(f"PP-OCRv6_{size}", recognition_sha256)
+
+
 # The one place an OCR model name maps to its (detection, recognition) files on the model source.
 # Language variants share the Chinese/English detector and only differ in the recogniser.
 _PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {
@@ -112,6 +118,23 @@ _PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {
     "KOREAN__PP-OCRv5_mobile": _ocr_lang("KOREAN", "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b"),
     "LATIN__PP-OCRv5_mobile": _ocr_lang("LATIN", "b20bd37c168a570f583afbc8cd7925603890efbcdc000a59e22c269d160b5f5a"),
     "TH__PP-OCRv5_mobile": _ocr_lang("TH", "de541dd83161c241ff426f7ecfd602a0ba77d686cf3ab9a6c255ea82fd08006e"),
+    # PP-OCRv6 (multilingual: Chinese, Japanese, English and Latin-script languages; tiny has no Japanese).
+    # Pinned to RapidOCR 3.10.0's ONNX exports (its default_models.yaml), which embed their character set.
+    "PP-OCRv6_tiny": _ocr_v6(
+        "tiny",
+        "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+        "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b",
+    ),
+    "PP-OCRv6_small": _ocr_v6(
+        "small",
+        "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    ),
+    "PP-OCRv6_medium": _ocr_v6(
+        "medium",
+        "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2",
+        "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+    ),
 }
 
 

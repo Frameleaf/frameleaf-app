@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -2197,6 +2198,8 @@ class TestOcr:
             (TextDetector, "LATIN__PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
             (TextRecognizer, "LATIN__PP-OCRv5_mobile", "frameleaf/LATIN__PP-OCRv5_mobile"),
             (TextRecognizer, "KOREAN__PP-OCRv5_mobile", "frameleaf/KOREAN__PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv6_tiny", "frameleaf/PP-OCRv6_tiny"),
+            (TextRecognizer, "PP-OCRv6_medium", "frameleaf/PP-OCRv6_medium"),
         ],
     )
     def test_download_goes_to_model_source(
@@ -2260,9 +2263,16 @@ class TestOcr:
             assert get_model_source(model_name) == ModelSource.PADDLE
             for model_type in (ModelType.DETECTION, ModelType.RECOGNITION):
                 source = get_ocr_model_file(model_name, model_type)
-                assert source.repo.endswith("PP-OCRv5_mobile") or source.repo.endswith("PP-OCRv5_server")
+                assert re.fullmatch(r"([A-Z]+__)?PP-OCRv5_(mobile|server)|PP-OCRv6_(tiny|small|medium)", source.repo)
                 assert len(source.sha256) == 64
                 int(source.sha256, 16)
+
+    def test_ppocr_v6_pins_a_detector_and_recognizer_per_size(self) -> None:
+        for size in ("tiny", "small", "medium"):
+            detection = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.DETECTION)
+            recognition = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.RECOGNITION)
+            assert detection.repo == recognition.repo == f"PP-OCRv6_{size}"
+            assert detection.sha256 != recognition.sha256
 
     def test_det_min_score_is_per_request(self, path: mock.Mock) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
