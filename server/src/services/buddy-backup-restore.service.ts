@@ -1581,7 +1581,75 @@ export class BuddyBackupRestoreService {
         (error instanceof FrameleafCloudError && [401, 403, 429, 507].includes(error.status ?? 0))
       )
         await this.operations.requeue(operation.id, token, { delayMs: 60_000, returnAttempt: true });
-      else
+      else {
+        // Only fixed categories enter retained CI diagnostics; error text can contain keys, paths or identities.
+        const invariants: Record<string, string> = {
+          'Buddy restore key binding changed': 'key_binding',
+          'Buddy restore album selection unavailable': 'album_selection',
+          'Buddy restore manifest changed': 'manifest_changed',
+          'Buddy restore item is missing': 'item_missing',
+          'Buddy restore authorization changed': 'authorization_changed',
+          'Buddy administrator authorization changed': 'administrator_changed',
+          'Live Photo relationship changed': 'live_photo_changed',
+          'Buddy restore destination changed': 'destination_changed',
+          'External library identity changed': 'external_library_changed',
+          'Buddy version destination changed': 'version_destination_changed',
+          'Buddy restored file did not verify': 'file_verification',
+          'Buddy restored file checkpoint changed': 'checkpoint_changed',
+          'Buddy restored file checkpoint unavailable': 'checkpoint_unavailable',
+          'Buddy restored original changed': 'original_changed',
+          'Buddy original has not been restored': 'original_missing',
+          'Buddy item could not be recreated': 'item_recreation',
+          'Buddy retained version did not verify': 'version_verification',
+          'Buddy restore relationship ownership changed': 'relationship_ownership',
+          'Buddy restore stack ownership changed': 'stack_ownership',
+          'Restore the original storage mounts before restoring these items.': 'storage_mounts',
+        };
+        const cause = error instanceof Error ? error.cause : undefined;
+        const codes = [
+          'ENOENT',
+          'EACCES',
+          'EPERM',
+          'ENOSPC',
+          'EIO',
+          '23503',
+          '23505',
+          '23514',
+          '40001',
+          '40P01',
+          '57014',
+          '55P03',
+          '42P01',
+          '42703',
+        ];
+        const code =
+          [error, cause].flatMap((value) =>
+            value &&
+            typeof value === 'object' &&
+            'code' in value &&
+            typeof value.code === 'string' &&
+            codes.includes(value.code)
+              ? [value.code]
+              : [],
+          )[0] ?? 'UNKNOWN';
+        const status =
+          error instanceof FrameleafCloudError &&
+          [400, 401, 403, 404, 409, 429, 500, 502, 503, 504, 507].includes(error.status ?? 0)
+            ? error.status
+            : null;
+        const category =
+          error instanceof Error && Object.hasOwn(invariants, error.message)
+            ? invariants[error.message]
+            : error instanceof BuddyExecutionError
+              ? 'execution'
+              : error instanceof OperationDeadlineError
+                ? 'deadline'
+                : error instanceof FrameleafCloudError
+                  ? 'upstream'
+                  : code !== 'UNKNOWN'
+                    ? 'coded_error'
+                    : 'unexpected';
+        this.logger.error(`BUDDY_RESTORE_DIAGNOSTIC ${JSON.stringify({ category, code, status })}`);
         await this.operations.fail(
           operation.id,
           token,
@@ -1596,6 +1664,7 @@ export class BuddyBackupRestoreService {
               (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)),
           },
         );
+      }
     }
   }
 
