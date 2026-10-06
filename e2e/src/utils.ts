@@ -39,6 +39,7 @@ import {
   getConfig,
   getConfigDefaults,
   getQueue,
+  getQueues,
   listDatabaseBackups,
   login,
   runQueueCommandLegacy,
@@ -173,6 +174,22 @@ const readQueue = async (accessToken: string, name: QueueName, context: WaitCont
     throw new TypeError(`Queue ${name} did not report authoritative unfinished work`);
   }
   return queue;
+};
+
+const readQueues = async (accessToken: string, context: WaitContext) => {
+  context.remaining();
+  const queues = await getQueues({ headers: asBearerAuth(accessToken), signal: context.signal });
+  context.remaining();
+  const names = Object.values(QueueName);
+  if (
+    !Array.isArray(queues) ||
+    queues.length !== names.length ||
+    names.some((name) => queues.filter((queue) => queue?.name === name).length !== 1) ||
+    queues.some((queue) => typeof queue.hasUnfinishedWork !== 'boolean')
+  ) {
+    throw new TypeError('Queues did not report complete authoritative unfinished work');
+  }
+  return queues;
 };
 
 const waitForQueue = (accessToken: string, name: QueueName, context: WaitContext) =>
@@ -474,16 +491,10 @@ export const utils = {
                                 { headers, signal: context.signal },
                               );
                             }
-                            let unfinished = false;
-                            for (const name of Object.values(QueueName)) {
-                              if (unfinished) {
-                                continue;
-                              }
-                              phase = `read queue ${name}`;
-                              const queue = await readQueue(token, name, context);
-                              unfinished = queue.hasUnfinishedWork;
-                              lastUnfinished = unfinished;
-                            }
+                            phase = 'read all queues';
+                            const queues = await readQueues(token, context);
+                            const unfinished = queues.some((queue) => queue.hasUnfinishedWork);
+                            lastUnfinished = unfinished;
                             if (unfinished) {
                               return true;
                             }
