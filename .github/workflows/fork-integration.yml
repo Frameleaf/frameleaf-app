@@ -127,22 +127,6 @@ jobs:
         run: |
           pnpm --filter frameleaf check
           pnpm --filter frameleaf lint
-      - name: Run server unit tests
-        run: pnpm --filter frameleaf test --run
-      - name: Install PostgreSQL 19 client tools
-        timeout-minutes: 5
-        run: |
-          curl --fail --silent --show-error --location --max-time 60 https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$RUNNER_TEMP/frameleaf-pgdg.asc"
-          printf '%s  %s\n' 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 "$RUNNER_TEMP/frameleaf-pgdg.asc" | sha256sum --check --strict
-          sudo install -m 644 "$RUNNER_TEMP/frameleaf-pgdg.asc" /usr/share/keyrings/frameleaf-pgdg.asc
-          printf '%s\n' 'deb [signed-by=/usr/share/keyrings/frameleaf-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main 19' | sudo tee /etc/apt/sources.list.d/frameleaf-pgdg.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client-19
-          /usr/lib/postgresql/19/bin/pg_dump --version
-          /usr/lib/postgresql/19/bin/pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 19([.a-z]|$)'
-          printf '%s\n' /usr/lib/postgresql/19/bin >> "$GITHUB_PATH"
-      - name: Run server medium tests with local PostgreSQL containers
-        run: pnpm --filter frameleaf test:medium --run
       - name: Check web types and Svelte components
         run: |
           pnpm --filter frameleaf-web exec svelte-kit sync

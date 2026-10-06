@@ -673,8 +673,35 @@ test("Buddy artifacts retain sanitized state and evidence rather than raw logs o
     capture.run,
     /\{\{index \.Config\.Labels "com\.docker\.compose\.service"\}\}/,
   );
+  const sanitizedLogs = capture.run.match(
+    /docker compose -f docker-compose\.buddy\.yml logs --no-color buddy-a buddy-b 2>\/dev\/null \|\n\s+grep -oE '([^'\n]+)' \|\| true/,
+  );
+  assert.ok(
+    sanitizedLogs,
+    "Buddy logs must pass through the fixed diagnostic filter",
+  );
+  const diagnosticFilter = new RegExp(sanitizedLogs[1], "g");
+  const diagnostic =
+    'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"23505","status":null}';
+  const sentinel = "private-fixture-sentinel";
+  assert.deepEqual(
+    `${sentinel} ${diagnostic} ${sentinel}`.match(diagnosticFilter),
+    [diagnostic],
+  );
+  assert.equal(
+    `BUDDY_RESTORE_DIAGNOSTIC {"category":"${sentinel}","code":"UNKNOWN","status":null}`.match(
+      diagnosticFilter,
+    ),
+    null,
+  );
+  assert.equal(
+    `BUDDY_RESTORE_DIAGNOSTIC {"category":"unexpected","code":"${sentinel}","status":null}`.match(
+      diagnosticFilter,
+    ),
+    null,
+  );
   assert.doesNotMatch(
-    capture.run,
+    capture.run.replace(sanitizedLogs[0], ""),
     /docker (?:compose[^\n]* logs|logs|inspect(?! --format))|\.Config\.(?:Env|Cmd)|printenv|\benv\b|cat |tar /,
   );
   assert.match(capture.run, /> docker-buddy-diagnostics\.txt 2>&1/);
