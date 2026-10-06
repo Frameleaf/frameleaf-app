@@ -8,11 +8,11 @@
       "sha256": "818fce6202ca27e7a8a1a4e888e5e55fab51e5964c14bf98932b0a8cd9f49961"
     },
     {
-      "bytes": 6746,
+      "bytes": 10052,
       "id": "reference:design/frameleaf/template/README.md",
       "path": "design/frameleaf/template/README.md",
       "role": "approved-prototype-usage-contract",
-      "sha256": "c00056875be22d461e6bfead59d12c0cda7b336e8533032ace0a9b2f05bbff3e"
+      "sha256": "da94333d613fe7aa70259474d8d41fb06b5886e5ac2f9397a469f1da092286e6"
     },
     {
       "bytes": 1777,
@@ -38,12 +38,12 @@
   ],
   "compatibilitySentinels": [
     {
-      "expectedValue": "@immich/sdk",
+      "expectedValue": "@frameleaf/sdk",
       "parser": "json-name",
       "path": "packages/sdk/package.json"
     },
     {
-      "expectedValue": "immich",
+      "expectedValue": "frameleaf",
       "parser": "json-name",
       "path": "server/package.json"
     },
@@ -58,7 +58,7 @@
       "path": "machine-learning/pyproject.toml"
     },
     {
-      "expectedValue": "@immich/sdk",
+      "expectedValue": "@frameleaf/sdk",
       "parser": "svelte-import",
       "path": "web/src/routes/+layout.svelte"
     }
@@ -71,7 +71,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "b8f88f59a4ae734b13616a62c41d408e13007c83f19d95c76f8f3f11ef8e07d4",
+    "approvedReferenceLedgerSha256": "3b2756955bae72cc372567e708c353af4a19465e7ce4cea6b2d8cc070114936c",
     "suppliedSourceLedgerSha256": "59f073d84b24756562e8047f7db74a098c049c3f2ed817d479d08e399d4aaced"
   },
   "expectedDuplicateContent": [

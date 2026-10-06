@@ -1,4 +1,4 @@
-import { LoginResponseDto, searchStacks } from '@immich/sdk';
+import { LoginResponseDto, searchStacks } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';

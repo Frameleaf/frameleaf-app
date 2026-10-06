@@ -1,4 +1,4 @@
-import { LoginResponseDto, getServerConfig } from '@immich/sdk';
+import { LoginResponseDto, getServerConfig } from '@frameleaf/sdk';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';

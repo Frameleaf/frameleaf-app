@@ -1,4 +1,4 @@
-import { NotificationType } from '@immich/sdk';
+import { NotificationType } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';

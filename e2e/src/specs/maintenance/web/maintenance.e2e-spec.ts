@@ -1,4 +1,4 @@
-import { LoginResponseDto } from '@immich/sdk';
+import { LoginResponseDto } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { utils } from 'src/utils.js';
 

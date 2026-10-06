@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TooltipProvider } from '@immich/ui';
+  import { TooltipProvider } from '@frameleaf/ui';
   import type { ComponentProps } from 'svelte';
   import ManagePeoplePage from './+page.svelte';
 

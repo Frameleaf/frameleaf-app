@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException } from '@nestjs/common';
 import { JobName, WorkflowIssueCode, WorkflowType } from 'src/enum.js';
 import { WorkflowService } from 'src/services/workflow.service.js';

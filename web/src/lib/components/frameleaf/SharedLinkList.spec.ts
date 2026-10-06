@@ -1,6 +1,6 @@
-import type { ServerConfigDto } from '@immich/sdk';
-import { getAllAlbums, getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import type { ServerConfigDto } from '@frameleaf/sdk';
+import { getAllAlbums, getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
@@ -10,8 +10,8 @@ import SharedLinkList from './SharedLinkList.svelte';
 
 vi.mock('$lib/utils');
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllSharedLinks: vi.fn(),
   getSharedLinkById: vi.fn(),
   getAllAlbums: vi.fn(),

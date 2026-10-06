@@ -27,8 +27,8 @@
     getAssetInfo,
     type AlbumResponseDto,
     type AssetResponseDto,
-  } from '@immich/sdk';
-  import { Icon, IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, IconButton, Link, LoadingSpinner, Text } from '@frameleaf/ui';
   import { mdiAccountArrowLeftOutline, mdiAccountOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';

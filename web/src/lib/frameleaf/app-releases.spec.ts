@@ -1,4 +1,4 @@
-import type { ServerAppReleasesResponseDto } from '@immich/sdk';
+import type { ServerAppReleasesResponseDto } from '@frameleaf/sdk';
 import { appDownload, obtainiumConfig, obtainiumProblems } from '$lib/frameleaf/app-releases';
 
 const unavailable: ServerAppReleasesResponseDto = { android: { available: false }, ios: { available: false } };

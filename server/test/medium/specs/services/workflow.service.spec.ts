@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { Kysely, sql } from 'kysely';
 import { WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';

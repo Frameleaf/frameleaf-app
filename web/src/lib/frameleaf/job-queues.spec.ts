@@ -1,4 +1,4 @@
-import { JobName, ManualJobName, QueueName, type QueueResponseDto, type ServerFeaturesDto } from '@immich/sdk';
+import { JobName, ManualJobName, QueueName, type QueueResponseDto, type ServerFeaturesDto } from '@frameleaf/sdk';
 import en from '../../../../i18n/en.json';
 import {
   isValidConcurrency,

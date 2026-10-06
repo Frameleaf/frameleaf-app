@@ -22,7 +22,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { CellGridOptions } from '$lib/frameleaf/library-grid';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import { AssetVisibility } from '@immich/sdk';
+  import { AssetVisibility } from '@frameleaf/sdk';
   import type { Snippet } from 'svelte';
 
   type Props = {

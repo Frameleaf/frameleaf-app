@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-import { AssetVisibility } from '@immich/sdk';
+import { AssetVisibility } from '@frameleaf/sdk';
 import { Command, Option } from 'commander';
 import os from 'node:os';
 import path from 'node:path';

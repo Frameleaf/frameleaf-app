@@ -4,7 +4,7 @@ import {
   TakeoutState,
   type TakeoutCountsDto,
   type TakeoutResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';

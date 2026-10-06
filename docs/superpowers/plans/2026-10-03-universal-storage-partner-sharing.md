@@ -21,7 +21,7 @@
 - Prototype first: new screens go in `design/frameleaf/template/src` before Svelte. Never edit hash-locked `design/frameleaf/**/README.md` or `source-manifest.json`.
 - Commands:
   - Server unit: `cd server && pnpm exec vitest run --config test/vitest.config.mjs <spec>`
-  - Server typecheck: `pnpm --filter @immich/plugin-sdk build && cd server && pnpm exec tsc --noEmit`
+  - Server typecheck: `pnpm --filter @frameleaf/plugin-sdk build && cd server && pnpm exec tsc --noEmit`
   - Medium tests (Postgres via testcontainers): prefix `PATH=/Applications/Docker.app/Contents/Resources/bin:$PATH`, then `cd server && pnpm exec vitest run --config test/vitest.config.medium.mjs <spec>`. Docker is shared and has 8 GB: run one medium file at a time.
   - **Do not run e2e locally:** the e2e stack is shared across sessions. CI runs it.
   - OpenAPI/SDK after DTO changes: build the server, then `mise run //server:sync-open-api` and `mise run open-api-typescript`. Run these **from your own worktree's paths, never via `mise run //:` from a .claude worktree**, since that regenerates the main checkout.

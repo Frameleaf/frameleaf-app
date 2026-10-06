@@ -10,8 +10,8 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
-  import { ConfigCredential, sendTestEmailAdmin } from '@immich/sdk';
-  import { Button, toastManager } from '@immich/ui';
+  import { ConfigCredential, sendTestEmailAdmin } from '@frameleaf/sdk';
+  import { Button, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
 

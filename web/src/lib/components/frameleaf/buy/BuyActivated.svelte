@@ -7,7 +7,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Toggle from '$lib/components/frameleaf/Toggle.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiHandHeartOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

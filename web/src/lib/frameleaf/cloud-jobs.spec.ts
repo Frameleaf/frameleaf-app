@@ -1,4 +1,4 @@
-import { CloudMlJobActivityStage, CloudMlJobPurpose, CloudMlJobCostOutcome } from '@immich/sdk';
+import { CloudMlJobActivityStage, CloudMlJobPurpose, CloudMlJobCostOutcome } from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import type { ActivityCloudJob } from '$lib/frameleaf/activity';
 import {
@@ -31,8 +31,8 @@ const cloud = (cost: Partial<ActivityCloudJob['cost']> = {}): ActivityCloudJob =
 });
 
 // The SDK's HttpError comes from its fetch runtime; a response error here is any error with a status.
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => error instanceof Error && 'status' in error,
 }));
 

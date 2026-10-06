@@ -7,8 +7,8 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { dismissPartnerLockedNotice, getPartnerLockedNotice } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { dismissPartnerLockedNotice, getPartnerLockedNotice } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiLockOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

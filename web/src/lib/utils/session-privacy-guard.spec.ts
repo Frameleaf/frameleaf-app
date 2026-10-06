@@ -1,4 +1,4 @@
-import { getAuthStatus, lockAuthSession } from '@immich/sdk';
+import { getAuthStatus, lockAuthSession } from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
@@ -8,7 +8,7 @@ import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 
 // FL-34: ported from PR131 bebfed12ff and 25990c373c (d7cfe8b1a7), adapted to the current Locked flow
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getAuthStatus: vi.fn(),
   lockAuthSession: vi.fn(),
@@ -436,7 +436,7 @@ describe('watchSessionPrivacy', () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true);
     await vi.advanceTimersByTimeAsync(0);
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockImplementationOnce(() =>
       sdk.getAuthStatus({
         fetch: async () => Response.json({ message: 'Invalid user token' }, { status: 401 }),
@@ -455,7 +455,7 @@ describe('watchSessionPrivacy', () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true);
     await vi.advanceTimersByTimeAsync(0);
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockImplementationOnce(() =>
       sdk.getAuthStatus({
         fetch: async () =>
@@ -477,7 +477,7 @@ describe('watchSessionPrivacy', () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true);
     await vi.advanceTimersByTimeAsync(0);
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockImplementationOnce(() =>
       sdk.getAuthStatus({
         fetch: async () => Response.json({ message: 'Forbidden' }, { status: 403 }),

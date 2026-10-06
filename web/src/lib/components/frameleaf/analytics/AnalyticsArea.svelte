@@ -14,7 +14,7 @@
     getAnalyticsScopes,
     type AnalyticsReportResponseDto,
     type AnalyticsScopeOptionDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   const range = $derived(

@@ -2,7 +2,7 @@
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import type { ErrorPageAction } from '$lib/frameleaf/error-page';
   import '$lib/frameleaf/tokens.css';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

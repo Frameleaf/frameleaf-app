@@ -354,7 +354,7 @@ describe('Frameleaf theme contract', () => {
     expect(withoutComments).not.toMatch(/min-height:\s*(?:[0-3]?\d|4[0-3])px/);
   });
 
-  it('layers the prototype baseline below Tailwind and @immich/ui utilities', () => {
+  it('layers the prototype baseline below Tailwind and @frameleaf/ui utilities', () => {
     const order = '@layer properties, theme, base, frameleaf-base, components, utilities;';
     // Declared before Tailwind's own statement in app.css, and again in base.css, so the order
     // holds whichever sheet loads first.
@@ -384,7 +384,7 @@ describe('Frameleaf theme contract', () => {
     }
   });
 
-  it('leaves @immich/ui form controls to their own ring', () => {
+  it('leaves @frameleaf/ui form controls to their own ring', () => {
     const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
     const rules = [...withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
       selector: selector.trim(),
@@ -399,8 +399,8 @@ describe('Frameleaf theme contract', () => {
       // A second border inside the Input/PasswordInput/Textarea ring, accent on focus, is the bug.
       expect(selector).toContain(exclusion);
     }
-    // The hook the exclusion relies on: @immich/ui draws its field ring with the ring-1 utility.
-    const immichStyles = readFileSync('node_modules/@immich/ui/dist/styles.js', 'utf8');
+    // The hook the exclusion relies on: @frameleaf/ui draws its field ring with the ring-1 utility.
+    const immichStyles = readFileSync('node_modules/@frameleaf/ui/dist/styles.js', 'utf8');
     expect(immichStyles).toMatch(/inputContainerCommon: '[^']*\bring-1\b/);
   });
 

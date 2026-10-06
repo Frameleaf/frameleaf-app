@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiStarFourPoints } from '@mdi/js';
   import { t } from 'svelte-i18n';
 </script>

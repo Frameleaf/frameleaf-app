@@ -10,8 +10,8 @@
    * changes, so nothing cached for an earlier state survives a reload or a restore.
    */
   import { t } from 'svelte-i18n';
-  import { toastManager } from '@immich/ui';
-  import type { StudioCommentDto, StudioProjectRevisionDto } from '@immich/sdk';
+  import { toastManager } from '@frameleaf/ui';
+  import type { StudioCommentDto, StudioProjectRevisionDto } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import type { StudioProjectSession } from '$lib/frameleaf/studio/project-session';
   import { coerceRational, toDisplaySeconds, type Rational } from '$lib/frameleaf/studio/rational-time';

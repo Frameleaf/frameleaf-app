@@ -3,8 +3,8 @@
   import { cleanClass } from '$lib';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import type { QueueSnapshot } from '$lib/types';
-  import type { QueueResponseDto } from '@immich/sdk';
-  import { LoadingSpinner, Theme, themeManager } from '@immich/ui';
+  import type { QueueResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner, Theme, themeManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import uPlot, { type AlignedData, type Axis } from 'uplot';

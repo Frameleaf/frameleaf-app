@@ -1,4 +1,4 @@
-import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@immich/sdk';
+import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable } from 'svelte/store';

@@ -6,7 +6,7 @@ import {
   SharedLinkType,
   createAlbum,
   deleteUserAdmin,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { createUserDto, uuidDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { errorDto } from 'src/responses.js';

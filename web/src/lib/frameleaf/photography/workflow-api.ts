@@ -1,4 +1,4 @@
-import { defaults, getBaseUrl } from '@immich/sdk';
+import { defaults, getBaseUrl } from '@frameleaf/sdk';
 
 export type Watermark = {
   type: 'text' | 'logo' | 'both';

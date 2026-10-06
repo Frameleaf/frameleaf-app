@@ -1,4 +1,4 @@
-import { getTimeBucket, getTimelineOrdered } from '@immich/sdk';
+import { getTimeBucket, getTimelineOrdered } from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { toISOYearMonthUTC } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';

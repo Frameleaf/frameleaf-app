@@ -16,8 +16,8 @@
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { normalizeSearchString } from '$lib/utils/string-utils';
-  import { searchPerson, updatePerson, type PersonResponseDto, type PersonStatisticsResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { searchPerson, updatePerson, type PersonResponseDto, type PersonStatisticsResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiArrowLeft,

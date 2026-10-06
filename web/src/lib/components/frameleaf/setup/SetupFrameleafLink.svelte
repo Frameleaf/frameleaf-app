@@ -10,8 +10,8 @@
   import { startFrameleaf } from '$lib/frameleaf/frameleaf-sign-in';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { CloudLinkRefusal, getPublicConfig } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { CloudLinkRefusal, getPublicConfig } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckDecagram, mdiCloudOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

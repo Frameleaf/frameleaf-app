@@ -14,7 +14,7 @@ import {
   type ClassificationRuleCreateDto,
   type ClassificationRuleResponseDto,
   type ClassificationRuleUpdateDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 export const DEFAULT_THRESHOLD = 0.25;

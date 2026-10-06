@@ -49,13 +49,15 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install script test dependencies
-        run: pnpm --filter @immich/scripts --filter 'immich...' install --frozen-lockfile
+        run: pnpm --filter @frameleaf/scripts --filter 'frameleaf...' install --frozen-lockfile
       - name: Run unit tests
-        run: pnpm --filter @immich/scripts test
+        run: pnpm --filter @frameleaf/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
+      - name: Verify Frameleaf workspace packages
+        run: node --test scripts/frameleaf-packages.test.mjs
       - name: Validate Frameleaf variable and command names
         run: node --test scripts/frameleaf-legacy-names.test.mjs
       - name: Validate public storage URLs (FL-325)
@@ -100,8 +102,8 @@ jobs:
       - name: Capture automatic server lint fixes
         if: failure()
         run: |
-          timeout 15m pnpm --filter immich format:fix || true
-          timeout 15m pnpm --filter immich lint:fix || true
+          timeout 15m pnpm --filter frameleaf format:fix || true
+          timeout 15m pnpm --filter frameleaf lint:fix || true
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
         if: failure()
@@ -154,7 +156,7 @@ jobs:
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.7.12
-      - name: Run setup @immich/sdk
+      - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
@@ -185,7 +187,7 @@ jobs:
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.7.12
-      - name: Run setup @immich/sdk
+      - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
@@ -381,8 +383,8 @@ jobs:
           cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Setup packages
         run:
-          pnpm --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk install --frozen-lockfile && pnpm
-          --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk build
+          pnpm --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk install --frozen-lockfile && pnpm
+          --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk build
       - name: Run setup web
         run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
         working-directory: ./web
@@ -661,8 +663,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: '**/pnpm-lock.yaml'
-      - name: Run setup @immich/sdk
-        run: pnpm --filter @immich/sdk install --frozen-lockfile && pnpm --filter @immich/sdk build
+      - name: Run setup @frameleaf/sdk
+        run: pnpm --filter @frameleaf/sdk install --frozen-lockfile && pnpm --filter @frameleaf/sdk build
         if: ${{ !cancelled() }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -869,7 +871,7 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install server dependencies
-        run: pnpm --filter 'immich...' install --frozen-lockfile
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
       - name: Verify generated API artifacts are tracked
         run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Run API generation
@@ -955,15 +957,15 @@ jobs:
           fi
           [[ "$schema_base" =~ ^[a-f0-9]{40}$ ]] || { echo '::error::Invalid schema history base'; exit 1; }
           git cat-file -e "$schema_base^{commit}"
-          pnpm --filter immich exec tsx scripts/verify-frameleaf-schema.ts "$schema_base"
+          pnpm --filter frameleaf exec tsx scripts/verify-frameleaf-schema.ts "$schema_base"
       - name: Build plugins
         run: mise run //:plugins
       - name: Build the app
         run: mise run //server:build
       - name: Run existing migrations
-        run: pnpm --filter immich migrations:run
+        run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation
-        run: pnpm --filter immich exec tsx scripts/snapshot-frameleaf-schema-catalog.ts /tmp/frameleaf-catalog.json
+        run: pnpm --filter frameleaf exec tsx scripts/snapshot-frameleaf-schema-catalog.ts /tmp/frameleaf-catalog.json
         env:
           DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
       - name: Archive exact canonical catalog
@@ -973,9 +975,9 @@ jobs:
           path: /tmp/frameleaf-catalog.json
           retention-days: 7
       - name: Test npm run schema:reset command works
-        run: pnpm --filter immich schema:reset
+        run: pnpm --filter frameleaf schema:reset
       - name: Generate new migrations
-        run: pnpm --filter immich migrations:generate src/schema/migrations/TestMigration
+        run: pnpm --filter frameleaf migrations:generate src/schema/migrations/TestMigration
       - name: Find file changes
         uses: tj-actions/verify-changed-files@a1c6acee9df209257a246f2cc6ae8cb6581c1edf
         id: verify-changed-files

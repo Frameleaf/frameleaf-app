@@ -1,4 +1,4 @@
-import { StudioProjectImportKind } from '@immich/sdk';
+import { StudioProjectImportKind } from '@frameleaf/sdk';
 import { isStudioBinImport, toStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
 
 describe('Studio project imports (FL-103 / FL-105)', () => {

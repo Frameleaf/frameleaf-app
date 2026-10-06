@@ -1,7 +1,7 @@
 import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
 
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => (error as { name?: string })?.name === 'HttpError',
 }));
 

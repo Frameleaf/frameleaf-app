@@ -25,8 +25,8 @@
   import { selectionForPreservation } from '$lib/frameleaf/preservation';
   import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
-  import { SharedLinkType } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  import { SharedLinkType } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiArchiveArrowUpOutline,
     mdiArchiveOutline,

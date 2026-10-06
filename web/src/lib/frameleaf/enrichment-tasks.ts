@@ -3,7 +3,7 @@ import {
   SmartAlbumBuiltInKind,
   type AdminConfigImageDescriptionDto,
   type AdminConfigNsfwDetectionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /**
  * The Job manager's "Enrichment tasks" (FL-59, CC-42), after the template's `EnrichmentJobDialog`

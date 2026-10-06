@@ -1,4 +1,4 @@
-import * as sdk from '@immich/sdk';
+import * as sdk from '@frameleaf/sdk';
 import {
   AssetTypeEnum,
   MediaOperationStatus,
@@ -9,7 +9,7 @@ import {
   type PhysicalDeduplicationPlanDto,
   type PhysicalDeduplicationPreviewResponseDto,
   type UserAdminResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import type { Mock } from 'vitest';
@@ -20,8 +20,8 @@ import en from '../../../../../i18n/en.json';
 
 // The verification endpoints (FL-73) are hand-added to the SDK source until it is regenerated, so
 // they are declared on the mock explicitly rather than read from the built module.
-vi.mock('@immich/sdk', async (originalImport) => {
-  const module = await originalImport<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (originalImport) => {
+  const module = await originalImport<typeof import('@frameleaf/sdk')>();
   const mocks: Record<string, Mock> = {};
   for (const [key, value] of Object.entries(module)) {
     if (typeof value === 'function') {

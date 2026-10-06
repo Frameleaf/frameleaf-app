@@ -6,8 +6,8 @@
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
-  import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountArrowLeftOutline, mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';

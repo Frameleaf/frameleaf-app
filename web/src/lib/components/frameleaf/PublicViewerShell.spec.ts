@@ -1,4 +1,4 @@
-import { SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
+import { SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { addMessages } from 'svelte-i18n';

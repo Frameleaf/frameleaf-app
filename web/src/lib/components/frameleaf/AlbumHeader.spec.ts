@@ -1,4 +1,4 @@
-import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

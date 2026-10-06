@@ -1,4 +1,4 @@
-import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
 import { cubicOut } from 'svelte/easing';
 import { authManager } from '$lib/managers/auth-manager.svelte';

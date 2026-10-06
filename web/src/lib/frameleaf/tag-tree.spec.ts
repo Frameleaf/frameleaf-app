@@ -1,4 +1,4 @@
-import type { TagResponseDto } from '@immich/sdk';
+import type { TagResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   TAG_COLORS,

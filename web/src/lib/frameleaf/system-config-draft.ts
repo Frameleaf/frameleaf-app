@@ -16,7 +16,7 @@
  * - Secrets (passwords, client secrets, API keys, tokens) and credentials inside URLs never go
  *   into the reload journal or an export.
  */
-import type { AdminConfigDto } from '@immich/sdk';
+import type { AdminConfigDto } from '@frameleaf/sdk';
 import { cloneDeep, get, isEqual, isPlainObject, set, unset } from 'lodash-es';
 
 export type ConfigLeafValue = unknown;

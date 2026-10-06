@@ -7,7 +7,7 @@ import {
   getQueue,
   runAssetJobs,
   updateConfig,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';

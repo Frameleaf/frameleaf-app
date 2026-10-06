@@ -1,4 +1,4 @@
-import type { AdminConfigDto } from '@immich/sdk';
+import type { AdminConfigDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   accountToolProgress,

@@ -64,8 +64,8 @@
     type ClassificationRuleCreateDto,
     type ClassificationRuleResponseDto,
     type CreateAlbumDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,

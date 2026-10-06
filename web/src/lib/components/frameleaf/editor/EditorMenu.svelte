@@ -22,7 +22,7 @@
    * button; the list is a `menu` with arrow-key roving focus. Escape or Tab closes it and returns
    * focus to the trigger, and a press outside closes it without moving focus.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { tick, type Snippet } from 'svelte';
 
   interface Props {

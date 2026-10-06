@@ -1,4 +1,4 @@
-import { AssetUploadAction } from '@immich/sdk';
+import { AssetUploadAction } from '@frameleaf/sdk';
 import { chunk } from 'lodash-es';
 import { writeFile } from 'node:fs/promises';
 import type { ServerClient } from 'src/commands/migrate/client';

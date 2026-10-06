@@ -4,9 +4,9 @@
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { addSourceOptions, spaceAddScope, type SpaceAddSource } from '$lib/frameleaf/shared-space';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPlaylistPlus } from '@mdi/js';
-  import type { AlbumResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

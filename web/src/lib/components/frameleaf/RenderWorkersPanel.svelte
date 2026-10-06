@@ -24,7 +24,7 @@
     type RenderWorkerFilter,
   } from '$lib/frameleaf/render-workers';
   import { locale } from '$lib/stores/preferences.store';
-  import { MediaOperationDestination, RenderWorkerStatus, type RenderWorkerDto } from '@immich/sdk';
+  import { MediaOperationDestination, RenderWorkerStatus, type RenderWorkerDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

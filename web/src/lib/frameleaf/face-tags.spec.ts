@@ -1,4 +1,4 @@
-import { SourceType, type AssetFaceResponseDto } from '@immich/sdk';
+import { SourceType, type AssetFaceResponseDto } from '@frameleaf/sdk';
 import {
   adjustFaceBox,
   boxFromPoints,

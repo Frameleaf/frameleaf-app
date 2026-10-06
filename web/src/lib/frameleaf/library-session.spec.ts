@@ -1,4 +1,4 @@
-import { ImageEnrichmentFilter } from '@immich/sdk';
+import { ImageEnrichmentFilter } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {

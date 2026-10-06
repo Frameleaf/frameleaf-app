@@ -13,7 +13,7 @@ import {
   AssetDevelopRevisionStatus,
   type AssetDevelopRecipeDto,
   type AssetDevelopRevisionResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   ASPECT_IDS,
   DEVELOP_KEYS,

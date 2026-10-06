@@ -1,4 +1,4 @@
-import { toastManager } from '@immich/ui';
+import { toastManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 

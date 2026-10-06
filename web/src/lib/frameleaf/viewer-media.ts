@@ -5,7 +5,7 @@
  * `asset.service.ts`; this module is the single pure definition both now use, so the
  * navbar's panorama control and the stage's choice of viewer can never disagree.
  */
-import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@frameleaf/sdk';
 import { ProjectionType } from '$lib/constants';
 
 export const isVideoAsset = (asset: Pick<AssetResponseDto, 'type'>): boolean => asset.type === AssetTypeEnum.Video;

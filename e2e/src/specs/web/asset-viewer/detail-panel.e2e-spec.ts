@@ -4,7 +4,7 @@ import {
   LoginResponseDto,
   SharedLinkType,
   updateMyPreferences,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';

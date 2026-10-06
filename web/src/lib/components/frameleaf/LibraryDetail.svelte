@@ -12,8 +12,8 @@
   import { describeAdminEvent, formatHistoryDate } from '$lib/frameleaf/account-history';
   import { canScanLibrary, isScanActive, scanMessage, type LibraryRow } from '$lib/frameleaf/libraries';
   import { locale } from '$lib/stores/preferences.store';
-  import { getUserHistoryAdmin, type UserAdminHistoryEventResponseDto } from '@immich/sdk';
-  import { getByteUnitString } from '@immich/ui';
+  import { getUserHistoryAdmin, type UserAdminHistoryEventResponseDto } from '@frameleaf/sdk';
+  import { getByteUnitString } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   type Tab = 'overview' | 'folders' | 'activity';

@@ -13,7 +13,7 @@ import {
   type RestorationGpuDto,
   type RestorationMeasuredThroughputDto,
   type RestorationModelCapabilityDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [

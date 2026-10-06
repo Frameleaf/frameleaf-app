@@ -26,7 +26,7 @@
     type CloudMlModelChoiceDto,
     type CloudMlModelDto,
     type HardwareCheckResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t, type Translations } from 'svelte-i18n';
 
   type Props = {

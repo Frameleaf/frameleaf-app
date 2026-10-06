@@ -1,4 +1,4 @@
-import { lockAuthSession } from '@immich/sdk';
+import { lockAuthSession } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess, setSessionLockPending } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
@@ -7,7 +7,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<object>()), lockAuthSession: vi.fn() }));
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), lockAuthSession: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/photos'), params: {} } }));
 vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({
@@ -18,7 +18,7 @@ vi.mock('$lib/utils/navigation', () => ({ isAssetViewerRoute: () => false, navig
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 const sdkStatus = async (status: number) => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return sdk.lockAuthSession({ fetch: async () => Response.json({ message: 'nope' }, { status }) });
 };
 

@@ -1,4 +1,4 @@
-import type { BuddyStatusDto } from '@immich/sdk';
+import type { BuddyStatusDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** Presentation only. The server validates grants, entitlement and identity for every operation. */

@@ -5,8 +5,8 @@
   import { isUnnamedPerson, sortMergeCandidates } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountOutline, mdiArrowRight, mdiCallMerge, mdiCheck } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -13,7 +13,7 @@ const sdk = vi.hoisted(() => ({
   getFileTrash: vi.fn(),
 }));
 const health = vi.hoisted(() => vi.fn());
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<typeof import('@immich/sdk')>()), ...sdk }));
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
 vi.mock('$lib/frameleaf/library-care-load', () => ({ loadLibraryCareHealth: health }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
 

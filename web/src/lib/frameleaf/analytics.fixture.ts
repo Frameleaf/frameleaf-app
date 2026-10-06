@@ -17,7 +17,7 @@ import {
   AnalyticsView,
   type AnalyticsInsightsDto,
   type AnalyticsReportResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /** Punchcard counts for the fixture: Monday 9 am is the peak. Adds up to 100. */
 const PUNCH: Record<string, number> = { '1:9': 50, '6:18': 30, '7:10': 20 };

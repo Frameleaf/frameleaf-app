@@ -5,7 +5,7 @@ import type {
   ServerFeaturesDto,
   ServerStorageResponseDto,
   ServerVersionResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { withoutCredentialValues } from '$lib/frameleaf/credentials';
 
 /**

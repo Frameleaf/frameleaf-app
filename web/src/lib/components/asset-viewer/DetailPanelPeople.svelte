@@ -8,8 +8,8 @@
   import { faceManager } from '$lib/stores/face.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getPeopleThumbnailUrl } from '$lib/utils';
-  import { AssetMediaSize, type AssetFaceResponseDto, type AssetResponseDto } from '@immich/sdk';
-  import { Button, Icon, Text } from '@immich/ui';
+  import { AssetMediaSize, type AssetFaceResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Button, Icon, Text } from '@frameleaf/ui';
   import { mdiEye, mdiEyeOff, mdiEyeOffOutline, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

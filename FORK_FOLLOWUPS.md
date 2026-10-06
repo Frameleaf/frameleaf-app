@@ -326,7 +326,7 @@ passes — included here only so future reviewers know not to re-surface them.
 **Correctness & cleanup** (this round + earlier):
 - Duplicate `'asset.isFavorite'` in `workflowAssetV1` column list
 - `pnpm run check` failing on cold clone (server `check` script now builds
-  `@immich/plugin-sdk` first)
+  `@frameleaf/plugin-sdk` first)
 - `BestPhotosRepository.deleteForAssets` `@GenerateSql` decorator declaring
   scalar instead of array (`[[DummyValue.UUID]]`)
 - Image enrichment 24-tag truncation could drop NSFW/medical tags — required

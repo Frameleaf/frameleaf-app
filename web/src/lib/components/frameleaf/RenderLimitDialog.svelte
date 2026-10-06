@@ -14,7 +14,7 @@
     type RenderLimitField,
   } from '$lib/frameleaf/render-workers';
   import { handleUpdateRenderLimits } from '$lib/services/render-worker.service';
-  import type { RenderWorkerLimitDto, UserAdminResponseDto } from '@immich/sdk';
+  import type { RenderWorkerLimitDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let {
