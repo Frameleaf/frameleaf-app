@@ -113,8 +113,13 @@ describe('iCloud exact identity adoption', () => {
       if (event.level === 'query') {
         captureCompiledQuery?.(event.query);
       } else {
-        // This fixture's diagnostic path must not print SQL, bindings, or driver error details.
-        console.error('iCloud qualification database query failed');
+        // Emit only validated SQLSTATE and timing, never SQL, bindings, or driver error details.
+        const code =
+          event.error && typeof event.error === 'object' && 'code' in event.error ? event.error.code : undefined;
+        console.error('iCloud qualification database query failed', {
+          sqlState: typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : 'unknown',
+          durationMs: Number.isFinite(event.queryDurationMillis) ? Math.round(event.queryDurationMillis) : 0,
+        });
       }
     });
     sync = new ICloudSyncRepository(db);
