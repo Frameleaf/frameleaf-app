@@ -149,7 +149,7 @@ export class EditOperationRun {
    * The executor published (`resultAssetId`) or had nothing to publish. The result must be a live
    * asset of the owner's, or the row fails instead: lineage never names media the owner cannot see.
    */
-  async complete(resultAssetId: string | null): Promise<boolean> {
+  async complete(resultAssetId: string | null | (() => string | null)): Promise<boolean> {
     // An executor may explicitly complete an already-rendered version before finish() handles
     // its return value. Register exactly one operation transition in the publication transaction.
     if (this.publicationQueued) {
@@ -160,10 +160,12 @@ export class EditOperationRun {
     }
     if (
       deferJobAdoption(async (transaction) => {
+        // Earlier deferred publication decides whether this render is still the requested one.
+        const acceptedResult = typeof resultAssetId === 'function' ? resultAssetId() : resultAssetId;
         const completed = await this.operations.complete(
           this.id,
           this.claimToken,
-          { resultAssetId, ...(resultAssetId === null && { result: EDIT_NOTHING_PUBLISHED }) },
+          { resultAssetId: acceptedResult, ...(acceptedResult === null && { result: EDIT_NOTHING_PUBLISHED }) },
           transaction,
           true,
         );
@@ -174,15 +176,16 @@ export class EditOperationRun {
       this.publicationQueued = true;
       return true;
     }
+    const acceptedResult = typeof resultAssetId === 'function' ? resultAssetId() : resultAssetId;
     const completed = await this.operations.complete(this.id, this.claimToken, {
-      resultAssetId,
-      ...(resultAssetId === null && { result: EDIT_NOTHING_PUBLISHED }),
+      resultAssetId: acceptedResult,
+      ...(acceptedResult === null && { result: EDIT_NOTHING_PUBLISHED }),
     });
     if (completed) {
       this.settle();
       return true;
     }
-    if (resultAssetId === null) {
+    if (acceptedResult === null) {
       this.state = 'lost';
     } else {
       await this.fail('The edited item is no longer in this library', 'result_not_owned', { retry: false });
