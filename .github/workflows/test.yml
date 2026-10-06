@@ -588,6 +588,9 @@ jobs:
                 [ -n "$container_id" ] || continue
                 docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} image={{.Image}}' "$container_id" || true
               done < <(docker compose -f docker-compose.buddy.yml ps --all --quiet)
+              # Retain only the worker's fixed, allowlisted diagnostic, never raw app log lines.
+              docker compose -f docker-compose.buddy.yml logs --no-color buddy-a buddy-b 2>/dev/null |
+                grep -oE 'BUDDY_RESTORE_DIAGNOSTIC \{"category":"(key_binding|album_selection|manifest_changed|item_missing|authorization_changed|administrator_changed|live_photo_changed|destination_changed|external_library_changed|version_destination_changed|file_verification|checkpoint_changed|checkpoint_unavailable|original_changed|original_missing|item_recreation|version_verification|relationship_ownership|stack_ownership|storage_mounts|execution|deadline|upstream|coded_error|unexpected)","code":"(UNKNOWN|ENOENT|EACCES|EPERM|ENOSPC|EIO|23503|23505|23514|40001|40P01|57014|55P03|42P01|42703)","status":(null|400|401|403|404|409|429|500|502|503|504|507)\}' || true
             fi
           } > docker-buddy-diagnostics.txt 2>&1
           if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/evidence/buddy.json" ]; then
