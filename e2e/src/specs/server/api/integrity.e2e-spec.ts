@@ -309,7 +309,7 @@ describe('/admin/integrity', () => {
         await utils.waitForQueue(admin.accessToken, QueueName.IntegrityCheck, context);
         await runIntegrityFixtureCommand(
           context,
-          ['rm', '-r', `/data/upload/${admin.userId}`],
+          ['rm', '-rf', `/data/upload/${admin.userId}`],
           'Integrity fixture deletion failed after confirmed native completion',
         );
         await runIntegrityFixtureCommand(
