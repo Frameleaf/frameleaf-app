@@ -27267,551 +27267,6 @@
       "synchronize": true
     },
     {
-      "name": "job",
-      "columns": [
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "safeToRetry",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "startedAt",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "deadlineMs",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "attempt",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "availableAt",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "cancelRequestedAt",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "state",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "default": "'pending'::text",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "dedupKey",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "parentId",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "progressUnits",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "progressAt",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "itemKey",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "name",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "data",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "rootItemKey",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "queue",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "token",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "workerId",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "retryBaseAttempt",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "error",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "dependencyReason",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "latestPending",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "externalId",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "finishedAt",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "sensitive",
-          "tableName": "job",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "leaseExpiresAt",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "cancelReason",
-          "tableName": "job",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "job_dedup_live",
-          "definition": "CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, \"dedupKey\") WHERE ((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "dedupKey"
-          ],
-          "using": "btree",
-          "where": "((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "job_run_stage",
-          "definition": "CREATE UNIQUE INDEX job_run_stage ON public.job USING btree (\"runId\", \"itemKey\", name) WHERE (\"runId\" IS NOT NULL)",
-          "tableName": "job",
-          "columnNames": [
-            "runId",
-            "itemKey",
-            "name"
-          ],
-          "using": "btree",
-          "where": "(\"runId\" IS NOT NULL)",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "job_retention",
-          "definition": "CREATE INDEX job_retention ON public.job USING btree (\"finishedAt\", id) WHERE ((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
-          "tableName": "job",
-          "columnNames": [
-            "finishedAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_worker_reference",
-          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
-          "tableName": "job",
-          "columnNames": [
-            "workerId"
-          ],
-          "using": "btree",
-          "where": "(\"workerId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_claim",
-          "definition": "CREATE INDEX job_claim ON public.job USING btree (queue, \"availableAt\", \"createdAt\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "availableAt",
-            "createdAt"
-          ],
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_lease",
-          "definition": "CREATE INDEX job_lease ON public.job USING btree (\"leaseExpiresAt\") WHERE (state = 'active'::text)",
-          "tableName": "job",
-          "columnNames": [
-            "leaseExpiresAt"
-          ],
-          "using": "btree",
-          "where": "(state = 'active'::text)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_live_queue",
-          "definition": "CREATE INDEX job_live_queue ON public.job USING btree (queue, state, \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "state",
-            "createdAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_dependency_pending",
-          "definition": "CREATE INDEX job_dependency_pending ON public.job USING btree (\"parentId\") WHERE ((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
-          "tableName": "job",
-          "columnNames": [
-            "parentId"
-          ],
-          "using": "btree",
-          "where": "((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_parent",
-          "definition": "CREATE INDEX job_parent ON public.job USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
-          "tableName": "job",
-          "columnNames": [
-            "parentId"
-          ],
-          "using": "btree",
-          "where": "(\"parentId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_cancel_pending",
-          "definition": "CREATE INDEX job_cancel_pending ON public.job USING btree (queue, \"createdAt\", id) WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "createdAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "job_check",
-          "definition": "CHECK (((state = 'active'::text) = (token IS NOT NULL)))",
-          "tableName": "job",
-          "expression": "(((state = 'active'::text) = (token IS NOT NULL)))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "job_state_check",
-          "definition": "CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
-          "tableName": "job",
-          "expression": "((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "job_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "job",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_parentId_fkey",
-          "definition": "FOREIGN KEY (\"parentId\") REFERENCES job(id)",
-          "tableName": "job",
-          "columnNames": [
-            "parentId"
-          ],
-          "referenceTableName": "job",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_queue_fkey",
-          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
-          "tableName": "job",
-          "columnNames": [
-            "queue"
-          ],
-          "referenceTableName": "job_queue",
-          "referenceColumnNames": [
-            "name"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_runId_fkey",
-          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
-          "tableName": "job",
-          "columnNames": [
-            "runId"
-          ],
-          "referenceTableName": "job_run",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_runId_itemKey_name_fkey",
-          "definition": "FOREIGN KEY (\"runId\", \"itemKey\", name) REFERENCES job_run_item(\"runId\", \"itemKey\", stage)",
-          "tableName": "job",
-          "columnNames": [
-            "runId",
-            "itemKey",
-            "name"
-          ],
-          "referenceTableName": "job_run_item",
-          "referenceColumnNames": [
-            "runId",
-            "itemKey",
-            "stage"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_workerId_fkey",
-          "definition": "FOREIGN KEY (\"workerId\") REFERENCES job_worker(id)",
-          "tableName": "job",
-          "columnNames": [
-            "workerId"
-          ],
-          "referenceTableName": "job_worker",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "job_cancel_reason_check",
-          "definition": "CHECK ((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
-          "tableName": "job",
-          "expression": "((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "job_attempt",
       "columns": [
         {
@@ -37649,6 +37104,551 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "safeToRetry",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "startedAt",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "deadlineMs",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempt",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "availableAt",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "cancelRequestedAt",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "state",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "dedupKey",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "parentId",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "progressUnits",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "progressAt",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "itemKey",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "data",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rootItemKey",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "queue",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "token",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workerId",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "retryBaseAttempt",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "cancelReason",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "dependencyReason",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "latestPending",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "externalId",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "finishedAt",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "sensitive",
+          "tableName": "job",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "leaseExpiresAt",
+          "tableName": "job",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_dedup_live",
+          "definition": "CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, \"dedupKey\") WHERE ((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "dedupKey"
+          ],
+          "using": "btree",
+          "where": "((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_stage",
+          "definition": "CREATE UNIQUE INDEX job_run_stage ON public.job USING btree (\"runId\", \"itemKey\", name) WHERE (\"runId\" IS NOT NULL)",
+          "tableName": "job",
+          "columnNames": [
+            "runId",
+            "itemKey",
+            "name"
+          ],
+          "using": "btree",
+          "where": "(\"runId\" IS NOT NULL)",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "job_retention",
+          "definition": "CREATE INDEX job_retention ON public.job USING btree (\"finishedAt\", id) WHERE ((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
+          "tableName": "job",
+          "columnNames": [
+            "finishedAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_worker_reference",
+          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
+          "tableName": "job",
+          "columnNames": [
+            "workerId"
+          ],
+          "using": "btree",
+          "where": "(\"workerId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_claim",
+          "definition": "CREATE INDEX job_claim ON public.job USING btree (queue, \"availableAt\", \"createdAt\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "availableAt",
+            "createdAt"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_lease",
+          "definition": "CREATE INDEX job_lease ON public.job USING btree (\"leaseExpiresAt\") WHERE (state = 'active'::text)",
+          "tableName": "job",
+          "columnNames": [
+            "leaseExpiresAt"
+          ],
+          "using": "btree",
+          "where": "(state = 'active'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_live_queue",
+          "definition": "CREATE INDEX job_live_queue ON public.job USING btree (queue, state, \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "state",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_dependency_pending",
+          "definition": "CREATE INDEX job_dependency_pending ON public.job USING btree (\"parentId\") WHERE ((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "tableName": "job",
+          "columnNames": [
+            "parentId"
+          ],
+          "using": "btree",
+          "where": "((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_cancel_pending",
+          "definition": "CREATE INDEX job_cancel_pending ON public.job USING btree (queue, \"createdAt\", id) WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND (\"cancelRequestedAt\" IS NOT NULL) AND (\"cancelReason\" IS DISTINCT FROM 'deadline'::text))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_parent",
+          "definition": "CREATE INDEX job_parent ON public.job USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
+          "tableName": "job",
+          "columnNames": [
+            "parentId"
+          ],
+          "using": "btree",
+          "where": "(\"parentId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "job_check",
+          "definition": "CHECK (((state = 'active'::text) = (token IS NOT NULL)))",
+          "tableName": "job",
+          "expression": "(((state = 'active'::text) = (token IS NOT NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_state_check",
+          "definition": "CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
+          "tableName": "job",
+          "expression": "((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "job_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "job",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_parentId_fkey",
+          "definition": "FOREIGN KEY (\"parentId\") REFERENCES job(id)",
+          "tableName": "job",
+          "columnNames": [
+            "parentId"
+          ],
+          "referenceTableName": "job",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_queue_fkey",
+          "definition": "FOREIGN KEY (queue) REFERENCES job_queue(name)",
+          "tableName": "job",
+          "columnNames": [
+            "queue"
+          ],
+          "referenceTableName": "job_queue",
+          "referenceColumnNames": [
+            "name"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES job_run(id)",
+          "tableName": "job",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "job_run",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_runId_itemKey_name_fkey",
+          "definition": "FOREIGN KEY (\"runId\", \"itemKey\", name) REFERENCES job_run_item(\"runId\", \"itemKey\", stage)",
+          "tableName": "job",
+          "columnNames": [
+            "runId",
+            "itemKey",
+            "name"
+          ],
+          "referenceTableName": "job_run_item",
+          "referenceColumnNames": [
+            "runId",
+            "itemKey",
+            "stage"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_workerId_fkey",
+          "definition": "FOREIGN KEY (\"workerId\") REFERENCES job_worker(id)",
+          "tableName": "job",
+          "columnNames": [
+            "workerId"
+          ],
+          "referenceTableName": "job_worker",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "job_cancel_reason_check",
+          "definition": "CHECK ((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
+          "tableName": "job",
+          "expression": "((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
           "synchronize": true
         }
       ],
