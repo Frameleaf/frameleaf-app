@@ -173,14 +173,13 @@ describe(JobRepository.name, () => {
   ])('classifies deferred publication failure without private diagnostics: %s', async (message, reasonCode) => {
     vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
     const privateValue = 'private-fixture-value';
-    const error = Object.assign(new Error(message), {
+    const error = Object.assign(new Error(message, { cause: new Error(privateValue) }), {
       code: '23505',
-      stack: privateValue,
-      cause: new Error(privateValue),
       detail: privateValue,
       query: privateValue,
       parameters: [privateValue],
     });
+    Object.defineProperty(error, 'stack', { value: privateValue });
     const claim = {
       ...context().claim,
       id: '11111111-1111-4111-8111-111111111111',
