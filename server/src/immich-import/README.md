@@ -16,7 +16,17 @@ canonical public schema and pgvector HNSW indexes.
 2. Use a dedicated source role with SELECT on source public tables, no ownership,
    write privileges, superuser/BYPASSRLS membership, or ability to assume such a
    role. Grant that role read access to `pg_control_system()` so the source cluster
-   identity can be bound to the journal. Connections additionally enforce
+   identity can be bound to the journal. It also needs effective `pg_read_all_stats`
+   access to distinguish autovacuum from client sessions. This is cluster-wide
+   read-only statistics visibility, including session activity text, not a grant
+   limited to the source database. For a new dedicated role, set `INHERIT` before
+   `GRANT pg_read_all_stats TO role_name` (PostgreSQL 14 compatible), and verify
+   `pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')` on its connection.
+   Existing non-inheriting memberships on PostgreSQL 16+ must be revoked and
+   regranted after setting `INHERIT`. Unknown/client sessions still block import;
+   do not disable autovacuum to bypass the check. Revoke membership or disable the
+   reader when no further resume is needed. Manager provisions this access and
+   disables its reader's login after import or cancellation. Connections enforce
    `default_transaction_read_only=on`. The importer never runs source writes or DDL.
 3. Bootstrap a fresh Frameleaf destination. The migration owner installs
    `IMMICH_IMPORT_SCHEMA_SQL`; this command does not adopt an existing library.
