@@ -180,12 +180,15 @@ const waitForQueue = (accessToken: string, name: QueueName, context: WaitContext
     context,
     (current) => readQueue(accessToken, name, current),
     (queue) => {
+      if (queue.hasUnfinishedWork) {
+        return false;
+      }
       if (queue.statistics.failed > 0) {
         throw new Error(
           `Queue ${name} has ${queue.statistics.failed} failed or blocked jobs; it did not complete successfully`,
         );
       }
-      return !queue.hasUnfinishedWork;
+      return true;
     },
   );
 
