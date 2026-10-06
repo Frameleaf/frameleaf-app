@@ -33,6 +33,17 @@ export const deferJobAdoption = (adopt: (tx: Transaction<DB>) => Promise<void>) 
   return true;
 };
 
+/** A prepared operation may settle only with the stopped queue claim's failed transaction. */
+export const deferJobFailure = (settle: (tx: Transaction<DB>, reason: string, cancelled: boolean) => Promise<void>) => {
+  const context = queueExecution.getStore();
+  if (!context || publicationTransaction.getStore()) return false;
+  context.signal.throwIfAborted();
+  (context.failureSettlements ??= []).push((tx, reason, cancelled) =>
+    settle(tx as unknown as Transaction<DB>, reason, cancelled),
+  );
+  return true;
+};
+
 /** The path itself is immutable after publication; DB adoption makes it the current file. */
 export const attemptOutputPath = (path: string) => {
   const context = queueExecution.getStore();

@@ -128,9 +128,14 @@ describe('retained video publication under queue and operation claims', () => {
 
   it('keeps the previous projection until the version, references, job and operation commit together', async () => {
     const fixture = await prepare();
+    const changed = vi.fn();
+    fixture.operations.onChange(changed);
     expect(await fixture.files()).toEqual([{ path: fixture.result('previous').files[0].path }]);
     expect((await fixture.edits.getVideoVersion(fixture.asset.id, fixture.candidate.id))?.masterPath).toBeNull();
     expect(await fixture.commit()).toBe(true);
+    expect(changed).not.toHaveBeenCalled();
+    for (const notify of fixture.context.afterCommit ?? []) await notify();
+    expect(changed).toHaveBeenCalledExactlyOnceWith([{ id: fixture.operation.id, ownerId: fixture.operation.ownerId }]);
     expect(await fixture.files()).toEqual([{ path: fixture.result('candidate').files[0].path }]);
     expect((await fixture.edits.getVideoVersion(fixture.asset.id, fixture.candidate.id))?.status).toBe('ready');
     expect((await fixture.operations.getForWorker(fixture.operation.id))?.status).toBe(MediaOperationStatus.Completed);
@@ -174,8 +179,12 @@ describe('retained video publication under queue and operation claims', () => {
     expect(job).toEqual({ state: 'active', token: fixture.claim.token, attempt: 1 });
     // Rollback cannot grant a different claimant authority or silently settle this owner.
     const failure = { error: 'Publication lease expired before commit', errorCode: 'publication_lease_expired' };
+    const changed = vi.fn();
+    fixture.operations.onChange(changed);
     expect(await fixture.operations.fail(run.id, randomUUID(), failure, { retry: false })).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
     expect(await run.fail(failure.error, failure.errorCode, { retry: false })).toBe('failed');
+    expect(changed).toHaveBeenCalledExactlyOnceWith([{ id: fixture.operation.id, ownerId: fixture.operation.ownerId }]);
     expect(await fixture.operations.getForWorker(run.id)).toMatchObject({
       status: MediaOperationStatus.Failed,
       claimToken: null,
@@ -192,7 +201,7 @@ describe('retained video publication under queue and operation claims', () => {
     const emit = vi.fn(async () => {
       await fixture.render();
       const context = queueExecution.getStore()!;
-      context.afterCommit!.push(notify);
+      (context.afterCommit ??= []).push(notify);
       context.followups.push({
         queue: fixture.claim.queue,
         name: JobName.FileDelete,
@@ -242,6 +251,8 @@ describe('retained video publication under queue and operation claims', () => {
 
   it('requires matching stopped proof and rolls back owner failure together with the queue outcome', async () => {
     const fixture = await prepare();
+    const changed = vi.fn();
+    fixture.operations.onChange(changed);
     const settlements = fixture.context.failureSettlements!;
     const fail = () =>
       fixture.store.fail(fixture.claim, 'Publication lease expired before commit', undefined, { settlements });
@@ -249,6 +260,7 @@ describe('retained video publication under queue and operation claims', () => {
     expect(await fail()).toBe(false);
     await recordStoppedAttempt(db, randomUUID(), fixture.claim.token);
     expect(await fail()).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
     expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
       status: MediaOperationStatus.Validating,
       claimToken: fixture.run!.claimToken,
@@ -257,9 +269,11 @@ describe('retained video publication under queue and operation claims', () => {
     await sql`delete from system_metadata where key = ${ATTEMPT_EVIDENCE_PREFIX + fixture.claim.token}`.execute(db);
     await recordStoppedAttempt(db, fixture.claim.id, fixture.claim.token);
     settlements.push(async (tx) => {
+      expect(changed).not.toHaveBeenCalled();
       await sql`select 1 / 0`.execute(tx);
     });
     await expect(fail()).rejects.toThrow('division by zero');
+    expect(changed).not.toHaveBeenCalled();
     expect(fixture.run!.done).toBe(false);
     expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
       status: MediaOperationStatus.Validating,
@@ -271,6 +285,8 @@ describe('retained video publication under queue and operation claims', () => {
     ]);
     settlements.pop();
     expect(await fail()).toBe(true);
+    // Direct store callers have no observer delivery owner. A durable refresh supplies the outcome.
+    expect(changed).not.toHaveBeenCalled();
     expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
       status: MediaOperationStatus.Queued,
       claimToken: null,
@@ -278,6 +294,7 @@ describe('retained video publication under queue and operation claims', () => {
       attempt: 1,
     });
     expect(await fail()).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
     expect((await fixture.operations.getForWorker(fixture.operation.id))?.autoRetries).toBe(1);
     expect(await fixture.files()).toEqual([{ path: fixture.result('previous').files[0].path }]);
   });
