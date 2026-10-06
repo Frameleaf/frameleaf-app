@@ -7,11 +7,11 @@ import {
   searchAssetStatistics,
   searchFacets,
   SearchFacetField,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', async (original) => {
-  const sdk = await original<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (original) => {
+  const sdk = await original<typeof import('@frameleaf/sdk')>();
   return {
     ...sdk,
     getAllPeople: vi.fn(async () => ({ people: [], total: 0, hidden: 0 })),

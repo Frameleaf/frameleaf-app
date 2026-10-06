@@ -21,8 +21,8 @@
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, getTimelineHighlights, TimelineHighlightGrouping } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, getTimelineHighlights, TimelineHighlightGrouping } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiImageOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { debounce } from 'lodash-es';

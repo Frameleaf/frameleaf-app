@@ -6,7 +6,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiFolderMultipleOutline, mdiHistory, mdiImageMultipleOutline, mdiMagnify } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

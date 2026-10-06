@@ -3,7 +3,7 @@
    * One dashboard panel (FL-79), the template's `Panel` (AnalyticsDashboard.jsx:188-212): a kicker,
    * a sentence-style title, a caption and an optional link to the settings area that owns the data.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

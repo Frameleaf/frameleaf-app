@@ -5,7 +5,7 @@ import {
   WorkflowEventPayload,
   WorkflowResponse,
   WorkflowTrigger,
-} from '@immich/plugin-sdk';
+} from '@frameleaf/plugin-sdk';
 import { HttpException, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';

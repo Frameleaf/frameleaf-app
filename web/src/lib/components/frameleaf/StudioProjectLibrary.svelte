@@ -48,8 +48,8 @@
     type StudioBundleOperationDto,
     type StudioBundleUploadDto,
     type StudioProjectDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiFilmstrip, mdiImport, mdiPlus } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';

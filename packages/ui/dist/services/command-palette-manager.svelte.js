@@ -1,0 +1,226 @@
+import { matchesShortcut, shortcuts, shouldIgnoreEvent } from '../actions/shortcut.js';
+import CommandPaletteModal from '../internal/CommandPaletteModal.svelte';
+import { modalManager } from './modal-manager.svelte.js';
+import { isModalOpen } from '../state/modal-state.svelte.js';
+import { isEnabled } from '../utilities/common.js';
+import { asArray, generateId } from '../utilities/internal.js';
+import Fuse, {} from 'fuse.js';
+import { on } from 'svelte/events';
+export const defaultProvider = ({ name, types, actions, options }) => {
+    const index = new Fuse(actions, {
+        keys: [
+            { name: 'title', weight: 3 },
+            { name: 'tags', weight: 2 },
+            { name: 'description', weight: 2 },
+            { name: 'text', weight: 1 },
+        ],
+        includeScore: true,
+        shouldSort: true,
+        includeMatches: true,
+        ignoreLocation: true,
+        minMatchCharLength: 3,
+        ...options,
+    });
+    return {
+        name,
+        types,
+        onSearch: (query) => (query ? index.search(query).map((result) => fromResult(result)) : actions),
+    };
+};
+const fromResult = ({ item, matches }) => {
+    const highlight = asHighlight(matches);
+    return {
+        ...item,
+        description: highlight.description || item.description,
+        highlights: highlight.items.length > 0 ? highlight.items : undefined,
+    };
+};
+const HIGHLIGHT_PADDING = 30;
+const DESCRIPTION_KEYS = new Set(['text', 'description']);
+const asHighlight = (matches) => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const highlights = new Set();
+    const descriptions = [];
+    for (const match of matches ?? []) {
+        const { value } = match;
+        if (!value) {
+            continue;
+        }
+        const windows = [];
+        for (const [start, end] of match.indices) {
+            if (end - start < 3) {
+                continue;
+            }
+            highlights.add(value.slice(start, end + 1));
+            windows.push([Math.max(0, start - HIGHLIGHT_PADDING), Math.min(value.length, end + 1 + HIGHLIGHT_PADDING)]);
+        }
+        if (!DESCRIPTION_KEYS.has(match.key ?? '')) {
+            continue;
+        }
+        // merge window slices
+        const merged = [];
+        for (const [startIndex, endIndex] of windows.toSorted((a, b) => a[0] - b[0])) {
+            const last = merged.at(-1);
+            if (last && startIndex <= last[1]) {
+                last[1] = Math.max(last[1], endIndex);
+            }
+            else {
+                merged.push([startIndex, endIndex]);
+            }
+        }
+        for (const [startIndex, endIndex] of merged) {
+            const description = value.slice(startIndex, endIndex);
+            descriptions.push(`${startIndex === 0 ? '' : '...'}${description}${endIndex < value.length ? '...' : ''}`);
+        }
+    }
+    return { description: descriptions.join(' '), items: [...highlights] };
+};
+const TYPE_REGEX = /type:("(?<quoted>[^"]+)"|(?<plain>\S+))/g;
+class CommandPaletteManager {
+    #translations = {};
+    #providers = [];
+    #isEnabled = false;
+    #isOpen = false;
+    #results = $state([]);
+    #selectedGroupIndex = $state(0);
+    #selectedItemIndex = $state(0);
+    get isEnabled() {
+        return this.#isEnabled;
+    }
+    get results() {
+        return this.#results;
+    }
+    get selectedItem() {
+        const group = this.#results[this.#selectedGroupIndex];
+        return group?.items[this.#selectedItemIndex];
+    }
+    isSelected(item) {
+        return this.selectedItem?.id === item.id;
+    }
+    enable() {
+        if (this.#isEnabled) {
+            return;
+        }
+        this.#isEnabled = true;
+        if (globalThis.window && document.body) {
+            shortcuts(document.body, [
+                { shortcut: { key: 'k', meta: true }, onShortcut: () => this.open() },
+                { shortcut: { key: 'k', ctrl: true }, onShortcut: () => this.open() },
+                { shortcut: { key: '/' }, preventDefault: true, onShortcut: () => this.open() },
+            ]);
+            on(document.body, 'keydown', (event) => this.#handleKeydown(event));
+        }
+    }
+    setTranslations(translations = {}) {
+        this.#translations = translations;
+    }
+    async #onSearch(query) {
+        let type;
+        if (query) {
+            for (const matches of query.matchAll(TYPE_REGEX)) {
+                query = query.replaceAll(TYPE_REGEX, '').trim();
+                type = matches.groups?.quoted ?? matches.groups?.plain;
+                break;
+            }
+        }
+        const newResults = await Promise.all(this.#providers
+            .filter(({ types }) => !type || (types && types.includes(type)))
+            .map(async (provider) => {
+            const items = await provider.onSearch(query);
+            return {
+                provider,
+                items: items.filter((item) => isEnabled(item)).map((item) => ({ ...item, id: generateId() })),
+            };
+        }));
+        this.#selectedGroupIndex = 0;
+        this.#selectedItemIndex = 0;
+        this.#results = newResults.filter((result) => result.items.length > 0);
+    }
+    queryUpdate(query) {
+        if (!query) {
+            this.#results = [];
+            return;
+        }
+        void this.#onSearch(query);
+    }
+    async #handleKeydown(event) {
+        if (event.defaultPrevented || isModalOpen()) {
+            return;
+        }
+        const actions = await Promise.all(this.#providers.map((provider) => Promise.resolve(provider.onSearch())));
+        for (const action of actions.flat()) {
+            if (asArray(action.shortcuts).every((shortcut) => !matchesShortcut(event, shortcut))) {
+                continue;
+            }
+            if (!isEnabled(action)) {
+                continue;
+            }
+            const { ignoreInputFields = true, preventDefault = true } = action.shortcutOptions || {};
+            if (ignoreInputFields && shouldIgnoreEvent(event)) {
+                continue;
+            }
+            if (preventDefault) {
+                // eslint-disable-next-line unicorn/no-late-event-control
+                event.preventDefault();
+            }
+            action?.onAction(action);
+            return;
+        }
+    }
+    async #onClose(action) {
+        await action?.onAction(action);
+        this.#isOpen = false;
+        this.#results = [];
+    }
+    open(initialQuery) {
+        if (this.#isOpen) {
+            return;
+        }
+        const { onClose } = modalManager.open(CommandPaletteModal, {
+            translations: this.#translations,
+            initialQuery,
+        });
+        this.#isOpen = true;
+        void onClose.then((action) => this.#onClose(action));
+    }
+    navigateUp() {
+        const groups = this.#results;
+        if (groups.length === 0) {
+            return;
+        }
+        this.#selectedItemIndex--;
+        if (this.#selectedItemIndex < 0) {
+            this.#selectedGroupIndex--; // previous group
+            if (this.#selectedGroupIndex < 0) {
+                this.#selectedGroupIndex = groups.length - 1; // first group
+            }
+            this.#selectedItemIndex = groups[this.#selectedGroupIndex].items.length - 1;
+        }
+    }
+    navigateDown() {
+        const groups = this.#results;
+        if (groups.length === 0) {
+            return;
+        }
+        const group = groups[this.#selectedGroupIndex];
+        this.#selectedItemIndex++;
+        if (this.#selectedItemIndex >= group.items.length) {
+            this.#selectedItemIndex = 0;
+            this.#selectedGroupIndex++; // next group
+            if (this.#selectedGroupIndex >= groups.length) {
+                this.#selectedGroupIndex = 0; // first group
+            }
+        }
+    }
+    loadAllItems() {
+        void this.#onSearch();
+    }
+    addProvider(provider) {
+        this.#providers.push(provider);
+        return () => this.#removeProvider(provider);
+    }
+    #removeProvider(provider) {
+        this.#providers = this.#providers.filter((actionProvider) => actionProvider !== provider);
+    }
+}
+export const commandPaletteManager = new CommandPaletteManager();

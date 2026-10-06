@@ -1,4 +1,4 @@
-import { getSupportedMediaTypes, type ServerMediaTypesResponseDto } from '@immich/sdk';
+import { getSupportedMediaTypes, type ServerMediaTypesResponseDto } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { cancelUploadRequests } from '$lib/utils';

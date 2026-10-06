@@ -97,8 +97,8 @@
     getVideoMoments,
     type MemoryExportResponseDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon, themeManager, Theme as AppTheme } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, themeManager, Theme as AppTheme } from '@frameleaf/ui';
   import {
     mdiChevronDown,
     mdiChevronLeft,

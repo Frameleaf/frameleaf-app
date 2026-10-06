@@ -1,7 +1,7 @@
 <script lang="ts">
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
-  import { Button, Checkbox, HStack, Label, Modal, ModalBody, ModalFooter } from '@immich/ui';
+  import { Button, Checkbox, HStack, Label, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
   import { mdiDeleteForeverOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

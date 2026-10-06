@@ -10,7 +10,7 @@
     type SetGroup,
   } from '$lib/frameleaf/search-filters';
   import '$lib/frameleaf/tokens.css';
-  import type { PersonResponseDto } from '@immich/sdk';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

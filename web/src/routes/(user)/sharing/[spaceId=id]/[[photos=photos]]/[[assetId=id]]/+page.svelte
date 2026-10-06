@@ -5,7 +5,7 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import { isEnteringViewer, isLeavingViewer } from '$lib/frameleaf/space-viewer';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { tick } from 'svelte';
   import type { PageData } from './$types';
 

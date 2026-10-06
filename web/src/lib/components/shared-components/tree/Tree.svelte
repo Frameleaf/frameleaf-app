@@ -2,7 +2,7 @@
   import TreeItems from '$lib/components/shared-components/tree/TreeItems.svelte';
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
   import { TreeNode } from '$lib/utils/tree-utils';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown, mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

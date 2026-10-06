@@ -1,6 +1,6 @@
 <script lang="ts" generics="T extends PersonResponseDto">
   import { onDestroy } from 'svelte';
-  import type { PersonResponseDto } from '@immich/sdk';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
 
   interface Props {
     people: T[];

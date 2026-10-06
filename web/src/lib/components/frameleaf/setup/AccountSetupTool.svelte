@@ -31,8 +31,8 @@
   import { lang } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { convertBCP47, langs } from '$lib/utils/i18n';
-  import { getFrameleafAccountLink, setUserOnboarding, updateMyPreferences, updateMyUser } from '@immich/sdk';
-  import { Icon, modalManager, themeManager, ThemePreference } from '@immich/ui';
+  import { getFrameleafAccountLink, setUserOnboarding, updateMyPreferences, updateMyUser } from '@frameleaf/sdk';
+  import { Icon, modalManager, themeManager, ThemePreference } from '@frameleaf/ui';
   import {
     mdiAccountCircleOutline,
     mdiCellphone,

@@ -10,7 +10,7 @@ import {
   type MediaHealthListResponseDto,
   type MediaHealthOperationDto,
   type MediaHealthSummaryResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   accountOptions,

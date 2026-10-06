@@ -1,4 +1,4 @@
-import type { PersonResponseDto } from '@immich/sdk';
+import type { PersonResponseDto } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 

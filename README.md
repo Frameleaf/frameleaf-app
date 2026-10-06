@@ -396,7 +396,7 @@ photos of Alice in Calgary from April 2024
 
 ## Server-to-Server Library Migration
 
-Frameleaf adds a `migrate` command to the CLI (run as `frameleaf migrate`; `immich` still works as an alias, and the npm package keeps its upstream name `@immich/cli`) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
+Frameleaf adds a `migrate` command to the CLI (run as `frameleaf migrate`; `immich` still works as an alias, and the local npm package is named `@frameleaf/cli`) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
 
 It is built for real migrations: consolidating two home-lab servers, moving to new hardware, or folding a second instance into your main one.
 
@@ -428,12 +428,12 @@ If the user doesn't exist on the destination yet, create the account there first
 
 ### Building the CLI
 
-`migrate` is Frameleaf-only, so build the CLI from this repository instead of installing `@immich/cli` from npm:
+`migrate` is Frameleaf-only, so build the CLI from this repository instead of installing `@frameleaf/cli` from npm:
 
 ```bash
 pnpm install
-pnpm --filter @immich/sdk build
-pnpm --filter @immich/cli build
+pnpm --filter @frameleaf/sdk build
+pnpm --filter @frameleaf/cli build
 ```
 
 Run it from anywhere that can reach both servers — a laptop, or ideally a machine on the same network as one of them. Each file is streamed to a temporary folder next to the ledger and deleted immediately after upload, so you only need enough free disk for the files in flight, not for the whole library.

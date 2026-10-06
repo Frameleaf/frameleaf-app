@@ -1,4 +1,4 @@
-import type { PeopleListItemDto } from '@immich/sdk';
+import type { PeopleListItemDto } from '@frameleaf/sdk';
 import { expect, test, type BrowserContext } from '@playwright/test';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 

@@ -6,13 +6,13 @@ import {
   getAssetDevelopExports,
   importAssetDevelopRendition,
   type DevelopExportResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import RoundTripPanel from './RoundTripPanel.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     getAssetDevelopExports: vi.fn(),
@@ -21,8 +21,8 @@ vi.mock('@immich/sdk', async () => {
   };
 });
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   const { default: Icon } = await import('@test-data/components/MockIcon.svelte');
   return { ...actual, Icon, toastManager: { primary: vi.fn(), danger: vi.fn() } };
 });

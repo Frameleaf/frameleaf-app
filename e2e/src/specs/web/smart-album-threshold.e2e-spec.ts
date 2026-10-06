@@ -1,4 +1,4 @@
-import { getConfig, getMlWorkloadRoutes, updateConfig, type LoginResponseDto } from '@immich/sdk';
+import { getConfig, getMlWorkloadRoutes, updateConfig, type LoginResponseDto } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

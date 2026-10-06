@@ -6,7 +6,7 @@ import {
   WorkerCredentialState,
   WorkerInventorySource,
   type WorkerInventoryEntryDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   accelerationLabelKey,

@@ -2,8 +2,8 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { hasNewSinceVisit, newSinceIsPartial, newSinceMessageKey } from '$lib/frameleaf/shared-space';
   import { handleError } from '$lib/utils/handle-error';
-  import { markSharedSpaceVisited, type AlbumResponseDto, type SharedSpaceNewResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { markSharedSpaceVisited, type AlbumResponseDto, type SharedSpaceNewResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckAll, mdiFilterOutline, mdiFilterRemoveOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -8,7 +8,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import type { AdminConfigDto } from '@immich/sdk';
+  import type { AdminConfigDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {

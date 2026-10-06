@@ -5,8 +5,8 @@
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import EmailTemplatePreviewModal from '$lib/modals/EmailTemplatePreviewModal.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { type AdminConfigTemplateEmailsDto, getNotificationTemplateAdmin } from '@immich/sdk';
-  import { Button, Icon, LoadingSpinner, modalManager } from '@immich/ui';
+  import { type AdminConfigTemplateEmailsDto, getNotificationTemplateAdmin } from '@frameleaf/sdk';
+  import { Button, Icon, LoadingSpinner, modalManager } from '@frameleaf/ui';
   import { mdiEyeOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';

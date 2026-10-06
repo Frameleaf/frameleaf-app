@@ -11,8 +11,8 @@
     unlinkSharedSpaceAlbum,
     type AlbumResponseDto,
     type SharedSpaceAlbumResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiLinkVariant, mdiLinkVariantOff } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

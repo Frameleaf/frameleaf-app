@@ -300,7 +300,7 @@ test("the selective server build admits owned SQL-tools and retains its producti
   assert.ok(ignore.includes("!packages/sql-tools/dist/**"));
   assert.deepEqual(
     ignore.filter((line) => line.startsWith("!") && line.includes("dist")),
-    ["!packages/sql-tools/dist/", "!packages/sql-tools/dist/**"],
+    ["!packages/sql-tools/dist/", "!packages/sql-tools/dist/**", "!packages/ui/dist/", "!packages/ui/dist/**"],
     "No blanket exception for other generated dist directories",
   );
   const manifest = JSON.parse(read("packages/sql-tools/package.json"));
@@ -319,7 +319,7 @@ test("the selective server build admits owned SQL-tools and retains its producti
     "COPY ./packages/sql-tools ./packages/sql-tools/",
   );
   const install = server.indexOf(
-    "pnpm --filter 'immich...' install --frozen-lockfile",
+    "pnpm --filter 'frameleaf...' install --frozen-lockfile",
   );
   const deploy = server.indexOf("deploy /output/server-pruned");
   const sharp = server.indexOf(

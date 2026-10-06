@@ -11,8 +11,8 @@
     getAssetClassifications,
     type AssetResponseDto,
     type ClassificationContributionDto,
-  } from '@immich/sdk';
-  import { Icon, Text } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Text } from '@frameleaf/ui';
   import { mdiAutoFix } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

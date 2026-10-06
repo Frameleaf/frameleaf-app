@@ -1,11 +1,11 @@
-import { searchPerson } from '@immich/sdk';
+import { searchPerson } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { personFactory } from '@test-data/factories/person-factory';
 import PersonNameField from './PersonNameField.svelte';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchPerson: vi.fn().mockResolvedValue([]),
 }));
 

@@ -1,4 +1,4 @@
-import { type DurableRunningJobs, QueueName } from '@immich/sdk';
+import { type DurableRunningJobs, QueueName } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { isRunSettled, matchesRunFilter, settledItems } from '$lib/frameleaf/durable-runs';

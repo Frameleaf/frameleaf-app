@@ -1,4 +1,4 @@
-import { MediaOperationKind, MediaOperationStatus, type MediaOperationDto } from '@immich/sdk';
+import { MediaOperationKind, MediaOperationStatus, type MediaOperationDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { recentUtilityActivity, UTILITY_HISTORY_LIMIT } from '$lib/frameleaf/utility-history';
 

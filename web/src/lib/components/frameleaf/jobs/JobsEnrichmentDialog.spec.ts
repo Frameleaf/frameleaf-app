@@ -1,12 +1,12 @@
-import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
+import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import JobsEnrichmentDialog from '$lib/components/frameleaf/jobs/JobsEnrichmentDialog.svelte';
 import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
 import en from '../../../../../../i18n/en.json';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getMachineLearningHardware: vi.fn(),
 }));
 

@@ -9,8 +9,8 @@
     type CatalogueEntry,
     type IconPaths,
   } from '$lib/frameleaf/icon-catalogue';
-  import type { AlbumIconCatalogueResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { AlbumIconCatalogueResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMagnify } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

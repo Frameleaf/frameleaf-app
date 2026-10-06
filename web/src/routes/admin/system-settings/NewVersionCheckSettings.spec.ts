@@ -5,7 +5,7 @@ import {
   ReleaseType,
   VersionCheckFrequency,
   type AdminConfigDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
@@ -14,7 +14,7 @@ import NewVersionCheckSettings from './NewVersionCheckSettings.svelte';
 
 const draft = vi.hoisted(() => ({ store: undefined as unknown }));
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   checkVersionNow: vi.fn(),
   getVersionCheck: vi.fn(),

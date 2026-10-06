@@ -10,8 +10,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllPeople, updatePeople, type PersonResponseDto } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { getAllPeople, updatePeople, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiCheck, mdiEyeOffOutline, mdiEyeOutline, mdiAccountOffOutline, mdiRestore } from '@mdi/js';
   import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -1,8 +1,8 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPawOutline } from '@mdi/js';
 
   /**

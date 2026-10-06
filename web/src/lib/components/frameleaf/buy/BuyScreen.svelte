@@ -55,8 +55,8 @@
     type LicenseProductDto,
     type LicenseProductsResponseDto,
     type LicenseStatusResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiCheckCircleOutline, mdiInformationOutline, mdiOpenInNew } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

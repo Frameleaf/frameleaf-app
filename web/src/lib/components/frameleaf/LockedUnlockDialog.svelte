@@ -19,8 +19,8 @@
   import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Route } from '$lib/route';
-  import { getAuthStatus, isHttpError, unlockAuthSession } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { getAuthStatus, isHttpError, unlockAuthSession } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiClose, mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

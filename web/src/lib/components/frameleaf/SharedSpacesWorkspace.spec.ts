@@ -1,4 +1,10 @@
-import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type PartnerResponseDto, UserAvatarColor } from '@immich/sdk';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  type AlbumResponseDto,
+  type PartnerResponseDto,
+  UserAvatarColor,
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -1,4 +1,4 @@
-import { LoginResponseDto, getAllAlbums, getAssetStatistics } from '@immich/sdk';
+import { LoginResponseDto, getAllAlbums, getAssetStatistics } from '@frameleaf/sdk';
 import { cpSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';

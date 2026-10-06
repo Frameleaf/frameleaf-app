@@ -16,7 +16,7 @@ import {
   type AssetImageEnrichmentResponseDto,
   type AssetResponseDto,
   type ExifResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   cameraLabel,
   dimensionsLabel,

@@ -9,7 +9,7 @@ import {
   AlbumUserRole,
   type SharedSpaceMemberResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';
@@ -19,8 +19,8 @@ import SharedSpaceMembers from './SharedSpaceMembers.svelte';
 
 vi.mock('$lib/utils');
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   addUsersToAlbum: vi.fn(),
   getRecipientGroups: vi.fn(),
   createRecipientGroup: vi.fn(),

@@ -27,8 +27,8 @@
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
   import { albumIconPath } from '$lib/utils/album-icons';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAlbumTree, getPartners, PartnerDirection, type PartnerResponseDto } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { getAlbumTree, getPartners, PartnerDirection, type PartnerResponseDto } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
     mdiChevronDoubleLeft,

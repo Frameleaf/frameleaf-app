@@ -20,7 +20,7 @@
     stringToSortOrder,
     type AlbumGroup,
   } from '$lib/utils/album-utils';
-  import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
+  import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@frameleaf/sdk';
   import { groupBy } from 'lodash-es';
   import { type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -4,7 +4,7 @@
    * optional icon tile, a title and description, and a status pill whose state is always written
    * out, never shown by colour alone. Styles come from cloud-account.css.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
 
   type Props = {

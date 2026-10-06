@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, SearchFacetField } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, SearchFacetField } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   BEST_PHOTOS_QUALITY_MIN_SCORE,

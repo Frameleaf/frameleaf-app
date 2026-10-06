@@ -7,8 +7,8 @@
   } from '$lib/components/shared-components/album-selection/album-selection-utils';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { albumViewSettings } from '$lib/stores/preferences.store';
-  import { createAlbum, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
-  import { Button, Icon, Modal, ModalBody, ModalFooter, Text } from '@immich/ui';
+  import { createAlbum, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { Button, Icon, Modal, ModalBody, ModalFooter, Text } from '@frameleaf/ui';
   import { mdiKeyboardReturn } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

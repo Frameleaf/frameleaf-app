@@ -1,5 +1,5 @@
 {
-  "name": "immich-web",
+  "name": "frameleaf-web",
   "version": "3.2.0",
   "license": "GNU Affero General Public License version 3",
   "type": "module",
@@ -25,9 +25,9 @@
   },
   "dependencies": {
     "@formatjs/icu-messageformat-parser": "^3.0.0",
-    "@immich/justified-layout-wasm": "^0.4.3",
-    "@immich/sdk": "workspace:*",
-    "@immich/ui": "^0.86.0",
+    "@frameleaf/justified-layout-wasm": "workspace:*",
+    "@frameleaf/sdk": "workspace:*",
+    "@frameleaf/ui": "workspace:*",
     "@mdi/js": "^7.4.47",
     "@noble/hashes": "^2.2.0",
     "@photo-sphere-viewer/core": "^5.14.0",

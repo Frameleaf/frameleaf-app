@@ -1,4 +1,4 @@
-import { TakeoutPhase, TakeoutState, type TakeoutResponseDto } from '@immich/sdk';
+import { TakeoutPhase, TakeoutState, type TakeoutResponseDto } from '@frameleaf/sdk';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';

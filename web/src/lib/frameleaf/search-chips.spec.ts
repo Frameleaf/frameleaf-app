@@ -1,4 +1,4 @@
-import type { SearchFilter } from '@immich/sdk';
+import type { SearchFilter } from '@frameleaf/sdk';
 import { entityNameKey, filterEntityIds, withoutFilterField } from '$lib/frameleaf/search-chips';
 
 describe('filterEntityIds', () => {

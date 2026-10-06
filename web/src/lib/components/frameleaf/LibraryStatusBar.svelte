@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCheckCircle } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

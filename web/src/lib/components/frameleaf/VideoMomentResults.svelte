@@ -8,7 +8,7 @@
    * there are no hits, so a search without video moments looks exactly as it did.
    */
   import VideoMomentHits from '$lib/components/frameleaf/VideoMomentHits.svelte';
-  import { searchVideoMoments, type VideoMomentSearchHitDto } from '@immich/sdk';
+  import { searchVideoMoments, type VideoMomentSearchHitDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let { query }: { query: string } = $props();

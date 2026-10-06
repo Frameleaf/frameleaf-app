@@ -8,8 +8,8 @@
   import MaintenanceBackupRow from '$lib/components/frameleaf/MaintenanceBackupRow.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { handleUploadDatabaseBackup } from '$lib/services/database-backups.service';
-  import { listDatabaseBackups, type DatabaseBackupDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { listDatabaseBackups, type DatabaseBackupDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiTrayArrowUp } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

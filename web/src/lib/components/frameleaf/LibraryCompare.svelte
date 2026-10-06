@@ -22,8 +22,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck, mdiClose, mdiMagnifyMinusOutline, mdiMagnifyPlusOutline, mdiPinOutline, mdiUndo } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

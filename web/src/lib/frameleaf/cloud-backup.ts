@@ -10,7 +10,7 @@ import {
   CloudBackupRunState,
   CloudBackupTask,
   type CloudBackupStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { ActivityProgressStage } from '$lib/frameleaf/activity';
 

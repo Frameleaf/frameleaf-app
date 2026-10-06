@@ -5,7 +5,7 @@ import {
   RemoteAccessMode,
   RemoteHostnameStatus,
   updateConfig,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';

@@ -14,8 +14,8 @@
     removeAssetEdits,
     type AssetEditsCreateDto,
     type AssetResponseDto,
-  } from '@immich/sdk';
-  import { Button, ConfirmModal, HStack, Icon, IconButton, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, ConfirmModal, HStack, Icon, IconButton, modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiClockOutline,
     mdiClose,

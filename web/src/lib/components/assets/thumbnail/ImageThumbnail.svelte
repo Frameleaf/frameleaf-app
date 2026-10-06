@@ -1,7 +1,7 @@
 <script lang="ts">
   import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import Image from '$lib/components/Image.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
   import type { ClassValue } from 'svelte/elements';
 

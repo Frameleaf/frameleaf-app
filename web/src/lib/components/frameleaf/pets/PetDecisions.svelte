@@ -18,8 +18,8 @@
     deletePetObservation,
     getPetObservations,
     type PetObservationResponseDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

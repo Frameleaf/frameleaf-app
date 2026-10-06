@@ -7,7 +7,7 @@ import {
   type TakeoutPairResponseDto,
   type TakeoutResponseDto,
   type TakeoutSourceResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import type { Translations } from 'svelte-i18n';

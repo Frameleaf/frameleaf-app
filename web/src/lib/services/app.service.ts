@@ -1,4 +1,4 @@
-import type { ActionItem } from '@immich/ui';
+import type { ActionItem } from '@frameleaf/ui';
 import { mdiCast, mdiCastConnected } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
 import { CastDestinationType, castManager } from '$lib/managers/cast-manager.svelte';

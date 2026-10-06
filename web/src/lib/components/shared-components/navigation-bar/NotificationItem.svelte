@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { NotificationLevel, NotificationType, type NotificationDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { NotificationLevel, NotificationType, type NotificationDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAt,
     mdiBackupRestore,

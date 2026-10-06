@@ -6,7 +6,7 @@
  * pixel format it cannot describe, or no usable picture size. The quick editor says so before the
  * person starts, and Studio says so for a video placed in a project. Both show the same sentence.
  */
-import { DecodeRefusal } from '@immich/sdk';
+import { DecodeRefusal } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 const decodeRefusalKeys: Record<DecodeRefusal, Translations> = {

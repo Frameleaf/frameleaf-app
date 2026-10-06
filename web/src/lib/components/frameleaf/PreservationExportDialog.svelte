@@ -63,7 +63,7 @@
     type AlbumResponseDto,
     type PreservationPackageDto,
     type PreservationPreviewResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';

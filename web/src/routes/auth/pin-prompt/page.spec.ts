@@ -1,4 +1,4 @@
-import { lockAuthSession, resetPinCode, setupPinCode, unlockAuthSession } from '@immich/sdk';
+import { lockAuthSession, resetPinCode, setupPinCode, unlockAuthSession } from '@frameleaf/sdk';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   lockAuthSession: vi.fn(),
   resetPinCode: vi.fn(),
@@ -183,7 +183,7 @@ describe('PIN prompt', () => {
   });
 
   it('keeps a confirmed Wrong PIN (HTTP 400) in the prompt without a compensating lock', async () => {
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(unlockAuthSession).mockImplementationOnce((request) =>
       sdk.unlockAuthSession(request, {
         fetch: async () => Response.json({ message: 'Wrong PIN code' }, { status: 400 }),

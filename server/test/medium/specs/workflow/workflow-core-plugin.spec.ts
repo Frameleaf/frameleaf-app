@@ -1,4 +1,4 @@
-import { WorkflowStepConfig, WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowStepConfig, WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { Kysely } from 'kysely';
 import { readFileSync } from 'node:fs';
 import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto.js';

@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type {

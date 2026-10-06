@@ -1,4 +1,4 @@
-import { setFetch } from '@immich/sdk';
+import { setFetch } from '@frameleaf/sdk';
 import { memoize } from 'lodash-es';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -8,7 +8,7 @@ import { initLanguage } from '$lib/utils';
 type Fetch = typeof fetch;
 
 async function _init(fetch: Fetch) {
-  // set event.fetch on the fetch-client used by @immich/sdk
+  // set event.fetch on the fetch-client used by @frameleaf/sdk
   // https://kit.svelte.dev/docs/load#making-fetch-requests
   // https://github.com/oazapfts/oazapfts/blob/main/README.md#fetch-options
   setFetch(fetch);

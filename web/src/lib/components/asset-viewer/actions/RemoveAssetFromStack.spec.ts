@@ -1,4 +1,4 @@
-import type { StackResponseDto } from '@immich/sdk';
+import type { StackResponseDto } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AlbumKind, AssetOrder, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AssetOrder, type AlbumResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const albumFactory = Sync.makeFactory<AlbumResponseDto>({

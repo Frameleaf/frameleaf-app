@@ -24,7 +24,7 @@
     type AccountPreferencesSection,
   } from '$lib/frameleaf/account-preferences';
   import { AccountPreferencesDraftStore } from '$lib/frameleaf/account-preferences-draft.svelte';
-  import { AssetOrder, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@immich/sdk';
+  import { AssetOrder, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -17,8 +17,8 @@
     updatePerson,
     type AssetResponseDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck, mdiPlay } from '@mdi/js';
   import { untrack } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';

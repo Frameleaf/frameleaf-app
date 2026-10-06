@@ -1,4 +1,8 @@
-import { createPreservationPackage, previewPreservationExport, type PreservationPreviewResponseDto } from '@immich/sdk';
+import {
+  createPreservationPackage,
+  previewPreservationExport,
+  type PreservationPreviewResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { loadFilterPanelOptions, emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
@@ -6,8 +10,8 @@ import en from '../../../../../i18n/en.json';
 import PreservationExportDialog from './PreservationExportDialog.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   previewPreservationExport: vi.fn(),
   createPreservationPackage: vi.fn(),
   getAllAlbums: vi.fn().mockResolvedValue([]),

@@ -1,8 +1,8 @@
 <script lang="ts">
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { insertMention, mentionCandidates, mentionQueryAt, splitMentions } from '$lib/frameleaf/shared-space';
-  import type { SharedSpaceMemberResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { SharedSpaceMemberResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiSend } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

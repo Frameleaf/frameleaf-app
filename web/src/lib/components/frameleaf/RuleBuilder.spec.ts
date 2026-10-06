@@ -1,4 +1,4 @@
-import { ClassificationRuleAction } from '@immich/sdk';
+import { ClassificationRuleAction } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

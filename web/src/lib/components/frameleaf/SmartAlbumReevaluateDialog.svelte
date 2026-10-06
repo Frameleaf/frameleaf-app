@@ -15,8 +15,8 @@
     planClassificationRule,
     type ClassificationPlanResponseDto,
     type ClassificationRuleResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMinus, mdiPlus, mdiRefresh } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

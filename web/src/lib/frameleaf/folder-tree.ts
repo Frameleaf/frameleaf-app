@@ -1,4 +1,4 @@
-import type { FolderSummaryResponseDto } from '@immich/sdk';
+import type { FolderSummaryResponseDto } from '@frameleaf/sdk';
 
 /**
  * The storage-folder tree for the Frameleaf Folders browser (FL-46), ported from the prototype's

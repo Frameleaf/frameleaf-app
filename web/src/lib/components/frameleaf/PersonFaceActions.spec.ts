@@ -5,8 +5,8 @@ import {
   getAllPeople,
   SourceType,
   type AssetFaceResponseDto,
-} from '@immich/sdk';
-import { modalManager, toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { peopleListItemFactory, personFactory } from '@test-data/factories/person-factory';
 import PersonFaceActions from './PersonFaceActions.svelte';
@@ -25,8 +25,8 @@ import PersonFaceActions from './PersonFaceActions.svelte';
  * translated, so those stay as the factory-built values.
  */
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     correctFace: vi.fn(),
@@ -38,8 +38,8 @@ vi.mock('@immich/sdk', async () => {
   };
 });
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   const { default: Icon } = await import('@test-data/components/MockIcon.svelte');
   return {
     ...actual,

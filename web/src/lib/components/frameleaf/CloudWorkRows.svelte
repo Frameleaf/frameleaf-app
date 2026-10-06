@@ -13,8 +13,8 @@
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { CloudBackupTargetSetting, type CloudBackupStatusResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { CloudBackupTargetSetting, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore, mdiChevronRight, mdiCloudUploadOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

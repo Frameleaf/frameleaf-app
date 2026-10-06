@@ -7,8 +7,8 @@
     recognitionRunProgress,
   } from '$lib/frameleaf/pets';
   import { Route } from '$lib/route';
-  import { MlDestinationKind, PetRecognitionRunStatus, type PetRecognitionStatusResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { MlDestinationKind, PetRecognitionRunStatus, type PetRecognitionStatusResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCloudOffOutline, mdiLanConnect, mdiServerOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

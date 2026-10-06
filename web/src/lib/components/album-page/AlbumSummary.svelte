@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getAlbumDateRange } from '$lib/utils/date-time';
-  import type { AlbumResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {

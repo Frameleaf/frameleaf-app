@@ -1,4 +1,4 @@
-import { LoginResponseDto, createAlbum, getAlbumInfo, getAssetStatistics } from '@immich/sdk';
+import { LoginResponseDto, createAlbum, getAlbumInfo, getAssetStatistics } from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { makeRandomImage } from 'src/generators.js';
 import { asBearerAuth, utils } from 'src/utils.js';

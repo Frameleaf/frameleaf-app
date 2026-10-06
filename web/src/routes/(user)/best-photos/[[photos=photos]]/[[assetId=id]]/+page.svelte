@@ -11,8 +11,8 @@
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getBestPhotos, type BestPhotoAssetResponseDto } from '@immich/sdk';
-  import { LoadingSpinner } from '@immich/ui';
+  import { getBestPhotos, type BestPhotoAssetResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

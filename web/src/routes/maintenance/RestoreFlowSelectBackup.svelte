@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
    * Restore from backup, step 2 (FL-80): the Frameleaf backup list (FL-81) inside the maintenance
-   * page's card, in place of the upstream `@immich/ui` layout and legacy `MaintenanceBackupsList`.
+   * page's card, in place of the upstream `@frameleaf/ui` layout and legacy `MaintenanceBackupsList`.
    */
   import MaintenanceBackupList from '$lib/components/frameleaf/MaintenanceBackupList.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -1,4 +1,4 @@
-import { getAdminConfigWithRevision, getConfigDefaults } from '@immich/sdk';
+import { getAdminConfigWithRevision, getConfigDefaults } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { authManager } from '$lib/managers/auth-manager.svelte';

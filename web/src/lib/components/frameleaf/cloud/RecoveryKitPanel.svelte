@@ -9,7 +9,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import { downloadBlob } from '$lib/utils';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiDownloadOutline, mdiFileDocumentOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';

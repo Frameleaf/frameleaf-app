@@ -1,4 +1,4 @@
-import { MachineLearningHardwareAcceleration as Acceleration, SmartAlbumBuiltInKind } from '@immich/sdk';
+import { MachineLearningHardwareAcceleration as Acceleration, SmartAlbumBuiltInKind } from '@frameleaf/sdk';
 import {
   applyDescriptionHardwarePreset,
   enrichmentTaskAction,

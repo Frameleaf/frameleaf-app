@@ -18,8 +18,8 @@
     TranscodePolicy,
     VideoCodec,
     VideoContainer,
-  } from '@immich/sdk';
-  import { Icon, Link } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Link } from '@frameleaf/ui';
   import { mdiHelpCircleOutline } from '@mdi/js';
   import { isEqual, sortBy } from 'lodash-es';
   import { t } from 'svelte-i18n';

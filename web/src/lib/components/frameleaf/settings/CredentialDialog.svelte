@@ -20,8 +20,8 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { updateConfigCredential, type ConfigCredential } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { updateConfigCredential, type ConfigCredential } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   let { name, onClose }: { name: ConfigCredential; onClose: (saved?: boolean) => void } = $props();

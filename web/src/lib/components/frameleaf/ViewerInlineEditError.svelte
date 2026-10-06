@@ -8,7 +8,7 @@
    * "try again" that cannot succeed, and a stale asset is reloaded rather than overwritten.
    */
   import { inlineEditMessageKey, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

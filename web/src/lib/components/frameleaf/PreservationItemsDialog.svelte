@@ -15,7 +15,7 @@
     PreservationVerifyState,
     type PreservationItemsResponseDto,
     type PreservationPackageDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 

@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     AssetMediaSize,
     getAllAlbums,
     getAssetDevelop,
     type AlbumResponseDto,
     type AssetDevelopResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import {
     mdiArrowLeft,
     mdiCameraIris,

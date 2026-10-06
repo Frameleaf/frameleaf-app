@@ -19,8 +19,8 @@
     SharedLinkType,
     type AlbumResponseDto,
     type UserResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountPlusOutline, mdiClose, mdiLinkVariant } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

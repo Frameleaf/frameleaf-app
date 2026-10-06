@@ -18,8 +18,8 @@
     type AssetResponseDto,
     type PersonResponseDto,
     type SearchHistogramBucketDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiTextBoxOutline } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
 

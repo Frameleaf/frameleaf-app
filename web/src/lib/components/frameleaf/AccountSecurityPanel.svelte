@@ -31,8 +31,8 @@
     getUserPinCodeStateAdmin,
     type SessionResponseDto,
     type UserAdminResponseDto,
-  } from '@immich/sdk';
-  import { modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { modalManager, toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

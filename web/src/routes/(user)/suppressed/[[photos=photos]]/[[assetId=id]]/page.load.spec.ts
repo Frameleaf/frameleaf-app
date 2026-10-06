@@ -1,4 +1,4 @@
-import { getAllAlbums, getAuthStatus, type AuthStatusResponseDto } from '@immich/sdk';
+import { getAllAlbums, getAuthStatus, type AuthStatusResponseDto } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import type { MessageFormatter } from 'svelte-i18n';
 import { authenticate } from '$lib/utils/auth';
@@ -6,8 +6,8 @@ import { getFormatter } from '$lib/utils/i18n';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frameleaf/sdk')>();
 
   return {
     ...actual,

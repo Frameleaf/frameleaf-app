@@ -6,7 +6,7 @@ import {
   type AssetResponseDto,
   type PersonResponseDto,
   type SearchFacetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { mdiCameraOutline, mdiHeartOutline, mdiImageSearchOutline, mdiMovieOpenOutline } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
 import { Route } from '$lib/route';

@@ -9,7 +9,7 @@ import {
   type MediaHealthOperationDto,
   type MediaHealthRunResponseDto,
   type MediaHealthSummaryResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /**

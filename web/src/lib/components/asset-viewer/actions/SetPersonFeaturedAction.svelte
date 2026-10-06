@@ -3,8 +3,8 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { handleError } from '$lib/utils/handle-error';
-  import { updatePerson, type AssetResponseDto, type PersonResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { updatePerson, type AssetResponseDto, type PersonResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { mdiFaceManProfile } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

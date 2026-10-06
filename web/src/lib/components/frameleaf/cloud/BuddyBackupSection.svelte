@@ -35,7 +35,7 @@
     type BuddyStatusDto,
     type BuddyKitDto,
     type BuddySettingsDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
 
   let { view = 'all' }: { view?: 'all' | 'status' | 'controls' | 'restore' } = $props();

@@ -1,4 +1,4 @@
-import { getAboutInfo } from '@immich/sdk';
+import { getAboutInfo } from '@frameleaf/sdk';
 
 /**
  * FL-135: documentation links go to this installation's own documentation (`FRAMELEAF_DOCS_URL`,

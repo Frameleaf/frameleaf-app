@@ -9,7 +9,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { configPathLabel, reviewValue, type ReviewValue } from '$lib/frameleaf/system-config-draft';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

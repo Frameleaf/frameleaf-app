@@ -24,7 +24,7 @@
     type BuddyRestoreResponseDto,
     type BuddyRestoreStatusDto,
     type BuddySnapshotListDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onDestroy } from 'svelte';
 
   let { admin = false }: { admin?: boolean } = $props();

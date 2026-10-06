@@ -1,10 +1,10 @@
-import { getAssetDevelop, saveAssetDevelop, cancelAssetDevelopRender } from '@immich/sdk';
+import { getAssetDevelop, saveAssetDevelop, cancelAssetDevelopRender } from '@frameleaf/sdk';
 import { vi, it, expect, beforeEach } from 'vitest';
 import { initialNativeRecipe, newNativeMask } from './native-develop';
 import { proposeNativeMask } from './native-develop';
 import { syncNativeRecipes, cancelNativeSync } from './native-sync';
 
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   defaults: {},
   getBaseUrl: () => '/api',
   getAssetDevelop: vi.fn(),

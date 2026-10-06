@@ -6,7 +6,7 @@ import {
   isHttpError,
   prepareArchiveOperation,
   undoArchiveOperation,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 
 /**

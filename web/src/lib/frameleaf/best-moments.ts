@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type BestPhotoAssetResponseDto, type VideoMomentFrameDto } from '@immich/sdk';
+import { AssetTypeEnum, type BestPhotoAssetResponseDto, type VideoMomentFrameDto } from '@frameleaf/sdk';
 
 /** A ranked video and the time of its best-scored frame (FL-50). */
 export interface BestMoment {

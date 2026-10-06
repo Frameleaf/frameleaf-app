@@ -29,7 +29,7 @@
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import type { UsageByUserDto, UserAdminResponseDto } from '@immich/sdk';
+  import type { UsageByUserDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let { users, usage = [] }: { users: UserAdminResponseDto[]; usage?: UsageByUserDto[] } = $props();

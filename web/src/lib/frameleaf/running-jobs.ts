@@ -6,7 +6,7 @@ import {
   type DurableJobRun,
   type DurableRunningJobs,
   type RunningJobsResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { fromMediaOperation, type ActivityTone } from '$lib/frameleaf/activity';
 import { isRunSettled, runStateKey, runTone, settledItems } from '$lib/frameleaf/durable-runs';

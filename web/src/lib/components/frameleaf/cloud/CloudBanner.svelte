@@ -3,7 +3,7 @@
    * A Frameleaf Cloud banner (FrameleafCloud.jsx:344-355): a coloured edge, an icon, a title and one
    * sentence, with an optional action. Danger banners are alerts; the others are polite status.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiInformationOutline } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

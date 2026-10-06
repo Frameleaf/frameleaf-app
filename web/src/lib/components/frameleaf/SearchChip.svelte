@@ -1,8 +1,8 @@
 <script lang="ts">
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import '$lib/frameleaf/tokens.css';
-  import type { PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

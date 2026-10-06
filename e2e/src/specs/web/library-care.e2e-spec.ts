@@ -6,7 +6,7 @@ import {
   MediaHealthStatus,
   reopen,
   startMissingScan,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 

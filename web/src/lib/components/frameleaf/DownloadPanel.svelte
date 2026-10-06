@@ -6,8 +6,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { isHttpError } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { isHttpError } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,

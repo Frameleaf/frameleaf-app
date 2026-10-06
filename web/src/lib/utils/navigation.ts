@@ -1,4 +1,4 @@
-import { isHttpError } from '@immich/sdk';
+import { isHttpError } from '@frameleaf/sdk';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import type { RouteId } from '$app/types';

@@ -14,7 +14,7 @@ import {
   type PersonRecapDto,
   type PetStoryDto,
   type YearInReviewDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
 

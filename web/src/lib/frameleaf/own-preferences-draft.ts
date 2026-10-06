@@ -1,4 +1,4 @@
-import { getMyPreferences, updateMyPreferences } from '@immich/sdk';
+import { getMyPreferences, updateMyPreferences } from '@frameleaf/sdk';
 import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
 import { AccountPreferencesDraftStore } from '$lib/frameleaf/account-preferences-draft.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';

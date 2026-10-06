@@ -1,7 +1,7 @@
 import { galleryRequest, galleryMedia, workflowRequest } from './workflow-api';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   defaults: { fetch: transport.fetch, headers: { Authorization: 'Bearer owner' } },
   getBaseUrl: () => '/custom-api',
 }));

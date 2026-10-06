@@ -12,8 +12,8 @@
   import { getAssetActions } from '$lib/services/asset.service';
   import { getSharedLink, isEnabled, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
-  import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@immich/ui';
+  import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
+  import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiDotsHorizontal, mdiInformationOutline, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

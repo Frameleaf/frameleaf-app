@@ -7,7 +7,7 @@ import {
   getFaces,
   updateAsset,
   type AssetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
@@ -99,8 +99,8 @@ vi.mock('$lib/stores/ocr.svelte', () => ({
   },
 }));
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     updateAsset: vi.fn(),

@@ -28,8 +28,8 @@
   import { getAssetMediaUrl } from '$lib/utils';
   import { fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
-  import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronLeft, mdiChevronRight, mdiClose } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy, onMount, untrack } from 'svelte';

@@ -34,7 +34,7 @@
     type CloudTourStepId,
   } from '$lib/frameleaf/cloud-tour';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiCheckCircle, mdiChevronLeft, mdiChevronRight, mdiShimmer } from '@mdi/js';
   import { onMount, tick, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';

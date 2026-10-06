@@ -1,4 +1,4 @@
-import type { CloudMlDescriptionEstimateResponseDto } from '@immich/sdk';
+import type { CloudMlDescriptionEstimateResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

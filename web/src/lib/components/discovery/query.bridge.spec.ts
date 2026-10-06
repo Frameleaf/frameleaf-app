@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   contextDiscoveryState,

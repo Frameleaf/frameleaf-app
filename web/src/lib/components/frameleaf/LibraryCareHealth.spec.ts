@@ -7,7 +7,7 @@ import {
   type MediaHealthListResponseDto,
   type MediaHealthSummaryResponseDto,
   type UserAdminResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -32,8 +32,8 @@ vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/user-setti
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'admin', name: 'Taylor', isAdmin: true }, params: {} },
 }));
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   ...state.sdk,
 }));
 

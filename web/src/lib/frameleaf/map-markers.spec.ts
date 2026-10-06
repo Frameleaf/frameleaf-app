@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type MapMarkerResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type MapMarkerResponseDto } from '@frameleaf/sdk';
 import { markerCardLine, markerDetail, markerRowLine, markerTypeCounts } from '$lib/frameleaf/map-markers';
 
 const marker = (overrides: Partial<MapMarkerResponseDto> = {}): MapMarkerResponseDto => ({

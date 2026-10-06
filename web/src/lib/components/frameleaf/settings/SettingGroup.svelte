@@ -6,7 +6,7 @@
    * parameter through the accordion manager so existing deep links still open the right group.
    */
   import { accordionManager } from '$lib/managers/accordion-manager.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

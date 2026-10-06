@@ -12,7 +12,7 @@ import {
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
   type RenderWorkerCompatibilityResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /** The workloads the ordinary machine-learning container serves (the Overview's "ML endpoint"). */
 const LIBRARY_WORKLOADS = new Set<MlWorkload>([

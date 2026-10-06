@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type TrashItemResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type TrashItemResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   allSelected,

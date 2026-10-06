@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@frameleaf/sdk';
 
 /**
  * The large-file review (FL-47), ported from the large-files part of the design template's

@@ -7,7 +7,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import MigrationChecklistDialog from '$lib/components/frameleaf/settings/MigrationChecklistDialog.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

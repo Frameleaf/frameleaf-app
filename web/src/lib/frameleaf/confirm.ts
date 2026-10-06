@@ -1,4 +1,4 @@
-import { modalManager } from '@immich/ui';
+import { modalManager } from '@frameleaf/ui';
 import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
 
 export type FrameleafConfirmOptions = {

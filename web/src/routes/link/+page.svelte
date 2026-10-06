@@ -16,8 +16,8 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { linkFrameleafAccount } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { linkFrameleafAccount } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

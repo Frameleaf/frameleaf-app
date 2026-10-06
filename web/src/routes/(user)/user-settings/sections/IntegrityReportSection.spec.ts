@@ -1,4 +1,4 @@
-import { IntegrityReport, ManualJobName } from '@immich/sdk';
+import { IntegrityReport, ManualJobName } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -8,7 +8,7 @@
    */
   import type { ActivityItem } from '$lib/frameleaf/activity';
   import { recentUtilityActivity, UTILITY_HISTORY_FETCH } from '$lib/frameleaf/utility-history';
-  import { searchMediaOperations } from '@immich/sdk';
+  import { searchMediaOperations } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

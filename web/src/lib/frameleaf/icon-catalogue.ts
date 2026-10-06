@@ -1,4 +1,4 @@
-import { getAlbumIconCatalogue, type AlbumIconCatalogueResponseDto } from '@immich/sdk';
+import { getAlbumIconCatalogue, type AlbumIconCatalogueResponseDto } from '@frameleaf/sdk';
 import { ALBUM_ICONS, DEFAULT_ALBUM_ICON_PATH } from '$lib/utils/album-icons';
 
 /**

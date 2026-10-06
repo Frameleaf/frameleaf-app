@@ -1,4 +1,4 @@
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { tileActionAvailability } from './tile-actions';

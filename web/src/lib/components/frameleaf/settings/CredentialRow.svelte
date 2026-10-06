@@ -17,8 +17,8 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { deleteConfigCredential, type ConfigCredential } from '@immich/sdk';
-  import { modalManager, toastManager } from '@immich/ui';
+  import { deleteConfigCredential, type ConfigCredential } from '@frameleaf/sdk';
+  import { modalManager, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   let {

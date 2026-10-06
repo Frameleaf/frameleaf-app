@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { get } from 'svelte/store';

@@ -4,8 +4,8 @@
   import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
   import { canSendCopies, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import { locale } from '$lib/stores/preferences.store';
-  import type { SharedLinkResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckboxMultipleMarkedOutline,
     mdiDownloadOutline,

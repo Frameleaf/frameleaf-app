@@ -2,8 +2,8 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
-  import type { AdminConfigMachineLearningDto } from '@immich/sdk';
-  import { Button, IconButton } from '@immich/ui';
+  import type { AdminConfigMachineLearningDto } from '@frameleaf/sdk';
+  import { Button, IconButton } from '@frameleaf/ui';
   import { mdiPlus, mdiTrashCanOutline } from '@mdi/js';
   import { isEqual } from 'lodash-es';
   import { t } from 'svelte-i18n';

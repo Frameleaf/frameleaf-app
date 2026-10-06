@@ -6,7 +6,7 @@ import {
   type AssetResponseDto,
   type VideoMomentFrameDto,
   type VideoMomentsResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

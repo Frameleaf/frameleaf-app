@@ -7,7 +7,7 @@
   import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { Route } from '$lib/route';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 

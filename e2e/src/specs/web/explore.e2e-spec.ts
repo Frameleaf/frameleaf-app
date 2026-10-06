@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updateAssets, updatePerson } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updateAssets, updatePerson } from '@frameleaf/sdk';
 import { expect, Locator, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

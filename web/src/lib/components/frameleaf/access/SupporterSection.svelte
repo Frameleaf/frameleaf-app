@@ -21,7 +21,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { deleteUserLicense, getMyUser, setUserLicense, updateMyPreferences } from '@immich/sdk';
+  import { deleteUserLicense, getMyUser, setUserLicense, updateMyPreferences } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let key = $state('');

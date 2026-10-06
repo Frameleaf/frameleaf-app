@@ -1,4 +1,4 @@
-import { LoginResponseDto, getConfig } from '@immich/sdk';
+import { LoginResponseDto, getConfig } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';

@@ -1,8 +1,8 @@
-import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sdk = vi.hoisted(() => ({ getAssetInfo: vi.fn(), getStudioProject: vi.fn(), getStudioRestoredVersion: vi.fn() }));
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<object>()), ...sdk }));
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), ...sdk }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn(async () => undefined) }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: vi.fn(async () => (key: string) => key) }));
 vi.mock('$lib/utils', () => ({

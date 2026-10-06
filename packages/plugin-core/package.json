@@ -1,5 +1,5 @@
 {
-  "name": "@immich/plugin-core",
+  "name": "@frameleaf/plugin-core",
   "version": "1.0.0",
   "description": "",
   "main": "src/index.ts",
@@ -13,8 +13,8 @@
   "license": "AGPL-3.0",
   "devDependencies": {
     "@extism/js-pdk": "^1.0.1",
-    "@immich/sdk": "workspace:*",
-    "@immich/plugin-sdk": "workspace:*",
+    "@frameleaf/sdk": "workspace:*",
+    "@frameleaf/plugin-sdk": "workspace:*",
     "esbuild": "^0.28.0",
     "typescript": "^7.0.0"
   }

@@ -1,4 +1,4 @@
-import { getMyPreferences, updateMyPreferences, type SavedSearch } from '@immich/sdk';
+import { getMyPreferences, updateMyPreferences, type SavedSearch } from '@frameleaf/sdk';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { removeSavedSearch, toSavedSearch, upsertSavedSearch } from '$lib/frameleaf/search-palette';

@@ -30,7 +30,7 @@
     type LibraryResponseDto,
     type UserAdminResponseDto,
     type ValidateLibraryImportPathResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {

@@ -71,7 +71,7 @@
     type EnrichmentPlanResponseDto,
     type EnrichmentPreviewResponseDto,
     type MediaOperationDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onDestroy, untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 

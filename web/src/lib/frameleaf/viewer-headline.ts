@@ -5,7 +5,7 @@
  * formatters it uses), adapted to the production `AssetResponseDto`/`ExifResponseDto`.
  * Pure: it reads the metadata the detail panel already receives and renders no markup.
  */
-import { AssetTypeEnum, type AssetResponseDto, type ExifResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto, type ExifResponseDto } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { locale } from '$lib/stores/preferences.store';
 

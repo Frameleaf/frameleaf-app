@@ -5,7 +5,7 @@ import {
   type DocumentFieldResponseDto,
   type DocumentLineDto,
   type DocumentResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /**

@@ -6,7 +6,7 @@ import {
   type DuplicateReviewGroupDto,
   type MediaOperationDetailDto,
   type MediaOperationDuplicateGroupDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { durableItemStates } from '$lib/frameleaf/bulk-operations';
 

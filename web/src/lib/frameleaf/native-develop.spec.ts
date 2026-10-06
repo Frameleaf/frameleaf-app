@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { initialNativeRecipe, nativePreset, newNativeMask } from './native-develop';
 
-vi.mock('@immich/sdk', () => ({ defaults: {}, getBaseUrl: () => '/api' }));
+vi.mock('@frameleaf/sdk', () => ({ defaults: {}, getBaseUrl: () => '/api' }));
 
 it('keeps native units/version and never transfers image-specific artifacts or geometry in a preset', () => {
   const recipe = {

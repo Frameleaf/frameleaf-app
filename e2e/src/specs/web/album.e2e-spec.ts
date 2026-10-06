@@ -13,7 +13,7 @@ import {
   moveAlbumToCollection,
   setUserOnboarding,
   updateAlbumInfo,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';

@@ -13,7 +13,7 @@
   import { handleDeleteDatabaseBackup, handleDownloadDatabaseBackup } from '$lib/services/database-backups.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore, mdiDatabaseOutline, mdiDeleteOutline, mdiDownload } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

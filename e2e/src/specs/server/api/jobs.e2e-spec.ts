@@ -1,4 +1,4 @@
-import { JobName, LoginResponseDto, QueueCommand, QueueName, getQueue, updateConfig } from '@immich/sdk';
+import { JobName, LoginResponseDto, QueueCommand, QueueName, getQueue, updateConfig } from '@frameleaf/sdk';
 import { createHash, randomUUID } from 'node:crypto';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';

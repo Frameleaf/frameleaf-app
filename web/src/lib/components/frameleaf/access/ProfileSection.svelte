@@ -14,8 +14,8 @@
   import { isProfileImageFile, PROFILE_IMAGE_EXTENSIONS } from '$lib/frameleaf/personal-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { createProfileImage, deleteProfileImage, getMyUser, updateMyUser, UserAvatarColor } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { createProfileImage, deleteProfileImage, getMyUser, updateMyUser, UserAvatarColor } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import './access.css';
 

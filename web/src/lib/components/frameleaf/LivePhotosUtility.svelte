@@ -27,8 +27,8 @@
     LivePhotoMatchConfidence,
     updateAsset,
     type LivePhotoCandidateDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiPlayCircleOutline, mdiUndo } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';

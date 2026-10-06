@@ -1,4 +1,4 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';

@@ -6,7 +6,7 @@
   import { uploadManager } from '$lib/managers/upload-manager.svelte';
   import { fileUploadHandler, openFilePicker } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiFolderOutline, mdiImageMultipleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

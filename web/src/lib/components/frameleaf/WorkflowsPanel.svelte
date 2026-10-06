@@ -28,8 +28,8 @@
     searchWorkflows,
     updateWorkflow,
     type WorkflowResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiDownload, mdiFileImportOutline, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
   import { onMount, untrack } from 'svelte';

@@ -1,11 +1,11 @@
-import { getAlbumInfo, getAuthStatus, type AuthStatusResponseDto } from '@immich/sdk';
+import { getAlbumInfo, getAuthStatus, type AuthStatusResponseDto } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { authenticate } from '$lib/utils/auth';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frameleaf/sdk')>();
 
   return {
     ...actual,

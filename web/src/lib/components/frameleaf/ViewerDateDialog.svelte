@@ -18,7 +18,7 @@
   } from '$lib/modals/timezone-utils';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { updateAsset, type AssetResponseDto } from '@immich/sdk';
+  import { updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

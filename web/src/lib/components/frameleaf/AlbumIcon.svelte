@@ -1,6 +1,6 @@
 <script lang="ts">
   import { iconPathFor, loadIconPaths, needsIconPaths, type IconPaths } from '$lib/frameleaf/icon-catalogue';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
 
   /**
    * Draw a stored album or collection icon: a Material Design Icons name or a
