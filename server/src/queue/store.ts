@@ -16,7 +16,7 @@ import {
   shareSelectionPage,
   withSelectionSharing,
 } from 'src/queue/manifest.js';
-import { listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
+import { listRunItems, listRuns, observeQueueRun, reportedQueueJobs } from 'src/queue/run-query.js';
 import {
   LineageItemIdentity,
   mirrorSelectionLineage,
@@ -818,10 +818,10 @@ export class SqlQueueStore {
     }>`select count(*) filter (where state = 'active')::int active,
       count(*) filter (where state = 'completed')::int completed,
       count(*) filter (where state in ('failed','needs_attention','blocked'))::int failed,
-      count(*) filter (where state in ('pending','waiting') and "availableAt" > now())::int delayed,
-      count(*) filter (where state in ('pending','waiting') and "availableAt" <= now() and not q.paused)::int waiting,
-      count(*) filter (where state in ('pending','waiting') and "availableAt" <= now() and q.paused)::int paused
-      from job j join job_queue q on q.name = j.queue where queue = ${name}`.execute(this.db);
+      count(*) filter (where state in ('pending','waiting') and "availableAt" > now() and not j."operationPaused")::int delayed,
+      count(*) filter (where state in ('pending','waiting') and "availableAt" <= now() and not q.paused and not j."operationPaused")::int waiting,
+      count(*) filter (where state in ('pending','waiting') and (j."operationPaused" or ("availableAt" <= now() and q.paused)))::int paused
+      from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue`.execute(this.db);
     return row;
   }
 
