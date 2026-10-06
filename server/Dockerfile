@@ -414,7 +414,7 @@ COPY ./packages/ui ./packages/ui/
 COPY ./packages/justified-layout-wasm ./packages/justified-layout-wasm/
 
 COPY ./web/package.json ./web/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frameleaf-web install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf-web...' install --frozen-lockfile
 
 COPY ./i18n ./i18n/
 # Acknowledgements and licence texts the About screen reads (FL-86).
