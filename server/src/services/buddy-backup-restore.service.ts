@@ -1606,7 +1606,7 @@ export class BuddyBackupRestoreService {
           'Restore the original storage mounts before restoring these items.': 'storage_mounts',
         };
         const cause = error instanceof Error ? error.cause : undefined;
-        const codes = [
+        const codes = new Set([
           'ENOENT',
           'EACCES',
           'EPERM',
@@ -1621,14 +1621,14 @@ export class BuddyBackupRestoreService {
           '55P03',
           '42P01',
           '42703',
-        ];
+        ]);
         const code =
           [error, cause].flatMap((value) =>
             value &&
             typeof value === 'object' &&
             'code' in value &&
             typeof value.code === 'string' &&
-            codes.includes(value.code)
+            codes.has(value.code)
               ? [value.code]
               : [],
           )[0] ?? 'UNKNOWN';
@@ -1646,9 +1646,9 @@ export class BuddyBackupRestoreService {
                 ? 'deadline'
                 : error instanceof FrameleafCloudError
                   ? 'upstream'
-                  : code !== 'UNKNOWN'
-                    ? 'coded_error'
-                    : 'unexpected';
+                  : code === 'UNKNOWN'
+                    ? 'unexpected'
+                    : 'coded_error';
         this.logger.error(`BUDDY_RESTORE_DIAGNOSTIC ${JSON.stringify({ category, code, status })}`);
         await this.operations.fail(
           operation.id,
