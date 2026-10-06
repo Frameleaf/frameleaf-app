@@ -29,6 +29,8 @@ export type VideoEditVersion = {
 };
 export type VideoVersionPublication = {
   published: boolean;
+  /** A newer requested version refused this otherwise valid publication. */
+  superseded?: boolean;
   /** Edited files the publication dropped from the asset that no retained version owns. */
   releasedPaths: string[];
 };
@@ -178,7 +180,16 @@ export class AssetEditRepository {
         db,
       );
       // A save or revert that is no longer the requested one is superseded.
-      if (rows.length === 0) return fail();
+      if (rows.length === 0) {
+        const { rows: selections } = await sql<{ superseded: boolean }>`SELECT EXISTS (
+          SELECT 1 FROM public.video_edit_selection s JOIN public.video_edit_version v ON v."assetId"=s."assetId"
+          WHERE v.id=${version.id}::uuid AND v."assetId"=${version.assetId}::uuid
+            AND v."ownerId"=${version.ownerId}::uuid AND v."sourceChecksum"=${asset.checksum}
+            AND v.purpose IN ('save','revert') AND s."ownerId"=v."ownerId"
+            AND s."requestedVersionId" IS DISTINCT FROM v.id
+        ) AS superseded`.execute(db);
+        return { ...(await fail()), ...(selections[0].superseded && { superseded: true }) };
+      }
       if (rows[0].purpose === 'export') return { published: true, releasedPaths: [] };
       await sql`UPDATE public.video_edit_selection SET "currentVersionId"=${version.id}::uuid WHERE "assetId"=${version.assetId}::uuid`.execute(
         db,
