@@ -160,6 +160,61 @@ describe(JobRepository.name, () => {
     expect(notify).toHaveBeenCalledOnce();
   });
 
+  it('classifies deferred publication failure without logging private error or job payloads', async () => {
+    vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+    const privateValue = 'private-fixture-value';
+    const error = Object.assign(new Error(privateValue), {
+      code: '23505',
+      detail: privateValue,
+      query: privateValue,
+      parameters: [privateValue],
+    });
+    const claim = {
+      ...context().claim,
+      id: '11111111-1111-4111-8111-111111111111',
+      name: JobName.AssetVideoEditGeneration,
+      queue: QueueName.VideoConversion,
+      attempt: 1,
+      data: { privateValue },
+      startedAt: new Date(),
+    };
+    sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+      queueExecution.getStore()!.adoptions.push(() => Promise.reject(error));
+      return Promise.resolve();
+    });
+    sut['store'].complete = vi.fn().mockImplementation((_claim, _followups, adopt) => adopt({}));
+    sut['store'].fail = vi.fn().mockResolvedValue(true);
+    await sut['execute'](claim, new AbortController());
+    expect(sut['logger'].error).toHaveBeenCalledExactlyOnceWith('Queue execution failed', {
+      jobName: JobName.AssetVideoEditGeneration,
+      queue: QueueName.VideoConversion,
+      attempt: 1,
+      jobId: claim.id,
+      phase: 'deferred_publication',
+      category: 'database',
+      sqlState: '23505',
+      aborted: false,
+    });
+    expect(JSON.stringify(vi.mocked(sut['logger'].error).mock.calls)).not.toContain(privateValue);
+    expect(sut['store'].fail).toHaveBeenCalledWith(claim, privateValue, undefined, expect.any(Object));
+
+    vi.mocked(sut['logger'].error).mockClear();
+    error.code = privateValue;
+    claim.id = privateValue;
+    await sut['execute'](claim, new AbortController());
+    expect(sut['logger'].error).toHaveBeenCalledExactlyOnceWith('Queue execution failed', {
+      jobName: JobName.AssetVideoEditGeneration,
+      queue: QueueName.VideoConversion,
+      attempt: 1,
+      jobId: null,
+      phase: 'deferred_publication',
+      category: 'error',
+      sqlState: null,
+      aborted: false,
+    });
+    expect(JSON.stringify(vi.mocked(sut['logger'].error).mock.calls)).not.toContain(privateValue);
+  });
+
   describe('database admission', () => {
     const claim = (index: number): QueueClaim => ({
       id: String(index),
