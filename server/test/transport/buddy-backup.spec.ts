@@ -229,6 +229,17 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       ? z
           .object({
             sourceHead: z.string().regex(/^[a-f\d]{40}$/),
+            executingSource: z.object({
+              builtFromCleanHead: z.string().regex(/^[a-f\d]{40}$/),
+              sourceTrees: z.object({
+                api: z.string().regex(/^[a-f\d]{64}$/),
+                contracts: z.string().regex(/^[a-f\d]{64}$/),
+              }),
+              compiledTrees: z.object({
+                api: z.string().regex(/^[a-f\d]{64}$/),
+                contracts: z.string().regex(/^[a-f\d]{64}$/),
+              }),
+            }),
             origin: z.url(),
             accounts: z.object({ a: z.uuid(), b: z.uuid() }),
             ownedFixtureOnly: z.literal(true),
@@ -240,16 +251,25 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
           .parse(JSON.parse(await readFile(process.env.BUDDY_CLOUD_MANIFEST ?? '', 'utf8')))
       : undefined;
     const control = async (command: Record<string, unknown>) => {
-      // execFile's error includes argv. Replace it so an approval userCode can never reach evidence/logs.
+      // All command input stays on stdin; discard child errors/output to keep codes and keys private.
       try {
         if (!process.env.BUDDY_CLOUD_CONTROL_NODE || !process.env.BUDDY_CLOUD_CONTROL_CLIENT) {
           throw new Error('Missing owned Cloud control client');
         }
-        const { stdout } = await docker(
-          process.env.BUDDY_CLOUD_CONTROL_NODE,
-          [process.env.BUDDY_CLOUD_CONTROL_CLIENT, JSON.stringify(command)],
-          { timeout: 20_000, maxBuffer: 64 * 1024 },
-        );
+        const input = JSON.stringify(command);
+        if (Buffer.byteLength(input) > 4096) {
+          throw new Error('Owned Cloud control input too large');
+        }
+        const stdout = await new Promise<string>((resolve, reject) => {
+          const child = execFile(
+            process.env.BUDDY_CLOUD_CONTROL_NODE!,
+            [process.env.BUDDY_CLOUD_CONTROL_CLIENT!, '-'],
+            { timeout: 20_000, maxBuffer: 64 * 1024 },
+            (error, stdout) => (error ? reject(error) : resolve(stdout)),
+          );
+          child.stdin!.on('error', reject);
+          child.stdin!.end(input);
+        });
         const reply = JSON.parse(stdout) as { ok: boolean; result: unknown };
         if (reply.ok !== true) {
           throw new Error('Owned Cloud control refused');
@@ -268,6 +288,17 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
           accounts: z.object({ a: z.uuid(), b: z.uuid() }),
           instances: z.array(z.unknown()),
           pairings: z.array(z.unknown()),
+          executingSource: z.object({
+            builtFromCleanHead: z.string().regex(/^[a-f\d]{40}$/),
+            sourceTrees: z.object({
+              api: z.string().regex(/^[a-f\d]{64}$/),
+              contracts: z.string().regex(/^[a-f\d]{64}$/),
+            }),
+            compiledTrees: z.object({
+              api: z.string().regex(/^[a-f\d]{64}$/),
+              contracts: z.string().regex(/^[a-f\d]{64}$/),
+            }),
+          }),
         })
         .parse(await control({ command: 'status' }));
       expect(live.origin).toBe(manifest.origin);
@@ -275,7 +306,12 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       expect(live.instances).toHaveLength(0);
       expect(live.pairings).toHaveLength(0);
       report.manifestCloudSource = manifest.sourceHead;
-      report.cloudPrivacy = 'missing-gate: owned sanitized request-body observer not supplied';
+      expect(live.executingSource.builtFromCleanHead).toBe(process.env.BUDDY_CLOUD_SOURCE_SHA);
+      expect(live.executingSource).toEqual(manifest.executingSource);
+      report.executingCloudSource = live.executingSource;
+      // Arm exactly once before any Library Cloud/device request; fresh app DBs must have no link token.
+      const armed = z.object({ armed: z.literal(true) }).parse(await control({ command: 'privacy-start' }));
+      report.cloudPrivacy = armed;
     } else {
       coordinator = await startBuddyCloud();
     }
@@ -1052,10 +1088,30 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     }
     if (actual) {
       report.mediaJourneyPassed = true;
-      report.phase = 'cloud-privacy-missing';
-      throw new Error(
-        'Actual Cloud sentinel confidentiality gate missing: owned sanitized request-body observer required',
-      );
+      report.phase = 'cloud-privacy';
+      const privacy = z
+        .object({
+          armed: z.boolean(),
+          complete: z.boolean(),
+          leaked: z.boolean(),
+          requests: z.number().int().nonnegative(),
+          buddyRequests: z.number().int().nonnegative(),
+          acceptedBuddyRequests: z.number().int().nonnegative(),
+          unknownBuddyRoutes: z.number().int().nonnegative(),
+          missingBuddyProof: z.number().int().nonnegative(),
+        })
+        .parse(await control({ command: 'privacy-check', sentinels }));
+      report.cloudPrivacy = privacy;
+      expect(privacy).toMatchObject({
+        armed: true,
+        complete: true,
+        leaked: false,
+        unknownBuddyRoutes: 0,
+        missingBuddyProof: 0,
+      });
+      expect(privacy.requests).toBeGreaterThan(0);
+      expect(privacy.buddyRequests).toBeGreaterThan(0);
+      expect(privacy.acceptedBuddyRequests).toBeGreaterThan(0);
     }
     report.passed = true;
     report.phase = 'complete';
