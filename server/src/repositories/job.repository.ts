@@ -60,6 +60,14 @@ type JobMapItem = {
 export type QueueRun = Awaited<ReturnType<SqlQueueStore['observeQueueRun']>>;
 const runSubmission = new AsyncLocalStorage<string>();
 const runAdmission = new AsyncLocalStorage<{ intents: QueueIntent[]; open: boolean }>();
+const PUBLICATION_FAILURE_REASONS = new Map([
+  ['Prepared output source changed', 'prepared_output_source_changed'],
+  ['Thumbnail source changed before publication', 'thumbnail_source_changed'],
+  ['Video version changed before publication', 'video_version_changed'],
+  ['video_version_invalid_paths', 'video_version_invalid_paths'],
+  ['Edit operation lost its claim before publication', 'edit_operation_claim_lost'],
+  ['Publication lease expired before commit', 'publication_lease_expired'],
+]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
   JobName.DatabaseBackup,
@@ -280,6 +288,8 @@ export class JobRepository {
       try {
         const code =
           error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+        const message =
+          error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'message')?.value : undefined;
         const sqlState = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : null;
         this.logger.error('Queue execution failed', {
           jobName: Object.values(JobName).includes(claim.name as JobName) ? claim.name : 'unknown',
@@ -288,6 +298,8 @@ export class JobRepository {
           jobId: /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(claim.id) ? claim.id : null,
           phase: context.buffering ? 'deferred_publication' : 'handler',
           category: sqlState ? 'database' : error instanceof Error ? 'error' : 'unknown',
+          reasonCode:
+            typeof message === 'string' ? (PUBLICATION_FAILURE_REASONS.get(message) ?? 'other_error') : 'other_error',
           sqlState,
           aborted: abort.signal.aborted,
         });

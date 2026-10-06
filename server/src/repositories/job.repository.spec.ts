@@ -160,11 +160,23 @@ describe(JobRepository.name, () => {
     expect(notify).toHaveBeenCalledOnce();
   });
 
-  it('classifies deferred publication failure without logging private error or job payloads', async () => {
+  it.each([
+    ['Prepared output source changed', 'prepared_output_source_changed'],
+    ['Thumbnail source changed before publication', 'thumbnail_source_changed'],
+    ['Video version changed before publication', 'video_version_changed'],
+    ['video_version_invalid_paths', 'video_version_invalid_paths'],
+    ['Edit operation lost its claim before publication', 'edit_operation_claim_lost'],
+    ['Publication lease expired before commit', 'publication_lease_expired'],
+    ['private-fixture-value', 'other_error'],
+    ['Prepared output source changed: private-fixture-value', 'other_error'],
+    ['toString', 'other_error'],
+  ])('classifies deferred publication failure without private diagnostics: %s', async (message, reasonCode) => {
     vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
     const privateValue = 'private-fixture-value';
-    const error = Object.assign(new Error(privateValue), {
+    const error = Object.assign(new Error(message), {
       code: '23505',
+      stack: privateValue,
+      cause: new Error(privateValue),
       detail: privateValue,
       query: privateValue,
       parameters: [privateValue],
@@ -192,11 +204,12 @@ describe(JobRepository.name, () => {
       jobId: claim.id,
       phase: 'deferred_publication',
       category: 'database',
+      reasonCode,
       sqlState: '23505',
       aborted: false,
     });
     expect(JSON.stringify(vi.mocked(sut['logger'].error).mock.calls)).not.toContain(privateValue);
-    expect(sut['store'].fail).toHaveBeenCalledWith(claim, privateValue, undefined, expect.any(Object));
+    expect(sut['store'].fail).toHaveBeenCalledWith(claim, message, undefined, expect.any(Object));
 
     vi.mocked(sut['logger'].error).mockClear();
     error.code = privateValue;
@@ -209,6 +222,7 @@ describe(JobRepository.name, () => {
       jobId: null,
       phase: 'deferred_publication',
       category: 'error',
+      reasonCode,
       sqlState: null,
       aborted: false,
     });
