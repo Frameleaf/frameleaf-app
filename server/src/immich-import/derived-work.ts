@@ -123,7 +123,12 @@ export async function transferImportedWork(
         where id = ${runId}::uuid) is not null then 'ready' else 'enumerating' end`
     : undefined;
 
-  const stages = IMPORT_DERIVED_STAGES.map(([kind, name]) => ({ kind, intent: intentFor(name) }));
+  const stages = IMPORT_DERIVED_STAGES.map(([kind, name]) => {
+    const intent = intentFor(name);
+    // Regenerating unverified vectors must not discard retained source face identities.
+    if (name === JobName.AssetDetectFaces) intent.data = { ...intent.data, preserveImportedFaces: true };
+    return { kind, intent };
+  });
   for (const { kind, intent } of stages) {
     // The whole stage is frozen by INSERT SELECT, including an empty stage. Retries reuse its
     // original membership; acknowledged rows remain in the journal and are never excluded here.
@@ -152,13 +157,18 @@ export async function transferImportedWork(
   ) limit 1`.execute(db);
   if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
 
-  const stageNames = sql.join(stages.map(({ kind, intent }) => sql`(${kind}, ${intent.name}, ${intent.queue})`));
+  const stageNames = sql.join(
+    stages.map(
+      ({ kind, intent }) =>
+        sql`(${kind}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.data)}::text::jsonb)`,
+    ),
+  );
   const retained = sql`exists (
-    select 1 from (values ${stageNames}) as expected(kind, stage, queue)
+    select 1 from (values ${stageNames}) as expected(kind, stage, queue, data)
     join job_run_item i on i."runId" = ${runId}::uuid and i."itemKey" = w.asset_id::text and i.stage = expected.stage
     join job_selection s on s.id = i."selectionId" and s."runId" = i."runId" and s.stage = i.stage
     where expected.kind = w.kind and i.queue = expected.queue and s.queue = expected.queue
-      and i."rootItemKey" = w.asset_id::text and i.selection = jsonb_build_object('id', w.asset_id::text))`;
+      and i."rootItemKey" = w.asset_id::text and i.selection = expected.data || jsonb_build_object('id', w.asset_id::text))`;
   let cursor: { asset_id: string; kind: string } | undefined;
   while (true) {
     const page = await db.transaction().execute(async (tx) => {
