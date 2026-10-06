@@ -833,6 +833,18 @@ export class SqlQueueStore {
     return row.unfinished;
   }
 
+  /** One round trip discovers producers, admitted executions, and unadmitted durable selections.
+   * Idle alias settlement/redaction still belongs to the coordinator's full reconciliation.
+   */
+  async queuesWithUnfinishedWork(queues: readonly string[]) {
+    if (queues.length === 0) return [];
+    const { rows } = await sql<{ queue: string }>`${sql.join(
+      queues.map((queue) => sql`select ${queue}::text queue where ${unfinishedQueueItems(queue)}`),
+      sql` union all `,
+    )}`.execute(this.db);
+    return rows.map(({ queue }) => queue);
+  }
+
   listRuns(take: number, skip: number) {
     return listRuns(this.db, take, skip);
   }
