@@ -13,7 +13,6 @@
    * from an earlier maintenance) is reported instead of silently showing the public page (FL-81).
    */
   /* eslint-disable unicorn/no-optional-chaining-on-undeclared-variable */
-  import { page } from '$app/state';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import MaintenanceRestoreFlow from './MaintenanceRestoreFlow.svelte';
   import { maintenancePageState, type MaintenanceTaskStatus } from '$lib/frameleaf/maintenance-page';
@@ -123,7 +122,7 @@
       action: MaintenanceAction.End,
     });
 
-  const openFrameleaf = () => location.assign(maintenanceReturnUrl(page.url.searchParams));
+  const openFrameleaf = () => location.assign(maintenanceReturnUrl(new URL(location.href).searchParams));
 
   const taskIcons: Record<MaintenanceTaskStatus, string> = {
     done: mdiCheckCircle,
