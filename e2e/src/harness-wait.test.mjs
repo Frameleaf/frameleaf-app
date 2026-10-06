@@ -44,44 +44,107 @@ test('integrity fixture restoration joins admitted work and latches uncertain se
   const start = source.indexOf('  afterEach(async ({ signal }) => {');
   const end = source.indexOf("\n\n  describe('GET /runs", start);
   assert.ok(start >= 0 && end > start);
-  let restore;
-  const joined = Promise.withResolvers();
-  let settlement = joined.promise;
-  const calls = [];
-  new Function(
-    'afterEach',
-    'utils',
-    'withDeadline',
-    'QueueName',
-    'admin',
-    `let fixtureRestorationFailed = false; let fixtureRestorationFailure; ${source.slice(start, end)}`,
+  for (const failurePhase of ['settlement', 'restoration']) {
+    let restore;
+    let restorationFailure;
+    const joined = Promise.withResolvers();
+    let settlement = joined.promise;
+    const calls = [];
+    new Function(
+      'afterEach',
+      'utils',
+      'withDeadline',
+      'QueueName',
+      'admin',
+      'runIntegrityFixtureCommand',
+      `let fixtureRestorationFailed = false; let fixtureRestorationFailure; ${source.slice(start, end)}`,
+    )(
+      (callback) => {
+        restore = callback;
+      },
+      {
+        settlePendingWaits: async () => {},
+        waitForQueue: () => settlement,
+      },
+      withDeadline,
+      { IntegrityCheck: 'integrity' },
+      { accessToken: 'token', userId: 'fixture' },
+      async (context, args) => {
+        context.remaining();
+        calls.push(args[0]);
+        if (restorationFailure && args[0] === 'cp') throw restorationFailure;
+      },
+    );
+    const pending = restore({ signal: new AbortController().signal });
+    assert.deepEqual(calls, []);
+    joined.resolve();
+    await pending;
+    assert.deepEqual(calls, ['rm', 'cp']);
+    const failure = new Error('settlement uncertain');
+    settlement = failurePhase === 'settlement' ? Promise.reject(failure) : Promise.resolve();
+    restorationFailure = failurePhase === 'restoration' ? failure : undefined;
+    await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
+    await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
+    assert.deepEqual(calls, failurePhase === 'settlement' ? ['rm', 'cp'] : ['rm', 'cp', 'rm', 'cp']);
+  }
+});
+
+test('integrity native fixture command requires confirmed close and rejects nonzero completion', async () => {
+  const source = readFileSync(new URL('./specs/server/api/integrity.e2e-spec.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const runIntegrityFixtureCommand =');
+  const end = source.indexOf("\n\ndescribe('/admin/integrity'", start);
+  assert.ok(start >= 0 && end > start);
+  let close;
+  let data;
+  let spawns = 0;
+  const command = new Function(
+    'spawn',
+    'randomUUID',
+    'process',
+    stripTypeScriptTypes(`function bind() { ${source.slice(start, end)} return runIntegrityFixtureCommand; }`) +
+      '\nreturn bind();',
   )(
-    (callback) => {
-      restore = callback;
+    () => {
+      spawns++;
+      return {
+        stdout: {
+          setEncoding() {},
+          on(_, callback) {
+            data = callback;
+          },
+        },
+        once(event, callback) {
+          if (event === 'close') close = callback;
+        },
+      };
     },
+    () => 'marker',
     {
-      settlePendingWaits: async () => {},
-      waitForQueue: () => settlement,
-      deleteFolder: async () => {
-        calls.push('delete');
-      },
-      copyFolder: async () => {
-        calls.push('copy');
+      kill() {
+        assert.fail('confirmed completion must not quarantine');
       },
     },
-    withDeadline,
-    { IntegrityCheck: 'integrity' },
-    { accessToken: 'token', userId: 'fixture' },
   );
-  const pending = restore({ signal: new AbortController().signal });
-  assert.deepEqual(calls, []);
-  joined.resolve();
-  await pending;
-  assert.deepEqual(calls, ['delete', 'copy']);
-  settlement = Promise.reject(new Error('settlement uncertain'));
-  await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
-  await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
-  assert.deepEqual(calls, ['delete', 'copy']);
+  let settled = false;
+  const pending = command({ remaining: () => 8000 }, ['cp'], 'Safe restoration failure');
+  pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  data('FL333_INTEGRITY_DONE_marker:1\n');
+  await Promise.resolve();
+  assert.equal(settled, false);
+  close(1, null);
+  await assert.rejects(pending, /^Error: Safe restoration failure$/);
+  await assert.rejects(
+    command({ remaining: () => 3000 }, ['rm'], 'Safe deletion failure'),
+    /without a complete native stop budget/,
+  );
+  assert.equal(spawns, 1);
 });
 
 test('reset reads all queues in one request and refuses incomplete or invalid aggregate status', async () => {
