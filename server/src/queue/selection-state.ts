@@ -1,4 +1,5 @@
 import { RawBuilder, sql } from 'kysely';
+import { JobName, QueueName } from 'src/enum.js';
 import { libraryChildOrigins } from 'src/queue/library-admission.js';
 
 /** Frozen root membership is the entitlement, not the current handler payload. Preserve a
@@ -223,7 +224,16 @@ export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
           and (${libraryCanonicalState('i')}) in ('pending','waiting','active')))) `;
 
 /** A terminal snapshot has no dispatch work even though its immutable rows retain pending admission state. */
-export const unfinishedQueueItems = (queue: string) => sql<boolean>`
+export const unfinishedQueueItems = (queue: string) => {
+  // Individual edit retries can be delayed or paused before their next physical job exists.
+  // Probe indexed operation kind/status, not retained failed queue history.
+  const edits =
+    queue === QueueName.Editor
+      ? [JobName.AssetEditThumbnailGeneration, JobName.AssetDevelopRender]
+      : queue === QueueName.VideoConversion
+        ? [JobName.AssetVideoEditGeneration]
+        : [];
+  return sql<boolean>`
   exists (select 1 from job where queue = ${queue} and state in ('pending','waiting','active'))
   or exists (select 1 from job_run_item where queue = ${queue} and "jobId" is null and "selectionId" is null
     and state in ('pending','waiting','active'))
@@ -233,4 +243,12 @@ export const unfinishedQueueItems = (queue: string) => sql<boolean>`
   or exists (select 1 from job_selection s where queue = ${queue} and state in ('ready','enumerating')
     and (state = 'enumerating' or exists (select 1 from job_run_item i where i."selectionId" = s.id
       and i."runId" = s."runId" and i."jobId" is null and i.state = 'pending'
-        and (s."sourceKind"='frozen' or (${libraryCanonicalState('i')}) in ('pending','waiting','active'))))) `;
+        and (s."sourceKind"='frozen' or (${libraryCanonicalState('i')}) in ('pending','waiting','active')))))
+  ${
+    edits.length > 0
+      ? sql`or exists (select 1 from media_operation
+    where kind='quick_edit' and status in ('queued','paused','preparing','rendering','validating','cancelling')
+      and snapshot->>'executor'='job_queue' and snapshot->'job'->>'name'=any(${edits}::text[]))`
+      : sql``
+  } `;
+};
