@@ -1792,7 +1792,9 @@ export class MediaService extends BaseService {
         }
       })
     ) {
-      await run?.complete(() => (adopted ? version.assetId : null));
+      if (run && !(await run.complete(() => (adopted ? version.assetId : null)))) {
+        throw new Error('Edit operation lost its claim before publication');
+      }
       // Keep private candidates until the enclosing queue and operation claims accept them.
       // A rejected transaction leaves no canonical references and cannot delete prior output.
       return true;
