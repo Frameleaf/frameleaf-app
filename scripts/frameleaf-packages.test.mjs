@@ -54,6 +54,10 @@ test("Frameleaf package identities and workspace dependencies never require Immi
     read("server/Dockerfile"),
     /COPY \.\/packages\/justified-layout-wasm \.\/packages\/justified-layout-wasm\//,
   );
+  assert.match(
+    read("server/Dockerfile"),
+    /pnpm --filter 'frameleaf-web\.\.\.' install --frozen-lockfile/,
+  );
   assert.match(read(".dockerignore"), /!packages\/ui\/dist\/\*\*/);
 });
 
