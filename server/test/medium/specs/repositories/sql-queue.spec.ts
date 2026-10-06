@@ -193,7 +193,9 @@ describe('PostgreSQL queue', () => {
       expect(
         (
           await sql`select key from system_metadata where key = ${'frameleaf-worker-stopped:' + workerA}
-        or key = any(${[...originals, second].map(({ token }) => 'frameleaf-attempt-evidence:' + token)}::text[])`.execute(db)
+        or key = any(${[...originals, second].map(({ token }) => 'frameleaf-attempt-evidence:' + token)}::text[])`.execute(
+            db,
+          )
         ).rows,
       ).toEqual([]);
       await sql`update job set "availableAt" = now() where data->>'testId' = ${testId}`.execute(db);
