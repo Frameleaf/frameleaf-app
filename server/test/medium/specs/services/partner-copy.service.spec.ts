@@ -256,6 +256,53 @@ describe(PartnerCopyService.name, () => {
   );
 
   describe('copyAsset', () => {
+    it('repairs thumbnail admission on replay of a copy made before source derivatives were published', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const jobs = ctx.getMock(JobRepository);
+      jobs.queue.mockRejectedValueOnce(new Error('Admission interrupted'));
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).rejects.toThrow('Admission interrupted');
+      const copyId = (await origins.getCopyId('asset', source.id, bob.id))!;
+      expect(copyId).toBeDefined();
+      const copy = await ctx.get(AssetRepository).getById(copyId, { files: true });
+      const original = await ctx.get(AssetRepository).getById(source.id, { files: true });
+      expect(copy).toMatchObject({
+        ownerId: bob.id,
+        originalPath: original!.originalPath,
+        physicalOriginalFileId: original!.physicalOriginalFileId,
+        files: [],
+      });
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+
+      jobs.queue.mockClear();
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+
+      // A partial publication still needs the existing thumbnail job; a complete one does not.
+      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Preview, path: '/thumbs/recipient.jpeg' });
+      jobs.queue.mockClear();
+      await sut.copyAsset(source.id, bob.id, alice.id);
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Thumbnail, path: '/thumbs/recipient.webp' });
+      jobs.queue.mockClear();
+      await sut.copyAsset(source.id, bob.id, alice.id);
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+      await expect(
+        ctx.get(AssetRepository).getForThumbnail(copyId, AssetFileType.Preview, false),
+      ).resolves.toMatchObject({
+        path: '/thumbs/recipient.jpeg',
+      });
+      await expect(ctx.get(AssetRepository).getById(source.id, { files: true })).resolves.toEqual(original);
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([
+        { id: copyId },
+      ]);
+    });
+
     it('creates the recipient their own asset linked to the same stored files, with no analysis queued', async () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
