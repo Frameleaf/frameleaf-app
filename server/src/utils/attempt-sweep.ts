@@ -28,7 +28,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     const {
       rows: [lock],
     } = await sql<{ acquired: boolean; now: number }>`SELECT pg_try_advisory_xact_lock(-333, 2) acquired,
-      extract(epoch FROM clock_timestamp()) * 1000 AS now`.execute(tx);
+      (extract(epoch FROM clock_timestamp()) * 1000)::double precision AS now`.execute(tx);
     if (!lock.acquired) return;
     const initial: SweepState = {
       roots,
@@ -42,7 +42,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     const {
       rows: [row],
     } = await sql<{ value: SweepState; now: number }>`SELECT value,
-      extract(epoch FROM clock_timestamp()) * 1000 AS now FROM system_metadata WHERE key=${STATE_KEY} FOR UPDATE`.execute(
+      (extract(epoch FROM clock_timestamp()) * 1000)::double precision AS now FROM system_metadata WHERE key=${STATE_KEY} FOR UPDATE`.execute(
       tx,
     );
     if (row.value.expires > Number(row.now)) return;
