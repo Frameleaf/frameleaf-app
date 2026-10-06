@@ -527,7 +527,8 @@ export class MetadataService extends BaseService {
     const { id } = job;
     const asset = await this.assetJobRepository.getForSidecarWriteJob(id, kysely);
     if (!asset) {
-      return JobStatus.Failed;
+      // An absent join result can mean a deleted asset or missing EXIF on an existing row.
+      return (await this.assetJobRepository.getForSidecarCheckJob(id, kysely)) ? JobStatus.Failed : JobStatus.Skipped;
     }
 
     const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
