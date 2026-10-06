@@ -2884,38 +2884,58 @@ describe('iCloud exact identity adoption', () => {
           );
         });
 
-        it('keeps actual late decoder work pending across a restarted cleanup and deletes only after true settlement', async () => {
-          const fixture = await createDispositionFixture();
-          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+        it('keeps actual late decoder work pending across a restarted cleanup and deletes only after true settlement', async ({
+          signal,
+        }) => {
+          const settled = Promise.withResolvers<void>();
+          stagedProofSettled = settled.promise;
           const decoderDone = Promise.withResolvers<void>();
-          const decoding = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
-            result: Promise.resolve({ status: 'timeout', reason: 'validation_timeout' }),
-            settled: decoderDone.promise,
-            cancel: vi.fn(),
-          });
-          const validation = await fixture.staging.validate(fixture.input, undefined, fixture.promotedPath);
-          expect(await validation.result).toEqual({ status: 'unavailable' });
-          await fixture.retire();
-          const restarted = new ICloudScheduledStagingService(
-            fixture.repository,
-            fixture.ordinary,
-            fixture.transport as never,
-            integrity,
-          );
-          const cleanup = fixture.staging.cleanupRetired(fixture.input);
+          let staging: ICloudScheduledStagingService | undefined;
+          let validation: Awaited<ReturnType<ICloudScheduledStagingService['validate']>> | undefined;
+          let restoreDecoder: (() => void) | undefined;
           try {
-            await restarted.housekeeping();
-            expect((await fixture.state()).lastError).toBe('scheduled_private_copy_retained_pending-settlement');
-            expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
-            expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+            const fixture = await createDispositionFixture();
+            staging = fixture.staging;
+            await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+            const decoding = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
+              result: Promise.resolve({ status: 'timeout', reason: 'validation_timeout' }),
+              settled: decoderDone.promise,
+              cancel: vi.fn(),
+            });
+            restoreDecoder = () => decoding.mockRestore();
+            validation = await fixture.staging.validate(fixture.input, signal, fixture.promotedPath);
+            expect(await validation.result).toEqual({ status: 'unavailable' });
+            await fixture.retire();
+            const restarted = new ICloudScheduledStagingService(
+              fixture.repository,
+              fixture.ordinary,
+              fixture.transport as never,
+              integrity,
+            );
+            const cleanup = fixture.staging.cleanupRetired(fixture.input);
+            try {
+              await restarted.housekeeping();
+              expect((await fixture.state()).lastError).toBe('scheduled_private_copy_retained_pending-settlement');
+              expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+              expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+            } finally {
+              decoderDone.resolve();
+              decoding.mockRestore();
+            }
+            await validation.settled;
+            await cleanup;
+            expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0 });
+            expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
           } finally {
-            decoderDone.resolve();
-            decoding.mockRestore();
+            try {
+              decoderDone.resolve();
+              restoreDecoder?.();
+              validation?.cancel();
+              await staging?.onShutdown();
+            } finally {
+              settled.resolve();
+            }
           }
-          await validation.settled;
-          await cleanup;
-          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0 });
-          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
         });
 
         it('refuses a replacement JSON generation between authenticated read and terminal cleanup locks', async () => {
@@ -3068,30 +3088,53 @@ describe('iCloud exact identity adoption', () => {
           15_000, // Actual staging/decode/copy setup; the PostgreSQL lock witness remains bounded to 1s.
         );
 
-        it('does not authenticate authored work-generation JSON when a late decoder finally settles', async () => {
-          const fixture = await createDispositionFixture();
-          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+        it('does not authenticate authored work-generation JSON when a late decoder finally settles', async ({
+          signal,
+        }) => {
+          const settled = Promise.withResolvers<void>();
+          stagedProofSettled = settled.promise;
           const done = Promise.withResolvers<void>();
-          const decoder = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
-            result: Promise.resolve({ status: 'timeout', reason: 'validation_timeout' }),
-            settled: done.promise,
-            cancel: vi.fn(),
-          });
-          const validation = await fixture.staging.validate(fixture.input, undefined, fixture.promotedPath);
-          const work = structuredClone(
-            (await fixture.state()).verification!.auditOwnedWork,
-          ) as privateCopyFiles.ScheduledPrivateWorkRecord;
-          work.payload.generation = randomUUID(); // Old server seal authenticates neither this generation nor its settlement.
-          await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditOwnedWork',${JSON.stringify(work)}::text::jsonb)
-            WHERE id=${fixture.resource.id}::uuid`.execute(db);
-          await fixture.retire();
-          done.resolve();
-          decoder.mockRestore();
-          await validation.settled;
-          await fixture.staging.cleanupRetired(fixture.input);
-          expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
-          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
-          expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+          let staging: ICloudScheduledStagingService | undefined;
+          let validation: Awaited<ReturnType<ICloudScheduledStagingService['validate']>> | undefined;
+          let restoreDecoder: (() => void) | undefined;
+          try {
+            const fixture = await createDispositionFixture();
+            staging = fixture.staging;
+            await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+            const decoder = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
+              result: Promise.resolve({ status: 'timeout', reason: 'validation_timeout' }),
+              settled: done.promise,
+              cancel: vi.fn(),
+            });
+            restoreDecoder = () => decoder.mockRestore();
+            validation = await fixture.staging.validate(fixture.input, signal, fixture.promotedPath);
+            const work = structuredClone(
+              (await fixture.state()).verification!.auditOwnedWork,
+            ) as privateCopyFiles.ScheduledPrivateWorkRecord;
+            work.payload.generation = randomUUID(); // Old server seal authenticates neither this generation nor its settlement.
+            await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditOwnedWork',${JSON.stringify(work)}::text::jsonb)
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+            await fixture.retire();
+            done.resolve();
+            decoder.mockRestore();
+            await validation.settled;
+            await fixture.staging.cleanupRetired(fixture.input);
+            expect(await fixture.state()).toMatchObject({
+              status: 'failed',
+              reservedBytes: 2 * fixture.f.bytes.length,
+            });
+            expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+            expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+          } finally {
+            try {
+              done.resolve();
+              restoreDecoder?.();
+              validation?.cancel();
+              await staging?.onShutdown();
+            } finally {
+              settled.resolve();
+            }
+          }
         });
 
         it('retains charge after an injected unlink fault and resumes the same sealed generation', async () => {
