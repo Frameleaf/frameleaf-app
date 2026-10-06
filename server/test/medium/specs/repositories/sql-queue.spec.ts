@@ -71,7 +71,7 @@ describe('PostgreSQL queue', () => {
   it('discovers paused manifest-only work and pending producers in one read without treating retained terminal jobs as work', async () => {
     const producerQueue = `${queue}-producer`;
     const idleQueue = `${queue}-idle`;
-    await store.initialize([producerQueue, idleQueue], workerA);
+    await store.initialize([producerQueue, idleQueue]);
     await store.enqueue([intent({ queue: producerQueue, name: 'producer' }), intent({ queue: idleQueue })]);
     const [finished] = await store.claim(idleQueue, workerA);
     await store.complete(finished, []);
