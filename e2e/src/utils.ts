@@ -278,6 +278,10 @@ export const utils = {
       );
     }
     resetting = true;
+    const started = performance.now();
+    let phase = 'connect';
+    let cleanupPhase = 'not started';
+    let lastUnfinished: boolean | undefined;
     try {
       await ownedWait(
         'Resetting test database',
@@ -388,6 +392,7 @@ export const utils = {
                   }
                   return operations.length > 0;
                 };
+                phase = 'authenticate reset';
                 const { rows: admins } = await query(
                   context,
                   `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
@@ -395,6 +400,7 @@ export const utils = {
                 let token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
                 await resetWhilePaused({
                   pause: async () => {
+                    phase = 'pause queues';
                     await query(context, 'BEGIN');
                     try {
                       const { rows } = await query(
@@ -410,6 +416,7 @@ export const utils = {
                     }
                   },
                   drain: async () => {
+                    phase = 'request active-job cancellation';
                     await query(
                       context,
                       `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
@@ -419,11 +426,14 @@ export const utils = {
                       async () => {
                         // Independent bulk/render/import workers do not claim from job_queue. Cancel
                         // through the owner's real API, preserving edit refusal and remote cleanup.
+                        phase = 'cancel media operations';
                         await cancelOperations();
+                        phase = 'confirm executor stop';
                         return drainAfterExecutorStop(
                           (text) => query(context, text),
                           async () => {
                             if (!token) {
+                              phase = 'inspect unauthenticated work';
                               // Periodic jobs can be admitted without an administrator. They cannot drain
                               // while paused, so use owned fixture authentication for the normal clear API.
                               const { rows } = await query(
@@ -454,6 +464,7 @@ export const utils = {
                             }
                             const headers = asBearerAuth(token);
                             for (const name of Object.values(QueueName)) {
+                              phase = `clear queue ${name}`;
                               context.remaining();
                               await emptyQueue(
                                 { name, queueDeleteDto: { failed: true } },
@@ -465,12 +476,15 @@ export const utils = {
                               if (unfinished) {
                                 continue;
                               }
+                              phase = `read queue ${name}`;
                               const queue = await readQueue(token, name, context);
                               unfinished = queue.hasUnfinishedWork;
+                              lastUnfinished = unfinished;
                             }
                             if (unfinished) {
                               return true;
                             }
+                            phase = 'inspect media operations';
                             const operations = await unfinishedOperations();
                             return operations.length > 0;
                           },
@@ -481,14 +495,17 @@ export const utils = {
                     );
                   },
                   mutate: async () => {
+                    phase = 'confirm stop before mutation';
                     context.remaining();
                     // Recheck retained attempts after terminal clearing and immediately before the
                     // callback that can delete fixtures. Cleared state/data never substitute for proof.
                     await assertResetExecutionsStopped((text) => query(context, text));
+                    phase = 'mutate fixtures';
                     await mutate?.(db, context);
                   },
                   restore: (snapshot) =>
                     withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
+                      cleanupPhase = 'restore queue settings';
                       await query(cleanup, 'BEGIN');
                       try {
                         if (resetAdminId) {
@@ -520,6 +537,7 @@ export const utils = {
           }
           try {
             if (sessions.size > 0) {
+              cleanupPhase = 'remove reset sessions';
               await withDeadline('Removing reset session', cleanupBudget(), (cleanup) =>
                 query(cleanup, 'DELETE FROM "session" WHERE token = ANY($1::bytea[])', [
                   sessions
@@ -536,6 +554,7 @@ export const utils = {
             failed = true;
           } finally {
             try {
+              cleanupPhase = 'close reset connection';
               await db.end();
             } catch (error) {
               primary = failed
@@ -552,8 +571,11 @@ export const utils = {
       );
     } catch (error) {
       // Do not let a retry/new test mutate data after uncertain cancellation or cleanup.
-      resetFailure = error;
-      throw error;
+      resetFailure = new Error(
+        `Reset failed: lastControlPhase=${phase}; lastCleanupPhase=${cleanupPhase}; elapsedMs=${Math.round(performance.now() - started)}; lastUnfinished=${lastUnfinished ?? 'unknown'}`,
+        { cause: error },
+      );
+      throw resetFailure;
     } finally {
       resetting = false;
     }
@@ -1502,8 +1524,10 @@ export const utils = {
       signal?: AbortSignal;
       timeout?: number;
     } = {},
-  ) =>
-    ownedWait(
+  ) => {
+    const started = performance.now();
+    let phase = 'start';
+    return ownedWait(
       `Waiting for asset ${id}`,
       options.timeout ?? queueWaitTimeout(),
       async (context) => {
@@ -1513,14 +1537,17 @@ export const utils = {
           QueueName.ThumbnailGeneration,
           ...(options.video ? [QueueName.VideoConversion] : []),
         ]) {
+          phase = `queue ${queue}`;
           await waitForQueue(accessToken, queue, context);
         }
         const headers = options.headers ?? asBearerAuth(accessToken);
+        phase = 'asset info';
         const asset = await getAssetInfo({ id }, { headers, signal: context.signal });
         context.remaining();
         if (asset.id !== id) {
           throw new Error('Asset readiness returned another asset');
         }
+        phase = 'preview';
         const preview = await viewAsset({ id, size: AssetMediaSize.Preview }, { headers, signal: context.signal });
         context.remaining();
         if (preview.size === 0 || !preview.type.startsWith('image/')) {
@@ -1529,7 +1556,13 @@ export const utils = {
         return asset;
       },
       options.signal,
-    ),
+    ).catch((error: unknown) => {
+      throw new Error(
+        `Asset readiness failed: phase=${phase}; elapsedMs=${Math.round(performance.now() - started)}`,
+        { cause: error },
+      );
+    });
+  },
 
   poll: (
     cb: () => request.Test,
