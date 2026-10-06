@@ -2,7 +2,7 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { JobStatus, MediaOperationStatus } from 'src/enum.js';
-import { advanceJobProgress, afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
+import { advanceJobProgress, afterJobCommit, deferJobAdoption, deferJobFailure, jobSignal } from 'src/queue/context.js';
 import {
   EDIT_OPERATION_LEASE_MS,
   EDIT_OPERATION_REDISPATCH_MS,
@@ -171,13 +171,13 @@ export class EditOperationRun {
           true,
         );
         if (!completed) throw new Error('Edit operation lost its claim before publication');
+        await afterJobCommit(() => Promise.resolve(this.settle()));
       })
     ) {
       this.publicationQueued = true;
-      await afterJobCommit(async () => this.settle());
       // The tracker has returned before publication runs. Hand a rejected publication back to
       // this exact operation claim in the queue's stopped, failed-claim transaction.
-      (queueExecution.getStore()!.failureSettlements ??= []).push(async (tx, reason, cancelled) => {
+      deferJobFailure(async (tx, reason, cancelled) => {
         if (this.done) return;
         const row = await tx
           .selectFrom('media_operation')
