@@ -14,8 +14,8 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { handleSetMaintenanceMode } from '$lib/services/maintenance.service';
-  import { MaintenanceAction, type MaintenanceStatusResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { MaintenanceAction, type MaintenanceStatusResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiWrenchOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

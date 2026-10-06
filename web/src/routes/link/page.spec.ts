@@ -1,4 +1,4 @@
-import { toastManager } from '@immich/ui';
+import { toastManager } from '@frameleaf/ui';
 import { render, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,7 @@ import en from '../../../../i18n/en.json';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
+vi.mock('@frameleaf/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
 
 describe('Frameleaf account link callback (FL-158)', () => {
   beforeEach(() => {

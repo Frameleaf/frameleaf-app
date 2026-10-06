@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiImageMultipleOutline } from '@mdi/js';
 
   /**

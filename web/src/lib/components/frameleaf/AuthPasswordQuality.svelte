@@ -1,7 +1,7 @@
 <script lang="ts">
   import { passwordRequirements, passwordStrength } from '$lib/frameleaf/auth-password';
   import { mdiCheckCircle, mdiCircleOutline } from '@mdi/js';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   // Advisory only: the server decides which passwords it accepts.

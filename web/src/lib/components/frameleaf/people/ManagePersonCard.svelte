@@ -1,8 +1,8 @@
 <script lang="ts">
   import { isUnnamedPerson } from '$lib/frameleaf/people';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
-  import type { PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { MediaQuery } from 'svelte/reactivity';

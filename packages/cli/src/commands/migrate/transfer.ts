@@ -1,4 +1,4 @@
-import { AssetMediaStatus } from '@immich/sdk';
+import { AssetMediaStatus } from '@frameleaf/sdk';
 import { createWriteStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';

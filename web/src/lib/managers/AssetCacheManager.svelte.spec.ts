@@ -1,10 +1,10 @@
-import { getAssetInfo, getAssetOcr, getFaces } from '@immich/sdk';
+import { getAssetInfo, getAssetOcr, getFaces } from '@frameleaf/sdk';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { assetCacheManager } from './AssetCacheManager.svelte';
 import { eventManager } from './event-manager.svelte';
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getAssetInfo: vi.fn(),
   getAssetOcr: vi.fn(),

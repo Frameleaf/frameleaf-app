@@ -13,6 +13,8 @@
 # SQL-tools is a frozen owned runtime/type payload, not a local build output.
 !packages/sql-tools/dist/
 !packages/sql-tools/dist/**
+!packages/ui/dist/
+!packages/ui/dist/**
 **/coverage/
 **/build/
 

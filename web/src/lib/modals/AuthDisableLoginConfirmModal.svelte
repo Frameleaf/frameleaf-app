@@ -1,7 +1,7 @@
 <script lang="ts">
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
-  import { ConfirmModal, Link } from '@immich/ui';
+  import { ConfirmModal, Link } from '@frameleaf/ui';
   import { mdiCancel } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

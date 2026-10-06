@@ -1,4 +1,4 @@
-import { downloadArchive as requestArchive, downloadAsset as requestAsset, getDownloadInfo } from '@immich/sdk';
+import { downloadArchive as requestArchive, downloadAsset as requestAsset, getDownloadInfo } from '@frameleaf/sdk';
 import { downloadManager, EmptyDownloadError, bufferLimit } from '$lib/managers/download-manager.svelte';
 import * as utils from '$lib/utils';
 import { downloadArchive, downloadAssetFile } from './asset-utils';
@@ -17,8 +17,8 @@ const auth = vi.hoisted(() => ({
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getDownloadInfo: vi.fn(),
   downloadArchive: vi.fn(),
   downloadAsset: vi.fn(),

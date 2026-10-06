@@ -1,4 +1,4 @@
-import { MediaOperationKind, MediaOperationStatus } from '@immich/sdk';
+import { MediaOperationKind, MediaOperationStatus } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -6,8 +6,8 @@ import en from '../../../../../i18n/en.json';
 import UtilityHistory from './UtilityHistory.svelte';
 
 const state = vi.hoisted(() => ({ search: vi.fn() }));
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   searchMediaOperations: state.search,
 }));
 

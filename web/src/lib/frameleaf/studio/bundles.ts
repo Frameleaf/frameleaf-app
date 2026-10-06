@@ -27,7 +27,7 @@ import {
   type StudioBundleExportCreateDto,
   type StudioBundleImportCreateDto,
   type StudioBundleUploadDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { StudioCommandEnvelope, StudioCommandPayloads } from './commands';
 import { studioBundleMapping } from './project-library';

@@ -1,8 +1,8 @@
 <script lang="ts">
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { searchPerson, type PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { searchPerson, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck, mdiClose } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { AlbumResponseDto, PersonResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto, PersonResponseDto } from '@frameleaf/sdk';
 
   export type ViewerChooserPick =
     { kind: 'album'; album: AlbumResponseDto } | { kind: 'person'; person: PersonResponseDto };
@@ -16,8 +16,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiImageAlbum } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

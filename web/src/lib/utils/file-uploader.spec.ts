@@ -1,4 +1,4 @@
-import { AssetMediaStatus, type AssetMediaResponseDto, type UserAdminResponseDto } from '@immich/sdk';
+import { AssetMediaStatus, type AssetMediaResponseDto, type UserAdminResponseDto } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';

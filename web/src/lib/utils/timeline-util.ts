@@ -1,4 +1,4 @@
-import { AssetTypeEnum, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
 import { DateTime, type LocaleOptions } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';

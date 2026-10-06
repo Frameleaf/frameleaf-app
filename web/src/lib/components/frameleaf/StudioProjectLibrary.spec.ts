@@ -1,4 +1,4 @@
-import { StudioProjectAccess, StudioProjectShelf, type StudioProjectDto } from '@immich/sdk';
+import { StudioProjectAccess, StudioProjectShelf, type StudioProjectDto } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';

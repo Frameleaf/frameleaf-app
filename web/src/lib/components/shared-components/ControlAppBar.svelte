@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ControlBar, ControlBarContent, ControlBarHeader, ControlBarOverflow, ControlBarTitle } from '@immich/ui';
+  import { ControlBar, ControlBarContent, ControlBarHeader, ControlBarOverflow, ControlBarTitle } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import type { ClassValue } from 'svelte/elements';

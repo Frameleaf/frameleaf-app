@@ -11,8 +11,8 @@
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
-  import { getAssetInfo, isHttpError } from '@immich/sdk';
-  import { Button } from '@immich/ui';
+  import { getAssetInfo, isHttpError } from '@frameleaf/sdk';
+  import { Button } from '@frameleaf/ui';
   import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';

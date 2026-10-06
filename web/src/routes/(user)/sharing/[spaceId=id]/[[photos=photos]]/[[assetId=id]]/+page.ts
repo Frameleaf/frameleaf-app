@@ -8,7 +8,7 @@ import {
   getSharedSpaceNew,
   getSharedSpacePeople,
   isHttpError,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { error } from '@sveltejs/kit';
 import { isSpaceUnavailableStatus } from '$lib/frameleaf/error-page';
 import { authenticate } from '$lib/utils/auth';

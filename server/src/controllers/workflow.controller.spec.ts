@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import request from 'supertest';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';

@@ -1,8 +1,8 @@
-import { getAllTags, getTagStatistics, type TagResponseDto } from '@immich/sdk';
+import { getAllTags, getTagStatistics, type TagResponseDto } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', () => ({ getAllTags: vi.fn(), getTagStatistics: vi.fn() }));
+vi.mock('@frameleaf/sdk', () => ({ getAllTags: vi.fn(), getTagStatistics: vi.fn() }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: async () => (key: string) => key }));
 

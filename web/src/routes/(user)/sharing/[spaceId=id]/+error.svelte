@@ -7,7 +7,7 @@
   import { errorStatus, spaceErrorKind, type ErrorPageAction } from '$lib/frameleaf/error-page';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { Route } from '$lib/route';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiAccountMultipleRemoveOutline, mdiAlertCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -5,7 +5,7 @@ import {
   updateQueue,
   type QueueName,
   type DurableRunningJobs,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { buildRunningJobRows, countActiveRunningJobs, type RunningJobRow } from '$lib/frameleaf/running-jobs';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 

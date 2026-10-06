@@ -1,4 +1,4 @@
-import { QueueName } from '@immich/sdk';
+import { QueueName } from '@frameleaf/sdk';
 import {
   historyFor,
   JOB_HISTORY_LIMIT,

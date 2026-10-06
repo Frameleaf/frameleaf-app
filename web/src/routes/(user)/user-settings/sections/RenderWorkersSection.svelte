@@ -22,7 +22,7 @@
     type RenderWorkerDto,
     type RenderWorkerLimitDto,
     type RenderWorkerLimitsResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { RenderWorkersData } from './loaders';

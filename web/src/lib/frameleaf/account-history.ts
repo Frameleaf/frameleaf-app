@@ -3,7 +3,7 @@ import {
   type AssetStatsResponseDto,
   type LibraryStatsResponseDto,
   type UserAdminHistoryEventResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
 
 /**

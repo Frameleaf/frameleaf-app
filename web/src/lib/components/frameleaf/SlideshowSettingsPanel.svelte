@@ -25,7 +25,7 @@
     SlideshowNavigation,
     slideshowStore,
   } from '$lib/stores/slideshow.store';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';

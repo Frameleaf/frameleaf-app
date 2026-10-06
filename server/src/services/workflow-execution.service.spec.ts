@@ -1,5 +1,5 @@
 import { CurrentPlugin } from '@extism/extism';
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { createHash } from 'node:crypto';
 import { Mocked, vitest } from 'vitest';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';

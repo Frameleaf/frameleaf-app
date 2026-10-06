@@ -25,7 +25,7 @@
     STATUS_LABEL_KEY,
     type LibraryCareRow,
   } from '$lib/frameleaf/library-care';
-  import { MediaHealthRootKind, type MediaHealthRootDto } from '@immich/sdk';
+  import { MediaHealthRootKind, type MediaHealthRootDto } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -6,7 +6,7 @@ import {
   StudioRestoredVersionUnavailable,
   type AssetResponseDto,
   type StudioRestoredVersionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 

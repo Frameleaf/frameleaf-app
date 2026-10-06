@@ -6,7 +6,7 @@ import {
   SearchSuggestionType,
   type AlbumTreeResponseDto,
   type PersonResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   mdiAccountGroupOutline,
   mdiAccountMultipleOutline,

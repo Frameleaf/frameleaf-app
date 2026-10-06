@@ -12,7 +12,7 @@ import {
   reconnectStudioPreviewStream,
   StudioPreviewQuality as ApiStudioPreviewQuality,
   type StudioPreviewStreamDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { StudioPreviewQuality } from './preview';
 import { toPreviewTimeWire } from './preview';
 import {

@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,8 +7,8 @@ import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));

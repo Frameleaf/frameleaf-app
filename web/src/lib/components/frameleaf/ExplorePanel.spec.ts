@@ -1,4 +1,4 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetTypeEnum } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';

@@ -42,8 +42,8 @@
     TrashReviewAction,
     type AssetResponseDto,
     type TrashReviewResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiHistory, mdiUndo } from '@mdi/js';
   import { onMount } from 'svelte';

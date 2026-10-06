@@ -1,4 +1,4 @@
-import { getAllTags, getTagStatistics } from '@immich/sdk';
+import { getAllTags, getTagStatistics } from '@frameleaf/sdk';
 import { error } from '@sveltejs/kit';
 import { QueryParameter } from '$lib/constants';
 import { tagPathExists } from '$lib/frameleaf/tag-tree';

@@ -11,8 +11,8 @@
   import { afterNavigate } from '$app/navigation';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
-  import { type MapMarkerResponseDto } from '@immich/sdk';
-  import { Alert, Container, Icon, Text, Theme, themeManager } from '@immich/ui';
+  import { type MapMarkerResponseDto } from '@frameleaf/sdk';
+  import { Alert, Container, Icon, Text, Theme, themeManager } from '@frameleaf/ui';
   import { mdiMap, mdiMapMarker } from '@mdi/js';
   import type { Feature, GeoJsonProperties, Geometry, Point } from 'geojson';
   import {

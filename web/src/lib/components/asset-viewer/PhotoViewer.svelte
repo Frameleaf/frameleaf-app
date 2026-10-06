@@ -20,8 +20,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getOcrBoundingBoxes } from '$lib/utils/ocr-utils';
   import { getBoundingBox, type BoundingBox } from '$lib/utils/people-utils';
-  import { type SharedLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onDestroy, untrack } from 'svelte';
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';

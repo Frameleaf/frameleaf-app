@@ -11,7 +11,7 @@ import {
   EnrichmentStaleReason,
   MediaOperationStatus,
   type EnrichmentDestinationOptionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** The order stages run in, per asset. */

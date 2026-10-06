@@ -7,7 +7,7 @@ import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
  * Ctrl/Cmd+K opens search (or the settings search on a settings page) and "/" does the same outside
  * a field. They belong to the Frameleaf search entry only.
  *
- * `@immich/ui`'s `commandPaletteManager.enable()` also binds Ctrl/Cmd+K and "/" on `document.body`
+ * `@frameleaf/ui`'s `commandPaletteManager.enable()` also binds Ctrl/Cmd+K and "/" on `document.body`
  * to open the upstream Immich command palette. The manager has to stay enabled because it
  * dispatches every registered action shortcut (the viewer's F, I, Delete and so on), but its
  * palette is not part of the product. This capture listener on `window` runs before the body

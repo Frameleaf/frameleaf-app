@@ -12,8 +12,8 @@
    * (PhysicalDedupManager.jsx:80-97, physical-dedup-manager.css:322-349).
    */
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetTypeEnum } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiEyeOffOutline, mdiFileAlertOutline, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

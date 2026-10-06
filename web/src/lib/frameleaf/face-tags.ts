@@ -13,7 +13,7 @@
  * loaded; the server maps them back through the asset's crop, rotation and mirroring to the
  * original image, and maps stored faces forward the same way (`transformFaceBoundingBox`).
  */
-import { SourceType, type AssetFaceResponseDto } from '@immich/sdk';
+import { SourceType, type AssetFaceResponseDto } from '@frameleaf/sdk';
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
 export type Size = { width: number; height: number };

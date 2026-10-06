@@ -1,4 +1,4 @@
-import { getServerConfig, type ServerConfigDto } from '@immich/sdk';
+import { getServerConfig, type ServerConfigDto } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 class ServerConfigManager {

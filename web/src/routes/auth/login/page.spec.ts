@@ -5,7 +5,7 @@ import {
   login,
   redeemFrameleafHandoff,
   startFrameleafSignIn,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,7 +22,7 @@ import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   login: vi.fn(),
   isHttpError: vi.fn(() => false),
   startFrameleafSignIn: vi.fn(),

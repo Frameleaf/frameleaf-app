@@ -1,4 +1,4 @@
-import { LibraryScanPhase, MediaOperationStatus, UserStatus, type LibraryScanResponseDto } from '@immich/sdk';
+import { LibraryScanPhase, MediaOperationStatus, UserStatus, type LibraryScanResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

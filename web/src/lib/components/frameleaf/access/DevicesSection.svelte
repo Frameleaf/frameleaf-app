@@ -9,8 +9,8 @@
   import { otherSessions, sessionDeviceName, sortSessions } from '$lib/frameleaf/personal-access';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { deleteAllSessions, deleteSession, getSessions, type SessionResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { deleteAllSessions, deleteSession, getSessions, type SessionResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

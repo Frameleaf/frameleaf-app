@@ -1,4 +1,4 @@
-import type { SharedLinkResponseDto } from '@immich/sdk';
+import type { SharedLinkResponseDto } from '@frameleaf/sdk';
 
 /**
  * What a shared link card says about its link (AL-21), ported from `linkBadges` in the design's

@@ -39,8 +39,8 @@
     type AlbumResponseDto,
     type AssetResponseDto,
     type TagResponseDto,
-  } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';

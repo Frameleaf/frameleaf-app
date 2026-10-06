@@ -11,7 +11,7 @@ import {
   type PhysicalDeduplicationReviewResponseDto,
   PhysicalDeduplicationCopyFile,
   PhysicalDeduplicationRetainedFile,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   applyBlockedReason,

@@ -54,8 +54,8 @@
     AnalyticsScopeKind,
     type AnalyticsReportResponseDto,
     type AnalyticsScopeOptionDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiDownload } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

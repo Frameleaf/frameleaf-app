@@ -1,5 +1,5 @@
-import { deleteAssets as deleteBulk, restoreAssets } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { deleteAssets as deleteBulk, restoreAssets } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';

@@ -5,8 +5,8 @@ import {
   resumeMediaOperation,
   retryMediaOperation,
   searchMediaOperations,
-} from '@immich/sdk';
-import type { MediaOperationDto } from '@immich/sdk';
+} from '@frameleaf/sdk';
+import type { MediaOperationDto } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**

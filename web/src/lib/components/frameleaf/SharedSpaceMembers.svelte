@@ -30,8 +30,8 @@
     type RecipientGroupResponseDto,
     type SharedSpaceMemberResponseDto,
     type UserResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountGroupOutline, mdiAccountPlusOutline, mdiClockOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

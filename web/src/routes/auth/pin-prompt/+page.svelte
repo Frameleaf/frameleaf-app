@@ -13,9 +13,9 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { resetPinCode, setupPinCode, unlockAuthSession } from '@immich/sdk';
+  import { resetPinCode, setupPinCode, unlockAuthSession } from '@frameleaf/sdk';
   import { mdiAlertCircleOutline, mdiInformationOutline, mdiBackspaceOutline, mdiShieldLockOutline } from '@mdi/js';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

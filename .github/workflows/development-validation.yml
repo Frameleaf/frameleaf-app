@@ -49,7 +49,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          { pnpm --filter @immich/sdk build; pnpm --filter @immich/plugin-sdk build; pnpm --filter @immich/plugin-core build; } 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sdks.log"
+          { pnpm --filter @frameleaf/sdk build; pnpm --filter @frameleaf/plugin-sdk build; pnpm --filter @frameleaf/plugin-core build; } 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sdks.log"
       - name: Report server types
         timeout-minutes: 10
         id: types

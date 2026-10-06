@@ -1,4 +1,4 @@
-import { OAuthClient, OAuthUser, generateLogoutToken } from '@immich/e2e-auth-server';
+import { OAuthClient, OAuthUser, generateLogoutToken } from '@frameleaf/e2e-auth-server';
 import {
   AdminConfigOAuthDto,
   LoginResponseDto,
@@ -7,7 +7,7 @@ import {
   getSessions,
   startOAuth,
   updateConfig,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { createHash, randomBytes } from 'node:crypto';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';

@@ -12,7 +12,7 @@
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
-  import { toastManager } from '@immich/ui';
+  import { toastManager } from '@frameleaf/ui';
   import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
   import StudioExportDialog, { type StudioExportChoice } from '$lib/components/frameleaf/StudioExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -82,7 +82,7 @@
     getStudioRestoredVersion,
     isHttpError,
     type StudioRestoredVersionDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';

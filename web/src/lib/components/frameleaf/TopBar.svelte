@@ -24,8 +24,8 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { getAuthStatus } from '@immich/sdk';
-  import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { getAuthStatus } from '@frameleaf/sdk';
+  import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
     mdiChevronRight,

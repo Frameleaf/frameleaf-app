@@ -5,7 +5,7 @@
  * storage (never shared, never sent anywhere). As the template (`JOBS_LIMITS.history`), it keeps 120
  * entries and the list shows the newest 40 of the chosen queue.
  */
-import type { QueueName } from '@immich/sdk';
+import type { QueueName } from '@frameleaf/sdk';
 
 export const JOB_HISTORY_STORAGE_KEY = 'frameleaf:job-manager-history:v1';
 export const JOB_HISTORY_LIMIT = 120;

@@ -1,4 +1,4 @@
-import { getPerson, LoginResponseDto, PeopleListItemDto, PersonResponseDto } from '@immich/sdk';
+import { getPerson, LoginResponseDto, PeopleListItemDto, PersonResponseDto } from '@frameleaf/sdk';
 import { createUserDto, uuidDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
 import { BrowserContext, expect, Request, test } from '@playwright/test';
 import { toAssetResponseDto, type TimelineAssetConfig } from 'src/ui/generators/timeline.js';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';

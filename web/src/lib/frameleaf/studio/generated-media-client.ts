@@ -1,4 +1,4 @@
-import { getBaseUrl } from '@immich/sdk';
+import { getBaseUrl } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { websocketEvents, websocketStore } from '$lib/stores/websocket';
 import { generatedMediaAlias, generatedMediaIds, type StudioGeneratedMedia } from './generated-media';

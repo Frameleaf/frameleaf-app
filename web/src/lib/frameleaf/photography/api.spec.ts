@@ -1,7 +1,7 @@
 import { loadPhotos, loadWorkspace, ratePhoto, saveWorkspace, type Workspace } from './api';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   defaults: { fetch: transport.fetch, headers: { 'x-test-header': 'configured' } },
   getBaseUrl: () => '/custom-api',
 }));

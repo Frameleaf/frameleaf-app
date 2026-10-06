@@ -6,7 +6,7 @@ import {
   MediaOperationStatus,
   type DuplicateDecisionBatchDto,
   type MediaOperationDetailDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   buildDecisionGroups,

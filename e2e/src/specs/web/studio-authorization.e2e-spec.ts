@@ -5,7 +5,7 @@ import {
   acceptSharedSpaceInvitation,
   createStudioProject,
   removeUserFromAlbum,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { Browser, Page, expect, test } from '@playwright/test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';

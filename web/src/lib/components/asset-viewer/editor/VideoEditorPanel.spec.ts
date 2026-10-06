@@ -1,12 +1,12 @@
-import { AssetEditAction, AssetTypeEnum, editAsset, getAssetEdits, removeAssetEdits } from '@immich/sdk';
+import { AssetEditAction, AssetTypeEnum, editAsset, getAssetEdits, removeAssetEdits } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { act, fireEvent, waitFor } from '@testing-library/svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoEditorPanel from './VideoEditorPanel.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     editAsset: vi.fn(),

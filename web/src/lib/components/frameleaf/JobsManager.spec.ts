@@ -21,7 +21,7 @@ import {
   triggerSmartAlbumReevaluate,
   updateQueue,
   type QueueResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import JobsManager from '$lib/components/frameleaf/JobsManager.svelte';
@@ -38,8 +38,8 @@ vi.mock('$app/state', () => ({
   },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   listDurableJobRuns: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   listDurableJobRunItems: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   getQueueJobs: vi.fn(),

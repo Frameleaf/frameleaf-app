@@ -24,8 +24,8 @@
     type AssetResponseDto,
     type PeopleListItemDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountArrowRightOutline,
     mdiAccountEditOutline,

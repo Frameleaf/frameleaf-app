@@ -1,10 +1,10 @@
-import { AssetDevelopPreset, createDevelopPreset, getDevelopPresets, updateDevelopPreset } from '@immich/sdk';
+import { AssetDevelopPreset, createDevelopPreset, getDevelopPresets, updateDevelopPreset } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { presetSettingsFrom, toPresetDto } from '$lib/frameleaf/photo-tools';
 import UserPresets from './UserPresets.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     getDevelopPresets: vi.fn(),
@@ -14,8 +14,8 @@ vi.mock('@immich/sdk', async () => {
   };
 });
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   const { default: Icon } = await import('@test-data/components/MockIcon.svelte');
   return {
     ...actual,

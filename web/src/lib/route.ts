@@ -5,7 +5,7 @@ import {
   type MediaHealthStatus,
   type MetadataSearchDto,
   type SmartSearchDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
 import {

@@ -15,8 +15,8 @@
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getMySharedLink, type SharedLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { getMySharedLink, type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 

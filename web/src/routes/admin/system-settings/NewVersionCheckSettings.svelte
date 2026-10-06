@@ -34,8 +34,8 @@
     ReleaseChannel,
     VersionCheckFrequency,
     type ReleaseEventV1,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMagnify, mdiServerOutline, mdiShieldCheckOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';

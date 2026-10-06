@@ -1,4 +1,4 @@
-import { getAllPeople } from '@immich/sdk';
+import { getAllPeople } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 

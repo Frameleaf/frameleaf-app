@@ -6,9 +6,11 @@
 const cli = 'node packages/cli/dist/index.js migrate';
 const ledger = '--ledger ./library-move.sqlite';
 export const migrationCommands = {
-  tool: ['pnpm install --frozen-lockfile', 'pnpm --filter @immich/sdk build', 'pnpm --filter @immich/cli build'].join(
-    '\n',
-  ),
+  tool: [
+    'pnpm install --frozen-lockfile',
+    'pnpm --filter @frameleaf/sdk build',
+    'pnpm --filter @frameleaf/cli build',
+  ].join('\n'),
   keys: [
     'export FRAMELEAF_FROM_URL=https://old-server.example/api',
     'export FRAMELEAF_TO_URL=https://new-server.example/api',

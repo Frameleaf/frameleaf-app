@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { AssetMediaSize, getAssetDevelop } from '@immich/sdk';
+  import { AssetMediaSize, getAssetDevelop } from '@frameleaf/sdk';
   import Button from './Button.svelte';
   import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
   import { loadBrand, type Shoot, type Branding } from '$lib/frameleaf/photography/api';

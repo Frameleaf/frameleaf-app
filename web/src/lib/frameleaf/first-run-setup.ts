@@ -8,7 +8,7 @@
  * administrator exists, and in this browser before that. Passwords are never part of the state:
  * they travel as `secrets` and only reach the sign-up and login calls.
  */
-import type { FrameleafSetupProgressDto, AdminConfigDto } from '@immich/sdk';
+import type { FrameleafSetupProgressDto, AdminConfigDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { passwordStrength } from '$lib/frameleaf/auth-password';
 

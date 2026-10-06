@@ -38,8 +38,8 @@ lockfile = true
 
 [tasks.plugins]
 run = [
-  "pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core install --frozen-lockfile",
-  "pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core build",
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core install --frozen-lockfile",
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core build",
 ]
 
 [tasks.open-api-typescript]
@@ -131,7 +131,7 @@ run = "docker compose -f ./docker-compose.dev.yml down --remove-orphans"
 # SDK tasks
 [tasks."sdk:install"]
 dir = "packages/sdk"
-run = "pnpm --filter @immich/sdk install --frozen-lockfile"
+run = "pnpm --filter @frameleaf/sdk install --frozen-lockfile"
 
 [tasks."sdk:build"]
 dir = "packages/sdk"

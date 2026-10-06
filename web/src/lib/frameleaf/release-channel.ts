@@ -1,4 +1,4 @@
-import { ReleaseChannel, type ServerVersionResponseDto } from '@immich/sdk';
+import { ReleaseChannel, type ServerVersionResponseDto } from '@frameleaf/sdk';
 
 /**
  * FL-71 "Installed build channel" (the template's read-only row, `settings-catalog.mjs` `updates`):

@@ -1,4 +1,4 @@
-import { AssetRestorationMode, MlWorkload, RestorationModelState } from '@immich/sdk';
+import { AssetRestorationMode, MlWorkload, RestorationModelState } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   allowsRestoration,

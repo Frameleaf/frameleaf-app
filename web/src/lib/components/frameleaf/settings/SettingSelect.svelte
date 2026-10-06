@@ -4,7 +4,7 @@
    * route-local SettingSelect it replaces; a native select keeps keyboard and screen-reader
    * behaviour and the option list stays data the caller owns.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

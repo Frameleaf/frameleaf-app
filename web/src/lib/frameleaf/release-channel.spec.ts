@@ -1,4 +1,4 @@
-import { ReleaseChannel } from '@immich/sdk';
+import { ReleaseChannel } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { installedReleaseChannel } from './release-channel';
 

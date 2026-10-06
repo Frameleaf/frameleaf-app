@@ -22,12 +22,9 @@ overrides:
   '@sveltejs/kit>cookie': ^0.7.2
   mermaid>uuid: ^11.1.1
 
-packageExtensionsChecksum: sha256-PeNtxe/tXGY7MuL6Zz9VAHqHR2N4DXxqwXECmog1VtA=
+packageExtensionsChecksum: sha256-Mofz7nyIAaEAEUKA7506+WAlCIWxW8nGtiE5KynurJ8=
 
 pnpmfileChecksum: sha256-un98do36L0wZyqsjcLozQ3YUadCAn2yz5bXcBbOuyDA=
-
-patchedDependencies:
-  '@immich/ui@0.86.0': 5ce02ddac7fa744f7120fcdc10f350a632e1421f74cf141f42c5cf7c1948fe16
 
 importers:
 
@@ -130,13 +127,13 @@ importers:
       '@faker-js/faker':
         specifier: ^10.1.0
         version: 10.6.0
-      '@immich/cli':
+      '@frameleaf/cli':
         specifier: workspace:*
         version: link:../packages/cli
-      '@immich/e2e-auth-server':
+      '@frameleaf/e2e-auth-server':
         specifier: workspace:*
         version: link:../packages/e2e-auth-server
-      '@immich/sdk':
+      '@frameleaf/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
       '@playwright/test':
@@ -248,7 +245,7 @@ importers:
       '@eslint/js':
         specifier: ^10.0.0
         version: 10.0.1(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2))
-      '@immich/sdk':
+      '@frameleaf/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@types/better-sqlite3':
@@ -345,15 +342,17 @@ importers:
         specifier: ^4.20.6
         version: 4.23.12
 
+  packages/justified-layout-wasm: {}
+
   packages/plugin-core:
     devDependencies:
       '@extism/js-pdk':
         specifier: ^1.0.1
         version: 1.1.1
-      '@immich/plugin-sdk':
+      '@frameleaf/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@immich/sdk':
+      '@frameleaf/sdk':
         specifier: workspace:*
         version: link:../sdk
       esbuild:
@@ -372,7 +371,7 @@ importers:
       '@extism/js-pdk':
         specifier: ^1.1.1
         version: 1.1.1
-      '@immich/sdk':
+      '@frameleaf/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@types/node':
@@ -444,6 +443,49 @@ importers:
         specifier: ^3.4.8
         version: 3.4.9
 
+  packages/ui:
+    dependencies:
+      '@internationalized/date':
+        specifier: ^3.10.0
+        version: 3.12.2
+      '@mdi/js':
+        specifier: ^7.4.47
+        version: 7.4.47
+      '@sveltejs/kit':
+        specifier: ^2.13.0
+        version: 2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0))
+      bits-ui:
+        specifier: ^2.15.7
+        version: 2.18.1(@internationalized/date@3.12.2)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.56.10(@typescript-eslint/types@8.68.0))
+      fuse.js:
+        specifier: ^7.4.2
+        version: 7.5.0
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+      simple-icons:
+        specifier: ^16.0.0
+        version: 16.28.0
+      svelte:
+        specifier: ^5.0.0
+        version: 5.56.10(@typescript-eslint/types@8.68.0)
+      svelte-highlight:
+        specifier: ^7.8.4
+        version: 7.11.0
+      tailwind-merge:
+        specifier: ^3.0.0
+        version: 3.6.0
+      tailwind-variants:
+        specifier: ^3.0.0
+        version: 3.3.1(tailwind-merge@3.6.0)(tailwindcss@4.3.3)
+      tailwindcss:
+        specifier: ^4.2.4
+        version: 4.3.3
+    devDependencies:
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+
   server:
     dependencies:
       '@achingbrain/nat-port-mapper':
@@ -452,12 +494,12 @@ importers:
       '@extism/extism':
         specifier: 2.0.0-rc13
         version: 2.0.0-rc13
+      '@frameleaf/plugin-sdk':
+        specifier: workspace:*
+        version: link:../packages/plugin-sdk
       '@frameleaf/sql-tools':
         specifier: workspace:*
         version: link:../packages/sql-tools
-      '@immich/plugin-sdk':
-        specifier: workspace:*
-        version: link:../packages/plugin-sdk
       '@nestjs/common':
         specifier: ^12.0.0
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
@@ -819,15 +861,15 @@ importers:
       '@formatjs/icu-messageformat-parser':
         specifier: ^3.0.0
         version: 3.5.17
-      '@immich/justified-layout-wasm':
-        specifier: ^0.4.3
-        version: 0.4.3
-      '@immich/sdk':
+      '@frameleaf/justified-layout-wasm':
+        specifier: workspace:*
+        version: link:../packages/justified-layout-wasm
+      '@frameleaf/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
-      '@immich/ui':
-        specifier: ^0.86.0
-        version: 0.86.0(patch_hash=5ce02ddac7fa744f7120fcdc10f350a632e1421f74cf141f42c5cf7c1948fe16)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.56.10(@typescript-eslint/types@8.68.0))
+      '@frameleaf/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -3157,15 +3199,6 @@ packages:
     engines: {node: '>=20.9.0'}
     cpu: [x64]
     os: [win32]
-
-  '@immich/justified-layout-wasm@0.4.3':
-    resolution: {integrity: sha512-fpcQ7zPhP3Cp1bEXhONVYSUeIANa2uzaQFGKufUZQo5FO7aFT77szTVChhlCy4XaVy5R4ZvgSkA/1TJmeORz7Q==}
-
-  '@immich/ui@0.86.0':
-    resolution: {integrity: sha512-fYasHw5DcEOiEQh0iDjn/pt7xj4fSjU0qCmrVqD+7HblAW1KhTmg27GHm0RwNlTsrKdNroiXH+WszL6eyxvjdg==}
-    peerDependencies:
-      '@sveltejs/kit': ^2.13.0
-      svelte: ^5.0.0
 
   '@inquirer/ansi@2.0.7':
     resolution: {integrity: sha512-3eTuUO1vH2cZm2ZKHeQxnOqlTi9EfZDGgIe3BL3I4u+rJHocr9Fz86M4fjYABPvFnQG/gGK551HqDiIcETwU6Q==}
@@ -16211,23 +16244,6 @@ snapshots:
 
   '@img/sharp-win32-x64@0.35.3':
     optional: true
-
-  '@immich/justified-layout-wasm@0.4.3': {}
-
-  '@immich/ui@0.86.0(patch_hash=5ce02ddac7fa744f7120fcdc10f350a632e1421f74cf141f42c5cf7c1948fe16)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.56.10(@typescript-eslint/types@8.68.0))':
-    dependencies:
-      '@internationalized/date': 3.12.2
-      '@mdi/js': 7.4.47
-      '@sveltejs/kit': 2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0))
-      bits-ui: 2.18.1(@internationalized/date@3.12.2)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.10(@typescript-eslint/types@8.68.0))(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.56.10(@typescript-eslint/types@8.68.0))
-      fuse.js: 7.5.0
-      luxon: 3.7.2
-      simple-icons: 16.28.0
-      svelte: 5.56.10(@typescript-eslint/types@8.68.0)
-      svelte-highlight: 7.11.0
-      tailwind-merge: 3.6.0
-      tailwind-variants: 3.3.1(tailwind-merge@3.6.0)(tailwindcss@4.3.3)
-      tailwindcss: 4.3.3
 
   '@inquirer/ansi@2.0.7': {}
 

@@ -8,8 +8,8 @@
    */
   import './gpu-models.css';
   import { formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
-  import type { CloudMlJobModelDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { CloudMlJobModelDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCloudOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

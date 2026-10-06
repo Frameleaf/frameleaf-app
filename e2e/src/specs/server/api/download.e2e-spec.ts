@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, AssetVisibility, LoginResponseDto, SharedLinkType } from '@immich/sdk';
+import { AssetMediaResponseDto, AssetVisibility, LoginResponseDto, SharedLinkType } from '@frameleaf/sdk';
 import { readFile, writeFile } from 'node:fs/promises';
 import { app, tempDir, utils } from 'src/utils.js';
 import request from 'supertest';

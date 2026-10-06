@@ -14,7 +14,7 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility, type PersonResponseDto } from '@immich/sdk';
+  import { AssetVisibility, type PersonResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

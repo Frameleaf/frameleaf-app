@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type MapMarkerResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type MapMarkerResponseDto } from '@frameleaf/sdk';
 import { captureDay } from '$lib/frameleaf/explore';
 
 /**

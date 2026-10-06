@@ -5,7 +5,7 @@ import {
   setUserOnboarding,
   updateAlbumInfo,
   updateAlbumUser,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

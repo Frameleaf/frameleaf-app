@@ -18,8 +18,8 @@
     getDevelopPresets,
     updateDevelopPreset,
     type DevelopPresetResponseDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiContentSaveOutline, mdiDeleteOutline, mdiPlus } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

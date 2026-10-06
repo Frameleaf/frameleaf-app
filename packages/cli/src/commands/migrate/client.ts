@@ -20,7 +20,7 @@ import type {
   UpdateAlbumDto,
   UpdateAssetDto,
   UserAdminResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { createReadStream } from 'node:fs';
 
 export class MigrateHttpError extends Error {
@@ -69,7 +69,7 @@ const buildQuery = (params: Record<string, string | number | boolean | undefined
 };
 
 /**
- * A minimal, self-contained API client for one Frameleaf server. Unlike `@immich/sdk`
+ * A minimal, self-contained API client for one Frameleaf server. Unlike `@frameleaf/sdk`
  * (which keeps a single global `defaults`), each instance is fully independent, so
  * SERVER A and SERVER B can be driven concurrently. Uses the SDK only for types.
  */

@@ -41,8 +41,8 @@ vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
   getMyPreferenceHistory: vi.fn().mockResolvedValue({
     entries: [

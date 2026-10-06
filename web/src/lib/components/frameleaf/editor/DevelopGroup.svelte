@@ -13,7 +13,7 @@
     type DevelopGroupId,
     type DevelopValues,
   } from '$lib/frameleaf/develop';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiRestore } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

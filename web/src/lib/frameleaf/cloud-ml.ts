@@ -14,7 +14,7 @@ import {
   type CloudMlStatusResponseDto,
   type CloudMlWalletDto,
   type HardwareCheckResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import {
   bandFor,

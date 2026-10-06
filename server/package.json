@@ -1,5 +1,5 @@
 {
-  "name": "immich",
+  "name": "frameleaf",
   "version": "3.2.0",
   "description": "",
   "author": "",
@@ -22,7 +22,7 @@
     "start:debug": "nest start --debug 0.0.0.0:9230 --watch --",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0",
     "lint:fix": "pnpm run lint --fix",
-    "check": "pnpm --filter @immich/plugin-sdk build && tsc --noEmit",
+    "check": "pnpm --filter @frameleaf/plugin-sdk build && tsc --noEmit",
     "check:code": "pnpm run format && pnpm run lint && pnpm run check",
     "check:all": "pnpm run check:code && pnpm run test:cov",
     "test": "vitest --config test/vitest.config.mjs",
@@ -44,7 +44,7 @@
   "dependencies": {
     "@achingbrain/nat-port-mapper": "4.0.5",
     "@extism/extism": "2.0.0-rc13",
-    "@immich/plugin-sdk": "workspace:*",
+    "@frameleaf/plugin-sdk": "workspace:*",
     "@frameleaf/sql-tools": "workspace:*",
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",

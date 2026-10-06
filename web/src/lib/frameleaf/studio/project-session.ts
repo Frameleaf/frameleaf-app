@@ -58,7 +58,7 @@ import {
   type StudioProjectRestoreDto,
   type StudioProjectSaveDto,
   type StudioProjectSaveResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { StudioCommandEnvelope } from './commands';
 import { holdBackHiddenClips, withHeldClips, type StudioHeldClip } from './hidden-clips';
 import type { StudioProjectHandle } from './host-contract';

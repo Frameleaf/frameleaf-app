@@ -8,7 +8,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { handleRevokeRenderWorker } from '$lib/services/render-worker.service';
-  import type { RenderWorkerDto } from '@immich/sdk';
+  import type { RenderWorkerDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let { worker, onClose }: { worker: RenderWorkerDto; onClose: (revoked: boolean) => void } = $props();

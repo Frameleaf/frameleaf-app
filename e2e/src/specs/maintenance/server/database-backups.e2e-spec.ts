@@ -1,4 +1,4 @@
-import { LoginResponseDto, ManualJobName } from '@immich/sdk';
+import { LoginResponseDto, ManualJobName } from '@frameleaf/sdk';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';

@@ -1,4 +1,4 @@
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
 import { browser } from '$app/environment';
 
 /**
@@ -65,8 +65,8 @@ const activeModals = new Set<() => Promise<void>>();
 const trackedManagers = new WeakSet<object>();
 let dismissNewModals = false;
 
-/** All @immich/ui show/showDialog calls pass through open; track them once, before viewer actions can run. */
-export const trackSessionModals = (manager: typeof import('@immich/ui').modalManager) => {
+/** All @frameleaf/ui show/showDialog calls pass through open; track them once, before viewer actions can run. */
+export const trackSessionModals = (manager: typeof import('@frameleaf/ui').modalManager) => {
   if (trackedManagers.has(manager)) {
     return;
   }

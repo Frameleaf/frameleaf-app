@@ -41,8 +41,8 @@
     type UserAdminResponseDto,
     type UserPreferencesResponseDto,
     type UserPreferencesUpdateDto,
-  } from '@immich/sdk';
-  import { getByteUnitString } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { getByteUnitString } from '@frameleaf/ui';
   import { goto } from '$app/navigation';
   import { t } from 'svelte-i18n';
 

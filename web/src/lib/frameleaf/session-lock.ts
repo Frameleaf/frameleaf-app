@@ -1,4 +1,4 @@
-import { isHttpError, lockAuthSession } from '@immich/sdk';
+import { isHttpError, lockAuthSession } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { goto, invalidateAll } from '$app/navigation';

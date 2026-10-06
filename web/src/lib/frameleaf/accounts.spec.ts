@@ -1,4 +1,4 @@
-import { UserStatus } from '@immich/sdk';
+import { UserStatus } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_QUERY_MAX_LENGTH,

@@ -12,8 +12,8 @@ const state = vi.hoisted(() => ({
   update: vi.fn(),
   tiles: new Map<string, { state: 'pending' }>(),
 }));
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   getAssetInfo: state.info,
   updateAsset: state.update,
 }));

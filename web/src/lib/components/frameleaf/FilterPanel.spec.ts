@@ -1,4 +1,4 @@
-import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto } from '@immich/sdk';
+import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';

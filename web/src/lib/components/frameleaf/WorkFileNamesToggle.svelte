@@ -8,7 +8,7 @@
    */
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiFormatText } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

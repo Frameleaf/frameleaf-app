@@ -70,11 +70,11 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install locked App test dependencies
-        run: pnpm --filter 'immich...' --filter @immich/sdk --filter @immich/plugin-sdk install --frozen-lockfile --ignore-scripts
+        run: pnpm --filter 'frameleaf...' --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk install --frozen-lockfile --ignore-scripts
       - name: Build required SDKs
         run: |
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/plugin-sdk build
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
       - name: Install isolated locked Cloud test dependency
         run: |
           mkdir -p "$RUNNER_TEMP/cloud-test-dependencies"

@@ -3,7 +3,7 @@
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
-  import { AssetMediaSize } from '@immich/sdk';
+  import { AssetMediaSize } from '@frameleaf/sdk';
   import DelayedLoadingSpinner from '$lib/components/DelayedLoadingSpinner.svelte';
   import { onMount } from 'svelte';
   import { motionFade } from '$lib/frameleaf/motion';

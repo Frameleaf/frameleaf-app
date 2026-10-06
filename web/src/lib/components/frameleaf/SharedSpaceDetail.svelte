@@ -61,8 +61,8 @@
     type SharedSpaceMemberResponseDto,
     type SharedSpaceNewResponseDto,
     type SharedSpacePeopleResponseDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,

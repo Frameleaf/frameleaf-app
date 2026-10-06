@@ -34,8 +34,8 @@
     type AssetResponseDto,
     type PetObservationResponseDto,
     type PetResponseDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiClose, mdiPlus, mdiVectorRectangle } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

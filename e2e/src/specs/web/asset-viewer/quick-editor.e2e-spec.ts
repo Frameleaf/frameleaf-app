@@ -6,7 +6,7 @@ import {
   LoginResponseDto,
   setupPinCode,
   unlockAuthSession,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

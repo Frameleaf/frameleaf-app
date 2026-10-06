@@ -5,7 +5,7 @@ import {
   LoginResponseDto,
   PersonResponseDto,
   SourceType,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { PNG } from 'pngjs';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';

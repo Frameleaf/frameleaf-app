@@ -1,11 +1,11 @@
-import type { AssetLockReason, AssetStackResponseDto, AssetVisibility, TimelineOrderedSort } from '@immich/sdk';
+import type { AssetLockReason, AssetStackResponseDto, AssetVisibility, TimelineOrderedSort } from '@frameleaf/sdk';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 import type { TimelineDay } from './timeline-day.svelte';
 import type { ViewerAsset } from './viewer-asset.svelte';
 
 export type ViewportTopMonth = TimelineYearMonth | undefined | 'lead-in' | 'lead-out';
 
-export type AssetApiGetTimeBucketsRequest = Parameters<typeof import('@immich/sdk').getTimeBuckets>[0];
+export type AssetApiGetTimeBucketsRequest = Parameters<typeof import('@frameleaf/sdk').getTimeBuckets>[0];
 
 export type TimelineManagerOptions = Omit<AssetApiGetTimeBucketsRequest, 'size'> & {
   timelineAlbumId?: string;

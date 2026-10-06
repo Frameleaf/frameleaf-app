@@ -8,7 +8,7 @@
    * the identity, while accept, reassign and reject act on a proposal and leave one
    * durable record behind.
    *
-   * Every mutation goes through the real `@immich/sdk` pet services. Nothing on this page
+   * Every mutation goes through the real `@frameleaf/sdk` pet services. Nothing on this page
    * is a fixture, and the empty review state says which of the two empty cases applies.
    */
   import { goto } from '$app/navigation';
@@ -49,8 +49,8 @@
     type PetObservationResponseDto,
     type PetRecognitionStatusResponseDto,
     type PetResponseDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiPawOutline, mdiPlus } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -34,6 +34,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install migration tooling
-        run: pnpm --filter 'immich...' install --frozen-lockfile
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
       - name: Verify canonical migration ORDER
-        run: pnpm --filter immich migrations:verify-order
+        run: pnpm --filter frameleaf migrations:verify-order

@@ -6,7 +6,7 @@ import {
   type LibraryResponseDto,
   type LibraryScanResponseDto,
   type UserAdminResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   buildLibraryRows,
   canScanLibrary,

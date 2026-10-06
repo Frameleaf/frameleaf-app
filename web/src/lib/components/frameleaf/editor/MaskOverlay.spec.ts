@@ -1,4 +1,4 @@
-import { AssetDevelopMaskKind } from '@immich/sdk';
+import { AssetDevelopMaskKind } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createMask } from '$lib/frameleaf/photo-tools';
 import MaskOverlay from './MaskOverlay.svelte';

@@ -5,7 +5,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { sidebarCollapsed } from '$lib/stores/preferences.store';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiMenu } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

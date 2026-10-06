@@ -1,4 +1,4 @@
-import type { UserResponseDto } from '@immich/sdk';
+import type { UserResponseDto } from '@frameleaf/sdk';
 import { render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';

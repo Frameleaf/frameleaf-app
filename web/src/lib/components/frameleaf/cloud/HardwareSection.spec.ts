@@ -8,7 +8,7 @@ import {
   HardwareWorkerKind,
   HardwareWorkloadUnavailable,
   type HardwareCheckResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

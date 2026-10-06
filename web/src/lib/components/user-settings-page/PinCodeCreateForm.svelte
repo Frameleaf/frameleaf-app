@@ -7,8 +7,8 @@
    */
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { setupPinCode } from '@immich/sdk';
-  import { Button, Field, Heading, toastManager } from '@immich/ui';
+  import { setupPinCode } from '@frameleaf/sdk';
+  import { Button, Field, Heading, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   interface Props {

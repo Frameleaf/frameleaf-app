@@ -2,7 +2,7 @@ import { setOAuthContinue } from '$lib/frameleaf/auth-session-preference';
 import { load } from './+page';
 
 const auth = vi.hoisted(() => ({ authenticated: false }));
-vi.mock('@immich/sdk', () => ({ getPublicConfig: vi.fn().mockResolvedValue({}) }));
+vi.mock('@frameleaf/sdk', () => ({ getPublicConfig: vi.fn().mockResolvedValue({}) }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: vi.fn().mockResolvedValue((key: string) => key) }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({

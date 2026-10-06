@@ -2,7 +2,7 @@
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { defaultIconFor } from '$lib/frameleaf/album-directory';
-  import type { AlbumCollectionResponseDto, AlbumResponseDto } from '@immich/sdk';
+  import type { AlbumCollectionResponseDto, AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

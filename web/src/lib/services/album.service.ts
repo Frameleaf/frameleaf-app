@@ -19,8 +19,8 @@ import {
   type CreateAlbumDto,
   type UpdateAlbumDto,
   type UserResponseDto,
-} from '@immich/sdk';
-import { toastManager, type ActionItem } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager, type ActionItem } from '@frameleaf/ui';
 import { mdiImageOutline, mdiPlusBoxOutline, mdiUpload } from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';

@@ -14,8 +14,8 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { canPlaySlideshow } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCogOutline,
     mdiFilmstrip,

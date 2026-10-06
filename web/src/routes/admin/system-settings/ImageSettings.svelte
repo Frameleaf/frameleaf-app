@@ -1,6 +1,6 @@
 <script lang="ts">
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
-  import { Colorspace, ImageFormat } from '@immich/sdk';
+  import { Colorspace, ImageFormat } from '@frameleaf/sdk';
   import { motionFade } from '$lib/frameleaf/motion';
 
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';

@@ -39,8 +39,8 @@
     type CloudMlJobEstimateRequestDto,
     type CloudMlJobEstimateResponseDto,
     type CloudMlJobResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCloudOutline, mdiCloudUploadOutline, mdiOpenInNew } from '@mdi/js';
   import { onDestroy, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';

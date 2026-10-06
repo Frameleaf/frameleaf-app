@@ -3,7 +3,7 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
-  import type { AdminConfigNsfwDetectionDto, AdminConfigMachineLearningDto } from '@immich/sdk';
+  import type { AdminConfigNsfwDetectionDto, AdminConfigMachineLearningDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   interface Props {

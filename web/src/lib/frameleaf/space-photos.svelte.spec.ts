@@ -1,4 +1,4 @@
-import { AssetOrder } from '@immich/sdk';
+import { AssetOrder } from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
 import { SpacePhotoSet, type SpacePageFetcher } from '$lib/frameleaf/space-photos.svelte';

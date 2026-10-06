@@ -449,7 +449,7 @@ export const coerceRational = (value: unknown): Rational | null => {
  *
  * A shared import was considered and rejected: `server` and `web` are separate packages with
  * separate `tsconfig` roots, separate builds and no path alias between them, and the only thing
- * they already share is `@immich/sdk`, which is *generated* from the OpenAPI document and
+ * they already share is `@frameleaf/sdk`, which is *generated* from the OpenAPI document and
  * therefore cannot carry hand-written arithmetic. Introducing a third published package for two
  * hundred lines of integer maths would add a build step, a version to keep in step and a
  * publish gate to every change here — a larger and more fragile contract than the file itself.

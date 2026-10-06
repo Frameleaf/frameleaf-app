@@ -1,4 +1,4 @@
-import { AnalyticsRange, AnalyticsScopeKind } from '@immich/sdk';
+import { AnalyticsRange, AnalyticsScopeKind } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
@@ -19,8 +19,8 @@ vi.mock('$app/state', () => ({
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 const sdk = vi.hoisted(() => ({ getAnalyticsScopes: vi.fn(), getAnalyticsReport: vi.fn() }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   ...sdk,
 }));
 

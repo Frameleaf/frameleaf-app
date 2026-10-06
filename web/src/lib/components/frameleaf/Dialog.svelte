@@ -1,7 +1,7 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
   /**

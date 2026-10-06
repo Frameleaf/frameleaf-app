@@ -1,4 +1,4 @@
-import { AssetOrder } from '@immich/sdk';
+import { AssetOrder } from '@frameleaf/sdk';
 import { LIBRARY_SORTS, type LibrarySort } from '$lib/frameleaf/library-session';
 
 /**

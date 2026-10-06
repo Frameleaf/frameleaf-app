@@ -1,4 +1,4 @@
-import { getStudioWorkspace, saveStudioWorkspace, type StudioWorkspaceDto } from '@immich/sdk';
+import { getStudioWorkspace, saveStudioWorkspace, type StudioWorkspaceDto } from '@frameleaf/sdk';
 import type { StudioWorkspaceSaveResult, StudioWorkspaceView } from '$lib/frameleaf/studio/host-contract';
 
 /**

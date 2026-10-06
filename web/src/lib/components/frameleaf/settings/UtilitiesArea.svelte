@@ -16,7 +16,7 @@
   import { UTILITY_GROUPS, utilityTool, utilityToolsFor, type UtilityId } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';

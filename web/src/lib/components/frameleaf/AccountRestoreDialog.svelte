@@ -10,7 +10,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { handleRestoreUserAdmin } from '$lib/services/user-admin.service';
-  import type { UserAdminResponseDto } from '@immich/sdk';
+  import type { UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let { user, onClose }: { user: UserAdminResponseDto; onClose: () => void } = $props();

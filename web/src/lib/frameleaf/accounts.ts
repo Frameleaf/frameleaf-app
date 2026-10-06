@@ -12,7 +12,7 @@
  * refuses self-deletion and `UserAdminService.update` refuses a self admin-status change.
  * Hiding a control is a courtesy; the endpoint is the boundary.
  */
-import { UserStatus, type UserAdminResponseDto } from '@immich/sdk';
+import { UserStatus, type UserAdminResponseDto } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 
 /** Bounds a pasted block of text so every keystroke cannot re-filter against a huge string. */

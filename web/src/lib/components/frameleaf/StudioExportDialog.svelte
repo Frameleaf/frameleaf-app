@@ -37,10 +37,10 @@
     StudioExportResolution,
     getMlCapabilities,
     type MlCapabilityDestinationDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import { resolvePosition, type DetectedGpu, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiExportVariant } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';

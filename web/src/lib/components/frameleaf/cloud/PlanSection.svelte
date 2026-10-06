@@ -32,7 +32,7 @@
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckCircleOutline,
     mdiClose,

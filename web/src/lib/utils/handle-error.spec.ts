@@ -1,4 +1,4 @@
-import { toastManager } from '@immich/ui';
+import { toastManager } from '@frameleaf/ui';
 import { handleError, setUnauthorizedHandler } from '$lib/utils/handle-error';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
@@ -11,8 +11,8 @@ const httpError = (status: number, message = 'Invalid share key') => ({
   data: { message },
 });
 
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => (error as { name?: string })?.name === 'HttpError',
 }));
 

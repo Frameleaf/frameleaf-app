@@ -1,4 +1,4 @@
-import { Permission } from '@immich/sdk';
+import { Permission } from '@frameleaf/sdk';
 import { stat } from 'node:fs/promises';
 import { app, immichCli, utils } from 'src/utils.js';
 import { beforeEach, describe, expect, it } from 'vitest';

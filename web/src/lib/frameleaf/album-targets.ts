@@ -1,4 +1,4 @@
-import { AlbumKind, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
 import { canEdit } from '$lib/frameleaf/album-directory';
 
 /**

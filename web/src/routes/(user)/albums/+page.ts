@@ -1,4 +1,4 @@
-import { getAlbumTree, getSharedSpaceInvitations } from '@immich/sdk';
+import { getAlbumTree, getSharedSpaceInvitations } from '@frameleaf/sdk';
 import { pendingInvitations } from '$lib/frameleaf/shared-space';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';

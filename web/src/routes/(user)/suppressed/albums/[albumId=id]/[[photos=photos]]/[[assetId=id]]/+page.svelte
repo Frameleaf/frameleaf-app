@@ -12,8 +12,8 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
-  import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
-  import { IconButton } from '@immich/ui';
+  import { AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { IconButton } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

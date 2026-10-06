@@ -5,7 +5,7 @@ import {
   VideoAdjustModel,
   VideoDevelopPreset,
   VideoTrimMode,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   changeVideoDraft,
   fastTrimBounds,

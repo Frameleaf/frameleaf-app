@@ -3,7 +3,7 @@ import type {
   ServerAboutResponseDto,
   ServerStorageResponseDto,
   ServerVersionHistoryResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 interface UserInteractions {

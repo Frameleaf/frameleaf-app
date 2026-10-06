@@ -14,8 +14,8 @@
   import { handlePromiseError } from '$lib/utils';
   import { downloadArchive, ignoreCancelledDownload, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
-  import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import type { AlbumResponseDto, SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -10,8 +10,8 @@ class HttpError extends Error {
   }
 }
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => error instanceof HttpError,
 }));
 

@@ -5,7 +5,7 @@ import {
   type LibraryStatsResponseDto,
   type ServerConfigDto,
   type UserAdminHistoryEventResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
@@ -29,14 +29,14 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { userDeleteDelay: 7 } as ServerConfigDto },
 }));
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getUserHistoryAdmin: vi.fn(),
   deleteUserSessionAdmin: vi.fn(),
 }));
 
-vi.mock('@immich/ui', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/ui')>()),
+vi.mock('@frameleaf/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/ui')>()),
   modalManager: { showDialog: vi.fn(), show: vi.fn() },
   toastManager: { primary: vi.fn(), danger: vi.fn() },
 }));
@@ -102,7 +102,7 @@ const event = (overrides: Partial<UserAdminHistoryEventResponseDto>): UserAdminH
 beforeEach(async () => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  const { getUserHistoryAdmin } = await import('@immich/sdk');
+  const { getUserHistoryAdmin } = await import('@frameleaf/sdk');
   vi.mocked(getUserHistoryAdmin).mockResolvedValue({ events: [], hasMore: false });
 });
 
@@ -210,7 +210,7 @@ describe('AccountDetailTabs (FL-76)', () => {
 
   describe('Activity', () => {
     it("lists the account's administrator history in the template's wording, newest first", async () => {
-      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      const { getUserHistoryAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserHistoryAdmin).mockResolvedValue({
         events: [
           event({ id: 'e3', action: AdminAuditAction.SessionRevoked, detail: 'iOS · iPhone' }),
@@ -237,7 +237,7 @@ describe('AccountDetailTabs (FL-76)', () => {
     });
 
     it('fetches the history again each time the tab opens', async () => {
-      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      const { getUserHistoryAdmin } = await import('@frameleaf/sdk');
       renderTabs();
 
       await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
@@ -256,7 +256,7 @@ describe('AccountDetailTabs (FL-76)', () => {
     });
 
     it('loads older events after the last one shown', async () => {
-      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      const { getUserHistoryAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserHistoryAdmin)
         .mockResolvedValueOnce({ events: [event({ id: 'e2', action: AdminAuditAction.PinReset })], hasMore: true })
         .mockResolvedValueOnce({
@@ -275,7 +275,7 @@ describe('AccountDetailTabs (FL-76)', () => {
     });
 
     it('says when the history cannot be loaded and offers a retry', async () => {
-      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      const { getUserHistoryAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserHistoryAdmin).mockRejectedValueOnce(new Error('offline'));
       renderTabs();
 

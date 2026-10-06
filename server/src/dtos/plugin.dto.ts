@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { JsonSchemaDto } from 'src/dtos/json-schema.dto.js';

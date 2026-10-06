@@ -4,7 +4,7 @@ import {
   MaintenanceAction,
   setMaintenanceMode,
   type DatabaseBackupUploadDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadRequest } from '$lib/utils';

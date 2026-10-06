@@ -31,8 +31,8 @@
     updateMyUser,
     UserAvatarColor,
     type AssetResponseDto,
-  } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

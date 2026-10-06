@@ -26,7 +26,7 @@ import {
   type AssetRestorationOptionsDto,
   type AssetRestorationRequestDto,
   type AssetRestorationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { restorationIdOfMedia } from './assets';
 import type { StudioCommandEnvelope, StudioCommandPayloads } from './commands';

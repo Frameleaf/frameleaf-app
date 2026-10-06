@@ -23,8 +23,8 @@
   import { buildExploreShortcuts, captureDay, isVideoAsset } from '$lib/frameleaf/explore';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, type AlbumResponseDto, type AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, type AlbumResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiChevronRight,
     mdiClockOutline,

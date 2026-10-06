@@ -60,8 +60,8 @@ source:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter @immich/sdk build
-pnpm --filter @immich/cli build
+pnpm --filter @frameleaf/sdk build
+pnpm --filter @frameleaf/cli build
 ```
 
 It needs network access to both servers and only a little free disk: each

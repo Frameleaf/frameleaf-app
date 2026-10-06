@@ -9,7 +9,7 @@ import {
   type PetCandidateResponseDto,
   type PetObservationResponseDto,
   type PetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   confidencePercent,

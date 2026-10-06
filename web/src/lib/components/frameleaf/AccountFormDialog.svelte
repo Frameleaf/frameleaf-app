@@ -25,7 +25,7 @@
   import { handleCreateUserAdmin, handleUpdateUserAdmin } from '$lib/services/user-admin.service';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
-  import { getUserAdmin, UserAvatarColor, type UserAdminResponseDto } from '@immich/sdk';
+  import { getUserAdmin, UserAvatarColor, type UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let {

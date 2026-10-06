@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
    * Restore from backup, step 1 (FL-80): the install check before an administrator picks a backup,
-   * in the maintenance page's Frameleaf card instead of upstream `@immich/ui` layout. Each storage
+   * in the maintenance page's Frameleaf card instead of upstream `@frameleaf/ui` layout. Each storage
    * folder shows whether it is readable and writable and whether it holds files, with the same hints.
    */
-  import { detectPriorInstall, type MaintenanceDetectInstallResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { detectPriorInstall, type MaintenanceDetectInstallResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlert, mdiArrowRight, mdiCheck, mdiClose, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -13,8 +13,8 @@
     restoreFileTrashItem,
     type FileTrashItemResponseDto,
     type FileTrashResponseDto,
-  } from '@immich/sdk';
-  import { modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { modalManager, toastManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { locale, t } from 'svelte-i18n';
 

@@ -1,5 +1,5 @@
-import type { StackResponseDto } from '@immich/sdk';
-import { modalManager, toastManager } from '@immich/ui';
+import type { StackResponseDto } from '@frameleaf/sdk';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
