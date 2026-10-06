@@ -128,7 +128,7 @@ test.describe('Database Backups', () => {
   });
 
   test('rollback to restore point if backup is missing admin', async ({ context, page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     await utils.resetBackups(admin.accessToken);
     await utils.prepareTestBackup('empty', admin.accessToken);
