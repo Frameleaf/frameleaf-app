@@ -64,7 +64,7 @@ it.each([
       unlink,
       checkFileExists: async (path: string) => !!(await lstat(path).catch(() => null)),
     },
-    logger: { warn: vi.fn() },
+    logger: { warn: vi.fn(), error: vi.fn() },
     binding: async () => {},
     guarded: guard,
     index: {
@@ -252,4 +252,35 @@ it('authorizes a hidden Live Photo component only through its selected, still-au
   await expect(
     checkOwnerRestoreItems(auth, manifest, snapshot, true, index, ['motion'], true, 'still'),
   ).rejects.toThrow('unavailable');
+});
+
+it('retains a terminal restore diagnostic without exposing exception text or details', async () => {
+  const sentinel = 'private-buddy-sentinel';
+  const error = Object.assign(new Error(`${sentinel}/path?token=${sentinel}`), {
+    code: '23505',
+    detail: sentinel,
+    cause: new Error(sentinel),
+  });
+  const logger = { error: vi.fn() };
+  const fail = vi.fn().mockResolvedValue('failed');
+  const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
+    logger,
+    binding: () => Promise.reject(error),
+    operations: { fail },
+  });
+  await service.runClaim({ id: 'operation', snapshot: {} }, 'claim');
+  expect(logger.error).toHaveBeenCalledExactlyOnceWith(
+    'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"23505","status":null}',
+  );
+  expect(fail).toHaveBeenCalledExactlyOnceWith(
+    'operation',
+    'claim',
+    {
+      error: 'Restore stopped. Check your PIN session, mounts, recovery kit, and backup integrity.',
+      errorCode: 'buddy_restore_failed',
+    },
+    { retry: false },
+  );
+  expect(JSON.stringify(logger.error.mock.calls)).not.toContain(sentinel);
+  expect(JSON.stringify(fail.mock.calls)).not.toContain(sentinel);
 });

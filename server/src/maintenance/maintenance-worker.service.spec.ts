@@ -460,6 +460,34 @@ describe(MaintenanceWorkerService.name, () => {
       expect(() => sut.claimAction(restore)).not.toThrow();
     });
 
+    it('publishes the terminal restore error only after its reservation is released', async () => {
+      const releasing = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      held.release.mockImplementation(() => {
+        releasing.resolve();
+        return released.promise;
+      });
+      databaseBackupServiceMock.restoreDatabaseBackup.mockRejectedValue(new Error('Migration failed'));
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      const running = sut.setAction(restore);
+
+      try {
+        await releasing.promise;
+        expect(await sut.status()).toEqual(expect.objectContaining({ task: 'ready' }));
+        expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+      } finally {
+        released.resolve();
+        await running;
+      }
+
+      expect(await sut.status()).toEqual(
+        expect.objectContaining({ task: 'error', error: 'Something went wrong, see logs!' }),
+      );
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+      expect(held.release).toHaveBeenCalledOnce();
+    });
+
     it('does not restore when another process holds the maintenance lock, and keeps refusing meanwhile', async () => {
       mocks.database.holdLock.mockResolvedValueOnce(null);
 
