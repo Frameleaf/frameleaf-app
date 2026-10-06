@@ -1,6 +1,7 @@
 import { JobName, JobStatus, MediaOperationStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { QueueExecution } from 'src/queue/types.js';
+import { EDIT_NOTHING_PUBLISHED, EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EDIT_OPERATION_REDISPATCH_MS, EditOperationEdit } from 'src/utils/edit-operation.js';
 
 const LEASE_MS = 30_000;
@@ -80,16 +81,28 @@ describe(EditOperationTracker.name, () => {
   describe('execute', () => {
     it('registers one deferred operation completion when the executor completes before returning Skipped', async () => {
       const adoptions: Array<(tx: never) => Promise<void>> = [];
+      const afterCommit: Array<() => Promise<void>> = [];
+      const failureSettlements: NonNullable<QueueExecution['failureSettlements']> = [];
+      let activeRun: EditOperationRun | undefined;
       await queueExecution.run(
-        { signal: new AbortController().signal, progress: vi.fn(), progressUnits: 0, adoptions } as never,
+        {
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions,
+          afterCommit,
+          failureSettlements,
+        } as never,
         () =>
           sut.execute('op-1', async (run) => {
+            activeRun = run;
             await run!.complete(null);
             return JobStatus.Skipped;
           }),
       );
       expect(operations.complete).not.toHaveBeenCalled();
       expect(adoptions).toHaveLength(1);
+      expect(failureSettlements).toHaveLength(1);
       const transaction = {} as never;
       await adoptions[0](transaction);
       expect(operations.complete).toHaveBeenCalledExactlyOnceWith(
@@ -102,6 +115,10 @@ describe(EditOperationTracker.name, () => {
         transaction,
         true,
       );
+      expect(activeRun!.done).toBe(false);
+      expect(afterCommit).toHaveLength(1);
+      await afterCommit[0]();
+      expect(activeRun!.done).toBe(true);
     });
     it('runs the executor exactly as before when the job names no row', async () => {
       const work = vi.fn().mockResolvedValue(JobStatus.Success);
