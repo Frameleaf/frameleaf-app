@@ -1,5 +1,6 @@
 import { JobName, JobStatus, MediaOperationStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { QueueExecution } from 'src/queue/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EDIT_OPERATION_REDISPATCH_MS, EditOperationEdit } from 'src/utils/edit-operation.js';
@@ -84,27 +85,27 @@ describe(EditOperationTracker.name, () => {
       const afterCommit: Array<() => Promise<void>> = [];
       const failureSettlements: NonNullable<QueueExecution['failureSettlements']> = [];
       let activeRun: EditOperationRun | undefined;
-      await queueExecution.run(
-        {
-          signal: new AbortController().signal,
-          progress: vi.fn(),
-          progressUnits: 0,
-          adoptions,
-          afterCommit,
-          failureSettlements,
-        } as never,
-        () =>
-          sut.execute('op-1', async (run) => {
-            activeRun = run;
-            await run!.complete(null);
-            return JobStatus.Skipped;
-          }),
+      const context = {
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions,
+        afterCommit,
+        failureSettlements,
+      } as never;
+      await queueExecution.run(context, () =>
+        sut.execute('op-1', async (run) => {
+          activeRun = run;
+          await run!.complete(null);
+          return JobStatus.Skipped;
+        }),
       );
       expect(operations.complete).not.toHaveBeenCalled();
       expect(adoptions).toHaveLength(1);
       expect(failureSettlements).toHaveLength(1);
+      expect(afterCommit).toEqual([]);
       const transaction = {} as never;
-      await adoptions[0](transaction);
+      await queueExecution.run(context, () => publicationTransaction.run(transaction, () => adoptions[0](transaction)));
       expect(operations.complete).toHaveBeenCalledExactlyOnceWith(
         'op-1',
         'token-1',

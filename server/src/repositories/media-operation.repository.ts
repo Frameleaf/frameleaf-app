@@ -209,7 +209,7 @@ export class MediaOperationRepository {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  private changed<T extends Partial<MediaOperationChange> | undefined>(rows: T | T[]): void {
+  private changed<T extends Partial<MediaOperationChange> | undefined>(rows: T | T[], executor?: Kysely<DB>): void {
     const changes = (Array.isArray(rows) ? rows : [rows]).filter(
       (row): row is T & MediaOperationChange => !!row?.id && !!row?.ownerId,
     );
@@ -217,6 +217,9 @@ export class MediaOperationRepository {
       return;
     }
     const context = queueExecution.getStore();
+    // An external transaction owns its commit. Without its queue observer scope, keep the
+    // durable update silent rather than announce a change that can still roll back.
+    if (executor?.isTransaction && !(context && Object.is(executor, publicationTransaction.getStore()))) return;
     if (context && publicationTransaction.getStore()) {
       (context.afterCommit ??= []).push(() => Promise.resolve(this.changed(changes)));
       return;
@@ -1226,7 +1229,7 @@ export class MediaOperationRepository {
               .executeTakeFirst(),
           );
     if (requeued) {
-      this.changed(requeued);
+      this.changed(requeued, options.executor);
       return 'retrying';
     }
     const result = await write((db) =>
@@ -1248,7 +1251,7 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-    this.changed(result);
+    this.changed(result, options.executor);
     return result ? 'failed' : false;
   }
   /**
@@ -1509,7 +1512,7 @@ export class MediaOperationRepository {
       )
       .returning(['id', 'ownerId'])
       .executeTakeFirst();
-    this.changed(result);
+    this.changed(result, options.executor);
     return !!result;
   }
   /**
