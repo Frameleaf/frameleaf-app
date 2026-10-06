@@ -19,10 +19,10 @@ import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
 import { loginDto, signupDto } from 'src/fixtures.js';
 import { ownedWait } from 'src/harness-context.js';
 import { resetWhilePaused } from 'src/harness-reset.js';
-import { withDeadline } from 'src/harness-wait.js';
+import { withDeadline, type WaitContext } from 'src/harness-wait.js';
 import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // Reset 8s + authentication 30s + snapshot 5s + pause 10s + three uploads
 // (60s CI / 10s local each) + backup 18s + empty 10s. Reserve another
@@ -34,6 +34,87 @@ const assetFilepath = `${testAssetDir}/metadata/gps-position/thompson-springs.jp
 const asset1Filepath = `${testAssetDir}/albums/nature/el_torcal_rocks.jpg`;
 const asset2Filepath = `${testAssetDir}/albums/nature/wood_anemones.jpg`;
 
+const runIntegrityFixtureCommand = async (context: WaitContext, args: string[], failureMessage: string) => {
+  const nativeTimeout = Math.min(5000, Math.floor((context.remaining() - 3000) / 1000) * 1000);
+  if (nativeTimeout <= 0) {
+    throw new Error('Integrity fixture command refused without a complete native stop budget');
+  }
+  await new Promise<void>((resolve, reject) => {
+    const marker = `FL333_INTEGRITY_DONE_${randomUUID()}`;
+    let quarantined = false;
+    const quarantine = () => {
+      if (quarantined) {
+        return;
+      }
+      quarantined = true;
+      // Never resolve/reject into resetWhilePaused while remote work is uncertain.
+      // Worker threads share this PID; no parent or unrelated process is killed.
+      setTimeout(() => {
+        try {
+          process.kill(process.pid, 'SIGKILL');
+        } catch {
+          // eslint-disable-next-line unicorn/no-process-exit -- Throwing could restore queues while remote work remains uncertain.
+          process.exit(1);
+        }
+      }, 1000);
+      try {
+        process.kill(process.pid, 'SIGTERM');
+      } catch {
+        try {
+          process.kill(process.pid, 'SIGKILL');
+        } catch {
+          // eslint-disable-next-line unicorn/no-process-exit -- Throwing could restore queues while remote work remains uncertain.
+          process.exit(1);
+        }
+      }
+    };
+    // Reserve the existing kill allowance 1s and transport settlement 2s.
+    const hostTimer = setTimeout(quarantine, nativeTimeout + 3000);
+    const child = spawn(
+      'docker',
+      [
+        'exec',
+        'immich-e2e-server',
+        'sh',
+        '-c',
+        String.raw`marker=$1; duration=$2; shift 2; timeout --signal=TERM --kill-after=1s "$duration" "$@"; status=$?; printf "%s:%s\n" "$marker" "$status"; exit "$status"`,
+        'integrity-fixture',
+        marker,
+        `${nativeTimeout / 1000}s`,
+        ...args,
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    let output = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      if (quarantined) {
+        return;
+      }
+      if (output.length + chunk.length > 128) {
+        quarantine();
+        return;
+      }
+      output += chunk;
+    });
+    child.once('error', quarantine);
+    child.once('close', (code, exitSignal) => {
+      if (quarantined) {
+        return;
+      }
+      clearTimeout(hostTimer);
+      if (exitSignal || code === null || output !== `${marker}:${code}\n`) {
+        quarantine();
+      } else if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(failureMessage));
+      }
+    });
+  });
+  context.remaining();
+};
+
 describe('/admin/integrity', () => {
   let admin: LoginResponseDto;
   let asset: AssetMediaResponseDto;
@@ -43,6 +124,8 @@ describe('/admin/integrity', () => {
 
   let user2: LoginResponseDto;
   let asset2: AssetMediaResponseDto;
+  let fixtureRestorationFailed = false;
+  let fixtureRestorationFailure: unknown;
 
   beforeAll(
     withApiAssetReadiness(INTEGRITY_SETUP_WORK_TIMEOUT, async (signal) => {
@@ -145,78 +228,11 @@ describe('/admin/integrity', () => {
                 context.remaining();
                 // Only the native wrapper's marker plus matching normal CLI close proves
                 // completion. An uncertain stop quarantines this runner before restoration.
-                await new Promise<void>((resolve, reject) => {
-                  const marker = `FL333_INTEGRITY_DONE_${randomUUID()}`;
-                  let quarantined = false;
-                  const quarantine = () => {
-                    if (quarantined) {
-                      return;
-                    }
-                    quarantined = true;
-                    // Never resolve/reject into resetWhilePaused while remote work is uncertain.
-                    // Worker threads share this PID; no parent or unrelated process is killed.
-                    setTimeout(() => {
-                      try {
-                        process.kill(process.pid, 'SIGKILL');
-                      } catch {
-                        // eslint-disable-next-line unicorn/no-process-exit -- Throwing could restore queues while remote work remains uncertain.
-                        process.exit(1);
-                      }
-                    }, 1000);
-                    try {
-                      process.kill(process.pid, 'SIGTERM');
-                    } catch {
-                      try {
-                        process.kill(process.pid, 'SIGKILL');
-                      } catch {
-                        // eslint-disable-next-line unicorn/no-process-exit -- Throwing could restore queues while remote work remains uncertain.
-                        process.exit(1);
-                      }
-                    }
-                  };
-                  // Native timeout 5s + kill allowance 1s + transport settlement 2s.
-                  const hostTimer = setTimeout(quarantine, 8000);
-                  const child = spawn(
-                    'docker',
-                    [
-                      'exec',
-                      'immich-e2e-server',
-                      'sh',
-                      '-c',
-                      String.raw`marker=$1; shift; timeout --signal=TERM --kill-after=1s 5s "$@"; status=$?; printf "%s:%s\n" "$marker" "$status"; exit "$status"`,
-                      'integrity-backup',
-                      marker,
-                      ...args,
-                    ],
-                    { stdio: ['ignore', 'pipe', 'ignore'] },
-                  );
-                  let output = '';
-                  child.stdout.setEncoding('utf8');
-                  child.stdout.on('data', (chunk: string) => {
-                    if (quarantined) {
-                      return;
-                    }
-                    if (output.length + chunk.length > 128) {
-                      quarantine();
-                      return;
-                    }
-                    output += chunk;
-                  });
-                  child.once('error', quarantine);
-                  child.once('close', (code, exitSignal) => {
-                    if (quarantined) {
-                      return;
-                    }
-                    clearTimeout(hostTimer);
-                    if (exitSignal || code === null || output !== `${marker}:${code}\n`) {
-                      quarantine();
-                    } else if (code === 0) {
-                      resolve();
-                    } else {
-                      reject(new Error('Integrity fixture backup command failed after confirmed native completion'));
-                    }
-                  });
-                });
+                await runIntegrityFixtureCommand(
+                  context,
+                  args,
+                  'Integrity fixture backup command failed after confirmed native completion',
+                );
                 context.remaining();
               }
             },
@@ -274,9 +290,39 @@ describe('/admin/integrity', () => {
     INTEGRITY_SETUP_TIMEOUT,
   );
 
-  afterEach(async () => {
-    await utils.deleteFolder(`/data/upload/${admin.userId}`);
-    await utils.copyFolder(`/data/bak/${admin.userId}`, `/data/upload/${admin.userId}`);
+  beforeEach(() => {
+    if (fixtureRestorationFailed) {
+      throw fixtureRestorationFailure;
+    }
+  });
+
+  afterEach(async ({ signal }) => {
+    if (fixtureRestorationFailed) {
+      throw fixtureRestorationFailure;
+    }
+    try {
+      // A timed-out test signal cannot own this join. Refuse fixture replacement
+      // unless admitted server work settles within the existing reset work budget.
+      await withDeadline('Settle integrity work before fixture restoration', 8_000, async (context) => {
+        await utils.settlePendingWaits(signal);
+        context.remaining();
+        await utils.waitForQueue(admin.accessToken, QueueName.IntegrityCheck, context);
+        await runIntegrityFixtureCommand(
+          context,
+          ['rm', '-r', `/data/upload/${admin.userId}`],
+          'Integrity fixture deletion failed after confirmed native completion',
+        );
+        await runIntegrityFixtureCommand(
+          context,
+          ['cp', '-r', `/data/bak/${admin.userId}`, `/data/upload/${admin.userId}`],
+          'Integrity fixture restoration failed after confirmed native completion',
+        );
+      });
+    } catch (error) {
+      fixtureRestorationFailed = true;
+      fixtureRestorationFailure = error;
+      throw error;
+    }
   });
 
   describe('GET /runs (FL-81)', async () => {
