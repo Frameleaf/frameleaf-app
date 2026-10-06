@@ -27,6 +27,7 @@ import {
 } from 'src/queue/library-admission.js';
 import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -777,10 +778,11 @@ export class JobRepository {
       select j.id, j.name, case when j.sensitive then '{}'::jsonb else j.data end data,
       (extract(epoch from j."createdAt") * 1000)::bigint::float8 timestamp, j.attempt "attemptsMade", j.error "failedReason",
       case when j.state in ('failed','needs_attention','blocked') then 'failed'
+        when j."operationPaused" then 'paused'
         when j.state in ('pending','waiting') and j."availableAt" > now() then 'delayed'
         when j.state in ('pending','waiting') and q.paused then 'paused'
         when j.state = 'pending' then 'waiting' else j.state end status
-      from job j join job_queue q on q.name = j.queue where j.queue = ${name}
+      from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
       ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
     return rows;
   }
