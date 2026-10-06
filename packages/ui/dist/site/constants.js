@@ -13,7 +13,7 @@ export const Constants = {
         iOS: 'https://get.immich.app/ios',
         Android: 'https://get.immich.app/android',
         FDroid: 'https://get.immich.app/fdroid',
-        GithubRelease: 'https://github.com/immich-app/immich/releases/latest',
+        GithubRelease: 'https://github.com/Frameleaf/frameleaf-app/releases/latest',
         Download: 'https://immich.app/download',
     },
     Sites: {
