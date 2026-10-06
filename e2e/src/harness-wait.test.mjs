@@ -70,8 +70,9 @@ test('reset skips only empty clean queues and rechecks periodic work without byp
     'emptyQueue',
     'unfinishedOperations',
     'asBearerAuth',
-    `return async (context) => { const token = 'token'; let phase; let lastUnfinished;
-      ${stripTypeScriptTypes(source.slice(start, end))} };`,
+    `${stripTypeScriptTypes(`const drain = async (context) => {
+      const token = 'token'; let phase; let lastUnfinished;
+      ${source.slice(start, end)} };`)}\nreturn drain;`,
   )(
     (_token, context) => {
       context.remaining();
