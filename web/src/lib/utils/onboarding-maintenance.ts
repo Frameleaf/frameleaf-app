@@ -33,7 +33,7 @@ export async function waitForOnboardingMaintenance(owner: AbortSignal): Promise<
         }
       }
       readiness.signal.throwIfAborted();
-      if (maintenanceMode === true) {
+      if (maintenanceMode) {
         if (maintenanceShouldRedirect(true, location)) {
           location.reload();
         }
