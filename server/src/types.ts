@@ -573,7 +573,7 @@ export type JobItem =
 
   // Facial Recognition
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
-  | { name: JobName.AssetDetectFaces; data: IEntityJob }
+  | { name: JobName.AssetDetectFaces; data: IEntityJob & { preserveImportedFaces?: boolean } }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }

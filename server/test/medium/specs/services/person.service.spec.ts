@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
 import {
@@ -12,6 +13,10 @@ import {
   MlWorkload,
   SourceType,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { QueueExecution } from 'src/queue/types.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -405,6 +410,118 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each(['empty', 'nonmatching'] as const)(
+      'settles an imported %s detection as failed without losing people or featured faces, including retry',
+      async (result) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Imported person', isHidden: true });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, description: '' });
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'imported-preview.jpg' });
+        const { assetFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.MachineLearning,
+          correctedAt: null,
+          deletedAt: null,
+          imageWidth: 100,
+          imageHeight: 100,
+          boundingBoxX1: 10,
+          boundingBoxY1: 10,
+          boundingBoxX2: 30,
+          boundingBoxY2: 30,
+        });
+        await ctx.get(PersonRepository).update({ ...person, faceAssetId: assetFace.id });
+        const readFaces = () =>
+          ctx.database.selectFrom('asset_face').selectAll().where('assetId', '=', asset.id).execute();
+        const readPerson = () =>
+          ctx.database
+            .selectFrom('person')
+            .selectAll()
+            .where('ownerId', '=', user.id)
+            .where('personGroupId', '=', person.personGroupId)
+            .executeTakeFirstOrThrow();
+        const before = { faces: await readFaces(), person: await readPerson() };
+        ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+          imageWidth: 100,
+          imageHeight: 100,
+          faces:
+            result === 'empty'
+              ? []
+              : [{ boundingBox: { x1: 70, y1: 70, x2: 90, y2: 90 }, embedding: newEmbedding(), score: 1 }],
+        });
+        const queue = `import-faces-${randomUUID()}`;
+        const worker = randomUUID();
+        const runId = randomUUID();
+        const store = new SqlQueueStore(ctx.database);
+        await store.initialize([queue], worker);
+        await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, 'immich-import-derived', '{}'::jsonb)`.execute(
+          ctx.database,
+        );
+        await store.enqueue([
+          {
+            queue,
+            name: JobName.AssetDetectFaces,
+            data: { id: asset.id, preserveImportedFaces: true },
+            runId,
+            itemKey: asset.id,
+            rootItemKey: asset.id,
+            safeToRetry: true,
+            sensitive: false,
+            deadlineMs: 60_000,
+          },
+        ]);
+        await store.finishEnumeration(runId);
+        const reason = 'Imported face regeneration unresolved: detection did not match retained faces';
+        for (const attempt of [1, 2]) {
+          const [claim] = await new SqlQueueStore(ctx.database).claim(queue, worker);
+          expect(claim).toMatchObject({ attempt, runId, data: { id: asset.id, preserveImportedFaces: true } });
+          const execution: QueueExecution = {
+            claim,
+            signal: new AbortController().signal,
+            progress: vi.fn(),
+            progressUnits: 0,
+            adoptions: [],
+            followups: [],
+            buffering: false,
+          };
+          await queueExecution.run(execution, () =>
+            sut.handleDetectFaces(claim.data as JobOf<JobName.AssetDetectFaces>),
+          );
+          await expect(
+            store.complete(claim, execution.followups, (tx) =>
+              publicationTransaction.run(tx, () =>
+                queueExecution.run(execution, async () => {
+                  execution.buffering = true;
+                  for (const adopt of execution.adoptions) await adopt(tx);
+                }),
+              ),
+            ),
+          ).rejects.toThrow(reason);
+          expect(await store.fail(claim, reason)).toBe(true);
+          expect({ faces: await readFaces(), person: await readPerson() }).toEqual(before);
+          expect(
+            await ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute(),
+          ).toEqual([]);
+          expect(execution.followups).toEqual([]);
+          await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(ctx.database);
+        }
+        expect(await store.claim(queue, worker)).toEqual([]);
+        expect(
+          (
+            await sql`select state, attempt, "retryBaseAttempt", error from job where "runId" = ${runId}::uuid`.execute(
+              ctx.database,
+            )
+          ).rows,
+        ).toEqual([{ state: 'failed', attempt: 2, retryBaseAttempt: 0, error: reason }]);
+        expect(
+          (await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(ctx.database)).rows,
+        ).toEqual([{ state: 'failed' }]);
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it.each([false, true])(
       'repairs an imported ML face without face_search, preserving decisions (corrected=%s)',
       async (corrected) => {
@@ -431,6 +548,15 @@ describe(PersonService.name, () => {
         const readEmbedding = () =>
           ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute();
         const before = await readFace();
+        await ctx.get(PersonRepository).update({ ...person, faceAssetId: assetFace.id });
+        const readPerson = () =>
+          ctx.database
+            .selectFrom('person')
+            .selectAll()
+            .where('ownerId', '=', user.id)
+            .where('personGroupId', '=', person.personGroupId)
+            .executeTakeFirstOrThrow();
+        const personBefore = await readPerson();
         expect(await readEmbedding()).toEqual([]);
         const embedding = newEmbedding();
         ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
@@ -450,16 +576,21 @@ describe(PersonService.name, () => {
           ],
         });
 
-        await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
         expect(await readEmbedding()).toEqual([{ faceId: assetFace.id, embedding: expect.any(String) }]);
         expect(await readFace()).toEqual(before);
         // Replaying the repair upserts the same derived row, without a new face or recognition assignment.
-        await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
         expect(await readEmbedding()).toHaveLength(1);
         expect(
           await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute(),
         ).toEqual([{ id: assetFace.id }]);
         expect(await readFace()).toEqual(before);
+        expect(await readPerson()).toEqual(personBefore);
         expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
       },
     );

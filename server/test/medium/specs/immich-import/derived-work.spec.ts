@@ -486,53 +486,58 @@ describe('offline import derived-work durable ownership', () => {
     expect(await counts()).toMatchObject({ runs: 0, pending: 4, acknowledged: 0, jobs: 0 });
   });
 
-  it('keeps the same ML execution, destination and retry budget across resumed transfers and retained completion', async () => {
-    await seed(1);
-    await repository.dispatchImportedWork();
-    const queue = QueueName.SmartSearch;
-    const worker = randomUUID();
-    await store.initialize(queues, worker);
-    expect(await store.feedManifest(queue)).toBe(1);
-    const [first] = await store.claim(queue, worker);
-    expect(first).toMatchObject({ runId, safeToRetry: true, attempt: 1 });
-    const pin = (claim: QueueClaim, destination: string) =>
-      queueExecution.run(
-        {
-          claim,
-          signal: new AbortController().signal,
-          progress: vi.fn(),
-          progressUnits: 0,
-          adoptions: [],
-          followups: [],
-          buffering: false,
-        },
-        () => repository.pinDestination('clip', destination),
-      );
-    expect(await pin(first, 'paid-destination-original')).toBe('paid-destination-original');
-    await store.fail(first, 'transport lost');
-    await repositoryFor(db).dispatchImportedWork();
-    expect(await store.feedManifest(queue)).toBe(0);
-    await sql`update job set "availableAt" = now()`.execute(db);
-    const [retry] = await new SqlQueueStore(db).claim(queue, worker);
-    expect(retry).toMatchObject({ id: first.id, runId, itemKey: first.itemKey, attempt: 2 });
-    expect(await pin(retry, 'paid-destination-reconfigured')).toBe('paid-destination-original');
-    await store.fail(retry, 'exhausted');
-    await repositoryFor(db).dispatchImportedWork();
-    expect(await store.feedManifest(queue)).toBe(0);
-    expect(await store.claim(queue, worker)).toEqual([]);
-    expect((await sql`select attempt, "retryBaseAttempt", state from job`.execute(db)).rows).toEqual([
-      { attempt: 2, retryBaseAttempt: 0, state: 'failed' },
-    ]);
-    // Completed thumbnail cleanup must not make the retained selection eligible again.
-    expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(1);
-    const [thumbnail] = await store.claim(QueueName.ThumbnailGeneration, worker);
-    expect(thumbnail.data).toEqual({ id: thumbnail.itemKey }); // no upload/notify fanout flags
-    await store.complete(thumbnail, []);
-    await sql`delete from job where id = ${thumbnail.id}::uuid`.execute(db);
-    await repositoryFor(db).dispatchImportedWork();
-    expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
-    expect((await counts()).memberships).toBe(4);
-  });
+  it.each([QueueName.SmartSearch, QueueName.FaceDetection])(
+    'keeps %s identity, destination, payload and retry budget across resumed transfers and retained completion',
+    async (queue) => {
+      await seed(1);
+      await repository.dispatchImportedWork();
+      const worker = randomUUID();
+      await store.initialize(queues, worker);
+      expect(await store.feedManifest(queue)).toBe(1);
+      const [first] = await store.claim(queue, worker);
+      expect(first).toMatchObject({ runId, safeToRetry: true, attempt: 1 });
+      const data = { id: first.itemKey, ...(queue === QueueName.FaceDetection && { preserveImportedFaces: true }) };
+      expect(first.data).toEqual(data);
+      const pin = (claim: QueueClaim, destination: string) =>
+        queueExecution.run(
+          {
+            claim,
+            signal: new AbortController().signal,
+            progress: vi.fn(),
+            progressUnits: 0,
+            adoptions: [],
+            followups: [],
+            buffering: false,
+          },
+          () => repository.pinDestination(queue === QueueName.FaceDetection ? 'face' : 'clip', destination),
+        );
+      expect(await pin(first, 'paid-destination-original')).toBe('paid-destination-original');
+      await store.fail(first, 'transport lost');
+      await repositoryFor(db).dispatchImportedWork();
+      expect(await store.feedManifest(queue)).toBe(0);
+      await sql`update job set "availableAt" = now()`.execute(db);
+      const [retry] = await new SqlQueueStore(db).claim(queue, worker);
+      expect(retry).toMatchObject({ id: first.id, runId, itemKey: first.itemKey, attempt: 2 });
+      expect(retry.data).toEqual(data);
+      expect(await pin(retry, 'paid-destination-reconfigured')).toBe('paid-destination-original');
+      await store.fail(retry, 'exhausted');
+      await repositoryFor(db).dispatchImportedWork();
+      expect(await store.feedManifest(queue)).toBe(0);
+      expect(await store.claim(queue, worker)).toEqual([]);
+      expect((await sql`select attempt, "retryBaseAttempt", state from job`.execute(db)).rows).toEqual([
+        { attempt: 2, retryBaseAttempt: 0, state: 'failed' },
+      ]);
+      // Completed thumbnail cleanup must not make the retained selection eligible again.
+      expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(1);
+      const [thumbnail] = await store.claim(QueueName.ThumbnailGeneration, worker);
+      expect(thumbnail.data).toEqual({ id: thumbnail.itemKey }); // no upload/notify fanout flags
+      await store.complete(thumbnail, []);
+      await sql`delete from job where id = ${thumbnail.id}::uuid`.execute(db);
+      await repositoryFor(db).dispatchImportedWork();
+      expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
+      expect((await counts()).memberships).toBe(4);
+    },
+  );
 
   it('transfers 500k roots and 2M stage memberships with bounded pages, then caps each queue at 1000', async () => {
     await seed(500_000);
@@ -694,6 +699,13 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
         fixture.importer().verify((config) => repositoryFor(db!.withPlugin(fault.plugin)).dispatchImportedWork(config)),
       ).rejects.toThrow('lost handoff acknowledgement');
       await expect(assertImmichImportActivated(fixture.destination.db)).rejects.toThrow('NOT_ACTIVATED');
+      const detection = (
+        await sql`select "runId", selection, "selectionId" from job_run_item
+          where stage = ${JobName.AssetDetectFaces}`.execute(db)
+      ).rows;
+      expect(detection).toEqual([
+        expect.objectContaining({ selection: { id: fixture.asset, preserveImportedFaces: true } }),
+      ]);
       const before = (
         await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item
       where stage = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
@@ -718,8 +730,22 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
       await sql`update job_run_item set selection = jsonb_set(selection, '{selectionFaceId}', to_jsonb(${face}::text))
       where stage = ${JobName.PersonGenerateThumbnail}`.execute(db);
       await fixture.restartConnections();
+      // A missing preservation contract must not be accepted merely because capture already committed.
+      await sql`update job_run_item set selection = selection - 'preserveImportedFaces'
+        where stage = ${JobName.AssetDetectFaces}`.execute(db);
+      await expect(repositoryFor(db).dispatchImportedWork(fixture.config)).rejects.toThrow(
+        'DERIVED_WORK_MANIFEST_MISMATCH',
+      );
+      await sql`update job_run_item set selection = selection || '{"preserveImportedFaces":true}'::jsonb
+        where stage = ${JobName.AssetDetectFaces}`.execute(db);
       await fixture.importer().verify((config) => repositoryFor(db!).dispatchImportedWork(config));
       await expect(assertImmichImportActivated(fixture.destination.db)).resolves.toBeUndefined();
+      expect(
+        (
+          await sql`select "runId", selection, "selectionId" from job_run_item
+            where stage = ${JobName.AssetDetectFaces}`.execute(db)
+        ).rows,
+      ).toEqual(detection);
       expect(
         (
           await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item

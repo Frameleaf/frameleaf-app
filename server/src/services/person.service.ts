@@ -909,7 +909,7 @@ export class PersonService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetDetectFaces, queue: QueueName.FaceDetection })
-  async handleDetectFaces({ id }: JobOf<JobName.AssetDetectFaces>): Promise<JobStatus> {
+  async handleDetectFaces({ id, preserveImportedFaces }: JobOf<JobName.AssetDetectFaces>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
@@ -995,6 +995,12 @@ export class PersonService extends BaseService {
       }
       // FL-57: a face with an explicit decision stays even when this detection no longer finds it
       const faceIdsToRemove = [...mlFaceIds.difference(decided)];
+
+      if (preserveImportedFaces && faceIdsToRemove.length > 0) {
+        // Frozen imports have no Frameleaf correction history to reconcile a replacement against.
+        // Fail the accepted publication before any mutation; the retained stage owns the retry budget.
+        throw new Error('Imported face regeneration unresolved: detection did not match retained faces');
+      }
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
