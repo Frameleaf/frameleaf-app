@@ -1,7 +1,16 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType, JobName, JobStatus, MediaOperationStatus } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetType,
+  JobName,
+  JobStatus,
+  MediaOperationKind,
+  MediaOperationStatus,
+  QueueJobStatus,
+  QueueName,
+} from 'src/enum.js';
 import { publishJobResult, queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
@@ -25,7 +34,7 @@ describe('retained video publication under queue and operation claims', () => {
     await db?.destroy();
   });
 
-  const prepare = async (runHandler = true) => {
+  const prepare = async (runHandler = true, destination?: QueueName) => {
     const user = await seedCanonicalUser(db);
     const asset = await seedCanonicalAsset(db, { ownerId: user.id, type: AssetType.Video });
     const edits = new AssetEditRepository(db);
@@ -61,7 +70,7 @@ describe('retained video publication under queue and operation claims', () => {
       }),
     );
     const store = new SqlQueueStore(db);
-    const queue = `video-publication-${randomUUID()}`;
+    const queue = destination ?? `video-publication-${randomUUID()}`;
     const worker = randomUUID();
     await store.initialize([queue], worker);
     await store.enqueue([
@@ -196,7 +205,7 @@ describe('retained video publication under queue and operation claims', () => {
   });
 
   it('hands a rolled-back publication to its stopped operation owner through the real facade', async () => {
-    const fixture = await prepare(false);
+    const fixture = await prepare(false, QueueName.VideoConversion);
     const notify = vi.fn();
     const emit = vi.fn(async () => {
       await fixture.render();
@@ -247,6 +256,63 @@ describe('retained video publication under queue and operation claims', () => {
       from system_metadata where key = ${ATTEMPT_EVIDENCE_PREFIX + fixture.claim.token}`.execute(db);
     expect(evidence).toEqual([{ jobId: fixture.claim.id, stopped: true }]);
     expect(await fixture.store.claim(fixture.claim.queue, fixture.claim.workerId)).toEqual([]);
+    // The operation owns the delayed retry; an empty execution buffer is still unfinished.
+    expect(await fixture.store.hasUnfinishedWork(fixture.claim.queue)).toBe(true);
+    expect(await fixture.store.queuesWithUnfinishedWork([fixture.claim.queue])).toEqual([fixture.claim.queue]);
+    expect(await fixture.store.counts(fixture.claim.queue)).toMatchObject({ failed: 0, delayed: 1, completed: 0 });
+    expect(await facade.searchJobs(QueueName.VideoConversion, { status: [QueueJobStatus.Failed] })).toEqual([]);
+    expect(
+      await fixture.operations.requestPause(fixture.operation.id, fixture.operation.ownerId, [MediaOperationKind.QuickEdit]),
+    ).toMatchObject({ status: MediaOperationStatus.Paused });
+    expect(await fixture.store.counts(fixture.claim.queue)).toMatchObject({ failed: 0, paused: 1, delayed: 0 });
+    expect(await fixture.store.hasUnfinishedWork(fixture.claim.queue)).toBe(true);
+    await fixture.operations.resume(fixture.operation.id, fixture.operation.ownerId);
+    await sql`update media_operation set "retryAt" = null where id = ${fixture.operation.id}::uuid`.execute(db);
+    facade['handlers'][JobName.AssetVideoEditGeneration] = {
+      jobName: JobName.AssetVideoEditGeneration,
+      queueName: QueueName.VideoConversion,
+      label: 'video fixture',
+      handler: vi.fn(),
+    };
+    const dispatcher = new EditOperationTracker(fixture.operations, facade, logger as never);
+    expect(await dispatcher.dispatch()).toBe(1);
+    const [retry] = await fixture.store.claim(fixture.claim.queue, fixture.claim.workerId);
+    expect(retry.id).not.toBe(fixture.claim.id);
+    expect(retry).toMatchObject({ attempt: 1, data: { operationId: fixture.operation.id } });
+    emit.mockImplementationOnce(async () => {
+      await fixture.render();
+    });
+    await facade['execute'](retry, new AbortController());
+    expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
+      status: MediaOperationStatus.Completed,
+      autoRetries: 1,
+      attempt: 2,
+    });
+    expect(await fixture.store.counts(fixture.claim.queue)).toEqual({
+      active: 0,
+      completed: 1,
+      failed: 0,
+      delayed: 0,
+      waiting: 0,
+      paused: 0,
+    });
+    expect(await fixture.store.hasUnfinishedWork(fixture.claim.queue)).toBe(false);
+    expect(await facade.searchJobs(QueueName.VideoConversion, { status: [QueueJobStatus.Failed] })).toEqual([]);
+    expect(await facade.searchJobs(QueueName.VideoConversion, { status: [QueueJobStatus.Complete] })).toEqual([
+      expect.objectContaining({ id: retry.id, attemptsMade: 1 }),
+    ]);
+    expect((await sql`select state,attempt from job where id = ${fixture.claim.id}::uuid`.execute(db)).rows).toEqual([
+      { state: 'needs_attention', attempt: 1 },
+    ]);
+    expect(
+      (await sql`select outcome from job_attempt where "jobId" = ${fixture.claim.id}::uuid
+        and token = ${fixture.claim.token}::uuid`.execute(db)).rows,
+    ).toEqual([{ outcome: 'needs_attention' }]);
+    expect(
+      (await sql`select count(*)::int count from job_run_item where "jobId"=any(${[fixture.claim.id, retry.id]}::uuid[])`
+        .execute(db)).rows,
+    ).toEqual([{ count: 0 }]);
+    expect(await fixture.store.fail(fixture.claim, 'stale failure')).toBe(false);
   });
 
   it('requires matching stopped proof and rolls back owner failure together with the queue outcome', async () => {
