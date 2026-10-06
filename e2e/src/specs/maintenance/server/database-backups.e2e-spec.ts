@@ -399,25 +399,24 @@ describe('/admin/database-backups', () => {
         )
         .toBeTruthy();
 
-      await expect
-        .poll(
-          async () => {
-            const { status, body } = await request(app).get('/admin/maintenance/status').send({ token: 'token' });
+      // The restore and completed rollback share this test's unchanged 60-second deadline.
+      const failedRestore = await ownedWait('Waiting for missing-admin rollback', 60_000, (context) =>
+        pollRequest(
+          context,
+          () => request(app).get('/admin/maintenance/status').send({ token: 'token' }),
+          ({ status, body }) => {
             expect(status).toBe(200);
-            return body;
+            return body.task === 'error';
           },
-          {
-            interval: 500,
-            timeout: 30_000,
-          },
-        )
-        .toEqual(
-          expect.objectContaining({
-            active: true,
-            action: 'restore_database',
-            error: 'Something went wrong, see logs!',
-          }),
-        );
+        ),
+      );
+      expect(failedRestore.body).toEqual(
+        expect.objectContaining({
+          active: true,
+          action: 'restore_database',
+          error: 'Something went wrong, see logs!',
+        }),
+      );
 
       const { status: status2, body: body2 } = await request(app)
         .get('/admin/maintenance/status')
