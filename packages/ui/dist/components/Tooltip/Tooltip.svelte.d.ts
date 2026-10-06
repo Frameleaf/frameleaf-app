@@ -1,6 +1,6 @@
-import { Tooltip } from 'bits-ui';
+import type { Tooltip as BitsTooltip } from 'bits-ui';
 import type { Snippet } from 'svelte';
-type Props = Tooltip.RootProps & {
+type Props = BitsTooltip.RootProps & {
     text?: string | null;
     child: Snippet<[{
         props: Record<string, unknown>;
