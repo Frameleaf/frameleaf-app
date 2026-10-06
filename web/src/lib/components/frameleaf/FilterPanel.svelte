@@ -27,7 +27,7 @@
   import type { PaletteFacets } from '$lib/frameleaf/search-palette';
   import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
-  import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@immich/sdk';
+  import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
 

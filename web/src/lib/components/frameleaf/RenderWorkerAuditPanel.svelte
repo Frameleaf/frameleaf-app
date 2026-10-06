@@ -14,7 +14,7 @@
     refusalReasonKey,
   } from '$lib/frameleaf/render-workers';
   import { locale } from '$lib/stores/preferences.store';
-  import type { RenderWorkerAuditDto, RenderWorkerDto, UserAdminResponseDto } from '@immich/sdk';
+  import type { RenderWorkerAuditDto, RenderWorkerDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

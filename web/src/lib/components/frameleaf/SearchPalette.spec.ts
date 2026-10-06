@@ -1,4 +1,4 @@
-import { AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

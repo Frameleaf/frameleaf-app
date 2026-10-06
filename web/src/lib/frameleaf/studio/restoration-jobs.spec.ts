@@ -5,7 +5,7 @@ import {
   type AssetResponseDto,
   type AssetRestorationOptionsDto,
   type AssetRestorationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { createStudioCommandEnvelope } from './commands';
 import {

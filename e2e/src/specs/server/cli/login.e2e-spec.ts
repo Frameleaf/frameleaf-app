@@ -1,4 +1,4 @@
-import { Permission } from '@immich/sdk';
+import { Permission } from '@frameleaf/sdk';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { app, immichCli, utils } from 'src/utils.js';

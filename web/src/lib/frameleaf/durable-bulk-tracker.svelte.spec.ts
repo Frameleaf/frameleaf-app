@@ -1,4 +1,4 @@
-import { MediaOperationItemStatus, MediaOperationStatus, type MediaOperationDetailDto } from '@immich/sdk';
+import { MediaOperationItemStatus, MediaOperationStatus, type MediaOperationDetailDto } from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DurableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 

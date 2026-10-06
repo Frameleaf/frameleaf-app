@@ -25,8 +25,8 @@
     isHttpError,
     type CloudMlConsentStateDto,
     type CloudMlConsentTermsDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiOpenInNew, mdiShieldCheckOutline } from '@mdi/js';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';

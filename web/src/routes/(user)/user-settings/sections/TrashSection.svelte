@@ -8,7 +8,7 @@
   import { handlePromiseError } from '$lib/utils';
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
-  import { getAssetInfo, type AssetResponseDto, type TrashItemResponseDto } from '@immich/sdk';
+  import { getAssetInfo, type AssetResponseDto, type TrashItemResponseDto } from '@frameleaf/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
   import { resolveTrashNeighbours, survivingTrashNeighbours } from './trash-neighbours';

@@ -42,14 +42,14 @@ runtime decision by themselves. This packet does not run their generators.
 ## Exact package versions and delivery gaps
 
 `pnpm-lock.yaml`'s `web` importer is the complete direct dependency resolution
-authority, including peer contexts, workspace links and the `@immich/ui` patch
+authority, including peer contexts, workspace links and the `@frameleaf/ui` patch
 hash. The following compact inventory records its external version numbers;
 it is not a license or transitive/delivered-file inventory.
 
 | Web package(s)                                                                                                               | Locked version(s)                                                                   |
 | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `@formatjs/icu-messageformat-parser`, `intl-messageformat`                                                                   | 3.5.17; 11.2.14                                                                     |
-| `@immich/justified-layout-wasm`, `@immich/ui`                                                                                | 0.4.3; 0.86.0 (patched; exact context in lock)                                      |
+| `@frameleaf/justified-layout-wasm`, `@frameleaf/ui`                                                                                | 0.4.3; 0.86.0 (patched; exact context in lock)                                      |
 | `@mdi/js`, `@noble/hashes`                                                                                                   | 7.4.47; 2.3.0                                                                       |
 | `@photo-sphere-viewer/core`, equirectangular-video-adapter, markers-plugin, resolution-plugin, settings-plugin, video-plugin | 5.15.1 each                                                                         |
 | `@types/geojson`, `@zoom-image/core`, `@zoom-image/svelte`                                                                   | 7946.0.16; 0.42.0; 0.3.9                                                            |
@@ -59,7 +59,7 @@ it is not a license or transitive/delivered-file inventory.
 | `maplibre-gl`, `media-chrome`, `qrcode`, `simple-icons`, `socket.io-client`                                                  | 6.9.0; 4.19.2; 1.5.4; 16.28.0; 4.8.3                                                |
 | `svelte-gestures`, `svelte-i18n`, `svelte-jsoneditor`, `svelte-maplibre`, `svelte-persisted-store`                           | 5.2.2; 4.0.1; 3.13.0; 2.0.0; 0.12.0                                                 |
 | `tabbable`, `tailwind-merge`, `tailwind-variants`, `thumbhash`, `transformation-matrix`, `uplot`                             | 6.5.0; 3.6.0; 3.3.1; 0.1.1; 3.1.0; 1.6.32                                           |
-| `@immich/sdk`                                                                                                                | Workspace link `../packages/sdk`; bind its Git source and emitted bytes at delivery |
+| `@frameleaf/sdk`                                                                                                                | Workspace link `../packages/sdk`; bind its Git source and emitted bytes at delivery |
 
 `web/package.json` declares AGPL version 3 for the application. That declaration
 does not license every dependency, model or fetched asset. Required next evidence:

@@ -1,4 +1,4 @@
-import { CloudMlJobPurpose, CloudMlJobStage, MlWorkload, type CloudMlJobEstimateResponseDto } from '@immich/sdk';
+import { CloudMlJobPurpose, CloudMlJobStage, MlWorkload, type CloudMlJobEstimateResponseDto } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import messages from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

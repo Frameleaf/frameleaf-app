@@ -5,7 +5,7 @@
    * queue, …) as buttons at the top of the section. Hidden actions (`$if`) and menu dividers are left out.
    */
   import type { HeaderButtonActionItem } from '$lib/types';
-  import { Button, isMenuItemType, type MenuItemType } from '@immich/ui';
+  import { Button, isMenuItemType, type MenuItemType } from '@frameleaf/ui';
 
   let { actions }: { actions: Array<HeaderButtonActionItem | MenuItemType> } = $props();
 

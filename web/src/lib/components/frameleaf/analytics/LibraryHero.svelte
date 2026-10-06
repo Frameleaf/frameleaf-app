@@ -10,8 +10,8 @@
   import AnalyticsSparkline from '$lib/components/frameleaf/analytics/AnalyticsSparkline.svelte';
   import { analyticsFormats, captureSpan, type Translate } from '$lib/frameleaf/analytics';
   import { locale } from '$lib/stores/preferences.store';
-  import { AnalyticsState, type AnalyticsReportResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AnalyticsState, type AnalyticsReportResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiCameraIris,

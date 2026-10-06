@@ -1,4 +1,4 @@
-import { ClassificationMediaType, ClassificationRuleAction, type ClassificationRuleResponseDto } from '@immich/sdk';
+import { ClassificationMediaType, ClassificationRuleAction, type ClassificationRuleResponseDto } from '@frameleaf/sdk';
 import {
   emptyRule,
   fromResponse,

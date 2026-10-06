@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AssetResponseDto } from '@immich/sdk';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
 
   let {
     cursor,

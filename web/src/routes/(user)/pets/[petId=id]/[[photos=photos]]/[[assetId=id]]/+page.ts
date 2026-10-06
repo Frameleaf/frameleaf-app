@@ -1,4 +1,4 @@
-import { getPet } from '@immich/sdk';
+import { getPet } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';

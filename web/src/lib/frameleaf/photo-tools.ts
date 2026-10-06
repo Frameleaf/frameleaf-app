@@ -13,7 +13,7 @@ import {
   type AssetDevelopMaskAdjustments,
   type AssetDevelopRecipeDto,
   type DevelopPresetSettingsDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DEVELOP_KEYS, clampParam, toneOnlyRecipe, type DevelopKey } from '$lib/frameleaf/develop';
 
 export const MAX_MASKS = 8;

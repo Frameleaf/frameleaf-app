@@ -1,7 +1,7 @@
 <script lang="ts">
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import '$lib/frameleaf/tokens.css';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 

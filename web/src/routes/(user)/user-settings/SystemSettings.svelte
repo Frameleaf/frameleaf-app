@@ -56,8 +56,8 @@
     updateAdminConfigWithRevision,
     type AdminConfigRevisionResponseDto,
     type AdminConfigDto,
-  } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, modalManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { CommandPaletteDefaultProvider, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountOutline,

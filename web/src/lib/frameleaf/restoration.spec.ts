@@ -4,7 +4,7 @@ import {
   MlDestinationHealth,
   MlDestinationKind,
   type AssetRestorationDestinationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CENTRE_REGION,

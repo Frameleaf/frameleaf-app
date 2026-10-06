@@ -9,8 +9,8 @@
   import MaintenanceBackupList from '$lib/components/frameleaf/MaintenanceBackupList.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { handleCreateJob } from '$lib/services/job.service';
-  import { getQueuesLegacy, listDatabaseBackups, ManualJobName, type DatabaseBackupDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getQueuesLegacy, listDatabaseBackups, ManualJobName, type DatabaseBackupDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiDatabaseOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';

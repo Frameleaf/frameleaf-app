@@ -1,4 +1,4 @@
-import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent } from '@testing-library/svelte';
 import { renderWithTooltips } from '$tests/helpers';

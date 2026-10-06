@@ -1,4 +1,4 @@
-import type { ApiHttpError } from '@immich/sdk';
+import type { ApiHttpError } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -13,7 +13,7 @@ vi.mock('$app/state', () => ({
   page: { params: {}, route: { id: '/(user)/user-settings' }, url: new URL('http://localhost/user-settings') },
 }));
 
-vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
+vi.mock('@frameleaf/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
 
 const loaded = preferencesFactory.build({
   emailNotifications: { enabled: true, albumInvite: true, albumUpdate: true },

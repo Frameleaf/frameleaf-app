@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type AlbumTreeResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';

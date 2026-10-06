@@ -1,4 +1,4 @@
-import type { AssetDevelopResponseDto } from '@immich/sdk';
+import type { AssetDevelopResponseDto } from '@frameleaf/sdk';
 import { nativePublicationState, nativeStrokeOverlay } from './native-editor-state';
 
 it('ignores historical successes and waits through rendered-before-current publication', () => {

@@ -1,4 +1,4 @@
-import { SystemConfigHistoryCredentialChange } from '@immich/sdk';
+import { SystemConfigHistoryCredentialChange } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { historyValue } from '$lib/frameleaf/settings-history';
 

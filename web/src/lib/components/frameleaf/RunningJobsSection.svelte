@@ -5,8 +5,8 @@
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
-  import { MediaOperationStatus } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { MediaOperationStatus } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiFolderZipOutline, mdiPause, mdiPlay, mdiProgressClock, mdiTrayFull } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
 

@@ -12,14 +12,14 @@ import {
   type PetRecognitionRunResponseDto,
   type PetResponseDto,
   type SearchFilter,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { toPixelBox, type FaceBox, type Size } from '$lib/frameleaf/face-tags';
 
 /**
  * Frameleaf Pets page (FL-58): small pure helpers shared by the grid and the recognition
  * review panel. Nothing here calls the network; the page owns every mutation through the
- * `@immich/sdk` pet services (`createPet`, `updatePet`, `deletePet`, `mergePets`,
+ * `@frameleaf/sdk` pet services (`createPet`, `updatePet`, `deletePet`, `mergePets`,
  * `acceptPetCandidate`, `rejectPetCandidate`, `deletePetObservation`).
  *
  * These helpers only ever touch the durable identity. The candidate helpers read a

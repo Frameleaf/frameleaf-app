@@ -14,7 +14,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { handleDeleteUserAdmin } from '$lib/services/user-admin.service';
-  import type { UserAdminResponseDto } from '@immich/sdk';
+  import type { UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let { user, onClose }: { user: UserAdminResponseDto; onClose: () => void } = $props();

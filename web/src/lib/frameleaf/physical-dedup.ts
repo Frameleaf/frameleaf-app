@@ -9,7 +9,7 @@ import {
   type PhysicalDeduplicationRetainedDto,
   type PhysicalDeduplicationReviewResponseDto,
   type PhysicalDeduplicationVerificationItemDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /**
  * Pure helpers for physical deduplication (FL-71, FL-73), ported from the design template's

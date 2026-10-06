@@ -7,7 +7,7 @@
    * (Shift moves further), so a mask can be placed without a pointer.
    */
   import { type EditorMask } from '$lib/frameleaf/photo-tools';
-  import { AssetDevelopMaskKind } from '@immich/sdk';
+  import { AssetDevelopMaskKind } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Handle = 'centre' | 'radiusX' | 'radiusY' | 'start' | 'end';

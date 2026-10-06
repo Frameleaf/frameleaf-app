@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TooltipProvider } from '@immich/ui';
+  import { TooltipProvider } from '@frameleaf/ui';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Rail from '$lib/components/frameleaf/Rail.svelte';

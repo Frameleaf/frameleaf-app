@@ -1,4 +1,4 @@
-import { CloudLinkState } from '@immich/sdk';
+import { CloudLinkState } from '@frameleaf/sdk';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';

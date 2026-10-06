@@ -5,7 +5,7 @@
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { PageData } from './$types';
 
   interface Props {

@@ -11,10 +11,10 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
-  import { ConfigCredential, OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
+  import { ConfigCredential, OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { Link, Text, toastManager } from '@immich/ui';
+  import { Link, Text, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';

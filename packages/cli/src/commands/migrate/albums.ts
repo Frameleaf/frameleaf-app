@@ -1,4 +1,4 @@
-import type { UpdateAlbumDto } from '@immich/sdk';
+import type { UpdateAlbumDto } from '@frameleaf/sdk';
 import { chunk } from 'lodash-es';
 import type { ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';

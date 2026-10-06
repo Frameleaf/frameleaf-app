@@ -12,7 +12,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import type { AccountPreferencesDraftStore } from '$lib/frameleaf/account-preferences-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { toastManager } from '@immich/ui';
+  import { toastManager } from '@frameleaf/ui';
   import { untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -10,7 +10,7 @@ import {
   type MemoryExportResponseDto,
   type QueueRunDto,
   type RunningJobsResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   buildRunningJobRows,

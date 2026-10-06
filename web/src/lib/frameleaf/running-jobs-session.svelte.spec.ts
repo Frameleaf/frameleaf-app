@@ -6,7 +6,7 @@ import {
   State4,
   type MediaOperationDto,
   type RunningJobsResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

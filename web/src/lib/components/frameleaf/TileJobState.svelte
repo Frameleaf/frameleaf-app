@@ -9,7 +9,7 @@
    * screen reader hears it once, with the item it belongs to.
    */
   import type { DurableTileState } from '$lib/frameleaf/durable-bulk-tracker.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
 
   type Props = {

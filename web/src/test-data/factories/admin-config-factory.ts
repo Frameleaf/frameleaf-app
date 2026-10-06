@@ -1,4 +1,4 @@
-import type { AdminConfigDto } from '@immich/sdk';
+import type { AdminConfigDto } from '@frameleaf/sdk';
 
 /**
  * A slice of the admin configuration with the shapes the FL-66 settings draft rules care about:

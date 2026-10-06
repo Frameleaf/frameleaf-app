@@ -7,7 +7,7 @@ import {
   getTimeBuckets,
   TimeBucketDateType,
   type AssetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';

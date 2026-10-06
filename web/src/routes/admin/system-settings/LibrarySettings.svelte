@@ -8,7 +8,7 @@
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Link } from '@immich/ui';
+  import { Link } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
 

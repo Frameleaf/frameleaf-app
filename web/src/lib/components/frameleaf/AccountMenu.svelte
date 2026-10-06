@@ -12,8 +12,8 @@
   import { formatUsd } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountCheckOutline,
     mdiAccountEditOutline,

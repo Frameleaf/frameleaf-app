@@ -18,8 +18,8 @@
     searchAssets,
     searchSmart,
     type BulkIdResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiFilterOutline, mdiFolderOutline, mdiFolderSearchOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

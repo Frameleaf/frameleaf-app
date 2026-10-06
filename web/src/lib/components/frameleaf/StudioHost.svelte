@@ -25,7 +25,7 @@
   import '$lib/frameleaf/tokens.css';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiArrowLeft,
@@ -42,7 +42,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import StudioHistoryPanel from '$lib/components/frameleaf/StudioHistoryPanel.svelte';
   import StudioRestorePanel, { type StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
-  import type { AssetRestorationResponseDto } from '@immich/sdk';
+  import type { AssetRestorationResponseDto } from '@frameleaf/sdk';
   import { decodeRefusalMessageKey } from '$lib/frameleaf/decode-refusal';
   import {
     loadStudioEngine as defaultLoadStudioEngine,
@@ -84,7 +84,7 @@
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
-  import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@immich/sdk';
+  import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
 
   const unavailableRestorationKeys: Record<StudioRestoredVersionUnavailable, Translations> = {

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { PeopleListItemDto, PersonResponseDto } from '@immich/sdk';
+import type { PeopleListItemDto, PersonResponseDto } from '@frameleaf/sdk';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
   createDefaultTimelineConfig,

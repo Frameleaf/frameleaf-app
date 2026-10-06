@@ -5,7 +5,7 @@ import {
   type DocumentFieldResponseDto,
   type DocumentLineDto,
   type DocumentResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   appendDocumentPage,

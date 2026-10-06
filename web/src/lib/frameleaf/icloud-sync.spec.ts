@@ -3,7 +3,7 @@ import {
   MediaOperationStatus,
   type ICloudConnectionResponseDto,
   type ICloudSyncRunDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   GIB,

@@ -7,7 +7,7 @@ dotenv.config({ quiet: true });
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   compilerOptions: {
-    // TODO pending `@immich/ui` to enable it
+    // TODO pending `@frameleaf/ui` to enable it
     // runes: true,
   },
   preprocess: vitePreprocess(),

@@ -7,7 +7,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PasswordDialog from '$lib/components/frameleaf/access/PasswordDialog.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { modalManager } from '@immich/ui';
+  import { modalManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import './access.css';
 

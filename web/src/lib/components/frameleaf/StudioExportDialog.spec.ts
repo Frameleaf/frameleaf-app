@@ -6,14 +6,14 @@ import {
   StudioExportFormat,
   StudioExportResolution,
   getMlCapabilities,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import StudioExportDialog from '$lib/components/frameleaf/StudioExportDialog.svelte';
 import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
 
-vi.mock('@immich/sdk', async () => ({
-  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+vi.mock('@frameleaf/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
   getMlCapabilities: vi.fn(),
 }));
 

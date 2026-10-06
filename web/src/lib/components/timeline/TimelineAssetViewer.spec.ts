@@ -1,4 +1,4 @@
-import { getAssetInfo } from '@immich/sdk';
+import { getAssetInfo } from '@frameleaf/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -15,8 +15,8 @@ vi.mock('$lib/utils/navigation', async () => ({
   ...(await vi.importActual<typeof import('$lib/utils/navigation')>('$lib/utils/navigation')),
   navigate: vi.fn(),
 }));
-vi.mock('@immich/sdk', async () => ({
-  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+vi.mock('@frameleaf/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
   getAssetInfo: vi.fn(),
 }));
 

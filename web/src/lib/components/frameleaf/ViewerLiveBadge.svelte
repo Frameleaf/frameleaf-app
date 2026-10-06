@@ -7,7 +7,7 @@
    * `LiveVideoViewer` in `AssetViewer`), so it replaces the old Play/Stop motion photo toolbar buttons.
    */
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMotionPlayOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

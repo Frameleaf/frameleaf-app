@@ -22,7 +22,7 @@ import {
   type AdminConfigDto,
   type AdminConfigRevisionResponseDto,
   type AdminConfigRevisionUpdateDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { get, isEqual, set } from 'lodash-es';
 import { getContext, setContext } from 'svelte';
 import {

@@ -1,7 +1,7 @@
-import { checkVersionNow, getVersionCheck, ReleaseType } from '@immich/sdk';
+import { checkVersionNow, getVersionCheck, ReleaseType } from '@frameleaf/sdk';
 import { checkForUpdates, isNewerVersion, releaseNotesUrl } from '$lib/frameleaf/version-check';
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   checkVersionNow: vi.fn(),
   getVersionCheck: vi.fn(),

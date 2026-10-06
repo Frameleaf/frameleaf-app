@@ -1,5 +1,5 @@
 [tasks.install]
-run = "pnpm install --filter immich-e2e... --frozen-lockfile"
+run = "pnpm install --filter frameleaf-e2e... --frozen-lockfile"
 
 [tasks.build]
 dir = "{{ config_root }}"

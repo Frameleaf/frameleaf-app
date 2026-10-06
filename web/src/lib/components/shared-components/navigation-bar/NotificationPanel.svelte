@@ -8,8 +8,8 @@
   import { Route } from '$lib/route';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { NotificationType, type NotificationDto } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  import { NotificationType, type NotificationDto } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiBellOutline, mdiClose } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

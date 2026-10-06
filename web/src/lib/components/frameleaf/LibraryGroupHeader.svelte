@@ -6,7 +6,7 @@
    * and the month, year and "all" groups draw the same header; it fills exactly the height the
    * timeline manager reserves for it.
    */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck, mdiMinus } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -101,8 +101,8 @@
     TimelineOrderedSort,
     updateAsset,
     type ArchiveOperationResponseDto,
-  } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { mdiCalendarRange, mdiCompare, mdiFilterOffOutline, mdiOpenInNew, mdiPencilOutline } from '@mdi/js';
   import { get } from 'svelte/store';
   import { hasRouterStarted } from '$lib/utils/router-started';

@@ -1,4 +1,4 @@
-import { AssetTypeEnum, ImageEnrichmentFilter, SearchFacetField } from '@immich/sdk';
+import { AssetTypeEnum, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, isDiscoveryFilter, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';

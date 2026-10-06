@@ -23,7 +23,7 @@
     type ReviewValue,
   } from '$lib/frameleaf/system-config-draft';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';

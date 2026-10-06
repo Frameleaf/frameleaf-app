@@ -10,7 +10,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import type { HeaderButtonActionItem } from '$lib/types';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@immich/ui';
+  import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -10,7 +10,7 @@
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetMediaSize, getBaseUrl, VideoMomentMatch, type VideoMomentSearchHitDto } from '@immich/sdk';
+  import { AssetMediaSize, getBaseUrl, VideoMomentMatch, type VideoMomentSearchHitDto } from '@frameleaf/sdk';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 

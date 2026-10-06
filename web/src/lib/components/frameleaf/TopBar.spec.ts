@@ -1,4 +1,4 @@
-import { modalManager } from '@immich/ui';
+import { modalManager } from '@frameleaf/ui';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

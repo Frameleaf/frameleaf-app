@@ -17,7 +17,7 @@ import {
   type AssetRestorationDestinationDto,
   type AssetRestorationOptionsDto,
   type AssetRestorationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 

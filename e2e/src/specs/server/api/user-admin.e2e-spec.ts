@@ -7,7 +7,7 @@ import {
   getUserPreferencesAdmin,
   login,
   type SessionResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { randomUUID } from 'node:crypto';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';

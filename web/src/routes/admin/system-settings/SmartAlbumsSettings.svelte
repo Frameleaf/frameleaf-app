@@ -9,13 +9,13 @@
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
-  import { Button, modalManager, toastManager } from '@immich/ui';
+  import { Button, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiRefresh } from '@mdi/js';
   import {
     ClassificationRuleAction,
     SmartAlbumBuiltInKind as SmartAlbumKind,
     type AdminConfigSmartAlbumKindDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
 
