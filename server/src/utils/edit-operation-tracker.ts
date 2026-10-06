@@ -2,7 +2,7 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { JobStatus, MediaOperationStatus } from 'src/enum.js';
-import { advanceJobProgress, deferJobAdoption, jobSignal } from 'src/queue/context.js';
+import { advanceJobProgress, afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import {
   EDIT_OPERATION_LEASE_MS,
   EDIT_OPERATION_REDISPATCH_MS,
@@ -24,6 +24,7 @@ type Operations = Pick<
   | 'fail'
   | 'requeue'
   | 'requestCancel'
+  | 'requestCancelWithin'
   | 'acknowledgeCancel'
   | 'claimJobQueueDispatch'
   | 'releaseJobQueueDispatch'
@@ -170,10 +171,35 @@ export class EditOperationRun {
           true,
         );
         if (!completed) throw new Error('Edit operation lost its claim before publication');
-        this.settle();
       })
     ) {
       this.publicationQueued = true;
+      await afterJobCommit(async () => this.settle());
+      // The tracker has returned before publication runs. Hand a rejected publication back to
+      // this exact operation claim in the queue's stopped, failed-claim transaction.
+      (queueExecution.getStore()!.failureSettlements ??= []).push(async (tx, reason, cancelled) => {
+        if (this.done) return;
+        const row = await tx
+          .selectFrom('media_operation')
+          .select('cancelRequestedAt')
+          .where('id', '=', this.id)
+          .where('claimToken', '=', this.claimToken)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!row) return;
+        if (cancelled || row.cancelRequestedAt) {
+          await this.operations.requestCancelWithin(tx, this.id, this.operation.ownerId, this.claimToken);
+          await this.operations.acknowledgeCancel(this.id, this.claimToken, { released: true, executor: tx });
+        } else {
+          await this.operations.fail(
+            this.id,
+            this.claimToken,
+            { error: reason, errorCode: EDIT_RENDER_FAILED.errorCode },
+            { executor: tx },
+          );
+        }
+        // No in-memory settlement inside this transaction: its final accounting can still roll back.
+      });
       return true;
     }
     const acceptedResult = typeof resultAssetId === 'function' ? resultAssetId() : resultAssetId;

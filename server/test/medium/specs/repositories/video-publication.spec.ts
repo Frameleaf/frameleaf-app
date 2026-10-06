@@ -7,8 +7,10 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { QUEUE_TIMING, QueueExecution } from 'src/queue/types.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
+import { ATTEMPT_EVIDENCE_PREFIX, recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, editOperationCreate } from 'src/utils/edit-operation.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
@@ -23,7 +25,7 @@ describe('retained video publication under queue and operation claims', () => {
     await db?.destroy();
   });
 
-  const prepare = async () => {
+  const prepare = async (runHandler = true) => {
     const user = await seedCanonicalUser(db);
     const asset = await seedCanonicalAsset(db, { ownerId: user.id, type: AssetType.Video });
     const edits = new AssetEditRepository(db);
@@ -84,7 +86,7 @@ describe('retained video publication under queue and operation claims', () => {
     };
     const tracker = new EditOperationTracker(operations, {} as never, { log: vi.fn(), warn: vi.fn(), error: vi.fn() });
     let run: EditOperationRun | undefined;
-    await queueExecution.run(context, () =>
+    const render = () =>
       tracker.execute(operation.id, async (activeRun) => {
         run = activeRun;
         await publishJobResult(async () => {
@@ -93,8 +95,8 @@ describe('retained video publication under queue and operation claims', () => {
           }
         });
         return JobStatus.Success;
-      }),
-    );
+      });
+    if (runHandler) await queueExecution.run(context, render);
     const commit = () =>
       store.complete(claim, [], (tx) =>
         publicationTransaction.run(tx, () =>
@@ -104,7 +106,24 @@ describe('retained video publication under queue and operation claims', () => {
         ),
       );
     const files = () => db.selectFrom('asset_file').select('path').where('assetId', '=', asset.id).execute();
-    return { asset, edits, previous, candidate, operations, operation, claim, context, run, commit, files, result };
+    return {
+      asset,
+      edits,
+      previous,
+      candidate,
+      operations,
+      operation,
+      claim,
+      context,
+      store,
+      render,
+      commit,
+      files,
+      result,
+      get run() {
+        return run;
+      },
+    };
   };
 
   it('keeps the previous projection until the version, references, job and operation commit together', async () => {
@@ -165,6 +184,175 @@ describe('retained video publication under queue and operation claims', () => {
       attempt: 1,
       autoRetries: 0,
     });
+  });
+
+  it.each([
+    'rollback',
+    'retry spent',
+    'expired queue',
+    'deadline',
+    'queue cancel',
+    'operation cancel',
+    'stale operation',
+    'stale queue',
+  ] as const)(
+    'hands deferred publication failure to its stopped operation owner through the real facade: %s',
+    async (fault) => {
+      const fixture = await prepare(false);
+      const notify = vi.fn();
+      const replacementToken = randomUUID();
+      const emit = vi.fn(async () => {
+        await fixture.render();
+        const context = queueExecution.getStore()!;
+        context.afterCommit!.push(notify);
+        context.followups.push({
+          queue: fixture.claim.queue,
+          name: JobName.FileDelete,
+          data: { files: ['must-not-publish'] },
+          safeToRetry: false,
+          sensitive: true,
+          deadlineMs: QUEUE_TIMING.opaqueDeadline,
+        });
+        switch (fault) {
+          case 'rollback':
+          case 'retry spent': {
+            if (fault === 'retry spent') {
+              await sql`update media_operation set "autoRetries" = 1 where id = ${fixture.operation.id}::uuid`.execute(
+                db,
+              );
+            }
+            context.adoptions.push(async (tx) => {
+              expect(
+                await tx
+                  .selectFrom('media_operation')
+                  .select('status')
+                  .where('id', '=', fixture.operation.id)
+                  .executeTakeFirst(),
+              ).toEqual({ status: MediaOperationStatus.Completed });
+              await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+                where id = ${fixture.claim.id}::uuid and token = ${fixture.claim.token}::uuid`.execute(tx);
+            });
+            break;
+          }
+          case 'expired queue': {
+            await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+              where id = ${fixture.claim.id}::uuid`.execute(db);
+            break;
+          }
+          case 'deadline':
+          case 'queue cancel': {
+            await sql`update job set "cancelRequestedAt" = clock_timestamp(), "cancelReason" = ${fault === 'deadline' ? 'deadline' : 'request'}
+              where id = ${fixture.claim.id}::uuid`.execute(db);
+            break;
+          }
+          case 'operation cancel': {
+            await fixture.operations.requestCancel(
+              fixture.operation.id,
+              fixture.operation.ownerId,
+              fixture.run!.claimToken,
+            );
+            break;
+          }
+          case 'stale operation': {
+            await sql`update media_operation set "claimToken" = ${replacementToken}::uuid where id = ${fixture.operation.id}::uuid`.execute(
+              db,
+            );
+            break;
+          }
+          case 'stale queue': {
+            await sql`update job set token = ${replacementToken}::uuid where id = ${fixture.claim.id}::uuid`.execute(
+              db,
+            );
+            break;
+          }
+        }
+      });
+      const logger = { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() };
+      const facade = new JobRepository({} as never, {} as never, { emit } as never, logger as never, db);
+      await facade['execute'](fixture.claim, new AbortController());
+      expect(emit).toHaveBeenCalledOnce();
+      expect(notify).not.toHaveBeenCalled();
+      if (fault === 'rollback' || fault === 'retry spent') {
+        expect(logger.error).toHaveBeenCalledExactlyOnceWith(
+          'Queue execution failed',
+          expect.objectContaining({ phase: 'deferred_publication', reasonCode: 'publication_lease_expired' }),
+        );
+      }
+      expect(await fixture.files()).toEqual([{ path: fixture.result('previous').files[0].path }]);
+      expect((await fixture.edits.getVideoVersion(fixture.asset.id, fixture.candidate.id))?.masterPath).toBeNull();
+      const stale = fault === 'stale operation' || fault === 'stale queue';
+      const cancelled = fault === 'queue cancel' || fault === 'operation cancel';
+      expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
+        status: stale
+          ? MediaOperationStatus.Validating
+          : cancelled
+            ? MediaOperationStatus.Cancelled
+            : fault === 'retry spent'
+              ? MediaOperationStatus.Failed
+              : MediaOperationStatus.Queued,
+        claimToken:
+          fault === 'stale operation' ? replacementToken : fault === 'stale queue' ? fixture.run!.claimToken : null,
+        resultAssetId: null,
+        attempt: 1,
+        autoRetries: stale || cancelled ? 0 : 1,
+      });
+      const { rows: jobs } =
+        await sql`select id, state, token, attempt from job where queue = ${fixture.claim.queue}`.execute(db);
+      expect(jobs).toEqual([
+        {
+          id: fixture.claim.id,
+          state: fault === 'stale queue' ? 'active' : fault === 'queue cancel' ? 'cancelled' : 'needs_attention',
+          token: fault === 'stale queue' ? replacementToken : null,
+          attempt: 1,
+        },
+      ]);
+      const { rows: evidence } = await sql`select value->>'jobId' "jobId", value ? 'stoppedAt' stopped
+        from system_metadata where key = ${ATTEMPT_EVIDENCE_PREFIX + fixture.claim.token}`.execute(db);
+      expect(evidence).toEqual([{ jobId: fixture.claim.id, stopped: true }]);
+      expect(await fixture.store.claim(fixture.claim.queue, fixture.claim.workerId)).toEqual([]);
+    },
+  );
+
+  it('requires matching stopped proof and rolls back owner failure together with the queue outcome', async () => {
+    const fixture = await prepare();
+    const settlements = fixture.context.failureSettlements!;
+    const fail = () =>
+      fixture.store.fail(fixture.claim, 'Publication lease expired before commit', undefined, { settlements });
+    expect(settlements).toHaveLength(1);
+    expect(await fail()).toBe(false);
+    await recordStoppedAttempt(db, randomUUID(), fixture.claim.token);
+    expect(await fail()).toBe(false);
+    expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
+      status: MediaOperationStatus.Validating,
+      claimToken: fixture.run!.claimToken,
+      autoRetries: 0,
+    });
+    await sql`delete from system_metadata where key = ${ATTEMPT_EVIDENCE_PREFIX + fixture.claim.token}`.execute(db);
+    await recordStoppedAttempt(db, fixture.claim.id, fixture.claim.token);
+    settlements.push(async (tx) => {
+      await sql`select 1 / 0`.execute(tx);
+    });
+    await expect(fail()).rejects.toThrow('division by zero');
+    expect(fixture.run!.done).toBe(false);
+    expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
+      status: MediaOperationStatus.Validating,
+      claimToken: fixture.run!.claimToken,
+      autoRetries: 0,
+    });
+    expect((await sql`select state,token from job where id = ${fixture.claim.id}::uuid`.execute(db)).rows).toEqual([
+      { state: 'active', token: fixture.claim.token },
+    ]);
+    settlements.pop();
+    expect(await fail()).toBe(true);
+    expect(await fixture.operations.getForWorker(fixture.operation.id)).toMatchObject({
+      status: MediaOperationStatus.Queued,
+      claimToken: null,
+      autoRetries: 1,
+      attempt: 1,
+    });
+    expect(await fail()).toBe(false);
+    expect((await fixture.operations.getForWorker(fixture.operation.id))?.autoRetries).toBe(1);
+    expect(await fixture.files()).toEqual([{ path: fixture.result('previous').files[0].path }]);
   });
 
   it.each(['expired operation', 'expired queue', 'superseded version'] as const)(

@@ -36,6 +36,7 @@ import {
   QUEUE_LOW_WATER,
   QUEUE_TIMING,
   QueueClaim,
+  QueueExecution,
   QueueIntent,
   QueueState,
 } from 'src/queue/types.js';
@@ -522,6 +523,7 @@ export class SqlQueueStore {
       stopRequestedOnly?: boolean;
       queuedCancellation?: boolean;
       publication?: QueuePublication;
+      settlements?: QueueExecution['failureSettlements'];
     } = {},
   ) {
     return withSelectionSharing(
@@ -558,6 +560,9 @@ export class SqlQueueStore {
           } stopped
           from job j where id = ${claim.id}::uuid and ${owned} for update`.execute(tx);
         if (!job || (options.stopRequestedOnly && !job.stopRequested)) return false;
+        // A domain retry may not outlive an unconfirmed executor. Leave this claim to recovery
+        // when the handler's bounded proof write failed; terminal queue state alone is not proof.
+        if (options.settlements?.length && !job.stopped) return false;
         let unconfirmedStop = false;
         if (options.expiredRecovery || job.stopRequested) {
           // Allow one sweep after expiry for the supervisor's bounded proof write. Cancellation
@@ -604,6 +609,7 @@ export class SqlQueueStore {
           and ${options.queuedCancellation ? sql`"finishedAt" is null` : sql`token = ${claim.token}::uuid`}`.execute(
           tx,
         );
+        for (const settle of options.settlements ?? []) await settle(tx, reason, job.cancelled);
         if (operationId) {
           if (unconfirmedStop) {
             // The media-operation dispatcher must not acquire a second retry budget or replay

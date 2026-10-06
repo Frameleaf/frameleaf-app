@@ -1472,9 +1472,10 @@ export class MediaOperationRepository {
     claimToken: string,
     options: {
       released: boolean;
+      executor?: Kysely<DB>;
     },
   ): Promise<boolean> {
-    const result = await this.db
+    const result = await (options.executor ?? this.db)
       .updateTable('media_operation')
       .set({
         status: MediaOperationStatus.Cancelled,

@@ -325,6 +325,7 @@ export class JobRepository {
                 })
             : undefined,
           {
+            settlements: context.failureSettlements,
             publication: (publish) =>
               admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
           },
@@ -338,8 +339,10 @@ export class JobRepository {
         try {
           // The database fence can observe cancellation before the coordinator's abort arrives.
           // Settle only this stopped claim, never publish its rejected output or rerun its handler.
+          // A deferred operation also needs this handoff when expiry alone rejected publication.
           await this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
-            stopRequestedOnly: true,
+            stopRequestedOnly: !context.failureSettlements?.length,
+            settlements: context.failureSettlements,
             publication: (publish) =>
               admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
           });

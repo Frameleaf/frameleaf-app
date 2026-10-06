@@ -67,6 +67,8 @@ export type QueueExecution = {
   followups: QueueIntent[];
   adoptions: Array<(tx: Transaction<any>) => Promise<void>>;
   failureDiagnostics?: Array<(tx: Transaction<any>) => Promise<void>>;
+  /** Database-only owner settlement, accepted with a failed claim only after confirmed executor stop. */
+  failureSettlements?: Array<(tx: Transaction<any>, reason: string, cancelled: boolean) => Promise<void>>;
   afterCommit?: Array<() => Promise<void>>;
   buffering: boolean;
   progressUnits: number;
