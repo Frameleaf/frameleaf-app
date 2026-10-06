@@ -161,5 +161,5 @@ describe('late shared selection recovery budget', () => {
       await controlDb?.destroy();
       await db.destroy();
     }
-  }, 90_000);
+  }, 180_000); // CI must finish capture and 2,001 sharing transactions; recovery/page bounds stay independent.
 });
