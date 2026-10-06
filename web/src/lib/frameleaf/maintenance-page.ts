@@ -62,7 +62,7 @@ export const maintenancePageState = (
 ): MaintenancePageState => {
   switch (status?.action) {
     case MaintenanceAction.End: {
-      return { kind: 'finished' };
+      return status.active ? { kind: 'maintenance' } : { kind: 'finished' };
     }
     case MaintenanceAction.RestoreDatabase: {
       if (status.error) {
