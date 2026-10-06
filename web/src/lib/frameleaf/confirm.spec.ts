@@ -1,4 +1,4 @@
-import { modalManager } from '@immich/ui';
+import { modalManager } from '@frameleaf/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
 import { confirmFrameleaf } from './confirm';

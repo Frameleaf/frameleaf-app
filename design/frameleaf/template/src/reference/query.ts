@@ -1,4 +1,4 @@
-import type { DiscoveryQuery as ApiDiscoveryQuery, MetadataSearchDto, SearchFilter, SmartSearchDto } from '@immich/sdk';
+import type { DiscoveryQuery as ApiDiscoveryQuery, MetadataSearchDto, SearchFilter, SmartSearchDto } from '@frameleaf/sdk';
 
 export type DiscoveryQuery = Required<Omit<ApiDiscoveryQuery, 'spaceId' | 'petIds'>> & Pick<ApiDiscoveryQuery, 'spaceId' | 'petIds'>;
 

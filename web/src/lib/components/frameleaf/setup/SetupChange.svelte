@@ -1,6 +1,6 @@
 <script lang="ts">
   /** The "Change" disclosure every optional step keeps its alternatives in. */
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -4,7 +4,7 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import type { AdminConfigMachineLearningDto } from '@immich/sdk';
+  import type { AdminConfigMachineLearningDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   interface Props {

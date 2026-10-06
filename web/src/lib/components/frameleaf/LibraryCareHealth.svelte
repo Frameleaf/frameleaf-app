@@ -86,8 +86,8 @@
     type MediaHealthSummaryResponseDto,
     type MediaOperationDetailDto,
     type UserAdminResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircleOutline, mdiClose, mdiImageOffOutline, mdiUndo } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy } from 'svelte';

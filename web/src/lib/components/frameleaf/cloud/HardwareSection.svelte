@@ -40,8 +40,8 @@
     type HardwareContainerCheckDto,
     type HardwareGpuFactsDto,
     type HardwareWorkloadBenchmarkDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertOutline,
     mdiCheckCircleOutline,

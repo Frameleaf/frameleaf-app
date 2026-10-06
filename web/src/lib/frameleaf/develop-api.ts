@@ -13,7 +13,7 @@ import {
   previewAssetDevelop,
   type AssetDevelopRecipeDto,
   type AssetDevelopResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { anyRevisionBusy } from '$lib/frameleaf/editor-draft';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 

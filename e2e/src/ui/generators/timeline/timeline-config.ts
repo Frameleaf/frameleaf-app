@@ -1,4 +1,4 @@
-import type { AssetVisibility } from '@immich/sdk';
+import type { AssetVisibility } from '@frameleaf/sdk';
 import { DayPattern, MonthDistribution } from 'src/ui/generators/timeline/distribution-patterns.js';
 
 // Constants for generation parameters

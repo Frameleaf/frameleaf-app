@@ -4,8 +4,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto } from '@immich/sdk';
-  import { LoadingSpinner } from '@immich/ui';
+  import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner } from '@frameleaf/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

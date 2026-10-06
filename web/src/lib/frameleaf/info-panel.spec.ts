@@ -5,7 +5,7 @@ import {
   type AssetImageEnrichmentResponseDto,
   type AssetResponseDto,
   type ExifResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   coordinateLabel,
   coordinatesOf,

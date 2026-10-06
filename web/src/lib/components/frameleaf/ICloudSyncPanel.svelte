@@ -65,8 +65,8 @@
     type ICloudConnectionResponseDto,
     type ICloudConnectionsResponseDto,
     type ICloudInventoryResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircleOutline, mdiClose, mdiCloudOutline } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';

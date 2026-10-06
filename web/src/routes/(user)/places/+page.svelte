@@ -2,7 +2,7 @@
   import PlacesPanel from '$lib/components/frameleaf/PlacesPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { PageData } from './$types';
 
   /** Places (FL-51): the prototype's `Places.jsx` over the real places data (`PlacesPanel`). */

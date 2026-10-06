@@ -26,8 +26,8 @@
     SharedLinkType,
     type AlbumResponseDto,
     type SharedLinkResponseDto,
-  } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
     mdiClockOutline,
     mdiContentCopy,

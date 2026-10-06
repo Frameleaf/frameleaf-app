@@ -1,4 +1,4 @@
-import { cancelAssetDevelopRender, getAssetDevelop, saveAssetDevelop } from '@immich/sdk';
+import { cancelAssetDevelopRender, getAssetDevelop, saveAssetDevelop } from '@frameleaf/sdk';
 import { initialNativeRecipe, isNativeRecipe, proposeNativeMask, type NativeRecipe } from './native-develop';
 
 export const NATIVE_SYNC_FIELDS = [

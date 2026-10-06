@@ -6,8 +6,8 @@
     getImageDescriptionRequeueEstimate,
     triggerImageDescriptionRequeue,
     type ImageDescriptionRequeueEstimateDto,
-  } from '@immich/sdk';
-  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   type CloseResult = { queued: boolean; cloudBatches: boolean } | { deferred: true };

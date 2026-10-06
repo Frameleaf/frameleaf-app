@@ -38,8 +38,8 @@
     isHttpError,
     type AssetFaceResponseDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon, Input, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Input, modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountEditOutline,
     mdiAccountOutline,
@@ -96,7 +96,7 @@
   let candidates = $state<PersonResponseDto[]>([]);
   let isLoadingCandidates = $state(false);
   let isBusy = $state(false);
-  // `null`, not `undefined`: @immich/ui `Input` gives `ref` a fallback, and binding `undefined` to it throws.
+  // `null`, not `undefined`: @frameleaf/ui `Input` gives `ref` a fallback, and binding `undefined` to it throws.
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let nameInputEl = $state<HTMLInputElement | null>(null);
 

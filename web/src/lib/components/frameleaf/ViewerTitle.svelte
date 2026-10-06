@@ -9,7 +9,7 @@
    */
   import { viewerHeadlineText } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
-  import type { AssetResponseDto } from '@immich/sdk';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {

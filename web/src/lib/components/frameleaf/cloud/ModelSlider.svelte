@@ -24,7 +24,7 @@
     type PositionState,
     type RouteMode,
   } from '$lib/frameleaf/gpu-model-catalog';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCancel, mdiChip, mdiCloudOutline, mdiExpansionCard, mdiInformationOutline } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
 

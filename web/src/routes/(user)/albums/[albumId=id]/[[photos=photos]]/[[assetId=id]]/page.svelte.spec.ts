@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { libraryTransientKey } from '$lib/frameleaf/library-session';
@@ -11,7 +11,7 @@ import AlbumPage from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidate: vi.fn(), onNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ navigating: { complete: Promise.resolve() } }));
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getAlbumInfo: vi.fn(),
   getAllTags: vi.fn().mockResolvedValue([]),

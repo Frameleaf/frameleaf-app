@@ -1,4 +1,4 @@
-import { AssetVisibility, type TimeBucketAssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

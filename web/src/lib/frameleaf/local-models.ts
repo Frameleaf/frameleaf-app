@@ -14,7 +14,7 @@
  * GPU, white when it runs on the processor, and unavailable otherwise. Without a check every stop is
  * white, since nothing says which fit.
  */
-import type { HardwareCheckResponseDto } from '@immich/sdk';
+import type { HardwareCheckResponseDto } from '@frameleaf/sdk';
 import { workerFromHardware, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 import type { DetectedGpu, RouteMode } from '$lib/frameleaf/gpu-model-catalog';
 

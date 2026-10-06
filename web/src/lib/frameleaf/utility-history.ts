@@ -1,4 +1,4 @@
-import { MediaOperationKind, type MediaOperationDto } from '@immich/sdk';
+import { MediaOperationKind, type MediaOperationDto } from '@frameleaf/sdk';
 import { fromMediaOperation, type ActivityItem } from '$lib/frameleaf/activity';
 
 /**

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { scrollProperties } from '$lib/components/shared-components/album-selection/album-selection-utils';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPlus } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { Action } from 'svelte/action';

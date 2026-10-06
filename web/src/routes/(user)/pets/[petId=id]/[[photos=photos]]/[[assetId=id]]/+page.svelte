@@ -14,8 +14,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { searchAssets, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, LoadingSpinner } from '@immich/ui';
+  import { searchAssets, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, LoadingSpinner } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiEyeOffOutline } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';

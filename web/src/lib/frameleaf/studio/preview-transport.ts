@@ -15,7 +15,7 @@ import {
   requestStudioPreview,
   StudioPreviewQuality as ApiStudioPreviewQuality,
   viewStudioPreviewFrame,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type {
   StudioPreviewIntent,
   StudioPreviewQuality,

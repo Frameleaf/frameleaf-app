@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-this-outside-of-class */
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import { expect, Page } from '@playwright/test';
 
 function getAssetIdFromUrl(url: URL): string | null {

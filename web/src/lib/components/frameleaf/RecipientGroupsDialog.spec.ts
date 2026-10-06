@@ -4,15 +4,15 @@ import {
   updateRecipientGroup,
   type RecipientGroupResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
 import RecipientGroupsDialog from './RecipientGroupsDialog.svelte';
 
 vi.mock('$lib/utils');
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   createRecipientGroup: vi.fn(),
   updateRecipientGroup: vi.fn(),
   deleteRecipientGroup: vi.fn(),

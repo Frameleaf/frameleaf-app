@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@frameleaf/sdk';
 import {
   cameraLabel,
   dimensionsLabel,

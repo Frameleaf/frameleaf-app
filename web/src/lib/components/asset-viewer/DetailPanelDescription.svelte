@@ -22,8 +22,8 @@
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, Text, Textarea, toastManager } from '@immich/ui';
+  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, Text, Textarea, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline, mdiShimmer } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fromAction } from 'svelte/attachments';

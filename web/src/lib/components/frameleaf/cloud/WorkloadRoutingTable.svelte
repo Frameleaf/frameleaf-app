@@ -43,8 +43,8 @@
     getHardwareCheck,
     type CloudMlStatusResponseDto,
     type HardwareCheckResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiCheckCircleOutline, mdiExpansionCard, mdiSourceBranch } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

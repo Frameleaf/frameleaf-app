@@ -5,7 +5,7 @@ import {
   TimeBucketDateType,
   type AssetResponseDto,
   type TimeBucketAssetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { justifiedRows } from '$lib/frameleaf/justified-rows';

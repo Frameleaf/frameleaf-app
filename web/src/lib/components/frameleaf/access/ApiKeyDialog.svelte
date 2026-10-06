@@ -19,7 +19,7 @@
     normalizeKeyPermissions,
   } from '$lib/frameleaf/personal-access';
   import { handleCreateApiKey, handleUpdateApiKey } from '$lib/services/api-key.service';
-  import { Permission, type ApiKeyResponseDto } from '@immich/sdk';
+  import { Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import './access.css';
 

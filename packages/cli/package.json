@@ -1,5 +1,5 @@
 {
-  "name": "@immich/cli",
+  "name": "@frameleaf/cli",
   "version": "3.2.0",
   "description": "Command Line Interface (CLI) for Frameleaf",
   "repository": {
@@ -20,7 +20,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@immich/sdk": "workspace:*",
+    "@frameleaf/sdk": "workspace:*",
     "@types/byte-size": "^8.1.0",
     "@types/cli-progress": "^3.11.0",
     "@types/better-sqlite3": "^7.6.11",

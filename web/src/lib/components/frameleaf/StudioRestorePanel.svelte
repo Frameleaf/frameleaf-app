@@ -24,8 +24,8 @@
   import type { StudioAssetRef } from '$lib/frameleaf/studio/host-contract';
   import { restorationIdOfMedia } from '$lib/frameleaf/studio/assets';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, type AssetResponseDto, type AssetRestorationResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getAssetInfo, type AssetResponseDto, type AssetRestorationResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import { tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';

@@ -6,8 +6,8 @@ import {
   editAsset,
   getAssetEdits,
   removeAssetEdits,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
@@ -23,8 +23,8 @@ import VideoQuickEditor from './VideoQuickEditor.svelte';
  */
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     getAssetEdits: vi.fn(),
@@ -37,8 +37,8 @@ vi.mock('@immich/sdk', async () => {
   };
 });
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   const { default: Icon } = await import('@test-data/components/MockIcon.svelte');
   return {
     ...actual,

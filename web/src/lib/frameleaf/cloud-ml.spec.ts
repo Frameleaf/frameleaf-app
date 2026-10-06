@@ -1,4 +1,4 @@
-import { CloudMlConnection, type CloudMlStatusResponseDto, type HardwareCheckResponseDto } from '@immich/sdk';
+import { CloudMlConnection, type CloudMlStatusResponseDto, type HardwareCheckResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   benchmarkFor,

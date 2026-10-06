@@ -5,7 +5,7 @@
    * a sentence, the features and one action.
    */
   import { formatUsd } from '$lib/frameleaf/cloud';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

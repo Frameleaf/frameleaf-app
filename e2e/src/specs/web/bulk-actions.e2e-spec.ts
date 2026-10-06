@@ -1,4 +1,4 @@
-import { LoginResponseDto, createPartner, deleteAssets, setUserOnboarding } from '@immich/sdk';
+import { LoginResponseDto, createPartner, deleteAssets, setUserOnboarding } from '@frameleaf/sdk';
 import { expect, type Page } from '@playwright/test';
 import { Client } from 'pg';
 import { asBearerAuth, utils } from 'src/utils.js';

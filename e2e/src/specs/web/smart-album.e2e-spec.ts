@@ -11,7 +11,7 @@ import {
   pauseMediaOperation,
   type ClassificationPlanResponseDto,
   type LoginResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

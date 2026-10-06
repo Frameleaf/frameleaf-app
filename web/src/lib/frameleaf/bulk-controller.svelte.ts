@@ -3,8 +3,8 @@ import {
   isHttpError,
   type ArchiveOperationResponseDto,
   type MediaOperationDto,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import {

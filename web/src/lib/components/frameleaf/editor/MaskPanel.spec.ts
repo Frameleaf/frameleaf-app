@@ -1,10 +1,10 @@
-import { AssetDevelopMaskKind } from '@immich/sdk';
+import { AssetDevelopMaskKind } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createMask, MAX_MASKS, type EditorMask } from '$lib/frameleaf/photo-tools';
 import MaskPanel from './MaskPanel.svelte';
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   const { default: Icon } = await import('@test-data/components/MockIcon.svelte');
   return { ...actual, Icon };
 });

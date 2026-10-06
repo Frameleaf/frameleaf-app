@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TooltipProvider } from '@immich/ui';
+  import { TooltipProvider } from '@frameleaf/ui';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   let { theme = 'dark', disabled = false }: { theme?: 'dark' | 'light'; disabled?: boolean } = $props();

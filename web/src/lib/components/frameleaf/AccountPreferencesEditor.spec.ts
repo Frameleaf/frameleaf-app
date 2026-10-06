@@ -1,4 +1,4 @@
-import type { UserPreferencesResponseDto, UserPreferencesUpdateDto } from '@immich/sdk';
+import type { UserPreferencesResponseDto, UserPreferencesUpdateDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import AccountPreferencesEditor from '$lib/components/frameleaf/AccountPreferencesEditor.svelte';
@@ -7,8 +7,8 @@ import en from '../../../../../i18n/en.json';
 
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn() }));
 
-vi.mock('@immich/sdk', async (originalImport) => ({
-  ...(await originalImport<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (originalImport) => ({
+  ...(await originalImport<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => typeof error === 'object' && error !== null && 'status' in error,
 }));
 

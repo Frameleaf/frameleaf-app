@@ -6,7 +6,7 @@ import {
   LoginResponseDto,
   signUpAdmin,
   updateAssets,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Socket } from 'socket.io-client';

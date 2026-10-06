@@ -5,7 +5,7 @@ import {
   type StudioProjectDetailDto,
   type StudioProjectLeaseDto,
   type StudioProjectSaveResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { websocketEvents, websocketStore } from '$lib/stores/websocket';
 import { decideStudioDraft, studioDraftResult } from './draft-staging';

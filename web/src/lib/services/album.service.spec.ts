@@ -1,11 +1,11 @@
-import { moveAlbumToCollection, removeUserFromAlbum, updateAlbumInfo } from '@immich/sdk';
+import { moveAlbumToCollection, removeUserFromAlbum, updateAlbumInfo } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleEditAlbumDetails, handleLeaveAlbum, leftLocally } from '$lib/services/album.service';
 import { handleError } from '$lib/utils/handle-error';
 import { albumFactory } from '@test-data/factories/album-factory';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   updateAlbumInfo: vi.fn(),
   moveAlbumToCollection: vi.fn(),
   removeUserFromAlbum: vi.fn(),

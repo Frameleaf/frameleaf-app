@@ -14,7 +14,7 @@
   import { Route } from '$lib/route';
   import { albumViewSettings } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility, getAuthStatus } from '@immich/sdk';
+  import { AssetVisibility, getAuthStatus } from '@frameleaf/sdk';
   import { mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

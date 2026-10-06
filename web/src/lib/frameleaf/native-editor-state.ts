@@ -1,4 +1,4 @@
-import type { AssetDevelopResponseDto } from '@immich/sdk';
+import type { AssetDevelopResponseDto } from '@frameleaf/sdk';
 
 /** Publication is later than rendering; historical successes never satisfy an admitted target. */
 export function nativePublicationState(develop: AssetDevelopResponseDto, targetId: string | undefined) {

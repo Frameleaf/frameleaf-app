@@ -1,4 +1,4 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { motionScrollBehavior } from '$lib/frameleaf/motion';

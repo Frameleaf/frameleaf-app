@@ -26,7 +26,7 @@ vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), invalidateAll: vi.fn
 vi.mock('$app/state', () => state);
 
 const sdk = vi.hoisted(() => ({ getAssetInfo: vi.fn() }));
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   getAssetInfo: sdk.getAssetInfo,
   isHttpError: (error: unknown) => !!(error as { isHttp?: boolean })?.isHttp,
 }));

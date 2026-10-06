@@ -1,4 +1,4 @@
-import { PersonMergeVerdict } from '@immich/sdk';
+import { PersonMergeVerdict } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';

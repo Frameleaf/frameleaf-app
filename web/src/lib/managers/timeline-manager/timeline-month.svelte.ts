@@ -1,4 +1,4 @@
-import { AssetOrder, TimeBucketDateType, type TimeBucketAssetResponseDto } from '@immich/sdk';
+import { AssetOrder, TimeBucketDateType, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';

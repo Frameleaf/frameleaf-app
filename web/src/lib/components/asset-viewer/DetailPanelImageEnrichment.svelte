@@ -44,9 +44,9 @@
     updateAssetImageEnrichment,
     type AssetImageEnrichmentResponseDto,
     type AssetResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { Icon, LoadingSpinner, toastManager } from '@immich/ui';
+  import { Icon, LoadingSpinner, toastManager } from '@frameleaf/ui';
   import {
     mdiClose,
     mdiPencilOutline,

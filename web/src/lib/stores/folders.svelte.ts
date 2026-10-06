@@ -5,7 +5,7 @@ import {
    * TODO: Incorrect type
    */
   type AssetResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { buildFolderTree, type FolderTree } from '$lib/frameleaf/folder-tree';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 

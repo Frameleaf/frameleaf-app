@@ -1,4 +1,4 @@
-import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
 import { throttle } from 'lodash-es';
 import type { Unsubscriber } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';

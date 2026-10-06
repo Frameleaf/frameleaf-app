@@ -5,7 +5,7 @@ import {
   type AlbumResponseDto,
   type AlbumTreeResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /**
  * Pure rules for the Albums page (FL-52). Vocabulary: an album holds photos, a

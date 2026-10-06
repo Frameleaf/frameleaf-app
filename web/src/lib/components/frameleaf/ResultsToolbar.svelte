@@ -29,8 +29,8 @@
     requestFilterPanelClose,
     type FilterPanelState,
   } from '$lib/frameleaf/search-shortcuts';
-  import { getPerson, type PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getPerson, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiCalendarRange,

@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type TrashItemResponseDto, type TrashReviewResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type TrashItemResponseDto, type TrashReviewResponseDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { filmstripPlaceholder } from '$lib/frameleaf/viewer-filmstrip';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';

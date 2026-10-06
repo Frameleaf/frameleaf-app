@@ -1,4 +1,4 @@
-import { searchAssets, type AssetOrder, type AssetResponseDto } from '@immich/sdk';
+import { searchAssets, type AssetOrder, type AssetResponseDto } from '@frameleaf/sdk';
 import { SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
 
 /**

@@ -1,4 +1,4 @@
-import { OAuthClient } from '@immich/e2e-auth-server';
+import { OAuthClient } from '@frameleaf/e2e-auth-server';
 import {
   LoginResponseDto,
   createUserAdmin,
@@ -7,7 +7,7 @@ import {
   logout,
   setUserOnboarding,
   updateConfig,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

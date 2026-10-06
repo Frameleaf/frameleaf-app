@@ -51,8 +51,8 @@
     type RemoteAccessStatusResponseDto,
     type RemoteAccessUpdateDto,
     type RemoteAccessUsageResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckCircleOutline,
     mdiCloudOutline,

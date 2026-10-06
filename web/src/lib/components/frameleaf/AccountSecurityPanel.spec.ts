@@ -1,4 +1,4 @@
-import type { SessionResponseDto } from '@immich/sdk';
+import type { SessionResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { userAdminFactory } from '$lib/../test-data/factories/user-factory';
@@ -14,13 +14,13 @@ import en from '../../../../../i18n/en.json';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-id' } } }));
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return { ...sdk, deleteUserSessionAdmin: vi.fn(), getUserPinCodeStateAdmin: vi.fn() };
 });
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   return {
     ...actual,
     modalManager: { showDialog: vi.fn(), show: vi.fn() },
@@ -45,15 +45,15 @@ const session = (overrides: Partial<SessionResponseDto> = {}): SessionResponseDt
 beforeEach(async () => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  const { deleteUserSessionAdmin, getUserPinCodeStateAdmin } = await import('@immich/sdk');
+  const { deleteUserSessionAdmin, getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
   vi.mocked(deleteUserSessionAdmin).mockResolvedValue(undefined as never);
   vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: false });
 });
 
 describe('AccountSecurityPanel (FL-76)', () => {
   it('revokes a device after confirmation, through the admin session endpoint', async () => {
-    const { modalManager, toastManager } = await import('@immich/ui');
-    const { deleteUserSessionAdmin } = await import('@immich/sdk');
+    const { modalManager, toastManager } = await import('@frameleaf/ui');
+    const { deleteUserSessionAdmin } = await import('@frameleaf/sdk');
     // CC-33: the Frameleaf ConfirmDialog, opened through modalManager.show, replaces showDialog.
     vi.mocked(modalManager.show).mockResolvedValue(true as never);
 
@@ -69,8 +69,8 @@ describe('AccountSecurityPanel (FL-76)', () => {
   });
 
   it('does nothing when the confirmation is declined', async () => {
-    const { modalManager } = await import('@immich/ui');
-    const { deleteUserSessionAdmin } = await import('@immich/sdk');
+    const { modalManager } = await import('@frameleaf/ui');
+    const { deleteUserSessionAdmin } = await import('@frameleaf/sdk');
     vi.mocked(modalManager.show).mockResolvedValue(false as never);
 
     render(AccountSecurityPanel, { user, sessions: [session()] });
@@ -105,7 +105,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
 
   describe('Locked folder PIN (CC-30, AccountsLibraries.jsx 1403-1435)', () => {
     it('offers Set PIN and no Reset PIN while the account has none', async () => {
-      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
       render(AccountSecurityPanel, { user, sessions: [] });
 
       expect(await screen.findByText(en.frameleaf_users_pin_not_set)).toBeInTheDocument();
@@ -115,8 +115,8 @@ describe('AccountSecurityPanel (FL-76)', () => {
     });
 
     it('offers Change PIN and Reset PIN once a PIN is set, and rereads the state after either', async () => {
-      const { modalManager } = await import('@immich/ui');
-      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      const { modalManager } = await import('@frameleaf/ui');
+      const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
       vi.mocked(modalManager.show).mockResolvedValue(undefined as never);
       render(AccountSecurityPanel, { user, sessions: [] });
@@ -130,7 +130,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
     });
 
     it('keeps both actions when the state cannot be read', async () => {
-      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserPinCodeStateAdmin).mockRejectedValue(new Error('offline'));
       render(AccountSecurityPanel, { user, sessions: [] });
 

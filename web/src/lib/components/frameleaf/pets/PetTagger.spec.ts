@@ -1,4 +1,4 @@
-import { PetObservationSource, PetObservationState, PetSpecies, type PetResponseDto } from '@immich/sdk';
+import { PetObservationSource, PetObservationState, PetSpecies, type PetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

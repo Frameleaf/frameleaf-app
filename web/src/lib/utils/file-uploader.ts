@@ -5,8 +5,8 @@ import {
   checkBulkUpload,
   getBaseUrl,
   type AssetMediaResponseDto,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { tick } from 'svelte';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';

@@ -13,7 +13,7 @@ import {
   SearchFacetField,
   type AlbumResponseDto,
   type AlbumTreeResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   BEST_PHOTOS_PREVIEW_LIMIT,
   BEST_PHOTOS_QUALITY_MIN_SCORE,

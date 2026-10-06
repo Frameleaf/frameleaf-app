@@ -14,8 +14,8 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetVisibility } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

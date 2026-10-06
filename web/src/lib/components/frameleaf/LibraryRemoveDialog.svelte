@@ -14,7 +14,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { serverStatus } from '$lib/frameleaf/libraries';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getLibraryRemovalReview, removeLibrary, type LibraryRemovalReviewDto } from '@immich/sdk';
+  import { getLibraryRemovalReview, removeLibrary, type LibraryRemovalReviewDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

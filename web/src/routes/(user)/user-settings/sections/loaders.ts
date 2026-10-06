@@ -18,7 +18,7 @@ import {
   listRenderWorkers,
   searchRenderWorkerAudit,
   searchUsersAdmin,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 export const loadRenderWorkers = async () => {
   const [workers, limits, audit, users] = await Promise.all([

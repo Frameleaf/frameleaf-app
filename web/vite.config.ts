@@ -49,7 +49,7 @@ export default defineConfig({
       'xmlhttprequest-ssl': './node_modules/engine.io-client/lib/xmlhttprequest.js',
       // eslint-disable-next-line unicorn/prefer-module
       '@test-data': path.resolve(import.meta.dirname, './src/test-data'),
-      // '@immich/ui': path.resolve(import.meta.dirname, '../../ui/packages/ui'),
+      // '@frameleaf/ui': path.resolve(import.meta.dirname, '../../ui/packages/ui'),
     },
   },
   server: {

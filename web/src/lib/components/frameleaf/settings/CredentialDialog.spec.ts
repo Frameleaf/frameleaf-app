@@ -1,12 +1,12 @@
-import { ConfigCredential, updateConfigCredential, type AdminConfigDto } from '@immich/sdk';
+import { ConfigCredential, updateConfigCredential, type AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import CredentialDialog from '$lib/components/frameleaf/settings/CredentialDialog.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import en from '../../../../../../i18n/en.json';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   updateConfigCredential: vi.fn(),
 }));
 

@@ -35,7 +35,7 @@ import {
   type SearchFilter,
   type SearchResponseDto,
   type SmartSearchDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
 import {

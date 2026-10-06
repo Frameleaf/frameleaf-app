@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiEarth,
@@ -35,7 +35,7 @@
   import { Route } from '$lib/route';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@immich/sdk';
+  import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';

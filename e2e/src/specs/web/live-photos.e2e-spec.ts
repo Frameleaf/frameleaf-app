@@ -5,7 +5,7 @@ import {
   getLivePhotoCandidates,
   updateConfig,
   VideoCodec,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';

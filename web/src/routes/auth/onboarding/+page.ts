@@ -1,4 +1,4 @@
-import { getFrameleafSetup, type FrameleafSetupResponseDto } from '@immich/sdk';
+import { getFrameleafSetup, type FrameleafSetupResponseDto } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';

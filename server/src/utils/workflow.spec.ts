@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@immich/plugin-sdk';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { WorkflowType } from 'src/enum.js';
 import { isMethodCompatible } from 'src/utils/workflow.js';
 

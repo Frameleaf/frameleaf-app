@@ -1,6 +1,6 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiImageMultipleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

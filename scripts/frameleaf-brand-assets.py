@@ -43,11 +43,11 @@ REFERENCE_SPECS = (
 )
 
 COMPATIBILITY_SENTINELS = (
-    ("packages/sdk/package.json", "json-name", "@immich/sdk"),
-    ("server/package.json", "json-name", "immich"),
+    ("packages/sdk/package.json", "json-name", "@frameleaf/sdk"),
+    ("server/package.json", "json-name", "frameleaf"),
     ("machine-learning/pyproject.toml", "toml-project-name", "immich-ml"),
     ("machine-learning/pyproject.toml", "toml-build-includes", "immich_ml"),
-    ("web/src/routes/+layout.svelte", "svelte-import", "@immich/sdk"),
+    ("web/src/routes/+layout.svelte", "svelte-import", "@frameleaf/sdk"),
 )
 
 

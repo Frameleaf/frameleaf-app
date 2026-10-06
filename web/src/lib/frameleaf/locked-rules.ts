@@ -21,7 +21,7 @@ import {
   type TagResponseDto,
   type UserPreferencesResponseDto,
   type UserPreferencesUpdateDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 export type LockedRules = {
   tagIds: string[];

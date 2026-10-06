@@ -1,6 +1,6 @@
 <script lang="ts">
   import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import type { HTMLInputAttributes } from 'svelte/elements';
 

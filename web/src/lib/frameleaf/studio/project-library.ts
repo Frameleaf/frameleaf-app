@@ -20,7 +20,7 @@ import {
   type StudioBundleSourceDto,
   type StudioBundleUploadDto,
   type StudioProjectDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { isRetryingMediaOperation } from '$lib/frameleaf/activity';
 

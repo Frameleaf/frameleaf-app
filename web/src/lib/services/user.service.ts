@@ -1,5 +1,5 @@
-import { changePassword, resetPinCode, type ChangePasswordDto, type PinCodeResetDto } from '@immich/sdk';
-import { toastManager, type ActionItem } from '@immich/ui';
+import { changePassword, resetPinCode, type ChangePasswordDto, type PinCodeResetDto } from '@frameleaf/sdk';
+import { toastManager, type ActionItem } from '@frameleaf/ui';
 import { mdiLockOutline } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';

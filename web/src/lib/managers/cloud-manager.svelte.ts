@@ -21,7 +21,7 @@ import {
   type CloudStatusResponseDto,
   type LicenseProductsResponseDto,
   type LicenseStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /** The longest wait between checks of a pending code after failures. */

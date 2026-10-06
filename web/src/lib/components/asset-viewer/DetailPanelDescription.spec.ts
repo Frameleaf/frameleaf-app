@@ -1,4 +1,4 @@
-import { updateAsset } from '@immich/sdk';
+import { updateAsset } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -6,8 +6,8 @@ import type { DescriptionReview } from '$lib/frameleaf/info-panel';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import DetailPanelDescription from './DetailPanelDescription.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return { ...sdk, updateAsset: vi.fn(), getAssetInfo: vi.fn() };
 });
 

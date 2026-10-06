@@ -1,4 +1,4 @@
-import { updateMyPreferences } from '@immich/sdk';
+import { updateMyPreferences } from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 
 export const setSupportBadgeVisibility = async (value: boolean) => {

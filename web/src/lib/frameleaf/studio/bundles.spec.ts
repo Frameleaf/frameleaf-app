@@ -3,7 +3,7 @@ import {
   StudioBundleSourceResolution,
   type MediaOperationDto,
   type StudioBundleUploadDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { createStudioBridge } from './bridge';
 import { createStudioBundleHandlers, studioBundleDownloadPath, type StudioBundleApi } from './bundles';

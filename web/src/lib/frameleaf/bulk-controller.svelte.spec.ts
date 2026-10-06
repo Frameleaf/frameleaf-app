@@ -1,5 +1,5 @@
-import { ArchiveOperationScope, type ArchiveOperationResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { ArchiveOperationScope, type ArchiveOperationResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveGateway } from '$lib/frameleaf/archive-operations';
 import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
@@ -16,10 +16,10 @@ vi.mock('$lib/utils/i18n', () => ({
 }));
 vi.mock('$lib/utils/asset-utils', () => ({ downloadArchive: vi.fn() }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() } }));
+vi.mock('@frameleaf/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() } }));
 // an HTTP refusal, as the generated SDK reports one
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => error instanceof Error && 'status' in error,
 }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({ activitySession: { refresh: vi.fn() } }));

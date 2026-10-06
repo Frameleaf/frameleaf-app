@@ -57,8 +57,8 @@
     type TrashItemResponseDto,
     type TrashReviewResponseDto,
     type TrashSummaryResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiBackupRestore,
     mdiCheckCircleOutline,

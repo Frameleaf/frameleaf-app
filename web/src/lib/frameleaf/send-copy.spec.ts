@@ -1,5 +1,5 @@
-import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import {
   canSendCopies,
   isSendable,

@@ -1,11 +1,11 @@
-import { getBackupRestoreVerification, recordBackupRestoreVerification } from '@immich/sdk';
+import { getBackupRestoreVerification, recordBackupRestoreVerification } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
 import en from '../../../../../i18n/en.json';
 
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   getBackupRestoreVerification: vi.fn(),
   recordBackupRestoreVerification: vi.fn(),
 }));

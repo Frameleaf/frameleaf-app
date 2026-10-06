@@ -15,7 +15,7 @@ import {
   type CloudMlModelChoiceDto,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 
 export type CloudModelGroupRow = {

@@ -1,4 +1,4 @@
-import { updateAsset } from '@immich/sdk';
+import { updateAsset } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { AssetAction } from '$lib/constants';
@@ -9,8 +9,8 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import RatingAction from './RatingAction.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return { ...sdk, updateAsset: vi.fn() };
 });
 

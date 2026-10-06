@@ -1,4 +1,4 @@
-import { MaintenanceAction } from '@immich/sdk';
+import { MaintenanceAction } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   backupFileVersion,

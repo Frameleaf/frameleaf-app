@@ -1,4 +1,4 @@
-import { AssetOrder, SuppressionScope, type UserPreferencesResponseDto } from '@immich/sdk';
+import { AssetOrder, SuppressionScope, type UserPreferencesResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({

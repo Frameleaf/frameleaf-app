@@ -3,7 +3,7 @@ import {
   UtilityActivityTool,
   type AssetResponseDto,
   type UtilityActivityEntryDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';

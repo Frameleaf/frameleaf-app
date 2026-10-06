@@ -7,9 +7,9 @@
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, AssetVisibility, getAssetInfo, searchAssets, type AssetResponseDto } from '@immich/sdk';
+  import { AssetMediaSize, AssetVisibility, getAssetInfo, searchAssets, type AssetResponseDto } from '@frameleaf/sdk';
   import { mdiArrowDown, mdiArrowLeft, mdiArrowRight, mdiArrowUp, mdiMinus, mdiPlus } from '@mdi/js';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

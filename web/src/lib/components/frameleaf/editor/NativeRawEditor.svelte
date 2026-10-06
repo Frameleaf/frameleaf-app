@@ -27,7 +27,7 @@
     type AssetResponseDto,
     type AssetDevelopRevisionResponseDto,
     type DevelopPresetResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount, onDestroy } from 'svelte';
 
   let {

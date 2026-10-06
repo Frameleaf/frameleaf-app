@@ -1,4 +1,4 @@
-import type { AssetResponseDto, MetadataSearchDto } from '@immich/sdk';
+import type { AssetResponseDto, MetadataSearchDto } from '@frameleaf/sdk';
 
 /**
  * The Places tree (FL-51), a port of the prototype's `placesTree` (`discovery-data.mjs:398-474`)

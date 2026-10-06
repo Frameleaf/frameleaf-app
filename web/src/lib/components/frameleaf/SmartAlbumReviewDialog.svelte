@@ -11,7 +11,7 @@
     getClassificationRuleMatches,
     type ClassificationMatchDto,
     type ClassificationRuleResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

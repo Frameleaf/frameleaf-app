@@ -14,7 +14,7 @@
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { locale } from '$lib/stores/preferences.store';
   import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
-  import type { AlbumResponseDto, AssetResponseDto, PersonResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto, AssetResponseDto, PersonResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

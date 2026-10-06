@@ -78,17 +78,9 @@ $env:FRAMELEAF_SERVER_URL = "https://photos.example.com/"
 mise //web:start
 ```
 
-#### `@immich/ui`
+#### `@frameleaf/ui`
 
-To see local changes to `@immich/ui` in Frameleaf, do the following:
-
-1. Install `@immich/ui` as a sibling to `frameleaf-app/`, for example `/home/user/frameleaf-app` and `/home/user/ui`
-2. Build the `@immich/ui` project via `pnpm run build`
-3. Uncomment the corresponding volume in web service of the `docker/docker-compose.dev.yml` file (`../../ui:/usr/src/ui`)
-4. Uncomment the corresponding alias in the `web/vite.config.ts` file (`'@immich/ui': path.resolve(\_\_dirname, '../../ui/packages/ui')`)
-5. Uncomment the import statement in `web/src/app.css` file `@import '../../../ui/packages/ui/dist/theme/default.css';` and comment out `@import '@immich/ui/theme/default.css';`
-6. Start up the stack via `mise dev`
-7. After making changes in `@immich/ui`, rebuild it (`pnpm run build`)
+The UI lives in `packages/ui/dist/` as the local `@frameleaf/ui` workspace package. Edit its Svelte, JavaScript or CSS files directly and restart the web development server. No sibling checkout, npm download, alias or separate UI build is required. Preserve the included license and the Frameleaf accessibility fixes.
 
 ### Mobile apps
 

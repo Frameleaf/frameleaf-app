@@ -17,8 +17,8 @@
    * the field.
    */
   import { SEARCH_ASK_EXAMPLES, type SearchAskProblem } from '$lib/frameleaf/search-ask';
-  import { Icon } from '@immich/ui';
-  import type { AskSearchResponseDto } from '@immich/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import type { AskSearchResponseDto } from '@frameleaf/sdk';
   import { mdiAlertCircleOutline, mdiClose, mdiCreation, mdiHistory, mdiMagnify } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

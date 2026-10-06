@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { testAssetDir, utils } from 'src/utils.js';

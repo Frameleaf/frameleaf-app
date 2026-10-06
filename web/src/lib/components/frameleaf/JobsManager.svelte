@@ -106,8 +106,8 @@
     triggerSmartAlbumReevaluate,
     type SmartAlbumBuiltInKind,
     type UserAdminResponseDto,
-  } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Icon, type ActionItem } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { CommandPaletteDefaultProvider, Icon, type ActionItem } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAlertCircleOutline,

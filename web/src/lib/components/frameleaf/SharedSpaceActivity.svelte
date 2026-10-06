@@ -22,8 +22,8 @@
     type SharedSpaceActivityResponseDto,
     type SharedSpaceEventResponseDto,
     type SharedSpaceMemberResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckAll, mdiClose, mdiHistory, mdiReply } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

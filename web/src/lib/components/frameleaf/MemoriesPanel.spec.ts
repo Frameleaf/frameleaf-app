@@ -1,4 +1,4 @@
-import { searchMemories, updateMemory, type MemoryResponseDto } from '@immich/sdk';
+import { searchMemories, updateMemory, type MemoryResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -7,8 +7,8 @@ import en from '../../../../../i18n/en.json';
 import MemoriesPanel from './MemoriesPanel.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchMemories: vi.fn().mockResolvedValue([]),
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
   getMemoryShowLess: vi.fn().mockResolvedValue([]),

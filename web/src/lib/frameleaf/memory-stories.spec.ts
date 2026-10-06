@@ -7,8 +7,8 @@ import {
   StudioExportResolution,
   type MemoryExportResponseDto,
   type MemoryResponseDto,
-} from '@immich/sdk';
-import { MemoryShowLessKind } from '@immich/sdk';
+} from '@frameleaf/sdk';
+import { MemoryShowLessKind } from '@frameleaf/sdk';
 import { addMessages, t as translations } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import {

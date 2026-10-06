@@ -1,4 +1,9 @@
-import { getAssetInfo, getStudioProject, getStudioRestoredVersion, type StudioRestoredVersionDto } from '@immich/sdk';
+import {
+  getAssetInfo,
+  getStudioProject,
+  getStudioRestoredVersion,
+  type StudioRestoredVersionDto,
+} from '@frameleaf/sdk';
 import { libraryAssetIdsIn, resolveStudioAssets } from '$lib/frameleaf/studio/assets';
 import { parseStudioHandoff } from '$lib/frameleaf/studio/handoff';
 import { authenticate } from '$lib/utils/auth';

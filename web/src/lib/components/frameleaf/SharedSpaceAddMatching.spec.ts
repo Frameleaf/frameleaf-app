@@ -1,4 +1,4 @@
-import { AlbumKind } from '@immich/sdk';
+import { AlbumKind } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';

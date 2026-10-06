@@ -18,8 +18,13 @@
   import { Route } from '$lib/route';
   import { getUserAdminsActions } from '$lib/services/user-admin.service';
   import { requestServerInfo } from '$lib/utils/auth';
-  import { getServerStatistics, searchUsersAdmin, type UsageByUserDto, type UserAdminResponseDto } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider } from '@immich/ui';
+  import {
+    getServerStatistics,
+    searchUsersAdmin,
+    type UsageByUserDto,
+    type UserAdminResponseDto,
+  } from '@frameleaf/sdk';
+  import { CommandPaletteDefaultProvider } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import UserDetail from './UserDetail.svelte';

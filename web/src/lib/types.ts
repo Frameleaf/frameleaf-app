@@ -1,5 +1,5 @@
-import type { ImageEnrichmentFilter, QueueResponseDto } from '@immich/sdk';
-import type { ActionItem } from '@immich/ui';
+import type { ImageEnrichmentFilter, QueueResponseDto } from '@frameleaf/sdk';
+import type { ActionItem } from '@frameleaf/ui';
 import type { DateTime } from 'luxon';
 import type { SvelteSet } from 'svelte/reactivity';
 import { MediaType } from '$lib/constants';

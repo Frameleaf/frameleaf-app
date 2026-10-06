@@ -11,7 +11,7 @@
  * so the histogram and the stage never disagree with what the renderer will actually produce
  * for longer than one round trip.
  */
-import { AssetDevelopPreset, VideoDevelopPreset, type AssetDevelopRecipeDto } from '@immich/sdk';
+import { AssetDevelopPreset, VideoDevelopPreset, type AssetDevelopRecipeDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));

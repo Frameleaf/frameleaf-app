@@ -119,11 +119,11 @@ const assertConsumerCoverage = (job) => {
   assert.match(
     steps.find((step) => step.name === "Install locked App test dependencies")
       .run,
-    /--filter @immich\/sdk --filter @immich\/plugin-sdk/,
+    /--filter @frameleaf\/sdk --filter @frameleaf\/plugin-sdk/,
   );
   assert.match(
     steps.find((step) => step.name === "Build required SDKs").run,
-    /@immich\/sdk build[\s\S]*@immich\/plugin-sdk build/,
+    /@frameleaf\/sdk build[\s\S]*@frameleaf\/plugin-sdk build/,
   );
   const installed = steps.find(
     (step) =>

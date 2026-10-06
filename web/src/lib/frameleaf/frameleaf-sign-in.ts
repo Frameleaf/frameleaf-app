@@ -1,4 +1,4 @@
-import { createFrameleafHandoff, startFrameleafSignIn } from '@immich/sdk';
+import { createFrameleafHandoff, startFrameleafSignIn } from '@frameleaf/sdk';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
 
 /**

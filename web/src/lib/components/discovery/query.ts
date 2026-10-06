@@ -5,7 +5,7 @@ import {
   type MetadataSearchDto,
   type SearchFilter,
   type SmartSearchDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /**
  * The one library query every Frameleaf view shares. It is portable: it travels in a URL, it is

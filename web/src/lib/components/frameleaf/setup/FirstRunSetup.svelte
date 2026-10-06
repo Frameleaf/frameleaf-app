@@ -90,8 +90,8 @@
     type FrameleafSetupStorageResponseDto,
     type HardwareCheckResponseDto,
     type UserAdminResponseDto,
-  } from '@immich/sdk';
-  import { Icon, ThemePreference, themeManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, ThemePreference, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountOutline,

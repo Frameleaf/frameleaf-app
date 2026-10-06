@@ -15,7 +15,7 @@
   } from '$lib/frameleaf/command-palette';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import '$lib/frameleaf/tokens.css';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

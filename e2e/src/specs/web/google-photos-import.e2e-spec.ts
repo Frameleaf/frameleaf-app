@@ -6,7 +6,7 @@ import {
   getTakeoutPairs,
   uploadTakeoutArchiveChunk,
   type LoginResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { crc32 } from 'node:zlib';

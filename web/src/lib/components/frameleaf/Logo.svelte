@@ -21,7 +21,7 @@
   import logoDarkUrl from '../../assets/frameleaf/frameleaf-logo-dark.svg?url';
   import symbolUrl from '../../assets/frameleaf/frameleaf-symbol.svg?url';
 
-  // Matches @immich/ui's `Logo` size scale so call sites that previously rendered the vendored
+  // Matches @frameleaf/ui's `Logo` size scale so call sites that previously rendered the vendored
   // Immich mark at a given size render this mark at the same size.
   const sizeClasses = {
     tiny: 'h-8',

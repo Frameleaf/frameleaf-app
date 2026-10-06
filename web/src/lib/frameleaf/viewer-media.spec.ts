@@ -1,4 +1,4 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetTypeEnum } from '@frameleaf/sdk';
 import { ProjectionType } from '$lib/constants';
 import { isImageAsset, isLivePhoto, isOffline, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
 import { assetFactory } from '@test-data/factories/asset-factory';

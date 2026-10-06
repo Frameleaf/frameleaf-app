@@ -17,7 +17,7 @@
     getManagedUploadStatistics,
     searchUsersAdmin,
     UserStatus,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -58,7 +58,7 @@ import {
   upsertTags,
   validate,
   viewAsset,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 import { exec, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';

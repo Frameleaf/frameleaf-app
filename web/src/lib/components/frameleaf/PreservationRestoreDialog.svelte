@@ -54,7 +54,7 @@
     type PreservationPackageDto,
     type PreservationRestoreDto,
     type PreservationRestoreItemDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -63,7 +63,7 @@
     type MlDestinationResponseDto,
     type MlWorkload,
     type MlWorkloadRouteDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { locale, t } from 'svelte-i18n';
 
   type Props = {

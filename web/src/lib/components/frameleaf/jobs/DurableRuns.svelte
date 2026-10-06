@@ -5,7 +5,7 @@
     type DurableJobRun,
     type DurableJobItem,
     type QueueName,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
   import type { ActivityFilter } from '$lib/frameleaf/activity';

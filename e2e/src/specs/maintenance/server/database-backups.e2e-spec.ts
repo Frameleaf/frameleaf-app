@@ -1,4 +1,4 @@
-import { LoginResponseDto, ManualJobName } from '@immich/sdk';
+import { LoginResponseDto, ManualJobName } from '@frameleaf/sdk';
 import { settleMaintenanceCleanup } from 'src/maintenance-cleanup.js';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';

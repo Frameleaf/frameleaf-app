@@ -8,7 +8,7 @@ import {
   type AssetResponseDto,
   type MetadataSearchDto,
   type SmartSearchDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 export type LibrarySearchQuery =

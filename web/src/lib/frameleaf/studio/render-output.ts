@@ -9,7 +9,7 @@
  * disabled, each with the reason the server would give, before anything is submitted. It never
  * enables a choice the evidence does not support; the server still decides at submission.
  */
-import { StudioExportColor, StudioExportFormat, StudioExportResolution } from '@immich/sdk';
+import { StudioExportColor, StudioExportFormat, StudioExportResolution } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { StudioRenderEvidence } from './host-contract';
 

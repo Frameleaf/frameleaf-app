@@ -1,4 +1,4 @@
-import { getAuthStatus, lockAuthSession, unlockAuthSession } from '@immich/sdk';
+import { getAuthStatus, lockAuthSession, unlockAuthSession } from '@frameleaf/sdk';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,8 +12,8 @@ import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 import en from '../../../../../i18n/en.json';
 import LockedUnlockDialog from './LockedUnlockDialog.svelte';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAuthStatus: vi.fn(),
   unlockAuthSession: vi.fn(),
   lockAuthSession: vi.fn(),
@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe('LockedUnlockDialog', () => {
   it('keeps the dialog open after the SDK Wrong PIN 400 and allows a second attempt', async () => {
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockResolvedValue({ pinCode: true, isElevated: false, password: true } as never);
     vi.mocked(unlockAuthSession)
       .mockImplementationOnce((request) =>
@@ -69,7 +69,7 @@ describe('LockedUnlockDialog', () => {
   });
 
   it.each([500, 401])('compensates SDK HTTP %s and retains the shield when the lock fails', async (status) => {
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockResolvedValue({ pinCode: true, isElevated: false, password: true } as never);
     vi.mocked(unlockAuthSession).mockImplementationOnce((request) =>
       sdk.unlockAuthSession(request, {
@@ -260,7 +260,7 @@ describe('LockedUnlockDialog', () => {
   });
 
   it('reports a revoked session (401) as no longer available', async () => {
-    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockImplementationOnce(() =>
       sdk.getAuthStatus({ fetch: async () => Response.json({ message: 'Invalid user token' }, { status: 401 }) }),
     );

@@ -23,7 +23,7 @@
   import { focusOutside } from '$lib/actions/focus-outside';
   import { shortcuts } from '$lib/actions/shortcut';
   import { generateId } from '$lib/utils/generate-id';
-  import { Icon, IconButton, Label } from '@immich/ui';
+  import { Icon, IconButton, Label } from '@frameleaf/ui';
   import { mdiChevronDown, mdiClose, mdiMagnify } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -183,7 +183,7 @@
     onSelect(selectedOption);
   };
 
-  // TODO: move this combobox component into @immich/ui
+  // TODO: move this combobox component into @frameleaf/ui
   // Bits UI dialogs use `contain: layout` so fixed descendants are positioned in dialog space
   const getModalBounds = () => {
     const modalRoot = input?.closest('[data-dialog-content]');

@@ -1,4 +1,4 @@
-import { ConfigCredential, type AdminConfigDto } from '@immich/sdk';
+import { ConfigCredential, type AdminConfigDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   CREDENTIALS,

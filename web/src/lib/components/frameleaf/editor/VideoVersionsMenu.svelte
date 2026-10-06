@@ -20,8 +20,8 @@
     getVideoEditVersions,
     type AssetResponseDto,
     type VideoEditVersionResponseDto,
-  } from '@immich/sdk';
-  import { ConfirmModal, Icon, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { ConfirmModal, Icon, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiDownload, mdiExport, mdiHistory, mdiImageOutline, mdiRestore } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';

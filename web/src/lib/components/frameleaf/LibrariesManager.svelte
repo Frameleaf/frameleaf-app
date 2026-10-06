@@ -32,8 +32,8 @@
   } from '$lib/frameleaf/libraries';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { cancelLibraryScan, scanLibrary, type LibraryResponseDto, type UserAdminResponseDto } from '@immich/sdk';
-  import { getByteUnitString } from '@immich/ui';
+  import { cancelLibraryScan, scanLibrary, type LibraryResponseDto, type UserAdminResponseDto } from '@frameleaf/sdk';
+  import { getByteUnitString } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   type Props = {

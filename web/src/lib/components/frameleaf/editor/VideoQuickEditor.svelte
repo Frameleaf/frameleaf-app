@@ -95,8 +95,8 @@
     getAssetEdits,
     removeAssetEdits,
     type AssetResponseDto,
-  } from '@immich/sdk';
-  import { Icon, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
     mdiCameraIris,

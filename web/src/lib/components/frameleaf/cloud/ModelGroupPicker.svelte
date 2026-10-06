@@ -33,8 +33,8 @@
     type CloudMlModelChoiceDto,
     type CloudMlModelDto,
     type CloudMlModelGroup,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertOutline,
     mdiCancel,

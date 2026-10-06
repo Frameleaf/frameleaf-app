@@ -9,7 +9,7 @@ import {
   CloudMlJobCostOutcome,
   type CloudMlJobActivityDto,
   type MediaOperationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   activityCompletion,

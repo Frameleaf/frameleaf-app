@@ -8,7 +8,7 @@ import {
   PreservationVerificationStatus,
   type MediaOperationDto,
   type PreservationPackageDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   defaultPackageName,
   emptyScope,

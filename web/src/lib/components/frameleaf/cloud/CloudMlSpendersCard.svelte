@@ -11,8 +11,8 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { searchUsersAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountCashOutline, mdiClose, mdiPlus } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

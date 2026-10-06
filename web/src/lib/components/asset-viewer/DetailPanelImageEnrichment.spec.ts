@@ -8,14 +8,14 @@ import {
   Status2,
   updateAssetImageEnrichment,
   type AssetImageEnrichmentResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import DetailPanelImageEnrichment from './DetailPanelImageEnrichment.svelte';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return {
     ...sdk,
     getAssetImageEnrichment: vi.fn(),

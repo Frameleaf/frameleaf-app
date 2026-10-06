@@ -1,4 +1,4 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 
 /**
  * Custom MIME type used to carry an album id across drag events. Using a

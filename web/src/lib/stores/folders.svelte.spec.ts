@@ -1,4 +1,4 @@
-import { getAssetsByOriginalPath, getFolderSummary, type FolderSummaryResponseDto } from '@immich/sdk';
+import { getAssetsByOriginalPath, getFolderSummary, type FolderSummaryResponseDto } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { foldersStore } from '$lib/stores/folders.svelte';
 
@@ -8,7 +8,7 @@ vi.mock('$lib/managers/event-manager.svelte', () => ({
   },
 }));
 
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   getAssetsByOriginalPath: vi.fn(),
   getFolderSummary: vi.fn(),
 }));

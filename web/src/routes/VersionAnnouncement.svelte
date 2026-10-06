@@ -3,8 +3,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import VersionAnnouncementModal from '$lib/modals/VersionAnnouncementModal.svelte';
   import { semverToName } from '$lib/utils';
-  import { ReleaseType, type ReleaseEventV1 } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
+  import { ReleaseType, type ReleaseEventV1 } from '@frameleaf/sdk';
+  import { modalManager } from '@frameleaf/ui';
 
   let modal = $state<{
     onClose: Promise<void>;

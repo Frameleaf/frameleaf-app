@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ruleChips, type RuleChip, type RuleDraft } from '$lib/frameleaf/classification-rules';
-  import type { PersonResponseDto, TagResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PersonResponseDto, TagResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
     mdiArchiveArrowDownOutline,

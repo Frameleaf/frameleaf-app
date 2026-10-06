@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type BestPhotoAssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type BestPhotoAssetResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { bestMomentsOf, isEffectiveCover } from '$lib/frameleaf/best-moments';
 import { assetFactory } from '@test-data/factories/asset-factory';

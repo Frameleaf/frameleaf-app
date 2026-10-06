@@ -29,8 +29,8 @@
     WALLET_MIN_TOP_UP_USD,
   } from '$lib/frameleaf/cloud-ml';
   import { handleError } from '$lib/utils/handle-error';
-  import { getCloudMlWallet, updateCloudMlWallet, type CloudMlWalletDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { getCloudMlWallet, updateCloudMlWallet, type CloudMlWalletDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCreditCardOutline, mdiOpenInNew, mdiPlus } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
 

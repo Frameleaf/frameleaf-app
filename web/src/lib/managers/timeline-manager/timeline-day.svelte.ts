@@ -1,4 +1,4 @@
-import { AssetOrder, TimeBucketDateType } from '@immich/sdk';
+import { AssetOrder, TimeBucketDateType } from '@frameleaf/sdk';
 import { SvelteSet } from 'svelte/reactivity';
 import type { CommonLayoutOptions, CommonPosition } from '$lib/utils/layout-utils';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';

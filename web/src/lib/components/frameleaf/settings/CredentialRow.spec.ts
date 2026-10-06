@@ -1,4 +1,4 @@
-import { ConfigCredential, deleteConfigCredential, type AdminConfigDto } from '@immich/sdk';
+import { ConfigCredential, deleteConfigCredential, type AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
@@ -9,8 +9,8 @@ import en from '../../../../../../i18n/en.json';
  * FL-67 / section D of the Sept 24 port: a write-only credential is a compact settings row, and
  * clearing it asks through the Frameleaf confirmation, never the upstream modal.
  */
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   deleteConfigCredential: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: vi.fn() }));

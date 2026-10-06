@@ -1,5 +1,5 @@
-import { isHttpError } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { isHttpError } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 

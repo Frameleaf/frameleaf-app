@@ -1,5 +1,5 @@
-import { DocumentLineStatus, type DocumentLineDto, type DocumentResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { DocumentLineStatus, type DocumentLineDto, type DocumentResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';

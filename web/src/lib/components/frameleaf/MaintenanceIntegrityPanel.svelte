@@ -22,8 +22,8 @@
     ManualJobName,
     type IntegrityCheckRunsResponseDto,
     type IntegrityReportSummaryResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiFileAlertOutline,
     mdiFileQuestionOutline,

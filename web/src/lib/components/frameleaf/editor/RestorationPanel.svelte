@@ -86,8 +86,8 @@
     type AssetRestorationOptionsDto,
     type AssetRestorationResponseDto,
     type CloudMlJobEstimateRequestDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
     mdiCheck,

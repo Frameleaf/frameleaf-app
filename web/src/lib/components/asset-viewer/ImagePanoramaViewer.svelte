@@ -1,8 +1,8 @@
 <script lang="ts">
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetUrl } from '$lib/utils';
-  import { AssetMediaSize, viewAsset, type AssetResponseDto } from '@immich/sdk';
-  import { LoadingSpinner } from '@immich/ui';
+  import { AssetMediaSize, viewAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
 

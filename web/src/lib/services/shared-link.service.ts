@@ -7,8 +7,8 @@ import {
   type SharedLinkCreateDto,
   type SharedLinkEditDto,
   type SharedLinkResponseDto,
-} from '@immich/sdk';
-import { modalManager, toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { Route } from '$lib/route';

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { UserAvatarColor, UserStatus, type UserAdminResponseDto, type UserLicense } from '@immich/sdk';
+import { UserAvatarColor, UserStatus, type UserAdminResponseDto, type UserLicense } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const userAdminFactory = Sync.makeFactory<UserAdminResponseDto>({

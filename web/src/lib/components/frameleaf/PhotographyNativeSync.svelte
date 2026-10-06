@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { getAssetDevelop } from '@immich/sdk';
+  import { getAssetDevelop } from '@frameleaf/sdk';
   import { isNativeRecipe, type NativeRecipe } from '$lib/frameleaf/native-develop';
   import {
     syncNativeRecipes,

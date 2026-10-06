@@ -12,7 +12,7 @@
   import { cloudWorkRows } from '$lib/frameleaf/cloud-backup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { getCloudBackupStatus, type CloudBackupStatusResponseDto } from '@immich/sdk';
+  import { getCloudBackupStatus, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

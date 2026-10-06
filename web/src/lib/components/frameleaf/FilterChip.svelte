@@ -1,7 +1,7 @@
 <script lang="ts">
   import PersonAvatar from './PersonAvatar.svelte';
-  import type { PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   /**
    * An active-filter chip (prototype `App.jsx` `.active-filter-bar .chip`). The label opens the

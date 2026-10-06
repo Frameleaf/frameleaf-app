@@ -7,7 +7,7 @@ import {
   getMyUser,
   LoginResponseDto,
   SharedLinkType,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { exiftool } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';

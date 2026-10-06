@@ -1,4 +1,4 @@
-import type { AssetOcrResponseDto, AssetResponseDto } from '@immich/sdk';
+import type { AssetOcrResponseDto, AssetResponseDto } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { toAssetResponseDto } from 'src/ui/generators/timeline.js';
 import {

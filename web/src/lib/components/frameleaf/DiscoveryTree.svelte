@@ -11,7 +11,7 @@
    * so browser Back returns to the previous one) and which branches are open.
    */
   import { treeKeyAction, visibleTreeRows, type DiscoveryTreeNode } from '$lib/frameleaf/discovery-tree';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown, mdiChevronRight } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

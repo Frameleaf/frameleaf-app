@@ -3,7 +3,7 @@ import {
   PetRecognitionRunStatus,
   PetRecognitionUnavailableReason,
   type PetRecognitionStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import en from '../../../../../../i18n/en.json';

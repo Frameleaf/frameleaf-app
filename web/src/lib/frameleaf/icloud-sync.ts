@@ -5,7 +5,7 @@ import {
   type ICloudConnectionUpdateDto,
   type ICloudInventoryResponseDto,
   type ICloudSyncRunDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /**

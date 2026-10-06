@@ -3,8 +3,8 @@
   import { Route } from '$lib/route';
   import { websocketStore } from '$lib/stores/websocket';
   import { handleError } from '$lib/utils/handle-error';
-  import { startDatabaseRestoreFlow } from '@immich/sdk';
-  import { Button, Heading, Stack } from '@immich/ui';
+  import { startDatabaseRestoreFlow } from '@frameleaf/sdk';
+  import { Button, Heading, Stack } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   async function switchToMaintenance() {

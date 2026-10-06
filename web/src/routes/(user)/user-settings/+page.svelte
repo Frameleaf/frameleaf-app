@@ -9,7 +9,7 @@
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
   import { personalSections } from './personal-sections';

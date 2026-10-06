@@ -2,7 +2,7 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
+  import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@frameleaf/sdk';
   import { isEqual } from 'lodash-es';
   import { onMount } from 'svelte';
   import { motionFade } from '$lib/frameleaf/motion';

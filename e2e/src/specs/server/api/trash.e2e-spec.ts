@@ -1,4 +1,4 @@
-import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@frameleaf/sdk';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';

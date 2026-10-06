@@ -5,7 +5,7 @@ import {
   getSharedSpaceComments,
   getSharedSpaceMembers,
   type SharedSpaceCommentResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -24,8 +24,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
     params: {},
   },
 }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getSharedSpaceComments: vi.fn(),
   getSharedSpaceMembers: vi.fn(),
   createSharedSpaceComment: vi.fn(),

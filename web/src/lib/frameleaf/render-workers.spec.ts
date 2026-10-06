@@ -5,7 +5,7 @@ import {
   RenderWorkerRefusalReason,
   RenderWorkerStatus,
   type RenderWorkerDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_WORKER_FORM,

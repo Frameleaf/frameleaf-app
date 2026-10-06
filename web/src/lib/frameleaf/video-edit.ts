@@ -30,7 +30,7 @@ import {
   VideoTrimMode,
   type AssetEditActionItemDto,
   type DecodeRefusal,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   ASPECT_IDS,
   DEVELOP_KEYS,

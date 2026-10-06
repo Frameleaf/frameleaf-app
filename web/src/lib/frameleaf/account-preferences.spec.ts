@@ -1,4 +1,4 @@
-import { AssetOrder, SuppressionScope } from '@immich/sdk';
+import { AssetOrder, SuppressionScope } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   archiveSizeToGib,
