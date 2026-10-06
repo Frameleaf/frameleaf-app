@@ -58,6 +58,10 @@ test("Frameleaf package identities and workspace dependencies never require Immi
     read("server/Dockerfile"),
     /pnpm --filter 'frameleaf-web\.\.\.' install --frozen-lockfile/,
   );
+  assert.match(
+    read("web/mise.toml"),
+    /run = "pnpm install --filter 'frameleaf-web\.\.\.' --frozen-lockfile"/,
+  );
   assert.match(read(".dockerignore"), /!packages\/ui\/dist\/\*\*/);
 });
 
