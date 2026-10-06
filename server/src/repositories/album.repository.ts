@@ -469,7 +469,7 @@ export class AlbumRepository {
                 .select(({ ref }) => [
                   ref('album.id').as('albumId'),
                   sql`unnest(${userIds}::uuid[])`.as('userId'),
-                  sql`unnest(${roles}::album_user_role_enum[])`.as('role'),
+                  sql`unnest(array[${sql.join(roles)}]::album_user_role_enum[])`.as('role'),
                 ]),
             )
             .returning(['album_user.albumId', 'album_user.userId', 'album_user.role']),

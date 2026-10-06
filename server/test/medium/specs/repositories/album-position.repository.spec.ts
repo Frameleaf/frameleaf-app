@@ -1,4 +1,7 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import { PostgresJSDialect } from 'kysely-postgres-js';
+import postgres from 'postgres';
+import { AlbumUserRole } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -77,4 +80,48 @@ it('deletes an album and its canonical position row', async () => {
   const { album } = await ctx.newAlbum({ ownerId: user.id });
   await sut.setPositions(user.id, [album.id]);
   await expect(sut.delete(album.id)).resolves.toBeUndefined();
+});
+
+it('creates album membership without a cached custom enum-array serializer', async () => {
+  const { ctx } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: viewer } = await ctx.newUser();
+  const { user: editor } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: owner.id });
+  const { rows } = await sql<{ name: string }>`select current_database() as name`.execute(db);
+  const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+  url.pathname = `/${rows[0].name}`;
+  const client = postgres(url.href, { max: 1 });
+  const fallbackDb = new Kysely<DB>({ dialect: new PostgresJSDialect({ postgres: client }) });
+  try {
+    // Initialize built-in and custom array types, then reproduce only the missing enum serializer.
+    const [type] = await client<{ oid: number }[]>`select 'album_user_role_enum[]'::regtype::oid as oid`;
+    expect(client.options.serializers[type.oid]).toBeTypeOf('function');
+    delete client.options.serializers[type.oid];
+    expect(client.options.serializers[type.oid]).toBeUndefined();
+
+    const users = [
+      { userId: owner.id, role: AlbumUserRole.Owner },
+      { userId: viewer.id, role: AlbumUserRole.Viewer },
+      { userId: editor.id, role: AlbumUserRole.Editor },
+    ];
+    const album = await new AlbumRepository(fallbackDb).create(
+      { albumName: 'Uncached enum array' },
+      [asset.id],
+      users,
+      owner.id,
+    );
+    const membership = await db
+      .selectFrom('album_user')
+      .select(['userId', 'role'])
+      .where('albumId', '=', album.id)
+      .execute();
+    expect(membership).toHaveLength(3);
+    expect(membership).toEqual(expect.arrayContaining(users));
+    await expect(
+      db.selectFrom('album_asset').select('assetId').where('albumId', '=', album.id).execute(),
+    ).resolves.toEqual([{ assetId: asset.id }]);
+  } finally {
+    await fallbackDb.destroy();
+  }
 });
