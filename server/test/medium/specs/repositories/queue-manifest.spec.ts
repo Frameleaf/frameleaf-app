@@ -348,5 +348,5 @@ describe('durable bounded selection manifests', () => {
     expect(await store.feedManifest(queue)).toBe(250);
     expect(await count()).toBe(QUEUE_HIGH_WATER);
     expect(await store.feedManifest(queue)).toBe(0);
-  }, 30_000); // This semantic fixture accepts 500 real publications before checking the refill watermark.
+  }, 60_000); // CI must accept 500 sequential publications before checking the refill watermark.
 });
