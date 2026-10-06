@@ -487,7 +487,7 @@ describe(PersonService.name, () => {
             buffering: false,
           };
           await queueExecution.run(execution, () =>
-            sut.handleDetectFaces(claim.data as JobOf<JobName.AssetDetectFaces>),
+            sut.handleDetectFaces(claim.data as unknown as JobOf<JobName.AssetDetectFaces>),
           );
           await expect(
             store.complete(claim, execution.followups, (tx) =>
