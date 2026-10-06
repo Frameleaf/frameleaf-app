@@ -404,7 +404,7 @@ with
     select
       "album"."id" as "albumId",
       unnest($2::uuid[]) as "userId",
-      unnest($3::album_user_role_enum[]) as "role"
+      unnest(array[$3, $4]::album_user_role_enum[]) as "role"
     from
       "album"
     returning
@@ -417,7 +417,7 @@ with
       "album_asset"
     select
       "album"."id" as "albumId",
-      unnest($4::uuid[]) as "assetId"
+      unnest($5::uuid[]) as "assetId"
     from
       "album"
     on conflict do nothing
