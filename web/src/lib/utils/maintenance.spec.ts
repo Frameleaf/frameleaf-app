@@ -1,8 +1,8 @@
+import { getMaintenanceStatus, MaintenanceAction } from '@immich/sdk';
+import { get } from 'svelte/store';
 import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { websocketStore } from '$lib/stores/websocket';
 import { loadMaintenanceStatus, maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
-import { getMaintenanceStatus, MaintenanceAction } from '@immich/sdk';
-import { get } from 'svelte/store';
 
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
