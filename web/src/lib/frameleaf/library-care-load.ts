@@ -5,7 +5,7 @@ import {
   MediaHealthCategory,
   MediaHealthStatus,
   searchUsersAdmin,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { initialOwner, ownerScope } from '$lib/frameleaf/library-care';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { authenticate } from '$lib/utils/auth';

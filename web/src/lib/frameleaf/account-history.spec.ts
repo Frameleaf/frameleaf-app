@@ -1,4 +1,4 @@
-import { AdminAuditAction } from '@immich/sdk';
+import { AdminAuditAction } from '@frameleaf/sdk';
 import { addMessages, t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import en from '$i18n/en.json';

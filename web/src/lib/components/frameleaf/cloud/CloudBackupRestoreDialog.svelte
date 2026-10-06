@@ -20,8 +20,8 @@
     unlockCloudBackupKey,
     type CloudBackupManifestDto,
     type CloudBackupStatusResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore, mdiShieldCheckOutline, mdiUpload } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

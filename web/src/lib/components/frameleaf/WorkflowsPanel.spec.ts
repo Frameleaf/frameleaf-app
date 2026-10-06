@@ -1,4 +1,4 @@
-import { WorkflowIssueCode, WorkflowTrigger, type WorkflowResponseDto } from '@immich/sdk';
+import { WorkflowIssueCode, WorkflowTrigger, type WorkflowResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

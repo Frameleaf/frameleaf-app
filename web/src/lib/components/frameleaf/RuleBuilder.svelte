@@ -18,7 +18,7 @@
     type ClassificationSettingsDto,
     type PersonResponseDto,
     type TagResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 

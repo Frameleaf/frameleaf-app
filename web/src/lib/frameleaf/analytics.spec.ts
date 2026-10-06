@@ -1,4 +1,4 @@
-import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState, AnalyticsVolumePart } from '@immich/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState, AnalyticsVolumePart } from '@frameleaf/sdk';
 import {
   analyticsCsv,
   analyticsTables,

@@ -4,8 +4,8 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { PlaceholderValidation, Style, type AdminConfigImageDescriptionDto } from '@immich/sdk';
-  import { Button } from '@immich/ui';
+  import { PlaceholderValidation, Style, type AdminConfigImageDescriptionDto } from '@frameleaf/sdk';
+  import { Button } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';

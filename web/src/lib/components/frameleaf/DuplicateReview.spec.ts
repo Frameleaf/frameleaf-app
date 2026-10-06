@@ -1,4 +1,4 @@
-import { DuplicateGroupBlock, DuplicateGroupKind } from '@immich/sdk';
+import { DuplicateGroupBlock, DuplicateGroupKind } from '@frameleaf/sdk';
 import { mdiChevronDoubleLeft, mdiChevronRight } from '@mdi/js';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';

@@ -3,7 +3,7 @@ import {
   type AuthStatusResponseDto,
   type TagResponseDto,
   type UserPreferencesResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';

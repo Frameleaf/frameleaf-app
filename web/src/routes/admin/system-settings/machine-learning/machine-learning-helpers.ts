@@ -1,4 +1,4 @@
-import { MachineLearningHardwareAcceleration, type AdminConfigMachineLearningDto } from '@immich/sdk';
+import { MachineLearningHardwareAcceleration, type AdminConfigMachineLearningDto } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { locale } from '$lib/stores/preferences.store';
 

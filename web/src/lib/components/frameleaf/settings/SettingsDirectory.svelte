@@ -26,7 +26,7 @@
    * A group named like its area does not repeat the name as a heading.
    */
   import { usualScope } from '$lib/frameleaf/settings-areas';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

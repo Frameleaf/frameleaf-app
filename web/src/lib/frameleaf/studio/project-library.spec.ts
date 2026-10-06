@@ -6,7 +6,7 @@ import {
   StudioProjectShelf,
   type StudioBundleSourceDto,
   type StudioProjectDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   isStudioBundleSettled,
   recentStudioProjects,

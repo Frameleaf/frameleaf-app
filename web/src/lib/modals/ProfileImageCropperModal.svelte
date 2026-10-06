@@ -1,8 +1,8 @@
 <script lang="ts">
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { createProfileImage, type AssetResponseDto } from '@immich/sdk';
-  import { FormModal, toastManager } from '@immich/ui';
+  import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
+  import { FormModal, toastManager } from '@frameleaf/ui';
   import domtoimage from 'dom-to-image';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

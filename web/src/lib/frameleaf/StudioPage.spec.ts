@@ -1,4 +1,4 @@
-import { DecodeRefusal, StudioProjectImportKind, StudioRestoredVersionUnavailable } from '@immich/sdk';
+import { DecodeRefusal, StudioProjectImportKind, StudioRestoredVersionUnavailable } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';

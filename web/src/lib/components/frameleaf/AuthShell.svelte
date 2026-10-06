@@ -5,7 +5,7 @@
   import '$lib/frameleaf/tokens.css';
   import '$lib/frameleaf/auth.css';
   import { mdiMoonWaningCrescent, mdiWhiteBalanceSunny } from '@mdi/js';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 

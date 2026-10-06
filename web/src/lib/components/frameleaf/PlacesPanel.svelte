@@ -24,8 +24,8 @@
     isPlacesGroupCollapsed,
     togglePlacesGroupCollapsing,
   } from '$lib/utils/places-utils';
-  import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiArrowCollapseAll,
     mdiArrowExpandAll,

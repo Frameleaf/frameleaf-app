@@ -1,7 +1,7 @@
 /*
  * The cascade layer order, repeated from web/src/app.css so it holds whichever stylesheet the
  * browser meets first: the prototype baseline sits above Tailwind's preflight and below
- * Tailwind / @immich/ui components and utilities, and every unlayered rule (a Svelte
+ * Tailwind / @frameleaf/ui components and utilities, and every unlayered rule (a Svelte
  * component's own scoped styles, tokens.css) beats all of them.
  */
 @layer properties, theme, base, frameleaf-base, components, utilities;
@@ -38,8 +38,8 @@
 
 /*
  * September 22 prototype styles.css: the shared element and control baseline, scoped to
- * .frameleaf. It lives in the `frameleaf-base` cascade layer, so a Tailwind or @immich/ui
- * utility (bg-primary on an @immich/ui Button, `hidden`, `mb-4`, `text-sm`) still wins over
+ * .frameleaf. It lives in the `frameleaf-base` cascade layer, so a Tailwind or @frameleaf/ui
+ * utility (bg-primary on an @frameleaf/ui Button, `hidden`, `mb-4`, `text-sm`) still wins over
  * it, and every selector is wrapped in :where() so the baseline also carries zero
  * specificity inside that layer. A component's own scoped styles always win over it, and so
  * do the 44px/48px control floors in tokens.css. The prototype's 34px `.button` height is
@@ -275,7 +275,7 @@
   }
 
   /*
-   * The field chrome skips @immich/ui form controls: an Input or PasswordInput draws its ring
+   * The field chrome skips @frameleaf/ui form controls: an Input or PasswordInput draws its ring
    * on the container around the <input>, and a Textarea on itself, both with the `ring-1`
    * utility (as does the legacy `immich-form-input`). A second 1px border inside that ring
    * would otherwise show, and turn accent on focus.

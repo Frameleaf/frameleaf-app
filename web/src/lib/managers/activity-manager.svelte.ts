@@ -7,7 +7,7 @@ import {
   ReactionType,
   type ActivityCreateDto,
   type ActivityResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';

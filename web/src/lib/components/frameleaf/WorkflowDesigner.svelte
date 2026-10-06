@@ -48,7 +48,7 @@
     type WorkflowLogEntryDto,
     type WorkflowResponseDto,
     type WorkflowTriggerResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t, type Translations } from 'svelte-i18n';
 

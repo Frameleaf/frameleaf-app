@@ -1,4 +1,4 @@
-import { getAssetInfo, getNotifications, lockAssets, setUserOnboarding } from '@immich/sdk';
+import { getAssetInfo, getNotifications, lockAssets, setUserOnboarding } from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 

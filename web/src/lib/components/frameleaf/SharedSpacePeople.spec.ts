@@ -5,7 +5,7 @@ import {
   AlbumKind,
   type SharedSpacePersonResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -14,8 +14,8 @@ import en from '../../../../../i18n/en.json';
 import SharedSpacePeople from './SharedSpacePeople.svelte';
 
 vi.mock('$lib/utils');
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   linkSharedSpacePerson: vi.fn(),
   unlinkSharedSpacePerson: vi.fn(),
   updatePerson: vi.fn(),

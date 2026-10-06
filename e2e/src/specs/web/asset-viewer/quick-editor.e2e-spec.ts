@@ -7,7 +7,7 @@ import {
   LoginResponseDto,
   setupPinCode,
   unlockAuthSession,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 import { test, withAssetReadySetup } from 'src/web-test.js';

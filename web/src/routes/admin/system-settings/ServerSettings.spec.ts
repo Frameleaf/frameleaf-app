@@ -1,4 +1,4 @@
-import type { AdminConfigDto } from '@immich/sdk';
+import type { AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';

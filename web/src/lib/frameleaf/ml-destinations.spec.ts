@@ -5,7 +5,7 @@ import {
   MlWorkerRole,
   MlWorkload,
   type MlDestinationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canRouteTo,

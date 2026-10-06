@@ -1,4 +1,4 @@
-import { updateMyUser } from '@immich/sdk';
+import { updateMyUser } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,7 @@ import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<object>()), updateMyUser: vi.fn() }));
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), updateMyUser: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { email: 'user@nas' } } }));
 
 beforeEach(() => {

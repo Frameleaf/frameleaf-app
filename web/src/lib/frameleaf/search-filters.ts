@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { activeFilterFields, ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
 
@@ -476,4 +476,4 @@ export const withFilterCondition = (query: DiscoveryQuery, field: string, condit
   return result;
 };
 
-export { type SearchFilter } from '@immich/sdk';
+export { type SearchFilter } from '@frameleaf/sdk';

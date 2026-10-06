@@ -1,4 +1,4 @@
-import { MediaOperationStatus, type ICloudConnectionResponseDto } from '@immich/sdk';
+import { MediaOperationStatus, type ICloudConnectionResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -20,8 +20,8 @@ const mocks = vi.hoisted(() => ({
   goto: vi.fn(),
 }));
 
-vi.mock('@immich/sdk', async (originalImport) => ({
-  ...(await originalImport<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (originalImport) => ({
+  ...(await originalImport<typeof import('@frameleaf/sdk')>()),
   authenticateICloudConnection: mocks.authenticateICloudConnection,
   controlICloudConnection: mocks.controlICloudConnection,
   createICloudConnection: mocks.createICloudConnection,

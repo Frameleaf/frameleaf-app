@@ -5,7 +5,7 @@ import {
   getStudioProject,
   releaseStudioProjectLease,
   saveStudioProjectRevision,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { asBearerAuth, utils } from 'src/utils.js';

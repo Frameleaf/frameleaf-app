@@ -6,11 +6,11 @@ source /immich-devcontainer/container-common.sh
 export CI=1
 log "Preparing Immich Web Frontend"
 log ""
-run_cmd pnpm --filter @immich/sdk install
-run_cmd pnpm --filter @immich/sdk build
-run_cmd pnpm --filter @immich/plugin-sdk install
-run_cmd pnpm --filter @immich/plugin-sdk build
-run_cmd pnpm --filter immich-web install
+run_cmd pnpm --filter @frameleaf/sdk install
+run_cmd pnpm --filter @frameleaf/sdk build
+run_cmd pnpm --filter @frameleaf/plugin-sdk install
+run_cmd pnpm --filter @frameleaf/plugin-sdk build
+run_cmd pnpm --filter frameleaf-web install
 
 log "Starting Immich Web Frontend"
 log ""
@@ -25,7 +25,7 @@ until curl --output /dev/null --silent --head --fail "http://127.0.0.1:${FRAMELE
 done
 
 while true; do
-    run_cmd pnpm --filter immich-web exec vite dev --host 0.0.0.0 --port "${DEV_PORT}"
+    run_cmd pnpm --filter frameleaf-web exec vite dev --host 0.0.0.0 --port "${DEV_PORT}"
     log "Web crashed with exit code $?.  Respawning in 3s ..."
     sleep 3
 done

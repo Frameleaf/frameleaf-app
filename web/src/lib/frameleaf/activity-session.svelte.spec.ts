@@ -3,7 +3,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   type MediaOperationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { ActivitySession } from '$lib/frameleaf/activity-session.svelte';

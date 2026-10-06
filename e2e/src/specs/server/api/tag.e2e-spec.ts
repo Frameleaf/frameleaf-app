@@ -8,7 +8,7 @@ import {
   getAllTags,
   tagAssets,
   upsertTags,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';

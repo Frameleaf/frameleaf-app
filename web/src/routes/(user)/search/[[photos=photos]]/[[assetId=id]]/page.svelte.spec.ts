@@ -1,4 +1,4 @@
-import { SearchAskMode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@immich/sdk';
+import { SearchAskMode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -22,7 +22,7 @@ vi.mock('$app/state', () => ({
     return state;
   },
 }));
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   searchAssets: vi.fn(),
   searchSmart: vi.fn(),

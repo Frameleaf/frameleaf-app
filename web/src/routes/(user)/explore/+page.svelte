@@ -16,7 +16,7 @@
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAssetInfo } from '@immich/sdk';
+  import { getAssetInfo } from '@frameleaf/sdk';
   import Portal from '$lib/elements/Portal.svelte';
   import type { PageData } from './$types';
   import type { Snapshot } from '@sveltejs/kit';

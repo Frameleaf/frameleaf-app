@@ -6,8 +6,8 @@ import { mapStub } from '../../../test-data/frameleaf/utility-map-stub';
 import GeolocationUtility from './GeolocationUtility.svelte';
 
 const state = vi.hoisted(() => ({ search: vi.fn(), info: vi.fn(), run: vi.fn() }));
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   searchAssets: state.search,
   getAssetInfo: state.info,
 }));

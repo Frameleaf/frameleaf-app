@@ -339,24 +339,24 @@ COPY ./packages/patches ./packages/patches/
 FROM builder AS sdk
 
 COPY ./packages/sdk/package.json ./packages/sdk/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/sdk install --frozen-lockfile
 
 COPY ./packages/sdk ./packages/sdk/
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/sdk build
 
 FROM sdk AS plugin-sdk
 
 COPY ./packages/plugin-sdk/package.json ./packages/plugin-sdk/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/plugin-sdk install --frozen-lockfile
 
 COPY ./packages/plugin-sdk ./packages/plugin-sdk/
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/plugin-sdk build
 
 FROM plugin-sdk AS server
 
 COPY ./packages/sql-tools ./packages/sql-tools/
 COPY ./server/package.json ./server/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'immich...' install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
 
 COPY ./server ./server/
 COPY ./docker/scripts/verify-server-package.mjs /build/verify-server-package.mjs
@@ -377,8 +377,8 @@ RUN set -eu; \
     *) echo "FRAMELEAF_BUILD_CHANNEL must be release or integration, not $FRAMELEAF_BUILD_CHANNEL" >&2; exit 1 ;; \
   esac
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
-  pnpm --filter immich build && \
-  pnpm --filter immich --prod --no-optional deploy /output/server-pruned
+  pnpm --filter frameleaf build && \
+  pnpm --filter frameleaf --prod --no-optional deploy /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
 RUN node /build/verify-server-package.mjs /output/server-pruned
@@ -410,8 +410,11 @@ RUN node studio/tools/engine.mjs prepare && \
 
 FROM sdk AS web
 
+COPY ./packages/ui ./packages/ui/
+COPY ./packages/justified-layout-wasm ./packages/justified-layout-wasm/
+
 COPY ./web/package.json ./web/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frameleaf-web install --frozen-lockfile
 
 COPY ./i18n ./i18n/
 # Acknowledgements and licence texts the About screen reads (FL-86).
@@ -423,17 +426,17 @@ COPY --from=studio-engine /usr/src/app/web/static/studio-engine ./web/static/stu
 ARG BUILD_ID
 ENV FRAMELEAF_BUILD=${BUILD_ID}
 
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frameleaf-web build
 
 FROM sdk AS cli
 
 COPY ./packages/cli/package.json ./packages/cli/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/cli install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/cli install --frozen-lockfile
 
 COPY ./packages/cli ./packages/cli/
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
-  pnpm --filter @immich/cli build && \
-  pnpm --filter @immich/cli --prod --no-optional deploy /output/cli-pruned
+  pnpm --filter @frameleaf/cli build && \
+  pnpm --filter @frameleaf/cli --prod --no-optional deploy /output/cli-pruned
 
 FROM plugin-sdk AS plugins
 
@@ -471,9 +474,9 @@ COPY ./packages/plugin-core ./packages/plugin-core/
 # Build plugins
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   --mount=type=cache,id=mise-tools-${TARGETPLATFORM},target=/buildcache/mise \
-  pnpm --filter @immich/plugin-core install --frozen-lockfile && \
+  pnpm --filter @frameleaf/plugin-core install --frozen-lockfile && \
   PATH="$(mise where github:extism/js-pdk):$(mise where github:webassembly/binaryen)/bin:$PATH" \
-  pnpm --filter @immich/plugin-core build
+  pnpm --filter @frameleaf/plugin-core build
 
 FROM base-server-prod AS prod
 

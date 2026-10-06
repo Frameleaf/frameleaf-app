@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
-  import { AssetOrder, type AlbumResponseDto } from '@immich/sdk';
+  import { AssetOrder, type AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

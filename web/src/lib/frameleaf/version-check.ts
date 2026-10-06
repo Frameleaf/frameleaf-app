@@ -1,4 +1,4 @@
-import { checkVersionNow, getVersionCheck } from '@immich/sdk';
+import { checkVersionNow, getVersionCheck } from '@frameleaf/sdk';
 import { semverToName } from '$lib/utils';
 
 /**

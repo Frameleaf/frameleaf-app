@@ -1,7 +1,7 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
-  import type { SystemConfigTemplateStorageOptionDto } from '@immich/sdk';
-  import { Card, CardBody, CardHeader, Text } from '@immich/ui';
+  import type { SystemConfigTemplateStorageOptionDto } from '@frameleaf/sdk';
+  import { Card, CardBody, CardHeader, Text } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

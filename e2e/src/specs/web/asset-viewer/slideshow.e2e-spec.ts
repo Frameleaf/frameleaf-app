@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto } from '@frameleaf/sdk';
 import { expect, type Page, test } from '@playwright/test';
 import { utils } from 'src/utils.js';
 

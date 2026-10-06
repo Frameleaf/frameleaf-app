@@ -26,8 +26,8 @@
     setVideoMomentCover,
     type BestPhotoAssetResponseDto,
     type VideoMomentFrameDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiImageCheckOutline, mdiImageOutline, mdiPlay } from '@mdi/js';
   import { SvelteMap } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';

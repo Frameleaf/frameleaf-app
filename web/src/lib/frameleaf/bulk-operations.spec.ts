@@ -6,7 +6,7 @@ import {
   MediaOperationItemStatus,
   MediaOperationStatus,
   SharedLinkType,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import {

@@ -6,7 +6,7 @@
  * status — `backup` → `restore` → `migrations`, with `rollback` only when a step failed — and the
  * progress is the whole restore's, from 0 to 1. This maps that status onto the prototype's list.
  */
-import { MaintenanceAction, type MaintenanceStatusResponseDto } from '@immich/sdk';
+import { MaintenanceAction, type MaintenanceStatusResponseDto } from '@frameleaf/sdk';
 
 export type MaintenanceTaskId = 'backup' | 'restore' | 'migrations' | 'rollback';
 export type MaintenanceTaskStatus = 'done' | 'running' | 'queued' | 'standby' | 'failed';

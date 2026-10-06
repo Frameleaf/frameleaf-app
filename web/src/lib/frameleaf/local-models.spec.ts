@@ -1,4 +1,4 @@
-import { HardwareBackend, type HardwareCheckResponseDto } from '@immich/sdk';
+import { HardwareBackend, type HardwareCheckResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import en from '$i18n/en.json';
 import { ROUTED_WORKLOADS } from '$lib/frameleaf/cloud-ml';

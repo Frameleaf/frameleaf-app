@@ -1,11 +1,11 @@
-import { deleteAssets, restoreAssets } from '@immich/sdk';
+import { deleteAssets, restoreAssets } from '@frameleaf/sdk';
 import { AssetAction } from '$lib/constants';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { confirmAndDeletePermanently, restoreFromTrash } from './delete-permanently';
 
-vi.mock('@immich/sdk', async () => {
-  const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+vi.mock('@frameleaf/sdk', async () => {
+  const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
   return { ...sdk, deleteAssets: vi.fn(), restoreAssets: vi.fn() };
 });
 vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: vi.fn() }));

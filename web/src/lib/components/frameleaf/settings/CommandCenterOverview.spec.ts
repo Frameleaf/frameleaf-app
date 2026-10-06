@@ -1,4 +1,4 @@
-import { AnalyticsScopeKind, AnalyticsVolumePart, type AnalyticsVolumeBreakdownDto } from '@immich/sdk';
+import { AnalyticsScopeKind, AnalyticsVolumePart, type AnalyticsVolumeBreakdownDto } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -42,7 +42,7 @@ vi.mock('$lib/managers/cloud-manager.svelte', () => ({
     },
   },
 }));
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<typeof import('@immich/sdk')>()), ...sdk }));
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
 vi.mock('$lib/components/frameleaf/analytics/AnalyticsChart.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));

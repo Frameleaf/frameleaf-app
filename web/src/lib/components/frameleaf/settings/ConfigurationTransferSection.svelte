@@ -11,7 +11,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
   import { redactConfigForExport } from '$lib/frameleaf/system-config-draft';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiDownload } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

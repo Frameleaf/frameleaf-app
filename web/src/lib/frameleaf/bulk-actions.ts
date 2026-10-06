@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /**

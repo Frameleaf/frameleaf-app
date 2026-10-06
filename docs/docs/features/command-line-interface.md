@@ -20,13 +20,18 @@ To import a Google Photos Takeout export, use [Import Google Photos](/features/g
 
 If you can't install node/npm, there is also a Docker version available below.
 
-## Installation (NPM)
+## Build from source
+
+The CLI is the local `@frameleaf/cli` workspace package. From a Frameleaf repository checkout:
 
 ```bash
-npm i -g @immich/cli
+pnpm install --frozen-lockfile
+pnpm --filter @frameleaf/sdk build
+pnpm --filter @frameleaf/cli build
+node packages/cli/bin/frameleaf --help
 ```
 
-The `@immich/cli` package provides the `frameleaf` command. The old command names (`immich`, and `immich-admin` and `immich-healthcheck` in the server image) still work as deprecated aliases of `frameleaf`, `frameleaf-admin` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release. The same rule applies to the [deprecated variable names](#deprecated-variable-names).
+The `@frameleaf/cli` package provides the `frameleaf` command. The old command names (`immich`, and `immich-admin` and `immich-healthcheck` in the server image) still work as deprecated aliases of `frameleaf`, `frameleaf-admin` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release. The same rule applies to the [deprecated variable names](#deprecated-variable-names).
 
 NOTE: if you previously installed the legacy CLI, you will need to uninstall it first:
 

@@ -75,8 +75,8 @@
     ImageEnrichmentFilter,
     type AssetResponseDto,
     type SearchHistogramBucketDto,
-  } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
     mdiArrowRight,

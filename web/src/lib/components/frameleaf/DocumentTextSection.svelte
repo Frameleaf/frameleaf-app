@@ -56,8 +56,8 @@
     type DocumentFieldResponseDto,
     type DocumentLineDto,
     type DocumentResponseDto,
-  } from '@immich/sdk';
-  import { Badge, Button, Text, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Badge, Button, Text, toastManager } from '@frameleaf/ui';
   import {
     mdiCheck,
     mdiClose,

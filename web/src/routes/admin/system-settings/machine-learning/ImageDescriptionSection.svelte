@@ -16,8 +16,8 @@
     type ImageDescriptionRequeueEstimateDto,
     type AdminConfigNsfwDetectionDto,
     type AdminConfigMachineLearningDto,
-  } from '@immich/sdk';
-  import { Button, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiFlaskOutline, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

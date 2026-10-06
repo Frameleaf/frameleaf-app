@@ -1,4 +1,4 @@
-import { LoginResponseDto, updateTag } from '@immich/sdk';
+import { LoginResponseDto, updateTag } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 

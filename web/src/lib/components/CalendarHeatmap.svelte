@@ -1,7 +1,7 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
-  import type { CalendarHeatmapResponseDto } from '@immich/sdk';
-  import { Text } from '@immich/ui';
+  import type { CalendarHeatmapResponseDto } from '@frameleaf/sdk';
+  import { Text } from '@frameleaf/ui';
   import { DateTime, Info } from 'luxon';
   import { t } from 'svelte-i18n';
 

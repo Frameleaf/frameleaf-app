@@ -25,7 +25,7 @@
   import FaceCrop from '$lib/components/frameleaf/people/FaceCrop.svelte';
   import { sharedFirstName } from '$lib/frameleaf/merge-suggestion';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, type FaceEvidenceDto, type PersonMergeSuggestionDto } from '@immich/sdk';
+  import { AssetMediaSize, type FaceEvidenceDto, type PersonMergeSuggestionDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   interface Props {

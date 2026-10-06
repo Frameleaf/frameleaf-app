@@ -6,7 +6,7 @@
  * in US dollars in every country and never converted. The store address comes from the server's
  * deployment configuration (`GET license/products`), never from here.
  */
-import { CloudLinkRefusal } from '@immich/sdk';
+import { CloudLinkRefusal } from '@frameleaf/sdk';
 
 // ------------------------------------------------------------------ prices
 

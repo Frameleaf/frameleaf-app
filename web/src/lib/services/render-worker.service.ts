@@ -13,8 +13,8 @@ import {
   type RenderWorkerCreateDto,
   type RenderWorkerLimitUpdateDto,
   type RenderWorkerUpdateDto,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 

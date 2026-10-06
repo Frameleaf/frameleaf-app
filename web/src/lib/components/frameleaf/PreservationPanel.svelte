@@ -44,8 +44,8 @@
     verifyPreservationPackage,
     type PreservationPackageDto,
     type PreservationRestoreDto,
-  } from '@immich/sdk';
-  import { Icon, modalManager, toastManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { locale, t } from 'svelte-i18n';

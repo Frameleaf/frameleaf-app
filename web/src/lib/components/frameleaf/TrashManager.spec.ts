@@ -6,7 +6,7 @@ import {
   reviewTrash,
   TrashReviewAction,
   type TrashItemResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -21,8 +21,8 @@ const bus = vi.hoisted(() => ({
   socket: new Map<string, (...args: never[]) => void>(),
 }));
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getTrashItems: vi.fn(),
   getTrashSummary: vi.fn(),
   reviewTrash: vi.fn(),

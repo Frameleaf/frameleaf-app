@@ -1,4 +1,4 @@
-import { IntegrityReport } from '@immich/sdk';
+import { IntegrityReport } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';

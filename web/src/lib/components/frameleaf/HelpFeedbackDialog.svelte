@@ -11,8 +11,8 @@
    */
   import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { type ServerAboutResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { type ServerAboutResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiBookOpenOutline,
     mdiBugOutline,

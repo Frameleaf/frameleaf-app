@@ -1,7 +1,7 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import { getPeopleThumbnailUrl } from '$lib/utils';
-  import type { PersonResponseDto } from '@immich/sdk';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
   /**
    * Pass only currently authorized evidence. Clear on lock, account change or revocation.
    * `size` defaults to the 24px chip/picker size; the People grid and person page pass a

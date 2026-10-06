@@ -5,7 +5,7 @@
  * encoded and already redacted by the server; credentials never have a value, only whether they
  * were replaced or cleared.
  */
-import type { SystemConfigHistoryChangeDto, SystemConfigHistoryCredentialChange } from '@immich/sdk';
+import type { SystemConfigHistoryChangeDto, SystemConfigHistoryCredentialChange } from '@frameleaf/sdk';
 import { reviewValue, type ReviewValue } from '$lib/frameleaf/system-config-draft';
 
 export type HistoryValue = ReviewValue | { kind: 'credential'; change: SystemConfigHistoryCredentialChange };

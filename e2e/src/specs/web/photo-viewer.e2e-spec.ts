@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto } from '@frameleaf/sdk';
 import { expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

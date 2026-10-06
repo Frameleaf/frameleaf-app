@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiClockOutline, mdiLinkOff } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

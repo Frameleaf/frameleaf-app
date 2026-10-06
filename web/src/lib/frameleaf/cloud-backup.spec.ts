@@ -5,7 +5,7 @@ import {
   CloudBackupRunState,
   CloudBackupTask,
   type CloudBackupStatusResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   backupKeyFile,

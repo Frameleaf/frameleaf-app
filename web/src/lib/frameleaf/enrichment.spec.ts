@@ -4,7 +4,7 @@ import {
   MlDestinationHealth,
   MlDestinationKind,
   type EnrichmentDestinationOptionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   captionRequestCount,

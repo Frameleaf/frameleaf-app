@@ -17,8 +17,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import type { UserAdminResponseDto } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
+  import type { UserAdminResponseDto } from '@frameleaf/sdk';
+  import { modalManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 

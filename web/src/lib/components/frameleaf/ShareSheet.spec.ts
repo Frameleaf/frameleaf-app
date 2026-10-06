@@ -1,4 +1,4 @@
-import { toastManager } from '@immich/ui';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';

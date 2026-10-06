@@ -1,4 +1,4 @@
-import type { AlbumCollectionResponseDto, AlbumResponseDto, AlbumTreeResponseDto } from '@immich/sdk';
+import type { AlbumCollectionResponseDto, AlbumResponseDto, AlbumTreeResponseDto } from '@frameleaf/sdk';
 
 /**
  * Album/collection/shared-space tree adapter for the Frameleaf rail (FL-30, FL-55).

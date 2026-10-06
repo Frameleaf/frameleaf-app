@@ -3,7 +3,7 @@ import {
   WorkflowType,
   type PluginMethodResponseDto,
   type WorkflowTriggerResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import {
   draftFromDocument,
   draftToCreateDto,

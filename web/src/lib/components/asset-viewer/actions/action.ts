@@ -1,4 +1,4 @@
-import type { AssetResponseDto, PersonResponseDto, StackResponseDto } from '@immich/sdk';
+import type { AssetResponseDto, PersonResponseDto, StackResponseDto } from '@frameleaf/sdk';
 import type { AssetAction } from '$lib/constants';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 

@@ -19,8 +19,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { AssetMediaSize } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiImageMultipleOutline, mdiOpenInNew } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

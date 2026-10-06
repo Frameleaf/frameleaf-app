@@ -8,8 +8,8 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { MANUAL_JOBS, manualJobKey, searchTerms, type ManualJobDefinition } from '$lib/frameleaf/job-queues';
-  import type { QueueName } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { QueueName } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiMagnify } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

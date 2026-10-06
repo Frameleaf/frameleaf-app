@@ -1,4 +1,4 @@
-import { SharedLinkType, type ServerConfigDto } from '@immich/sdk';
+import { SharedLinkType, type ServerConfigDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   asUrl,

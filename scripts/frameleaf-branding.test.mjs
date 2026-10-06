@@ -62,7 +62,7 @@ test("compatibility identifiers and FL-191/FL-192 hosts are not the name", () =>
   const text = [
     "IMMICH_MEDIA_LOCATION=/data",
     "x-immich-checksum",
-    "import { getMyUser } from '@immich/sdk';",
+    "import { getMyUser } from '@frameleaf/sdk';",
     "docker compose logs immich-server",
     "DB_DATABASE_NAME=immich",
     "the immich_fork schema",

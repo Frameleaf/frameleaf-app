@@ -6,7 +6,7 @@
   import { UploadState, type UploadAsset } from '$lib/types';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,

@@ -5,7 +5,7 @@ import {
   LoginResponseDto,
   searchAssets,
   updateConfig,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';

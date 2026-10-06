@@ -15,7 +15,7 @@ import {
   type TimeBucketsResponseDto,
   type TimelineHighlightResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { signupDto } from 'src/fixtures.js';
 import { parseTimeBucketKey } from 'src/ui/generators/timeline/utils.js';

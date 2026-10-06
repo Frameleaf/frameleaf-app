@@ -50,8 +50,8 @@
     type MemoryResponseDto,
     type MemoryShowLessDto,
     type MemoryShowLessResponseDto,
-  } from '@immich/sdk';
-  import { Icon, LoadingSpinner } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, LoadingSpinner } from '@frameleaf/ui';
   import {
     mdiAccountHeartOutline,
     mdiCakeVariantOutline,

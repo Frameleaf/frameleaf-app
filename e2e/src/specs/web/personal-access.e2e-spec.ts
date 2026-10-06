@@ -11,7 +11,7 @@ import {
   setupPinCode,
   unlockAuthSession,
   updateConfigCredential,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { BrowserContext, Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { app, asBearerAuth, utils } from 'src/utils.js';

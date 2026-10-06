@@ -1,4 +1,4 @@
-import { getAlbumTree, getPartners, getSharedSpaceInvitations, PartnerDirection } from '@immich/sdk';
+import { getAlbumTree, getPartners, getSharedSpaceInvitations, PartnerDirection } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';

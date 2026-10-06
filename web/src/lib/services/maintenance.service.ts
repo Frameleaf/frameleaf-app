@@ -1,4 +1,4 @@
-import { setMaintenanceMode, type SetMaintenanceModeDto } from '@immich/sdk';
+import { setMaintenanceMode, type SetMaintenanceModeDto } from '@frameleaf/sdk';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 

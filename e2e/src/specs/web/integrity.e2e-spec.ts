@@ -1,4 +1,4 @@
-import { getIntegrityReportSummary, LoginResponseDto, ManualJobName, QueueName } from '@immich/sdk';
+import { getIntegrityReportSummary, LoginResponseDto, ManualJobName, QueueName } from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { asBearerAuth, dockerExec, utils } from 'src/utils.js';
 

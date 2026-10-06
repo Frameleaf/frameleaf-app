@@ -40,8 +40,8 @@
     getCloudBackupStatus,
     getStudioBundleOperation,
     type CloudBackupStatusResponseDto,
-  } from '@immich/sdk';
-  import { Icon, Theme, themeManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
     mdiCancel,

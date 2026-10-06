@@ -18,8 +18,8 @@
   import { locationPatch } from '$lib/frameleaf/viewer-location';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiMapMarkerOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

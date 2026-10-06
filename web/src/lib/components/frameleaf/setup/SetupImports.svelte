@@ -6,7 +6,7 @@
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiArrowRightThin, mdiClockOutline, mdiCloudOutline, mdiImageMultipleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
