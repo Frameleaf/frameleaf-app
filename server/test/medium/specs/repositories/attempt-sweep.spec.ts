@@ -203,8 +203,7 @@ describe('attempt output retention and cleanup', () => {
             fragment.includes(' AS now')
               ? fragment.replace(
                   'clock_timestamp()',
-                  () =>
-                    `(to_timestamp(${millisecond}::double precision / 1000) + interval '750 microseconds')`,
+                  () => `(to_timestamp(${millisecond}::double precision / 1000) + interval '750 microseconds')`,
                 )
               : fragment,
           ),
