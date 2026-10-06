@@ -2061,6 +2061,21 @@ export class MediaService extends BaseService {
     // With speed ranges the segmented graph carries the whole-clip rate in its gaps (FL-113), so
     // the whole-clip rate is applied here only when there are no ranges.
     if (globalSpeed && speedSegments.length === 0) {
+      // The recipe spans the container timeline, including audio after the last picture.
+      // Hold that picture before changing speed so the source audio tail survives.
+      if (
+        !trim &&
+        audioStream &&
+        typeof videoStream.duration === 'number' &&
+        Number.isFinite(videoStream.duration) &&
+        videoStream.duration > 0 &&
+        Number.isFinite(format.duration) &&
+        format.duration > videoStream.duration
+      ) {
+        videoFilters.push(
+          `tpad=stop_mode=clone:stop_duration=${this.roundFilterNumber(format.duration - videoStream.duration)}`,
+        );
+      }
       videoFilters.push(`setpts=${this.roundFilterNumber(1 / globalSpeed.parameters.rate)}*PTS`);
       audioFilters.push(...this.getAudioTempoFilters(globalSpeed.parameters.rate));
     }

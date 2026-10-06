@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
 import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline } from './harness-wait.ts';
+
+test('a failed queue joins remaining work before reporting the failure', async () => {
+  // Exercise the actual predicate without loading the application SDK or runner fixtures.
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const waitForQueue =');
+  const end = source.indexOf('\n/**', start);
+  assert.ok(start >= 0 && end > start);
+  let reads = 0;
+  const waitForQueue = new Function(
+    'waitUntil',
+    'readQueue',
+    `${stripTypeScriptTypes(source.slice(start, end))}\nreturn waitForQueue;`,
+  )(waitUntil, async () => ({ hasUnfinishedWork: ++reads === 1, statistics: { failed: 1 } }));
+  await assert.rejects(
+    withDeadline('failed queue settlement', 1_000, (context) => waitForQueue('token', 'videoConversion', context)),
+    /Queue videoConversion has 1 failed or blocked jobs/,
+  );
+  assert.equal(reads, 2);
+});
 
 test('a timeout aborts and settles its one request before returning, with no late validation or second poll', async () => {
   let reads = 0;

@@ -2720,6 +2720,44 @@ describe(MediaService.name, () => {
     const getPlan = (ffmpeg: Partial<SystemConfig['ffmpeg']>, edits: any[]) =>
       editPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
 
+    it('holds the final picture through a longer audio timeline before applying whole-clip speed', () => {
+      const source = { ...videoStream, duration: 22.362289 };
+      const timeline = { ...format, duration: 22.616236 };
+      const edits = [{ action: AssetEditAction.Speed, parameters: { rate: 2 } }];
+      const command = editCommand(defaults.ffmpeg, edits, source, audioStream, timeline);
+      expect(getFilterOption(command.outputOptions)).toContain(
+        'tpad=stop_mode=clone:stop_duration=0.2539,setpts=0.5*PTS',
+      );
+      expect(command.outputOptions).toEqual(
+        expect.arrayContaining(['-filter:a', 'atempo=2', '-fps_mode', 'passthrough']),
+      );
+      expect(command.outputOptions).not.toContain('-shortest');
+      const fallback = (sut as any).getVideoEditSoftwareFallbackCommandPlan(
+        defaults.ffmpeg,
+        edits,
+        source,
+        audioStream,
+        timeline,
+        'hardware failed',
+        resolveEditedMasterColorPolicy(source, defaults.ffmpeg),
+      );
+      expect(getFilterOption(fallback.command.outputOptions)).toContain(
+        'tpad=stop_mode=clone:stop_duration=0.2539,setpts=0.5*PTS',
+      );
+      for (const duration of [undefined, null, NaN, Infinity, 0, 22.616236, 23]) {
+        const unchanged = editCommand(defaults.ffmpeg, edits, { ...source, duration }, audioStream, timeline);
+        expect(getFilterOption(unchanged.outputOptions)).not.toContain('tpad');
+      }
+      const unchanged = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.AutoEnhance, parameters: { enabled: true } }],
+        source,
+        audioStream,
+        timeline,
+      );
+      expect(getFilterOption(unchanged.outputOptions)).not.toContain('tpad');
+    });
+
     it('should preserve edited dimensions independently of playback resolution', () => {
       const source = { ...videoStream, width: 3840, height: 2160, rotation: 0 };
       const edits = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
