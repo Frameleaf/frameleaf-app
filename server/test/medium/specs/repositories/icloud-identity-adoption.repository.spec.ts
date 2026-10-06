@@ -2794,95 +2794,99 @@ describe('iCloud exact identity adoption', () => {
           'physical-reference',
           'resource-reservation',
           'legacy',
-        ] as const)('retains private charged copies under %s rather than borrowing cleanup authority', async (kind) => {
-          const fixture = await createDispositionFixture();
-          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
-          await fixture.retire();
-          const before = await fixture.state();
-          switch (kind) {
-            case 'owner-forgery':
-            case 'generation-forgery': {
-              const copy = structuredClone(
-                before.verification!.auditPrivateCopy,
-              ) as privateCopyFiles.ScheduledPrivateCopyRecord;
-              if (kind === 'owner-forgery') {
-                copy.payload.ownerId = randomUUID();
-              } else {
-                copy.payload.generation = randomUUID();
+        ] as const)(
+          'retains private charged copies under %s rather than borrowing cleanup authority',
+          async (kind) => {
+            const fixture = await createDispositionFixture();
+            await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+            await fixture.retire();
+            const before = await fixture.state();
+            switch (kind) {
+              case 'owner-forgery':
+              case 'generation-forgery': {
+                const copy = structuredClone(
+                  before.verification!.auditPrivateCopy,
+                ) as privateCopyFiles.ScheduledPrivateCopyRecord;
+                if (kind === 'owner-forgery') {
+                  copy.payload.ownerId = randomUUID();
+                } else {
+                  copy.payload.generation = randomUUID();
+                }
+                await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${JSON.stringify(copy)}::text::jsonb)
+                WHERE id=${fixture.resource.id}::uuid`.execute(db); // Old server seal cannot authenticate authored JSON.
+
+                break;
               }
-              await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${JSON.stringify(copy)}::text::jsonb)
-              WHERE id=${fixture.resource.id}::uuid`.execute(db); // Old server seal cannot authenticate authored JSON.
+              case 'inode-replacement': {
+                await rename(fixture.promotedPath, `${fixture.promotedPath}.original-inode`);
+                await writeFile(fixture.promotedPath, fixture.f.bytes, { mode: 0o600, flag: 'wx' });
 
-              break;
-            }
-            case 'inode-replacement': {
-              await rename(fixture.promotedPath, `${fixture.promotedPath}.original-inode`);
-              await writeFile(fixture.promotedPath, fixture.f.bytes, { mode: 0o600, flag: 'wx' });
+                break;
+              }
+              case 'operation-replacement': {
+                await sql`UPDATE public.media_operation SET "claimToken"=${randomUUID()}::uuid
+                WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
 
-              break;
-            }
-            case 'operation-replacement': {
-              await sql`UPDATE public.media_operation SET "claimToken"=${randomUUID()}::uuid
-              WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+                break;
+              }
+              case 'item-replacement': {
+                await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+                WHERE id=${fixture.claim.id}::uuid`.execute(db);
+                await identities.claim(
+                  fixture.f.user.id,
+                  [fixture.f.resource.sourceAssetId.toUpperCase()],
+                  `device:${randomUUID()}`,
+                  1800,
+                );
 
-              break;
-            }
-            case 'item-replacement': {
-              await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
-              WHERE id=${fixture.claim.id}::uuid`.execute(db);
-              await identities.claim(
-                fixture.f.user.id,
-                [fixture.f.resource.sourceAssetId.toUpperCase()],
-                `device:${randomUUID()}`,
-                1800,
-              );
+                break;
+              }
+              case 'outbox': {
+                await sql`UPDATE public.icloud_resource SET "pendingJobs"=${JSON.stringify([{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }])}::text::jsonb
+                WHERE id=${fixture.resource.id}::uuid`.execute(db);
 
-              break;
-            }
-            case 'outbox': {
-              await sql`UPDATE public.icloud_resource SET "pendingJobs"=${JSON.stringify([{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }])}::text::jsonb
-              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+                break;
+              }
+              case 'asset-reference': {
+                await db
+                  .updateTable('asset')
+                  .set({ originalPath: fixture.promotedPath })
+                  .where('id', '=', fixture.f.asset.id)
+                  .execute();
 
-              break;
-            }
-            case 'asset-reference': {
-              await db
-                .updateTable('asset')
-                .set({ originalPath: fixture.promotedPath })
-                .where('id', '=', fixture.f.asset.id)
-                .execute();
+                break;
+              }
+              case 'physical-reference': {
+                await sql`INSERT INTO public.physical_file (id,type,checksum,path,"sizeInBytes","createdAt","updatedAt")
+                VALUES (${randomUUID()}::uuid,'original',${fixture.f.sha256},${fixture.promotedPath},${fixture.f.bytes.length},clock_timestamp(),clock_timestamp())`.execute(
+                  db,
+                );
 
-              break;
-            }
-            case 'physical-reference': {
-              await sql`INSERT INTO public.physical_file (id,type,checksum,path,"sizeInBytes","createdAt","updatedAt")
-              VALUES (${randomUUID()}::uuid,'original',${fixture.f.sha256},${fixture.promotedPath},${fixture.f.bytes.length},clock_timestamp(),clock_timestamp())`.execute(
-                db,
-              );
+                break;
+              }
+              case 'resource-reservation': {
+                // A distinct durable recovery obligation owns its reserved destination even before publication.
+                await sql`UPDATE public.icloud_resource SET "promotedPath"=${fixture.promotedPath}
+                  WHERE id=${fixture.f.resource.id}::uuid`.execute(db);
 
-              break;
+                break;
+              }
+              default: {
+                await sql`UPDATE public.icloud_resource SET verification=verification-'auditPrivateCopy'
+                WHERE id=${fixture.resource.id}::uuid`.execute(db);
+              }
             }
-            case 'resource-reservation': {
-              // A distinct durable recovery obligation owns its reserved destination even before publication.
-              await sql`UPDATE public.icloud_resource SET "promotedPath"=${fixture.promotedPath}
-                WHERE id=${fixture.f.resource.id}::uuid`.execute(db);
-
-              break;
-            }
-            default: {
-              await sql`UPDATE public.icloud_resource SET verification=verification-'auditPrivateCopy'
-              WHERE id=${fixture.resource.id}::uuid`.execute(db);
-            }
-          }
-          await fixture.staging.cleanupRetired(fixture.input);
-          expect((await fixture.state()).reservedBytes).toBe(before.reservedBytes);
-          expect((await fixture.state()).status).toBe('failed');
-          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
-          expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
-          expect((await fixture.state()).pendingJobs).toEqual(
-            kind === 'outbox' ? [{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }] : [],
-          );
-        });
+            await fixture.staging.cleanupRetired(fixture.input);
+            expect((await fixture.state()).reservedBytes).toBe(before.reservedBytes);
+            expect((await fixture.state()).status).toBe('failed');
+            expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+            expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+            expect((await fixture.state()).pendingJobs).toEqual(
+              kind === 'outbox' ? [{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }] : [],
+            );
+          },
+          15_000, // Real staging, decode and copy setup, as in neighboring I/O cases.
+        );
 
         it('keeps actual late decoder work pending across a restarted cleanup and deletes only after true settlement', async ({
           signal,
