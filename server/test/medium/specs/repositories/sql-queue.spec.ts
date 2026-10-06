@@ -21,7 +21,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
-import { feedManifest } from 'src/queue/manifest.js';
+import { feedManifest, freezeSelection } from 'src/queue/manifest.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
@@ -66,6 +66,44 @@ describe('PostgreSQL queue', () => {
     workerB = randomUUID();
     await store.initialize([queue], workerA);
     await store.initialize([], workerB);
+  });
+
+  it('discovers paused manifest-only work and pending producers in one read without treating retained terminal jobs as work', async () => {
+    const producerQueue = `${queue}-producer`;
+    const idleQueue = `${queue}-idle`;
+    await store.initialize([producerQueue, idleQueue], workerA);
+    await store.enqueue([intent({ queue: producerQueue, name: 'producer' }), intent({ queue: idleQueue })]);
+    const [finished] = await store.claim(idleQueue, workerA);
+    await store.complete(finished, []);
+    const runId = await freezeSelection(
+      db,
+      intent(),
+      db.selectFrom('job_worker').select('id').where('id', '=', workerA),
+    );
+    await store.pause(queue, true);
+    expect((await sql`select id from job where queue = ${queue}`.execute(db)).rows).toEqual([]);
+    capturedQueries = [];
+    try {
+      expect((await store.queuesWithUnfinishedWork([idleQueue, queue, producerQueue])).sort()).toEqual(
+        [queue, producerQueue].sort(),
+      );
+      expect(capturedQueries).toHaveLength(1);
+      expect(await store.claim(queue, workerA)).toEqual([]);
+      expect(await store.feedManifest(queue)).toBe(0);
+      await store.pause(queue, false);
+      expect(await store.feedManifest(queue)).toBe(1);
+      const [selected] = await store.claim(queue, workerA);
+      expect(selected.runId).toBe(runId);
+      await store.complete(selected, []);
+      const [producer] = await store.claim(producerQueue, workerA);
+      await store.complete(producer, []);
+      expect(await store.queuesWithUnfinishedWork([queue, producerQueue, idleQueue])).toEqual([]);
+      capturedQueries = [];
+      expect(await store.queuesWithUnfinishedWork([])).toEqual([]);
+      expect(capturedQueries).toEqual([]);
+    } finally {
+      capturedQueries = undefined;
+    }
   });
 
   it('finishes an empty manifest page without linkage updates or a recount and clears filling state', async () => {
