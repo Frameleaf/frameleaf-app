@@ -278,6 +278,23 @@ export class JobRepository {
       }
     } catch (error) {
       try {
+        const code =
+          error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+        const sqlState = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : null;
+        this.logger.error('Queue execution failed', {
+          jobName: Object.values(JobName).includes(claim.name as JobName) ? claim.name : 'unknown',
+          queue: Object.values(QueueName).includes(claim.queue as QueueName) ? claim.queue : 'unknown',
+          attempt: Number.isSafeInteger(claim.attempt) && claim.attempt >= 0 ? claim.attempt : null,
+          jobId: /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(claim.id) ? claim.id : null,
+          phase: context.buffering ? 'deferred_publication' : 'handler',
+          category: sqlState ? 'database' : error instanceof Error ? 'error' : 'unknown',
+          sqlState,
+          aborted: abort.signal.aborted,
+        });
+      } catch {
+        // A diagnostic failure must not replace the original durable job outcome.
+      }
+      try {
         if (!started || context.dependencyReason) {
           // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
           // A rejected fence can only settle below with matching stop proof; never invent a new claim.
