@@ -1,4 +1,5 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
+import { QueueName } from 'src/enum.js';
 import {
   initialCanonicalOutcomeContext,
   initialSelectionEntitlementRows,
@@ -429,3 +430,52 @@ export async function observeQueueRun(db: Kysely<any>, name: string) {
       from current_jobs`.execute(db);
   return row;
 }
+
+/** Individual edit operations own their one domain retry across queue deliveries. Keep
+ * failed attempt rows intact; report one latest delivery of the exact operation instead.
+ * Run-backed selections retain their existing ledger interpretation.
+ */
+export const reportedQueueJobs = (queue: string) => {
+  if (queue !== QueueName.Editor && queue !== QueueName.VideoConversion) {
+    return sql`select j.*,false "operationPaused" from job j where j.queue=${queue}`;
+  }
+  return sql`
+  with deliveries as materialized (
+    select j.id,j.queue,j.name,j.data,j.sensitive,j."createdAt",j.attempt,j.error,j.state "rawState",
+      j."availableAt",o.id "operationId",o.status "operationState",o."retryAt",
+      (o.id is not null and j."cancelRequestedAt" is null and (
+        j.state in ('pending','waiting','active','completed')
+        or (j.state='needs_attention' and a.outcome='needs_attention' and a."finishedAt" is not null and (
+          (stopped.value->>'jobId'=j.id::text and stopped.value ? 'stoppedAt')
+          or (worker.value->>'workerId'=a."workerId"::text and worker.value ? 'stoppedAt'))))) authoritative
+    from job j left join media_operation o
+      on o.id=case when j.data->>'operationId' ~ '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'
+        then (j.data->>'operationId')::uuid end
+      and j."runId" is null and j."itemKey" is null and j."rootItemKey" is null
+      and o.kind='quick_edit' and o.snapshot->>'executor'='job_queue'
+      and j.name in ('AssetEditThumbnailGeneration','AssetVideoEditGeneration','AssetDevelopRender')
+      and o.snapshot->'job'->>'name'=j.name and o.snapshot->'job'->'data'->>'id'=j.data->>'id'
+      and (o.snapshot->'job'->'data'->>'versionId') is not distinct from (j.data->>'versionId')
+    left join job_attempt a on j.state='needs_attention' and a."jobId"=j.id and a.attempt=j.attempt
+    left join system_metadata stopped on stopped.key='frameleaf-attempt-evidence:' || a.token::text
+    left join system_metadata worker on worker.key='frameleaf-worker-stopped:' || a."workerId"::text
+    where j.queue=${queue}
+  ), ranked as (
+    select *,row_number() over (partition by "operationId" order by "createdAt" desc,id desc) delivery
+      from deliveries where authoritative
+  ), latest as (
+    select id,queue,name,data,sensitive,"createdAt",attempt,error,"rawState","availableAt","operationId",
+      "operationState","retryAt",authoritative from ranked where delivery=1
+    union all select * from deliveries where not coalesce(authoritative,false)
+  ) select id,queue,name,data,sensitive,"createdAt",attempt,error,
+    case when authoritative and "rawState"!='active' then case "operationState"
+      when 'queued' then 'pending' when 'paused' then 'pending'
+      when 'preparing' then 'active' when 'rendering' then 'active' when 'validating' then 'active'
+      when 'cancelling' then 'active' when 'completed' then 'completed' when 'cancelled' then 'cancelled'
+      when 'failed' then case when "rawState"='needs_attention' then "rawState" else 'failed' end
+      else "rawState" end else "rawState" end state,
+    case when authoritative and "operationState"='queued' then coalesce("retryAt","availableAt")
+      else "availableAt" end "availableAt",
+    coalesce(authoritative and "operationState"='paused',false) "operationPaused"
+  from latest`;
+};
