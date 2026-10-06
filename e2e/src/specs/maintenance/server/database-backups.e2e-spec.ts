@@ -14,7 +14,9 @@ const waitForServerRestart = () =>
       context,
       () => request(app).get('/server/config'),
       ({ status, body }) => {
-        if (status >= 500) throw new Error(`Server restart failed: HTTP ${status}`);
+        if (status >= 500) {
+          throw new Error(`Server restart failed: HTTP ${status}`);
+        }
         return status === 200 && !body.maintenanceMode;
       },
     ),

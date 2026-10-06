@@ -45,11 +45,12 @@ it('does not carry the unawaited request into the next test', () => {
 
 it('joins implicit test-owned transports before test-finished cleanup', async ({ signal }) => {
   const release = Promise.withResolvers<void>();
-  const pending = ownedWait('admitted test request', 1_000, () => release.promise);
+  const pending = ownedWait('admitted test request', 1000, () => release.promise);
   let settled = false;
-  const settlement = settlePendingWaits(signal).then(() => {
+  const settlement = (async () => {
+    await settlePendingWaits(signal);
     settled = true;
-  });
+  })();
   try {
     await sleep(0);
     expect(settled).toBe(false);
