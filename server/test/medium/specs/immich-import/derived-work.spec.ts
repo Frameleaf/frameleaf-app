@@ -518,7 +518,12 @@ describe('offline import derived-work durable ownership', () => {
       await sql`update job set "availableAt" = now()`.execute(db);
       const [retry] = await new SqlQueueStore(db).claim(queue, worker);
       expect(retry).toMatchObject({ id: first.id, runId, itemKey: first.itemKey, attempt: 2 });
-      expect(retry.data).toEqual(data);
+      expect(retry.data).toEqual({
+        ...data,
+        _queueDestinations: {
+          [queue === QueueName.FaceDetection ? 'face' : 'clip']: 'paid-destination-original',
+        },
+      });
       expect(await pin(retry, 'paid-destination-reconfigured')).toBe('paid-destination-original');
       await store.fail(retry, 'exhausted');
       await repositoryFor(db).dispatchImportedWork();
