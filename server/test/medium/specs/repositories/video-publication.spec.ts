@@ -262,7 +262,9 @@ describe('retained video publication under queue and operation claims', () => {
     expect(await fixture.store.counts(fixture.claim.queue)).toMatchObject({ failed: 0, delayed: 1, completed: 0 });
     expect(await facade.searchJobs(QueueName.VideoConversion, { status: [QueueJobStatus.Failed] })).toEqual([]);
     expect(
-      await fixture.operations.requestPause(fixture.operation.id, fixture.operation.ownerId, [MediaOperationKind.QuickEdit]),
+      await fixture.operations.requestPause(fixture.operation.id, fixture.operation.ownerId, [
+        MediaOperationKind.QuickEdit,
+      ]),
     ).toMatchObject({ status: MediaOperationStatus.Paused });
     expect(await fixture.store.counts(fixture.claim.queue)).toMatchObject({ failed: 0, paused: 1, delayed: 0 });
     expect(await fixture.store.hasUnfinishedWork(fixture.claim.queue)).toBe(true);
@@ -305,12 +307,17 @@ describe('retained video publication under queue and operation claims', () => {
       { state: 'needs_attention', attempt: 1 },
     ]);
     expect(
-      (await sql`select outcome from job_attempt where "jobId" = ${fixture.claim.id}::uuid
-        and token = ${fixture.claim.token}::uuid`.execute(db)).rows,
+      (
+        await sql`select outcome from job_attempt where "jobId" = ${fixture.claim.id}::uuid
+        and token = ${fixture.claim.token}::uuid`.execute(db)
+      ).rows,
     ).toEqual([{ outcome: 'needs_attention' }]);
     expect(
-      (await sql`select count(*)::int count from job_run_item where "jobId"=any(${[fixture.claim.id, retry.id]}::uuid[])`
-        .execute(db)).rows,
+      (
+        await sql`select count(*)::int count from job_run_item where "jobId"=any(${[fixture.claim.id, retry.id]}::uuid[])`.execute(
+          db,
+        )
+      ).rows,
     ).toEqual([{ count: 0 }]);
     expect(await fixture.store.fail(fixture.claim, 'stale failure')).toBe(false);
   });
