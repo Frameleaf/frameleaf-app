@@ -203,7 +203,8 @@ describe('attempt output retention and cleanup', () => {
             fragment.includes(' AS now')
               ? fragment.replace(
                   'clock_timestamp()',
-                  `(to_timestamp(${millisecond}::double precision / 1000) + interval '750 microseconds')`,
+                  () =>
+                    `(to_timestamp(${millisecond}::double precision / 1000) + interval '750 microseconds')`,
                 )
               : fragment,
           ),
@@ -229,7 +230,8 @@ describe('attempt output retention and cleanup', () => {
         (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
       ).toHaveLength(0);
       expect(
-        (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + laterToken}`.execute(db)).rows,
+        (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + laterToken}`.execute(db))
+          .rows,
       ).toHaveLength(1);
     } finally {
       clock.mockRestore();
