@@ -32,7 +32,10 @@ test('reset reads all queues in one request and refuses incomplete or invalid ag
   const read = () => withDeadline('reset queue snapshot', 1_000, (context) => readQueues('token', context));
   assert.deepEqual(await read(), queues);
   assert.equal(calls, 1);
-  assert.equal(queues.some((queue) => queue.hasUnfinishedWork), true);
+  assert.equal(
+    queues.some((queue) => queue.hasUnfinishedWork),
+    true,
+  );
   for (const invalid of [
     queues.slice(1),
     [...queues.slice(1), queues[1]],
