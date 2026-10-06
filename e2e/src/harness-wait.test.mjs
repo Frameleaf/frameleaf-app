@@ -5,6 +5,51 @@ import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline } from './harness-wait.ts';
 
+test('reset reads all queues in one request and refuses incomplete or invalid aggregate status', async () => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const readQueues =');
+  const end = source.indexOf('\nconst waitForQueue =', start);
+  assert.ok(start >= 0 && end > start);
+  const names = Array.from({ length: 25 }, (_, index) => `queue-${index}`);
+  const queues = names.map((name, index) => ({ name, hasUnfinishedWork: index === 24 }));
+  let response = queues;
+  let calls = 0;
+  let failure;
+  const readQueues = new Function(
+    'getQueues',
+    'QueueName',
+    'asBearerAuth',
+    `${stripTypeScriptTypes(source.slice(start, end))}\nreturn readQueues;`,
+  )(
+    ({ signal }) => {
+      calls++;
+      assert.equal(signal.aborted, false);
+      return failure ? Promise.reject(failure) : Promise.resolve(response);
+    },
+    Object.fromEntries(names.map((name) => [name, name])),
+    (token) => ({ Authorization: `Bearer ${token}` }),
+  );
+  const read = () => withDeadline('reset queue snapshot', 1_000, (context) => readQueues('token', context));
+  assert.deepEqual(await read(), queues);
+  assert.equal(calls, 1);
+  assert.equal(
+    queues.some((queue) => queue.hasUnfinishedWork),
+    true,
+  );
+  for (const invalid of [
+    queues.slice(1),
+    [...queues.slice(1), queues[1]],
+    queues.map((queue, index) => (index === 24 ? { name: queue.name } : queue)),
+    queues.map((queue, index) => (index === 24 ? { ...queue, hasUnfinishedWork: 'false' } : queue)),
+    null,
+  ]) {
+    response = invalid;
+    await assert.rejects(read(), /Queues did not report complete authoritative unfinished work/);
+  }
+  failure = new Error('aggregate transport failed');
+  await assert.rejects(read(), (error) => error === failure);
+});
+
 test('a failed queue joins remaining work before reporting the failure', async () => {
   // Exercise the actual predicate without loading the application SDK or runner fixtures.
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
