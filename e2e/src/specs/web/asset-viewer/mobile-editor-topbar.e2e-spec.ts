@@ -80,7 +80,10 @@ test.describe('Shared editor Save and Cancel reachability (FL-144)', () => {
           const savedPromise = page.waitForResponse(
             (response) => response.url() === endpoint && response.request().method() === 'PUT',
           );
-          await testInfo.attach(`${kind}-${width}-toolbar`, { body: await page.screenshot(), contentType: 'image/png' });
+          await testInfo.attach(`${kind}-${width}-toolbar`, {
+            body: await page.screenshot(),
+            contentType: 'image/png',
+          });
           await save.click();
           const savedResponse = await savedPromise;
           expect(savedResponse.status()).toBe(200);
