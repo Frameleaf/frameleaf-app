@@ -241,8 +241,9 @@ describe('queue connection recovery and repeated database pressure', () => {
     });
     let interactions = 0;
     let maximumLive = 0;
-    // Calibration only until hosted evidence supports a growth budget. Do not force GC:
-    // RSS includes allocator retention, and heapUsed can rise between ordinary collections.
+    // Node 24.21 Linux x64/Mac arm64 captures: per-environment peak +25%, rounded up
+    // to MiB with a 16 MiB floor, then the larger ceiling. HeapTotal is allocator capacity.
+    const memoryGrowthLimits = { rss: 120, heapUsed: 106, external: 16, arrayBuffers: 16 };
     const memoryKeys = ['rss', 'heapTotal', 'heapUsed', 'external', 'arrayBuffers'] as const;
     const initialMemory = process.memoryUsage();
     const peakMemory = { ...initialMemory };
@@ -396,7 +397,8 @@ describe('queue connection recovery and repeated database pressure', () => {
         console.info(
           'FL333 queue-pressure-memory',
           JSON.stringify({
-            mode: 'calibration-only',
+            mode: 'bounded-warm-growth',
+            growthLimitsMiB: memoryGrowthLimits,
             node: process.version,
             platform: process.platform,
             arch: process.arch,
@@ -430,5 +432,13 @@ describe('queue connection recovery and repeated database pressure', () => {
       },
       { timeout: 2000 },
     );
+    expect(roundMemory).toHaveLength(3);
+    expect(warmMemory).toBeDefined();
+    expect(warmPeakMemory).toBeDefined();
+    for (const key of ['rss', 'heapUsed', 'external', 'arrayBuffers'] as const) {
+      expect(warmPeakMemory![key] - warmMemory![key], `${key} sampled warm growth`).toBeLessThanOrEqual(
+        memoryGrowthLimits[key] * 1024 * 1024,
+      );
+    }
   }, 180_000);
 });
