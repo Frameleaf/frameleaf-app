@@ -50,6 +50,7 @@ import {
   VideoContainer,
 } from 'src/enum.js';
 import {
+  afterJobCommit,
   attemptOutputPath,
   deferJobAdoption,
   jobSignal,
@@ -1590,18 +1591,23 @@ export class MediaService extends BaseService {
         if (!(await mayPublish())) {
           return JobStatus.Skipped;
         }
-        published = await this.publishVideoVersion(version, {
-          files: [],
-          masterPath: null,
-          thumbhash: originalPreview
-            ? await this.mediaRepository.generateThumbhash(originalPreview.path, {
-                colorspace: config.image.colorspace,
-                processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
-              })
-            : null,
-          ...this.getVideoEditDimensions([], videoStream),
-          duration: Math.round(original.format.duration * 1000),
-        });
+        published = await this.publishVideoVersion(
+          version,
+          {
+            files: [],
+            masterPath: null,
+            thumbhash: originalPreview
+              ? await this.mediaRepository.generateThumbhash(originalPreview.path, {
+                  colorspace: config.image.colorspace,
+                  processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
+                })
+              : null,
+            ...this.getVideoEditDimensions([], videoStream),
+            duration: Math.round(original.format.duration * 1000),
+          },
+          run,
+          candidates,
+        );
         return published ? JobStatus.Success : JobStatus.Skipped;
       }
 
@@ -1708,12 +1714,17 @@ export class MediaService extends BaseService {
         if (!(await mayPublish())) {
           return JobStatus.Skipped;
         }
-        published = await this.publishVideoVersion(version, {
-          masterPath: master,
-          files: [proxyFile],
-          ...dimensions,
-          duration,
-        });
+        published = await this.publishVideoVersion(
+          version,
+          {
+            masterPath: master,
+            files: [proxyFile],
+            ...dimensions,
+            duration,
+          },
+          run,
+          candidates,
+        );
         return published ? JobStatus.Success : JobStatus.Skipped;
       }
 
@@ -1725,13 +1736,18 @@ export class MediaService extends BaseService {
       if (!(await mayPublish())) {
         return JobStatus.Skipped;
       }
-      published = await this.publishVideoVersion(version, {
-        masterPath: master,
-        files: [proxyFile, ...generated.files],
-        ...dimensions,
-        duration,
-        thumbhash: generated.thumbhash,
-      });
+      published = await this.publishVideoVersion(
+        version,
+        {
+          masterPath: master,
+          files: [proxyFile, ...generated.files],
+          ...dimensions,
+          duration,
+          thumbhash: generated.thumbhash,
+        },
+        run,
+        candidates,
+      );
       return published ? JobStatus.Success : JobStatus.Skipped;
     } catch (error: any) {
       jobSignal()?.throwIfAborted();
@@ -1753,16 +1769,30 @@ export class MediaService extends BaseService {
   private async publishVideoVersion(
     version: VideoEditVersion,
     result: Parameters<AssetEditRepository['publishVideoVersion']>[1],
+    run?: EditOperationRun,
+    candidates: string[] = [],
   ): Promise<boolean> {
+    let adopted = false;
     if (
       deferJobAdoption(async () => {
-        const { published, releasedPaths } = await this.assetEditRepository.publishVideoVersion(version, result);
-        if (!published) throw new Error('Video version changed before publication');
+        const publication = await this.assetEditRepository.publishVideoVersion(version, result);
+        adopted = publication.published;
+        if (!adopted) {
+          if (!publication.superseded) throw new Error('Video version changed before publication');
+          if (candidates.length > 0) {
+            await afterJobCommit(async () => {
+              await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
+            });
+          }
+          return;
+        }
+        const { releasedPaths } = publication;
         if (releasedPaths.length > 0) {
           await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
         }
       })
     ) {
+      await run?.complete(() => (adopted ? version.assetId : null));
       // Keep private candidates until the enclosing queue and operation claims accept them.
       // A rejected transaction leaves no canonical references and cannot delete prior output.
       return true;
