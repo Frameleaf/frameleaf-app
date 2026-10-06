@@ -10,8 +10,8 @@
     type AlbumResponseDto,
     type PersonResponseDto,
     type SharedSpacePersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAccountPlusOutline, mdiAccountRemoveOutline, mdiAccountOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { AssetMediaSize } from '@immich/sdk';
+  import { AssetMediaSize } from '@frameleaf/sdk';
   import Button from './Button.svelte';
   import {
     siteRequest,

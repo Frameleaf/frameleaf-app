@@ -6,7 +6,7 @@ import {
   AssetTypeEnum,
   MlDestinationKind,
   type AssetRestorationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { assetFactory } from '@test-data/factories/asset-factory';

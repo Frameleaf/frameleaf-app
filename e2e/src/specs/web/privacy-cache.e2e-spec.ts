@@ -1,4 +1,4 @@
-import { lockAssets, setUserOnboarding, shareItems, unshareItems } from '@immich/sdk';
+import { lockAssets, setUserOnboarding, shareItems, unshareItems } from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 

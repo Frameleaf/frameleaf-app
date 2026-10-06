@@ -37,8 +37,8 @@
     type ClusterGroupRequestResponseDto,
     type PartnerResponseDto,
     type UserResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 

@@ -15,8 +15,8 @@
   import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
-  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
+  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, LoadingSpinner, shortcuts } from '@frameleaf/ui';
   import {
     mdiCheck,
     mdiChevronLeft,

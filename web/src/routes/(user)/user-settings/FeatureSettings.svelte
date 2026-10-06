@@ -16,7 +16,7 @@
   import { SettingInputFieldType } from '$lib/constants';
   import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
-  import { AssetOrder } from '@immich/sdk';
+  import { AssetOrder } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   const keys: AccountPreferenceKey[] = [

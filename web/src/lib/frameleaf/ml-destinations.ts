@@ -13,7 +13,7 @@ import {
   MlWorkerRole,
   MlWorkload,
   type MlDestinationResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** The order workloads are listed in: library work first, then restoration, then Studio. */

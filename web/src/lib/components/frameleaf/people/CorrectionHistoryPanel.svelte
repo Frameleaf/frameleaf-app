@@ -29,8 +29,8 @@
     undoCorrection,
     type PersonCorrectionDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiImageOffOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy, onMount } from 'svelte';

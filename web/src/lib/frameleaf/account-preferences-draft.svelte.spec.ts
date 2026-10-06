@@ -1,11 +1,11 @@
-import type { UserPreferencesResponseDto, UserPreferencesUpdateDto } from '@immich/sdk';
+import type { UserPreferencesResponseDto, UserPreferencesUpdateDto } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SECTION_KEYS } from '$lib/frameleaf/account-preferences';
 import { AccountPreferencesDraftStore } from '$lib/frameleaf/account-preferences-draft.svelte';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 
-vi.mock('@immich/sdk', async (originalImport) => ({
-  ...(await originalImport<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (originalImport) => ({
+  ...(await originalImport<typeof import('@frameleaf/sdk')>()),
   isHttpError: (error: unknown) => typeof error === 'object' && error !== null && 'status' in error,
 }));
 

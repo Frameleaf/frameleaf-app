@@ -1,4 +1,4 @@
-import { getStorage } from '@immich/sdk';
+import { getStorage } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { setupRedirect } from '$lib/frameleaf/first-run-setup';
 import { authManager } from '$lib/managers/auth-manager.svelte';

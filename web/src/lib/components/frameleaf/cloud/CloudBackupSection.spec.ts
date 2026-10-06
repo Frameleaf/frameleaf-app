@@ -1,4 +1,4 @@
-import { CloudBackupKeyMode, type CloudBackupStatusResponseDto } from '@immich/sdk';
+import { CloudBackupKeyMode, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

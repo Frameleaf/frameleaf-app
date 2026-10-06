@@ -7,7 +7,7 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import TagBrowserPanel from '$lib/components/frameleaf/TagBrowserPanel.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import type { AssetResponseDto } from '@immich/sdk';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
   import type { PageData } from './$types';
 
   interface Props {

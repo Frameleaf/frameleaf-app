@@ -13,8 +13,8 @@
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Route } from '$lib/route';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
-  import { getStorageTemplateOptions, type SystemConfigTemplateStorageOptionDto } from '@immich/sdk';
-  import { Heading, Link, LoadingSpinner, Text } from '@immich/ui';
+  import { getStorageTemplateOptions, type SystemConfigTemplateStorageOptionDto } from '@frameleaf/sdk';
+  import { Heading, Link, LoadingSpinner, Text } from '@frameleaf/ui';
   import handlebar from 'handlebars';
   import * as luxon from 'luxon';
   import { onDestroy } from 'svelte';

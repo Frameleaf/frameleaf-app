@@ -21,9 +21,9 @@
     getUserPreferencesAdmin,
     updateUserPreferencesAdmin,
     type UserAdminResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { CommandPaletteDefaultProvider, toastManager } from '@immich/ui';
+  import { CommandPaletteDefaultProvider, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { loadUserDetail, type UserDetailData } from './loaders';
 

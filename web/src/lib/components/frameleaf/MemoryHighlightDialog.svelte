@@ -33,8 +33,8 @@
     StudioExportColor,
     StudioExportFormat,
     StudioExportResolution,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiMovieOpenPlayOutline } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';

@@ -4,7 +4,7 @@ import {
   StudioExportFormat,
   StudioExportResolution,
   type StudioRenderEvidenceDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateStudioRender,

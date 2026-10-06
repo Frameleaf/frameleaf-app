@@ -1,4 +1,4 @@
-import type { MemoryResponseDto } from '@immich/sdk';
+import type { MemoryResponseDto } from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 
 export type MemoryChanges = {

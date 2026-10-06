@@ -18,7 +18,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { AlbumResponseDto, AssetResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto, AssetResponseDto } from '@frameleaf/sdk';
   import { afterNavigate, goto } from '$app/navigation';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';

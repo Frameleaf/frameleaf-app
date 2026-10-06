@@ -18,7 +18,7 @@ import {
   type PersonResponseDto,
   type PetResponseDto,
   type SearchHistogramBucketDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { DiscoverySearchDto } from '$lib/components/discovery/query';
 import { sortPets } from '$lib/frameleaf/pets';
 import {

@@ -11,7 +11,7 @@ import {
   runQueueCommandLegacy,
   signUpAdmin,
   updateAdminOnboarding,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';

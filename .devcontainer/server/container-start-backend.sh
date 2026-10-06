@@ -6,7 +6,7 @@ source /immich-devcontainer/container-common.sh
 log "Preparing Immich Nest API Server"
 log ""
 export CI=1
-run_cmd pnpm --filter immich install
+run_cmd pnpm --filter frameleaf install
 
 log "Starting Nest API Server"
 log ""
@@ -16,7 +16,7 @@ cd "${IMMICH_WORKSPACE}/server" || (
 )
 
 while true; do
-    run_cmd pnpm --filter immich exec nest start --debug "0.0.0.0:9230" --watch
+    run_cmd pnpm --filter frameleaf exec nest start --debug "0.0.0.0:9230" --watch
     log "Nest API Server crashed with exit code $?.  Respawning in 3s ..."
     sleep 3
 done

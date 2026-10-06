@@ -1,4 +1,4 @@
-import type { AssetResponseDto, SharedLinkResponseDto } from '@immich/sdk';
+import type { AssetResponseDto, SharedLinkResponseDto } from '@frameleaf/sdk';
 import { loadImage } from '$lib/actions/image-loader.svelte';
 import { getAssetUrls } from '$lib/utils';
 import { AdaptiveImageLoader, type QualityList } from '$lib/utils/adaptive-image-loader.svelte';

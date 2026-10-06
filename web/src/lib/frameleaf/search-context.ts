@@ -1,4 +1,4 @@
-import type { IdsFilter } from '@immich/sdk';
+import type { IdsFilter } from '@frameleaf/sdk';
 import { contextDiscoveryState, type DiscoveryContext } from '$lib/components/discovery/query';
 import { readLibraryView } from '$lib/frameleaf/library-session';
 

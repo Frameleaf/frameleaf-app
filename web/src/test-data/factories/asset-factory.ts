@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type TimeBucketAssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { fromISODateTimeUTCToObject, fromTimelinePlainDateTime } from '$lib/utils/timeline-util';

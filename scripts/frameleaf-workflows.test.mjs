@@ -284,17 +284,17 @@ const assertScriptTestWiring = (job) => {
   const install = scripts.findIndex(
     (step) =>
       step.run ===
-      "pnpm --filter @immich/scripts --filter 'immich...' --filter 'immich-e2e...' install --frozen-lockfile",
+      "pnpm --filter @frameleaf/scripts --filter 'frameleaf...' --filter 'frameleaf-e2e...' install --frozen-lockfile",
   );
   assert.ok(
     install >= 0,
     "Required locked install must include the server and E2E dependency closures",
   );
   for (const command of [
-    "pnpm --filter @immich/scripts test",
+    "pnpm --filter @frameleaf/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs",
     "node --test --test-concurrency=1 e2e/src/harness-wait.test.mjs e2e/src/harness-reset.test.mjs e2e/src/harness-http.test.mjs",
-    "pnpm --filter immich-e2e exec vitest run --config vitest.harness.config.ts",
+    "pnpm --filter frameleaf-e2e exec vitest run --config vitest.harness.config.ts",
     "node --test scripts/frameleaf-branding.test.mjs",
     "node --test scripts/frameleaf-legacy-names.test.mjs",
   ]) {
@@ -321,10 +321,10 @@ test("script wiring rejects missing contracts, skipped coverage and suppressed f
     (step) => step.name === "Install script test dependencies",
   ).run;
   for (const change of [
-    { run: installCommand.replace("'immich...'", "immich") },
-    { run: installCommand.replace(" --filter 'immich-e2e...'", "") },
+    { run: installCommand.replace("'frameleaf...'", "frameleaf") },
+    { run: installCommand.replace(" --filter 'frameleaf-e2e...'", "") },
     { run: installCommand.replace(" --frozen-lockfile", "") },
-    { run: installCommand.replace("--filter @immich/scripts ", "") },
+    { run: installCommand.replace("--filter @frameleaf/scripts ", "") },
     { run: `${installCommand} || true` },
     { if: "false" },
     { "continue-on-error": true },
@@ -909,7 +909,7 @@ test("migration authority validation runs on Frameleaf and failures cannot be co
   const generate = sql.steps.find((s) => s.name === "Generate new migrations");
   assert.equal(
     generate.run,
-    "pnpm --filter immich migrations:generate src/schema/migrations/TestMigration",
+    "pnpm --filter frameleaf migrations:generate src/schema/migrations/TestMigration",
   );
   assert.equal(generate["continue-on-error"], undefined);
 });

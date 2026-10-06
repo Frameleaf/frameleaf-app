@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { LoginResponseDto } from '@immich/sdk';
+import { LoginResponseDto } from '@frameleaf/sdk';
 import { expect, Page, test, TestInfo } from '@playwright/test';
 import { utils } from 'src/utils.js';
 

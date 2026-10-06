@@ -14,7 +14,7 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { toastManager } from '@immich/ui';
+  import { toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

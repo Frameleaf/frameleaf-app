@@ -5,8 +5,8 @@ import {
   lockAssets,
   unlockAssets,
   type AssetResponseDto,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { AssetAction } from '$lib/constants';
 import { handleError } from '$lib/utils/handle-error';
@@ -24,8 +24,8 @@ const deferred = <T>() => {
   return { promise, resolve };
 };
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   updateAsset: vi.fn(),
   lockAssets: lockRequest,
   unlockAssets: vi.fn(),

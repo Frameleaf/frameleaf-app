@@ -26,7 +26,7 @@ import {
   getLibraryStatistics,
   getManagedUploadStatistics,
   searchUsersAdmin,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** The template's field limits. */

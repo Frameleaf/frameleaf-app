@@ -1,4 +1,4 @@
-import { getAllAlbums, getAuthStatus } from '@immich/sdk';
+import { getAllAlbums, getAuthStatus } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';

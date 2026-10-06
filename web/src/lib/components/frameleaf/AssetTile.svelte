@@ -31,8 +31,8 @@
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
-  import { AssetMediaSize, AssetVisibility } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetVisibility } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCheck,
     mdiCloudOffOutline,

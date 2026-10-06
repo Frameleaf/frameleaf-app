@@ -9,7 +9,7 @@ import {
   type MediaOperationDetailDto,
   type MediaOperationDto,
   type MediaOperationDuplicateGroupDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { SvelteMap } from 'svelte/reactivity';
 import {
   decisionAssetIds,

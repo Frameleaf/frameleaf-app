@@ -9,8 +9,8 @@ import {
   searchMemories,
   updateMemory,
   type MemoryResponseDto,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleError } from '$lib/utils/handle-error';
 import { MEMORY_REMOVE_UNDO_TIMEOUT_MS, memoryManager } from './memory-manager.svelte';
@@ -21,8 +21,8 @@ vi.mock('$app/state', () => ({
   page: { params: { id: 'memory-1' }, url: new URL('http://localhost/memories/memory-1?assetId=asset-1') },
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { authenticated: false, user: { id: 'me' } } }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   removeMemoryAssets: vi.fn().mockResolvedValue([{ id: 'asset-1', success: true }]),
   addMemoryAssets: vi.fn().mockResolvedValue([{ id: 'asset-1', success: true }]),
   deleteMemory: vi.fn().mockResolvedValue(undefined),
@@ -32,8 +32,8 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   addMemoryShowLess: vi.fn().mockResolvedValue(undefined),
   getMemoryShowLess: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('@immich/ui', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/ui')>()),
+vi.mock('@frameleaf/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/ui')>()),
   toastManager: { primary: vi.fn() },
 }));
 

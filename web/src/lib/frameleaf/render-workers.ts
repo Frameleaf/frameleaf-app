@@ -18,7 +18,7 @@ import {
   RenderWorkerStatus,
   type RenderWorkerDto,
   type RenderWorkerLimitDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** Bounds a pasted block of text so every keystroke cannot re-filter against a huge string. */

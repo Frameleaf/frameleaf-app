@@ -1,4 +1,4 @@
-import { getAllSharedLinks } from '@immich/sdk';
+import { getAllSharedLinks } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { UUID_REGEX } from '$lib/constants';
 import { Route } from '$lib/route';

@@ -6,7 +6,7 @@ import {
   isHttpError,
   isMalformedResponseError,
   Permission,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';

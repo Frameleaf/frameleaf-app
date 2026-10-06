@@ -58,10 +58,10 @@
     type AssetResponseDto,
     type PersonResponseDto,
     type StackResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import { CommandPaletteDefaultProvider } from '@immich/ui';
+  import { CommandPaletteDefaultProvider } from '@frameleaf/ui';
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';

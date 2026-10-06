@@ -15,8 +15,8 @@
   import { Route } from '$lib/route';
   import { getAssetActions } from '$lib/services/asset.service';
   import { copyToClipboard, isEnabled } from '$lib/utils';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Icon, Text } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, Text } from '@frameleaf/ui';
   import {
     mdiAspectRatio,
     mdiCameraIris,

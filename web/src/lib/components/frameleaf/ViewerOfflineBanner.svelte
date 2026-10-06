@@ -11,8 +11,8 @@
   import { folderOf } from '$lib/frameleaf/viewer-headline';
   import { getAssetActions } from '$lib/services/asset.service';
   import { isEnabled } from '$lib/utils';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Button, Icon } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { Button, Icon } from '@frameleaf/ui';
   import { mdiLinkOff } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -15,7 +15,7 @@
     updateClassificationRule,
     type AlbumResponseDto,
     type ClassificationRuleResponseDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**

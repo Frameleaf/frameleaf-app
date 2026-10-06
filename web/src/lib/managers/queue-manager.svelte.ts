@@ -1,4 +1,4 @@
-import { getQueues, type QueueResponseDto } from '@immich/sdk';
+import { getQueues, type QueueResponseDto } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { QueueSnapshot } from '$lib/types';

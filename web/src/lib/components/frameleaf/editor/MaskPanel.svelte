@@ -16,8 +16,8 @@
     maskIsActive,
     type EditorMask,
   } from '$lib/frameleaf/photo-tools';
-  import { AssetDevelopMaskKind } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetDevelopMaskKind } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiDeleteOutline,
     mdiEye,

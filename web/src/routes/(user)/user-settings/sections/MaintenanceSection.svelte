@@ -26,7 +26,7 @@
     type IntegrityReportSummaryResponseDto,
     type JobCreateDto,
     type QueuesResponseLegacyDto,
-  } from '@immich/sdk';
+  } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';

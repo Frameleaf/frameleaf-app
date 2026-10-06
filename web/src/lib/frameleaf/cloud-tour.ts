@@ -7,7 +7,7 @@
  * Pure data and rules only; `CloudTour.svelte` draws it and `CloudTourHost.svelte` decides when it
  * opens. Whether an administrator has seen it is kept on the server (`GET/PUT admin/cloud/tour`).
  */
-import type { LicenseSlotDto, LicenseStatusResponseDto } from '@immich/sdk';
+import type { LicenseSlotDto, LicenseStatusResponseDto } from '@frameleaf/sdk';
 import {
   mdiAccountMultipleOutline,
   mdiBackupRestore,

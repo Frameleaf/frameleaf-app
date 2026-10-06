@@ -15,8 +15,8 @@
     pauseCloudBackupRun,
     resumeCloudBackupRun,
     type CloudBackupStatusResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiPause, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

@@ -20,7 +20,7 @@
   } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { convertBCP47, getClosestAvailableLocale, langCodes, langs } from '$lib/utils/i18n';
-  import { Theme, themeManager, ThemePreference } from '@immich/ui';
+  import { Theme, themeManager, ThemePreference } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { locale as i18nLocale, t } from 'svelte-i18n';
 

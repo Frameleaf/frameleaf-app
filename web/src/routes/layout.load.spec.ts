@@ -11,7 +11,7 @@ vi.mock('$lib/managers/language-manager.svelte', () => ({ languageManager: { ini
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { maintenanceMode: false } },
 }));
-vi.mock('@immich/ui', () => ({ commandPaletteManager: { enable: vi.fn() } }));
+vi.mock('@frameleaf/ui', () => ({ commandPaletteManager: { enable: vi.fn() } }));
 
 const runLoad = async (path: string, fetchFn: typeof fetch) => {
   const { load } = await import('./+layout');

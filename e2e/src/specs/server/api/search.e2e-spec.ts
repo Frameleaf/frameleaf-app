@@ -10,7 +10,7 @@ import {
   signUpAdmin,
   updateAdminOnboarding,
   updateAsset,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

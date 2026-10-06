@@ -5,13 +5,13 @@ import {
   searchSmart,
   type SearchResponseDto,
   type AskSearchResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { LibrarySearchSession } from './library-search-session.svelte';
 import type { LibrarySearchTerms, LibrarySearchQuery } from './library-search-session.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
-vi.mock('@immich/sdk', async (original) => ({
+vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   askSearch: vi.fn(),
   searchAssets: vi.fn(),

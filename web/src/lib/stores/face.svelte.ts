@@ -1,4 +1,4 @@
-import { getFaces, type AssetFaceResponseDto, type PersonResponseDto } from '@immich/sdk';
+import { getFaces, type AssetFaceResponseDto, type PersonResponseDto } from '@frameleaf/sdk';
 import { SvelteMap } from 'svelte/reactivity';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import type { Faces } from '$lib/managers/asset-viewer-manager.svelte';

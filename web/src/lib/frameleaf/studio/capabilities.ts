@@ -14,7 +14,7 @@
  * never infers one from an ML endpoint. A request failure reports every capability as absent,
  * because a capability the server did not confirm is not one the route may claim.
  */
-import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
+import { getMlCapabilities, type StudioCapabilitiesDto } from '@frameleaf/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities, type StudioRenderEvidence } from './host-contract';
 
 /**

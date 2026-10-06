@@ -1,4 +1,4 @@
-import { getMediaOperation, MediaOperationStatus, type MediaOperationDetailDto } from '@immich/sdk';
+import { getMediaOperation, MediaOperationStatus, type MediaOperationDetailDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { SvelteMap } from 'svelte/reactivity';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';

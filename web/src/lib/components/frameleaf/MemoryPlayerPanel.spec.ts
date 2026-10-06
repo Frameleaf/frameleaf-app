@@ -1,4 +1,4 @@
-import { updateMemory, type MemoryResponseDto } from '@immich/sdk';
+import { updateMemory, type MemoryResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,8 +22,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
     preferences: { memories: { enabled: true, duration: 5 }, download: { archiveSize: 4 } },
   },
 }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchMemories: vi.fn().mockResolvedValue([]),
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
   getMemoryExports: vi.fn().mockResolvedValue([]),

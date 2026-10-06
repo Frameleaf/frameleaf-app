@@ -3,7 +3,7 @@
   import { AssetAction } from '$lib/constants';
   import { deleteStack } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { StackResponseDto } from '@immich/sdk';
+  import type { StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';

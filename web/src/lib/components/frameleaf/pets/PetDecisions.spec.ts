@@ -1,5 +1,5 @@
-import { PetObservationSource, PetObservationState, type PetObservationResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { PetObservationSource, PetObservationState, type PetObservationResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';

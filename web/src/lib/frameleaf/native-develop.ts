@@ -1,4 +1,4 @@
-import { defaults, getBaseUrl, type AssetDevelopRecipeDto } from '@immich/sdk';
+import { defaults, getBaseUrl, type AssetDevelopRecipeDto } from '@frameleaf/sdk';
 
 export type NativeTone = {
   exposureEV: number;

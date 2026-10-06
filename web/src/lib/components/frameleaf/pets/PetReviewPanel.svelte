@@ -8,8 +8,8 @@
     reviewEmptyState,
     speciesLabelKey,
   } from '$lib/frameleaf/pets';
-  import type { PetCandidateResponseDto, PetResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PetCandidateResponseDto, PetResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck, mdiClose, mdiSwapHorizontal } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

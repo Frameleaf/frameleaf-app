@@ -1,4 +1,4 @@
-import type { ServerConfigDto } from '@immich/sdk';
+import type { ServerConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -38,8 +38,8 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
     } as ServerConfigDto,
   },
 }));
-vi.mock('@immich/ui', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@immich/ui')>();
+vi.mock('@frameleaf/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frameleaf/ui')>();
   return { ...actual, themeManager: { value: actual.Theme.Light } };
 });
 

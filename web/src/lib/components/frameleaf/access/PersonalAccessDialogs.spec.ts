@@ -1,4 +1,4 @@
-import { Permission } from '@immich/sdk';
+import { Permission } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';

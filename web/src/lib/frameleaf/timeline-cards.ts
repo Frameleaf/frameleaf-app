@@ -1,4 +1,4 @@
-import type { TimelineHighlightResponseDto } from '@immich/sdk';
+import type { TimelineHighlightResponseDto } from '@frameleaf/sdk';
 
 /**
  * Curated Years and Months cards for the Timeline (FL-33, FL-50), ported from the September 24

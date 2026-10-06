@@ -6,7 +6,7 @@ import {
   type CreateAlbumDto,
   type TagBulkAssetsDto,
   type TagBulkAssetsResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 declare module 'extism:host' {
   interface user extends Record<

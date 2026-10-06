@@ -29,8 +29,8 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { CloudLinkRefusal, type CloudHeartbeatField, type CloudPermissionsDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { CloudLinkRefusal, type CloudHeartbeatField, type CloudPermissionsDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCellphone,
     mdiCheck,

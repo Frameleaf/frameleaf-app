@@ -15,8 +15,8 @@
     NotificationType,
     type AssetResponseDto,
     type ItemShareReceivedDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPlayCircleOutline } from '@mdi/js';
   import { onDestroy, onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';

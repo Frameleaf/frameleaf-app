@@ -1,5 +1,5 @@
 import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
-import { WorkflowStepConfig } from '@immich/plugin-sdk';
+import { WorkflowStepConfig } from '@frameleaf/plugin-sdk';
 import type { Generated } from '@frameleaf/sql-tools';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';

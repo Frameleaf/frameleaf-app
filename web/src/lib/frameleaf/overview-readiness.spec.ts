@@ -6,7 +6,7 @@ import {
   MlWorkload,
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { cloudGlance, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
 
 const destination = (id: string, kind: MlDestinationKind, status: MlDestinationHealth) =>

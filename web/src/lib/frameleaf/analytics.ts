@@ -23,7 +23,7 @@ import {
   type AnalyticsNamedCountDto,
   type AnalyticsReportResponseDto,
   type AnalyticsScopeOptionDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 export type Translate = (key: string, values?: Record<string, string | number>) => string;
 

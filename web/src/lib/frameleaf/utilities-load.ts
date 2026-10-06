@@ -6,7 +6,7 @@ import {
   listICloudConnections,
   MediaHealthCategory,
   searchLargeAssets,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { error } from '@sveltejs/kit';
 import { loadLibraryCareHealth } from '$lib/frameleaf/library-care-load';
 import { utilityTool, type UtilityId } from '$lib/frameleaf/utilities';

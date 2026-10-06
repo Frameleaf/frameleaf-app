@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -11,8 +11,8 @@ import {
   searchAlbumTargets,
 } from './album-targets';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
 

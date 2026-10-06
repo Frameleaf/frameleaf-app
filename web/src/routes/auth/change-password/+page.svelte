@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
   import { goto } from '$app/navigation';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
@@ -9,7 +9,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { updateMyUser } from '@immich/sdk';
+  import { updateMyUser } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let password = $state('');

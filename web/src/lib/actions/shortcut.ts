@@ -6,4 +6,4 @@ export {
   shouldIgnoreEvent,
   type Shortcut,
   type ShortcutOptions,
-} from '@immich/ui';
+} from '@frameleaf/ui';

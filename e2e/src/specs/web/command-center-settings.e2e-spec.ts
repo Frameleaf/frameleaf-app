@@ -1,4 +1,4 @@
-import { getConfig, getConfigDefaults, LoginResponseDto, updateConfig, VersionCheckFrequency } from '@immich/sdk';
+import { getConfig, getConfigDefaults, LoginResponseDto, updateConfig, VersionCheckFrequency } from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { asBearerAuth, baseUrl, utils } from 'src/utils.js';

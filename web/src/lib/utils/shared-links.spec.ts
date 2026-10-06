@@ -1,9 +1,9 @@
-import { getMySharedLink, type SharedLinkResponseDto } from '@immich/sdk';
+import { getMySharedLink, type SharedLinkResponseDto } from '@frameleaf/sdk';
 import { getAssetInfoFromParam } from '$lib/utils/navigation';
 import { loadSharedLink } from '$lib/utils/shared-links';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getMySharedLink: vi.fn(),
   isHttpError: (error: unknown) => error instanceof Error && 'data' in error,
 }));

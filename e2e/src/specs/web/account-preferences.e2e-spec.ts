@@ -1,4 +1,4 @@
-import { getMyPreferences, setUserOnboarding } from '@immich/sdk';
+import { getMyPreferences, setUserOnboarding } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 

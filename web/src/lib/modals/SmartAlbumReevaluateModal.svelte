@@ -7,8 +7,8 @@
     triggerSmartAlbumReevaluate,
     type SmartAlbumReevaluateEstimateDto,
     type SmartAlbumReevaluateRequestDto,
-  } from '@immich/sdk';
-  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 

@@ -8,7 +8,7 @@ import {
   type TakeoutItemResponseDto,
   type TakeoutResponseDto,
   type TakeoutSourceResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { describe, expect, it, vi } from 'vitest';

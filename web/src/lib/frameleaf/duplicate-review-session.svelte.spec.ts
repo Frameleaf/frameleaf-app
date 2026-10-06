@@ -6,7 +6,7 @@ import {
   type DuplicateDecisionHistoryDto,
   type MediaOperationDetailDto,
   type MediaOperationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
 import {

@@ -9,7 +9,7 @@
    * hidden person keeps out of view, so an empty page reveals nothing about those items.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
 
   type Props = {
     icon: string;

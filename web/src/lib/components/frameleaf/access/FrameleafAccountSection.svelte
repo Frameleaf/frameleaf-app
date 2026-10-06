@@ -11,8 +11,12 @@
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { startFrameleaf } from '$lib/frameleaf/frameleaf-sign-in';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getFrameleafAccountLink, unlinkFrameleafAccount, type FrameleafAccountLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import {
+    getFrameleafAccountLink,
+    unlinkFrameleafAccount,
+    type FrameleafAccountLinkResponseDto,
+  } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';

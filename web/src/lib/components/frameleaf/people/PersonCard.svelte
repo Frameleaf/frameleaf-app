@@ -4,8 +4,8 @@
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import PersonNameField from '$lib/components/frameleaf/people/PersonNameField.svelte';
   import { isUnnamedPerson } from '$lib/frameleaf/people';
-  import type { PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCakeVariantOutline,
     mdiCallMerge,

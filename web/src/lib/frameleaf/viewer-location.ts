@@ -1,4 +1,4 @@
-import type { ExifResponseDto, UpdateAssetDto } from '@immich/sdk';
+import type { ExifResponseDto, UpdateAssetDto } from '@frameleaf/sdk';
 import { validCoordinate } from '$lib/frameleaf/info-panel';
 
 /**

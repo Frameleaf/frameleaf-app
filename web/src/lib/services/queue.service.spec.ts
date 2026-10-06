@@ -1,8 +1,8 @@
-import { emptyQueue, getQueue, QueueCommand, QueueName, runQueueCommandLegacy } from '@immich/sdk';
+import { emptyQueue, getQueue, QueueCommand, QueueName, runQueueCommandLegacy } from '@frameleaf/sdk';
 import { handleClearFailedJobs, handleClearWaitingJobs } from '$lib/services/queue.service';
 
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   emptyQueue: vi.fn(),
   getQueue: vi.fn(),
   runQueueCommandLegacy: vi.fn(),
