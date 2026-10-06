@@ -4,7 +4,16 @@ The importer copies content from a stopped Immich installation into a fresh cano
 
 ## Prepare the source and destination
 
-Stop every source writer: API servers, workers, upload clients and maintenance jobs. Keep them stopped through final verification. Use a dedicated source role with SELECT-only privileges and read access to `pg_control_system()` for cluster identity. The role must not own source objects, have write privileges, superuser/BYPASSRLS access or be able to assume a privileged role. Set its default transaction policy to read-only.
+Stop every source writer: API servers, workers, upload clients and maintenance jobs. Keep them stopped through final verification. Use a dedicated source role with SELECT-only privileges and read access to `pg_control_system()` for cluster identity. The role must not own source objects, have write privileges, superuser/BYPASSRLS access or be able to assume a role with those powers. Set its default transaction policy to read-only.
+
+Give this dedicated role effective `pg_read_all_stats` access so preflight can distinguish PostgreSQL autovacuum workers from client sessions. This grants **cluster-wide read-only statistics visibility, including other sessions' activity text**; it is not limited to the imported database. It grants no content-writing authority. Manager provisions this access automatically. For a newly created CLI import role, set `INHERIT` before granting membership (compatible with PostgreSQL 14 and later):
+
+```sql
+ALTER ROLE frameleaf_import_reader INHERIT;
+GRANT pg_read_all_stats TO frameleaf_import_reader;
+```
+
+Use your actual dedicated role name. Verify effective access with `SELECT pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')` on its connection. If an existing PostgreSQL 16+ membership was granted without inheritance, revoke that membership and grant it again after setting `INHERIT`. Client sessions and unknown backend types still block admission; do not disable autovacuum or retry past the refusal. Revoke the statistics membership or disable the dedicated reader when no further import or resume is needed. Manager disables its reader's login after import or cancellation.
 
 Create a fresh Frameleaf PostgreSQL 19 database with the canonical baseline. Do not run destination API or job workers during import. Content tables must be empty; seeded configuration, queue, import-journal and reference tables are handled by the importer.
 
