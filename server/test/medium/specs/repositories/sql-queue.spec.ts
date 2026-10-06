@@ -102,14 +102,14 @@ describe('PostgreSQL queue', () => {
       expect(claim.id).toBe(waiting[0].id);
       expect(claim.attempt).toBe(1);
       expect(capturedQueries.filter((query) => query.startsWith("update job set state = 'waiting'"))).toHaveLength(1);
-      expect((await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows).toHaveLength(
-        2,
-      );
+      expect(
+        (await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows,
+      ).toHaveLength(2);
       expect(await store.complete(claim, [])).toBe(true);
       expect(await store.claim(queue, workerB)).toHaveLength(1);
-      expect((await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows).toHaveLength(
-        1,
-      );
+      expect(
+        (await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows,
+      ).toHaveLength(1);
     } finally {
       capturedQueries = undefined;
     }
