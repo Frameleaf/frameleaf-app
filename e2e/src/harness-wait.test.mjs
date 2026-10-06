@@ -50,6 +50,78 @@ test('reset reads all queues in one request and refuses incomplete or invalid ag
   await assert.rejects(read(), (error) => error === failure);
 });
 
+test('reset skips only empty clean queues and rechecks periodic work without bypassing privacy or failures', async () => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const headers = asBearerAuth(token);', source.indexOf('drainQueues:'));
+  const end = source.indexOf('                          },\n                        );', start);
+  assert.ok(start >= 0 && end > start);
+  const idle = { name: 'idle', hasUnfinishedWork: false, statistics: { failed: 0 } };
+  const live = { ...idle, name: 'live', hasUnfinishedWork: true };
+  const failed = { ...idle, name: 'failed', statistics: { failed: 1 } };
+  const privateQueue = { ...idle, name: 'private' };
+  let snapshots = [[idle, live, failed, privateQueue], [idle]];
+  let dirty = [{ queue: 'private' }];
+  let failure;
+  let reads = 0;
+  const clears = [];
+  const drain = new Function(
+    'readQueues',
+    'query',
+    'emptyQueue',
+    'unfinishedOperations',
+    'asBearerAuth',
+    `return async (context) => { const token = 'token'; let phase; let lastUnfinished;
+      ${stripTypeScriptTypes(source.slice(start, end))} };`,
+  )(
+    (_token, context) => {
+      context.remaining();
+      reads++;
+      return Promise.resolve(snapshots.shift());
+    },
+    (context, statement) => {
+      context.remaining();
+      assert.match(statement, /^SELECT DISTINCT queue FROM job_run_item/);
+      assert.match(statement, /"jobId" IS NULL/);
+      assert.match(statement, /"libraryIntent"->>'sensitive' = 'true'/);
+      assert.match(statement, /"libraryIntent" \? 'options' OR "libraryIntent"->'data' != '\{\}'::jsonb/);
+      return failure ? Promise.reject(failure) : Promise.resolve({ rows: dirty });
+    },
+    ({ name, queueDeleteDto }, { signal }) => {
+      assert.equal(signal.aborted, false);
+      assert.deepEqual(queueDeleteDto, { failed: true });
+      clears.push(name);
+      return Promise.resolve();
+    },
+    () => Promise.resolve([]),
+    () => ({}),
+  );
+  const run = () => withDeadline('selected reset queues', 1_000, drain);
+  assert.equal(await run(), false);
+  assert.deepEqual(clears, ['live', 'failed', 'private']);
+  assert.equal(reads, 2);
+
+  clears.length = 0;
+  dirty = [];
+  snapshots = [[idle], [{ ...idle, hasUnfinishedWork: true }]];
+  assert.equal(await run(), true); // A periodic producer arrived after the initial snapshot.
+  assert.deepEqual(clears, []);
+  snapshots = [[{ ...idle, hasUnfinishedWork: true }], [idle]];
+  assert.equal(await run(), false);
+  assert.deepEqual(clears, ['idle']);
+
+  clears.length = 0;
+  snapshots = [[idle], [idle]];
+  failure = new Error('privacy snapshot unavailable');
+  const previousReads = reads;
+  await assert.rejects(run(), (error) => error === failure);
+  assert.deepEqual(clears, []);
+  assert.equal(reads, previousReads + 1);
+  failure = undefined;
+  snapshots = [[{ ...idle, statistics: {} }], [idle]];
+  assert.equal(await run(), false);
+  assert.deepEqual(clears, ['idle']); // Unknown failed count cannot authorize skipping.
+});
+
 test('a failed queue joins remaining work before reporting the failure', async () => {
   // Exercise the actual predicate without loading the application SDK or runner fixtures.
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');

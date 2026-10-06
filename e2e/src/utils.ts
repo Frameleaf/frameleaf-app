@@ -483,7 +483,26 @@ export const utils = {
                               token = await ownerToken(resetAdminId);
                             }
                             const headers = asBearerAuth(token);
-                            for (const name of Object.values(QueueName)) {
+                            phase = 'read queues before clear';
+                            const before = await readQueues(token, context);
+                            lastUnfinished = before.some((queue) => queue.hasUnfinishedWork);
+                            phase = 'inspect sensitive library intents';
+                            const { rows: dirtyIntents } = await query(
+                              context,
+                              `SELECT DISTINCT queue FROM job_run_item WHERE "jobId" IS NULL
+                                AND "libraryIntent"->>'sensitive' = 'true'
+                                AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
+                            );
+                            const dirtyQueues = new Set(dirtyIntents.map((row) => row.queue));
+                            for (const queue of before) {
+                              if (
+                                !queue.hasUnfinishedWork &&
+                                queue.statistics.failed === 0 &&
+                                !dirtyQueues.has(queue.name)
+                              ) {
+                                continue;
+                              }
+                              const name = queue.name;
                               phase = `clear queue ${name}`;
                               context.remaining();
                               await emptyQueue(
