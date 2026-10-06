@@ -1,5 +1,5 @@
 [tasks.install]
-run = "pnpm install --filter frameleaf-web --frozen-lockfile"
+run = "pnpm install --filter 'frameleaf-web...' --frozen-lockfile"
 
 [tasks.build]
 run = "pnpm run build"
