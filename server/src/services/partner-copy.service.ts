@@ -11,6 +11,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  AssetFileType,
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
@@ -270,7 +271,23 @@ export class PartnerCopyService extends BaseService {
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
+    await this.ensureCopyThumbnails(copyId);
     return copyId;
+  }
+
+  /** Metadata can admit a copy before the source's derivatives have been published. */
+  private async ensureCopyThumbnails(copyId: string) {
+    const copy = await this.assetRepository.getById(copyId, { files: true });
+    if (!copy || copy.deletedAt || copy.status !== AssetStatus.Active || copy.visibility === AssetVisibility.Hidden) {
+      return;
+    }
+    if (
+      [AssetFileType.Preview, AssetFileType.Thumbnail].some(
+        (type) => !copy.files?.some((file) => file.type === type && !file.isEdited),
+      )
+    ) {
+      await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id: copyId } });
+    }
   }
 
   /**
@@ -283,6 +300,8 @@ export class PartnerCopyService extends BaseService {
     if (!copyId) {
       return;
     }
+    // Admission may have failed after the copy committed; replay repairs its missing derivatives.
+    await this.ensureCopyThumbnails(copyId);
     const origin = await this.partnerOriginRepository.getOrigin('asset', copyId);
     if (!origin?.following || origin.overriddenFields.includes(AssetOriginField.Visibility)) {
       return;
