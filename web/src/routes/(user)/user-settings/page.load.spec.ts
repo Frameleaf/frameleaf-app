@@ -1,8 +1,8 @@
-import { getAdminConfigWithRevision, getApiKeys, getConfigDefaults, getSessions } from '@immich/sdk';
+import { getAdminConfigWithRevision, getApiKeys, getConfigDefaults, getSessions } from '@frameleaf/sdk';
 import { load } from './+page';
 
 const auth = vi.hoisted(() => ({ user: { isAdmin: false } }));
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   getApiKeys: vi.fn().mockResolvedValue([]),
   getSessions: vi.fn().mockResolvedValue([]),
   getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: {}, revision: 1 }),

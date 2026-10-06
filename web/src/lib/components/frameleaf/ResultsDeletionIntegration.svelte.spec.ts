@@ -1,4 +1,4 @@
-import { AssetVisibility, getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -21,8 +21,8 @@ const { deleteRequest, confirmRequest } = vi.hoisted(() => ({
 }));
 // A permanent delete is confirmed with the Frameleaf dialog (`confirmAndDeletePermanently`).
 vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: confirmRequest }));
-vi.mock('@immich/sdk', async () => ({
-  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+vi.mock('@frameleaf/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
   deleteAssets: deleteRequest,
   getAssetInfo: vi.fn(),
   getFaces: vi.fn().mockResolvedValue([]),

@@ -18,8 +18,8 @@ import {
   type ServerVersionResponseDto,
   type SharedLinkResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
-import { toastManager, type ActionItem, type IfLike } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager, type ActionItem, type IfLike } from '@frameleaf/ui';
 import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';

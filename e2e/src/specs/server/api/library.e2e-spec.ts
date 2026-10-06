@@ -1,4 +1,4 @@
-import { LibraryRemovalReviewDto, LibraryResponseDto, LoginResponseDto, updateConfig } from '@immich/sdk';
+import { LibraryRemovalReviewDto, LibraryResponseDto, LoginResponseDto, updateConfig } from '@frameleaf/sdk';
 import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';

@@ -1,5 +1,5 @@
-import { JustifiedLayout, type LayoutOptions } from '@immich/justified-layout-wasm';
-import type { AssetResponseDto } from '@immich/sdk';
+import { JustifiedLayout, type LayoutOptions } from '@frameleaf/justified-layout-wasm';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import createJustifiedLayout from 'justified-layout';
 import { filledJustifiedLayout } from '$lib/frameleaf/justified-rows';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';

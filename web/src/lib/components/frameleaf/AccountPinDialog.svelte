@@ -17,7 +17,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
   import { handleUpdateUserAdmin } from '$lib/services/user-admin.service';
-  import type { UserAdminResponseDto } from '@immich/sdk';
+  import type { UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let {

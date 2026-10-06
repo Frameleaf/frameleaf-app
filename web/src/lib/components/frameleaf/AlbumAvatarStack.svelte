@@ -1,6 +1,6 @@
 <script lang="ts">
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import type { UserResponseDto } from '@immich/sdk';
+  import type { UserResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /** Overlapping avatars for the people who can see an album, current user excluded by the caller. */

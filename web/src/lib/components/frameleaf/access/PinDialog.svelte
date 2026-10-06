@@ -19,8 +19,8 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { changePinCode, resetPinCode, setupPinCode } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { changePinCode, resetPinCode, setupPinCode } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import './access.css';
 

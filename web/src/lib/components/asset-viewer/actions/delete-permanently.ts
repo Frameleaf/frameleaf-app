@@ -1,5 +1,5 @@
-import { deleteAssets, restoreAssets, type AssetResponseDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { deleteAssets, restoreAssets, type AssetResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
 import { AssetAction } from '$lib/constants';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';

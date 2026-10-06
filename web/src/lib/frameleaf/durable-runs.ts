@@ -4,7 +4,7 @@ import type {
   DurableJobState,
   DurableJobOutcome,
   DurableJobReason,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { ActivityFilter, ActivityTone } from '$lib/frameleaf/activity';
 

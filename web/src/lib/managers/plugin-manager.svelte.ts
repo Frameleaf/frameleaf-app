@@ -6,7 +6,7 @@ import {
   type PluginMethodResponseDto,
   type PluginTemplateResponseDto,
   type WorkflowTriggerResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { SvelteMap } from 'svelte/reactivity';
 import { get } from 'svelte/store';

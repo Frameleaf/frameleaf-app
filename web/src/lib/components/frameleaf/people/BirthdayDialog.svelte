@@ -4,8 +4,8 @@
   import { ageInYears, isUnnamedPerson } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { updatePerson, type PersonResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { updatePerson, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiDeleteOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';

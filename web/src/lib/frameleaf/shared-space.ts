@@ -12,7 +12,7 @@ import {
   type SharedSpaceNewResponseDto,
   type SharedSpacePreviewResponseDto,
   type UserResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
 

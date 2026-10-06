@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetVisibility } from '@frameleaf/sdk';
 import { isRevealedLock } from '$lib/frameleaf/session-access.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 

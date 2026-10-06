@@ -1,11 +1,11 @@
-import { getAssetDevelop } from '@immich/sdk';
+import { getAssetDevelop } from '@frameleaf/sdk';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { syncNativeRecipes, cancelNativeSync } from '$lib/frameleaf/native-sync';
 import PhotographyNativeSync from './PhotographyNativeSync.svelte';
 
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   getAssetDevelop: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/native-sync', async (original) => ({

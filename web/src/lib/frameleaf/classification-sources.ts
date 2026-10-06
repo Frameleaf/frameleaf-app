@@ -5,7 +5,7 @@ import {
   type ClassificationSettingsDto,
   type PersonResponseDto,
   type TagResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 
 /** The owner's named people and tags a rule can choose from, and the server's rule settings (FL-60). */
 export type RuleSources = {

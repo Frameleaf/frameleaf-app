@@ -9,7 +9,7 @@
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import '$lib/frameleaf/tokens.css';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiFilterOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

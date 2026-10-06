@@ -1,4 +1,4 @@
-import { createAssetDevelopExport, getAssetDevelop, importAssetDevelopRendition } from '@immich/sdk';
+import { createAssetDevelopExport, getAssetDevelop, importAssetDevelopRendition } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';

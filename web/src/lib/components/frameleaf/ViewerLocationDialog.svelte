@@ -24,8 +24,8 @@
   import { geolocationManager } from '$lib/managers/geolocation.manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { updateAsset, type AssetResponseDto } from '@immich/sdk';
-  import { LoadingSpinner } from '@immich/ui';
+  import { updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   interface Props {

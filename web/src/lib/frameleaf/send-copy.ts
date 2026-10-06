@@ -1,5 +1,5 @@
-import { downloadAsset, getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-import { toastManager, type ToastShow } from '@immich/ui';
+import { downloadAsset, getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@frameleaf/sdk';
+import { toastManager, type ToastShow } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';

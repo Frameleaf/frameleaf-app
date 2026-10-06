@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * The maintenance page (FL-80 MS-1, M-1…M-6): the prototype's `MaintenanceSplash`
-   * (`design/frameleaf/template/src/AuthScreens.jsx:1291-1381`) in place of the upstream `@immich/ui`
+   * (`design/frameleaf/template/src/AuthScreens.jsx:1291-1381`) in place of the upstream `@frameleaf/ui`
    * page — the heading and reassurance, the administrator's reason, a restore's task list with one
    * overall progress bar, "Checking again in N s · Check now", "End maintenance" with its note for a
    * signed-in administrator, and "Maintenance is finished" with "Open Frameleaf".
@@ -21,8 +21,8 @@
   import { maintenanceStore } from '$lib/stores/maintenance.store';
   import { loadMaintenanceStatus, maintenanceReturnUrl } from '$lib/utils/maintenance';
   import { websocketEvents } from '$lib/stores/websocket';
-  import { MaintenanceAction } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { MaintenanceAction } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiBackupRestore,

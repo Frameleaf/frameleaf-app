@@ -17,7 +17,7 @@
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
   import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
+  import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';

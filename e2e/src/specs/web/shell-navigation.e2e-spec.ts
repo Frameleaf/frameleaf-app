@@ -1,4 +1,4 @@
-import { LoginResponseDto, setUserOnboarding, updateUserPreferencesAdmin } from '@immich/sdk';
+import { LoginResponseDto, setUserOnboarding, updateUserPreferencesAdmin } from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { createUserDto, loginDto } from 'src/fixtures.js';
 import { asBearerAuth, utils } from 'src/utils.js';

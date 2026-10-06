@@ -1,4 +1,4 @@
-import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
+import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { getOrderingDate, plainDateTimeCompare, type TimelineYearMonth } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';

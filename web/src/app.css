@@ -8,9 +8,9 @@
 @layer properties, theme, base, frameleaf-base, components, utilities;
 
 @import 'tailwindcss';
-@import '@immich/ui/theme/default.css';
+@import '@frameleaf/ui/theme/default.css';
 
-@source "../node_modules/@immich/ui";
+@source "../node_modules/@frameleaf/ui";
 /* @import '../../../ui/packages/ui/dist/theme/default.css'; */
 
 @custom-variant dark (&:where(.dark, .dark *):not(.light));
@@ -254,7 +254,7 @@
   animation-duration: 300ms;
 }
 /*
- * FL-139: arrows and chevrons that point along the reading direction (marked by the @immich/ui Icon
+ * FL-139: arrows and chevrons that point along the reading direction (marked by the @frameleaf/ui Icon
  * patch) point the other way in a right-to-left page.
  */
 [dir='rtl'] svg[data-rtl-mirror] {

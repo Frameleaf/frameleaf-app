@@ -5,7 +5,7 @@ import {
   ManualJobName,
   QueueCommand,
   QueueName,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { readFile } from 'node:fs/promises';
 import { app, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';

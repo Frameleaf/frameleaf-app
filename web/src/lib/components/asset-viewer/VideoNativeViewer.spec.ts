@@ -1,4 +1,4 @@
-import { AssetMediaSize, AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetMediaSize, AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import Hls from 'hls.js';

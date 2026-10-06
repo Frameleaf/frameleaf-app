@@ -33,8 +33,8 @@
     IntegrityReport,
     ManualJobName,
     type IntegrityReportResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';

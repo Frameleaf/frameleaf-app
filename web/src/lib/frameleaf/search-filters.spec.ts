@@ -1,4 +1,4 @@
-import { AssetTypeEnum, ImageEnrichmentFilter } from '@immich/sdk';
+import { AssetTypeEnum, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {

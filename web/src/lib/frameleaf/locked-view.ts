@@ -1,4 +1,4 @@
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /**

@@ -4,7 +4,7 @@ import {
   updateNotification,
   updateNotifications,
   type NotificationDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { eventManager } from '$lib/managers/event-manager.svelte';

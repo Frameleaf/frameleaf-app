@@ -2,7 +2,7 @@
   /** A large selectable card for plain two-way or three-way choices (FirstRunSetup.jsx `ChoiceCard`). */
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import SetupRecommended from '$lib/components/frameleaf/setup/SetupRecommended.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheck } from '@mdi/js';
   import type { Snippet } from 'svelte';
 

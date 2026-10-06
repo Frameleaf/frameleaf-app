@@ -36,8 +36,8 @@
     type QueueResponseDto,
     type ServerAboutResponseDto,
     type ServerStorageResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiBackupRestore,

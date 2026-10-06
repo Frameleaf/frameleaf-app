@@ -7,7 +7,7 @@
  * Every save sends only the changed keys plus `expectedRevision`, so the server refuses (409) a
  * save made against preferences that changed since they were loaded and nothing is overwritten.
  */
-import { isHttpError, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@immich/sdk';
+import { isHttpError, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@frameleaf/sdk';
 import {
   ALL_PREFERENCE_KEYS,
   createDefaultDraft,

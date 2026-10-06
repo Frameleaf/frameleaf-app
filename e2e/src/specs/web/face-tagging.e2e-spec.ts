@@ -10,7 +10,7 @@ import {
   PersonResponseDto,
   setUserOnboarding,
   SharedLinkType,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { asBearerAuth, utils } from 'src/utils.js';

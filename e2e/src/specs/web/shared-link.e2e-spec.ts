@@ -7,7 +7,7 @@ import {
   createAlbum,
   removeSharedLink,
   updateSharedLink,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { createUserDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';

@@ -1,4 +1,4 @@
-import { getAlbumInfo, getPerson, getPet, getTagById } from '@immich/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById } from '@frameleaf/sdk';
 
 /**
  * Name lookups for a person/pet/tag (and an album, for the FL-49 search chips) behind an id-list

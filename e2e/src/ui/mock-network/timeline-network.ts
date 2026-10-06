@@ -1,4 +1,4 @@
-import { AssetResponseDto, AssetVisibility } from '@immich/sdk';
+import { AssetResponseDto, AssetVisibility } from '@frameleaf/sdk';
 import { BrowserContext, Page, Request, Route } from '@playwright/test';
 import { basename, dirname } from 'node:path';
 import {

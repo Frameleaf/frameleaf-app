@@ -18,8 +18,12 @@
     type EnrichmentTiming,
   } from '$lib/frameleaf/enrichment-tasks';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
-  import { getMachineLearningHardware, MachineLearningHardwareAcceleration, SmartAlbumBuiltInKind } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import {
+    getMachineLearningHardware,
+    MachineLearningHardwareAcceleration,
+    SmartAlbumBuiltInKind,
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

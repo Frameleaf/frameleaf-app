@@ -6,7 +6,7 @@ import {
   MlWorkload,
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

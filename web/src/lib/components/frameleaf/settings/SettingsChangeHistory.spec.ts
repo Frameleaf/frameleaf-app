@@ -1,4 +1,8 @@
-import { SystemConfigHistoryCredentialChange, SystemConfigHistoryKind, SystemConfigHistorySource } from '@immich/sdk';
+import {
+  SystemConfigHistoryCredentialChange,
+  SystemConfigHistoryKind,
+  SystemConfigHistorySource,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';

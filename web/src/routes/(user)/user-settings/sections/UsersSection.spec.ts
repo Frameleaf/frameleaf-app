@@ -1,4 +1,4 @@
-import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
+import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -18,8 +18,8 @@ vi.mock('$app/state', () => ({
 }));
 vi.mock('$app/navigation', () => ({ goto: state.goto }));
 vi.mock('$lib/utils/auth', () => ({ requestServerInfo: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@immich/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchUsersAdmin: vi.fn(),
   getServerStatistics: vi.fn(),
 }));

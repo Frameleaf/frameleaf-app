@@ -20,8 +20,8 @@
   import { Route } from '$lib/route';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { deleteUserLicense, getMyUser, setUserLicense } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { deleteUserLicense, getMyUser, setUserLicense } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCartOutline,
     mdiCertificateOutline,

@@ -1,4 +1,4 @@
-import { State as BuddyPairingState } from '@immich/sdk';
+import { State as BuddyPairingState } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -10,8 +10,8 @@ const state = vi.hoisted(() => ({
   getBuddyBackupStatus: vi.fn(),
   getCloudBackupStatus: vi.fn(),
 }));
-vi.mock('@immich/sdk', async (original) => ({
-  ...(await original<typeof import('@immich/sdk')>()),
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   getBuddyBackupStatus: state.getBuddyBackupStatus,
   getCloudBackupStatus: state.getCloudBackupStatus,
 }));

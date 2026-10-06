@@ -15,8 +15,8 @@
   } from '$lib/frameleaf/personal-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { changePassword } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { changePassword } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import './access.css';
 

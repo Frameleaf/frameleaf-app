@@ -1,4 +1,4 @@
-import { AssetVisibility, LoginResponseDto } from '@immich/sdk';
+import { AssetVisibility, LoginResponseDto } from '@frameleaf/sdk';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Socket } from 'socket.io-client';

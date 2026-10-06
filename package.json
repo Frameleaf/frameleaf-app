@@ -1,7 +1,7 @@
 {
-  "name": "immich-monorepo",
+  "name": "frameleaf-monorepo",
   "version": "3.2.0",
-  "description": "Monorepo for Immich",
+  "description": "Monorepo for Frameleaf",
   "type": "module",
   "private": true,
   "scripts": {

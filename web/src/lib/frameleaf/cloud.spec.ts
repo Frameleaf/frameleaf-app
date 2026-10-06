@@ -167,7 +167,7 @@ describe('licensedDiscount (FL-156)', () => {
 describe('linkRefusalKeys (FL-177)', () => {
   it('gives every refused link its own title and help', async () => {
     const { linkRefusalKeys } = await import('$lib/frameleaf/cloud');
-    const { CloudLinkRefusal } = await import('@immich/sdk');
+    const { CloudLinkRefusal } = await import('@frameleaf/sdk');
     const keys = Object.values(CloudLinkRefusal).map((refusal) => linkRefusalKeys(refusal));
     expect(new Set(keys.map(({ title }) => title)).size).toBe(Object.values(CloudLinkRefusal).length);
     for (const { title, body } of keys) {

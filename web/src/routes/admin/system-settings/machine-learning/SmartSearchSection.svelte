@@ -5,7 +5,7 @@
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
-  import type { AdminConfigMachineLearningDto } from '@immich/sdk';
+  import type { AdminConfigMachineLearningDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   interface Props {

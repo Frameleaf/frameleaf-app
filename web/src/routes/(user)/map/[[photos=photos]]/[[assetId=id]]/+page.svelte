@@ -12,8 +12,8 @@
   import { navigate } from '$lib/utils/navigation';
   import { filmstripPlaceholder } from '$lib/frameleaf/viewer-filmstrip';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiMapMarkerOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { onDestroy } from 'svelte';

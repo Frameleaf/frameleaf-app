@@ -1,12 +1,12 @@
-import type { FileTrashResponseDto } from '@immich/sdk';
+import type { FileTrashResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import FileTrashUtility from '$lib/components/frameleaf/FileTrashUtility.svelte';
 import en from '../../../../../i18n/en.json';
 
-vi.mock('@immich/ui', async () => {
-  const actual = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+vi.mock('@frameleaf/ui', async () => {
+  const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   return {
     ...actual,
     modalManager: { showDialog: vi.fn(), show: vi.fn() },
@@ -61,7 +61,7 @@ describe('FileTrashUtility', () => {
 
   it('restores a file to the library it was last in', async () => {
     sdkMock.restoreFileTrashItem.mockResolvedValue({ assetId: 'new-asset' });
-    const { toastManager } = await import('@immich/ui');
+    const { toastManager } = await import('@frameleaf/ui');
     render(FileTrashUtility, { initial });
 
     await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_file_trash_restore })[0]);
@@ -72,7 +72,7 @@ describe('FileTrashUtility', () => {
   });
 
   it('deletes a file permanently only after confirmation', async () => {
-    const { modalManager } = await import('@immich/ui');
+    const { modalManager } = await import('@frameleaf/ui');
     vi.mocked(modalManager.show)
       .mockResolvedValueOnce(false as never)
       .mockResolvedValueOnce(true as never);

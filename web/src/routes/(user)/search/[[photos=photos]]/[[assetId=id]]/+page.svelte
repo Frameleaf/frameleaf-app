@@ -56,8 +56,8 @@
     ImageEnrichmentFilter,
     type MetadataSearchDto,
     type SmartSearchDto,
-  } from '@immich/sdk';
-  import { Icon, LoadingSpinner, Theme as AppTheme, themeManager } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon, LoadingSpinner, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiImageOffOutline } from '@mdi/js';
   import { onDestroy, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';

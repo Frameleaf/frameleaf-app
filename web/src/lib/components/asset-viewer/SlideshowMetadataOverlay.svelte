@@ -1,8 +1,8 @@
 <script lang="ts">
   import { SlideshowMetadataOverlayMode, slideshowStore } from '$lib/stores/slideshow.store';
   import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Text } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { Text } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
 
   type Props = {

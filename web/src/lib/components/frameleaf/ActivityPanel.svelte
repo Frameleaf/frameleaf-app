@@ -11,8 +11,8 @@
     ReactionType,
     type ActivityResponseDto,
     type AlbumResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiArrowUp,
     mdiChevronDown,

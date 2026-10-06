@@ -47,8 +47,8 @@
     unlockCloudBackupKey,
     verifyCloudBackup,
     type CloudBackupStatusResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiCertificateOutline,
     mdiCheckCircleOutline,

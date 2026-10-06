@@ -12,7 +12,7 @@ import {
   importStudioProjectFile,
   StudioProjectImportKind,
   type StudioProjectImportDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { getStudioProjectImportUrl } from '$lib/utils';
 import type { StudioProjectImportRef, StudioProjectImportUpload } from './host-contract';
 

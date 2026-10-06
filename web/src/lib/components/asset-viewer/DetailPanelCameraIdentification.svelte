@@ -6,8 +6,8 @@
     type CameraIdentification,
   } from '$lib/frameleaf/camera-identification';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { getAssetMetadata, type AssetResponseDto } from '@immich/sdk';
-  import { Text } from '@immich/ui';
+  import { getAssetMetadata, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Text } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   let { asset, isOwner }: { asset: AssetResponseDto; isOwner: boolean } = $props();

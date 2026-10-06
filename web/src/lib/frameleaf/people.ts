@@ -1,7 +1,7 @@
 /**
  * Frameleaf People pages (FL-37): small pure helpers shared by the People grid and the
  * manage-visibility page. These never call a network endpoint themselves; the pages own
- * every mutation through the existing `@immich/sdk` person services
+ * every mutation through the existing `@frameleaf/sdk` person services
  * (`updatePerson`, `updatePeople`, `searchPerson`, `mergePerson`).
  */
 

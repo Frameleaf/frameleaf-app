@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { trashFilmstripAsset } from '$lib/frameleaf/trash';
 import { filmstripPlaceholder } from '$lib/frameleaf/viewer-filmstrip';
 

@@ -1,4 +1,4 @@
-import { getPublicConfig } from '@immich/sdk';
+import { getPublicConfig } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { getOAuthContinue } from '$lib/frameleaf/auth-session-preference';
 import { authManager } from '$lib/managers/auth-manager.svelte';

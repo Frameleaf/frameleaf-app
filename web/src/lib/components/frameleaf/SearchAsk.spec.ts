@@ -1,4 +1,4 @@
-import { SearchAskMode, type AskSearchResponseDto } from '@immich/sdk';
+import { SearchAskMode, type AskSearchResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';

@@ -1,7 +1,7 @@
-import { getAdminConfigWithRevision } from '@immich/sdk';
+import { getAdminConfigWithRevision } from '@frameleaf/sdk';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: {}, revision: 1 }),
   getConfigDefaults: vi.fn().mockResolvedValue({}),
 }));

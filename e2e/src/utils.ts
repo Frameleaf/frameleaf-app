@@ -55,7 +55,7 @@ import {
   updateQueue,
   upsertTags,
   validate,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 import { exec, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';

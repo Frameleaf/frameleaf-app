@@ -1,4 +1,4 @@
-import { type DurableJobRun, type JobRunResponseDto, QueueName } from '@immich/sdk';
+import { type DurableJobRun, type JobRunResponseDto, QueueName } from '@frameleaf/sdk';
 
 export const durableRun = (overrides: Partial<DurableJobRun> = {}): JobRunResponseDto => {
   const run: DurableJobRun = {

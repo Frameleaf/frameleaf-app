@@ -15,8 +15,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
-  import { Text } from '@immich/ui';
+  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Text } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
   interface Props {

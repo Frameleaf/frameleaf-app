@@ -6,7 +6,7 @@
   import BuddyBackupSection from '$lib/components/frameleaf/cloud/BuddyBackupSection.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiArrowRight, mdiCloudOutline, mdiLockOutline, mdiServerOutline, mdiShieldCheckOutline } from '@mdi/js';
   import './frameleaf-cloud.css';
 

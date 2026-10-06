@@ -1,4 +1,4 @@
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import {
   actsAsRegular,
@@ -13,7 +13,7 @@ describe('closeSessionModals', () => {
     const close = vi.fn().mockRejectedValueOnce(new Error('busy')).mockResolvedValueOnce(undefined);
     const manager = {
       open: () => ({ onClose: new Promise(() => {}), close }),
-    } as unknown as typeof import('@immich/ui').modalManager;
+    } as unknown as typeof import('@frameleaf/ui').modalManager;
     trackSessionModals(manager);
     manager.open({} as never);
 

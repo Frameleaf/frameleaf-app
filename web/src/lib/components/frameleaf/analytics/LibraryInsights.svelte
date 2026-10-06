@@ -49,8 +49,8 @@
     type AnalyticsInsightsDto,
     type AnalyticsReportResponseDto,
     type PersonResponseDto,
-  } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiCalendarCheckOutline,

@@ -1,4 +1,4 @@
-import { getAlbumInfo, getPerson, getPet, getTagById } from '@immich/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   forgetEntityNames,
@@ -7,7 +7,7 @@ import {
   resolveEntityNames,
 } from './filter-entity-names';
 
-vi.mock('@immich/sdk', () => ({
+vi.mock('@frameleaf/sdk', () => ({
   getAlbumInfo: vi.fn(),
   getPerson: vi.fn(),
   getPet: vi.fn(),

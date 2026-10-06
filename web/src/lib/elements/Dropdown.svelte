@@ -13,7 +13,7 @@
 <script lang="ts" generics="T">
   import { clickOutside } from '$lib/actions/click-outside';
   import { motionFly } from '$lib/frameleaf/motion';
-  import { Button, Icon, Text } from '@immich/ui';
+  import { Button, Icon, Text } from '@frameleaf/ui';
   import { mdiCheck } from '@mdi/js';
   import { isEqual } from 'lodash-es';
 

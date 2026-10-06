@@ -1,4 +1,4 @@
-import { AssetDevelopPreset } from '@immich/sdk';
+import { AssetDevelopPreset } from '@frameleaf/sdk';
 import {
   ASPECT_IDS,
   AUTO_TONE,

@@ -1,4 +1,4 @@
-import { MaintenanceAction } from '@immich/sdk';
+import { MaintenanceAction } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

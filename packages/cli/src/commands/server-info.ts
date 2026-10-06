@@ -1,4 +1,4 @@
-import { getAssetStatistics, getMyUser, getServerVersion, getSupportedMediaTypes, Permission } from '@immich/sdk';
+import { getAssetStatistics, getMyUser, getServerVersion, getSupportedMediaTypes, Permission } from '@frameleaf/sdk';
 import { authenticate, BaseOptions, requirePermissions } from 'src/utils.js';
 
 export const serverInfo = async (options: BaseOptions) => {

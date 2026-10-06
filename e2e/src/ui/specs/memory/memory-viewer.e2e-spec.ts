@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetTypeEnum, type MemoryResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type MemoryResponseDto } from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { generateMemoriesFromTimeline } from 'src/ui/generators/memory.js';
 import {

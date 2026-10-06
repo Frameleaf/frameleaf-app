@@ -4,8 +4,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { isHttpError } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { isHttpError } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCheckCircleOutline, mdiDownloadOutline, mdiProgressDownload } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

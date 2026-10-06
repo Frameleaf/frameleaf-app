@@ -6,7 +6,7 @@
    * produces duplicate ids.
    */
   import { SettingInputFieldType } from '$lib/constants';
-  import { PasswordInput } from '@immich/ui';
+  import { PasswordInput } from '@frameleaf/ui';
   import { onMount, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { FormEventHandler } from 'svelte/elements';

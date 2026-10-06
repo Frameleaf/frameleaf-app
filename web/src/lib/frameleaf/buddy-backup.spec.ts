@@ -1,4 +1,4 @@
-import { State as BuddyPairingState, type BuddyStatusDto } from '@immich/sdk';
+import { State as BuddyPairingState, type BuddyStatusDto } from '@frameleaf/sdk';
 import { buddyBackupPresentation } from './buddy-backup';
 
 const paired = (): BuddyStatusDto => ({

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPencilOutline } from '@mdi/js';
 
   /**

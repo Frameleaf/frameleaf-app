@@ -1,4 +1,4 @@
-import { AssetOrder } from '@immich/sdk';
+import { AssetOrder } from '@frameleaf/sdk';
 import {
   ALBUM_VIEW_SORT_KEY,
   albumOrderSort,

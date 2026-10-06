@@ -10,7 +10,7 @@ import {
   CloudMlJobCostOutcome,
   isHttpError,
   type CloudMlJobEstimateResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import type { ActivityCloudJob, ActivityStage } from '$lib/frameleaf/activity';

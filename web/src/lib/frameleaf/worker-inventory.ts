@@ -16,7 +16,7 @@ import {
   WorkerInventorySource,
   type WorkerInventoryEntryDto,
   type WorkerInventoryResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** The prototype supports up to 32 endpoints in the list. */

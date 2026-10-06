@@ -1,5 +1,5 @@
-import type { AlbumResponseDto } from '@immich/sdk';
-import * as sdk from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
+import * as sdk from '@frameleaf/sdk';
 import { orderBy } from 'lodash-es';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';

@@ -1,4 +1,4 @@
-import { getAlbumInfo } from '@immich/sdk';
+import { getAlbumInfo } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';

@@ -1,4 +1,4 @@
-import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@frameleaf/sdk';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';

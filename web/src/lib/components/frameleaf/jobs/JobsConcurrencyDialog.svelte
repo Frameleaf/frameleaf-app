@@ -10,7 +10,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { isValidConcurrency, JOB_QUEUES, searchTerms, type JobQueueDefinition } from '$lib/frameleaf/job-queues';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiClockOutline, mdiMagnify } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 

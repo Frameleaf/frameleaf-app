@@ -1,4 +1,4 @@
-import type { AlbumResponseDto, AlbumTreeResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto, AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { buildAlbumTree, flattenAlbumTree } from '$lib/frameleaf/album-tree';
 

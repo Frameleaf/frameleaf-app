@@ -96,16 +96,16 @@ jobs:
         run: node --test scripts/frameleaf-studio-preflight.test.mjs
       - name: Build SDK and core plugin WASM
         run: |
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/plugin-sdk build
-          pnpm --filter @immich/plugin-core build
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+          pnpm --filter @frameleaf/plugin-core build
       - name: Verify generated API artifacts are tracked
         run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Generate OpenAPI and TypeScript client
         id: api-generation
         run: |
-          pnpm --filter immich build
-          pnpm --filter immich exec node dist/bin/sync-open-api.js
+          pnpm --filter frameleaf build
+          pnpm --filter frameleaf exec node dist/bin/sync-open-api.js
           oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Retain generated API artifacts for source reconciliation
         if: ${{ steps.api-generation.outcome == 'success' }}
@@ -119,34 +119,34 @@ jobs:
       - name: Verify OpenAPI and TypeScript client freshness
         run: |
           git diff --exit-code -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/sdk test
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/sdk test
       - name: Check server types and lint
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: |
-          pnpm --filter immich check
-          pnpm --filter immich lint
+          pnpm --filter frameleaf check
+          pnpm --filter frameleaf lint
       - name: Run server unit tests
-        run: pnpm --filter immich test --run
+        run: pnpm --filter frameleaf test --run
       - name: Run server medium tests with local PostgreSQL containers
-        run: pnpm --filter immich test:medium --run
+        run: pnpm --filter frameleaf test:medium --run
       - name: Check web types and Svelte components
         run: |
-          pnpm --filter immich-web exec svelte-kit sync
-          pnpm --filter immich-web check:typescript
-          pnpm --filter immich-web check:svelte
+          pnpm --filter frameleaf-web exec svelte-kit sync
+          pnpm --filter frameleaf-web check:typescript
+          pnpm --filter frameleaf-web check:svelte
       - name: Check CLI and migration command
         run: |
-          pnpm --filter @immich/cli check
-          pnpm --filter @immich/cli lint
-          pnpm --filter @immich/cli test --run
-          pnpm --filter @immich/cli build
+          pnpm --filter @frameleaf/cli check
+          pnpm --filter @frameleaf/cli lint
+          pnpm --filter @frameleaf/cli test --run
+          pnpm --filter @frameleaf/cli build
           node packages/cli/bin/immich migrate --help
       - name: Check end-to-end fixtures against generated clients
-        run: pnpm --filter immich-e2e check
+        run: pnpm --filter frameleaf-e2e check
       - name: Run web unit tests
-        run: pnpm --filter immich-web test --run
+        run: pnpm --filter frameleaf-web test --run
 
   machine-learning:
     if: github.repository == 'Frameleaf/frameleaf-app'

@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetVisibility } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   activeFilterCount,
