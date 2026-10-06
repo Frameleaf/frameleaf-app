@@ -187,9 +187,38 @@ describe('attempt output retention and cleanup', () => {
   });
 
   it('releases unseen stopped proof after a complete pass when the application clock is behind PostgreSQL', async () => {
-    const { files } = setup();
+    const {
+      rows: [clockRow],
+    } = await sql<{ millisecond: number }>`SELECT
+      floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS millisecond`.execute(db);
+    const { millisecond } = clockRow;
+    // Control only the sweep's two clock projections; their result types still pass through
+    // the real driver. The pass starts between two proofs in the same millisecond.
+    const clockDb = db.withPlugin({
+      transformQuery({ node }) {
+        if (node.kind !== 'RawNode') return node;
+        return {
+          ...node,
+          sqlFragments: node.sqlFragments.map((fragment) =>
+            fragment.includes(' AS now')
+              ? fragment.replace(
+                  'clock_timestamp()',
+                  `(to_timestamp(${millisecond}::double precision / 1000) + interval '750 microseconds')`,
+                )
+              : fragment,
+          ),
+        };
+      },
+      transformResult: ({ result }) => Promise.resolve(result),
+    });
+    const files = new PhysicalFileRepository(clockDb);
     const token = randomUUID();
+    const laterToken = randomUUID();
     await recordStoppedAttempt(db, randomUUID(), token);
+    await recordStoppedAttempt(db, randomUUID(), laterToken);
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{recordedAt}',
+      to_jsonb(${millisecond}::numeric + CASE WHEN key=${ATTEMPT_EVIDENCE_PREFIX + token} THEN 0.25 ELSE 0.875 END))
+      WHERE key IN (${ATTEMPT_EVIDENCE_PREFIX + token},${ATTEMPT_EVIDENCE_PREFIX + laterToken})`.execute(db);
     await sql`DELETE FROM system_metadata WHERE key='frameleaf-attempt-cleanup-v1'`.execute(db);
     const now = Date.now;
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => now() - 60 * 60 * 1000);
@@ -199,6 +228,9 @@ describe('attempt output retention and cleanup', () => {
       expect(
         (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
       ).toHaveLength(0);
+      expect(
+        (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + laterToken}`.execute(db)).rows,
+      ).toHaveLength(1);
     } finally {
       clock.mockRestore();
     }
