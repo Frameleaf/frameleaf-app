@@ -303,7 +303,7 @@ describe('/admin/integrity', () => {
     try {
       // A timed-out test signal cannot own this join. Refuse fixture replacement
       // unless admitted server work settles within the existing reset work budget.
-      await withDeadline('Settle integrity work before fixture restoration', 8_000, async (context) => {
+      await withDeadline('Settle integrity work before fixture restoration', 8000, async (context) => {
         await utils.settlePendingWaits(signal);
         context.remaining();
         await utils.waitForQueue(admin.accessToken, QueueName.IntegrityCheck, context);
