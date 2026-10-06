@@ -14,6 +14,12 @@ describe('maintenance', () => {
         'href',
         'https://photos.example.com/photos',
       );
+      const settings = new URL('https://photos.example.com/maintenance');
+      settings.searchParams.set('continue', '/user-settings?area=maintenance&section=mode');
+      expect(maintenanceReturnUrl(settings.searchParams)).property(
+        'href',
+        'https://photos.example.com/user-settings?area=maintenance&section=mode',
+      );
     });
 
     it('should fall back to the root route when continue is missing', () => {
