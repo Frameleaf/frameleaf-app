@@ -5,6 +5,85 @@ import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline } from './harness-wait.ts';
 
+test('job admission refuses an aborted owner and binds the admitted request signal', async () => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  createJob: async');
+  const end = source.indexOf('\n\n  queueCommand:', start);
+  assert.ok(start >= 0 && end > start);
+  const admission = source
+    .slice(start, end)
+    .trim()
+    .replace(/^createJob: /, '')
+    .replace(/,$/, '');
+  const owner = new AbortController();
+  let calls = 0;
+  const create = new Function(
+    'ownedWait',
+    'queueWaitTimeout',
+    'createJob',
+    'asBearerAuth',
+    stripTypeScriptTypes(`function bind() { return (${admission}); }`) + '\nreturn bind();',
+  )(
+    (description, timeout, operation) => withDeadline(description, timeout, operation, owner.signal),
+    () => 100,
+    async (_, { signal }) => {
+      calls++;
+      assert.equal(signal.aborted, false);
+      return 'admitted';
+    },
+    () => ({}),
+  );
+  assert.equal(await create('token', { name: 'integrity' }), 'admitted');
+  owner.abort(new Error('test expired'));
+  await assert.rejects(create('token', { name: 'integrity' }), /test expired/);
+  assert.equal(calls, 1);
+});
+
+test('integrity fixture restoration joins admitted work and latches uncertain settlement', async () => {
+  const source = readFileSync(new URL('./specs/server/api/integrity.e2e-spec.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  afterEach(async ({ signal }) => {');
+  const end = source.indexOf("\n\n  describe('GET /runs", start);
+  assert.ok(start >= 0 && end > start);
+  let restore;
+  const joined = Promise.withResolvers();
+  let settlement = joined.promise;
+  const calls = [];
+  new Function(
+    'afterEach',
+    'utils',
+    'withDeadline',
+    'QueueName',
+    'admin',
+    `let fixtureRestorationFailed = false; let fixtureRestorationFailure; ${source.slice(start, end)}`,
+  )(
+    (callback) => {
+      restore = callback;
+    },
+    {
+      settlePendingWaits: async () => {},
+      waitForQueue: () => settlement,
+      deleteFolder: async () => {
+        calls.push('delete');
+      },
+      copyFolder: async () => {
+        calls.push('copy');
+      },
+    },
+    withDeadline,
+    { IntegrityCheck: 'integrity' },
+    { accessToken: 'token', userId: 'fixture' },
+  );
+  const pending = restore({ signal: new AbortController().signal });
+  assert.deepEqual(calls, []);
+  joined.resolve();
+  await pending;
+  assert.deepEqual(calls, ['delete', 'copy']);
+  settlement = Promise.reject(new Error('settlement uncertain'));
+  await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
+  await assert.rejects(restore({ signal: new AbortController().signal }), /settlement uncertain/);
+  assert.deepEqual(calls, ['delete', 'copy']);
+});
+
 test('reset reads all queues in one request and refuses incomplete or invalid aggregate status', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const start = source.indexOf('const readQueues =');

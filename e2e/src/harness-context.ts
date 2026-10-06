@@ -48,10 +48,11 @@ export const ownedWait = async <T>(
     signals.length > 0 ? AbortSignal.any(signals) : undefined,
   );
   scope?.pending.add(pending);
-  let caller = signal && callerWaits.get(signal);
-  if (signal && !caller) {
+  const owner = signal ?? context?.signal;
+  let caller = owner && callerWaits.get(owner);
+  if (owner && !caller) {
     caller = new Set();
-    callerWaits.set(signal, caller);
+    callerWaits.set(owner, caller);
   }
   caller?.add(pending);
   try {
