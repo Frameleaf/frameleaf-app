@@ -15,6 +15,12 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   using: 'gin',
   expression: 'f_unaccent("description") gin_trgm_ops',
 })
+// Rating and capture time live on different tables: this supplies the rating prefix,
+// while PostgreSQL still orders matching assets by capture time and id after the join.
+@Index({
+  name: 'asset_exif_rating_order_idx',
+  expression: '(COALESCE(rating, 0)) DESC, "assetId"',
+})
 @UpdatedAtTrigger('asset_exif_updatedAt')
 export class AssetExifTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })

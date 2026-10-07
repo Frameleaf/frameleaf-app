@@ -1,11 +1,17 @@
 # Sharp process isolation
 
-`MediaRepository` delegates all thirteen Sharp operations to `SharpProcessPool`.
+`MediaRepository` delegates Sharp operations to `SharpProcessPool`.
 Only the child imports Sharp/libvips and ThumbHash. Existing image processing
 order, ICC conversion/preservation, EXIF stripping, orientation, develop detail
 and geometry are retained. LibRaw fallback remains in the repository and uses
 its existing supervised subprocess. Cancellation, pool capacity, child failure
 and resource refusals never trigger a LibRaw fallback.
+
+Still thumbnails use one child operation: decode once, then generate the hash,
+thumbnail, preview and optional fullsize sequentially. Decoded pixels stay in
+the child; only the hash and metadata return over IPC. Each finished stage
+reports progress. Only an initial decode failure is eligible for RAW fallback;
+an output failure fails the attempt without starting another renderer.
 
 Each executor/API process has one lazy pool. A child accepts one operation at a
 time and remains registered with the queue supervisor between operations. A
@@ -31,7 +37,8 @@ completed operations report progress, in the submitting job/operation context.
 | `FRAMELEAF_SHARP_PENDING_BYTES`    |       1 GiB |              64 MiB–4 GiB |
 | `FRAMELEAF_SHARP_MAX_PIXELS`       | 200,000,000 |   1,000,000–1,000,000,000 |
 
-The buffer bound applies to each IPC request/result, including raw buffers. The
+The buffer bound applies to each IPC request/result, including raw buffers, and
+to the decoded pixels retained inside a thumbnail batch. The
 pending byte bound applies to aggregate queued arguments; active tasks are
 bounded separately by worker count. Defaults allow a 100MP 16-bit RGB buffer
 (600MB) and retain the existing 200MP artifact ceiling. Artifact operations keep

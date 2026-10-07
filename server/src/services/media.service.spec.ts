@@ -27,6 +27,7 @@ import {
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
+import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
@@ -63,6 +64,32 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    // Keep the child batch orchestration real while stubbing its native I/O. The pool tests exercise IPC.
+    let decodeFailure: unknown;
+    const operations = Object.assign(new SharpOperations(), {
+      decodeImage: async (...args: Parameters<SharpOperations['decodeImage']>) => {
+        try {
+          return await mocks.media.decodeImage(...args);
+        } catch (error) {
+          decodeFailure = error;
+          throw error;
+        }
+      },
+      generateThumbhash: mocks.media.generateThumbhash,
+      generateThumbnail: mocks.media.generateThumbnail,
+      getImageMetadata: mocks.media.getImageMetadata,
+    });
+    mocks.media.generateImageThumbnails.mockImplementation(async (...args) => {
+      decodeFailure = undefined;
+      try {
+        return await operations.generateImageThumbnails(...args);
+      } catch (error) {
+        if (decodeFailure instanceof SharpOperationError) {
+          throw new SharpOperationError(decodeFailure.message, true);
+        }
+        throw decodeFailure ?? error;
+      }
+    });
     mocks.asset.update.mockResolvedValue(undefined);
     // FL-39: without retained video history the handler keeps its single-master path.
     mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
@@ -234,6 +261,27 @@ describe(MediaService.name, () => {
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
       vi.mocked(renderRawWithLibRaw).mockReset();
       vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
+    });
+
+    it('submits one image batch without returning decoded pixels to the service', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateImageThumbnails.mockResolvedValue({
+        info: rawInfo,
+        thumbhash: Buffer.from('hash'),
+        isTransparent: false,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbhash).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([
+        expect.objectContaining({ type: AssetFileType.Preview }),
+        expect.objectContaining({ type: AssetFileType.Thumbnail }),
+      ]);
     });
 
     it('should skip thumbnail generation if asset not found', async () => {
@@ -1417,6 +1465,21 @@ describe(MediaService.name, () => {
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('encoding failed');
       expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
       expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
+    it('does not retry the sensor or publish files after an embedded preview output fails', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+      const error = new SharpOperationError('output encoding failed');
+      mocks.media.generateThumbnail.mockRejectedValueOnce(error);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
     });
 
     it.each(['metadata', 'decode'] as const)(

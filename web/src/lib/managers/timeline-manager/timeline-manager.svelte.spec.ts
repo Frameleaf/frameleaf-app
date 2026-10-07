@@ -438,6 +438,23 @@ describe('TimelineManager', () => {
       timelineManager.destroy();
     });
 
+    it('invalidates ordered cursors when an asset changes', async () => {
+      const timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1001, timeBucket: '2024-06-01T00:00:00.000Z' }]);
+      sdkMock.getTimelineOrdered.mockResolvedValue({ ...toResponseDto(a), startCursor: 'start', endCursor: 'end' });
+      await timelineManager.updateOptions({ orderedBy: 'filename' as never });
+      await timelineManager.updateViewport({ width: 1588, height: 0 });
+      await timelineManager.loadTimelineMonth(timelineManager.months[0].yearMonth);
+      timelineManager.update([a.id], (asset) => void (asset.originalFileName = 'renamed.jpg'));
+      await timelineManager.loadTimelineMonth(timelineManager.months[1].yearMonth);
+      expect(sdkMock.getTimelineOrdered).toHaveBeenLastCalledWith(
+        expect.objectContaining({ skip: 500 }),
+        expect.anything(),
+      );
+      expect(sdkMock.getTimelineOrdered.mock.calls.at(-1)![0]).not.toHaveProperty('after');
+      timelineManager.destroy();
+    });
+
     it('selects a range by position in the order, not by date', async () => {
       const timelineManager = await setup();
       await getAssets(timelineManager);

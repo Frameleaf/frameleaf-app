@@ -46617,6 +46617,16 @@
         "operationId": "getTimelineOrdered",
         "parameters": [
           {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "Continue after the previous ordered page cursor; overrides skip",
+            "schema": {
+              "maxLength": 8192,
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -46643,6 +46653,16 @@
             "description": "Bounding box coordinates as west,south,east,north (WGS84)",
             "schema": {
               "example": "11.075683,49.416711,11.117589,49.454875",
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Read the page before this ordered cursor; overrides skip",
+            "schema": {
+              "maxLength": 8192,
               "type": "string"
             }
           },
@@ -46734,7 +46754,7 @@
             "name": "skip",
             "required": false,
             "in": "query",
-            "description": "Items to skip",
+            "description": "Items to skip when no cursor is supplied",
             "schema": {
               "minimum": 0,
               "maximum": 9007199254740991,
@@ -115830,6 +115850,11 @@
             },
             "type": "array"
           },
+          "endCursor": {
+            "description": "Last ordered item cursor; absent for time buckets",
+            "nullable": true,
+            "type": "string"
+          },
           "fileCreatedAt": {
             "description": "Array of file creation timestamps in UTC",
             "items": {
@@ -115990,6 +116015,11 @@
               "type": "array"
             },
             "type": "array"
+          },
+          "startCursor": {
+            "description": "First ordered item cursor; absent for time buckets",
+            "nullable": true,
+            "type": "string"
           },
           "thumbhash": {
             "description": "Array of BlurHash strings for generating asset previews (base64 encoded)",

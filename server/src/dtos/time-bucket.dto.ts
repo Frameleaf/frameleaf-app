@@ -108,7 +108,9 @@ const TimelineOrderedSchema = TimeBucketQueryBaseSchema.extend({
       'filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture',
     )
     .meta({ id: 'TimelineOrderedSort' }),
-  skip: z.coerce.number().int().min(0).default(0).describe('Items to skip'),
+  after: z.string().max(8192).optional().describe('Continue after the previous ordered page cursor; overrides skip'),
+  before: z.string().max(8192).optional().describe('Read the page before this ordered cursor; overrides skip'),
+  skip: z.coerce.number().int().min(0).default(0).describe('Items to skip when no cursor is supplied'),
   take: z.coerce
     .number()
     .int()
@@ -123,6 +125,8 @@ const stackTupleSchema = z.array(z.string()).length(2).nullable();
 const TimeBucketAssetResponseSchema = z
   .object({
     id: z.array(z.string()).describe('Array of asset IDs in the time bucket'),
+    startCursor: z.string().nullable().optional().describe('First ordered item cursor; absent for time buckets'),
+    endCursor: z.string().nullable().optional().describe('Last ordered item cursor; absent for time buckets'),
     ownerId: z.array(z.string()).describe('Array of owner IDs for each asset'),
     ratio: z
       .array(z.number().meta({ format: 'double' }))

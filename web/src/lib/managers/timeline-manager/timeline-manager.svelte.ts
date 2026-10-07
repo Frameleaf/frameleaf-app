@@ -19,6 +19,7 @@ import { batchFlow, linkFlows, releaseFlowHolds } from '$lib/managers/timeline-m
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
 import {
+  clearOrderedPageCursors,
   loadFromTimeBuckets,
   loadOrderedPage,
   ORDERED_PAGE_SIZE,
@@ -538,7 +539,7 @@ export class TimelineManager extends VirtualScrollManager {
 
     const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
       await (this.#options.orderedBy
-        ? loadOrderedPage(timelineMonth, this.months.indexOf(timelineMonth), this.#options, signal)
+        ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
         : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
     }, cancelable);
     if (executionStatus === 'LOADED') {
@@ -763,6 +764,7 @@ export class TimelineManager extends VirtualScrollManager {
     if (ids.size === 0) {
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
+    clearOrderedPageCursors(this.months);
     if (this.#options.orderedBy === 'rating') {
       // Ordered by rating, a new rating moves the item: the pages are read again in the new order.
       let reordered = false;

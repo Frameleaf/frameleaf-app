@@ -277,6 +277,8 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
 export type TimelineOrderedSort = 'filename' | 'rating';
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
+  cursor?: { key: string | number; date: string; id: string };
+  reverse?: boolean;
   skip: number;
   take: number;
 }
@@ -2243,6 +2245,12 @@ export class AssetRepository {
         },
   ) {
     const { timeBucket, page } = target;
+    const sortKey =
+      page?.sort === 'filename'
+        ? sql`asset."originalFileName" collate "und-x-icu"`
+        : sql`coalesce(asset_exif.rating, 0)`;
+    const keyAscending = page?.sort === 'filename';
+    const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
     const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
     // partners who hide their locations from this viewer (FL-54): their location columns are nulled in SQL
@@ -2276,7 +2284,7 @@ export class AssetRepository {
         )
       : 'asset.livePhotoVideoId';
     const query = this.db
-      .with('cte', (qb) =>
+      .with('selection', (qb) =>
         qb
           .selectFrom('asset')
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
@@ -2309,6 +2317,13 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
+          .$if(!!page, (qb) =>
+            qb.select([
+              sortKey.as('sortKey'),
+              sql`asset."fileCreatedAt"`.as('sortDate'),
+              sql<string>`json_build_array(${sortKey}, asset."fileCreatedAt", asset.id)::text`.as('cursor'),
+            ]),
+          )
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select(lockReasonOf('asset').as('lockReason')),
           )
@@ -2409,25 +2424,46 @@ export class AssetRepository {
           .$if(!page, (qb) =>
             qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
           )
-          // File names in the ICU root collation (`und-x-icu`): letters compare regardless of case and
-          // accents first, as a person reads a list, rather than by byte value. Digits still compare
-          // one by one ("IMG_10" before "IMG_2"). This needs a Postgres built with ICU, which the Immich
-          // Postgres images (production and e2e) are. The newest capture, then the id, break ties so
-          // pages never overlap.
-          .$if(page?.sort === 'filename', (qb) =>
+          // Seek on the same tuple as ORDER BY. Preserve the database timestamp's microseconds
+          // in the cursor rather than round-tripping the display date through JavaScript Date.
+          .$if(!!page?.cursor, (qb) => {
+            const { key, date, id } = page!.cursor!;
+            const keyOp = keyAscending === reverse ? '<' : '>';
+            const dateOp = reverse ? '>' : '<';
+            const idOp = reverse ? '<' : '>';
+            return qb
+              .where(sortKey, keyAscending === reverse ? '<=' : '>=', key)
+              .where((eb) =>
+                eb.or([
+                  eb(sortKey, keyOp, key),
+                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', dateOp, date)]),
+                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', '=', date), eb('asset.id', idOp, id)]),
+                ]),
+              );
+          })
+          .$if(!!page, (qb) =>
             qb
-              .orderBy(sql`asset."originalFileName" collate "und-x-icu"`, 'asc')
-              .orderBy('asset.fileCreatedAt', 'desc')
-              .orderBy('asset.id', 'asc'),
-          )
-          // Highest rating first; an unrated item counts as 0, below every star and above rejected.
-          .$if(page?.sort === 'rating', (qb) =>
+              .orderBy(sortKey, keyAscending === reverse ? 'desc' : 'asc')
+              .orderBy('asset.fileCreatedAt', reverse ? 'asc' : 'desc')
+              .orderBy('asset.id', reverse ? 'desc' : 'asc')
+              .offset(page!.cursor ? 0 : page!.skip)
+              .limit(page!.take),
+          ),
+      )
+      .with('cte', (qb) =>
+        qb
+          .selectFrom('selection')
+          .selectAll()
+          // A backward seek selects in reverse, but every response has the canonical display order.
+          .$if(reverse, (qb) =>
             qb
-              .orderBy(sql`coalesce(asset_exif.rating, 0)`, 'desc')
-              .orderBy('asset.fileCreatedAt', 'desc')
-              .orderBy('asset.id', 'asc'),
-          )
-          .$if(!!page, (qb) => qb.offset(page!.skip).limit(page!.take)),
+              .orderBy(
+                sql`"sortKey" ${page?.sort === 'filename' ? sql`collate "und-x-icu"` : sql``}`,
+                keyAscending ? 'asc' : 'desc',
+              )
+              .orderBy('sortDate', 'desc')
+              .orderBy('id', 'asc'),
+          ),
       )
       .with('agg', (qb) =>
         qb
@@ -2451,6 +2487,12 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(!!page, (qb) =>
+            qb.select([
+              sql<string | null>`(array_agg(cursor))[1]`.as('startCursor'),
+              sql<string | null>`(array_agg(cursor))[count(*)::int]`.as('endCursor'),
+            ]),
+          )
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),
           )

@@ -13861,6 +13861,8 @@ export type TimeBucketAssetResponseDto = {
     createdAt: string[];
     /** Array of video/gif durations in milliseconds (null for static images) */
     duration: (number | null)[];
+    /** Last ordered item cursor; absent for time buckets */
+    endCursor?: string | null;
     /** Array of file creation timestamps in UTC */
     fileCreatedAt: string[];
     /** Array of file sizes in bytes (null when unknown). Omitted for shared links that hide EXIF */
@@ -13899,6 +13901,8 @@ export type TimeBucketAssetResponseDto = {
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
     stack?: (string[] | null)[];
+    /** First ordered item cursor; absent for time buckets */
+    startCursor?: string | null;
     /** Array of BlurHash strings for generating asset previews (base64 encoded) */
     thumbhash: (string | null)[];
     /** Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
@@ -26506,10 +26510,12 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withStacked }: {
+    after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    before?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
@@ -26534,9 +26540,11 @@ export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavor
         status: 200;
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/ordered${QS.query(QS.explode({
+        after,
         albumId,
         assetType,
         bbox,
+        before,
         dateType,
         isFavorite,
         isTrashed,

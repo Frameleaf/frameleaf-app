@@ -9010,6 +9010,20 @@
           "using": "btree",
           "unique": false,
           "synchronize": true
+        },
+        {
+          "name": "asset_owner_filename_order_idx",
+          "definition": "CREATE INDEX asset_owner_filename_order_idx ON public.asset USING btree (\"ownerId\", \"originalFileName\" COLLATE \"und-x-icu\", \"fileCreatedAt\" DESC, id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "originalFileName",
+            "fileCreatedAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
         }
       ],
       "triggers": [
@@ -9722,6 +9736,18 @@
           "columnNames": [
             "city"
           ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_rating_order_idx",
+          "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "expression": "COALESCE(rating, 0)",
           "using": "btree",
           "unique": false,
           "synchronize": true
