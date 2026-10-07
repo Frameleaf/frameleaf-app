@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TextItem, TimelineItem } from '@/types/timeline'
+import { resolveTrackAudioPanStages } from '@/shared/utils/audio-pan'
 import { getAudioEqSettings, resolveAudioEqSettings } from '@/shared/utils/audio-eq'
 import { getAudioPitchShiftSemitones, resolvePreviewAudioPitchShiftSemitones } from '@/shared/utils/audio-pitch'
 import { collectDuckingSources, extractAudioSegments } from '@/features/export/utils/canvas-audio'
@@ -225,11 +226,11 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       envelope('project.setMasterAudio', { gainDb: -2 }),
     ])
     const eq = { lowGainDb: 4, lowFrequencyHz: 250, lowQ: 1.5 }
-    const changed = await applied(before.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: -6, eq })])
+    const changed = await applied(before.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: -6, eq, pan: -0.5 })])
     expect(itemsOf(changed.project)).toEqual(itemsOf(before.project))
     expect({ ...changed.project.timeline, tracks: [] }).toEqual({ ...before.project.timeline, tracks: [] })
     expect(changed.project.timeline!.tracks.filter((track) => track.id !== 'a1')).toEqual(before.project.timeline!.tracks.filter((track) => track.id !== 'a1'))
-    expect(changed.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: -6, muted: false, audioEq: resolveAudioEqSettings(eq) })
+    expect(changed.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: -6, pan: -0.5, muted: false, audioEq: resolveAudioEqSettings(eq) })
     const resolvedTracks = changed.project.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(changed.project).filter((item) => item.trackId === track.id).map((item) => ({ ...item, src: 'blob:resolved-audio' })) }))
     const preview = buildStandaloneAudioSegments(collectAudioTrackItems({ tracks: resolvedTracks, visibleTrackIds: new Set(resolvedTracks.map((track) => track.id)) }), 30).find((segment) => segment.itemId === audio.id)!
     const exported = extractAudioSegments({ ...changed.project.timeline, fps: 30, tracks: resolvedTracks } as never, 30).find((segment) => segment.itemId === audio.id)!
@@ -237,13 +238,15 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     expect(exported).toMatchObject({ volume: -10, trackVolumeDb: -6, fadeInFrames: 0.3, pitchShiftSemitones: -2.75 })
     expect(preview.audioEqStages).toEqual([resolveAudioEqSettings(eq), resolveAudioEqSettings({ highGainDb: 2 })])
     expect(exported.audioEqStages.slice(-2)).toEqual(preview.audioEqStages)
+    expect(exported.panStages).toEqual([-0.5])
+    expect(resolveTrackAudioPanStages(itemsOf(changed.project), changed.project.timeline!.tracks, [], audio.id)).toEqual(exported.panStages)
     expect((await applied(JSON.parse(JSON.stringify(changed.project)), [])).digest).toBe(changed.digest)
-    const cleared = await applied(changed.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: 0, eq: null })])
-    expect(cleared.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: 0 })
+    const cleared = await applied(changed.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: 0, eq: null, pan: 0 })])
+    expect(cleared.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: 0, pan: 0 })
     expect(cleared.project.timeline!.tracks.find((track) => track.id === 'a1')!.audioEq).toBeUndefined()
     expect(itemsOf(cleared.project)).toEqual(itemsOf(before.project))
     expect((await applied(JSON.parse(JSON.stringify(cleared.project)), [])).digest).toBe(cleared.digest)
-    for (const fields of [{ gainDb: -61 }, { gainDb: 13 }, { gainDb: NaN }, { eq: [] }, { eq: { lowQ: 11 } }, { eq: { bogus: 1 } }, { muted: true }, { automation: [] }]) {
+    for (const fields of [{ gainDb: -61 }, { gainDb: 13 }, { gainDb: NaN }, { pan: NaN }, { pan: Infinity }, { pan: -1.1 }, { pan: 1.1 }, { pan: null }, { pan: '0' }, { eq: [] }, { eq: { lowQ: 11 } }, { eq: { bogus: 1 } }, { muted: true }, { automation: [] }]) {
       await expect(applyCanonicalCommands(before.project, [envelope('track.setAudio', { trackId: 'a1', ...fields })], media))
         .resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
     }
@@ -254,8 +257,8 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     const snapshot = structuredClone(before.project)
     await expect(applyCanonicalCommands(before.project, [
       envelope('track.setAudio', { trackId: 'a1', gainDb: -12, eq }),
-      envelope('track.setAudio', { trackId: 'a1', gainDb: -3, eq, pan: 0 }),
-    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+      envelope('track.setAudio', { trackId: 'a1', gainDb: -3, eq, pan: 2 }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 1 })
     expect(before.project).toEqual(snapshot)
   })
 
@@ -358,6 +361,31 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
           blobUrlManager.release(ASSET)
         }
       }
+    }
+  })
+
+  it('keeps inside-out track pan stages through compound ownership, reopen and root pan reset', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const video = itemsOf(start.project).find((item) => item.type === 'video')!
+    const composed = await applied(start.project, [envelope('composition.add', { name: 'Panned sound', clipIds: [video.id] })])
+    const graph = structuredClone(composed.project)
+    const composition = graph.timeline!.compositions![0]!
+    const leaf = composition.items.find((item) => item.type === 'audio')!
+    composition.tracks.find((track) => track.id === leaf.trackId)!.pan = -0.5
+    const wrapper = itemsOf(graph).find((item) => item.type === 'audio' && 'compositionId' in item)!
+    const changed = await applied(graph, [envelope('track.setAudio', { trackId: wrapper.trackId, pan: 1 })])
+    for (const [candidate, expected] of [[changed.project, [-0.5, 1]], [(await applied(changed.project, [envelope('track.setAudio', { trackId: wrapper.trackId, pan: 0 })])).project, [-0.5]]] as const) {
+      const reopened = await applied(JSON.parse(JSON.stringify(candidate)), [])
+      const timeline = reopened.project.timeline!
+      const tracks = timeline.tracks.map((track) => ({ ...track, items: itemsOf(reopened.project).filter((item) => item.trackId === track.id) }))
+      blobUrlManager.registerUrl(ASSET, 'blob:pan-compound')
+      try {
+        const exported = extractAudioSegments({ tracks, fps: 30 } as never, 30)
+        expect(exported).toHaveLength(1)
+        expect(exported[0]!.panStages).toEqual(expected)
+        expect(resolveTrackAudioPanStages(itemsOf(reopened.project), tracks, timeline.compositions!, leaf.id, [wrapper.id])).toEqual(expected)
+      } finally { blobUrlManager.release(ASSET) }
+      expect(canonicalJson(timeline.compositions)).toBe(canonicalJson(changed.project.timeline!.compositions))
     }
   })
 

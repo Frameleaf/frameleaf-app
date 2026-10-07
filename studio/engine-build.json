@@ -329,7 +329,12 @@
       "path": "patches/0068-linear-hdr-brightness.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "aa162a5234a2bfa65ca65ec47c9a76d43e8d4e14610310cc48a0492585f4b9cc"
+    },
+    {
+      "path": "patches/0069-persisted-track-pan.patch",
+      "sha256": "166b803f5b81c47fccd588d3fe621b96bd9e3a29247a91c4bd556dbaa826d29c",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "2b7bfaa6f2b6d3aca66256faffae7a4cba05773abf7df7c8f35f6df0f347f71b"
+  "sourceSha256": "19da41cfdfc331f09315710d27b58cb4b707463a2e4fadbd2b5eadf98d13079f"
 }
