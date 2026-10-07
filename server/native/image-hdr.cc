@@ -2,6 +2,7 @@
 #include <node_api.h>
 #include <libheif/heif.h>
 #include <libheif/heif_items.h>
+#include <libheif/heif_security.h>
 #include <ultrahdr_api.h>
 #include <expat.h>
 #include <lcms2.h>
@@ -61,11 +62,32 @@ struct Input {
     if (!(maxPixels > 0 && maxPixels <= 200000000 && maxBytes > 0 && maxBytes <= 8589934592)
         || size > maxBytes || size > 134217728) throw std::runtime_error("RESOURCE_LIMIT");
   }
-  // Includes compressed input, decoded base/map, half-float codec storage and float working/output buffers.
-  void dimensions(int w, int h, double mapPixels = 0) const {
-    const double pixels = double(w) * h;
-    if (w <= 0 || h <= 0 || pixels > maxPixels || mapPixels > maxPixels
-        || size + pixels * 64 + mapPixels * 16 > maxBytes) throw std::runtime_error("RESOURCE_LIMIT");
+  // Include row padding in either orientation, compressed copies and simultaneous working surfaces.
+  void dimensions(int w, int h, int mapWidth = 0, int mapHeight = 0, int workingBytesPerPixel = 64) const {
+    const auto paddedPixels = [](int width, int height) {
+      return std::max(std::ceil(double(width) / 64) * 64 * height,
+                      std::ceil(double(height) / 64) * 64 * width);
+    };
+    if (w <= 0 || h <= 0 || mapWidth < 0 || mapHeight < 0
+        || (mapWidth == 0) != (mapHeight == 0) || double(w) * h > maxPixels
+        || double(mapWidth) * mapHeight > maxPixels
+        || double(size) * 2 + paddedPixels(w, h) * workingBytesPerPixel + paddedPixels(mapWidth, mapHeight) * 16 > maxBytes)
+      throw std::runtime_error("RESOURCE_LIMIT");
+  }
+  Context readHeif() const {
+    if (double(size) * 2 >= maxBytes) throw std::runtime_error("RESOURCE_LIMIT");
+    Context ctx(heif_context_alloc(), heif_context_free);
+    if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
+    auto* limits = heif_context_get_security_limits(ctx.get());
+    if (!limits || limits->version < 2) throw std::runtime_error("HDR_CODEC_VERSION_UNSUPPORTED");
+    const auto available = uint64_t(maxBytes - double(size) * 2);
+    if (!available) throw std::runtime_error("RESOURCE_LIMIT");
+    limits->max_image_size_pixels = std::max(uint64_t(1), uint64_t(maxPixels));
+    limits->max_color_profile_size = std::min(limits->max_color_profile_size, uint32_t(1048576));
+    limits->max_memory_block_size = std::min(limits->max_memory_block_size, available);
+    limits->max_total_memory = std::min(limits->max_total_memory, available);
+    check(heif_context_read_from_memory_without_copy(ctx.get(), data, size, nullptr));
+    return ctx;
   }
 };
 
@@ -134,7 +156,7 @@ Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
   }
   check(uhdr_dec_probe(dec.get()));
   input.dimensions(uhdr_dec_get_image_width(dec.get()), uhdr_dec_get_image_height(dec.get()),
-    double(uhdr_dec_get_gainmap_width(dec.get())) * uhdr_dec_get_gainmap_height(dec.get()));
+    uhdr_dec_get_gainmap_width(dec.get()), uhdr_dec_get_gainmap_height(dec.get()));
   auto* metadata = uhdr_dec_get_gainmap_metadata(dec.get());
   if (!metadata || !std::isfinite(metadata->hdr_capacity_max) || metadata->hdr_capacity_max < 1
       || !std::isfinite(metadata->hdr_capacity_min) || metadata->hdr_capacity_min < 1
@@ -426,9 +448,7 @@ void validateAppleLayout(const Input& input, const heif_context* ctx, const heif
   }
   const int width = heif_image_handle_get_ispe_width(primary), height = heif_image_handle_get_ispe_height(primary);
   const int mapWidth = heif_image_handle_get_ispe_width(auxiliary), mapHeight = heif_image_handle_get_ispe_height(auxiliary);
-  input.dimensions(width, height, double(mapWidth) * mapHeight);
-  if (double(input.size) * 2 + double(width) * height * 64 + double(mapWidth) * mapHeight * 16 > input.maxBytes)
-    throw std::runtime_error("RESOURCE_LIMIT");
+  input.dimensions(width, height, mapWidth, mapHeight);
   heif_colorspace colorspace; heif_chroma chroma;
   check(heif_image_handle_get_preferred_decoding_colorspace(auxiliary, &colorspace, &chroma));
   if (colorspace != heif_colorspace_monochrome || chroma != heif_chroma_monochrome)
@@ -540,7 +560,7 @@ napi_value decodeApple(napi_env env, Input& input, heif_context* ctx, heif_image
   }
   int width = rawWidth, height = rawHeight;
   const auto transforms = appleTransforms(ctx, heif_image_handle_get_item_id(primary), width, height);
-  input.dimensions(width, height, double(mapWidth) * mapHeight);
+  input.dimensions(width, height, mapWidth, mapHeight);
   napi_value data; void* output;
   check(napi_create_buffer(env, size_t(width) * height * 16, &output, &data));
   napi_value sdrData; void* sdrOutput = nullptr;
@@ -573,9 +593,7 @@ napi_value decodeApple(napi_env env, Input& input, heif_context* ctx, heif_image
 }
 
 napi_value decodeHeif(napi_env env, Input& input, bool paired = false) {
-  Context ctx(heif_context_alloc(), heif_context_free);
-  if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
-  check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+  auto ctx = input.readHeif();
   if (heifHasToneMap(input, ctx.get())) throw std::runtime_error("ISO_HEIF_GAIN_MAP_UNAVAILABLE");
   heif_image_handle* raw = nullptr; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
   Handle primary(raw, heif_image_handle_release);
@@ -689,9 +707,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
         field(env, result, "bitDepth", 8.0);
         field(env, result, "gainMap", jpegIsoGainMap(uhdr_dec_get_gainmap_image(dec.get())) ? "iso-21496" : "ultra-hdr");
       } else {
-        Context ctx(heif_context_alloc(), heif_context_free);
-        if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
-        check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+        auto ctx = input.readHeif();
         heif_image_handle* raw; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
         Handle primary(raw, heif_image_handle_release);
         describeHeif(env, result, input, ctx.get(), raw);
@@ -707,9 +723,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
     }
     const auto type = heif_check_filetype(static_cast<uint8_t*>(input.data), int(input.size));
     if (type == heif_filetype_yes_supported || type == heif_filetype_yes_unsupported) {
-      Context ctx(heif_context_alloc(), heif_context_free);
-      if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
-      check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+      auto ctx = input.readHeif();
       if (heifHasToneMap(input, ctx.get())) {
         field(env, result, "container", heif_has_compatible_brand(static_cast<const uint8_t*>(input.data),
           int(input.size), "avif") == 1 ? "avif" : "heif");
@@ -813,9 +827,8 @@ napi_value decodePaired(napi_env env, napi_callback_info info) {
     // The previous decoder is destroyed before this one starts. Include retained float RGB in its budget.
     auto result = decodeLinear(env, input);
     auto dec = decoder(input, false, true);
-    if (input.size + double(uhdr_dec_get_image_width(dec.get())) * uhdr_dec_get_image_height(dec.get()) * 80
-        + double(uhdr_dec_get_gainmap_width(dec.get())) * uhdr_dec_get_gainmap_height(dec.get()) * 16 > input.maxBytes)
-      throw std::runtime_error("RESOURCE_LIMIT");
+    input.dimensions(uhdr_dec_get_image_width(dec.get()), uhdr_dec_get_image_height(dec.get()),
+      uhdr_dec_get_gainmap_width(dec.get()), uhdr_dec_get_gainmap_height(dec.get()), 80);
     check(uhdr_decode(dec.get()));
     const auto* image = uhdr_get_decoded_image(dec.get());
     // The pinned decoder copies the JPEG base with an unspecified transfer tag; this output mode is sRGB.
