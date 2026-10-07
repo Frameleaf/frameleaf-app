@@ -71,3 +71,50 @@ and linear RGB values. No Frameleaf codec is used to generate them. Reference
 updates require independent qualification; they must not be generated from the
 implementation under test. These synthetic cases do not establish camera or
 physical-display acceptance.
+
+## Independent Develop/export round trips
+
+`develop-hdr.jpg` and `develop-hdr.heic` come from the admitted server worker:
+`apple-gain-map-colors.heic` → Develop exposure +1 EV → HDR JPEG master → still
+exports. The original fixture's checksum is checked after generation. These are
+synthetic, capture-metadata-stripped files; they contain no user media.
+
+The generator uses the pinned libUltraHDR 2.0.2 revision and the same
+`UHDR_WRITE_XMP=ON`, `UHDR_WRITE_ISO=ON`, `UHDR_ENABLE_GLES=OFF`,
+`UHDR_ENABLE_HEIF=OFF` build inputs as Linux. No upstream source patches are
+applied. Fixture generation used the addon at `08b683a38d` and libheif 1.23.6;
+Linux tests independently decode the committed outputs with pinned libheif 1.23.3.
+The JPEG includes both Ultra HDR XMP and ISO metadata; its SDR baseline
+and reconstructed HDR are Display P3. The HEIC is ten-bit PQ, Display P3.
+
+| Fixture          | SHA-256                                                          | Independent reconstruction bounds     |
+| ---------------- | ---------------------------------------------------------------- | ------------------------------------- |
+| develop-hdr.jpg  | d9b8bec5099f6b6d20a76f6f57d481159388b76be17ba9654d3c9a14176e26f3 | maximum RGB error < 0.2, RMS < 0.02   |
+| develop-hdr.heic | 668110ac7f49e1512ec1116e1320120e1ec6b4a5e04f5d11d8cdcf4acef8de69 | maximum RGB error < 0.08, RMS < 0.015 |
+
+References are linear Display P3 relative to reference white, sampled over all
+256 gain-map positions and four color rows. Bounds account for independent
+JPEG/HEVC decoding, gain-map quantization, and half-float output; they do not
+establish display correctness. macOS 26.5.2 observed maximum/RMS error:
+JPEG 0.189683/0.013982; HEIC 0.052709/0.008369.
+
+After building the server, generate exports with
+`FRAMELEAF_HDR_BINDING=/path/to/pinned/image-hdr.node node server/test/native/fixtures/generate-hdr-export-fixtures.mjs /path/to/output`.
+Select the pinned codec shared libraries as well as the addon; a version string
+alone does not prove identical codec build options. Regenerate references on
+macOS with:
+
+```sh
+swift server/test/native/fixtures/generate-jpeg-reference.swift /path/to/develop-hdr.jpg /path/to/reference.json --display-p3
+swift server/test/native/fixtures/generate-apple-reference.swift /path/to/develop-hdr.heic /path/to/reference.json --display-p3
+```
+
+For JPEG, Core Image URL/data loading adjusts the adaptive SDR baseline even
+when `expandToHDR` is false. A direct expanded URL decode therefore cannot be
+compared to the server's unnormalized linear working pixels. The independent
+reference retains the untouched primary JPEG pixels and ICC profile, omits only
+adaptive routing/capture metadata from that temporary in-memory baseline, and
+applies the original gain map with Apple's Core Image API at full content
+headroom. It never re-encodes the baseline or uses Frameleaf to reconstruct the
+reference. Normal platform display adaptation remains separate from this
+reconstruction check.
