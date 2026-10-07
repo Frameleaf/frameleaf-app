@@ -44,6 +44,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 @Index({ columns: ['ownerId', 'updatedAt'] })
 @Index({ columns: ['purgeAfter'] })
 @Unique({ columns: ['importOperationId'] })
+@Unique({ columns: ['ownerId', 'createRequestKey'] })
 @Table('studio_project')
 @UpdatedAtTrigger('studio_project_updatedAt')
 export class StudioProjectTable {
@@ -106,6 +107,14 @@ export class StudioProjectTable {
   /** The import job that created this project; unique, so a retried import finds it again. */
   @Column({ type: 'uuid', nullable: true })
   importOperationId!: string | null;
+
+  /** Owner-scoped creation retry identity; independent of mutable project metadata and saves. */
+  @Column({ nullable: true })
+  createRequestKey!: string | null;
+
+  /** Digest of the original creation payload, including the editor instance receiving the lease. */
+  @Column({ nullable: true })
+  createRequestDigest!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

@@ -402,6 +402,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   let saving: Promise<void> | null = null;
   /** The draft a save is carrying right now; a `stage` meanwhile starts a fresh summary. */
   let inflightDraft: Draft | null = null;
+  /** Recover the first project's identity before sending any newer document as a save. */
+  let creating: { generation: number; draft: Draft; request: StudioProjectCreateDto } | null = null;
   let autosaveMs = STUDIO_AUTOSAVE_DEBOUNCE_MS;
   let renewMs = STUDIO_LEASE_RENEW_MS;
   /** Bumped by open, reload, saveAsCopy and dispose; responses from an older value are dropped. */
@@ -671,7 +673,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     }
 
     const gen = generation;
-    const current = draft;
+    if (creating && creating.generation !== gen) {
+      creating = null;
+    }
+    const current = !projectId && creating ? creating.draft : draft;
     current.requestKey ??= newKey();
     inflightDraft = current;
     emit({ status: 'saving', error: null });
@@ -679,6 +684,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     saving = (async () => {
       try {
         let result: { revision: number; lease: StudioProjectLeaseDto | null };
+        let createdDetail: StudioProjectDetailDto | null = null;
         if (projectId) {
           const saved = await api.save(projectId, {
             clientId,
@@ -706,22 +712,31 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           }
           result = { revision: saved.revision, lease: saved.lease };
         } else {
-          const created = await api.create({
-            name: state.project.name,
-            clientId,
-            envelope: envelopeFor(current.graph),
-            requestKey: current.requestKey ?? undefined,
-          });
+          creating ??= {
+            generation: gen,
+            draft: current,
+            request: structuredClone({
+              name: state.project.name,
+              clientId,
+              envelope: envelopeFor(current.graph),
+              requestKey: current.requestKey ?? undefined,
+            }),
+          };
+          const initialRevision = creating.request.envelope ? 1 : 0;
+          const created = await api.create(creating.request);
           if (gen !== generation) {
             return;
           }
           projectId = created.id;
+          creating = null;
           emit({
             project: { ...state.project, id: created.id, name: created.name, hasLease: created.lease.heldByYou },
             access: 'owner',
             resources: created.resources,
           });
-          result = { revision: created.revision, lease: created.lease };
+          createdDetail = created;
+          // Replay returns the current head, but this request only acknowledged the initial document.
+          result = { revision: initialRevision, lease: created.lease };
         }
 
         if (result.lease) {
@@ -749,6 +764,28 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           error: null,
           status: shelved ? 'review' : draft ? 'dirty' : 'saved',
         });
+        if (createdDetail && createdDetail.revision !== result.revision && !shelved) {
+          if (draft) {
+            emit({
+              status: 'conflict',
+              conflict: {
+                reason: 'stale-revision',
+                currentRevision: createdDetail.revision,
+                lease: createdDetail.lease,
+              },
+            });
+            if (state.project.hasLease) {
+              scheduleRenewal(gen);
+            }
+            return;
+          }
+          // No unsaved descendants remain: replace the editor's graph with the actual head.
+          applyDetail(createdDetail, gen, createdDetail.lease.heldByYou, true);
+        }
+        if (result.lease && !result.lease.heldByYou && !shelved) {
+          loseLease({ reason: 'lease-lost', currentRevision: result.revision, lease: result.lease });
+          return;
+        }
         if (state.project.hasLease) {
           scheduleRenewal(gen);
         }
@@ -766,6 +803,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           } else if (conflict.reason === 'request-key-reused') {
             // Same key, different document: a client bug. Take a fresh key rather than loop.
             current.requestKey = null;
+            creating = null;
             emit({ status: 'error', conflict, error: 'The save request key was reused for a different document' });
           } else if (isShelvedConflict(conflict)) {
             shelve(conflict);
@@ -775,10 +813,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           return;
         }
         if (isNotFound(error)) {
+          creating = null;
           fail(error, gen);
           return;
         }
         if (isBadRequest(error)) {
+          creating = null;
           // Final: the same request would be refused again. When the draft carried canonical
           // commands, they are the likely cause (FL-92): quarantine them as a count and save the
           // document on its own, once, with a fresh key. Otherwise the document itself was refused;
@@ -1001,6 +1041,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     async rename(name) {
       const next = name.trim();
       if (!next) {
+        return false;
+      }
+      // A creation retry must retain the original name; rename once its identity is known.
+      if (creating?.generation === generation) {
         return false;
       }
       if (!projectId) {
