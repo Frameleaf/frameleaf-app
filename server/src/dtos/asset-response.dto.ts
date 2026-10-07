@@ -7,6 +7,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
+import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
 import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
@@ -35,6 +36,9 @@ const SanitizedAssetResponseSchema = z
       )
       .nullable(),
     originalMimeType: z.string().optional().describe('Original MIME type'),
+    imageEncoding: ImageEncodingSchema.optional().describe(
+      'Source image color encoding; unprocessed or unavailable evidence remains unknown',
+    ),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     localDateTime: z
       .string()
@@ -215,6 +219,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       localDateTime: asDateTimeString(entity.localDateTime),
       duration: entity.duration,
       livePhotoVideoId: entity.livePhotoVideoId,
+      imageEncoding:
+        entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
       hasMetadata: false,
       width: entity.width,
       height: entity.height,
@@ -249,6 +255,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     checksum: hexOrBufferToBase64(entity.checksum)!,
     stack: withStack ? mapStack(entity) : undefined,
     isOffline: entity.isOffline,
+    imageEncoding:
+      entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
     hasMetadata: true,
     duplicateId: entity.duplicateId,
     resized: true,

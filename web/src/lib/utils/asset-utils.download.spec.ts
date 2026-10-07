@@ -317,6 +317,19 @@ describe('downloadAssetFile, files of unknown size (review B1)', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(['3', String(bufferLimit() + 1)])(
+    'names an edited HEIC download from its actual MIME type before buffering: %s',
+    async (length) => {
+      throughSdk();
+      serve({ 'content-length': length, 'content-type': 'image/jpeg' });
+      const key = downloadAssetFile({ id: 'asset-1', filename: 'IMG_1.HEIC', edited: true });
+      await flush();
+      expect(downloadManager.assets.get(key)).toMatchObject({ name: 'IMG_1.jpeg', status: 'ready' });
+      downloadManager.save(key, vi.fn());
+      if (Number(length) > bufferLimit()) expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'IMG_1.jpeg');
+    },
+  );
+
   it('streams a file with no Content-Length', async () => {
     throughSdk();
     serve({});

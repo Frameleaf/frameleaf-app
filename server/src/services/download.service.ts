@@ -46,6 +46,11 @@ const nextArchiveName = (paths: Record<string, number>, originalFileName: string
   return filename;
 };
 
+const archiveFileName = (asset: { originalFileName: string; editedPath?: string | null }, dto: DownloadArchiveDto) =>
+  dto.edited && asset.editedPath
+    ? `${parse(asset.originalFileName).name}${parse(asset.editedPath).ext}`
+    : asset.originalFileName;
+
 @Injectable()
 export class DownloadService extends BaseService {
   async getDownloadInfo(auth: AuthDto, dto: DownloadInfoDto): Promise<DownloadResponseDto> {
@@ -167,7 +172,7 @@ export class DownloadService extends BaseService {
         continue;
       }
 
-      zip.addFile(await this.resolveArchivePath(asset, dto), nextArchiveName(paths, asset.originalFileName));
+      zip.addFile(await this.resolveArchivePath(asset, dto), nextArchiveName(paths, archiveFileName(asset, dto)));
     }
 
     void zip.finalize();
@@ -221,7 +226,7 @@ export class DownloadService extends BaseService {
 
         const realpath = await this.resolveArchivePath(asset, dto);
         if (policyFor(asset) !== OriginalLocationPolicy.RemoveLocation) {
-          zip.addFile(realpath, nextArchiveName(paths, asset.originalFileName));
+          zip.addFile(realpath, nextArchiveName(paths, archiveFileName(asset, dto)));
           continue;
         }
 
@@ -244,7 +249,7 @@ export class DownloadService extends BaseService {
           if (zip.isClosed()) {
             return;
           }
-          zip.addFile(lease.path, nextArchiveName(paths, asset.originalFileName));
+          zip.addFile(lease.path, nextArchiveName(paths, archiveFileName(asset, dto)));
           // resolves once the copy has been written into the archive, or the archive is gone
           await zip.whenIdle();
         } finally {

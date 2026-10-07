@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
 import { AlbumSourceLinkResponseSchema } from 'src/dtos/album-source.dto.js';
+import { ImageEncodingSchema } from 'src/dtos/image-encoding.dto.js';
 import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
 import { PIN_LIMIT, PinnedCollectionSchema, PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
@@ -163,6 +164,7 @@ const SyncAssetExifV1Schema = z
     profileDescription: z.string().nullable().describe('Profile description'),
     rating: z.int().nullable().describe('Rating'),
     fps: z.number().meta({ format: 'double' }).nullable().describe('FPS'),
+    imageEncoding: ImageEncodingSchema.nullish(),
   })
   .meta({ id: 'SyncAssetExifV1' });
 
