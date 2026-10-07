@@ -161,7 +161,8 @@ export class MediaRepository {
     this.logger.setContext(MediaRepository.name);
   }
 
-  private readonly logImageWorker = (record: unknown) => this.logger.debug(`Image worker ${JSON.stringify(record)}`);
+  private readonly logImageWorker = (record: unknown) =>
+    this.logger.debugFn(() => `Image worker ${JSON.stringify(record)}`);
 
   onModuleInit() {
     imageWorkerDiagnostics.subscribe(this.logImageWorker);

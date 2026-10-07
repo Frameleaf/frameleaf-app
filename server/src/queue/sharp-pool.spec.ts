@@ -61,15 +61,19 @@ describe('bounded native image process pool', () => {
       const failed = expect(active).rejects.toThrow('secret cancellation reason');
       abort.abort(new Error('secret cancellation reason'));
       await failed;
-      expect(observations).toHaveLength(3);
+      const cancelled = new AbortController();
+      cancelled.abort(null);
+      await expect(value.run('getImageMetadata', ['private'], cancelled.signal)).rejects.toBeNull();
+      expect(observations).toHaveLength(4);
       expect(observations).toEqual([
         expect.objectContaining({ operation: 'getImageMetadata', outcome: 'success', elapsedMs: expect.any(Number) }),
         expect.objectContaining({ outcome: 'resource-limit' }),
         expect.objectContaining({ outcome: 'cancelled' }),
+        expect.objectContaining({ outcome: 'cancelled' }),
       ]);
       expect(JSON.stringify(observations)).not.toMatch(/private|photo-secret|secret cancellation|args|message/);
       await value.close();
-      expect(observations).toHaveLength(3);
+      expect(observations).toHaveLength(4);
     } finally {
       diagnostics.unsubscribe(collect);
     }
