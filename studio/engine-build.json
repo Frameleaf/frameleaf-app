@@ -319,7 +319,12 @@
       "path": "patches/0065-linear-display-hdr-subtree.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "beddeae556f10a6bcd8123e829ec556f0ff841a22e27f27fb417d4c1160b37dd"
+    },
+    {
+      "path": "patches/0067-persisted-clip-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b2d7cae5041561c510ed7bda6036592ee72bfe9a056371ad03051b6806892538"
     }
   ],
-  "sourceSha256": "82de2fd1f2d4e1773269bd688722b5534fddd506901ccdfefd59775b19da8d15"
+  "sourceSha256": "03ceeef8d27196ad66d00f7b1500d286f22318fbe1a00821b164d742105d5229"
 }

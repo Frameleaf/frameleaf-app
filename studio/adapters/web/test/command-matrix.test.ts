@@ -274,7 +274,7 @@ const ENGINE_CASES: Record<
   'clip.push': (f) => ({ payload: { clipId: f.right, delta: seconds(1) } }),
   'clip.reorder': (f) => ({ payload: { trackId: 'v1', clipId: f.right, index: 0 } }),
   'clip.roll': (f) => ({ payload: { clipId: f.left, at: seconds(3) } }),
-  'clip.setAudio': (f) => ({ payload: { clipId: itemsOf(f.graph).find((item) => item.type === 'audio')!.id, volume: -6, fadeIn: seconds(1, 100), fadeOut: seconds(3, 2), pitchSemitones: -3, pitchCents: 25, eq: { lowGainDb: 4 } } }),
+  'clip.setAudio': (f) => ({ payload: { clipId: itemsOf(f.graph).find((item) => item.type === 'audio')!.id, volume: -6, fadeIn: seconds(1, 100), fadeOut: seconds(3, 2), pitchSemitones: -3, pitchCents: 25, eq: { lowGainDb: 4 }, muted: true } }),
   'clip.setLink': (f) => ({ payload: { clipIds: [f.left], linked: false } }),
   'clip.setSpeed': (f) => ({ payload: { clipId: f.right, speed: { num: 2, den: 1 } } }),
   'clip.setTransform': (f) => ({ payload: { clipId: f.left, transform: { x: 10 } } }),

@@ -1205,8 +1205,11 @@ const commands = {
       updates[property] = value;
     }
     if (payload.eq !== undefined) Object.assign(updates, clipAudioEqPatch(payload.eq));
-    if (payload.muted !== undefined) throw new Refusal('not-implemented', 'clip.setAudio.muted is not implemented');
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch or eq');
+    if (payload.muted !== undefined) {
+      if (typeof payload.muted !== 'boolean') invalid('muted must be a boolean');
+      updates.muted = payload.muted;
+    }
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq or muted');
     refuseLocked(state, [clip.id], 'clip.setAudio');
     replace(state, { ...clip, ...updates });
   },
@@ -1250,7 +1253,12 @@ const commands = {
       if (typeof patch.volume !== 'number' || !Number.isFinite(patch.volume)) invalid('volume must be a number');
       styled.volume = patch.volume;
     }
-    if (patch.muted !== undefined) throw new Refusal('not-implemented', 'patch.muted: clips have no mute');
+    if (patch.muted !== undefined) {
+      if (clip.type !== 'video' && clip.type !== 'audio') invalid('patch.muted applies to video and audio clips');
+      if (typeof patch.muted !== 'boolean') invalid('patch.muted must be a boolean');
+      refuseLocked(state, [clip.id], 'clip.update');
+      styled.muted = patch.muted;
+    }
     replace(state, styled);
     if (patch.transform !== undefined) {
       if (!patch.transform || typeof patch.transform !== 'object') invalid('patch.transform must be an object');
@@ -2453,6 +2461,7 @@ function carriesSound(state, items, tracks, path = new Set()) {
   return items
     .filter((item) => heard.has(item.trackId))
     .some((item) => {
+      if (item.muted === true) return false;
       if (isSoundClip(item)) return inside(item);
       if (item.type === 'composition') return !soundCompanion(items, item) && inside(item);
       if (!item.mediaId) return false;

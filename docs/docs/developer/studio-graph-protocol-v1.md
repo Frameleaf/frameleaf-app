@@ -319,7 +319,7 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                             |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch and EQ fields of `clip.setAudio` (13.9); its mute field is refused as `not-implemented`. It also implements track gain and EQ via `track.setAudio` (13.10); pan is refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain and EQ via `track.setAudio` (13.10); pan is refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
@@ -347,7 +347,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.push`                        | Engine          | 12.5.1  |                                                                                                                        |
 | `clip.reorder`                     | Engine          | 12.5.2  |                                                                                                                        |
 | `clip.roll`                        | Engine          | 12.4.2  |                                                                                                                        |
-| `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch and EQ; clip mute is refused as `not-implemented`.                                                  |
+| `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch, EQ and persisted clip mute.                                                                        |
 | `clip.setBlendMode`                | Not implemented | 13.8.4  | Do not record it. Edit `blendMode` as 13.8.4 says; set opacity with `clip.setTransform` (12.6.3).                      |
 | `clip.setCrop`                     | Not implemented | 8.2     | Do not record it. Do not change `crop` or `cornerPin`.                                                                 |
 | `clip.setGrade`                    | Not implemented | 8.2     | Do not record it. Do not change a clip's colour grade.                                                                 |
@@ -1200,7 +1200,7 @@ Changes a clip's name, title properties, gain or transform. Payload: `clipId`, `
 | `animation`   | titles          | `textMotion`, from the named title animation (14.3.3).                                                                                                                              |
 | `volume`      | video, audio    | `volume`, the clip's gain in dB, as given.                                                                                                                                          |
 | `transform`   | any clip        | As `clip.setTransform` (12.6.3), applied after the other fields.                                                                                                                    |
-| `muted`       | none            | Refused as `not-implemented`: clips have no mute. Mute the track or set the gain.                                                                                                   |
+| `muted`       | video, audio    | Boolean clip `muted`, independent of track/parent mute and separated-video `embeddedAudioMuted` ownership. False resets only this clip control.                                     |
 
 **Refusals, in order**
 
@@ -1210,7 +1210,7 @@ Changes a clip's name, title properties, gain or transform. Payload: `clipId`, `
 4. `text`, `style`, `position` or `animation` on a clip that is not a title: `invalid`.
 5. `text` is not a string; `style` names no title style; `position` is not one of the nine positions; `animation` names no title animation: `invalid`.
 6. `volume` on a clip that is not video or audio, or `volume` is not a finite number: `invalid`.
-7. `muted` is present: `not-implemented`.
+7. `muted` on a clip that is not video or audio, or `muted` is not a boolean: `invalid`. A track locked against a mute edit: `failed`.
 8. `transform` is not an object, or fails a `clip.setTransform` check: `invalid`.
 
 An empty `patch` is applied and changes nothing.
@@ -2052,6 +2052,7 @@ This command edits the named audio or video clip through the same `updateItem` a
 - `volume`: a finite number in −60..12 dB, stored as the clip's static `volume`.
 - `fadeIn` and `fadeOut`: exact rational durations in 0..5 seconds, the range of the editor's sliders. Store `num / den` as `audioFadeIn` and `audioFadeOut`, respectively. These are seconds, including durations shorter than one video frame; do not round them to frames. A zero duration resets the fade. Fades may overlap or exceed a short clip, as the editor permits.
 
+- `muted`: a boolean, stored as the clip's `muted`. Omission preserves it; false resets the clip control. Missing and false are audible unless an independent track/parent/ownership rule suppresses sound.
 - `pitchSemitones`: an integer in −12..12, stored as `audioPitchSemitones`.
 - `pitchCents`: an integer in −100..100, stored as `audioPitchCents`. Effective pitch is semitones + cents / 100. Zero resets either field; changing one preserves the other. Playback and export use the existing pitch paths, with their existing channel/latency admission limits.
 - `eq`: an object with the settings below, replacing the clip's known EQ fields as an editor EQ preset does. Omitted settings take their defaults. An empty object resets the stage to flat defaults. `null` clears all known `audioEq*` fields. Omitted `eq` preserves the current stage.
@@ -2071,9 +2072,9 @@ Each band has `Enabled`, `Type`, `FrequencyHz`, `GainDb` (default 0) and `Q`. Ba
 
 The legacy `lowCut` and `highCut` prefixes each have `Enabled`, `FrequencyHz` and `SlopeDbPerOct`, with the corresponding outer band's defaults and domains. When no field of an outer band is supplied, its enabled/frequency/slope come from the legacy cut and its type is high-pass (band 1) or low-pass (band 6). When any outer-band field is supplied, that band's settings take precedence. The stored cut enabled value is outer-band enabled AND its type is the cut type; its frequency and slope mirror the outer band. Every explicitly supplied alias must equal that resolved value. The engine's existing resolver and preset mapper supply the defaults and stored fields; these rules do not add DSP.
 
-Require at least one of these fields. Reject an unknown field, malformed or out-of-range value, missing clip or other clip type as `invalid`. A clip on a locked track is refused as `failed`. After validating the supported fields, supplying `muted` refuses the whole batch as `not-implemented`, even alongside a supported field. Clips have no persisted mute control in the current audio path; a video's embedded-audio suppression flag has linked-media ownership semantics and must not be reused as clip mute.
+Require at least one of these fields. Reject an unknown field, malformed or out-of-range value, missing clip or other clip type as `invalid`. A clip on a locked track is refused as `failed`. Clip mute is combined with track/parent mute in preview and export; resetting it never clears those states. A video's `embeddedAudioMuted` and linked-audio ownership still suppress embedded sound independently, including when the owning audio clip is muted. Neither ownership nor gain is rewritten to implement mute. Muted clips do not contribute meter/scrub audio or duck other clips; transition and nested audio retain the same control.
 
-Leave omitted gain/fade/pitch fields, volume keyframes, fade curves, source windows, channels, linked companions, tracks and the master/monitor controls unchanged. EQ replacement changes only known clip EQ fields; unknown extension fields survive. The command addresses one clip; it does not expand linked selection. Existing volume keyframes continue to override static gain during playback. Save, reopen, undo and redo use the usual graph and host history rules (sections 7 and 9).
+Leave omitted gain/fade/pitch/mute fields, volume keyframes, fade curves, source windows, channels, linked companions, tracks and the master/monitor controls unchanged. EQ replacement changes only known clip EQ fields; unknown extension fields survive. The command addresses one clip; it does not expand linked selection. Existing volume keyframes continue to override static gain during playback. Save, reopen, undo and redo use the usual graph and host history rules (sections 7 and 9).
 
 ### 13.10 `track.setAudio`
 
