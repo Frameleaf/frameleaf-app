@@ -19215,387 +19215,6 @@
       "synchronize": true
     },
     {
-      "name": "studio_project",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "leaseHolderId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "importedFromDigest",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "currentRevision",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "archivedAt",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastOpenedAt",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "leaseClientId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "leaseExpiresAt",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "purgeAfter",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "spaceId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "importOperationId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "duplicatedFromId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "thumbnailAssetId",
-          "tableName": "studio_project",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "studio_project",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "studio_project_ownerId_updatedAt_idx",
-          "definition": "CREATE INDEX \"studio_project_ownerId_updatedAt_idx\" ON public.studio_project USING btree (\"ownerId\", \"updatedAt\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "ownerId",
-            "updatedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_leaseHolderId_idx",
-          "definition": "CREATE INDEX \"studio_project_leaseHolderId_idx\" ON public.studio_project USING btree (\"leaseHolderId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "leaseHolderId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_ownerId_idx",
-          "definition": "CREATE INDEX \"studio_project_ownerId_idx\" ON public.studio_project USING btree (\"ownerId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_duplicatedFromId_idx",
-          "definition": "CREATE INDEX \"studio_project_duplicatedFromId_idx\" ON public.studio_project USING btree (\"duplicatedFromId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "duplicatedFromId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_purgeAfter_idx",
-          "definition": "CREATE INDEX \"studio_project_purgeAfter_idx\" ON public.studio_project USING btree (\"purgeAfter\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "purgeAfter"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_thumbnailAssetId_idx",
-          "definition": "CREATE INDEX \"studio_project_thumbnailAssetId_idx\" ON public.studio_project USING btree (\"thumbnailAssetId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "thumbnailAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_spaceId_idx",
-          "definition": "CREATE INDEX \"studio_project_spaceId_idx\" ON public.studio_project USING btree (\"spaceId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "spaceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "studio_project_updatedAt",
-          "definition": "CREATE TRIGGER \"studio_project_updatedAt\" BEFORE UPDATE ON public.studio_project FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "studio_project",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "studio_project_importOperationId_uq",
-          "definition": "UNIQUE (\"importOperationId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "importOperationId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "studio_project_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "studio_project",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "studio_project_duplicatedFromId_fkey",
-          "definition": "FOREIGN KEY (\"duplicatedFromId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "studio_project",
-          "columnNames": [
-            "duplicatedFromId"
-          ],
-          "referenceTableName": "studio_project",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "studio_project_leaseHolderId_fkey",
-          "definition": "FOREIGN KEY (\"leaseHolderId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "studio_project",
-          "columnNames": [
-            "leaseHolderId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "studio_project_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "studio_project",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "studio_project_spaceId_fkey",
-          "definition": "FOREIGN KEY (\"spaceId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "studio_project",
-          "columnNames": [
-            "spaceId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "studio_project_thumbnailAssetId_fkey",
-          "definition": "FOREIGN KEY (\"thumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "studio_project",
-          "columnNames": [
-            "thumbnailAssetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "tag_asset",
       "columns": [
         {
@@ -37649,6 +37268,416 @@
           "definition": "CHECK ((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
           "tableName": "job",
           "expression": "((\"cancelReason\" = ANY (ARRAY['deadline'::text, 'request'::text])))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "studio_project",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "leaseHolderId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "importedFromDigest",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "createRequestDigest",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "currentRevision",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "createRequestKey",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "archivedAt",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastOpenedAt",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "leaseClientId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "leaseExpiresAt",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "purgeAfter",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "spaceId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "importOperationId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "duplicatedFromId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "thumbnailAssetId",
+          "tableName": "studio_project",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "studio_project",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "studio_project_ownerId_updatedAt_idx",
+          "definition": "CREATE INDEX \"studio_project_ownerId_updatedAt_idx\" ON public.studio_project USING btree (\"ownerId\", \"updatedAt\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "ownerId",
+            "updatedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_leaseHolderId_idx",
+          "definition": "CREATE INDEX \"studio_project_leaseHolderId_idx\" ON public.studio_project USING btree (\"leaseHolderId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "leaseHolderId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_ownerId_idx",
+          "definition": "CREATE INDEX \"studio_project_ownerId_idx\" ON public.studio_project USING btree (\"ownerId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_duplicatedFromId_idx",
+          "definition": "CREATE INDEX \"studio_project_duplicatedFromId_idx\" ON public.studio_project USING btree (\"duplicatedFromId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "duplicatedFromId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_purgeAfter_idx",
+          "definition": "CREATE INDEX \"studio_project_purgeAfter_idx\" ON public.studio_project USING btree (\"purgeAfter\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "purgeAfter"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_thumbnailAssetId_idx",
+          "definition": "CREATE INDEX \"studio_project_thumbnailAssetId_idx\" ON public.studio_project USING btree (\"thumbnailAssetId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "thumbnailAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_spaceId_idx",
+          "definition": "CREATE INDEX \"studio_project_spaceId_idx\" ON public.studio_project USING btree (\"spaceId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "spaceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "studio_project_updatedAt",
+          "definition": "CREATE TRIGGER \"studio_project_updatedAt\" BEFORE UPDATE ON public.studio_project FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "studio_project",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "studio_project_importOperationId_uq",
+          "definition": "UNIQUE (\"importOperationId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "importOperationId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "studio_project_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "studio_project",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "studio_project_duplicatedFromId_fkey",
+          "definition": "FOREIGN KEY (\"duplicatedFromId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "studio_project",
+          "columnNames": [
+            "duplicatedFromId"
+          ],
+          "referenceTableName": "studio_project",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "studio_project_leaseHolderId_fkey",
+          "definition": "FOREIGN KEY (\"leaseHolderId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "studio_project",
+          "columnNames": [
+            "leaseHolderId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "studio_project_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "studio_project",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "studio_project_spaceId_fkey",
+          "definition": "FOREIGN KEY (\"spaceId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "studio_project",
+          "columnNames": [
+            "spaceId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "studio_project_thumbnailAssetId_fkey",
+          "definition": "FOREIGN KEY (\"thumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "studio_project",
+          "columnNames": [
+            "thumbnailAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "studio_project_ownerId_createRequestKey_uq",
+          "definition": "UNIQUE (\"ownerId\", \"createRequestKey\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "ownerId",
+            "createRequestKey"
+          ],
           "synchronize": true
         }
       ],

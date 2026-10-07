@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -68,6 +68,28 @@ describe('Studio project creation persistence (FL-341)', () => {
     expect(first.id).toBe(second.id);
     expect(await s.rows()).toHaveLength(1);
     expect((await s.repository.listRevisions(first.id, { take: 10, skip: 0 })).total).toBe(1);
+  });
+
+  it('retains creation identity after metadata changes and notifies only for the committed initial revision', async () => {
+    const s = await setup();
+    const listener = vi.fn(async ({ projectId, revision }: { projectId: string; revision: number }) => {
+      return {
+        revisionExists: Boolean(await s.repository.getRevision(projectId, revision)),
+        leaseClientId: (await s.repository.getById(projectId))?.leaseClientId,
+      };
+    });
+    s.sut.registerRevisionListener(listener);
+    const first = await s.sut.create(s.auth, s.dto);
+    await s.sut.update(s.auth, first.id, { name: 'Renamed' });
+    const retried = await s.sut.create(s.auth, {
+      ...s.dto,
+      envelope: { graph: s.dto.envelope.graph, engineRevision: 'r', engine: 'freecut', schemaVersion: 1 },
+    });
+    expect(retried.id).toBe(first.id);
+    expect(retried.name).toBe('Renamed');
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(await listener.mock.results[0].value).toEqual({ revisionExists: true, leaseClientId: 'tab-a' });
+    expect(await s.rows()).toHaveLength(1);
   });
 
   it.each(['envelope', 'name', 'clientId'] as const)('refuses the same key with a different %s', async (field) => {
@@ -163,6 +185,6 @@ describe('Studio project creation persistence (FL-341)', () => {
     expect(await s.repository.getById(first.id)).toEqual(before);
     await expect(
       s.sut.create(factory.auth({ user: s.auth.user, sharedLink: { id: newUuid() } }), s.dto),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
