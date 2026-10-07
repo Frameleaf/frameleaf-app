@@ -212,7 +212,6 @@ export class SearchService extends BaseService {
       // each facet once, in the order asked
       facets: [...new Set(requested ?? Object.values(SearchFacetField))],
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
-      locationHiddenOwnerIds: [],
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
       covers: facetCovers ?? false,

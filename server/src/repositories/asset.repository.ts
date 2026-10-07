@@ -245,8 +245,6 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
-  /** owners whose location columns (city, country, latitude, longitude) come back null for this viewer */
-  locationHiddenOwnerIds?: string[];
   /**
    * The one owner whose Locked media may show when no visibility is requested: the viewer, in an
    * elevated session, looking at an album (see `withAlbumVisibility`). Never set for the main timeline.
@@ -373,9 +371,6 @@ const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T
     eb.or([eb('asset_exif.longitude', '>=', west), eb('asset_exif.longitude', '<=', east)]),
   );
 };
-/** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
-const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
-  ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
 /**
  * The visibility a timeline request lists (see `visibilityIs`). FL-34: the Locked view is every locked
  * item plus every timeline or archived item the owner's Locked rules match (`lockedRuleMatches`); a
@@ -2059,8 +2054,7 @@ export class AssetRepository {
               '@>',
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
-          // FL-54: matching a place reveals it, so owners who hide their locations never match
-          return withoutLocationHiddenOwners(withBoundingBox(withBoundingCircle, bbox), options.locationHiddenOwnerIds);
+          return withBoundingBox(withBoundingCircle, bbox);
         })
         .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
@@ -2123,8 +2117,7 @@ export class AssetRepository {
    * its key photo (highest Best Photos score, then highest star rating, then the most recent
    * capture, then id), up to `highlightCount` more highlights in capture order, and its three
    * busiest places (city, else state, else country). The set of assets is exactly the one the
-   * matching `getTimeBuckets` request counts; places leave out owners who hide their locations from
-   * the viewer (`locationHiddenOwnerIds`) and every place when `withPlaces` is false.
+   * matching `getTimeBuckets` request counts; places are omitted when `withPlaces` is false.
    */
   @GenerateSql({
     params: [{}, { user: { id: DummyValue.UUID } }, { grouping: 'month', highlightCount: 4, withPlaces: true }],
@@ -2136,7 +2129,6 @@ export class AssetRepository {
   ): Promise<TimelineHighlightItem[]> {
     const scoreTable = sql.table('public.asset_best_photo_score');
     const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
-    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
     const size = grouping === 'year' ? 'YEAR' : 'MONTH';
     // the same date the cards are grouped by breaks ties and orders the highlights
     const sortDate =
@@ -2144,7 +2136,6 @@ export class AssetRepository {
         ? sql<Date>`asset."createdAt"`
         : sql<Date>`asset."localDateTime"`;
     const place = sql`coalesce(nullif(trim(e.city), ''), nullif(trim(e.state), ''), nullif(trim(e.country), ''))`;
-    const locationShared = hiddenOwnerIds.length > 0 ? sql`not (a."ownerId" = ${anyUuid(hiddenOwnerIds)})` : sql`true`;
     const { rows } = await sql<{
       timeBucket: string;
       count: string;
@@ -2183,7 +2174,7 @@ export class AssetRepository {
           row_number() over (partition by a."timeBucket" order by count(*) desc, ${place} asc) as rank
         from asset a
         inner join asset_exif e on e."assetId" = a.id
-        where ${withPlaces ? sql`true` : sql`false`} and ${locationShared} and ${place} is not null
+        where ${withPlaces ? sql`true` : sql`false`} and ${place} is not null
         group by a."timeBucket", ${place}
       )
       select
@@ -2245,16 +2236,6 @@ export class AssetRepository {
     const { timeBucket, page } = target;
     const order = options.order ?? 'desc';
     const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
-    // partners who hide their locations from this viewer (FL-54): their location columns are nulled in SQL
-    // so the pre-jsonified bucket never carries them; the plain column selects stay untouched otherwise
-    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
-    const hidesLocation = hiddenOwnerIds.length > 0;
-    const locationColumn = <C extends 'city' | 'country' | 'latitude' | 'longitude'>(column: C) =>
-      sql<
-        (C extends 'city' | 'country' ? string : number) | null
-      >`case when asset."ownerId" = ${anyUuid(hiddenOwnerIds)} then null else asset_exif.${sql.ref(column)} end`.as(
-        column,
-      );
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
       ? sql`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
@@ -2316,14 +2297,8 @@ export class AssetRepository {
           .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
           // S-15: the list view's dimensions and size column; hidden with the rest of the metadata
           .$if(withPlaces, (qb) => qb.select(['asset.width', 'asset.height', 'asset_exif.fileSizeInByte']))
-          .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
-          .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
-          .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
-            qb.select(['asset_exif.latitude', 'asset_exif.longitude']),
-          )
-          .$if(!!options.withCoordinates && hidesLocation, (qb) =>
-            qb.select([locationColumn('latitude'), locationColumn('longitude')]),
-          )
+          .$if(withPlaces, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
+          .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
@@ -2343,11 +2318,7 @@ export class AssetRepository {
               '@>',
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
-            // FL-54: matching a place reveals it, so owners who hide their locations never match
-            return withoutLocationHiddenOwners(
-              withBoundingBox(withBoundingCircle, bbox),
-              options.locationHiddenOwnerIds,
-            );
+            return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(timeBucket !== undefined, (qb) => qb.where(timeBucketDate, '=', timeBucket!.replace(/^[+-]/, '')))
           .$if(!!options.albumId, (qb) =>

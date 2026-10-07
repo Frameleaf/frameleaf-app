@@ -20,6 +20,7 @@ import {
   JobStatus,
   QueueName,
 } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
   AlbumOriginField,
@@ -218,9 +219,17 @@ export class PartnerCopyService extends BaseService {
     const locks = BaseService.create(PartnerLockService, this);
     const lockInput = { sourceAssetId: source.id, sourceOwnerId: source.ownerId };
     if (await this.partnerOriginRepository.libraryHasChecksum(targetOwnerId, source.checksum)) {
-      // a retry of a copy that failed part-way: its lock state is mirrored again (idempotent)
-      await this.remirrorExistingCopy(source.id, source.ownerId, targetOwnerId);
-      return;
+      const copyId = await this.partnerOriginRepository.getCopyId('asset', source.id, targetOwnerId);
+      const copyOrigin = copyId ? await this.partnerOriginRepository.getOrigin('asset', copyId) : undefined;
+      if (!copyId || !copyOrigin?.following) {
+        return;
+      }
+      const copy = await this.assetRepository.getById(copyId);
+      if (!copy || copy.deletedAt || copy.status !== AssetStatus.Active) {
+        return;
+      }
+      await this.completeAssetCopy(source, copyId, targetOwnerId, partnerSharedById, copyOrigin.overriddenFields);
+      return copyId;
     }
 
     // a copy the recipient deleted is never made again (its origin row outlives it)
@@ -251,6 +260,22 @@ export class PartnerCopyService extends BaseService {
       await locks.noteLockedCopy(targetOwnerId);
     }
 
+    await this.completeAssetCopy(source, copyId, targetOwnerId, partnerSharedById);
+    return copyId;
+  }
+
+  /** Replay every post-insert step; recipient overrides and trash still win. */
+  private async completeAssetCopy(
+    source: { id: string; ownerId: string; livePhotoVideoId: string | null },
+    copyId: string,
+    targetOwnerId: string,
+    partnerSharedById: string,
+    overriddenFields: string[] = [],
+  ) {
+    const rootOwnerId =
+      (await this.partnerOriginRepository.getOrigin('asset', source.id))?.rootOwnerId ?? source.ownerId;
+    const locks = BaseService.create(PartnerLockService, this);
+    const lockReason = await locks.getCopyLockReason({ sourceAssetId: source.id, sourceOwnerId: source.ownerId });
     if (source.livePhotoVideoId) {
       const motionId = await this.copyMotionPart(
         source.livePhotoVideoId,
@@ -263,16 +288,26 @@ export class PartnerCopyService extends BaseService {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
       }
     }
-    await this.copyTags(source.id, copyId, targetOwnerId);
-    await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
+    if (!overriddenFields.includes(AssetOriginField.Tags)) {
+      await this.copyTags(source.id, copyId, targetOwnerId);
+    }
+    if (!overriddenFields.includes(AssetOriginField.Faces)) {
+      await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
+    }
     // the source may have been locked or unlocked meanwhile
-    await locks.mirrorLockedState({ ...lockInput, targetAssetId: copyId, targetOwnerId });
+    if (!overriddenFields.includes(AssetOriginField.Visibility)) {
+      await locks.mirrorLockedState({
+        sourceAssetId: source.id,
+        sourceOwnerId: source.ownerId,
+        targetAssetId: copyId,
+        targetOwnerId,
+      });
+    }
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
     await this.ensureCopyThumbnails(copyId);
-    return copyId;
   }
 
   /** Metadata can admit a copy before the source's derivatives have been published. */
@@ -288,30 +323,6 @@ export class PartnerCopyService extends BaseService {
     ) {
       await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id: copyId } });
     }
-  }
-
-  /**
-   * `targetOwnerId` already holds a copy of this source (a retried copy job, or a re-run): mirror its lock
-   * state again while it follows the source's visibility, so a copy whose earlier attempt failed before
-   * its lock was settled is never left visible.
-   */
-  private async remirrorExistingCopy(sourceAssetId: string, sourceOwnerId: string, targetOwnerId: string) {
-    const copyId = await this.partnerOriginRepository.getCopyId('asset', sourceAssetId, targetOwnerId);
-    if (!copyId) {
-      return;
-    }
-    // Admission may have failed after the copy committed; replay repairs its missing derivatives.
-    await this.ensureCopyThumbnails(copyId);
-    const origin = await this.partnerOriginRepository.getOrigin('asset', copyId);
-    if (!origin?.following || origin.overriddenFields.includes(AssetOriginField.Visibility)) {
-      return;
-    }
-    await BaseService.create(PartnerLockService, this).mirrorLockedState({
-      sourceAssetId,
-      sourceOwnerId,
-      targetAssetId: copyId,
-      targetOwnerId,
-    });
   }
 
   /**
@@ -331,6 +342,11 @@ export class PartnerCopyService extends BaseService {
     partnerSharedById: string,
     lockReason?: AssetLockReason,
   ): Promise<string | undefined> {
+    const existing = await this.partnerOriginRepository.getCopyId('asset', motionAssetId, targetOwnerId);
+    if (existing) {
+      const motion = await this.assetRepository.getById(existing);
+      return motion && !motion.deletedAt && motion.status === AssetStatus.Active ? existing : undefined;
+    }
     const original = await this.resolvePhysicalOriginal(motionAssetId);
     if (!original) {
       return;
@@ -413,31 +429,23 @@ export class PartnerCopyService extends BaseService {
     const cover = album.albumThumbnailAssetId
       ? await this.partnerOriginRepository.getCopyId('asset', album.albumThumbnailAssetId, targetOwnerId)
       : undefined;
-    const copy = await this.albumRepository.create(
-      {
-        albumName: album.albumName,
-        description: album.description,
-        order: album.order,
-        albumThumbnailAssetId: cover ?? assetIds[0] ?? null,
-        kind: AlbumKind.Album,
+    return this.partnerOriginRepository.createAlbumCopy(
+      { sourceId: album.id, ownerId: targetOwnerId, rootOwnerId, partnerSharedById },
+      async (trx) => {
+        return new AlbumRepository(trx).create(
+          {
+            albumName: album.albumName,
+            description: album.description,
+            order: album.order,
+            albumThumbnailAssetId: cover ?? assetIds[0] ?? null,
+            kind: AlbumKind.Album,
+          },
+          assetIds,
+          [{ userId: targetOwnerId, role: AlbumUserRole.Owner }],
+          targetOwnerId,
+        );
       },
-      assetIds,
-      [{ userId: targetOwnerId, role: AlbumUserRole.Owner }],
-      targetOwnerId,
     );
-    const recorded = await this.partnerOriginRepository.createAlbumOriginIfPartnered({
-      id: copy.id,
-      sourceId: album.id,
-      ownerId: targetOwnerId,
-      rootOwnerId,
-      partnerSharedById,
-    });
-    if (!recorded) {
-      // the partnership ended while the album was being copied: no copy is made for it
-      await this.albumRepository.delete(copy.id);
-      return;
-    }
-    return copy.id;
   }
 
   @OnJob({ name: JobName.PartnerCopyAlbum, queue: QueueName.BackgroundTask })

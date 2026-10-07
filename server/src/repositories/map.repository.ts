@@ -24,8 +24,6 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isFavorite?: boolean;
   fileCreatedBefore?: Date;
   fileCreatedAfter?: Date;
-  /** FL-54: owners who hide their locations from the viewer; their assets contribute no markers */
-  locationHiddenOwnerIds?: string[];
 }
 
 /** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
@@ -44,8 +42,6 @@ export interface AlbumMapMarkerSearchOptions {
   favoriteOwnerId?: string;
   /** Keep only album items this user owns (the sheet's "Partner items" switched off). Only ever narrows the album. */
   onlyOwnerId?: string;
-  /** FL-54: owners who hide their locations from the viewer (for a shared link, its creator) */
-  locationHiddenOwnerIds?: string[];
 }
 
 export interface GeoPoint {
@@ -102,15 +98,7 @@ export class MapRepository {
     albumId: string,
     options: HiddenContentQueryOptions & LockedVisibilityOptions & AlbumMapMarkerSearchOptions = {},
   ) {
-    const {
-      isArchived,
-      isFavorite,
-      fileCreatedAfter,
-      fileCreatedBefore,
-      favoriteOwnerId,
-      onlyOwnerId,
-      locationHiddenOwnerIds,
-    } = options;
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, favoriteOwnerId, onlyOwnerId } = options;
     return (
       this.mapMarkersQuery()
         .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -128,14 +116,13 @@ export class MapRepository {
         .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
         .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))
         .$if(!!onlyOwnerId, (qb) => qb.where('asset.ownerId', '=', onlyOwnerId!))
-        .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
         .execute()
     );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
   getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerSearchOptions = {}) {
-    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, locationHiddenOwnerIds } = options;
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
     // FL-195: the viewer's own marks and detections, when their session is unlocked
     const reveal = options.revealLockedOwnerId;
     return this.mapMarkersQuery()
@@ -152,7 +139,6 @@ export class MapRepository {
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
-      .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
       .where((eb) => {
         const expression: Expression<SqlBool>[] = [];
 

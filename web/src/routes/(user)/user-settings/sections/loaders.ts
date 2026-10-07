@@ -8,7 +8,7 @@ import {
   getLibraryStatistics,
   getManagedUploadStatistics,
   getMlWorkloadRoutes,
-  getPhysicalDeduplicationPreview,
+  getFileTrash,
   getRenderWorkerLimits,
   getUserPreferencesAdmin,
   getUserSessionsAdmin,
@@ -43,11 +43,7 @@ export const loadProcessing = async () => {
 export type ProcessingData = Awaited<ReturnType<typeof loadProcessing>>;
 
 export const loadDeduplication = async () => {
-  const [preview, users] = await Promise.all([
-    getPhysicalDeduplicationPreview(),
-    searchUsersAdmin({ withDeleted: false }),
-  ]);
-  return { preview, users };
+  return getFileTrash({ size: 100 });
 };
 
 /** One account's detail, the old `/admin/users/[id]` layout loader (FL-76). */

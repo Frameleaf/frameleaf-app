@@ -1131,9 +1131,10 @@ export class PhysicalDeduplicationService extends BaseService {
 
   private async ensureGeneratedPhysicalFile(assetId: string, type: AssetFileType, path: string) {
     const existing = await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type);
-    if (existing) {
-      return existing;
+    if (existing?.id) {
+      return { ...existing, id: existing.id };
     }
+    path = existing?.path ?? path;
 
     const sizeInBytes = await this.getFileSize(path);
     if (sizeInBytes === 0) {
@@ -1141,7 +1142,7 @@ export class PhysicalDeduplicationService extends BaseService {
     }
 
     return this.physicalFileRepository.upsertPhysicalFile({
-      canonicalAssetId: assetId,
+      canonicalAssetId: existing?.canonicalAssetId ?? assetId,
       checksum: await this.cryptoRepository.hashFile(path),
       path,
       sizeInBytes,

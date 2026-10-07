@@ -2,10 +2,11 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder, AssetType } from 'src/enum.js';
 
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
 /**
@@ -167,17 +168,23 @@ export class PartnerOriginRepository {
       ON CONFLICT (${sql.id(key)}) DO NOTHING
     `.execute(kysely);
   }
-  /**
-   * Record an album copy's origin, only while its partnership still exists (held FOR SHARE, see
-   * `lockPartnership`). Returns false when the partnership has ended: the caller removes the album copy.
-   */
-  async createAlbumOriginIfPartnered(input: OriginInput): Promise<boolean> {
+  /** Album, membership and origin commit together while the partnership is held FOR SHARE. */
+  async createAlbumCopy(
+    input: Omit<OriginInput, 'id'>,
+    create: (trx: Transaction<DB>) => Promise<{ id: string }>,
+  ): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
       if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
-        return false;
+        return;
       }
-      await this.createOrigin('album', input, trx);
-      return true;
+      // ponytail: serial album admission per library; lock by root album if contention matters.
+      await lockLibraryContent(trx, input.ownerId, Buffer.from('partner-albums'));
+      if (await this.hasAlbumCopyOfRoot(input.sourceId, input.ownerId, trx)) {
+        return;
+      }
+      const copy = await create(trx);
+      await this.createOrigin('album', { ...input, id: copy.id }, trx);
+      return copy.id;
     });
   }
   createAssetOrigin(input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
@@ -409,8 +416,8 @@ export class PartnerOriginRepository {
    * the file paths' locks (so a concurrent FileDelete cannot count a path unreferenced in between) and
    * a per-library content lock, re-checking the one-copy rule under it.
    *
-   * Favorites, trash, stacks, duplicates, edits and the Live Photo pairing are never copied: the copy
-   * starts as the owner's own unedited, unfavorited item. The library is charged the full file size.
+   * Favorites and trash stay the recipient's own. Photo edits are snapshots; stacks and duplicate
+   * groups use recipient-owned records. Live Photo pairing is completed by the copy engine.
    *
    * Returns the copy's id, or undefined when the library already holds the content (or once received a
    * copy of this source), or the partnership it is made for has ended.
@@ -420,7 +427,12 @@ export class PartnerOriginRepository {
       if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
         return;
       }
-      const source = await trx.selectFrom('asset').selectAll().where('id', '=', input.sourceAssetId).executeTakeFirst();
+      const source = await trx
+        .selectFrom('asset')
+        .selectAll()
+        .where('id', '=', input.sourceAssetId)
+        .forShare()
+        .executeTakeFirst();
       if (!source) {
         return;
       }
@@ -428,10 +440,35 @@ export class PartnerOriginRepository {
         .selectFrom('asset_file')
         .selectAll()
         .where('assetId', '=', source.id)
-        .where('isEdited', '=', false)
+        .$if(source.type !== AssetType.Image, (qb) => qb.where('isEdited', '=', false))
         .where('type', 'in', GENERATED_FILE_TYPES)
         .execute();
-      for (const path of [...new Set([input.original.path, ...files.map((file) => file.path)])].toSorted()) {
+      // Lock version rows and their paths too: a source prune cannot release a snapshot's files mid-copy.
+      const revisions =
+        source.type === AssetType.Image
+          ? (
+              await sql<{ id: string; masterPath: string | null; previewPath: string | null }>`
+            SELECT id, "masterPath", "previewPath"
+            FROM public.asset_develop_revision revision WHERE "assetId" = ${source.id}::uuid FOR SHARE
+          `.execute(trx)
+            ).rows
+          : [];
+      const artifacts =
+        source.type === AssetType.Image
+          ? (
+              await sql<{ id: string; path: string }>`
+            SELECT id, path FROM public.asset_develop_artifact artifact
+            WHERE "assetId" = ${source.id}::uuid FOR SHARE
+          `.execute(trx)
+            ).rows
+          : [];
+      const paths = [
+        input.original.path,
+        ...files.map((file) => file.path),
+        ...revisions.flatMap((revision) => [revision.masterPath, revision.previewPath]),
+        ...artifacts.map((artifact) => artifact.path),
+      ].filter((path): path is string => !!path);
+      for (const path of [...new Set(paths)].toSorted()) {
         await lockFilePath(trx, path);
       }
       const physical = await trx
@@ -509,12 +546,35 @@ export class PartnerOriginRepository {
               assetId: copy.id,
               type: file.type,
               path: file.path,
+              isEdited: file.isEdited,
               physicalFileId: file.physicalFileId,
               isProgressive: file.isProgressive,
               isTransparent: file.isTransparent,
             })),
           )
           .execute();
+      }
+      if (source.type === AssetType.Image) {
+        await sql`INSERT INTO asset_edit ("assetId", action, parameters, sequence)
+          SELECT ${copy.id}::uuid, action, parameters, sequence FROM asset_edit
+          WHERE "assetId" = ${source.id}::uuid`.execute(trx);
+        await sql`INSERT INTO public.asset_develop_revision
+          SELECT (jsonb_populate_record(NULL::public.asset_develop_revision,
+            to_jsonb(snapshot) || jsonb_build_object('id', gen_random_uuid(),
+              'assetId', ${copy.id}::uuid, 'ownerId', ${input.ownerId}::uuid, 'exportId', NULL,
+              'cancelRequested', false, 'attempts', 0, 'error', NULL,
+              'status', CASE WHEN snapshot.status = 'rendered' THEN 'rendered' ELSE 'saved' END,
+              'progress', CASE WHEN snapshot.status = 'rendered' THEN 100 ELSE 0 END))).*
+          FROM public.asset_develop_revision snapshot
+          WHERE snapshot.id = ANY(${revisions.map(({ id }) => id)}::uuid[])`.execute(trx);
+        await sql`INSERT INTO public.asset_develop_artifact
+          SELECT (jsonb_populate_record(NULL::public.asset_develop_artifact,
+            to_jsonb(snapshot) || jsonb_build_object('assetId', ${copy.id}::uuid,
+              'ownerId', ${input.ownerId}::uuid))).*
+          FROM public.asset_develop_artifact snapshot
+          WHERE snapshot."assetId" = ${source.id}::uuid AND snapshot.id = ANY(${artifacts.map(({ id }) => id)}::text[])`.execute(
+          trx,
+        );
       }
       await sql`
         INSERT INTO smart_search ("assetId", embedding)
@@ -565,15 +625,70 @@ export class PartnerOriginRepository {
         },
         trx,
       );
+      await this.copyGroups(trx, source.id, copy.id, input.ownerId);
       // spec §4.3: every library is charged the full size; copying never fails on quota
       await sql`
         UPDATE "user"
         SET "quotaUsageInBytes" = "quotaUsageInBytes" + coalesce(${exif?.fileSizeInByte ?? null}::bigint, 0)
+          + (SELECT coalesce(sum(bytes), 0) FROM public.asset_develop_artifact WHERE "assetId" = ${copy.id}::uuid)
         WHERE id = ${input.ownerId}::uuid
       `.execute(trx);
       return copy.id;
     });
   }
+  /** Only new copies join groups. Replays never regroup media the recipient already changed. */
+  private async copyGroups(trx: Transaction<DB>, sourceId: string, copyId: string, ownerId: string) {
+    // ponytail: serial group admission per library; use per-source group locks if contention matters.
+    await lockLibraryContent(trx, ownerId, Buffer.from('partner-groups'));
+    const source = await trx
+      .selectFrom('asset')
+      .select(['stackId', 'duplicateId'])
+      .where('id', '=', sourceId)
+      .executeTakeFirstOrThrow();
+    if (source.stackId) {
+      // The primary must arrive before a stack exists; its earlier copied members join then.
+      const { rows } = await sql<{ id: string; stackId: string | null; isPrimary: boolean }>`
+        SELECT copy.id, copy."stackId", source.id = stack."primaryAssetId" AS "isPrimary"
+        FROM asset source JOIN stack ON stack.id = source."stackId"
+        JOIN asset copy ON copy.checksum = source.checksum AND copy."ownerId" = ${ownerId}::uuid
+        JOIN public.asset_origin origin ON origin."assetId" = copy.id AND origin.following
+        WHERE source."stackId" = ${source.stackId}::uuid AND copy."deletedAt" IS NULL
+      `.execute(trx);
+      const primary = rows.find((row) => row.isPrimary);
+      const existing = rows.find((row) => row.stackId)?.stackId;
+      if (existing) {
+        await trx.updateTable('asset').set({ stackId: existing }).where('id', '=', copyId).execute();
+        await onStacksJoined(trx, [existing]);
+      } else if (primary) {
+        const stack = await trx
+          .insertInto('stack')
+          .values({ ownerId, primaryAssetId: primary.id })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await trx
+          .updateTable('asset')
+          .set({ stackId: stack.id })
+          .where(
+            'id',
+            'in',
+            rows.map((row) => row.id),
+          )
+          .where('stackId', 'is', null)
+          .execute();
+        await onStacksJoined(trx, [stack.id]);
+      }
+    }
+    if (source.duplicateId) {
+      const { rows } = await sql<{ duplicateId: string }>`SELECT copy."duplicateId"
+        FROM asset source JOIN asset copy ON copy.checksum = source.checksum AND copy."ownerId" = ${ownerId}::uuid
+        JOIN public.asset_origin origin ON origin."assetId" = copy.id AND origin.following
+        WHERE source."duplicateId" = ${source.duplicateId}::uuid AND copy."duplicateId" IS NOT NULL
+        ORDER BY copy.id LIMIT 1`.execute(trx);
+      await sql`UPDATE asset SET "duplicateId" = coalesce(${rows[0]?.duplicateId ?? null}::uuid, gen_random_uuid())
+        WHERE id = ${copyId}::uuid`.execute(trx);
+    }
+  }
+
   /** One page of `ownerId`'s assets after `cursor`, in id order, for the backfill. */
   async getOwnerAssetIdsAfter(ownerId: string, cursor: string | null, limit: number): Promise<string[]> {
     const { rows } = await sql<{
@@ -660,7 +775,7 @@ export class PartnerOriginRepository {
    * descends from the same original (the root album): one copy per library per root album, however many
    * partners pass it on (A→B, A→C, B→C must not give C two).
    */
-  async hasAlbumCopyOfRoot(albumId: string, ownerId: string): Promise<boolean> {
+  async hasAlbumCopyOfRoot(albumId: string, ownerId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
     const { rows } = await sql<{
       present: boolean;
     }>`
@@ -685,7 +800,7 @@ export class PartnerOriginRepository {
         WHERE up."sourceAlbumId" IS NOT NULL AND copy_lineage.depth < ${MAX_LINEAGE_DEPTH}
       )
       SELECT EXISTS (SELECT 1 FROM copy_lineage WHERE id IN (SELECT id FROM root)) AS present
-    `.execute(this.db);
+    `.execute(kysely);
     return rows[0]?.present ?? false;
   }
   /** The items in an album. */
@@ -705,11 +820,20 @@ export class PartnerOriginRepository {
     const { rows } = await sql<{
       id: string;
     }>`
-      SELECT origin."albumId" AS id
+      WITH RECURSIVE lineage(asset_id) AS (
+        SELECT ${sourceAssetId}::uuid
+        UNION
+        SELECT CASE WHEN origin."assetId" = lineage.asset_id
+          THEN origin."sourceAssetId" ELSE origin."assetId" END
+        FROM lineage JOIN public.asset_origin origin
+          ON origin."assetId" = lineage.asset_id OR origin."sourceAssetId" = lineage.asset_id
+        WHERE origin."sourceAssetId" IS NOT NULL
+      )
+      SELECT DISTINCT origin."albumId" AS id
       FROM public.album_origin origin
       JOIN album copy ON copy.id = origin."albumId" AND copy."deletedAt" IS NULL
-      JOIN album_asset ON album_asset."albumId" = origin."sourceAlbumId"
-        AND album_asset."assetId" = ${sourceAssetId}::uuid
+      JOIN album_asset membership ON membership."albumId" = origin."sourceAlbumId"
+      JOIN lineage ON lineage.asset_id = membership."assetId"
       WHERE origin."ownerId" = ${ownerId}::uuid AND origin.following
         AND NOT (${AlbumOriginField.Membership} = ANY(origin."overriddenFields"))
     `.execute(this.db);

@@ -653,9 +653,6 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           ? qb.where('asset.deletedAt', 'is', null)
           : qb.where((eb) => othersNotTrashed(eb, options.viewingUserId!)),
       )
-      .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
-        qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
-      )
       .$if(!!options.encodedVideoPath, (qb) =>
         qb
           .innerJoin('asset_file', (join) =>
@@ -1049,9 +1046,6 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
-      .$if(!!scope.locationHiddenOwnerIds?.length, (qb) =>
-        qb.where('asset.ownerId', 'not in', scope.locationHiddenOwnerIds!),
-      )
       .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
       .$if(!!scope.sharedLink, (qb) => qb.where('asset.deletedAt', 'is', null))
       .$if(!scope.sharedLink && !!viewerId, (qb) => qb.where((eb) => othersNotTrashed(eb, viewerId!)))

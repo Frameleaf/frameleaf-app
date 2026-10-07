@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetVisibility, JobStatus } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { TagService } from 'src/services/tag.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { tagResponseStub, tagStub } from 'test/fixtures/tag.stub.js';
@@ -14,6 +14,7 @@ describe(TagService.name, () => {
     ({ sut, mocks } = newTestService(TagService));
 
     mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+    mocks.tag.getSubtreeAssetIds.mockResolvedValue([]);
   });
 
   it('should work', () => {
@@ -224,6 +225,30 @@ describe(TagService.name, () => {
       );
       expect(mocks.tag.update).not.toHaveBeenCalled();
     });
+  });
+
+  it('propagates renamed subtree tags through the existing asset edit path', async () => {
+    mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
+    mocks.tag.getSubtreeAssetIds.mockResolvedValue(['photo', 'child-photo']);
+    mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'Renamed/Child' }] } as never);
+    mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['photo', 'child-photo']);
+
+    await sut.update(authStub.admin, 'tag-1', { name: 'Renamed' });
+
+    expect(mocks.tag.getSubtreeAssetIds).toHaveBeenCalledWith('tag-1');
+    expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+      'asset',
+      ['photo', 'child-photo'],
+      ['tags'],
+      authStub.admin.user.id,
+    );
+    expect(mocks.job.queueAll).toHaveBeenCalledWith(
+      ['photo', 'child-photo'].map((sourceId) => ({
+        name: JobName.PartnerPropagate,
+        data: { kind: 'asset', sourceId, fields: ['tags'] },
+      })),
+    );
+    expect(mocks.asset.upsertExif).toHaveBeenCalledTimes(2);
   });
 
   describe('upsert', () => {

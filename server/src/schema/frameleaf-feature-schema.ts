@@ -267,7 +267,7 @@ export const FRAMELEAF_FEATURE_SCHEMA_SQL: readonly string[] = [
   'CREATE INDEX archive_operation_owner_created_idx ON public.archive_operation USING btree ("ownerId", "createdAt" DESC)',
   'CREATE INDEX asset_checksum_sha256_idx ON public.asset_checksum USING btree (sha256)',
   'CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree ("ownerId")',
-  'CREATE UNIQUE INDEX asset_develop_artifact_path_key ON public.asset_develop_artifact USING btree (path)',
+  'CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)',
   'CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree ("assetId", revision DESC)',
   'CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree ("assetId") WHERE "isCurrent"',
   'CREATE INDEX asset_develop_revision_owner_idx ON public.asset_develop_revision USING btree ("ownerId")',

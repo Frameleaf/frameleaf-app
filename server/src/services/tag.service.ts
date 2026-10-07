@@ -112,6 +112,13 @@ export class TagService extends BaseService {
 
     // the path, cycle and duplicate checks run with the owner's tags locked (see TagRepository.update)
     const tag = await this.tagRepository.update(id, { name, color, parentId });
+    if (name !== undefined || parentId !== undefined) {
+      const assetIds = await this.tagRepository.getSubtreeAssetIds(id);
+      for (const assetId of assetIds) {
+        await this.updateTags(assetId);
+      }
+      await this.recordTagEdit(auth, assetIds);
+    }
     return mapTag(tag);
   }
 

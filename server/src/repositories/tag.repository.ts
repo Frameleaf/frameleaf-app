@@ -269,6 +269,18 @@ export class TagRepository {
     await this.db.deleteFrom('tag').where('id', '=', id).execute();
   }
 
+  /** A rename or move changes the values carried by the entire subtree's assets. */
+  async getSubtreeAssetIds(tagId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('tag_asset')
+      .innerJoin('tag_closure', 'tag_closure.id_descendant', 'tag_asset.tagId')
+      .where('tag_closure.id_ancestor', '=', tagId)
+      .select('tag_asset.assetId')
+      .distinct()
+      .execute();
+    return rows.map(({ assetId }) => assetId);
+  }
+
   @ChunkedSet({ paramIndex: 1 })
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   async getAssetIds(tagId: string, assetIds: string[]): Promise<Set<string>> {

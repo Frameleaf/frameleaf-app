@@ -2676,6 +2676,26 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('retains a shared legacy derivative while its physical registration is pending', async () => {
+      const file = {
+        assetId: 'asset-id',
+        type: AssetFileType.Thumbnail,
+        path: '/regenerated/thumbnail.webp',
+        isEdited: false,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const existing = { ...file, id: 'file-id', path: '/source/thumbnail.webp', physicalFileId: null };
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({
+        id: null,
+        path: existing.path,
+        canonicalAssetId: 'source-id',
+      } as never);
+      await (sut as any).syncFiles([existing], [file]);
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: [file.path] } });
+    });
+
     it('keeps edited outputs independent from shared generated files', async () => {
       const file = {
         assetId: 'asset-id',
