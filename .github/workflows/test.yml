@@ -101,7 +101,12 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Run ci-unit
-        run: mise run //server:ci-unit
+        run: |
+          export FL285_VOLUME_FOLDER="$RUNNER_TEMP/fl285-volume"
+          mkdir "$FL285_VOLUME_FOLDER"
+          sudo mount -t tmpfs -o "size=32m,uid=$(id -u),gid=$(id -g),mode=0700" tmpfs "$FL285_VOLUME_FOLDER"
+          trap 'sudo umount "$FL285_VOLUME_FOLDER"; rmdir "$FL285_VOLUME_FOLDER"' EXIT
+          mise run //server:ci-unit
       - name: Run Buddy Backup and recovery runtime tests
         working-directory: ./server
         run: node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
@@ -534,6 +539,7 @@ jobs:
           FL225_PG_URL: postgres://postgres:postgres@127.0.0.1:5435/frameleaf
           FL225_CLOUD_URL: http://host.docker.internal:30185
           FL225_EDGE_SECRET: fl225-local-transport-only-secret
+          FL285_RESTART_OWNED_FIXTURE: 'true'
         run: pnpm exec vitest run --config test/vitest.config.transport.mjs
         if: ${{ !cancelled() && steps.upload-fixture.outcome == 'success' }}
       - name: Capture upload transport Docker logs

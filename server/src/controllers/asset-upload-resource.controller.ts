@@ -29,8 +29,6 @@ import { AssetUploadResourceService } from 'src/services/asset-upload-resource.s
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
 import { UUIDParamDto } from 'src/validation.js';
 
-const uploadLimit = `max-size=${ASSET_UPLOAD_LIMITS.maxSize}, max-append-size=${ASSET_UPLOAD_LIMITS.maxAppendSize}, max-age=${ASSET_UPLOAD_LIMITS.maxAge}, min-size=1`;
-
 @ApiTags(ApiTag.Assets)
 @Controller('assets/uploads')
 export class AssetUploadResourceController {
@@ -60,10 +58,16 @@ export class AssetUploadResourceController {
     return req.headers;
   }
 
-  private headers(res: Response, row?: AssetUploadResource) {
+  private headers(res: Response, row?: AssetUploadResource, limits?: typeof ASSET_UPLOAD_LIMITS) {
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Upload-Draft-Interop-Version', '9');
-    res.setHeader('Upload-Limit', uploadLimit);
+    const capacity = row ?? limits;
+    if (capacity) {
+      res.setHeader(
+        'Upload-Limit',
+        `max-size=${capacity.maxSize}, max-append-size=${capacity.maxAppendSize}, max-age=${ASSET_UPLOAD_LIMITS.maxAge}, min-size=1`,
+      );
+    }
     if (row) {
       res.setHeader('Upload-Offset', row.offset);
       res.setHeader('Upload-Complete', row.state === 'published' && row.ingested ? '?1' : '?0');
@@ -80,8 +84,8 @@ export class AssetUploadResourceController {
     summary: 'Get resumable asset upload limits',
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
-  getAssetUploadResourceLimits(@Res() res: Response) {
-    this.headers(res);
+  async getAssetUploadResourceLimits(@Res() res: Response) {
+    this.headers(res, undefined, await this.service.limits());
     res.status(204).end();
   }
 
@@ -123,6 +127,7 @@ export class AssetUploadResourceController {
   async createAssetUploadResource(@Auth() auth: AuthDto, @Req() req: Request, @Res() res: Response) {
     this.headers(res);
     const outcome = await this.service.create(auth, this.requestHeaders(req), req, (row) => {
+      this.headers(res, row);
       const location = `${req.originalUrl.split('?', 1)[0]}/${row.id}`;
       res.setHeader('Location', location);
       const information = res as Response & {
@@ -132,7 +137,7 @@ export class AssetUploadResourceController {
         Location: location,
         'Upload-Draft-Interop-Version': '9',
         'Upload-Complete': '?0',
-        'Upload-Limit': uploadLimit,
+        'Upload-Limit': String(res.getHeader('Upload-Limit')),
       });
     });
     if (!res.destroyed) {

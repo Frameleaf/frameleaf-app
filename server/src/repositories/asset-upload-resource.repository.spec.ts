@@ -39,6 +39,7 @@ describe('native upload schema and ownership read boundary', () => {
       checksum: Buffer.alloc(32),
       contentType: 'image/jpeg',
       size: 4,
+      maxSize: 10,
       metadata: {
         filename: 'still.jpg',
         fileCreatedAt: new Date(),
@@ -48,5 +49,6 @@ describe('native upload schema and ownership read boundary', () => {
     });
     const insert = queries.find((query) => query.sql.startsWith('insert into "asset_upload_resource"'))!;
     expect(insert.parameters).toContain('pair-receiving');
+    expect(insert.parameters.filter((value) => value === 10)).toHaveLength(2);
   });
 });
