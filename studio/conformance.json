@@ -2900,7 +2900,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Linear HDR brightness has a candidate regression runner; a complete source-bound Chromium measured-conformance artifact has not been admitted (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
