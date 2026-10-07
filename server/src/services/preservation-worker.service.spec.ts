@@ -10,7 +10,12 @@ import {
   PreservationRestore,
   PreservationRestoreItem,
 } from 'src/repositories/preservation.repository.js';
-import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
+import {
+  PRESERVATION_LEASE_MS,
+  PRESERVATION_TICK_MS,
+  PreservationWorkerService,
+} from 'src/services/preservation-worker.service.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_SCHEMA_VERSION,
@@ -43,6 +48,7 @@ describe(PreservationWorkerService.name, () => {
 
   /** Private steps are exercised directly: they are where the invariants live. */
   const worker = () => sut as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  const commit = (write: (repository: Mocked) => Promise<unknown>) => write(repository);
 
   const packageOf = (overrides: Partial<PreservationPackage> = {}): PreservationPackage =>
     ({
@@ -172,6 +178,11 @@ describe(PreservationWorkerService.name, () => {
       findPeopleByName: vi.fn().mockResolvedValue([]),
       createPerson: vi.fn(),
       otherClaimedOperation: vi.fn().mockResolvedValue(false),
+      withExportClaim: vi
+        .fn()
+        .mockImplementation((_id: string, _token: string, write: (repository: Mocked) => Promise<unknown>) =>
+          commit(write),
+        ),
     };
     files = {
       copyOriginal: vi.fn(),
@@ -181,6 +192,8 @@ describe(PreservationWorkerService.name, () => {
     };
     operations = {
       requeue: vi.fn().mockResolvedValue(true),
+      heartbeat: vi.fn().mockResolvedValue(true),
+      getOfKind: vi.fn().mockResolvedValue(undefined),
       acknowledgeCancel: vi.fn(),
       fail: vi.fn().mockResolvedValue('retrying'),
     };
@@ -221,7 +234,7 @@ describe(PreservationWorkerService.name, () => {
         isLocked: true,
       });
 
-      const outcome = await worker().exportItem(packageOf({ includeLocked: false }), item);
+      const outcome = await worker().exportItem(packageOf({ includeLocked: false }), item, commit);
 
       expect(outcome).toBe('skipped');
       expect(files.copyOriginal).not.toHaveBeenCalled();
@@ -235,9 +248,9 @@ describe(PreservationWorkerService.name, () => {
     it('skips an item that is not the owner’s or has left the library', async () => {
       const item = itemOf();
       repository.getExportAsset.mockResolvedValue({ id: item.sourceAssetId, ownerId: newUuid(), status: 'active' });
-      expect(await worker().exportItem(packageOf(), item)).toBe('skipped');
+      expect(await worker().exportItem(packageOf(), item, commit)).toBe('skipped');
       repository.getExportAsset.mockResolvedValue(undefined);
-      expect(await worker().exportItem(packageOf(), item)).toBe('skipped');
+      expect(await worker().exportItem(packageOf(), item, commit)).toBe('skipped');
       expect(files.copyOriginal).not.toHaveBeenCalled();
     });
 
@@ -256,7 +269,7 @@ describe(PreservationWorkerService.name, () => {
       });
       files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
 
-      const outcome = await worker().exportItem(packageOf(), item);
+      const outcome = await worker().exportItem(packageOf(), item, commit);
 
       expect(outcome).toBe('failed');
       expect(files.removeFile).toHaveBeenCalledWith(expect.stringContaining(`originals/${item.sourceAssetId}.jpg`));
@@ -279,7 +292,7 @@ describe(PreservationWorkerService.name, () => {
           return { sha256, bytes: 0 };
         });
         files.openPackage = vi.fn().mockResolvedValue({ listEntries: vi.fn().mockResolvedValue([]), close: vi.fn() });
-        await worker().publishPackage(found);
+        await worker().publishPackage(found, commit);
         const manifest = JSON.parse(String(vi.mocked(files.writeDocument).mock.calls.at(-1)![1]));
         return { manifest, update: vi.mocked(repository.updatePackage).mock.calls[0][1] };
       };
@@ -395,11 +408,361 @@ describe(PreservationWorkerService.name, () => {
       });
       files.copyOriginal.mockRejectedValue(Object.assign(new Error('no space'), { code: 'ENOSPC' }));
 
-      await expect(worker().exportItem(packageOf(), item)).rejects.toThrow('no space');
+      await expect(worker().exportItem(packageOf(), item, commit)).rejects.toThrow('no space');
       expect(repository.finishItem).toHaveBeenCalledWith(
         item.id,
         expect.objectContaining({ reasonKey: 'package_no_space' }),
       );
+    });
+
+    describe('execution lifetime', () => {
+      const digests = { sha1, sha256, bytes: 5 };
+
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
+
+      const exportJob = (items = [itemOf()]) => {
+        items.sort((left, right) => left.id.localeCompare(right.id));
+        const found = packageOf({ includeMetadata: false });
+        const claimToken = newUuid();
+        const operation = {
+          id: newUuidV7(),
+          ownerId,
+          kind: MediaOperationKind.PreservationExport,
+          status: MediaOperationStatus.Rendering,
+          snapshot: { packageId: found.id },
+          result: null,
+          claimToken,
+        } as unknown as MediaOperation;
+        const work = () =>
+          items.filter((item) => item.state === 'pending' || (item.state === 'failed' && item.attempts < 2));
+        repository.getPackageById = vi.fn().mockResolvedValue(found);
+        repository.countExportWork = vi.fn().mockImplementation(() => Promise.resolve(work().length));
+        repository.exportWork = vi
+          .fn()
+          .mockImplementation((_packageId: string, after: string | null) =>
+            Promise.resolve(work().filter((item) => !after || item.id > after)),
+          );
+        repository.beginItemAttempt.mockImplementation((id: string) => {
+          items.find((item) => item.id === id)!.attempts++;
+          return Promise.resolve();
+        });
+        repository.finishItem.mockImplementation((id: string, patch: Record<string, unknown>) => {
+          Object.assign(
+            items.find((item) => item.id === id)!,
+            patch,
+          );
+          return Promise.resolve();
+        });
+        repository.getExportAsset.mockImplementation((id: string) =>
+          Promise.resolve({
+            id,
+            ownerId,
+            type: 'IMAGE',
+            deletedAt: null,
+            status: 'active',
+            isLocked: false,
+            isOffline: false,
+            originalFileName: 'lake.jpg',
+            originalPath: `/library/${id}.jpg`,
+            checksum: Buffer.from(sha256, 'hex'),
+          }),
+        );
+        repository.listedItems = vi
+          .fn()
+          .mockImplementation((_packageId: string, after: string | null) =>
+            Promise.resolve(
+              items
+                .filter((item) => item.state === 'copied' && (!after || item.sourceAssetId > after))
+                .sort((left, right) => left.sourceAssetId.localeCompare(right.sourceAssetId)),
+            ),
+          );
+        repository.countItems = vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Map([
+              [
+                found.id,
+                {
+                  states: { copied: items.filter((item) => item.state === 'copied').length },
+                  unavailable: 0,
+                },
+              ],
+            ]),
+          ),
+        );
+        repository.updatePackage = vi.fn();
+        repository.listExpiredUploads = vi.fn().mockResolvedValue([]);
+        files.copyOriginal.mockResolvedValue(digests);
+        files.writeLines = vi.fn(async (_path: string, pages: AsyncIterable<string[]>) => {
+          let lines = 0;
+          for await (const page of pages) lines += page.length;
+          return { sha256, bytes: lines, lines };
+        });
+        files.openPackage = vi.fn().mockResolvedValue({ listEntries: vi.fn().mockResolvedValue([]), close: vi.fn() });
+        operations.setBulkResult = vi.fn().mockResolvedValue(operation);
+        operations.getOfKind.mockResolvedValue(operation);
+        operations.beginValidation = vi.fn().mockResolvedValue(true);
+        operations.complete = vi.fn().mockResolvedValue(true);
+        operations.settlePause = vi.fn().mockResolvedValue(true);
+        return { job: { operation, claimToken }, found, items };
+      };
+
+      const holdCopy = (waitForAbort = false) => {
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let signal!: AbortSignal;
+        files.copyOriginal.mockImplementationOnce(async () => {
+          signal = executionSignal()!;
+          started.resolve();
+          if (waitForAbort) {
+            await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+          }
+          await release.promise;
+          if (waitForAbort) throw signal.reason;
+          return digests;
+        });
+        return {
+          started: started.promise,
+          release: release.resolve,
+          get signal() {
+            return signal;
+          },
+        };
+      };
+
+      it('renews the claim throughout a copy longer than its lease, then writes the original once', async () => {
+        const { job, items } = exportJob();
+        const copy = holdCopy();
+        const task = sut.run(job);
+        await copy.started;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_LEASE_MS + PRESERVATION_TICK_MS);
+
+        expect(operations.heartbeat).toHaveBeenCalledWith(job.operation.id, job.claimToken, PRESERVATION_LEASE_MS, {
+          requireActiveClaim: true,
+        });
+        expect(operations.heartbeat.mock.calls.length).toBeGreaterThan(1);
+        expect(copy.signal.aborted).toBe(false);
+        expect(files.copyOriginal).toHaveBeenCalledTimes(1);
+        expect(repository.finishItem).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+
+        copy.release();
+        await task;
+        expect(repository.finishItem).toHaveBeenCalledWith(items[0].id, expect.objectContaining({ state: 'copied' }));
+        expect(files.copyOriginal).toHaveBeenCalledTimes(1);
+        expect(operations.complete).toHaveBeenCalledTimes(1);
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('renews the claim throughout index publication longer than its lease', async () => {
+        const { job } = exportJob([]);
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        files.writeLines.mockImplementationOnce(async () => {
+          started.resolve();
+          await release.promise;
+          return { sha256, bytes: 0, lines: 0 };
+        });
+        const task = sut.run(job);
+        await started.promise;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_LEASE_MS + PRESERVATION_TICK_MS);
+        expect(operations.heartbeat.mock.calls.length).toBeGreaterThan(1);
+        expect(repository.updatePackage).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+
+        release.resolve();
+        await task;
+        expect(files.writeLines).toHaveBeenCalledTimes(1);
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ status: 'ready' }),
+        );
+        expect(operations.complete).toHaveBeenCalledTimes(1);
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('a replaced claim cannot publish a late index or remove package files', async () => {
+        const { job } = exportJob([]);
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        operations.heartbeat.mockResolvedValue(false);
+        operations.getOfKind.mockResolvedValue({ ...job.operation, claimToken: newUuid() });
+        files.writeLines.mockImplementationOnce(async () => {
+          started.resolve();
+          await release.promise;
+          return { sha256, bytes: 0, lines: 0 };
+        });
+        const task = sut.run(job);
+        await started.promise;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+        release.resolve();
+        await task;
+        expect(files.writeDocument).not.toHaveBeenCalled();
+        expect(files.removeFile).not.toHaveBeenCalled();
+        expect(repository.updatePackage).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it.each(['refused', 'rejected'])(
+        'rejects late copy success after renewal was %s and the claim replaced',
+        async (renewal) => {
+          const { job } = exportJob();
+          operations.getOfKind.mockResolvedValue({ ...job.operation, claimToken: newUuid() });
+          if (renewal === 'refused') operations.heartbeat.mockResolvedValue(false);
+          else operations.heartbeat.mockRejectedValue(new Error('database unavailable'));
+          const copy = holdCopy();
+          let returned = false;
+          const task = sut.run(job).finally(() => {
+            returned = true;
+          });
+          await copy.started;
+          await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+          expect(copy.signal.aborted).toBe(true);
+          expect(returned).toBe(false);
+
+          copy.release();
+          await task;
+          expect(repository.finishItem).not.toHaveBeenCalled();
+          expect(files.writeDocument).not.toHaveBeenCalled();
+          expect(files.writeLines).not.toHaveBeenCalled();
+          expect(repository.updatePackage).not.toHaveBeenCalled();
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(operations.fail).not.toHaveBeenCalled();
+          expect(operations.requeue).not.toHaveBeenCalled();
+          expect(vi.getTimerCount()).toBe(0);
+        },
+      );
+
+      it.each(['cancel', 'pause'])('settles an owner %s only after the copy has unwound', async (request) => {
+        const { job } = exportJob();
+        operations.heartbeat.mockResolvedValue(false);
+        operations.getOfKind.mockResolvedValue({
+          ...job.operation,
+          ...(request === 'cancel' ? { cancelRequestedAt: new Date() } : { pauseRequestedAt: new Date() }),
+        });
+        const copy = holdCopy(true);
+        const task = sut.run(job);
+        await copy.started;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+        expect(copy.signal.aborted).toBe(true);
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        expect(operations.settlePause).not.toHaveBeenCalled();
+
+        copy.release();
+        await task;
+        const settled = request === 'cancel' ? operations.acknowledgeCancel : operations.settlePause;
+        const other = request === 'cancel' ? operations.settlePause : operations.acknowledgeCancel;
+        expect(settled).toHaveBeenCalledTimes(1);
+        expect(other).not.toHaveBeenCalled();
+        expect(repository.finishItem).not.toHaveBeenCalled();
+        expect(repository.updatePackage).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.requeue).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('an uncertain item commit cannot record a second outcome or attempt', async () => {
+        const { job } = exportJob();
+        repository.finishItem.mockRejectedValueOnce(new Error('commit acknowledgement lost'));
+        await sut.run(job);
+        expect(repository.beginItemAttempt).toHaveBeenCalledOnce();
+        expect(repository.finishItem).toHaveBeenCalledOnce();
+        expect(operations.fail).toHaveBeenCalledOnce();
+        expect(repository.updatePackage).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('pause does not spend the remaining retry of a failed item', async () => {
+        const item = { ...itemOf(), state: 'failed', attempts: 1 };
+        const { job } = exportJob([item]);
+        operations.heartbeat.mockResolvedValue(false);
+        operations.getOfKind.mockResolvedValue({ ...job.operation, pauseRequestedAt: new Date() });
+        const copy = holdCopy(true);
+        const paused = sut.run(job);
+        await copy.started;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+        copy.release();
+        await paused;
+        expect(item).toMatchObject({ state: 'failed', attempts: 1 });
+        expect(repository.beginItemAttempt).not.toHaveBeenCalled();
+        expect(operations.settlePause).toHaveBeenCalledOnce();
+
+        operations.heartbeat.mockResolvedValue(true);
+        await sut.run({ ...job, claimToken: newUuid() });
+        expect(item).toMatchObject({ state: 'copied', attempts: 2 });
+        expect(repository.beginItemAttempt).toHaveBeenCalledOnce();
+        expect(files.copyOriginal).toHaveBeenCalledTimes(2);
+        expect(operations.complete).toHaveBeenCalledOnce();
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('shutdown waits for copy cleanup and returns the claim without taking another item or job', async () => {
+        const { job } = exportJob([itemOf(), itemOf()]);
+        operations.claimNext = vi.fn().mockResolvedValueOnce(job).mockResolvedValue(undefined);
+        const copy = holdCopy(true);
+        sut.tick();
+        await copy.started;
+        let returned = false;
+        const shutdown = sut.onShutdown().finally(() => {
+          returned = true;
+        });
+        await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+        expect(copy.signal.aborted).toBe(true);
+        expect(returned).toBe(false);
+        expect(operations.requeue).not.toHaveBeenCalled();
+
+        copy.release();
+        await shutdown;
+        expect(operations.claimNext).toHaveBeenCalledTimes(1);
+        expect(files.copyOriginal).toHaveBeenCalledTimes(1);
+        expect(repository.finishItem).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(job.operation.id, job.claimToken, {
+          delayMs: PRESERVATION_TICK_MS,
+          returnAttempt: true,
+        });
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('a replacement claim resumes remaining work without recopying a completed original', async () => {
+        const { job, items } = exportJob([itemOf(), itemOf()]);
+        const replacementToken = newUuid();
+        operations.getOfKind.mockResolvedValue({ ...job.operation, claimToken: replacementToken });
+        operations.heartbeat.mockResolvedValue(false);
+        files.copyOriginal.mockResolvedValueOnce(digests);
+        const copy = holdCopy();
+        const task = sut.run(job);
+        await copy.started;
+        await vi.advanceTimersByTimeAsync(PRESERVATION_TICK_MS);
+        copy.release();
+        await task;
+        expect(items.map((item) => item.state)).toEqual(['copied', 'pending']);
+
+        operations.heartbeat.mockResolvedValue(true);
+        await sut.run({ ...job, claimToken: replacementToken });
+        const copiedFirst = files.copyOriginal.mock.calls.filter(
+          ([source]) => source === `/library/${items[0].sourceAssetId}.jpg`,
+        );
+        expect(copiedFirst).toHaveLength(1);
+        expect(items.map((item) => item.state)).toEqual(['copied', 'copied']);
+        expect(items.map((item) => item.attempts)).toEqual([1, 1]);
+        expect(repository.withExportClaim).toHaveBeenCalledWith(
+          job.operation.id,
+          replacementToken,
+          expect.any(Function),
+        );
+        expect(operations.complete).toHaveBeenCalledTimes(1);
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
     });
   });
 

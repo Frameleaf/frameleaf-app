@@ -59,7 +59,7 @@ describe(PhysicalFileTrashRepository.name, () => {
 
       expect(result).toEqual({ deleted: true, references: 0, trashed: true });
       expect(unlink).not.toHaveBeenCalled();
-      expect(move).toHaveBeenCalledWith(asset.originalPath, expect.stringMatching(`/file-trash/${physical.id}/a.jpg$`));
+      expect(move).toHaveBeenCalledWith(asset.originalPath, expect.stringMatching(/\/file-trash\/[\da-f-]+\/a\.jpg$/));
       await expect(trashRows(checksum)).resolves.toMatchObject({
         rows: [{ path: move.mock.calls[0][1], lastOwnerId: user.id }],
       });

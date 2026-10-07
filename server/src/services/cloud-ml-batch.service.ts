@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Transaction } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import type { DB } from 'src/schema/index.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudMlDescriptionBatchCreateDto,
@@ -30,6 +32,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { afterJobCommit, deferJobAdoption, deferJobFailure, jobSignal, queueExecution } from 'src/queue/context.js';
 import { CloudMlGateway, CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
@@ -301,6 +304,7 @@ export class CloudMlBatchService extends BaseService {
       try {
         finished = (await this.step(claim.operation, claim.claimToken, now)) || finished;
       } catch (error) {
+        jobSignal()?.throwIfAborted();
         this.logger.error(`Description batch ${claim.operation.id} failed: ${errorMessage(error)}`);
         await this.mediaOperationRepository.fail(claim.operation.id, claim.claimToken, {
           error: errorMessage(error),
@@ -1401,51 +1405,105 @@ export class CloudMlBatchService extends BaseService {
     const job = run.result.job!;
     const outputs = view.result?.outputs ?? [];
     const delivered = (view.status === 'completed' || view.status === 'cancelled_budget') && outputs.length > 0;
-    if (!delivered) {
-      await this.release(gateway, run.operation.id, job.jobId, false);
-      await this.recordCost(run, view);
-      await this.end(run, {
-        errorCode: `cloud_description_job_${(view.error?.code ?? view.status).replaceAll('-', '_')}`,
-        error:
-          view.error?.message ??
-          `Frameleaf Cloud ended this batch (${view.status.replaceAll('_', ' ')}). Nothing was written.`,
-      });
-      return;
-    }
-
-    const documents = await this.downloadResults(run, gateway, view);
+    // A stopped parent can collect this paid job again, without resubmitting billable work.
+    deferJobFailure(async (tx) => {
+      await this.mediaOperationRepository.requeue(
+        run.operation.id,
+        run.claimToken,
+        { delayMs: CLOUD_DESCRIPTION_POLL_MS, returnAttempt: true },
+        undefined,
+        tx,
+      );
+    });
+    // The external charge happened even if adoption rolls back; settlement is idempotent by job id.
+    await this.recordCost(run, view);
+    const documents = delivered ? await this.downloadResults(run, gateway, view) : new Map();
     const modelName = run.snapshot.modelName ?? run.snapshot.modelSku;
     const items: typeof run.result.items = [];
-    for (const item of run.result.items) {
-      if (item.refused || item.outcome) {
-        items.push(item);
-        continue;
+    const context = queueExecution.getStore();
+    const adoptionStart = context?.adoptions.length ?? 0;
+    let adoptions: NonNullable<typeof context>['adoptions'] = [];
+    const prepare = async () => {
+      for (const item of run.result.items) {
+        if (!delivered || item.refused || item.outcome) {
+          items.push(item);
+          continue;
+        }
+        items.push(
+          await this.writeResult(item, documents.get(item.inputId) ?? null, run.snapshot.destinationId, modelName),
+        );
       }
-      items.push(
-        await this.writeResult(item, documents.get(item.inputId) ?? null, run.snapshot.destinationId, modelName),
+    };
+    try {
+      await prepare();
+    } finally {
+      // Preserve the parent's dependency/stop state while grouping this batch's publications.
+      adoptions = context?.adoptions.splice(adoptionStart) ?? [];
+    }
+    const commit = async (tx?: Transaction<DB>) => {
+      // Hold the live media claim before any description is adopted. Rejection rolls back the parent.
+      if (!(await this.mediaOperationRepository.beginValidation(run.operation.id, run.claimToken, true, tx))) {
+        throw new Error('Cloud description batch claim changed before adoption');
+      }
+      for (const adopt of adoptions) {
+        await adopt(tx!);
+      }
+      run.result = { ...run.result, items, phase: CloudDescriptionPhase.Finished };
+      const written = await this.mediaOperationRepository.setBulkResult(
+        run.operation.id,
+        run.claimToken,
+        {
+          result: run.result as unknown as Record<string, unknown>,
+          processedUnits: total(run),
+          totalUnits: total(run),
+          progress: 100,
+          leaseMs: CLOUD_DESCRIPTION_LEASE_MS,
+        },
+        tx,
       );
-    }
-    run.result = { ...run.result, items };
-    if (!(await this.save(run))) {
-      return;
-    }
-
-    await this.release(gateway, run.operation.id, job.jobId, false);
-    await this.recordCost(run, view);
-    const described = items.filter((item) => item.outcome === 'described').length;
-    if (described === 0) {
-      await this.end(run, {
-        errorCode: 'cloud_description_nothing_described',
-        error: 'Frameleaf Cloud described none of the photos in this batch; each photo says why.',
+      if (
+        !written ||
+        written.cancelRequestedAt ||
+        written.pauseRequestedAt ||
+        written.status === MediaOperationStatus.Cancelling
+      ) {
+        throw new Error('Cloud description batch claim changed during adoption');
+      }
+      const described = items.filter((item) => item.outcome === 'described').length;
+      const settled =
+        described > 0
+          ? await this.mediaOperationRepository.complete(
+              run.operation.id,
+              run.claimToken,
+              { resultAssetId: null },
+              tx,
+              true,
+            )
+          : await this.mediaOperationRepository.fail(
+              run.operation.id,
+              run.claimToken,
+              delivered
+                ? {
+                    errorCode: 'cloud_description_nothing_described',
+                    error: 'Frameleaf Cloud described none of the photos in this batch; each photo says why.',
+                  }
+                : {
+                    errorCode: `cloud_description_job_${(view.error?.code ?? view.status).replaceAll('-', '_')}`,
+                    error:
+                      view.error?.message ??
+                      `Frameleaf Cloud ended this batch (${view.status.replaceAll('_', ' ')}). Nothing was written.`,
+                  },
+              { retry: false, executor: tx },
+            );
+      if (!settled) {
+        throw new Error('Cloud description batch could not settle its adopted results');
+      }
+      await afterJobCommit(async () => {
+        await this.release(gateway, run.operation.id, job.jobId, false);
       });
-      return;
-    }
-    run.result = { ...run.result, phase: CloudDescriptionPhase.Finished };
-    if (
-      (await this.save(run)) &&
-      (await this.mediaOperationRepository.beginValidation(run.operation.id, run.claimToken))
-    ) {
-      await this.mediaOperationRepository.complete(run.operation.id, run.claimToken, { resultAssetId: null });
+    };
+    if (!deferJobAdoption(commit)) {
+      await commit();
     }
   }
 
@@ -1533,18 +1591,26 @@ export class CloudMlBatchService extends BaseService {
         ? `Frameleaf Cloud could not describe this photo (${failed.join(', ')})`
         : undefined
       : 'Frameleaf Cloud returned no readable description for this photo';
-    const base = { ...item, ...(found && { modelRev: found.modelRev, warnings: [...warnings] }) };
+    const base: CloudDescriptionItem = { ...item, ...(found && { modelRev: found.modelRev, warnings: [...warnings] }) };
+    const onPublished = (outcome: Awaited<ReturnType<ImageEnrichmentService['publishCloudDescription']>>) => {
+      if (!failure && outcome.status === JobStatus.Success) {
+        base.outcome = 'described';
+        delete base.error;
+      } else {
+        base.outcome = 'failed';
+        base.error = failure ?? outcome.message ?? outcome.reasonKey ?? 'not written';
+      }
+    };
     try {
       const outcome = await this.enrichment.publishCloudDescription(
         item.assetId,
         found?.item ?? { description: '', tags: [], moment: null, confidence: 0 },
-        { destinationId, modelName, failure },
+        { destinationId, modelName, failure, onPublished },
       );
-      if (!failure && outcome.status === JobStatus.Success) {
-        return { ...base, outcome: 'described' };
-      }
-      return { ...base, outcome: 'failed', error: failure ?? outcome.message ?? outcome.reasonKey ?? 'not written' };
+      onPublished(outcome);
+      return base;
     } catch (error) {
+      jobSignal()?.throwIfAborted();
       this.logger.warn(`The Frameleaf Cloud description of ${item.assetId} was not written: ${errorMessage(error)}`);
       return { ...base, outcome: 'failed', error: failure ?? errorMessage(error) };
     }

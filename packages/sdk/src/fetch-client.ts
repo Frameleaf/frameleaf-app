@@ -7679,7 +7679,17 @@ export type MlDestinationCreateDto = {
     url?: string;
     workloads?: MlWorkload[];
 };
+export type StudioRenderCandidateDto = {
+    dolbyVision: boolean;
+    gpuMemoryBytes: number | null;
+    hdr10: boolean;
+    maxBitDepth: number;
+    /** Output formats whose exact writer and container this session verified */
+    outputFormats: StudioExportFormat[];
+};
 export type StudioRenderEvidenceDto = {
+    /** Per-session StudioExport proof; aggregate fields must not authorize an export */
+    candidates?: StudioRenderCandidateDto[];
     /** Encoders and decoders qualified sessions verified */
     codecs: string[];
     destination: MediaOperationDestination;
@@ -29213,6 +29223,12 @@ export enum MemoryShowLessKind {
     Date = "date",
     Type = "type"
 }
+export enum StudioExportFormat {
+    Mp4HevcMain10 = "mp4-hevc-main10",
+    Mp4H264 = "mp4-h264",
+    WebmAv1 = "webm-av1",
+    Prores422Hq = "prores-422-hq"
+}
 export enum MlStudioFeature {
     SpeechToText = "speech-to-text",
     Captions = "captions",
@@ -30223,12 +30239,6 @@ export enum StudioExportColor {
     Preserve = "preserve",
     Hdr10 = "hdr10",
     DolbyVision = "dolby-vision"
-}
-export enum StudioExportFormat {
-    Mp4HevcMain10 = "mp4-hevc-main10",
-    Mp4H264 = "mp4-h264",
-    WebmAv1 = "webm-av1",
-    Prores422Hq = "prores-422-hq"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",

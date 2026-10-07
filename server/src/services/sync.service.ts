@@ -9,6 +9,7 @@ import { OnJob } from 'src/decorators.js';
 import { SyncAckDeleteDto, SyncAckSetDto, SyncItem, SyncStreamDto, syncAlbumV2ToV1 } from 'src/dtos/sync.dto.js';
 import { JobName, QueueName, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
+import { MEMORY_SYNC_ACK_VERSION, MEMORY_SYNC_TYPES } from 'src/repositories/tag-sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
@@ -180,6 +181,7 @@ export class SyncService extends BaseService {
       // TODO pick the latest ack for each type, instead of using the last one
       if (
         [
+          ...MEMORY_SYNC_TYPES,
           SyncEntityType.AlbumAssetAccessV1,
           SyncEntityType.AlbumAssetAccessDeleteV1,
           SyncEntityType.PartnerAssetAccessV1,
@@ -270,7 +272,12 @@ export class SyncService extends BaseService {
     }
     const checkpointMap: CheckpointMap = Object.fromEntries(checkpoints.map(({ type, ack }) => [type, fromAck(ack)]));
 
-    if (this.needsFullSync(checkpointMap)) {
+    // Legacy memory cursors have no session visibility history. Reset the mirror once so previously
+    // leaked/hidden memories are purged and every currently authorized row is backfilled.
+    const hasLegacyMemoryCursor = MEMORY_SYNC_TYPES.some(
+      (type) => checkpointMap[type] && checkpointMap[type].extraId !== MEMORY_SYNC_ACK_VERSION,
+    );
+    if (hasLegacyMemoryCursor || this.needsFullSync(checkpointMap)) {
       await send(response, { type: SyncEntityType.SyncResetV1, ids: ['reset'], data: {} });
       response.end();
       return;
@@ -321,8 +328,8 @@ export class SyncService extends BaseService {
       [SyncRequestType.AlbumToAssetsV1]: () => this.syncAlbumToAssetsV1(options, response, checkpointMap, session.id),
       [SyncRequestType.AlbumAssetExifsV1]: () =>
         this.syncAlbumAssetExifsV1(options, response, checkpointMap, session.id),
-      [SyncRequestType.MemoriesV1]: () => this.syncMemoriesV1(options, response, checkpointMap),
-      [SyncRequestType.MemoryToAssetsV1]: () => this.syncMemoryAssetsV1(options, response, checkpointMap),
+      [SyncRequestType.MemoriesV1]: () => this.syncTags(auth, response, 'memory'),
+      [SyncRequestType.MemoryToAssetsV1]: () => this.syncTags(auth, response, 'memoryAsset'),
       [SyncRequestType.StacksV1]: () => this.syncStackV1(options, response, checkpointMap),
       [SyncRequestType.PartnerStacksV1]: () => Promise.resolve(),
       [SyncRequestType.PeopleV1]: () => this.syncPeopleV1(options, response, checkpointMap),
@@ -872,34 +879,6 @@ export class SyncService extends BaseService {
     }
   }
 
-  private async syncMemoriesV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
-    const deleteType = SyncEntityType.MemoryDeleteV1;
-    const deletes = this.syncRepository.memory.getDeletes({ ...options, ack: checkpointMap[deleteType] });
-    for await (const { id, ...data } of deletes) {
-      await send(response, { type: deleteType, ids: [id], data });
-    }
-
-    const upsertType = SyncEntityType.MemoryV1;
-    const upserts = this.syncRepository.memory.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
-    }
-  }
-
-  private async syncMemoryAssetsV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
-    const deleteType = SyncEntityType.MemoryToAssetDeleteV1;
-    const deletes = this.syncRepository.memoryToAsset.getDeletes({ ...options, ack: checkpointMap[deleteType] });
-    for await (const { id, ...data } of deletes) {
-      await send(response, { type: deleteType, ids: [id], data });
-    }
-
-    const upsertType = SyncEntityType.MemoryToAssetV1;
-    const upserts = this.syncRepository.memoryToAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
-    }
-  }
-
   private async syncStackV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const deleteType = SyncEntityType.StackDeleteV1;
     const deletes = this.syncRepository.stack.getDeletes({ ...options, ack: checkpointMap[deleteType] });
@@ -918,6 +897,8 @@ export class SyncService extends BaseService {
     auth: AuthDto,
     response: Writable,
     kind:
+      | 'memory'
+      | 'memoryAsset'
       | 'tag'
       | 'assetTag'
       | 'pet'
@@ -942,7 +923,12 @@ export class SyncService extends BaseService {
       const item = await (readPins
         ? this.syncRepository.tag.prepare(auth, kind, eventId, readPins)
         : this.syncRepository.tag.prepare(auth, kind, eventId));
-      if (item) await send(response, { type: item.type, ids: [item.eventId], data: item.data as never });
+      if (item)
+        await send(response, {
+          type: item.type,
+          ids: kind === 'memory' || kind === 'memoryAsset' ? [item.eventId, MEMORY_SYNC_ACK_VERSION] : [item.eventId],
+          data: item.data as never,
+        });
     }
   }
 
