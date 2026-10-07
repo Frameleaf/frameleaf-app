@@ -7,6 +7,7 @@ import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder } from 'src/enum.js';
+import { assertExecutionActive, executionSignal, reportExecutionProgress } from 'src/utils/execution-signal.js';
 import {
   PRESERVATION_METADATA_PREFIX,
   PRESERVATION_ORIGINALS_PREFIX,
@@ -31,6 +32,10 @@ export const preservationFolder = (ownerId: string) =>
 /** Where multer writes an owner's uploaded package before its manifest is read. */
 export const preservationUploadFolder = (ownerId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'preservation-uploads');
+
+/** Fence only the final rename; streaming and fsync do not hold a database claim lock. */
+export type PreservationFileCommit = (write: () => Promise<void>) => Promise<void>;
+const commitFile: PreservationFileCommit = (write) => write();
 
 /** The digests of one entry, measured as it was read. */
 export type PreservationDigests = { sha1: string; sha256: string; bytes: number };
@@ -205,7 +210,7 @@ class DirectoryPackageSource implements PreservationPackageSource {
     let bytes = 0;
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
-      for await (const chunk of handle.createReadStream({ autoClose: false })) {
+      for await (const chunk of handle.createReadStream({ autoClose: false, signal: executionSignal() })) {
         const buffer = chunk as Buffer;
         sha1.update(buffer);
         sha256.update(buffer);
@@ -289,12 +294,35 @@ export class PreservationFileRepository {
    * changed while it was read (size, modification time or inode), so a package never holds a copy
    * of a file that was being rewritten.
    */
-  async copyOriginal(source: string, destination: string): Promise<PreservationDigests> {
+  async copyOriginal(
+    source: string,
+    destination: string,
+    commit: PreservationFileCommit = commitFile,
+    checksum?: Buffer,
+  ): Promise<PreservationDigests> {
+    assertExecutionActive();
+    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+    // A rename can survive a lost database acknowledgement. Reuse only checksum-verified bytes.
+    if (checksum) {
+      const existing = new DirectoryPackageSource(await realpath(dirname(destination)));
+      const name = destination.slice(dirname(destination).length + 1);
+      if (await existing.has(name)) {
+        let copied = 0;
+        const digest = await existing.stream(name, (chunk) => {
+          assertExecutionActive();
+          copied += chunk.length;
+          reportExecutionProgress(destination, copied);
+        });
+        if (checksum.toString('hex') === (checksum.length === 20 ? digest.sha1 : digest.sha256)) {
+          assertExecutionActive();
+          return digest;
+        }
+      }
+    }
     const before = await stat(source);
     if (!before.isFile()) {
       throw new PreservationPackageError('original_missing', 'The original is not a regular file');
     }
-    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
     const temporary = `${destination}.${randomUUID()}.partial`;
     const sha1 = createHash('sha1');
     const sha256 = createHash('sha256');
@@ -308,10 +336,12 @@ export class PreservationFileRepository {
             sha1.update(chunk);
             sha256.update(chunk);
             bytes += chunk.length;
+            reportExecutionProgress(temporary, bytes);
             callback(null, chunk);
           },
         }),
         createWriteStream(temporary, { flags: 'wx', mode: 0o600 }),
+        { signal: executionSignal() },
       );
       const after = await stat(source);
       if (
@@ -323,7 +353,8 @@ export class PreservationFileRepository {
         throw new PreservationPackageError('original_changed', 'The original changed while it was copied');
       }
       await this.sync(temporary);
-      await rename(temporary, destination);
+      assertExecutionActive();
+      await commit(() => rename(temporary, destination));
       return { sha1: sha1.digest('hex'), sha256: sha256.digest('hex'), bytes };
     } finally {
       await rm(temporary, { force: true });
@@ -370,18 +401,25 @@ export class PreservationFileRepository {
   }
 
   /** Write a document atomically and return its digest. */
-  async writeDocument(destination: string, bytes: Buffer): Promise<{ sha256: string; bytes: number }> {
+  async writeDocument(
+    destination: string,
+    bytes: Buffer,
+    commit: PreservationFileCommit = commitFile,
+  ): Promise<{ sha256: string; bytes: number }> {
+    assertExecutionActive();
     await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
     const temporary = `${destination}.${randomUUID()}.partial`;
     const handle = await open(temporary, 'wx', 0o600);
     try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    try {
-      await rename(temporary, destination);
+      try {
+        await handle.writeFile(bytes, { signal: executionSignal() });
+        reportExecutionProgress(temporary, bytes.length);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      assertExecutionActive();
+      await commit(() => rename(temporary, destination));
     } finally {
       await rm(temporary, { force: true });
     }
@@ -395,7 +433,9 @@ export class PreservationFileRepository {
   async writeLines(
     destination: string,
     pages: AsyncIterable<string[]>,
+    commit: PreservationFileCommit = commitFile,
   ): Promise<{ sha256: string; bytes: number; lines: number }> {
+    assertExecutionActive();
     await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
     const temporary = `${destination}.${randomUUID()}.partial`;
     const hash = createHash('sha256');
@@ -403,22 +443,25 @@ export class PreservationFileRepository {
     let lines = 0;
     const handle = await open(temporary, 'wx', 0o600);
     try {
-      for await (const page of pages) {
-        if (page.length === 0) {
-          continue;
+      try {
+        for await (const page of pages) {
+          assertExecutionActive();
+          if (page.length === 0) {
+            continue;
+          }
+          const chunk = Buffer.from(page.map((line) => `${line}\n`).join(''), 'utf8');
+          hash.update(chunk);
+          bytes += chunk.length;
+          lines += page.length;
+          await handle.write(chunk);
+          reportExecutionProgress(temporary, bytes);
         }
-        const chunk = Buffer.from(page.map((line) => `${line}\n`).join(''), 'utf8');
-        hash.update(chunk);
-        bytes += chunk.length;
-        lines += page.length;
-        await handle.write(chunk);
+        await handle.sync();
+      } finally {
+        await handle.close();
       }
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    try {
-      await rename(temporary, destination);
+      assertExecutionActive();
+      await commit(() => rename(temporary, destination));
     } finally {
       await rm(temporary, { force: true });
     }
