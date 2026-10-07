@@ -24,6 +24,7 @@ import {
   ImmichWorker,
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
+  MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
@@ -60,7 +61,8 @@ import {
   unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
-import { SDR_ONLY, isQualifiedRenderSession } from 'src/utils/render-admission.js';
+import { SDR_ONLY, isQualifiedRenderSession, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
+import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -751,21 +753,37 @@ export class MlDestinationService extends BaseService {
       list.push(entry);
       byDestination.set(entry.worker.destination, list);
     }
-    const render = [...byDestination].map(([destination, entries]) => {
-      const memories = entries
-        .map(({ session }) => (session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)))
-        .filter((value): value is number => value !== null);
-      const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
-      return {
-        destination,
-        gpuMemoryBytes: memories.length > 0 ? Math.max(...memories) : null,
-        codecs: [...new Set(entries.flatMap(({ session }) => session.codecs ?? []))].toSorted(),
-        maxBitDepth: Math.max(...precisions.map((precision) => precision.maxBitDepth)),
-        hdr10: precisions.some((precision) => precision.hdr10),
-        dolbyVision: precisions.some((precision) => precision.dolbyVision),
-        sessions: entries.length,
-      };
-    });
+    const render = await Promise.all(
+      [...byDestination].map(async ([destination, entries]) => {
+        const memories = entries
+          .map(({ session }) => (session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)))
+          .filter((value): value is number => value !== null);
+        const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
+        return {
+          destination,
+          gpuMemoryBytes: memories.length > 0 ? Math.max(...memories) : null,
+          codecs: [...new Set(entries.flatMap(({ session }) => session.codecs ?? []))].toSorted(),
+          maxBitDepth: Math.max(...precisions.map((precision) => precision.maxBitDepth)),
+          hdr10: precisions.some((precision) => precision.hdr10),
+          dolbyVision: precisions.some((precision) => precision.dolbyVision),
+          sessions: entries.length,
+          candidates: await Promise.all(
+            entries
+              .filter(({ session }) => session.scopes.includes(MediaOperationKind.StudioExport))
+              .map(async ({ session }) => {
+                const capabilities = await this.renderWorkerRepository.getSessionCapabilities(session.id);
+                return {
+                  gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
+                  outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
+                    provesOutput(capabilities ?? null, requiredOutput({ format })!),
+                  ),
+                  ...(session.colorPrecision ?? SDR_ONLY),
+                };
+              }),
+          ),
+        };
+      }),
+    );
 
     return {
       workloads,

@@ -22,10 +22,10 @@
    *
    * Exports render on this server or another computer on the home network, never on Frameleaf Cloud
    * (FL-159 §2.7). Each format, colour and resolution is judged against what the qualified render
-   * workers verified (FL-42, `studio.render` evidence, `studioRenderChoices`): a choice the server
-   * would refuse is disabled, and the chosen combination's refusal is named before anything is
-   * submitted. The time, size and cost rows are not shown, because nothing on the server measures
-   * them for a Studio export yet and the prototype's figures are simulated.
+   * workers verified (FL-42, `studio.render` evidence, `studioRenderChoices`). Format and colour
+   * remain selectable at the minimum resolution so a supported tuple is reachable when several
+   * defaults must change; submission still requires the full chosen combination to be supported.
+   * The time, size and cost rows are not shown, because nothing on the server measures them for a Studio export yet and the prototype's figures are simulated.
    */
   import { t } from 'svelte-i18n';
   import {
@@ -165,6 +165,13 @@
   });
 
   const choices = $derived(studioRenderChoices(renderEvidence, destination, { format, color, resolution }));
+  const availableChoices = $derived(
+    studioRenderChoices(renderEvidence, destination, {
+      format,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$720P,
+    }),
+  );
   const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
   const canExport = $derived(!busy && verdict.supported && (smoothFactor === null || !!smoothDestination));
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
@@ -195,7 +202,9 @@
         <span>{$t('frameleaf_studio_export_format')}</span>
         <select id="{fieldId}-format" bind:value={format}>
           {#each formats as item (item.value)}
-            <option value={item.value} disabled={unsupported(choices.formats, item.value)}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(availableChoices.formats, item.value)}
+              >{$t(item.label)}</option
+            >
           {/each}
         </select>
       </label>
@@ -203,7 +212,9 @@
         <span>{$t('frameleaf_studio_export_color')}</span>
         <select id="{fieldId}-color" bind:value={color}>
           {#each colors as item (item.value)}
-            <option value={item.value} disabled={unsupported(choices.colors, item.value)}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
+              >{$t(item.label)}</option
+            >
           {/each}
         </select>
       </label>
