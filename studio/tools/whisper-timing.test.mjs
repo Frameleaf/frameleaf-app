@@ -56,6 +56,13 @@ const readWav = (file) => {
 const ready = existsSync(worker);
 const requested = process.env.STUDIO_WHISPER_TIMING === '1';
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const responseOrigin = (response) => response.url ? new URL(response.url).origin : null;
+
+test('verified synthetic responses retain unknown upstream origin in diagnostics', () => {
+  assert.equal(responseOrigin(new Response('verified bytes')), null);
+  assert.equal(responseOrigin({ url: 'https://cdn.example/model.bin' }), 'https://cdn.example');
+  assert.throws(() => responseOrigin({ url: 'invalid' }), { code: 'ERR_INVALID_URL' });
+});
 
 test('requested Whisper inference requires the prepared engine', () => {
   if (requested) assert.ok(ready, 'STUDIO_WHISPER_TIMING=1 requires a prepared engine; qualification cannot skip');
@@ -101,7 +108,7 @@ test('real whisper-tiny word timestamps land on the clip\'s words and pauses', {
     const response = await originalFetch(url, init);
     if (method === 'GET' && response.ok) {
       const bytes = new Uint8Array(await response.clone().arrayBuffer());
-      payloads.push({ origin: url, responseOrigin: new URL(response.url).origin, revision: evidence.revision, bytes: bytes.byteLength, observedSha256: sha256(bytes), approvedPayloadDigest: null });
+      payloads.push({ origin: url, responseOrigin: responseOrigin(response), revision: evidence.revision, bytes: bytes.byteLength, observedSha256: sha256(bytes), approvedPayloadDigest: null });
     }
     return response;
   };
