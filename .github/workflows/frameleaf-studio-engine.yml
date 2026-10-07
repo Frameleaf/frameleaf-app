@@ -7,6 +7,8 @@ name: Frameleaf Studio engine
       - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - scripts/frameleaf-studio-rights.mjs
+      - scripts/frameleaf-studio-evidence.mjs
+      - scripts/frameleaf-studio-evidence.test.mjs
       - server/src/services/studio-project.service.ts
       - server/src/repositories/studio-project.repository.ts
       - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
@@ -18,6 +20,8 @@ name: Frameleaf Studio engine
       - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - scripts/frameleaf-studio-rights.mjs
+      - scripts/frameleaf-studio-evidence.mjs
+      - scripts/frameleaf-studio-evidence.test.mjs
       - server/src/services/studio-project.service.ts
       - server/src/repositories/studio-project.repository.ts
       - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
@@ -144,15 +148,20 @@ jobs:
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
-        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs
+        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Render-worker hardware probe refuses software GPU evidence
         env:
           STUDIO_WORKER_PROBE_BROWSER_TEST: '1'
         run: node --test studio/tools/render-worker-probe.test.mjs studio/tools/render-worker-claim.test.mjs studio/tools/render-worker-image-inputs.test.mjs studio/tools/render-worker-still-executor.test.mjs
       - name: Compositor float range and alpha regression (software WebGPU)
         env:
-          FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan
+          # Keep Canvas fixture ingress on CPU while the renderer uses software WebGPU.
+          FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan --disable-accelerated-2d-canvas
           HDR_MASTER_REPORT: ${{ runner.temp }}/hdr-master-browser-report.json
+          HDR_SIGNAL_REPORT: ${{ runner.temp }}/hdr-signal-browser-report.json
+          HDR_SOURCE_REPORT: ${{ runner.temp }}/hdr-source-browser-report.json
+          LINEAR_HDR_REPORT: ${{ runner.temp }}/linear-hdr-subtree-report.json
+          GRAPHICS_FLOAT_REPORT: ${{ runner.temp }}/graphics-float-report.json
         run: |
           setsid npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort > "$RUNNER_TEMP/studio-float-vite.log" 2>&1 &
           server_pid=$!
@@ -161,6 +170,8 @@ jobs:
             if curl --fail --silent http://127.0.0.1:5186/ > /dev/null; then break; fi
             sleep 1
           done
+          node studio/tools/linear-hdr-subtree.browser.mjs
+          node studio/tools/graphics-float.browser.mjs
           node studio/tools/compositor-float.browser.mjs
           node studio/tools/transition-float.browser.mjs
           node studio/tools/nested-float.browser.mjs
@@ -187,6 +198,20 @@ jobs:
           done
           STUDIO_TEST_ORIGIN=http://127.0.0.1:5199 STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/keyframe-animation" node studio/tools/keyframe-animation.browser.mjs
           STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/linked-edit-axis" node studio/tools/linked-edit-axis.browser.mjs
+      - name: Retain independent linear HDR physical oracle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-linear-hdr-subtree-report
+          path: ${{ runner.temp }}/linear-hdr-subtree-report.json
+          if-no-files-found: error
+      - name: Retain effect-free graphics float measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-graphics-float-report
+          path: ${{ runner.temp }}/graphics-float-report.json
+          if-no-files-found: error
       # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
       # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
       # any developer machine's GPU. Fails the job (via the tracked-file diff) if conformance.json
@@ -293,5 +318,10 @@ jobs:
             ${{ runner.temp }}/hdr-master-browser-report.json
             ${{ runner.temp }}/hdr-master-browser-report.json.artifacts-*/
             ${{ runner.temp }}/mask-path-keyframes-report.json
+            ${{ runner.temp }}/effects-matrix-report.json
+            ${{ runner.temp }}/blend-matrix-report.json
+            ${{ runner.temp }}/transition-matrix-report.json
+            ${{ runner.temp }}/hdr-signal-browser-report.json
+            ${{ runner.temp }}/hdr-source-browser-report.json
             studio/engine/frameleaf-build.json
           if-no-files-found: error

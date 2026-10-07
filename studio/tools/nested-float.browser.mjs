@@ -14,6 +14,7 @@ try {
   );
   await page.goto(origin + '/nested-probe');
   const result = await page.evaluate(async () => {
+    const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
     const { MediaRenderPipeline } = await import('/src/infrastructure/gpu-media/media-render-pipeline.ts');
     const { MediaBlendPipeline } = await import('/src/infrastructure/gpu-media/media-blend-pipeline.ts');
@@ -37,12 +38,12 @@ try {
       const masks = new MaskCombinePipeline(device);
       const pool = new GpuTexturePool(device);
       resources.push(effects, transition, media, blend, shapePipeline, masks, pool);
-      // FL-97: these witnesses model an HDR project, whose node pipelines keep
-      // extended range; the SDR project witnesses follow at the end.
+      // All positive operator witnesses retain pinned SDR behavior. Admitted
+      // linear HDR transport is independently measured by linear-hdr-subtree.
       const projectRange = (range) => {
         for (const pipeline of [effects, transition, blend]) pipeline.setWorkingRange(range);
       };
-      projectRange('hdr');
+      projectRange('sdr');
       const readbacks = {};
       const read = (name, texture) => {
         if (texture.format !== 'rgba16float') throw new Error(`${name} lost float allocation`);
@@ -132,7 +133,7 @@ try {
       // The inner composition's hard viewport edge creates exact adjacent texels:
       // transparent red on the left and opaque foreground on the right. Moving
       // its parent by half a pixel must not filter hidden red into the foreground.
-      for (const [name, color] of [['fractionalEdge', '#00ff00'], ['fractionalHdrEdge', 'rgb(200%, -50%, 25%)']]) {
+      for (const [name, color] of [['fractionalEdge', '#00ff00'], ['fractionalSdrExtremeEdge', 'rgb(200%, -50%, 25%)']]) {
         const rightHalf = composition([shape(color)], {
           transform: { x: 2, y: 0, width: 4, height: 8, rotation: 0, opacity: 1 },
         });
@@ -185,13 +186,22 @@ try {
       await render('recoveredNestedSdr', composition([
         add, shape('rgb(30%, 30%, 30%)', { blendMode: 'subtract' }),
       ]), transparentBlue);
+      projectRange('hdr');
+      let hdrRefusal;
+      try {
+        await render('historicalHdrGraph', composition([add], { effects: identity }), transparentBlue);
+        throw new Error('Nested HDR operator graph unexpectedly rendered');
+      } catch (error) {
+        if (!(error instanceof HdrRenderUnavailableError)) throw error;
+        hdrRefusal = { errorType: error.name, reason: error.message };
+      }
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Nested GPU validation failed: ${error.message}`);
       await Promise.all(buffers.map((buffer) => buffer.mapAsync(GPUMapMode.READ)));
-      return Object.fromEntries(Object.entries(readbacks).map(([name, buffer]) =>
+      return { ...Object.fromEntries(Object.entries(readbacks).map(([name, buffer]) =>
         [name, Array.from(new Float16Array(buffer.getMappedRange(), 0, 4))],
-      ));
+      )), hdrRefusal };
     } finally {
       for (const resource of resources.reverse()) resource.destroy();
       for (const buffer of buffers) buffer.destroy();
@@ -199,13 +209,13 @@ try {
     }
   });
   const expected = {
-    extended: [1.3, 1.3, 1.3, 1], recoveredNested: [1, 1, 1, 1],
-    subtract: [0.3, 0.3, 0.3, 1], recoveredAfterTransition: [1, 1, 1, 1],
+    extended: [1, 1, 1, 1], recoveredNested: [0.7, 0.7, 0.7, 1],
+    subtract: [0.3, 0.3, 0.3, 1], recoveredAfterTransition: [0.7, 0.7, 0.7, 1],
     half: [1, 0, 0, 0.5], white: [1, 1, 1, 1], halfOverWhite: [1, 0.5, 0.5, 1],
     laterSourceOver: [1 / 3, 2 / 3, 0, 0.75], crossfade: [1, 0, 0, 0.5],
     identityEffectsMasks: [2, -0.5, 0.25, 0.5], mediaUpload: [1, 0, 0, 128 / 255],
     fractionalEdge: [0, 1, 0, 0.5], fractionalEdgeOverWhite: [0.5, 1, 0.5, 1],
-    fractionalHdrEdge: [2, -0.5, 0.25, 0.5], fractionalHdrEdgeOverWhite: [1.5, 0.25, 0.625, 1],
+    fractionalSdrExtremeEdge: [2, -0.5, 0.25, 0.5], fractionalSdrExtremeEdgeOverWhite: [1, 0.5, 0.625, 1],
     legacyEdgeSampling: [0.5, 0.5, 0, 0.5],
     extendedSdr: [1, 1, 1, 1], recoveredNestedSdr: [0.7, 0.7, 0.7, 1],
   };
@@ -215,7 +225,8 @@ try {
       `${name} channel ${channel}: ${result[name][channel]} != ${value}`,
     ));
   }
-  console.log(JSON.stringify({ check: 'nested production participants, transition, effects, masks and straight float RGB', ...result }));
+  assert.equal(result.hdrRefusal.errorType, 'HdrRenderUnavailableError');
+  console.log(JSON.stringify({ check: 'SDR nested participants, transition, effects, masks and alpha; typed HDR operator refusal', ...result }));
 } finally {
   await browser.close();
 }

@@ -1,13 +1,13 @@
-// FL-97 / FL-107: an edited frame goes through the production renderer's float
-// route (shapes, an effect and a blend over a background) and the explicit
-// output conversion. PQ and HLG BT.2020 signal must equal the managed-colour
-// reference for an HDR project, and an SDR project must deliver Freecut's
-// clamped results mapped to reference white.
+// Current admitted HDR/SDR graphics and explicit output parity. Production
+// helpers build expectations here; linear-hdr-subtree supplies the separate
+// physical oracle. The historical effect/blend HDR graph is a typed refusal.
 import assert from 'node:assert/strict';
+import { testedSource } from './lib/working-domain-report.mjs';
 import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
+const source = await testedSource(new URL(import.meta.url));
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
@@ -50,10 +50,16 @@ window.__vite_plugin_react_preamble_installed__ = true
         track(3, [{ ...shape('grey', 0, 'rgb(40%, 40%, 40%)'), transform: { x: 0, y: 0, width: 16, height: 8, rotation: 0, opacity: 1 } }]),
       ],
     });
-    const renderAll = async (colorManagement) => {
+    const admittedComposition = (colorManagement) => ({ ...composition(colorManagement), tracks: [
+      track(0, [shape('highlight', -6, 'rgb(200%, 125%, 50%)')]),
+      track(1, [shape('grey-half', -2, 'rgb(50%, 50%, 50%)')]),
+      track(2, [shape('near-white', 2, 'rgb(110%, 110%, 110%)')]),
+      track(3, [{ ...shape('grey', 0, 'rgb(40%, 40%, 40%)'), transform: { x: 0, y: 0, width: 16, height: 8, rotation: 0, opacity: 1 } }]),
+    ] });
+    const renderAll = async (colorManagement, admitted = false) => {
       const canvas = new OffscreenCanvas(W, H);
       const ctx = canvas.getContext('2d');
-      const renderer = await createCompositionRenderer(composition(colorManagement), canvas, ctx, { mode: 'export' });
+      const renderer = await createCompositionRenderer((admitted ? admittedComposition : composition)(colorManagement), canvas, ctx, { mode: 'export' });
       try {
         await renderer.preload?.();
         const out = {};
@@ -66,7 +72,13 @@ window.__vite_plugin_react_preamble_installed__ = true
         renderer.dispose?.();
       }
     };
-    const hdr = await renderAll({ workingRange: 'hdr' });
+    let historicalHdrRefusal;
+    try { await renderAll({ workingRange: 'hdr' }); throw new Error('Historical HDR operator graph unexpectedly rendered'); }
+    catch (error) {
+      if (!(error instanceof color.HdrRenderUnavailableError)) throw error;
+      historicalHdrRefusal = { errorType: error.name, reason: error.message, emitted: 0 };
+    }
+    const hdr = await renderAll({ workingRange: 'hdr' }, true);
     const sdr = await renderAll(undefined);
 
     // Owner decision (FL-97): placing HDR media makes the project HDR, with no
@@ -77,7 +89,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     useMediaLibraryStore.setState({ mediaById: { ...previous.mediaById, [hdrMedia.id]: hdrMedia } });
     const marker = { id: 'marker', type: 'audio', trackId: 'track-9', from: 0, durationInFrames: 30,
       label: 'marker', mediaId: hdrMedia.id, src: '' };
-    const derived = composition(undefined);
+    const derived = admittedComposition(undefined);
     derived.tracks.push({ ...track(9, [marker]), visible: false });
     const canvas = new OffscreenCanvas(W, H);
     const ctx = canvas.getContext('2d');
@@ -97,17 +109,20 @@ window.__vite_plugin_react_preamble_installed__ = true
     const toSignal = (working, target) => color.workingToSignal(working, target);
     // Working values each region should hold before output conversion.
     const expected = {
-      hdr: [[3, 1.5, 0.5], [2, 2, 2], [1.1, 1.1, 1.1], [0.4, 0.4, 0.4]],
+      hdr: [[2, 1.25, 0.5], [0.5, 0.5, 0.5], [1.1, 1.1, 1.1], [0.4, 0.4, 0.4]],
       sdr: [[1, 1, 0.5], [1, 1, 1], [1, 1, 1], [0.4, 0.4, 0.4]],
     };
+    for (const project of ['hdr', 'sdr']) expected[project] = expected[project].map(rgb => rgb.map(color.srgbDecodeExtended));
     const want = Object.fromEntries(Object.entries(expected).map(([project, regions]) => [project,
       Object.fromEntries(['pq', 'hlg'].map((target) => [target, regions.map((w) => toSignal(w, target))]))]));
     const toneMapped = expected.hdr.map((w) =>
       color.workingToSdrDisplay(w, color.resolveColorManagement(undefined, 'hdr')).map((v) => v * 255));
-    return { hdr, sdr, want, fromSources, preview, toneMapped };
+    return { workingDomain: color.HDR_WORKING_DOMAIN, alpha: 'straight', referenceWhiteNits: 203, expectation: 'production helper parity only; independent physical oracle is linear-hdr-subtree', historicalHdrRefusal, hdr, sdr, want, fromSources, preview, toneMapped };
   });
   // Raw measurements for conformance evidence, written before any assertion.
   if (process.env.HDR_SIGNAL_REPORT) await writeFile(process.env.HDR_SIGNAL_REPORT, JSON.stringify(result));
+  assert.equal(result.historicalHdrRefusal.errorType, 'HdrRenderUnavailableError');
+  assert.equal(result.historicalHdrRefusal.emitted, 0);
   for (const project of ['hdr', 'sdr']) {
     for (const target of ['pq', 'hlg']) {
       const got = result[project][target];
@@ -131,10 +146,13 @@ window.__vite_plugin_react_preamble_installed__ = true
   // bright grey stays below white.
   const [r, g, b] = result.preview[0];
   assert.ok(r > g && g > b && g < 200, `highlight clipped in preview: ${result.preview[0]}`);
-  // Light just above reference white (1.1 encoded) keeps headroom below display white.
+  // Light just above reference white (linear decode of authored 1.1 sRGB) keeps headroom below display white.
   assert.ok(result.preview[2][0] > 150 && result.preview[2][0] < 230,
     `just above reference white in preview: ${result.preview[2]}`);
-  console.log(JSON.stringify({ check: 'edited frame through the float route and explicit PQ/HLG output', ...result.hdr.pq }));
+  assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+  Object.assign(result, { source, result: 'passed' });
+  if (process.env.HDR_SIGNAL_REPORT) await writeFile(process.env.HDR_SIGNAL_REPORT, JSON.stringify(result));
+  console.log(JSON.stringify({ check: 'admitted graphics through linear HDR and SDR output; historical HDR operator refusal', ...result.hdr.pq }));
 } finally {
   await browser.close();
 }

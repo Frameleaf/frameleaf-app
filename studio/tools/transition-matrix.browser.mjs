@@ -1,20 +1,9 @@
-// FL-99 / FL-97: every GPU transition, every direction, through the production
-// transition pipeline on software WebGPU in CI.
-// - Boundaries: progress 0 shows the outgoing clip and 1 the incoming clip,
-//   exactly on the float route of an HDR project (signed extended range), and
-//   within quantisation on the SDR routes.
-// - SDR projects: the float route equals Freecut's rgba8unorm route.
-// - HDR projects: extended-range input is never clipped at the midpoint.
-// - Direction: 'from-right' is the mirror image of 'from-left' (and bottom of top)
-//   for transitions declared mirror-symmetric in transition-semantics.json.
-// - Every frame is finite and re-renders bit-identically.
-// - Per transition through the production renderer (clips, keyframes, frame scene,
-//   compositor): animated progress and a keyframed participant, a composed second
-//   blend, and invalid durations, alignments, parameters, directions, timings and ids.
-//   TRANSITION_MATRIX_REPORT carries them as report.cases [{ id, case, ... }].
+// All registered transitions and directions: pinned SDR boundaries, parity and production cases.
+// Linear display-referred HDR transitions are typed-refused until individually migrated.
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
@@ -39,6 +28,7 @@ const sdrRight = Array.from({ length: W * H }, (_, i) => {
 const hdrLeft = sdrLeft.map(([r, g, b, a], i) => (i % 3 === 0 ? [r * 4 + 0.5, -0.25 * g, b + 1, a] : [r, g, b, a]));
 const hdrRight = sdrRight.map(([r, g, b, a], i) => (i % 4 === 1 ? [3, g * 2, -0.1, a] : [r, g, b, a]));
 
+const source = await testedSource(new URL(import.meta.url));
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
 let report;
 try {
@@ -49,6 +39,7 @@ try {
   await page.goto(origin + '/transition-matrix');
   report = await page.evaluate(async ({ W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight }) => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
+    const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { TransitionPipeline } = await import('/src/infrastructure/gpu-transitions/transition-pipeline.ts');
     const { GPU_TRANSITION_REGISTRY } = await import('/src/infrastructure/gpu-transitions/registry.ts');
     const device = await EffectsPipeline.requestCachedDevice();
@@ -90,8 +81,15 @@ try {
       const buffer = device.createBuffer({ size: 256 * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
       try {
         device.pushErrorScope('validation');
-        const accepted = pipeline.renderTexturesToTexture(id, input(`${set}L`, left, format),
-          input(`${set}R`, right, format), output, progress, W, H, direction, undefined, 'straight', 'straight');
+        let accepted;
+        try { accepted = pipeline.renderTexturesToTexture(id, input(`${set}L`, left, format),
+          input(`${set}R`, right, format), output, progress, W, H, direction, undefined, 'straight', 'straight'); }
+        catch (error) {
+          const validation = await device.popErrorScope();
+          if (validation) throw new Error(validation.message);
+          if (!(error instanceof HdrRenderUnavailableError) || range !== 'hdr') throw error;
+          return { outcome: 'refused', errorType: error.name, message: error.message };
+        }
         const encoder = device.createCommandEncoder();
         encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow: 256 }, [W, H]);
         device.queue.submit([encoder.finish()]);
@@ -122,7 +120,7 @@ try {
           entry.frames.push({
             direction: direction ?? null, progress,
             hdr: await render(id, 'hdr', 'rgba16float', 'hdr', progress, direction),
-            hdrAgain: progress === 0.5 ? await render(id, 'hdr', 'rgba16float', 'hdr', progress, direction) : null,
+            sdrAgain: progress === 0.5 ? await render(id, 'sdr', 'rgba16float', 'sdr', progress, direction) : null,
             sdrFloat: await render(id, 'sdr', 'rgba16float', 'sdr', progress, direction),
             sdr: await render(id, 'sdr', 'rgba8unorm', 'sdr', progress, direction),
           });
@@ -142,7 +140,7 @@ try {
     const f16 = (texels) => Array.from(new Float16Array(texels.flat()));
     pipeline.destroy();
     for (const texture of cache.values()) texture.destroy();
-    return { transitions, hdrLeft16: f16(hdrLeft), hdrRight16: f16(hdrRight),
+    return { browser: { name: 'chromium', driver: 'playwright', userAgent: navigator.userAgent }, transitions, hdrLeft16: f16(hdrLeft), hdrRight16: f16(hdrRight),
       sdrLeft16: f16(sdrLeft), sdrRight16: f16(sdrRight) };
   }, { W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight });
 } finally {
@@ -437,26 +435,22 @@ for (const transition of report.transitions) {
   for (const frame of transition.frames) {
     frameCount++;
     const label = `${transition.id} ${frame.direction ?? '-'} @${frame.progress}`;
-    for (const route of ['hdr', 'sdrFloat', 'sdr']) check(!frame[route].error, `${label} ${route}: ${frame[route].error}`);
-    if (frame.hdr.error || frame.sdrFloat.error || frame.sdr.error) continue;
-    check(frame.hdr.pixels.every(Number.isFinite), `${label}: non-finite HDR output`);
-    if (frame.hdrAgain) {
-      check(frame.hdr.pixels.every((v, i) => Object.is(v, frame.hdrAgain.pixels[i])), `${label}: re-render differs`);
+    check(frame.hdr.errorType === 'HdrRenderUnavailableError', `${label}: missing typed HDR refusal`);
+    for (const route of ['sdrFloat', 'sdr']) check(!frame[route].error, `${label} ${route}: ${frame[route].error}`);
+    if (frame.sdrFloat.error || frame.sdr.error) continue;
+    check(frame.sdrFloat.pixels.every(Number.isFinite), `${label}: non-finite SDR output`);
+    if (frame.sdrAgain) {
+      check(frame.sdrFloat.pixels.every((v, i) => Object.is(v, frame.sdrAgain.pixels[i])), `${label}: re-render differs`);
     }
     // SDR project: the float route is Freecut's rgba8unorm route before quantisation.
     const clipped = frame.sdrFloat.pixels.map((v) => Math.min(1, Math.max(0, v)));
     const differing = clipped.filter((v, i) => Math.abs(v - frame.sdr.pixels[i]) > 1.5 / 255 + 1e-3).length;
     check(differing <= (rule.sdrParityBudget ?? 0), `${label}: ${differing} SDR float channels differ from the rgba8 route`);
     if (frame.progress === 0 || frame.progress === 1) {
-      const want = frame.progress === 0 ? report.hdrLeft16 : report.hdrRight16;
-      check(near(frame.hdr.pixels, want, 1e-6), `${label}: HDR endpoint is not the ${frame.progress ? 'incoming' : 'outgoing'} clip`);
       if (!rule.sdrEndpointOffset) {
         const sdrWant = frame.progress === 0 ? report.sdrLeft16 : report.sdrRight16;
         check(near(frame.sdrFloat.pixels, sdrWant, 2e-3), `${label}: SDR endpoint is not the ${frame.progress ? 'incoming' : 'outgoing'} clip`);
       }
-    }
-    if (frame.progress === 0.5 && rule.hdrMidpoint === 'extended') {
-      check(Math.max(...frame.hdr.pixels.filter((_, k) => k % 4 !== 3)) > 1.01, `${label}: HDR midpoint clipped highlights`);
     }
   }
   if (rule.mirrorSymmetric) {
@@ -529,5 +523,9 @@ if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'));
   assert.fail(`${failures.length} transition-matrix failures`);
 }
-console.log(JSON.stringify({ check: 'every transition and direction: boundaries, SDR route parity, HDR range, mirror symmetry, determinism; animated, composed and invalid cases through the renderer',
+assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
+report.observations = domainObservations(report);
+if (process.env.TRANSITION_MATRIX_REPORT) await writeFile(process.env.TRANSITION_MATRIX_REPORT, JSON.stringify(report));
+console.log(JSON.stringify({ check: 'every transition and direction: boundaries, SDR route parity, typed HDR refusals, SDR mirror symmetry, determinism; animated, composed and invalid cases through the renderer',
   transitions: report.transitions.length, frames: frameCount, cases: report.cases.length }));

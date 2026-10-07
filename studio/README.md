@@ -192,55 +192,45 @@ keyframed effect params and adjustment-layer keyframes. They now resolve both on
 their own timelines, as top-level items already did. Unit tests cover the clock,
 the resolver and the transition and nested render paths.
 
-Patch 0031 adds managed colour (FL-97), specified in
+Patch 0065 establishes the current HDR working boundary (FL-97), specified in
 `src/shared/graphics/color/managed-color.ts`.
 
-- **Working ranges.** A project without `metadata.colorManagement` is an SDR project.
-  SDR projects keep Freecut's reference behaviour: every effect, blend and transition
-  clamps exactly as upstream, whichever GPU route renders it. HDR projects
-  (`workingRange: 'hdr'`) use extended-range sRGB encoding with BT.709 primaries.
-  1.0 is reference white (203 cd/m² by default, ITU-R BT.2408). Values above 1 are
-  highlights, and negative values carry wide gamut. The float route keeps them until
-  the explicit output conversion.
-- **Output and ingest.** The module defines the explicit PQ/HLG BT.2020 output
-  conversion and HDR source ingest, with reference values tested against ST 2084
-  and BT.2100/BT.2408.
-- **Tone mapping** is a named policy (`sdrMonitoring: 'bt2390'`). It is never
-  inherited from playback.
-- **Propagation.** The range travels with project metadata into preview, queued
-  export, client export and headless composition input. Each renderer applies it to
-  its effects, transition, media-blend and compositor pipelines.
-- **HDR effects.** Shaders stop only at the rgba16float finite limit. Gamma is
-  sign-preserving, curves and LUTs pass the out-of-domain offset through, and a
-  collapsed Levels input range no longer divides by zero. `effect-hdr-semantics.json`
-  declares each effect as extended, bounded or palette.
-- **HDR blends.** Arithmetic modes (normal, darken, multiply, lighten, linear
-  burn/dodge/light, difference, subtract) drop their clamps. Soft light keeps its
-  signed extension. Modes defined only on [0, 1] blend the in-range part and carry the
-  base's out-of-range offset.
-- **SDR blends.** Blends see their inputs as Freecut's 8-bit route would, so an
-  out-of-range CSS colour cannot produce NaN.
-- **Transitions.** They keep Codex's extended float variants in HDR projects and use
-  Freecut's display bounds in SDR projects.
+- **Working ranges.** SDR keeps Freecut's sRGB-encoded BT.709 parameters, clamps,
+  endpoints and directions. HDR uses **linear display-referred BT.709**, straight
+  alpha, with **1.0 = 203 cd/m²** by default (`linear-display-bt709-v1`). Signed RGB
+  carries wide gamut and values above 1 carry highlights until explicit output.
+- **Ingress and output.** Decoded PQ/HLG BT.2020 planes enter this linear domain.
+  SDR media decode each texel before premultiplied filtering; authored shape,
+  gradient, stroke and background colors decode before interpolation/compositing.
+  Text and Lottie Canvas snapshots decode into float textures. Output explicitly
+  converts to PQ/HLG BT.2020 or the selected SDR monitoring policy.
+- **Admitted HDR graph.** Effect-free items, normal straight-alpha source-over,
+  masks, nested viewports, cuts and explicit output have bounded regression
+  witnesses. All 54 enabled effects, 21 transitions and 24 non-normal blends
+  throw the shared `HdrRenderUnavailableError` until individually migrated and
+  measured in this domain. Nested compositions containing a transition refuse
+  as a whole. A declined HDR float item also refuses Canvas fallback.
+- **Historical contracts.** Patch 0031's extended sRGB-encoded HDR classifications
+  and prior receipts belong to that historical domain. The effect/transition
+  semantics retain their original contracts, commit and file hashes under
+  `historicalEncodedHdr`; they cannot qualify current linear HDR.
 
-Hosted regressions:
+The effects, blend and transition matrices retain production SDR measurements:
+parameter extremes and meanings, animation, stack order, blend equations,
+transition endpoints/directions and rgba8/float parity. They also observe each
+registered HDR operator's typed refusal; normal HDR blend remains a positive
+source-over measurement. The independent photometric equations and signed/gamma/
+highlight discriminators remain historical checks, with a separate current SDR
+oracle and reviewed source hash guard. `tools/linear-hdr-subtree.browser.mjs`
+provides separate physical PQ/HLG/SDR equations for admitted linear HDR paths.
+`tools/graphics-float.browser.mjs` measures admitted effect-free graphics.
 
-- `tools/effects-matrix.browser.mjs` covers all 54 effects: every numeric extreme,
-  select option and boolean, in both ranges.
-- `tools/blend-matrix.browser.mjs` covers all 25 blend modes. SDR projects are checked
-  on the rgba8 and float routes against Freecut's formulas, restated as the pinned
-  reference. This includes its HSL saturation denominators, which differ from CSS.
-  HDR projects are checked against the declared semantics.
-- `tools/transition-matrix.browser.mjs` covers all 21 transitions and every direction
-  at five progress points. It checks exact HDR endpoints and parity between the SDR
-  float and rgba8 routes. It also checks HDR midpoint range and mirror symmetry of
-  opposite directions. `transition-semantics.json` records these per transition,
-  including Freecut's stylised SDR endpoints for chromatic, sparkles, liquid distort
-  and light leak. Each transition also runs through the production renderer on a cut
-  between two image clips: progress follows the timeline, a participant's keyframed
-  opacity draws as its static values, and a blended layer stacks over the result.
-  Every invalid input draws as its declared meaning, the same on the preview surface
-  as in export.
+Browser reports bind actual prepared input and patch hashes, the tested commit,
+runner/oracle/harness hashes, working-domain conventions and observed fixture
+outcomes. The evidence updater consumes per-feature/per-case observations. A
+passing refusal cannot cover a rendered fixture, and SDR measurements cannot
+cover HDR extremes. Passing regressions do not establish hardware, native,
+other-browser, human or release acceptance.
 
 Patch 0048 gives a transition's invalid inputs that meaning (FL-99), by the rule patch
 0039 set for effect parameters: a finite number outside its declared range is clamped to
@@ -256,8 +246,8 @@ renderer and the audio crossfade read their windows and transitions from, so no
 transition carries its own. Finite durations keep their whole frames and are not held to
 a transition's editing minimum and maximum, and finite colour components are not clamped.
 
-The existing compositor, transition and nested regressions now cover both project
-ranges. Everything passes on SwiftShader (CI) and Apple Metal.
+The compositor, transition and nested regressions retain SDR transport and alpha
+witnesses; HDR operator refusals are isolated from admitted HDR subtree checks.
 
 Still missing:
 
@@ -347,8 +337,8 @@ all-blocked substitute policy.
 Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-107).
 
 - **Float route.** HDR projects, and any delivery request, render each item through
-  the participant path into rgba16float. That covers transform, keyframes and effects,
-  with masks left to the compositor. Every frame is then composited on the GPU
+  the participant path into rgba16float. Admitted HDR items cover transform and
+  opacity keyframes, with masks left to the compositor; unmigrated operators refuse. Every frame is then composited on the GPU
   compositor with the background as the bottom layer. The Canvas2D direct path is not
   used.
 - **Output conversion.** `ColorOutputPipeline` (`src/infrastructure/gpu-color`) is a
@@ -369,11 +359,11 @@ Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-10
 Tests:
 
 - `tools/color-output.browser.mjs` checks the GPU conversion against the reference.
-- `tools/hdr-signal.browser.mjs` renders an edited frame through the production
-  renderer in HDR and SDR projects.
-- `tools/hdr-master.browser.mjs` covers the edit-to-master path. It renders a cut, a
-  keyframed exposure, an HDR highlight and a linear-dodge blend. It encodes PQ and HLG
-  masters and decodes them within two 10-bit codes.
+- `tools/hdr-signal.browser.mjs` checks the old edited HDR graph as a typed refusal
+  and admitted effect-free HDR/SDR graphics through the production renderer.
+- `tools/hdr-master.browser.mjs` checks the old effect/blend graph as a typed refusal,
+  then renders admitted HDR raster cuts, SDR graphics and opacity keyframes. It
+  encodes PQ/HLG Main10 diagnostic masters and decodes them within two 10-bit codes.
 - `tools/hdr-master.test.mjs` covers the metadata maths, refusals and a lossless round
   trip.
 

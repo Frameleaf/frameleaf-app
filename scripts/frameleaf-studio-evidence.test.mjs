@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { WORKING_DOMAINS, REPORT_BINDINGS, observedFixtureIds } from "../studio/tools/lib/working-domain-report.mjs";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,7 +11,6 @@ import {
   validateConformance,
 } from "../studio/tools/conformance.mjs";
 import {
-  FAMILY_CASE_COVERAGE,
   applyCommandMatrixCoverage,
   applyFamilyCoverage,
   blockedAxisEntry,
@@ -146,26 +147,6 @@ test("missingCases lists every required case not in the covered set", () => {
 test("missingCases is empty once every required case is covered", () => {
   const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
   assert.deepEqual(missingCases(fixture("blend.normal"), "chromium", all), []);
-});
-
-test("the transition family claims all five chromium cases its matrix measures, and the overlay says so", async () => {
-  // transition-matrix.browser.mjs measures animated, composed and invalid for every transition
-  // through the production renderer; engine patch 0048 gives the invalid inputs their meaning.
-  assert.deepEqual([...FAMILY_CASE_COVERAGE.chromium.transition].sort(), [
-    "animated",
-    "composed",
-    "extreme",
-    "invalid",
-    "normal",
-  ]);
-  const overlay = JSON.parse(
-    await readFile(path.join(ROOT, "studio/conformance.json"), "utf8"),
-  );
-  const rows = overlay.rows.filter((row) => row.id.startsWith("transition."));
-  assert.equal(rows.length, 21);
-  for (const row of rows) {
-    assert.deepEqual(row.axes.chromium, pendingArtifactEntry("chromium"));
-  }
 });
 
 test("blockedAxisEntry names the axis and the exact missing cases", () => {
@@ -407,362 +388,187 @@ test("applyCommandMatrixCoverage treats a row absent from the report as fully un
   });
 });
 
-test("applyFamilyCoverage blocks every row of the family with partial coverage, and only that family", async () => {
-  const overlay = {
-    engineRevision: "e",
-    rows: [
-      overlayRow("blend.normal"),
-      overlayRow("blend.dissolve"),
-      overlayRow("effect.brightness"),
-    ],
-  };
-  const catalog = {
-    rows: [
-      fixture("blend.normal"),
-      fixture("blend.dissolve"),
-      fixture("effect.brightness"),
-    ],
-  };
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    new Set(["normal", "extreme"]),
-  );
-  assert.deepEqual(summary, {
-    family: "blend",
-    axis: "chromium",
-    rows: 2,
-    blocked: 2,
-    alreadyPassed: 0,
-    fullyCovered: 0,
-    pendingArtifact: 0,
-    passed: 0,
-  });
-  assert.deepEqual(overlay.rows[0].axes.chromium, {
-    status: "blocked",
-    reason:
-      "Missing chromium-axis case(s): animated, composed, invalid (FL-112).",
-  });
-  assert.deepEqual(overlay.rows[2].axes.chromium, { status: "not-tested" });
+// Synthetic schema witnesses only; these cannot qualify actual browser rendering.
+async function familyReport(ids = ['blend.normal'], names = ['normal', 'invalid', 'animated', 'composed']) {
+  const runner = 'studio/tools/blend-matrix.browser.mjs';
+  const digest = async (file) => createHash('sha256').update(await readFile(path.join(ROOT, file))).digest('hex');
+  const pixels = () => ({ pixels: [0.25, 0.5, 0.75, 1] });
+  const results = ids.map(id => ({ mode: id.split('.')[1], ...(names.includes('normal') ? { sdr: pixels() } : {}),
+    ...(names.includes('extreme') ? { floatSdr: pixels(), float: id === 'blend.normal' ? pixels() :
+      { outcome: 'refused', errorType: 'HdrRenderUnavailableError' } } : {}) }));
+  const cases = ids.flatMap(id => names.filter(name => ['animated', 'composed', 'invalid'].includes(name))
+    .map(name => ({ mode: id.split('.')[1], case: name, ...pixels() })));
+  return { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', browser: { name: 'chromium', userAgent: 'Chromium/1 synthetic schema fixture' },
+    source: { engineRevision: 'e', ...build(), commit: 'a'.repeat(40), runner: { path: runner, sha256: await digest(runner) },
+      bindings: await Promise.all(REPORT_BINDINGS.map(async (path) => ({ path, sha256: await digest(path) }))) }, results, cases,
+    observations: results.flatMap((row, index) => [
+      ...names.map(name => ({ fixtureId: `blend.${row.mode}/apply/${name}`, workingDomain: WORKING_DOMAINS.sdr,
+        expected: 'rendered', observed: 'rendered', result: 'passed', oracle: 'synthetic schema fixture only',
+        witness: name === 'normal' ? `results.${index}.sdr` : name === 'extreme' ? `results.${index}.floatSdr` :
+          `cases.${cases.findIndex(value => value.mode === row.mode && value.case === name)}` })),
+      ...(row.float ? [{ fixtureId: `blend.${row.mode}/apply/extreme`, workingDomain: WORKING_DOMAINS.hdr,
+        expected: row.mode === 'normal' ? 'rendered' : 'refused', observed: row.mode === 'normal' ? 'rendered' : 'refused',
+        result: 'passed', oracle: 'synthetic schema fixture only', witness: `results.${index}.float` }] : []),
+    ]) };
+}
+
+test('family coverage requires observed cases per row; SDR extremes and typed refusals cannot qualify HDR renders', async () => {
+  const overlay = { engineRevision: 'e', rows: [overlayRow('blend.normal'), overlayRow('blend.dissolve'), overlayRow('effect.gpu-brightness')] };
+  const catalog = { rows: overlay.rows.map(({ id }) => fixture(id)) };
+  const report = await familyReport();
+  report.results[0].floatSdr = structuredClone(report.results[0].sdr);
+  report.observations.push({ ...report.observations[0], fixtureId: 'blend.normal/apply/extreme', witness: 'results.0.floatSdr' }); // SDR only.
+  report.results.push({ mode: 'dissolve', float: { outcome: 'refused', errorType: 'HdrRenderUnavailableError' } });
+  report.observations.push({ fixtureId: 'blend.dissolve/apply/extreme', workingDomain: WORKING_DOMAINS.hdr,
+    expected: 'refused', observed: 'refused', result: 'passed', oracle: 'synthetic typed refusal', witness: 'results.1.float' });
+  await applyFamilyCoverage(overlay, catalog, manifest(), build(), 'blend', 'chromium', report);
+  assert.match(overlay.rows[0].axes.chromium.reason, /extreme.*SDR measurements cannot cover HDR extremes/);
+  assert.match(overlay.rows[1].axes.chromium.reason, /typed-refused; refusal regression does not cover/);
+  assert.match(overlay.rows[1].axes.chromium.reason, /animated, composed, extreme, invalid, normal/);
+  assert.deepEqual(overlay.rows[0].axes.safari, { status: 'not-tested' });
+  assert.deepEqual(overlay.rows[2].axes.chromium, { status: 'not-tested' });
 });
 
-test("applyFamilyCoverage never touches a different axis on the same row", async () => {
-  const passedSafari = { status: "passed", run: { path: "x", sha256: "y" } };
-  const overlay = {
-    engineRevision: "e",
-    rows: [overlayRow("blend.normal", { safari: passedSafari })],
-  };
-  const catalog = { rows: [fixture("blend.normal")] };
-  await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    new Set(["normal", "extreme"]),
-  );
-  assert.deepEqual(overlay.rows[0].axes.safari, passedSafari);
-  assert.equal(overlay.rows[0].axes.chromium.status, "blocked");
-});
-
-test("applyFamilyCoverage marks a fully-covered row's axis pending-artifact when no meta is given", async () => {
-  const overlay = { engineRevision: "e", rows: [overlayRow("blend.normal")] };
-  const catalog = { rows: [fixture("blend.normal")] };
-  const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    all,
-  );
-  assert.deepEqual(summary, {
-    family: "blend",
-    axis: "chromium",
-    rows: 1,
-    blocked: 0,
-    alreadyPassed: 0,
-    fullyCovered: 1,
-    pendingArtifact: 1,
-    passed: 0,
-  });
-  assert.deepEqual(overlay.rows[0].axes.chromium, {
-    status: "blocked",
-    reason:
-      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
-  });
-});
-
-test("applyFamilyCoverage replaces a now-false 'missing case(s)' reason once coverage becomes complete", async () => {
-  const stale = {
-    status: "blocked",
-    reason: "Missing chromium-axis case(s): invalid (FL-112).",
-  };
-  const overlay = {
-    engineRevision: "e",
-    rows: [overlayRow("blend.normal", { chromium: stale })],
-  };
-  const catalog = { rows: [fixture("blend.normal")] };
-  const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    all,
-  );
-  assert.equal(summary.pendingArtifact, 1);
-  assert.deepEqual(overlay.rows[0].axes.chromium, {
-    status: "blocked",
-    reason:
-      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
-  });
-});
-
-test("applyFamilyCoverage is idempotent once a row is already marked pending-artifact", async () => {
-  const pending = {
-    status: "blocked",
-    reason:
-      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
-  };
-  const overlay = {
-    engineRevision: "e",
-    rows: [overlayRow("blend.normal", { chromium: pending })],
-  };
-  const catalog = { rows: [fixture("blend.normal")] };
-  const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    all,
-  );
-  assert.equal(summary.pendingArtifact, 0);
-  assert.deepEqual(overlay.rows[0].axes.chromium, pending);
-});
-
-test("applyFamilyCoverage never downgrades an already-passed row", async () => {
-  const passed = { status: "passed", run: { path: "x", sha256: "y" } };
-  const overlay = {
-    engineRevision: "e",
-    rows: [overlayRow("blend.normal", { chromium: passed })],
-  };
-  const catalog = { rows: [fixture("blend.normal")] };
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    new Set(["normal"]),
-  );
-  assert.deepEqual(summary, {
-    family: "blend",
-    axis: "chromium",
-    rows: 1,
-    blocked: 0,
-    alreadyPassed: 1,
-    fullyCovered: 0,
-    pendingArtifact: 0,
-    passed: 0,
-  });
-  assert.deepEqual(overlay.rows[0].axes.chromium, passed);
-});
-
-test("applyFamilyCoverage family '*' matches every row regardless of id prefix", async () => {
-  const overlay = {
-    engineRevision: "e",
-    rows: [
-      overlayRow("readme.foo", { graph: { status: "not-tested" } }),
-      overlayRow("module.export", { graph: { status: "not-tested" } }),
-      overlayRow("blend.normal", { graph: { status: "not-tested" } }),
-    ],
-  };
-  const catalog = {
-    rows: [
-      fixture("readme.foo"),
-      fixture("module.export"),
-      fixture("blend.normal"),
-    ],
-  };
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "*",
-    "graph",
-    new Set(["normal", "invalid", "save", "reopen"]),
-  );
-  assert.deepEqual(summary, {
-    family: "*",
-    axis: "graph",
-    rows: 3,
-    blocked: 3,
-    alreadyPassed: 0,
-    fullyCovered: 0,
-    pendingArtifact: 0,
-    passed: 0,
-  });
-  assert.deepEqual(overlay.rows[0].axes.graph, {
-    status: "blocked",
-    reason: "Missing graph-axis case(s): bundle, unknown-fields (FL-112).",
-  });
-  assert.deepEqual(overlay.rows[1].axes.graph, {
-    status: "blocked",
-    reason: "Missing graph-axis case(s): bundle, unknown-fields (FL-112).",
-  });
-});
-
-test("applyFamilyCoverage with a real family does not touch rows outside it, unlike '*'", async () => {
-  const overlay = {
-    engineRevision: "e",
-    rows: [overlayRow("readme.foo"), overlayRow("blend.normal")],
-  };
-  const catalog = { rows: [fixture("readme.foo"), fixture("blend.normal")] };
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest(),
-    build(),
-    "blend",
-    "chromium",
-    new Set(["normal", "extreme"]),
-  );
-  assert.equal(summary.rows, 1);
-  assert.deepEqual(overlay.rows[0].axes.chromium, { status: "not-tested" });
-});
-
-test("applyFamilyCoverage throws on a row missing from the fixture catalog", async () => {
-  const overlay = { engineRevision: "e", rows: [overlayRow("blend.ghost")] };
-  const catalog = { rows: [] };
-  await assert.rejects(
-    () =>
-      applyFamilyCoverage(
-        overlay,
-        catalog,
-        manifest(),
-        build(),
-        "blend",
-        "chromium",
-        new Set(),
-      ),
-    /no matching row/,
-  );
-});
-
-test("buildPassedEntry throws naming the missing meta field", async () => {
-  await assert.rejects(
-    () =>
-      buildPassedEntry({
-        row: { id: "blend.normal" },
-        feature: feature("blend.normal"),
-        fixture: fixture("blend.normal"),
-        axis: "safari",
-        engineRevision: "e",
-        build: build(),
-        manifest: manifest(),
-        meta: {},
-        artifactPath: "x",
-      }),
-    /meta\.version is required/,
-  );
-});
-
-test("applyFamilyCoverage writes a real schema-shaped artifact and marks the row passed, given meta and full coverage", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "studio-evidence-"));
-  try {
-    const reportPath = path.join(dir, "safari-report.json");
-    await writeFile(reportPath, JSON.stringify({ ok: true }));
-    const artifactDirAbs = path.join(dir, "artifacts");
-    await mkdir(artifactDirAbs, { recursive: true });
-    const overlay = { engineRevision: "e", rows: [overlayRow("blend.normal")] };
-    const catalog = { rows: [fixture("blend.normal")] };
-    const manifestObject = {
-      features: [feature("blend.normal")],
-      familySourceInventory: {},
-    };
-    const all = new Set([
-      "normal",
-      "invalid",
-      "animated",
-      "extreme",
-      "composed",
-    ]);
-    const meta = {
-      version: "18.2",
-      hardware: "macOS 15.2 (Sequoia), MacBook Pro M3",
-      tool: "safaridriver + WebDriver",
-      commit: "c".repeat(40),
-      command: ["safaridriver", "--port", "4444"],
-      controlPaths: ["studio/tools/blend-matrix.browser.mjs"],
-      parameterDomain: "same declared params and extremes as the chromium run",
-      tolerances: "same pixel/float tolerances as blend-matrix.browser.mjs",
-      reviewer: "library-qa",
-      artifacts: [path.relative(ROOT, reportPath)],
-      startedAt: "2026-09-29T00:00:00Z",
-      finishedAt: "2026-09-29T00:00:01Z",
-    };
-    const summary = await applyFamilyCoverage(
-      overlay,
-      catalog,
-      manifestObject,
-      build(),
-      "blend",
-      "safari",
-      all,
-      {
-        meta,
-        artifactDir: path.relative(ROOT, artifactDirAbs),
-      },
-    );
-    assert.deepEqual(summary, {
-      family: "blend",
-      axis: "safari",
-      rows: 1,
-      blocked: 0,
-      alreadyPassed: 0,
-      fullyCovered: 1,
-      pendingArtifact: 0,
-      passed: 1,
-    });
-    const entry = overlay.rows[0].axes.safari;
-    assert.equal(entry.status, "passed");
-    assert.equal(typeof entry.run.sha256, "string");
-    const artifact = JSON.parse(
-      await readFile(path.join(ROOT, entry.run.path), "utf8"),
-    );
-    assert.equal(artifact.kind, "measured-conformance");
-    assert.equal(artifact.axis, "safari");
-    assert.equal(artifact.featureId, "blend.normal");
-    assert.equal(artifact.target, "safari/18.2");
-    assert.equal(artifact.hardware, meta.hardware);
-    assert.deepEqual(artifact.fixtureIds, [
-      "blend.normal/apply/normal",
-      "blend.normal/apply/invalid",
-      "blend.normal/apply/animated",
-      "blend.normal/apply/extreme",
-      "blend.normal/apply/composed",
-    ]);
-    assert.equal(artifact.sourceReview.reviewer, "library-qa");
-    assert.equal(artifact.artifacts.length, 1);
-    assert.notEqual(artifact.artifacts[0].path, entry.run.path);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+test('family reports reject static grants, stale source, wrong domain, missing/duplicate cases, unexpected outcomes and changed bindings', async () => {
+  const args = [{ engineRevision: 'e', rows: [overlayRow('blend.normal')] }, { rows: [fixture('blend.normal')] }, manifest(), build(), 'blend', 'chromium'];
+  await assert.rejects(applyFamilyCoverage(...args, new Set(['normal', 'extreme'])), /domain report schema/);
+  const wrongFamily = structuredClone(args); wrongFamily[4] = 'effect';
+  await assert.rejects(applyFamilyCoverage(...wrongFamily, await familyReport()), /another operator family/);
+  for (const mutate of [
+    r => { r.result = 'failed'; }, r => { r.browser.name = 'safari'; }, r => { delete r.browser.userAgent; },
+    r => { r.source.sourceSha256 = '0'.repeat(64); }, r => { r.source.patches = []; },
+    r => { r.source.runner.sha256 = '0'.repeat(64); }, r => { r.source.bindings[0].sha256 = '0'.repeat(64); },
+    r => { r.observations = []; }, r => { r.observations.push(r.observations[0]); },
+    r => { r.observations[0].workingDomain = { ...WORKING_DOMAINS.hdr, referenceWhiteNits: 100 }; },
+    r => { r.observations[0].workingDomain = { ...WORKING_DOMAINS.sdr, encoding: 'linear' }; },
+    r => { r.observations[0].observed = 'refused'; }, r => { r.results[0].sdr.error = 'unexpected'; }, r => { r.observations[0].witness = 'missing'; },
+    r => { r.observations[0].fixtureId = 'blend.unknown/apply/normal'; },
+  ]) {
+    const report = await familyReport(); mutate(report);
+    await assert.rejects(applyFamilyCoverage(...structuredClone(args), report));
   }
+});
+
+test('a complete observed family row remains pending until measured metadata and its exact report are retained', async () => {
+  const overlay = { engineRevision: 'e', rows: [overlayRow('blend.normal')] };
+  const catalog = { rows: [fixture('blend.normal')] };
+  const report = await familyReport(['blend.normal'], ['normal', 'invalid', 'animated', 'extreme', 'composed']);
+  const args = [overlay, catalog, { ...manifest(), features: [feature('blend.normal')] }, build(), 'blend', 'chromium', report];
+  assert.equal((await applyFamilyCoverage(...args)).pendingArtifact, 1);
+  assert.deepEqual(overlay.rows[0].axes.chromium, pendingArtifactEntry('chromium'));
+  assert.equal((await applyFamilyCoverage(...args)).pendingArtifact, 0);
+  const dir = await mkdtemp(path.join(ROOT, 'studio/.evidence-test-'));
+  try {
+    const reportPath = path.relative(ROOT, path.join(dir, 'report.json'));
+    await writeFile(path.join(ROOT, reportPath), JSON.stringify(report));
+    const meta = { version: 'synthetic', hardware: 'synthetic', tool: 'node schema test', commit: report.source.commit,
+      command: ['node', 'synthetic'], controlPaths: ['synthetic'], parameterDomain: 'synthetic', tolerances: 'exact', reviewer: 'synthetic',
+      artifacts: [reportPath], startedAt: '2026-10-07T00:00:00Z', finishedAt: '2026-10-07T00:00:01Z' };
+    assert.equal((await applyFamilyCoverage(...args, { meta, artifactDir: path.relative(ROOT, dir) })).passed, 1);
+    const record = JSON.parse(await readFile(path.join(ROOT, overlay.rows[0].axes.chromium.run.path)));
+    assert.equal(record.observationReport.path, reportPath);
+    assert.equal(record.fixtureIds.length, 5);
+    await assert.rejects(buildPassedEntry({ row: overlay.rows[0], feature: feature('blend.normal'), fixture: catalog.rows[0],
+      axis: 'chromium', engineRevision: 'e', build: build(), manifest: manifest(), meta, artifactPath: 'unused' }), /domain report/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('independent conformance validation rejects fixture lists without observed HDR render evidence', async () => {
+  const data = await loadConformance(ROOT);
+  const row = data.overlay.rows.find(value => value.id === 'blend.normal');
+  const feature = data.manifest.features.find(value => value.id === row.id);
+  const fixture = data.catalog.rows.find(value => value.id === row.id);
+  const dir = await mkdtemp(path.join(ROOT, 'studio/.evidence-test-'));
+  const save = async (name, value) => {
+    const relative = path.relative(ROOT, path.join(dir, name));
+    const bytes = JSON.stringify(value);
+    await writeFile(path.join(ROOT, relative), bytes);
+    return { path: relative, sha256: createHash('sha256').update(bytes).digest('hex') };
+  };
+  try {
+    const report = await familyReport([row.id], ['normal', 'invalid', 'animated', 'extreme', 'composed']);
+    Object.assign(report.source, data.build, { engineRevision: data.manifest.engineRevision });
+    const retained = await save('report.json', report);
+    const meta = { version: 'synthetic', hardware: 'synthetic schema environment', tool: 'node schema test', commit: report.source.commit,
+      command: ['node', 'synthetic'], controlPaths: ['synthetic'], parameterDomain: 'synthetic', tolerances: 'exact', reviewer: 'synthetic',
+      artifacts: [retained.path], startedAt: '2026-10-07T00:00:00Z', finishedAt: '2026-10-07T00:00:01Z' };
+    row.axes.chromium = await buildPassedEntry({ row, feature, fixture, axis: 'chromium', report, meta,
+      engineRevision: data.manifest.engineRevision, build: data.build, manifest: data.manifest,
+      artifactPath: path.relative(ROOT, path.join(dir, 'run.json')) });
+    assert.equal((await validateConformance(data, ROOT)).passedAxes, 1);
+    const run = JSON.parse(await readFile(path.join(ROOT, row.axes.chromium.run.path)));
+    const noReport = structuredClone(run); delete noReport.observationReport;
+    row.axes.chromium.run = await save('run.json', noReport);
+    await assert.rejects(validateConformance(data, ROOT), /retained observation report/);
+    for (const mutate of [
+      r => { r.observations.find(value => value.fixtureId.endsWith('/extreme') && value.workingDomain.id === WORKING_DOMAINS.hdr.id).workingDomain = WORKING_DOMAINS.sdr; },
+      r => { const value = r.observations.find(value => value.fixtureId.endsWith('/extreme') && value.workingDomain.id === WORKING_DOMAINS.hdr.id);
+        Object.assign(value, { expected: 'refused', observed: 'refused', witness: 'results.1.float' }); },
+      r => { r.source.runner.sha256 = '0'.repeat(64); },
+      r => { r.source.bindings[0].sha256 = '0'.repeat(64); },
+    ]) {
+      const changed = structuredClone(report); mutate(changed);
+      const ref = await save('report.json', changed);
+      row.axes.chromium.run = await save('run.json', { ...run, artifacts: [ref], observationReport: ref });
+      await assert.rejects(validateConformance(data, ROOT));
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// Keep artifact/source metadata valid: these attacks change only observation-to-route binding.
+const forgedRoutes = [
+  report => {
+    report.observations = report.observations.filter(value => !(value.fixtureId === 'blend.screen/apply/extreme' && value.workingDomain.id === WORKING_DOMAINS.hdr.id));
+    report.observations.find(value => value.fixtureId === 'blend.screen/apply/extreme').workingDomain = WORKING_DOMAINS.hdr;
+  },
+  report => { report.observations.find(value => value.fixtureId === 'blend.normal/apply/normal').witness = 'results.1.sdr'; },
+  report => { report.observations.find(value => value.fixtureId === 'blend.normal/apply/animated').witness = 'cases.2'; },
+];
+
+test('updater rejects SDR-to-HDR relabeling and another feature or case witness', async () => {
+  const args = [{ engineRevision: 'e', rows: [overlayRow('blend.normal'), overlayRow('blend.screen')] },
+    { rows: [fixture('blend.normal'), fixture('blend.screen')] }, manifest(), build(), 'blend', 'chromium'];
+  for (const [index, forge] of forgedRoutes.entries()) {
+    const report = await familyReport(['blend.normal', 'blend.screen'], ['normal', 'invalid', 'animated', 'extreme', 'composed']);
+    forge(report);
+    const id = index === 0 ? 'blend.screen' : 'blend.normal', name = ['extreme', 'normal', 'animated'][index];
+    assert(!observedFixtureIds(report, id).includes(`${id}/apply/${name}`), 'coverage must derive the measured route');
+    await assert.rejects(applyFamilyCoverage(...structuredClone(args), report), /route binding/);
+  }
+});
+
+test('independent validator rejects relabeled and substituted witnesses despite matching artifact/source metadata', async () => {
+  const original = await loadConformance(ROOT);
+  const dir = await mkdtemp(path.join(ROOT, 'studio/.evidence-test-'));
+  const save = async (name, value) => {
+    const relative = path.relative(ROOT, path.join(dir, name)), bytes = JSON.stringify(value);
+    await writeFile(path.join(ROOT, relative), bytes);
+    return { path: relative, sha256: createHash('sha256').update(bytes).digest('hex') };
+  };
+  try {
+    const report = await familyReport(['blend.normal', 'blend.screen'], ['normal', 'invalid', 'animated', 'extreme', 'composed']);
+    Object.assign(report.source, original.build, { engineRevision: original.manifest.engineRevision });
+    const data = structuredClone(original), row = data.overlay.rows.find(value => value.id === 'blend.normal');
+    const fixture = data.catalog.rows.find(value => value.id === row.id), feature = data.manifest.features.find(value => value.id === row.id);
+    const retained = await save('report.json', report);
+    const meta = { version: 'synthetic', hardware: 'synthetic schema environment', tool: 'node schema test', commit: report.source.commit,
+      command: ['node', 'synthetic'], controlPaths: ['synthetic'], parameterDomain: 'synthetic', tolerances: 'exact', reviewer: 'synthetic',
+      artifacts: [retained.path], startedAt: '2026-10-07T00:00:00Z', finishedAt: '2026-10-07T00:00:01Z' };
+    row.axes.chromium = await buildPassedEntry({ row, feature, fixture, axis: 'chromium', report, meta,
+      engineRevision: data.manifest.engineRevision, build: data.build, manifest: data.manifest,
+      artifactPath: path.relative(ROOT, path.join(dir, 'run.json')) });
+    assert.equal((await validateConformance(data, ROOT)).passedAxes, 1);
+    const run = JSON.parse(await readFile(path.join(ROOT, row.axes.chromium.run.path)));
+    for (const [index, forge] of forgedRoutes.entries()) {
+      const changed = structuredClone(report); forge(changed);
+      const ref = await save('report.json', changed), data = structuredClone(original);
+      const id = index === 0 ? 'blend.screen' : 'blend.normal';
+      data.overlay.rows.find(value => value.id === id).axes.chromium = { status: 'passed',
+        run: await save('run.json', { ...run, featureId: id,
+          fixtureIds: run.fixtureIds.map(value => value.replace('blend.normal', id)), artifacts: [ref], observationReport: ref }) };
+      await assert.rejects(validateConformance(data, ROOT), /route binding/);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test("mergeMatrixCoverage unions per-row coverage across reports that own disjoint cases", () => {

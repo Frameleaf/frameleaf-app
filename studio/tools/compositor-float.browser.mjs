@@ -6,7 +6,7 @@ import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
-const softLightBase = [-0.25, 4, 0, 1, 0.0625, 0.25, 0.75, 1, -0.25, 4, 0, 0.5, 0.0625, 0.25, 0.75, 0.5];
+const softLightBase = [0.125, 0.875, 0, 1, 0.0625, 0.25, 0.75, 1, 0.125, 0.875, 0, 0.5, 0.0625, 0.25, 0.75, 0.5];
 const softLightLevels = [0, 0.25, 0.5, 0.75, 1];
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
 try {
@@ -20,6 +20,7 @@ try {
     if (!navigator.gpu) throw new Error('WebGPU unavailable; compositor float regression cannot run');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('No WebGPU adapter; compositor float regression cannot run');
+    const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
     const device = await EffectsPipeline.requestCachedDevice();
     if (!device) throw new Error('No effects GPU device');
@@ -66,6 +67,15 @@ try {
           maskView: mask.createView(),
         },
       ];
+      const refusal = (run) => {
+        try { run(); throw new Error('HDR operator unexpectedly rendered'); }
+        catch (error) {
+          if (!(error instanceof HdrRenderUnavailableError)) throw error;
+          return { errorType: error.name, reason: error.message };
+        }
+      };
+      const externalLayer = layers.pop();
+      const hdrExternalRefusal = refusal(() => pipeline.compositeToTexture([...layers, externalLayer], 4, 1, device.createCommandEncoder()));
       const encoder = device.createCommandEncoder();
       const composite = pipeline.compositeToTexture(layers, 4, 1, encoder);
       if (!composite) throw new Error('Compositor rejected float layers');
@@ -96,6 +106,10 @@ try {
         [4, 1],
       );
       device.queue.submit([canvasEncoder.finish()]);
+      const hdrBlendRefusal = refusal(() => pipeline.compositeToTexture([
+        layer, { ...layer, params: { ...layer.params, blendMode: 'soft-light' } },
+      ], 4, 1, device.createCommandEncoder()));
+      pipeline.setWorkingRange('sdr');
       const softLightSource = texture(softLightBase);
       const softLightReadbacks = [];
       for (const level of softLightLevels) {
@@ -126,6 +140,15 @@ try {
       buffers.push(sdrReadback);
       sdrEncoder.copyTextureToBuffer({ texture: sdrComposite.texture }, { buffer: sdrReadback, bytesPerRow: 256 }, [4, 1]);
       device.queue.submit([sdrEncoder.finish()]);
+      const externalEncoder = device.createCommandEncoder();
+      const sdrSource = texture(pixels.map((value, index) => index % 4 === 3 ? value : Math.min(1, Math.max(0, value))));
+      const sdrLayers = layers.map(layer => ({ ...layer, textureView: sdrSource.createView() }));
+      const externalComposite = pipeline.compositeToTexture([...sdrLayers, externalLayer], 4, 1, externalEncoder);
+      if (!externalComposite) throw new Error('SDR external texture rejected');
+      const externalReadback = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      buffers.push(externalReadback);
+      externalEncoder.copyTextureToBuffer({ texture: externalComposite.texture }, { buffer: externalReadback, bytesPerRow: 256 }, [4, 1]);
+      device.queue.submit([externalEncoder.finish()]);
       pipeline.setWorkingRange('hdr');
       effectsPipeline = await EffectsPipeline.create();
       if (!effectsPipeline) throw new Error('Effects pipeline unavailable');
@@ -165,12 +188,14 @@ try {
         }
         readEffect(name, output);
       };
-      // Pixel 1 keeps extended channels (2, -1) with a luma inside pixel sort's declared [0, 1]
-      // band after the vignette, so the sort moves extended values at its declared thresholds.
+      // Bounded SDR values cross the sort's declared luma thresholds after the
+      // fragment pass, so a real compute scatter must move the texels.
       const effectInput = effectTexture('rgba16float',
-        [...pixels.slice(0, 4), 2, 1.8, -1, 1, ...pixels.slice(8, 12), 1.25, -0.25, 0.0009765625, 0]);
+        [0.25, 0.75, 0.333251953125, 0.5, 0.75, 0.9, 0.125, 1, ...pixels.slice(8, 12), 0.875, 0.25, 0.0009765625, 0]);
       const floatOutput = effectTexture('rgba16float');
       const sdrOutput = effectTexture('rgba8unorm');
+      const hdrEffectRefusal = refusal(() => runEffects('historicalHdrIdentity', effectInput, identityEffects, floatOutput));
+      effectsPipeline.setWorkingRange('sdr');
       runEffects('identity', effectInput, identityEffects, floatOutput);
       // A visible fragment operation followed by compute scatter proves neither pass was skipped.
       runEffects('active', effectInput, [
@@ -203,6 +228,8 @@ try {
       if (error) throw new Error(`Float compositor GPU validation failed: ${error.message}`);
       await Promise.all(buffers.map((buffer) => buffer.mapAsync(GPUMapMode.READ)));
       return {
+        hdrExternalRefusal, hdrBlendRefusal, hdrEffectRefusal,
+        sdrExternalPixels: Array.from(new Float16Array(externalReadback.getMappedRange(), 0, 16)),
         effectPixels: Object.fromEntries(effectReadbacks.map(({ name, buffer, format }) => {
           const View = format === 'rgba16float' ? Float16Array : Uint8Array;
           const mapped = buffer.getMappedRange();
@@ -235,26 +262,15 @@ try {
   };
   const result = await page.evaluate(probe, { softLightBase, softLightLevels });
   assert.equal(result.format, 'rgba16float');
-  // Black video at 25% opacity must contribute: masked alpha 5/8 becomes 23/32,
-  // and its straight RGB is attenuated by (5/8 * 3/4) / (23/32) = 15/23.
-  const expected = [
-    (-0.5 * 15) / 23,
-    (2 * 15) / 23,
-    (0.333251953125 * 15) / 23,
-    23 / 32,
-    1.5,
-    3,
-    -0.75,
-    1,
-    0.1875,
-    0.375,
-    0.5625,
-    1,
-    0,
-    0,
-    0,
-    0,
-  ];
+  // Normal linear HDR layers plus a bounded mask retain raw straight RGB.
+  // The historical external-texture HDR graph refuses; its positive transport
+  // witness remains SDR below.
+  const expected = [-0.5, 2, 0.333251953125, 5 / 8, 2, 4, -1, 1,
+    0.25, 0.5, 0.75, 1, 0, 0, 0, 0];
+  const sdrExternal = [0, 15 / 23, 0.333251953125 * 15 / 23, 23 / 32,
+    0.75, 0.75, 0, 1, 0.1875, 0.375, 0.5625, 1, 0, 0, 0, 0];
+  sdrExternal.forEach((value, index) => assert(Math.abs(result.sdrExternalPixels[index] - value) < 0.001,
+    `SDR external texture channel ${index}: ${result.sdrExternalPixels[index]} != ${value}`));
   for (let i = 0; i < expected.length; i++) {
     assert.ok(
       Math.abs(result.pixels[i] - expected[i]) < 0.001,
@@ -303,7 +319,7 @@ try {
       }
     }
   }
-  const effectInput = [-0.5, 2, 0.333251953125, 0.5, 2, 1.7998046875, -1, 1, 0.25, 0.5, 0.75, 1, 1.25, -0.25, 0.0009765625, 0];
+  const effectInput = [0.25, 0.75, 0.333251953125, 0.5, 0.75, 0.89990234375, 0.125, 1, 0.25, 0.5, 0.75, 1, 0.875, 0.25, 0.0009765625, 0];
   const quantized = effectInput.map((value) => Math.round(Math.min(1, Math.max(0, value)) * 255));
   const active = [1, 0, 2, 3].flatMap((pixel) =>
     effectInput.slice(pixel * 4, pixel * 4 + 4).map((value, channel) => channel === 3 ? value : value * 0.5),
@@ -328,7 +344,10 @@ try {
     assert.ok(Math.abs(result.legacyActual[i] - result.legacyExpected[i]) <= 2,
       `Legacy effects canvas channel ${i}: alpha representation changed`);
   }
-  console.log(JSON.stringify({ check: 'compositor and effect float transport, compute scatter, alpha and SDR boundaries', ...result }));
+  assert.equal(result.hdrExternalRefusal.errorType, 'HdrRenderUnavailableError');
+  assert.equal(result.hdrBlendRefusal.errorType, 'HdrRenderUnavailableError');
+  assert.equal(result.hdrEffectRefusal.errorType, 'HdrRenderUnavailableError');
+  console.log(JSON.stringify({ check: 'linear HDR normal compositor; SDR effects, compute scatter, alpha and format switches; typed HDR operator refusals', ...result }));
 } finally {
   await browser.close();
 }

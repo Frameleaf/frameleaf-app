@@ -1,10 +1,8 @@
-// FL-107 (VID-202): edit → float graph → native master, end to end. An edited
-// HDR sequence (a cut between two clips, a keyframed exposure, an HDR highlight
-// and a linear-dodge blend) renders through the production renderer's float
-// route and explicit PQ/HLG output conversion, is encoded as HEVC Main10 with
-// measured HDR10 metadata, and is decoded back independently. Requires FFmpeg
-// with libx265 (installed in the engine workflow).
+// Admitted linear HDR raster cuts, SDR graphics and opacity keyframes -> Main10
+// diagnostic masters. The historical exposure/linear-dodge graph is typed-refused.
+// Production helper expectations check parity; linear-hdr-subtree is the physical oracle.
 import assert from 'node:assert/strict';
+import { testedSource } from './lib/working-domain-report.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -15,6 +13,7 @@ import path from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 import { decodeMaster, encodeHdrMaster, validateHdrPlaneSamples } from './hdr-master.mjs';
 
+const source = await testedSource(new URL(import.meta.url));
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
@@ -67,7 +66,29 @@ window.__vite_plugin_react_preamble_installed__ = true
       }] }],
     };
     const canvas = new OffscreenCanvas(W, H);
-    const renderer = await createCompositionRenderer(composition, canvas, canvas.getContext('2d'), { mode: 'export' });
+    const historicalRenderer = await createCompositionRenderer(composition, canvas, canvas.getContext('2d'), { mode: 'export' });
+    let historicalHdrRefusal;
+    try { await historicalRenderer.renderFrameSignal(0, 'pq'); throw new Error('Historical HDR operators unexpectedly rendered'); }
+    catch (error) {
+      if (!(error instanceof color.HdrRenderUnavailableError)) throw error;
+      historicalHdrRefusal = { errorType: error.name, reason: error.message, emitted: 0 };
+    } finally { historicalRenderer.dispose(); }
+    const codes = { pq: [0.75, 0.75, 0.75].map(value => Math.round(value * 65535)),
+      hlg: [0.7, 0.65, 0.6].map(value => Math.round(value * 65535)) };
+    const raster = (transfer) => ({ width: W, height: H, transfer,
+      rgb: new Uint16Array(Array.from({ length: W * H }, () => codes[transfer]).flat()) });
+    const hdrRasters = { 'master-pq': raster('pq'), 'master-hlg': raster('hlg') };
+    const clip = (id, transfer, from) => ({ ...rect(id, 'track-2', -8, 16, '#fff'), type: 'image',
+      mediaId: `master-${transfer}`, src: '', from, durationInFrames: 2, sourceWidth: W, sourceHeight: H });
+    const grey = rect('opacity-grey', 'track-1', 8, 16, 'rgb(50%, 50%, 50%)');
+    const normal = rect('normal-strip', 'track-0', 12, 8, 'rgb(40%, 40%, 40%)');
+    normal.transform.opacity = 0.5;
+    const admitted = { ...composition, tracks: [track(0, [normal]), track(1, [grey]),
+      track(2, [clip('pq-cut', 'pq', 0), clip('hlg-cut', 'hlg', 2)])],
+      keyframes: [{ itemId: grey.id, properties: [{ property: 'opacity', keyframes: [
+        { id: 'k0', frame: 0, value: 0, easing: 'linear' }, { id: 'k3', frame: 3, value: 1, easing: 'linear' },
+      ] }] }] };
+    const renderer = await createCompositionRenderer(admitted, canvas, canvas.getContext('2d'), { mode: 'export', hdrRasters });
     const out = { pq: [], hlg: [] };
     try {
       for (const target of ['pq', 'hlg']) {
@@ -79,19 +100,18 @@ window.__vite_plugin_react_preamble_installed__ = true
     } finally {
       renderer.dispose?.();
     }
-    // Reference working values at the probe points of each frame.
-    const exposure = (frame) => 1.5 * (frame / 3);
+    // CPU/GPU helper parity for the admitted linear graph, not an independent physical oracle.
     const reference = (frame) => ({
-      clip: frame < 2 ? [2.5, 1.2, 0.6] : [0.3, 0.6, 0.9],
-      exposed: [0.5, 0.5, 0.5].map((v) => v * 2 ** exposure(frame)),
-      dodge: [0.5, 0.5, 0.5].map((v) => v * 2 ** exposure(frame) + 0.4),
+      clip: color.signalToWorking(codes[frame < 2 ? 'pq' : 'hlg'].map(value => value / 65535), frame < 2 ? 'pq' : 'hlg'),
+      opacity: [0.5, 0.5, 0.5].map(value => color.srgbDecodeExtended(value) * frame / 3),
+      normal: [0.5, 0.5, 0.5].map(value => color.srgbDecodeExtended(value) * frame / 3 * 0.5 + color.srgbDecodeExtended(0.4) * 0.5),
     });
     const want = {};
     for (const target of ['pq', 'hlg']) {
       want[target] = Array.from({ length: FRAMES }, (_, frame) => Object.fromEntries(
         Object.entries(reference(frame)).map(([key, working]) => [key, color.workingToSignal(working, target)])));
     }
-    return { out, want };
+    return { workingDomain: color.HDR_WORKING_DOMAIN, alpha: 'straight', referenceWhiteNits: 203, expectation: 'production helper parity only; independent physical oracle is linear-hdr-subtree', historicalHdrRefusal, inputProfiles: ['16-bit PQ BT.2020 raster', '16-bit HLG BT.2020 raster', 'SDR authored BT.709 graphics'], out, want };
   }, { W, H, FRAMES });
 } finally {
   await browser.close();
@@ -106,8 +126,10 @@ const writeReport = (masters) =>
     rendered, masters,
   }));
 await writeReport(null);
+assert.equal(rendered.historicalHdrRefusal.errorType, 'HdrRenderUnavailableError');
+assert.equal(rendered.historicalHdrRefusal.emitted, 0);
 
-const points = { clip: [8, 8], exposed: [20, 8], dodge: [28, 8] };
+const points = { clip: [8, 8], opacity: [20, 8], normal: [28, 8] };
 const dir = mkdtempSync(process.env.HDR_MASTER_REPORT
   ? `${path.resolve(process.env.HDR_MASTER_REPORT)}.artifacts-` : path.join(tmpdir(), 'fl-hdr-master-e2e-'));
 try {
@@ -161,8 +183,10 @@ try {
     summary[transfer].planeDecodeArgs = ['-v', 'error', '-xerror', '-i', summary[transfer].outputPath ?? output,
       '-pix_fmt', 'yuv420p10le', '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'];
   }
+  assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+  Object.assign(summary, { source, result: 'passed' });
   await writeReport(summary);
-  console.log(JSON.stringify({ check: 'edited HDR sequence through float route, explicit output and HEVC Main10 master', ...summary }));
+  console.log(JSON.stringify({ check: 'admitted linear HDR cuts/graphics/opacity through explicit output and HEVC Main10 diagnostic master', ...summary }));
 } finally {
   if (!process.env.HDR_MASTER_REPORT) rmSync(dir, { recursive: true, force: true });
 }

@@ -1,18 +1,9 @@
-// FL-99 / FL-97: every blend mode through the production media-blend pipeline
-// (the compositor shares the same WGSL) on software WebGPU in CI.
-// - SDR projects match the pinned reference: Freecut 4d62e80's formulas,
-//   restated below, on both the legacy rgba8unorm route and the float route.
-// - HDR projects' float route keeps out-of-range values with the declared semantics
-//   (arithmetic modes unclamped, soft light signed, [0, 1]-defined modes carry
-//   the base's out-of-range offset), checked against the same reference.
-// - Every result is finite and re-renders bit-identically; dissolve coverage is
-//   all-or-nothing per pixel.
-// - Per mode through the production renderer (items, keyframes, compositor):
-//   animated opacity, a composed second blend, and invalid opacity and mode ids.
-//   BLEND_MATRIX_REPORT carries them as report.cases [{ mode, case, ... }].
+// All registered blends: independent pinned SDR formulas and production cases.
+// Linear display-referred HDR admits normal source-over; other modes are typed-refused.
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
@@ -43,6 +34,7 @@ const layerRow = (alpha) => [[0, 0, 0, alpha], [1, 1, 1, alpha], [q(0.5), q(0.5)
 const layerRows = [layerRow(1), layerRow(1), layerRow(1), layerRow(q(0.5))];
 const sdrBaseRows = [baseRows[0], baseRows[1], baseRows[0], baseRows[3]];
 
+const source = await testedSource(new URL(import.meta.url));
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
 let report;
 try {
@@ -52,7 +44,9 @@ try {
   );
   await page.goto(origin + '/blend-matrix');
   report = await page.evaluate(async ({ W, H, MODES, base, sdrBase, layer }) => {
+    const { BLEND_MODE_INDEX } = await import('/src/types/blend-modes.ts');
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
+    const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { MediaBlendPipeline } = await import('/src/infrastructure/gpu-media/media-blend-pipeline.ts');
     const device = await EffectsPipeline.requestCachedDevice();
     if (!device) throw new Error('WebGPU unavailable; blend matrix cannot run');
@@ -79,7 +73,14 @@ try {
       const buffer = device.createBuffer({ size: 256 * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
       try {
         device.pushErrorScope('validation');
-        const accepted = blend.blend(inputs[format].base, inputs[format].layer, output, mode);
+        let accepted;
+        try { accepted = blend.blend(inputs[format].base, inputs[format].layer, output, mode); }
+        catch (error) {
+          const validation = await device.popErrorScope();
+          if (validation) throw new Error(validation.message);
+          if (!(error instanceof HdrRenderUnavailableError) || range !== 'hdr') throw error;
+          return { outcome: 'refused', errorType: error.name, message: error.message };
+        }
         const encoder = device.createCommandEncoder();
         encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow: 256 }, [W, H]);
         device.queue.submit([encoder.finish()]);
@@ -105,13 +106,12 @@ try {
     for (const mode of MODES) {
       results.push({
         mode,
-        // HDR project: float route with extended semantics.
+        // Actual registered operator in the linear HDR domain: normal renders, others refuse.
         float: await render('rgba16float', mode, 'hdr'),
-        again: await render('rgba16float', mode, 'hdr'),
+        again: await render('rgba16float', mode, 'sdr'),
         // SDR project: Freecut's semantics on the float route and on rgba8unorm.
         floatSdr: await render('rgba16float', mode, 'sdr'),
         sdr: await render('rgba8unorm', mode, 'sdr'),
-        sdrInHdr: await render('rgba8unorm', mode, 'hdr'),
       });
     }
     // The float inputs as the GPU holds them (half precision).
@@ -119,7 +119,8 @@ try {
     blend.destroy();
     for (const set of Object.values(inputs)) { set.base.destroy(); set.layer.destroy(); }
     const info = (await navigator.gpu.requestAdapter())?.info ?? {};
-    return { adapter: { vendor: info.vendor, architecture: info.architecture }, results,
+    return { browser: { name: 'chromium', driver: 'playwright', userAgent: navigator.userAgent }, registeredModes: Object.keys(BLEND_MODE_INDEX),
+      adapter: { vendor: info.vendor, architecture: info.architecture }, results,
       base16: f16(base), layer16: f16(layer) };
   }, { W, H, MODES, base: baseRows.flat(2), sdrBase: sdrBaseRows.flat(2), layer: layerRows.flat(2) });
 } finally {
@@ -385,20 +386,8 @@ const formulas = {
   color: (b, l) => { const lh = rgb2hsl(l); return setLum(hsl2rgb([lh[0], lh[1], 0.5]), lum(b)); },
   luminosity: (b, l) => setLum(b, lum(l)),
 };
-// Declared float-route semantics (FL-97).
-const ARITHMETIC = {
-  'linear-burn': each((b, l) => b + l - 1),
-  'linear-dodge': each((b, l) => b + l),
-  'linear-light': each((b, l) => b + 2 * l - 1),
-  subtract: each((b, l) => b - l),
-};
-const UNCLAMPED = new Set(['normal', 'dissolve', 'darken', 'multiply', 'lighten', 'soft-light', 'difference']);
-const extended = (mode) => (b, l) => {
-  if (ARITHMETIC[mode]) return ARITHMETIC[mode](b, l);
-  if (UNCLAMPED.has(mode)) return formulas[mode](b, l);
-  const bc = b.map(clamp01);
-  return formulas[mode](bc, l.map(clamp01)).map((v, i) => v + (b[i] - bc[i]));
-};
+// Historical encoded-HDR extensions are pinned in commit 24d509f1346e344bb356f92cd0fbed2a59b74ca8.
+// Only normal's arithmetic is admitted for current linear HDR.
 const sourceOver = (fn) => (base, layer) => {
   const srcA = clamp01(layer[3]);
   if (srcA <= 0) return base;
@@ -414,26 +403,24 @@ const check = (condition, message) => { if (!condition) failures.push(message); 
 const texel = (values, i) => values.slice(i * 4, i * 4 + 4);
 const sdrBase = sdrBaseRows.flat(2);
 const layer = layerRows.flat(2);
-for (const { mode, float, again, floatSdr, sdr, sdrInHdr } of report.results) {
-  const routes = { float, again, floatSdr, sdr, sdrInHdr };
+for (const { mode, float, again, floatSdr, sdr } of report.results) {
+  const routes = { again, floatSdr, sdr };
+  if (mode === 'normal') routes.float = float;
+  else check(float.errorType === 'HdrRenderUnavailableError', `${mode}: missing typed HDR refusal`);
   for (const [route, result] of Object.entries(routes)) {
     check(!result.error, `${mode} ${route}: ${result.error}`);
   }
   if (Object.values(routes).some((result) => result.error)) continue;
   check(floatSdr.pixels.every(Number.isFinite), `${mode}: non-finite SDR-project float output`);
-  // rgba8unorm is Freecut's route in every project.
-  check(sdrInHdr.pixels.every((v, i) => v === sdr.pixels[i]), `${mode}: HDR project changed the rgba8 route`);
-  check(float.pixels.every(Number.isFinite), `${mode}: non-finite float output`);
-  check(float.pixels.every((v, i) => Object.is(v, again.pixels[i])), `${mode}: re-render differs`);
+  check(floatSdr.pixels.every((v, i) => Object.is(v, again.pixels[i])), `${mode}: SDR re-render differs`);
   for (let i = 0; i < W * H; i++) {
     const row = Math.floor(i / W);
-    const gotFloat = texel(float.pixels, i);
+    const gotFloat = mode === 'normal' ? texel(float.pixels, i) : null;
     const gotSdr = texel(sdr.pixels, i);
     if (mode === 'dissolve') {
       // Coverage is all-or-nothing (FL-99 owner decision): the pixel's opacity is dithered,
       // so each pixel is the base or the layer drawn fully opaque.
-      for (const [route, got, b] of [['float', gotFloat, texel(report.base16, i)],
-        ['float', texel(floatSdr.pixels, i), texel(report.base16, i)], ['sdr', gotSdr, texel(sdrBase, i)]]) {
+      for (const [route, got, b] of [['float', texel(floatSdr.pixels, i), texel(report.base16, i)], ['sdr', gotSdr, texel(sdrBase, i)]]) {
         const layerTexel = texel(route === 'float' ? report.layer16 : layer, i);
         const covered = sourceOver(formulas.normal)(b, [...layerTexel.slice(0, 3), layerTexel[3] > 0 ? 1 : 0]);
         const same = (x) => x.every((v, c) => Math.abs(v - got[c]) < 2 / 255 + 2e-3);
@@ -445,13 +432,13 @@ for (const { mode, float, again, floatSdr, sdr, sdrInHdr } of report.results) {
     const wantSdr = sourceOver(formulas[mode])(texel(sdrBase, i), texel(layer, i)).map(clamp01);
     wantSdr.forEach((v, c) => check(Math.abs(v - gotSdr[c]) <= 1.5 / 255 + 1e-6,
       `${mode} rgba8 pixel ${i} ch ${c}: ${gotSdr[c]} != ${v}`));
-    // Float route: declared semantics on half-precision inputs.
     const b16 = texel(report.base16, i);
     const l16 = texel(report.layer16, i);
-    const wantFloat = sourceOver(extended(mode))(b16, l16);
-    const tolerance = (v) => 3e-3 * Math.max(1, Math.abs(v));
-    wantFloat.forEach((v, c) => check(Math.abs(v - gotFloat[c]) <= tolerance(v),
-      `${mode} float pixel ${i} ch ${c}: ${gotFloat[c]} != ${v}`));
+    if (mode === 'normal') {
+      const wantFloat = sourceOver(formulas.normal)(b16, l16);
+      wantFloat.forEach((v, c) => check(Math.abs(v - gotFloat[c]) <= 3e-3 * Math.max(1, Math.abs(v)),
+        `normal linear HDR pixel ${i} ch ${c}: ${gotFloat[c]} != ${v}`));
+    }
     // SDR project on the float route: exactly the pinned formula for SDR input.
     if (row !== 2) {
       const gotFloatSdr = texel(floatSdr.pixels, i);
@@ -555,6 +542,11 @@ if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'));
   assert.fail(`${failures.length} blend-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
-console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, declared float semantics, determinism; animated, composed and invalid cases through the renderer; dithered Dissolve on float, legacy and Canvas2D routes',
+assert.deepEqual(report.registeredModes.sort(), [...MODES].sort(), 'every registered blend must be measured');
+assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
+report.observations = domainObservations(report);
+if (process.env.BLEND_MATRIX_REPORT) await writeFile(process.env.BLEND_MATRIX_REPORT, JSON.stringify(report));
+console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, linear HDR normal, typed HDR refusals, SDR determinism; animated, composed and invalid cases through the renderer; dithered Dissolve on float, legacy and Canvas2D routes',
   adapter: { vendor: report.adapter.vendor, architecture: report.adapter.architecture }, modes: report.results.length, pixels: W * H,
   cases: report.cases.length }));

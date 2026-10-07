@@ -1,25 +1,13 @@
-// FL-99 / FL-97: every registered GPU effect through the shared preview/export
-// effect pipeline, on software WebGPU in CI. For each effect and each parameter
-// case (defaults, every numeric extreme, every select option, every boolean):
-//   - no WebGPU validation error and only finite float output;
-//   - rendering the same case twice is bit-identical (temporal effects get a
-//     fixed frame clock);
-//   - SDR reference behaviour: the float route on in-range input matches the
-//     legacy rgba8unorm route within quantization, for the effects declared so;
-//   - the declared HDR class in effect-hdr-semantics.json holds on the float
-//     route (extended range survives, bounded effects stay within [0, 1]);
-//   - keyframed parameters reach the shader (start/end frames equal the static
-//     extremes, the midpoint differs) and a two-effect stack equals applying
-//     the effects one after the other;
-//   - invalid parameters (non-finite, out of range, unknown options, non-boolean
-//     flags, undeclared keys) draw exactly as their declared meaning, and an unknown effect id
-//     passes the input through. EFFECTS_MATRIX_REPORT carries effects[].invalid.
+// All registered effects: real pinned SDR measurements and per-operator typed HDR refusals.
+// HDR refusals never qualify rendered HDR fixtures. Historical encoded-HDR classifications
+// are retained in effect-hdr-semantics.json; current HDR is linear display-referred BT.709.
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { photometricCases, photometricInput, validatePhotometricResults } from './photometric-goldens.mjs';
+import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
 
@@ -77,13 +65,15 @@ export async function withEffectsMatrixPage({ origin, browser = 'chromium', endp
 }
 
 export async function runEffectsMatrix() {
+const source = await testedSource(new URL(import.meta.url));
 // Per-file hosted adapted-source evidence gate, independent of the whole source
 // digest (unrelated approved runtime policy changes may alter that digest).
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
   'effects/color.ts': '53e8a9b6c748a9c04bfa02edad3d068e14872c5ff9652912ec42e1d6e8e85d5c',
   'common.ts': 'e8ae09970e48879996b7f64ee6daa9bdd822cb66233ca374adb9ad65a996a349',
-  'effects-pipeline.ts': 'edbaa7a91f8966ba942cfa7c10eeaf5342fd8d583066be2f2800bcc6431d7374',
+  // Reviewed 0065 changes the HDR admission guard; SDR colour/common shader bytes above are unchanged.
+  'effects-pipeline.ts': '58bdc568dce442ea4a9dd7c8638054f45211cbd79125e309efe72eb38a5655af',
 })) {
   const observed = createHash('sha256').update(await readFile(new URL(`../engine/src/infrastructure/gpu-effects/${file}`, import.meta.url))).digest('hex');
   assert.equal(observed, expected, `photometric source contract changed: ${file}; numerical qualification requires source review`);
@@ -116,6 +106,7 @@ const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
   page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput }) => {
+    const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
     const { resolveAnimatedGpuEffects } =
@@ -145,7 +136,14 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       const buffer = device.createBuffer({ size: 256 * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
       try {
         device.pushErrorScope('validation');
-        const accepted = pipeline.applyTextureEffectsToTexture(source, effects, output, W, H);
+        let accepted;
+        try { accepted = pipeline.applyTextureEffectsToTexture(source, effects, output, W, H); }
+        catch (error) {
+          const validation = await device.popErrorScope();
+          if (validation) throw new Error(validation.message);
+          if (!(error instanceof HdrRenderUnavailableError)) throw error;
+          return { outcome: 'refused', errorType: error.name, message: error.message };
+        }
         const encoder = device.createCommandEncoder();
         encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow: 256 }, [W, H]);
         device.queue.submit([encoder.finish()]);
@@ -206,15 +204,12 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         const floatSdr = await render(inputs.rgba16float, effect);
         const sdrFloat = await render(sdrFloatInput, effect);
         const sdr = await render(inputs.rgba8unorm, effect);
-        // HDR project: extended range on the float route.
-        pipeline.setWorkingRange('hdr');
-        const float = await render(inputs.rgba16float, effect);
-        const again = await render(inputs.rgba16float, effect);
-        const hdrOnSdr = await render(sdrFloatInput, effect);
-        const sdrInHdr = await render(inputs.rgba8unorm, effect);
-        entry.cases.push({ name, float, again, floatSdr, sdrFloat, sdr, hdrOnSdr, sdrInHdr });
+        const again = await render(sdrFloatInput, effect);
+        entry.cases.push({ name, again, floatSdr, sdrFloat, sdr });
       }
       pipeline.setWorkingRange('hdr');
+      entry.hdrRefusal = await render(inputs.rgba16float, [instance(definition.id, getGpuEffectDefaultParams(definition.id))]);
+      pipeline.setWorkingRange('sdr');
 
       // Animation: keyframe the first animatable numeric parameter between its
       // extremes through the production keyframe resolver.
@@ -307,7 +302,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     const numericalInput = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
     device.queue.writeTexture({ texture: numericalInput }, new Float16Array(photometricInput),
       { bytesPerRow: W * 8 }, [W, H]);
-    pipeline.setWorkingRange('hdr');
+    pipeline.setWorkingRange('sdr');
     const photometric = [];
     for (const entry of photometricCases) {
       if (!GPU_EFFECT_REGISTRY.has(entry.id)) throw new Error(`missing numerical node ${entry.id}`);
@@ -329,7 +324,7 @@ if (process.env.EFFECTS_MATRIX_EXPLORE) return;
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
-const photometric = validatePhotometricResults(report.photometric);
+const photometric = validatePhotometricResults(report.photometric, 'srgb-display-bt709');
 const declared = new Map(Object.entries(semantics.effects));
 const ids = report.effects.map((effect) => effect.id);
 assert.deepEqual([...declared.keys()].sort(), [...ids].sort(),
@@ -339,31 +334,20 @@ const rows = (pixels, wanted) => wanted.flatMap((y) => pixels.slice(pixelIndex(0
 let caseCount = 0;
 for (const effect of report.effects) {
   const rule = declared.get(effect.id);
-  let extendedSeen = false;
+  check(effect.hdrRefusal.errorType === 'HdrRenderUnavailableError', `${effect.id}: missing typed HDR refusal`);
   for (const entry of effect.cases) {
     caseCount++;
     const label = `${effect.id} [${entry.name}]`;
-    const routes = ['float', 'again', 'floatSdr', 'sdrFloat', 'sdr', 'hdrOnSdr', 'sdrInHdr'];
+    const routes = ['again', 'floatSdr', 'sdrFloat', 'sdr'];
     for (const route of routes) check(!entry[route].error, `${label} ${route}: ${entry[route].error}`);
     if (routes.some((route) => entry[route].error)) continue;
-    // The rgba8unorm route is physically SDR in every project.
-    check(entry.sdrInHdr.pixels.every((v, i) => v === entry.sdr.pixels[i]),
-      `${label}: an HDR project changed the rgba8unorm route`);
-    // In an HDR project, in-range results agree with the SDR project; only the
-    // values the SDR project clipped may differ.
-    const eps = 2e-3;
-    let disagreements = 0;
-    entry.sdrFloat.pixels.forEach((v, i) => {
-      if (v > eps && v < 1 - eps && Math.abs(v - entry.hdrOnSdr.pixels[i]) > eps) disagreements++;
-    });
-    check(disagreements === 0, `${label}: ${disagreements} in-range channels differ between SDR and HDR projects`);
     // SDR projects keep upstream clamps for the effects declared so.
-    if (rule.hdr !== 'bounded' && rule.sdrClamped) {
+    if (rule.sdrClamped) {
       const sdrHdrRow = rows(entry.floatSdr.pixels, [2]).filter((_, i) => i % 4 !== 3);
       check(sdrHdrRow.every((v) => v >= -1e-3 && v <= 1 + 1e-3), `${label}: SDR project left [0, 1]`);
     }
-    check(entry.float.pixels.every(Number.isFinite), `${label}: non-finite float output`);
-    check(entry.float.pixels.every((v, i) => Object.is(v, entry.again.pixels[i])),
+    check(entry.sdrFloat.pixels.every(Number.isFinite), `${label}: non-finite float output`);
+    check(entry.sdrFloat.pixels.every((v, i) => Object.is(v, entry.again.pixels[i])),
       `${label}: two renders of the same frame differ`);
     // SDR reference behaviour: in-range float result equals the 8-bit route.
     if (rule.sdrParity) {
@@ -376,15 +360,6 @@ for (const effect of report.effects) {
       });
       check(mismatches <= budget, `${label}: ${mismatches} channels differ from the rgba8 SDR route`);
     }
-    // HDR class on the extended-range row (row 2), colour channels only.
-    const hdr = rows(entry.float.pixels, [2]).filter((_, i) => i % 4 !== 3);
-    if (rule.hdr === 'bounded' || (rule.hdr === 'palette' && entry.name === 'default')) {
-      check(hdr.every((v) => v >= -1e-3 && v <= 1 + 1e-3), `${label}: declared ${rule.hdr} but left [0, 1]`);
-    }
-    if (Math.max(...hdr) > 1.01) extendedSeen = true;
-  }
-  if (rule.hdr === 'extended') {
-    check(extendedSeen, `${effect.id}: declared extended but no case kept light above reference white`);
   }
   if (effect.animation) {
     const { frames, statics, key } = effect.animation;
@@ -425,7 +400,11 @@ if (failures.length) {
   console.error(failures.join('\n'));
   assert.fail(`${failures.length} effects-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
-console.log(JSON.stringify({ check: 'every GPU effect: parameter extremes, determinism, SDR parity, HDR class, animation, stack order, invalid parameters',
+assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
+report.observations = domainObservations(report);
+if (process.env.EFFECTS_MATRIX_REPORT) await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
+console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; typed HDR refusals',
   browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
   photometric, photometricSource,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
