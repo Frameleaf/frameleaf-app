@@ -610,9 +610,9 @@ describe(DuplicateService.name, () => {
       },
     );
 
-    it('protects historical Develop and external edits even after reset', async () => {
+    it.each([AssetType.Image, AssetType.Video])('protects historical %s edits even after reset', async (type) => {
       const keeper = AssetFactory.create();
-      const disposable = AssetFactory.create({ isEdited: false });
+      const disposable = AssetFactory.create({ isEdited: false, type });
       mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
       mocks.duplicateRepository.get.mockResolvedValue({

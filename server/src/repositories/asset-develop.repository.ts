@@ -109,11 +109,12 @@ export class AssetDevelopRepository {
   ) {
     this.db = publicationDatabase(db);
   }
-  /** Includes reset and external revisions: absence of a current edit is not absence of history. */
+  /** Includes photo, video, reset and external revisions: an unedited current copy may still have history. */
   async getAssetIdsWithHistory(assetIds: string[]): Promise<Set<string>> {
     if (assetIds.length === 0) return new Set();
     const { rows } = await sql<{ assetId: string }>`
       SELECT DISTINCT "assetId" FROM ${TABLE} WHERE "assetId" = ANY(${assetIds}::uuid[])
+      UNION SELECT "assetId" FROM public.video_edit_version WHERE "assetId" = ANY(${assetIds}::uuid[])
     `.execute(this.db);
     return new Set(rows.map(({ assetId }) => assetId));
   }
