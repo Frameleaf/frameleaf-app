@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { imageViewingPreference } from '$lib/frameleaf/viewer-preferences';
   import { shortcuts } from '$lib/actions/shortcut';
   import { isControlTarget } from '$lib/frameleaf/viewer-keys';
   import { zoomImageAction } from '$lib/actions/zoom-image';
@@ -261,6 +262,7 @@
   {...useSwipe((event) => onSwipe?.(event))}
 >
   <AdaptiveImage
+    dynamicRange={$imageViewingPreference}
     {asset}
     {sharedLink}
     {container}

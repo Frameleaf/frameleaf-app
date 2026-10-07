@@ -40,7 +40,7 @@
     type ViewerMenuContext,
     type ViewerMenuGroup,
   } from '$lib/frameleaf/viewer-menu';
-  import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
+  import { imageViewingPreference, showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { castManager, CastDestinationType } from '$lib/managers/cast-manager.svelte';
@@ -65,6 +65,7 @@
   import { modalManager, toastManager, type ActionItem } from '@frameleaf/ui';
   import {
     mdiAccountCircleOutline,
+    mdiCheckCircleOutline,
     mdiCogOutline,
     mdiDeleteForeverOutline,
     mdiDeleteRestore,
@@ -393,3 +394,19 @@
     <MenuOption icon={mdiCogOutline} text={label('slideshow-settings')} onClick={openSlideshowSettings} />
   {/if}
 {/each}
+
+{#if isImageAsset(asset) && !asset.duration}
+  <ViewerMenuGroupLabel text={$t('frameleaf_image_display')} divided />
+  <MenuOption
+    text={$t('frameleaf_image_display_auto')}
+    subtitle={$imageViewingPreference === 'auto' ? $t('selected') : ''}
+    icon={$imageViewingPreference === 'auto' ? mdiCheckCircleOutline : undefined}
+    onClick={() => imageViewingPreference.set('auto')}
+  />
+  <MenuOption
+    text={$t('frameleaf_image_display_sdr')}
+    subtitle={$imageViewingPreference === 'sdr' ? $t('selected') : ''}
+    icon={$imageViewingPreference === 'sdr' ? mdiCheckCircleOutline : undefined}
+    onClick={() => imageViewingPreference.set('sdr')}
+  />
+{/if}

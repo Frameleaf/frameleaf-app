@@ -857,6 +857,7 @@ describe(AssetMediaService.name, () => {
         imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
         renditionIdentity: null,
         ownerId: asset.ownerId,
+        isEdited: false,
         originalPath: '/original/photo.cr2',
         originalFileName: 'photo.cr2',
         path: '/thumbs/photo-preview.jpeg',
@@ -981,6 +982,67 @@ describe(AssetMediaService.name, () => {
       } finally {
         vitest.unstubAllEnvs();
       }
+    });
+
+    it.each(['auto', 'sdr'] as const)(
+      'keeps an unedited SDR source full resolution in %s viewing',
+      async (dynamicRange) => {
+        const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: false });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForThumbnail.mockResolvedValue({
+          ...asset,
+          path: null,
+          renditionIdentity: null,
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        });
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.FULLSIZE,
+            edited: true,
+            dynamicRange,
+          }),
+        ).resolves.toEqual({ targetSize: 'original' });
+      },
+    );
+
+    it.each([
+      { allowDownload: false, showExif: true },
+      { allowDownload: true, showExif: false },
+    ])('keeps restricted shared viewers on sanitized SDR pixels (%j)', async (policy) => {
+      const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: false });
+      const auth = AuthFactory.from().sharedLink(policy).build();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: null,
+        renditionIdentity: null,
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+      });
+      await expect(
+        sut.viewThumbnail(auth, asset.id, {
+          size: AssetMediaSize.FULLSIZE,
+          edited: true,
+          dynamicRange: 'auto',
+        }),
+      ).resolves.toEqual({ targetSize: AssetMediaSize.PREVIEW });
+    });
+
+    it('does not bypass a legacy edit for full-resolution SDR viewing', async () => {
+      const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: true });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: '/data/edited.jpg',
+        renditionIdentity: null,
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+      });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, {
+          size: AssetMediaSize.FULLSIZE,
+          edited: true,
+          dynamicRange: 'sdr',
+        }),
+      ).resolves.toMatchObject({ path: '/data/edited.jpg' });
     });
 
     it('does not redirect an HDR or unknown source to the original for default SDR viewing', async () => {

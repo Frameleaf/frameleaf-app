@@ -70,6 +70,7 @@
     asset: AssetResponseDto;
     sharedLink?: SharedLinkResponseDto;
     objectFit?: 'contain' | 'cover';
+    dynamicRange?: 'auto' | 'sdr';
     container: Size;
     onUrlChange?: (url: string) => void;
     onImageReady?: () => void;
@@ -87,6 +88,7 @@
     asset,
     sharedLink,
     objectFit = 'contain',
+    dynamicRange,
     container,
     onUrlChange,
     onImageReady,
@@ -103,8 +105,8 @@
     }
   };
 
-  const buildQualityList = () => {
-    const assetUrls = getAssetUrls(asset, sharedLink);
+  const buildQualityList = (range: typeof dynamicRange) => {
+    const assetUrls = getAssetUrls(asset, sharedLink, range);
     const qualityList: QualityList = [
       {
         quality: 'thumbnail',
@@ -125,22 +127,37 @@
   // FL-115: the playback cache key changes when the owner's playback choice does, so the loader rebuilds.
   const loaderKey = $derived(`${asset.id}:${playbackCacheKey(asset)}:${sharedLink?.id}`);
 
+  let lastReady = $state<{ key: string; range: typeof dynamicRange; url: string }>();
   const adaptiveImageLoader = $derived.by(() => {
     void loaderKey;
+    const range = dynamicRange;
+    const key = loaderKey;
 
     return untrack(
       () =>
-        new AdaptiveImageLoader(buildQualityList(), {
+        new AdaptiveImageLoader(buildQualityList(range), {
           onImageReady,
           onError,
-          onUrlChange,
+          onUrlChange: (url) => {
+            // Retain the focused image until the replacement baseline/HDR preview is ready.
+            const thumbnail = getAssetUrls(asset, sharedLink, range).thumbnail;
+            if (!range || !lastReady || lastReady.key !== key || lastReady.range === range || url !== thumbnail) {
+              lastReady = { key, range, url };
+            }
+            onUrlChange?.(url);
+          },
         }),
     );
   });
 
+  let previousLoaderKey: string | undefined;
   $effect.pre(() => {
     const loader = adaptiveImageLoader;
-    untrack(() => assetViewerManager.resetZoomState());
+    const key = loaderKey;
+    if (key !== previousLoaderKey) {
+      untrack(() => assetViewerManager.resetZoomState());
+    }
+    previousLoaderKey = key;
     return () => loader.destroy();
   });
 
@@ -239,6 +256,7 @@
       style:transform="scale({rasterScale})"
       style:transform-origin={languageManager.rtl ? 'right top' : 'left top'}
       style:will-change={maxRasterPixels > 0 ? 'transform' : undefined}
+      style:dynamic-range-limit={dynamicRange === 'sdr' ? 'standard' : 'no-limit'}
     >
       {#if show.alphaBackground}
         <AlphaBackground />
@@ -288,6 +306,9 @@
           src={status.urls.original}
           bind:ref={originalElement}
         />
+      {/if}
+      {#if dynamicRange && lastReady?.key === loaderKey && lastReady.range !== dynamicRange && status.quality.preview !== 'success' && status.quality.original !== 'success'}
+        <img src={lastReady.url} alt="" aria-hidden="true" class="pointer-events-none absolute inset-0 size-full" />
       {/if}
     </div>
 

@@ -2779,6 +2779,7 @@ export class AssetRepository {
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
         'asset.ownerId',
+        'asset.isEdited',
         'asset.originalPath',
         'asset.originalFileName',
         'asset_file.path as path',

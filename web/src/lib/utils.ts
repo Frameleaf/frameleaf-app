@@ -205,16 +205,24 @@ const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   return getBaseUrl() + url.pathname + url.search + url.hash;
 };
 
-type AssetUrlOptions = { id: string; cacheKey?: string | null; edited?: boolean; size?: AssetMediaSize };
+type AssetUrlOptions = {
+  id: string;
+  cacheKey?: string | null;
+  edited?: boolean;
+  size?: AssetMediaSize;
+  dynamicRange?: 'auto' | 'sdr' | 'hdr';
+};
 
 export const getAssetUrl = ({
   asset,
   sharedLink,
   forceOriginal = false,
+  dynamicRange,
 }: {
   asset: AssetResponseDto | undefined;
   sharedLink?: SharedLinkResponseDto;
   forceOriginal?: boolean;
+  dynamicRange?: AssetUrlOptions['dynamicRange'];
 }) => {
   if (!asset) {
     return;
@@ -222,18 +230,24 @@ export const getAssetUrl = ({
   const id = asset.id;
   // FL-115: the preview and full-size files follow the owner's playback choice, so their cache key does too.
   const cacheKey = playbackCacheKey(asset);
+  const range = asset.type === AssetTypeEnum.Image && !asset.duration ? dynamicRange : undefined;
   if (sharedLink && (!sharedLink.allowDownload || !sharedLink.showMetadata)) {
-    return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey });
+    return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey, dynamicRange: range });
   }
-  const size = targetImageSize(asset, forceOriginal);
-  return getAssetMediaUrl({ id, size, cacheKey });
+  const target = targetImageSize(asset, forceOriginal);
+  const size = range && target === AssetMediaSize.Original ? AssetMediaSize.Fullsize : target;
+  return getAssetMediaUrl({ id, size, cacheKey, dynamicRange: range });
 };
 
-export function getAssetUrls(asset: AssetResponseDto, sharedLink?: SharedLinkResponseDto) {
+export function getAssetUrls(
+  asset: AssetResponseDto,
+  sharedLink?: SharedLinkResponseDto,
+  dynamicRange?: AssetUrlOptions['dynamicRange'],
+) {
   return {
     thumbnail: getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, size: AssetMediaSize.Thumbnail }),
-    preview: getAssetUrl({ asset, sharedLink })!,
-    original: getAssetUrl({ asset, sharedLink, forceOriginal: true })!,
+    preview: getAssetUrl({ asset, sharedLink, dynamicRange })!,
+    original: getAssetUrl({ asset, sharedLink, forceOriginal: true, dynamicRange })!,
   };
 }
 
@@ -254,10 +268,17 @@ export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean)
 };
 
 export const getAssetMediaUrl = (options: AssetUrlOptions) => {
-  const { id, size, cacheKey: c, edited = true } = options;
+  const { id, size, cacheKey: c, edited = true, dynamicRange } = options;
   const isOriginal = size === AssetMediaSize.Original;
   const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
-  return createUrl(path, { ...authManager.params, size: isOriginal ? undefined : size, c, edited });
+  return createUrl(path, {
+    ...authManager.params,
+    size: isOriginal ? undefined : size,
+    c,
+    edited,
+    dynamicRange:
+      !isOriginal && (size === AssetMediaSize.Preview || size === AssetMediaSize.Fullsize) ? dynamicRange : undefined,
+  });
 };
 
 export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
