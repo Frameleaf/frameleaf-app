@@ -332,7 +332,7 @@
     },
     {
       "path": "patches/0069-persisted-track-pan.patch",
-      "sha256": "397be60ff740d0cb06a366447cf4ea3e04744f60504fb998d16de788e9f64c24",
+      "sha256": "ae8df7e533b71f551d38c549c3089fe044449b73f80436039a3998ba4076a4d1",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     },
     {
@@ -351,5 +351,5 @@
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "0e423f5c72e10f8dc124cdb18761d60f92575be15f16307e2aa9c48626c2a631"
+  "sourceSha256": "bfcbf3c96c0475de7974983a12ff7c811a8be2b8c0f472794e3c53cbec282ef6"
 }
