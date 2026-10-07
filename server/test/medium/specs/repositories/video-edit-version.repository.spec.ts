@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -101,6 +102,9 @@ it('stores original-derived recipes and publishes only the requested version whi
     path: string;
   }>`SELECT "masterPath" as path FROM public.video_edit_version WHERE id=${second.id}::uuid`.execute(db);
   expect(retained.rows[0].path).toBe(`/derived/${second.id}.master.mp4`);
+  const histories = new AssetDevelopRepository(db);
+  expect(await histories.getAssetIdsWithHistory([asset.id])).toEqual(new Set([asset.id]));
+  expect(await histories.getAssetIdsWithHistory([])).toEqual(new Set());
   const unchanged = await db.selectFrom('asset').select('originalPath').where('id', '=', asset.id).executeTakeFirst();
   expect(unchanged?.originalPath).toBe(asset.originalPath);
 });
