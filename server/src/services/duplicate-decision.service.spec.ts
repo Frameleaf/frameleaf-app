@@ -42,7 +42,7 @@ describe(DuplicateDecisionService.name, () => {
   let repository: Record<string, any>;
   let access: Record<string, any>;
   let duplicates: { getDuplicates: any; resolve: any; delete: any };
-  let assets: { updateAll: any };
+  let assets: { updateAll: any; notifyVisibilityChanged: any };
   let albums: { removeAssets: any };
   let tags: { removeAssets: any };
   let stacks: { create: any; delete: any };
@@ -92,6 +92,7 @@ describe(DuplicateDecisionService.name, () => {
       getOwnerNames: vi.fn().mockResolvedValue([]),
       getAssetStates: vi.fn().mockResolvedValue([]),
       getKeeperStates: vi.fn().mockResolvedValue(new Map([[keeper, keeperState()]])),
+      restoreKeeperMotion: vi.fn().mockResolvedValue(true),
       getLockedIds: vi.fn().mockResolvedValue(new Set()),
       getStackAssetIds: vi.fn().mockResolvedValue([]),
       relink: vi.fn().mockResolvedValue(undefined),
@@ -115,7 +116,10 @@ describe(DuplicateDecisionService.name, () => {
       resolve: vi.fn().mockResolvedValue([{ id: duplicateId, success: true }]),
       delete: vi.fn().mockResolvedValue(undefined),
     };
-    assets = { updateAll: vi.fn().mockResolvedValue(undefined) };
+    assets = {
+      updateAll: vi.fn().mockResolvedValue(undefined),
+      notifyVisibilityChanged: vi.fn().mockResolvedValue(undefined),
+    };
     albums = { removeAssets: vi.fn().mockResolvedValue([]) };
     tags = { removeAssets: vi.fn().mockResolvedValue([]) };
     stacks = { create: vi.fn().mockResolvedValue({ id: 'stack-1' }), delete: vi.fn().mockResolvedValue(undefined) };
@@ -498,6 +502,30 @@ describe(DuplicateDecisionService.name, () => {
       { id: copy, ownerId, duplicateId: null, stackId: null, status: AssetStatus.Trashed, deletedAt: new Date() },
       { id: other, ownerId, duplicateId: null, stackId: null, status: AssetStatus.Trashed, deletedAt: new Date() },
     ];
+
+    it.each([false, true])('undo restores only an unchanged transferred motion link (newer=%s)', async (newer) => {
+      const decision = applied({
+        state: {
+          before: { [keeper]: keeperState({ livePhotoVideoId: null }) },
+          after: { [keeper]: keeperState({ livePhotoVideoId: 'original-motion' }) },
+        },
+      });
+      grantAll();
+      repository.getById.mockResolvedValue(decision);
+      repository.getAssetStates.mockImplementation((ids: string[]) =>
+        Promise.resolve(statesAfterKeepers().filter(({ id }) => ids.includes(id))),
+      );
+      repository.getKeeperStates.mockResolvedValue(
+        new Map([[keeper, keeperState({ livePhotoVideoId: newer ? 'newer-motion' : 'original-motion' })]]),
+      );
+      await sut.undoGroup(owner, undoOperationId, undoGroupOf(decision));
+      if (newer) {
+        expect(repository.restoreKeeperMotion).not.toHaveBeenCalled();
+      } else {
+        expect(repository.restoreKeeperMotion).toHaveBeenCalledWith(ownerId, keeper, 'original-motion');
+        expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([keeper], ownerId);
+      }
+    });
 
     it('restores the trashed copies, takes back what the merge added and puts the group back', async () => {
       const decision = applied();

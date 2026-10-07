@@ -135,22 +135,39 @@ export class DuplicateService extends BaseService {
     } catch {
       // Recommendations stay visible, but missing evidence never permits unattended disposal.
     }
-    return duplicates.map(({ duplicateId, assets }) => {
-      const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
-      const suggestedKeepAssetIds =
-        classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
-          ? []
-          : suggestDuplicateKeepAssetIds(mappedAssets);
-      const reviewRequiredReasons = history
-        ? duplicateDisposalReasons(mappedAssets, suggestedKeepAssetIds, history)
-        : ['evidence-unavailable'];
-      return {
-        duplicateId,
-        assets: mappedAssets,
-        suggestedKeepAssetIds,
-        ...(reviewRequiredReasons.length > 0 && { reviewRequiredReasons }),
-      };
-    });
+    return Promise.all(
+      duplicates.map(async ({ duplicateId, assets }) => {
+        const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
+        const suggestedKeepAssetIds =
+          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
+            ? []
+            : suggestDuplicateKeepAssetIds(mappedAssets);
+        let motionId: string | undefined;
+        if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
+          try {
+            motionId = await this.duplicateRepository.findMotionTransfer(
+              auth.user.id,
+              suggestedKeepAssetIds[0],
+              assets.filter(({ id }) => !suggestedKeepAssetIds.includes(id)).map(({ id }) => id),
+            );
+          } catch {
+            /* Inconclusive pairing evidence retains the review requirement. */
+          }
+        }
+        const prospective = mappedAssets.map((asset) =>
+          motionId && suggestedKeepAssetIds.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
+        );
+        const reviewRequiredReasons = history
+          ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history)
+          : ['evidence-unavailable'];
+        return {
+          duplicateId,
+          assets: mappedAssets,
+          suggestedKeepAssetIds,
+          ...(reviewRequiredReasons.length > 0 && { reviewRequiredReasons }),
+        };
+      }),
+    );
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -308,7 +325,14 @@ export class DuplicateService extends BaseService {
     }
 
     const history = await this.assetDevelopRepository.getAssetIdsWithHistory(idsToTrash);
-    const reviewRequiredReasons = duplicateDisposalReasons(duplicateGroup.assets, idsToKeep, history);
+    const motionId =
+      idsToKeep.length === 1 && duplicateGroup.assets.some((asset) => asset.livePhotoVideoId)
+        ? await this.duplicateRepository.findMotionTransfer(auth.user.id, idsToKeep[0], idsToTrash)
+        : undefined;
+    const prospective = duplicateGroup.assets.map((asset) =>
+      motionId && idsToKeep.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
+    );
+    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history);
     if (reviewRequiredReasons.length > 0) {
       return {
         id: duplicateId,
@@ -316,6 +340,14 @@ export class DuplicateService extends BaseService {
         error: BulkIdErrorReason.VALIDATION,
         errorMessage: 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
       };
+    }
+
+    if (motionId) {
+      const allowed = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: idsToKeep });
+      if (!allowed.has(idsToKeep[0]))
+        return { id: duplicateId, success: false, error: BulkIdErrorReason.NO_PERMISSION };
+      // Keep the disposable still's original reference too, for restoration and shared-motion accounting.
+      await this.assetRepository.update({ id: idsToKeep[0], livePhotoVideoId: motionId });
     }
 
     // Only merge metadata into the keeper when exactly one asset can absorb trashed duplicates.

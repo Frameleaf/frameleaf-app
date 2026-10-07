@@ -6,7 +6,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, QueueName } from 'src/enum.js';
+import { AssetStatus, AssetType, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
@@ -14,6 +14,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 // Maximum number of candidate duplicates to return from vector search
 const DUPLICATE_SEARCH_LIMIT = 64;
@@ -86,6 +87,45 @@ export class DuplicateRepository {
           await tx.selectFrom('asset').select('id').where('id', '=', anyUuid(ids)).orderBy('id').forUpdate().execute();
         return publicationTransaction.run(tx, () => callback(tx));
       });
+  }
+
+  /** A reference may move only when every disposable motion proves the same owned pair. */
+  async findMotionTransfer(ownerId: string, keeperId: string, trashIds: string[]): Promise<string | undefined> {
+    if (trashIds.length === 0) return;
+    const keeper = await this.db
+      .selectFrom('asset')
+      .select(['originalFileName', 'livePhotoVideoId'])
+      .where('id', '=', keeperId)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+    if (!keeper || keeper.livePhotoVideoId || !mimeTypes.isHeic(keeper.originalFileName)) return;
+    const sources = await this.db
+      .selectFrom('asset')
+      .select(['id', 'livePhotoVideoId'])
+      .where('id', '=', anyUuid(trashIds))
+      .where('livePhotoVideoId', 'is not', null)
+      .execute();
+    if (sources.length === 0 || new Set(sources.map(({ livePhotoVideoId }) => livePhotoVideoId)).size !== 1) return;
+    const { rows } = await sql<{ id: string; motionId: string }>`
+      select source.id, video.id as "motionId" from asset source
+      join asset keeper on keeper.id = ${keeperId}::uuid
+      join asset video on video.id = source."livePhotoVideoId"
+      join asset_exif source_exif on source_exif."assetId" = source.id
+      join asset_exif keeper_exif on keeper_exif."assetId" = keeper.id
+      join asset_exif video_exif on video_exif."assetId" = video.id
+      where source.id = any(${trashIds}::uuid[])
+        and source."ownerId" = ${ownerId}::uuid and keeper."ownerId" = source."ownerId" and video."ownerId" = source."ownerId"
+        and source."duplicateId" = keeper."duplicateId"
+        and source.type = ${AssetType.Image} and keeper.type = ${AssetType.Image} and video.type = ${AssetType.Video}
+        and source."deletedAt" is null and keeper."deletedAt" is null and video."deletedAt" is null
+        and source.status = ${AssetStatus.Active} and keeper.status = ${AssetStatus.Active} and video.status = ${AssetStatus.Active}
+        and keeper."livePhotoVideoId" is null
+        and source."libraryId" is not distinct from keeper."libraryId" and video."libraryId" is not distinct from keeper."libraryId"
+        and btrim(keeper_exif."livePhotoCID") <> ''
+        and source_exif."livePhotoCID" = keeper_exif."livePhotoCID" and video_exif."livePhotoCID" = keeper_exif."livePhotoCID"
+        and not ${isLocked('video')}
+    `.execute(this.db);
+    return rows.length === sources.length ? rows[0]?.motionId : undefined;
   }
   /** Read-only owner projection using the same eligibility predicates as getAll. */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })

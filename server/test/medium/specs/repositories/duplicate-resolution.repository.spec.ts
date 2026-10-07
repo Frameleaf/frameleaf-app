@@ -8,6 +8,7 @@ import { QueueExecution } from 'src/queue/types.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -33,6 +34,7 @@ const setup = async () => {
   const assets = new AssetRepository(db);
   await assets.updateAll([asset.id], { duplicateId });
   return {
+    ctx,
     user,
     asset,
     duplicateId,
@@ -41,6 +43,110 @@ const setup = async () => {
     develop: new AssetDevelopRepository(db),
   };
 };
+
+it('proves motion by owner and content identifier, then undoes only its own still link', async () => {
+  const { ctx, user, asset: keeper, duplicateId, assets, duplicates } = await setup();
+  await assets.update({ id: keeper.id, originalFileName: 'capture.HEIC' });
+  const { asset: motion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+  const { asset: jpeg } = await ctx.newAsset({ ownerId: user.id, duplicateId, livePhotoVideoId: motion.id });
+  for (const id of [keeper.id, motion.id, jpeg.id]) {
+    await db.insertInto('asset_exif').values({ assetId: id, livePhotoCID: 'consented-test-pair' }).execute();
+  }
+  expect(await duplicates.findMotionTransfer(user.id, keeper.id, [jpeg.id])).toBe(motion.id);
+  await db.updateTable('asset_exif').set({ livePhotoCID: 'different-pair' }).where('assetId', '=', jpeg.id).execute();
+  expect(await duplicates.findMotionTransfer(user.id, keeper.id, [jpeg.id])).toBeUndefined();
+  await db
+    .updateTable('asset_exif')
+    .set({ livePhotoCID: 'consented-test-pair' })
+    .where('assetId', '=', jpeg.id)
+    .execute();
+  await assets.update({ id: keeper.id, livePhotoVideoId: motion.id });
+  const decisions = new DuplicateDecisionRepository(db);
+  expect(await decisions.restoreKeeperMotion(user.id, keeper.id, motion.id)).toBe(true);
+  expect(await assets.getById(keeper.id)).toMatchObject({ livePhotoVideoId: null });
+  expect(await assets.getById(jpeg.id)).toMatchObject({ livePhotoVideoId: motion.id });
+  expect(await decisions.restoreKeeperMotion(user.id, keeper.id, motion.id)).toBe(false);
+});
+
+it('undo cannot clear the surviving motion reference while the protecting still is permanently deleted', async () => {
+  const { ctx, user, asset: keeper, assets } = await setup();
+  const { asset: motion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+  const { asset: original } = await ctx.newAsset({ ownerId: user.id, livePhotoVideoId: motion.id });
+  await assets.update({ id: keeper.id, livePhotoVideoId: motion.id });
+  const { promise: locked, resolve: entered } = Promise.withResolvers<void>();
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  const deletion = db.transaction().execute(async (tx) => {
+    await tx.deleteFrom('asset').where('id', '=', original.id).execute();
+    entered();
+    await gate;
+  });
+  await locked;
+  const undo = new DuplicateDecisionRepository(db)
+    .restoreKeeperMotion(user.id, keeper.id, motion.id)
+    .then((restored) => (restored ? 'cleared' : 'refused'))
+    .catch(() => 'refused');
+  try {
+    await expect
+      .poll(async () => {
+        const { rows } = await sql<{
+          waiting: boolean;
+        }>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%"asset"%for update%') AS waiting`.execute(
+          db,
+        );
+        return rows[0].waiting;
+      })
+      .toBe(true);
+  } finally {
+    release();
+  }
+  await deletion;
+  expect(await undo).toBe('refused');
+  expect(await assets.getById(keeper.id)).toMatchObject({ livePhotoVideoId: motion.id });
+  expect(await assets.getById(motion.id)).toBeDefined();
+});
+
+it.each(['foreign-owner', 'missing-video-cid', 'deleted-video', 'multiple-clips'])(
+  'requires review for incomplete motion proof (%s)',
+  async (fault) => {
+    const { ctx, user, asset: keeper, duplicateId, assets, duplicates } = await setup();
+    await assets.update({ id: keeper.id, originalFileName: 'capture.HIF' });
+    const { asset: motion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+    const { asset: jpeg } = await ctx.newAsset({ ownerId: user.id, duplicateId, livePhotoVideoId: motion.id });
+    for (const id of [keeper.id, motion.id, jpeg.id]) {
+      await db.insertInto('asset_exif').values({ assetId: id, livePhotoCID: 'test-pair' }).execute();
+    }
+    const trashIds = [jpeg.id];
+    switch (fault) {
+      case 'foreign-owner': {
+        const { user: other } = await ctx.newUser();
+        await assets.update({ id: motion.id, ownerId: other.id });
+
+        break;
+      }
+      case 'missing-video-cid': {
+        await db.updateTable('asset_exif').set({ livePhotoCID: null }).where('assetId', '=', motion.id).execute();
+
+        break;
+      }
+      case 'deleted-video': {
+        await assets.update({ id: motion.id, deletedAt: new Date() });
+
+        break;
+      }
+      default: {
+        const { asset: otherMotion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+        const { asset: otherCopy } = await ctx.newAsset({
+          ownerId: user.id,
+          duplicateId,
+          livePhotoVideoId: otherMotion.id,
+        });
+        trashIds.push(otherCopy.id);
+      }
+    }
+    expect(await duplicates.findMotionTransfer(user.id, keeper.id, trashIds)).toBeUndefined();
+    expect(await assets.getById(keeper.id)).toMatchObject({ livePhotoVideoId: null });
+  },
+);
 
 it('rolls metadata and disposal back together across participating repositories', async () => {
   const { asset, duplicateId, assets, duplicates } = await setup();
