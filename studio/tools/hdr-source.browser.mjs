@@ -115,6 +115,8 @@ window.__vite_plugin_react_preamble_installed__ = true
     }
     const c = SIZE / 2;
     const out = {};
+    // Exposure is admitted in linear HDR. Historical refusal probes use the
+    // still-unmigrated chroma key; the rendered source/mask oracles stay effect-free.
     const historicalHdrRefusals = [];
     const expectHdrOperatorRefusal = async (composition, options, frame, scenario) => {
       const canvas = new OffscreenCanvas(composition.width, composition.height);
@@ -217,9 +219,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         from: 0, durationInFrames: 30, sourceStart: 0, sourceEnd: 30, sourceFps: FPS,
         sourceDuration: 30, speed: 1, sourceWidth: SIZE, sourceHeight: SIZE,
         transform: { x, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity },
-        effects: [{ id: `mixed-exposure-${transfer}`, enabled: true,
-          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure',
-            params: { exposure, offset: 0, gamma: 1 } } }] }],
+        effects: [{ id: `mixed-chroma-key-${transfer}`, enabled: true,
+          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
+            params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] }],
     }));
     const sdrRgb = [0.25, 0.5, 0.75].map(color.srgbDecodeExtended);
     const sdrOpacity = 0.5;
@@ -239,7 +241,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     try {
       const historicalMixed = { fps: FPS, width, height: SIZE, durationInFrames: 30,
         backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' }, tracks: mixedTracks };
-      await expectHdrOperatorRefusal(historicalMixed, {}, 15, 'mixed decoded PQ/HLG with exposure');
+      await expectHdrOperatorRefusal(historicalMixed, {}, 15, 'mixed decoded PQ/HLG with chroma key');
       const admittedTracks = mixedTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) }));
       mixedRenderer = await createCompositionRenderer({ ...historicalMixed, tracks: admittedTracks },
         mixedCanvas, mixedCanvas.getContext('2d'), { mode: 'export' });
@@ -300,9 +302,9 @@ window.__vite_plugin_react_preamble_installed__ = true
             sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
             sourceWidth: SIZE, sourceHeight: SIZE,
             transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
-            effects: [{ id: `nested-exposure-${transfer}`, enabled: true,
-              effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure',
-                params: { exposure: 1, offset: 0, gamma: 1 } } }] };
+            effects: [{ id: `nested-chroma-key-${transfer}`, enabled: true,
+              effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
+                params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
           const mask = { id: `nested-mask-${transfer}`, type: 'shape', trackId: 'nested-mask',
             from: 0, durationInFrames: 30, label: 'upper-half alpha mask', shapeType: 'rectangle',
             fillColor: '#ffffff', strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
@@ -324,7 +326,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 });
           await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
             backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-            tracks: [nestedTrack(historicalInstance.trackId, 0, [historicalInstance])] }, {}, 15, `nested exposure ${transfer}`);
+            tracks: [nestedTrack(historicalInstance.trackId, 0, [historicalInstance])] }, {}, 15, `nested chroma key ${transfer}`);
           const admittedInner = storeComposition(innerId, [nestedTrack('nested-sdr', 0, [graphic]),
             nestedTrack('nested-mask', 1, [mask]), nestedTrack('nested-video', 2, [{ ...clip, effects: [] }])]);
           useCompositionsStore.getState().setCompositions([admittedInner, outer]);
@@ -439,8 +441,9 @@ window.__vite_plugin_react_preamble_installed__ = true
               sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
               sourceWidth: SIZE, sourceHeight: SIZE,
               transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
-              effects: [{ id: `variant-exposure-${transfer}-${variant.name}`, enabled: true,
-                effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 1, offset: 0, gamma: 1 } } }] };
+              effects: [{ id: `variant-chroma-key-${transfer}-${variant.name}`, enabled: true,
+                effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
+                  params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
             const id = `variant-comp-${transfer}-${variant.name}`;
             const variantTracks = [...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
               nestedTrack('variant-video', variant.masks.length, [clip])];
@@ -449,7 +452,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.75 });
             await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
               backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-              tracks: [nestedTrack(instance.trackId, 0, [instance])] }, {}, 15, `mask exposure ${transfer}/${variant.name}`);
+              tracks: [nestedTrack(instance.trackId, 0, [instance])] }, {}, 15, `mask chroma key ${transfer}/${variant.name}`);
             useCompositionsStore.getState().setCompositions([storeComposition(id,
               variantTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) })))]);
             const canvas = new OffscreenCanvas(SIZE, SIZE);
