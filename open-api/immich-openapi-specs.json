@@ -12736,7 +12736,15 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "headers": {
+              "X-Frameleaf-HDR-Histogram": {
+                "description": "Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [

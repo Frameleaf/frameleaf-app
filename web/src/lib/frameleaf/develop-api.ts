@@ -8,12 +8,15 @@
  */
 import {
   AssetDevelopFileKind,
+  DynamicRange2,
   getAssetDevelop,
+  defaults,
   getBaseUrl,
   previewAssetDevelop,
   type AssetDevelopRecipeDto,
   type AssetDevelopResponseDto,
 } from '@frameleaf/sdk';
+import type { HistogramBins } from '$lib/frameleaf/develop';
 import { anyRevisionBusy } from '$lib/frameleaf/editor-draft';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 
@@ -36,7 +39,61 @@ export const developFileUrl = (
   return `${getBaseUrl()}/assets/${encodeURIComponent(assetId)}/develop/revisions/${encodeURIComponent(revisionId)}/file?${search.toString()}`;
 };
 
-export type PreviewResult = { url: string; revoke: () => void };
+export type HdrHistogram = HistogramBins & {
+  version: 1;
+  minStops: number;
+  maxStops: number;
+  referenceWhite: number;
+  peakStops: number;
+};
+export type PreviewResult = { url: string; revoke: () => void; histogram?: HdrHistogram };
+
+/** Treat response metadata as untrusted; invalid evidence must never become an HDR histogram. */
+export function parseHdrHistogram(header: string | null): HdrHistogram | undefined {
+  if (!header || header.length > 8192) {
+    return;
+  }
+  try {
+    const value = JSON.parse(header) as HdrHistogram;
+    if (
+      value.version !== 1 ||
+      value.bins !== 64 ||
+      value.minStops !== -10 ||
+      value.maxStops !== 6 ||
+      value.referenceWhite !== 203
+    ) {
+      return;
+    }
+    const numbers = [value.max, value.samples, value.peakStops, value.clipped?.shadows, value.clipped?.highlights];
+    if (
+      numbers.some((number) => !Number.isFinite(number)) ||
+      value.max < 1 ||
+      value.samples < 0 ||
+      value.peakStops < -10 ||
+      value.peakStops > 6
+    ) {
+      return;
+    }
+    if ([value.clipped.shadows, value.clipped.highlights].some((number) => number < 0 || number > 1)) {
+      return;
+    }
+    if (
+      [value.red, value.green, value.blue, value.luma].some(
+        (bins) =>
+          !(
+            Array.isArray(bins) &&
+            bins.length === 64 &&
+            bins.every((count) => Number.isSafeInteger(count) && count >= 0 && count <= value.samples)
+          ),
+      )
+    ) {
+      return;
+    }
+    return value;
+  } catch {
+    return;
+  }
+}
 
 /**
  * Renders the recipe on the server at preview size and returns an object URL. The caller owns
@@ -47,14 +104,37 @@ export async function requestDevelopPreview(
   recipe: AssetDevelopRecipeDto,
   size: number,
   signal?: AbortSignal,
+  dynamicRange?: 'auto' | 'sdr' | 'hdr',
 ): Promise<PreviewResult | null> {
   try {
-    const blob = await previewAssetDevelop({ id: assetId, assetDevelopPreviewDto: { recipe, size } }, { signal });
+    let histogram: HdrHistogram | undefined;
+    const blob = await previewAssetDevelop(
+      {
+        id: assetId,
+        assetDevelopPreviewDto: {
+          recipe,
+          size,
+          ...(dynamicRange && {
+            dynamicRange: DynamicRange2[dynamicRange === 'auto' ? 'Auto' : dynamicRange === 'sdr' ? 'Sdr' : 'Hdr'],
+          }),
+        },
+      },
+      {
+        signal,
+        ...(recipe.version === 3 && {
+          fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+            const response = await (defaults.fetch ?? fetch)(input, init);
+            histogram = parseHdrHistogram(response.headers.get('X-Frameleaf-HDR-Histogram'));
+            return response;
+          },
+        }),
+      },
+    );
     if (signal?.aborted) {
       return null;
     }
     const url = URL.createObjectURL(blob);
-    return { url, revoke: () => URL.revokeObjectURL(url) };
+    return { url, revoke: () => URL.revokeObjectURL(url), ...(histogram && { histogram }) };
   } catch (error) {
     if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
       return null;

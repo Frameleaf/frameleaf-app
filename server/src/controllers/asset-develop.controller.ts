@@ -12,7 +12,7 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -78,7 +78,16 @@ export class AssetDevelopController {
 
   @Post(':id/develop/preview')
   @HttpCode(HttpStatus.OK)
-  @FileResponse()
+  @ApiOkResponse({
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    headers: {
+      'X-Frameleaf-HDR-Histogram': {
+        description:
+          'Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.',
+        schema: { type: 'string' },
+      },
+    },
+  })
   @Authenticated({ permission: Permission.AssetEditGet })
   @Endpoint({
     summary: 'Render a develop preview',
@@ -96,12 +105,16 @@ export class AssetDevelopController {
     res.once('close', abandon);
     if (res.destroyed) abandon();
     try {
-      const { buffer, contentType } = await this.service.preview(auth, id, dto, controller.signal);
+      const { buffer, contentType, histogram } = await this.service.preview(auth, id, dto, controller.signal);
       if (!res.destroyed) {
         res.set({
           'Content-Type': contentType,
           'Cache-Control': 'private, no-store',
           'Content-Length': String(buffer.length),
+          ...(histogram && {
+            'X-Frameleaf-HDR-Histogram': JSON.stringify(histogram),
+            'Access-Control-Expose-Headers': 'X-Frameleaf-HDR-Histogram',
+          }),
         });
         res.end(buffer);
       }

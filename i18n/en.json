@@ -4825,6 +4825,7 @@
   "frameleaf_editor_group_light": "Light",
   "frameleaf_editor_histogram_approximate": "Approximate",
   "frameleaf_editor_histogram_from_render": "From render",
+  "frameleaf_editor_histogram_hdr": "HDR histogram: stops relative to reference white",
   "frameleaf_editor_histogram_highlights_clipping": "Highlights are clipping",
   "frameleaf_editor_histogram_label": "Histogram of the current preview",
   "frameleaf_editor_histogram_shadows_clipping": "Shadows are clipping",

@@ -219,3 +219,20 @@ it("saves a preset's Brilliance with the photo, one undo step back from it (FL-3
   expect(toServerRecipe(applied.recipe)).toMatchObject({ contrast: 20, brilliance: 40 });
   expect(toServerRecipe(undoDraft(applied).recipe)).toMatchObject({ contrast: 5, brilliance: 10 });
 });
+
+it('upgrades a new HDR edit while retaining historical and native recipe identities', () => {
+  const hdr = toServerRecipe(openingRecipe(null, true));
+  expect(hdr).toMatchObject({
+    version: 3,
+    renderer: 'frameleaf-develop-hdr/1',
+    hdr: { intent: 'preserve', referenceWhite: 203 },
+  });
+  const native = revision({ recipe: { version: 2, native: { renderer: 'darktable/5.6.1' } } });
+  expect(toServerRecipe(openingRecipe({ currentRevisionId: native.id, revisions: [native] }, true)).version).toBe(2);
+  const previous = revision({ recipe: { version: 1, contrast: 30 } });
+  expect(toServerRecipe(openingRecipe({ currentRevisionId: previous.id, revisions: [previous] }, true))).toMatchObject({
+    version: 3,
+    contrast: 30,
+  });
+  expect(previous.recipe.version).toBe(1);
+});

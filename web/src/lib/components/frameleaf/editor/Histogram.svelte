@@ -6,6 +6,7 @@
    * Sampling runs on the next animation frame after any input changes.
    */
   import { histogramBins, tonePixels, type CssFilterInfo } from '$lib/frameleaf/develop';
+  import type { HdrHistogram } from '$lib/frameleaf/develop-api';
   import { t } from 'svelte-i18n';
 
   let {
@@ -13,6 +14,8 @@
     approximation,
     fromServer,
     tick = 0,
+    hdrMode = false,
+    rendered,
   }: {
     /** The image or video element currently shown on the stage, once it has loaded (a clip samples its current frame). */
     source: HTMLImageElement | HTMLVideoElement | undefined;
@@ -21,6 +24,8 @@
     fromServer: boolean;
     /** Bumped by the owner when the stage image finishes loading, so the sample is fresh. */
     tick?: number;
+    hdrMode?: boolean;
+    rendered?: HdrHistogram;
   } = $props();
 
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -71,10 +76,25 @@
   $effect(() => {
     const target = canvas;
     const image = source;
+    const hdr = hdrMode;
+    const bins = rendered;
     const info = approximation;
     const server = fromServer;
     void tick;
-    if (!target || !image) {
+    if (!target) {
+      return;
+    }
+    if (hdr) {
+      if (!bins) {
+        status = 'unavailable';
+        return;
+      }
+      draw(target, bins);
+      clipped = bins.clipped;
+      status = 'ok';
+      return;
+    }
+    if (!image) {
       return;
     }
     const frame = requestAnimationFrame(() => {
@@ -113,8 +133,15 @@
   });
 </script>
 
-<div class="ed-histogram" role="img" aria-label={$t('frameleaf_editor_histogram_label')}>
+<div
+  class="ed-histogram"
+  role="img"
+  aria-label={$t(hdrMode ? 'frameleaf_editor_histogram_hdr' : 'frameleaf_editor_histogram_label')}
+>
   <canvas bind:this={canvas}></canvas>
+  {#if hdrMode && rendered}
+    <div class="ed-hdr-stops"><span>−10 EV</span><span>0 EV</span><span>+6 EV</span></div>
+  {/if}
   {#if status === 'ok' && clipped.shadows > 0.01}
     <span class="ed-clip left" title={$t('frameleaf_editor_histogram_shadows_clipping')}></span>
   {/if}
@@ -129,3 +156,25 @@
     </span>
   {/if}
 </div>
+
+<style>
+  .ed-hdr-stops {
+    position: absolute;
+    bottom: 18px;
+    left: 3px;
+    right: 3px;
+    color: #eceef1;
+    display: grid;
+    grid-template-columns: 10fr 6fr;
+    font-size: 10px;
+  }
+  .ed-hdr-stops span:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ed-hdr-stops span:last-child {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+</style>
