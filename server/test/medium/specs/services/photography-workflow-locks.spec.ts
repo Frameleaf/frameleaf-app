@@ -81,9 +81,9 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
   const service = new PhotographyWorkflowService(
     repository,
     {
-      get: async () => ({ value: { shoots: [{ id: shootId, albumId: album.id, name: 'Portrait' }], brand } }),
+      get: () => Promise.resolve({ value: { shoots: [{ id: shootId, albumId: album.id, name: 'Portrait' }], brand } }),
     } as never,
-    { get: async () => ({ albumUsers: [{ user: { id: user.id } }], isSmart: false, kind: 'album' }) } as never,
+    { get: () => Promise.resolve({ albumUsers: [{ user: { id: user.id } }], isSmart: false, kind: 'album' }) } as never,
     new AssetDevelopRepository(db),
     {} as never,
     { queue: vi.fn(async () => {}) } as never,
