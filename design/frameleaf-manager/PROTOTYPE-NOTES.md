@@ -15,3 +15,5 @@ Use Preview > Mobile onboarding, or ?preview=mobile, for the short route. The fu
 The previous database-only policy is preserved: a readable, completed, verified backup for the selected source/database with age 0–24 hours skips the backup page and backup creation step. Import copies the current stopped database; it does not import an older recovery snapshot. Photos/videos/external libraries are excluded from backups.
 
 Production implementation remains a separate phase: real authenticated status API, durable setup sessions and sync cursors, user-scoped data reconciliation, secure local claiming and account linking, native background execution and tests on real phones still need implementation and validation. This prototype is not that evidence.
+
+The sample managed-server service label uses `frameleaf-server`, matching the canonical deployment identifier. Service rows and logs remain fictional; the live Manager lists actual owned containers and uses the server's SQL-backed queues.

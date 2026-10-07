@@ -7,6 +7,35 @@ import type { Request, Response } from 'express';
 import { Store } from '../src/store.js';
 import { Security } from '../src/security.js';
 
+test('credential changes invalidate existing sessions and in-flight old-password logins', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-credentials-'));
+  const store = new Store(directory),
+    proof = 'a'.repeat(64),
+    password = 'old private password',
+    replacement = 'new private password';
+  await writeFile(join(directory, 'claim-key'), proof);
+  const security = new Security(store, 'https://manager.test:9443', join(directory, 'claim-key'));
+  try {
+    await security.claim('Owner', password, proof);
+    const old = await security.login(password);
+    await assert.rejects(security.updateAdministrator('Changed', 'wrong', replacement), /invalid_credentials/);
+    assert.equal(store.get<any>('administrator').name, 'Owner');
+    const changed = await security.updateAdministrator('Changed', password, replacement);
+    assert.equal(store.db.prepare('SELECT count(*) AS count FROM sessions').get()!.count, 1);
+    assert.notEqual(changed.session, old.session);
+    await assert.rejects(security.login(password), /invalid_credentials/);
+    await security.login(replacement);
+    // confirm yields during scrypt: a record rotated before it returns cannot mint a session.
+    const pending = security.login(replacement);
+    store.set('administrator', { name: 'Rotated elsewhere', salt: 'different', hash: '0'.repeat(128) });
+    await assert.rejects(pending, /invalid_credentials/);
+    assert.equal(store.db.prepare('SELECT count(*) AS count FROM sessions').get()!.count, 2);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('claim proof, atomic administrator creation, sessions and CSRF survive Manager replacement', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-security-'));
   const proof = '1'.repeat(64),

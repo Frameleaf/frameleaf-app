@@ -17,6 +17,53 @@ export class Fencing {
     private store: Store,
     private autostartFile?: string,
   ) {}
+  async stopInstallation(installation: Installation): Promise<void> {
+    await this.assertMedia(installation.mounts, installation);
+    const owned = (await this.docker.inventory()).filter(
+      (c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id,
+    );
+    this.store.createOnce(
+      `installation-fence:${installation.id}`,
+      owned.map((c) => ({ id: c.Id, restart: c.HostConfig.RestartPolicy })),
+    );
+    if (this.autostartFile) await this.removeNames(owned.map((c) => c.Name.replace(/^\//, '')));
+    for (const container of owned) {
+      await this.docker.restartPolicy(container.Id, 'no');
+      await this.docker.stop(container.Id);
+    }
+    await this.verifyInstallation(installation);
+  }
+  async verifyInstallation(installation: Installation): Promise<void> {
+    const owned = (await this.docker.inventory()).filter(
+      (c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id,
+    );
+    if (owned.some((c) => c.State.Running || c.HostConfig.RestartPolicy.Name !== 'no'))
+      throw new Refusal('previous_installation_not_fenced');
+    if (this.autostartFile) {
+      const text = await readFile(this.autostartFile, 'utf8');
+      if (
+        removeAutostart(
+          text,
+          owned.map((c) => c.Name.replace(/^\//, '')),
+        ) !== text
+      )
+        throw new Refusal('previous_autostart_enabled');
+    }
+  }
+  private async removeNames(names: string[]): Promise<void> {
+    const text = await readFile(this.autostartFile!, 'utf8'),
+      modified = removeAutostart(text, names);
+    const file = await open(this.autostartFile!, 'r+');
+    try {
+      if ((await file.readFile('utf8')) !== text) throw new Refusal('autostart_changed');
+      await file.write(modified, 0, 'utf8');
+      await file.truncate(Buffer.byteLength(modified));
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    if ((await readFile(this.autostartFile!, 'utf8')) !== modified) throw new Refusal('autostart_write_failed');
+  }
   async assertMedia(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
     const all = await this.docker.inventory();
     const autostart = this.autostartFile ? await readFile(this.autostartFile, 'utf8') : '';
@@ -50,18 +97,8 @@ export class Fencing {
         .map((id) => all.find((c) => c.Id === id)?.Name.replace(/^\//, ''))
         .filter((s): s is string => !!s);
       this.store.createOnce(`autostart:${source.id}`, { text, names });
-      const modified = removeAutostart(text, names);
       // A mounted file must be updated in place; rename would replace the container's mount, not the host file.
-      const file = await open(this.autostartFile, 'r+');
-      try {
-        if ((await file.readFile('utf8')) !== text) throw new Refusal('autostart_changed');
-        await file.write(modified, 0, 'utf8');
-        await file.truncate(Buffer.byteLength(modified));
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      if ((await readFile(this.autostartFile, 'utf8')) !== modified) throw new Refusal('autostart_write_failed');
+      await this.removeNames(names);
     }
     for (const id of source.workers) {
       await this.docker.restartPolicy(id, 'no');

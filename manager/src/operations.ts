@@ -21,11 +21,13 @@ import {
   type Operation,
   type Database,
   type Backup,
+  publicSource,
 } from './contracts.js';
 
 export const ReviewInput = z
   .object({
     kind: z.enum(['install', 'import']),
+    name: z.string().trim().min(1).max(120).optional(),
     tag: releaseTag,
     sourceId: z
       .string()
@@ -58,12 +60,20 @@ const Recovery = z
     installation: z
       .object({
         id: z.string().regex(/^[a-f0-9]{12}$/),
+        name: z.string().trim().min(1).max(120).optional(),
         project: z.string().regex(/^frameleaf-[a-f0-9]{12}$/),
         release: releaseTag,
         port: z.number().int().min(1024).max(65535),
         ml: z.boolean(),
         origin: z.enum(['new_library', 'new_import', 'restored_library']),
-        importInstallation: z.string().regex(/^[a-f0-9]{12}$/).optional(),
+        importInstallation: z
+          .string()
+          .regex(/^[a-f0-9]{12}$/)
+          .optional(),
+        libraryId: z
+          .string()
+          .regex(/^[a-f0-9]{12}$/)
+          .optional(),
         sourceId: z.string().nullable(),
         mayHaveWrittenMedia: z.boolean(),
         databaseRoot: z.string().min(1).max(4096),
@@ -95,9 +105,21 @@ type RestoreReview = {
   release: VerifiedRelease;
   recovery: z.infer<typeof Recovery>;
   platform: string;
+  current: Installation | null;
 };
 type UpdateReview = { expires: number; current: Installation; release: VerifiedRelease; platform: string };
-type Cancellation = { kind: 'backup' | 'update' | 'source'; installation: Installation | null; archive: string };
+type Cancellation = {
+  kind: 'backup' | 'update' | 'source' | 'restore';
+  installation: Installation | null;
+  archive: string;
+};
+type PreviousInstallation = {
+  installation: Installation;
+  password: string;
+  application: ApplicationConfig;
+  onboardingFinished: unknown;
+  archive: string;
+};
 export class Operations {
   private discovery: Discovery;
   private fencing: Fencing;
@@ -128,18 +150,37 @@ export class Operations {
     for (const source of found.sources) this.store.set(`source:${source.id}`, source);
     return found;
   }
+  async librarySummary() {
+    return JSON.parse(
+      await this.docker.sql(
+        await this.targetDatabase(),
+        `SELECT json_build_object('assets',(SELECT count(*) FROM public.asset),'users',(SELECT count(*) FROM public.user),'albums',(SELECT count(*) FROM public.album));`,
+      ),
+    );
+  }
+  private async reviewedSource(id: string) {
+    const source = this.store.get<Source>(`source:${id}`);
+    if (!source) throw new Refusal('select_source_installation');
+    await this.discovery.revalidate(source);
+    if (source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+    if (source.platform === 'unraid' && !this.autostartFile) throw new Refusal('unraid_autostart_file_required');
+    return { source, backup: recentBackup(await sourceBackups(this.docker, source), source) ?? null };
+  }
+  async sourceReview(id: string) {
+    if (this.installation()) throw new Refusal('installation_already_exists');
+    const { source, backup } = await this.reviewedSource(id);
+    return {
+      source: publicSource(source),
+      backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
+    };
+  }
   async review(input: z.infer<typeof ReviewInput>) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
     let source: Source | null = null,
       backup: Backup | null = null;
     if (input.kind === 'import') {
-      source = input.sourceId ? this.store.get<Source>(`source:${input.sourceId}`) : null;
-      if (!source) throw new Refusal('select_source_installation');
-      await this.discovery.revalidate(source);
-      if (source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
-      if (source.platform === 'unraid' && !this.autostartFile) throw new Refusal('unraid_autostart_file_required');
-      backup = recentBackup(await sourceBackups(this.docker, source), source) ?? null;
+      ({ source, backup } = await this.reviewedSource(input.sourceId ?? ''));
     } else {
       if (!input.mediaPath) throw new Refusal('media_path_required');
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
@@ -184,12 +225,13 @@ export class Operations {
         'Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to Immich.',
     };
   }
-  async checkPort(port: number): Promise<void> {
+  async checkPort(port: number, installation?: Installation | null): Promise<void> {
     const containers = await this.docker.inventory();
     if (
       containers.some(
         (c) =>
           c.State.Running &&
+          (!installation || c.Config.Labels?.['app.frameleaf.manager'] !== installation.id) &&
           Object.values(c.HostConfig.PortBindings ?? {}).some((values) =>
             values?.some((v) => Number(v.HostPort) === port),
           ),
@@ -201,6 +243,11 @@ export class Operations {
       throw new Refusal('port_in_use');
   }
   start(reviewId: string, key: string): Operation {
+    const prior = this.store.request(undefined, key, { reviewId });
+    if (prior) {
+      if (!['install', 'import'].includes(prior.kind)) throw new Refusal('request_key_reused');
+      return prior;
+    }
     const review = this.store.get<Review>(`review:${reviewId}`);
     if (!review || review.expires < Date.now()) throw new Refusal('review_expired');
     const { operation, created } = this.store.start(review.input.kind, key, { reviewId });
@@ -243,7 +290,12 @@ export class Operations {
       );
       if (!review) throw new Refusal('review_missing');
       const installation = this.installation();
-      if (installation && !operation.completed.includes('configure') && !operation.receipts['configuration-intent'])
+      if (
+        installation &&
+        !operation.completed.includes('configure') &&
+        !operation.receipts['configuration-intent'] &&
+        !(restoring && digest(installation) === digest((review as RestoreReview).current))
+      )
         throw new Refusal('configuration_recovery_required');
       if (!restoring && (review as Review).source && operation.completed.includes('fence-source'))
         await this.fencing.verify((review as Review).source!, installation ?? undefined);
@@ -319,6 +371,7 @@ export class Operations {
         );
         const result: Installation = {
           id,
+          name: review.input.name,
           project: `frameleaf-${id}`,
           release: review.input.tag,
           port: review.input.port,
@@ -704,6 +757,8 @@ export class Operations {
     return path;
   }
   control(kind: 'start' | 'stop' | 'restart' | 'backup', key: string): Operation {
+    const prior = this.store.request(kind, key, {});
+    if (prior) return prior;
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
     const { operation, created } = this.store.start(kind, key, {});
@@ -766,6 +821,8 @@ export class Operations {
     };
   }
   update(id: string, key: string): Operation {
+    const prior = this.store.request('update', key, { reviewId: id });
+    if (prior) return prior;
     const review = this.store.get<UpdateReview>(`update:${id}`);
     if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
       throw new Refusal('review_expired');
@@ -817,7 +874,7 @@ export class Operations {
     });
   }
   async reviewRestore(snapshot: string, databaseRoot: string) {
-    if (this.installation()) throw new Refusal('restore_requires_empty_installation');
+    const current = this.installation();
     await this.databaseStorage.validate(databaseRoot, 1024 ** 3);
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
@@ -825,7 +882,13 @@ export class Operations {
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
     if (recovery.databaseFormat !== 'frameleaf-canonical')
       throw new Refusal('immich_source_checkpoint_requires_source_recovery');
-    await this.fencing.assertMedia(recovery.installation.mounts);
+    if (
+      current &&
+      ((current.libraryId ?? current.id) !== (recovery.installation.libraryId ?? recovery.installation.id) ||
+        digest(current.mounts) !== digest(recovery.installation.mounts))
+    )
+      throw new Refusal('backup_belongs_to_another_library');
+    await this.fencing.assertMedia(recovery.installation.mounts, current ?? undefined);
     const containers = await this.docker.inventory();
     for (const mount of recovery.installation.mounts) {
       if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
@@ -837,7 +900,7 @@ export class Operations {
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(recovery.installation.release);
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
-    await this.checkPort(recovery.installation.port);
+    await this.checkPort(recovery.installation.port, current);
     const hash = await fileHash(join(checkpoint, 'database.dump'));
     if (hash !== recovery.dumpSha256) throw new Refusal('restore_checkpoint_changed');
     const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
@@ -853,6 +916,7 @@ export class Operations {
       release,
       recovery,
       platform: compatibility.platform,
+      current,
     } satisfies RestoreReview);
     return {
       id,
@@ -861,11 +925,15 @@ export class Operations {
       port: recovery.installation.port,
       databaseStorage,
       mediaIncluded: false,
+      replacesInstallation: !!current,
     };
   }
   restore(id: string, key: string): Operation {
+    const prior = this.store.request('restore', key, { reviewId: id });
+    if (prior) return prior;
     const review = this.store.get<RestoreReview>(`restore:${id}`);
-    if (!review || review.expires < Date.now() || this.installation()) throw new Refusal('review_expired');
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
+      throw new Refusal('review_expired');
     const { operation, created } = this.store.start('restore', key, { reviewId: id });
     if (created) this.launch(operation, () => this.applyRestore(operation, review));
     return operation;
@@ -878,6 +946,33 @@ export class Operations {
         await this.docker.pull(image, review.platform);
       return true;
     });
+    if (review.current) {
+      await this.step(operation, 'stop-previous-installation', async () => {
+        if (digest(this.installation()) !== digest(review.current)) throw new Refusal('installation_changed');
+        this.store.createOnce(`previous-installation:${operation.id}`, {
+          installation: review.current!,
+          password: this.store.get<string>('database-password')!,
+          application: this.application(),
+          onboardingFinished: this.store.get('onboarding-finished'),
+          archive: join(this.store.directory, `previous-stack-${operation.id}`),
+        } satisfies PreviousInstallation);
+        await this.fencing.stopInstallation(review.current!);
+        return true;
+      });
+      await this.fencing.verifyInstallation(review.current);
+      await this.step(operation, 'archive-previous-installation', async () => {
+        const previous = this.store.get<PreviousInstallation>(`previous-installation:${operation.id}`)!;
+        await this.archiveStack(previous.archive);
+        const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+        this.store.set('retained-database-directories', [...new Set([...retained, review.current!.databasePath])]);
+        return previous.archive;
+      });
+    } else if (
+      !operation.completed.includes('configure') &&
+      !operation.receipts['configuration-intent'] &&
+      this.installation()
+    )
+      throw new Refusal('installation_changed');
     const installation = await this.step(operation, 'configure', async () => {
       let intent = operation.receipts['configuration-intent'] as
         { installation: Installation; password: string } | undefined;
@@ -893,6 +988,7 @@ export class Operations {
           sourceId: null,
           mayHaveWrittenMedia: false,
           origin: 'restored_library',
+          libraryId: review.recovery.installation.libraryId ?? review.recovery.installation.id,
           importInstallation:
             review.recovery.installation.origin === 'new_import'
               ? review.recovery.installation.id
@@ -908,6 +1004,7 @@ export class Operations {
       this.store.set('database-password', password);
       this.store.set('installation', installation);
       this.store.set('application-config', review.recovery.application);
+      this.store.set('onboarding-finished', null);
       await mkdir(this.directory(), { recursive: true, mode: 0o700 });
       await this.managerToken();
       await renderCompose(review.release, installation, password, this.directory(), this.application());
@@ -942,6 +1039,7 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'start-frameleaf', async () => {
+      if (review.current) await this.fencing.verifyInstallation(review.current);
       await this.fencing.assertMedia(installation.mounts, installation);
       await this.releases.eligible(review.release.nas.tag);
       installation.mayHaveWrittenMedia = true;
@@ -959,14 +1057,20 @@ export class Operations {
       if (!operation.receipts['cancellation-intent']) {
         const installation = this.installation();
         const kind =
-          operation.kind === 'backup'
-            ? 'backup'
-            : operation.kind === 'update' &&
-                !operation.completed.includes('apply-release') &&
-                operation.step !== 'apply-release'
-              ? 'update'
-              : 'source';
+          operation.kind === 'restore'
+            ? 'restore'
+            : operation.kind === 'backup'
+              ? 'backup'
+              : operation.kind === 'update' &&
+                  !operation.completed.includes('apply-release') &&
+                  operation.step !== 'apply-release'
+                ? 'update'
+                : 'source';
         if (kind === 'source' && installation?.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
+        const restoreReview =
+          kind === 'restore' ? this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`) : null;
+        if (kind === 'restore' && installation?.id !== restoreReview?.current?.id && installation?.mayHaveWrittenMedia)
+          throw new Refusal('manual_media_recovery_required');
         operation.receipts['cancellation-intent'] = {
           kind,
           installation,
@@ -991,6 +1095,69 @@ export class Operations {
   private async cancelOperation(operation: Operation): Promise<void> {
     const intent = operation.receipts['cancellation-intent'] as Cancellation;
     const installation = intent.installation;
+    if (intent.kind === 'restore') {
+      const review = this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`);
+      if (!review) throw new Refusal('review_missing');
+      const previous = this.store.get<PreviousInstallation>(`previous-installation:${operation.id}`);
+      const target = operation.receipts['configuration-intent'] as { installation: Installation } | undefined;
+      if (target && installation?.id !== target.installation.id && installation?.id !== review.current?.id)
+        throw new Refusal('installation_changed');
+      if (target) {
+        await this.step(operation, 'cancel-stop-target', async () => {
+          await this.fencing.stopInstallation(target.installation);
+          return true;
+        });
+        await this.step(operation, 'cancel-archive-stack', async () => {
+          this.store.createOnce(`cancelled-installation:${operation.id}`, {
+            installation,
+            password: this.store.get('database-password'),
+            application: this.application(),
+          });
+          if (
+            await stat(this.directory()).catch((error: NodeJS.ErrnoException) => {
+              if (error.code !== 'ENOENT') throw error;
+              return null;
+            })
+          )
+            await this.archiveStack(intent.archive);
+          return true;
+        });
+      }
+      await this.step(operation, 'cancel-restore-previous', async () => {
+        if (previous) {
+          await this.fencing.stopInstallation(previous.installation);
+          if (
+            operation.completed.includes('archive-previous-installation') ||
+            operation.step === 'cancel-restore-previous'
+          ) {
+            try {
+              await rename(previous.archive, this.directory());
+            } catch (error: any) {
+              if (error.code !== 'ENOENT' || !(await stat(this.directory()).catch(() => null))) throw error;
+            }
+            const parent = await open(this.store.directory, 'r');
+            try {
+              await parent.sync();
+            } finally {
+              await parent.close();
+            }
+          }
+          this.store.set('installation', previous.installation);
+          this.store.set('database-password', previous.password);
+          this.store.set('application-config', previous.application);
+          this.store.set('onboarding-finished', previous.onboardingFinished);
+        } else if (!review.current) {
+          this.store.set('installation', null);
+          this.store.set('database-password', null);
+          this.store.set('application-config', null);
+        }
+        return true;
+      });
+      operation.receipts['cancelled'] = previous
+        ? 'restore_cancelled_previous_installation_stopped'
+        : 'restore_cancelled';
+      return;
+    }
     if (intent.kind === 'backup') {
       operation.receipts['cancelled'] = 'backup_cancelled';
       return;
@@ -1074,6 +1241,35 @@ export class Operations {
     operation.receipts['cancelled'] = 'recovered_source_stopped';
   }
   history() {
-    return this.store.history().map(({ input, receipts, ...operation }) => operation);
+    return this.store
+      .history()
+      .map(({ input, receipts, ...operation }) => ({
+        ...operation,
+        backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.reviewId}`)?.backup,
+        replacesInstallation:
+          operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
+        canCancel:
+          ['failed', 'interrupted'].includes(operation.state) &&
+          (operation.kind === 'backup' ||
+            (operation.kind === 'update' &&
+              operation.step !== 'apply-release' &&
+              !operation.completed.includes('apply-release')) ||
+            !this.installation()?.mayHaveWrittenMedia ||
+            (operation.kind === 'restore' &&
+              this.installation()?.id === this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current?.id)),
+      }));
+  }
+  private async archiveStack(archive: string): Promise<void> {
+    try {
+      await rename(this.directory(), archive);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT' || !(await stat(archive).catch(() => null))?.isDirectory()) throw error;
+    }
+    const parent = await open(this.store.directory, 'r');
+    try {
+      await parent.sync();
+    } finally {
+      await parent.close();
+    }
   }
 }

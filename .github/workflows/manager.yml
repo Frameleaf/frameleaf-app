@@ -58,6 +58,10 @@ jobs:
         run: node --test .github/verify-release-bundle.test.cjs
       - name: Build standalone UI and API
         run: npm run build --prefix manager
+      - name: Install browser for Manager interaction checks
+        run: npx --prefix manager playwright install --with-deps chromium
+      - name: Manager navigation, setup, maintenance and responsive interactions
+        run: node manager/test/ui-browser.mjs
       - name: Build Manager container without publishing
         run: docker build --file manager/Dockerfile --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-manager:test .
       - name: HTTPS claim, session and restart integration

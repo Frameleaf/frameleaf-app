@@ -130,7 +130,26 @@ export class Backups {
           s.tags.includes('frameleaf-canonical') &&
           !s.tags.includes('immich-source'),
       )
-      .map((s: any) => ({ id: s.id, time: s.time, paths: s.paths }));
+      .map((s: any) => ({ id: s.id, time: s.time, paths: s.paths }))
+      .sort((a: { time: string }, b: { time: string }) => Date.parse(b.time) - Date.parse(a.time));
+  }
+  async status() {
+    const exists = async (file: string) =>
+      stat(file)
+        .then(() => true)
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        });
+    const configured = await exists(join(this.repository, 'config'));
+    const keyAvailable = await exists(this.keyFile),
+      unlocked = configured && keyAvailable;
+    return {
+      configured,
+      unlocked,
+      keyAvailable,
+      snapshots: unlocked ? (await this.list()).map(({ id, time }) => ({ id, time })) : [],
+    };
   }
   async restore(snapshot: string, emptyDirectory: string): Promise<void> {
     const entry = (await this.list()).find((s) => s.id === snapshot);
