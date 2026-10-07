@@ -1,0 +1,698 @@
+diff --git a/src/features/editor/components/preview-area.tsx b/src/features/editor/components/preview-area.tsx
+--- a/src/features/editor/components/preview-area.tsx
++++ b/src/features/editor/components/preview-area.tsx
+@@ -74,28 +74,68 @@
+ )
+ 
+ function PreviewSplitHandle({
+-  onMouseDown,
++  onPointerDown,
+   onReset,
++  onChange,
++  value,
++  min,
++  max,
++  label,
++  reversed = false,
++  disabled,
+   showReset,
+   resetLabel,
+   resetTooltip,
+ }: {
+-  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void
++  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void
+   onReset: () => void
++  onChange: (value: number) => void
++  value: number
++  min: number
++  max: number
++  label: string
++  reversed?: boolean
++  disabled: boolean
+   showReset: boolean
+   resetLabel: string
+   resetTooltip: string
+ }) {
+   return (
+     <div
+-      onMouseDown={onMouseDown}
+-      className="w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary/70 bg-border transition-colors flex-shrink-0 relative group"
++      role="separator"
++      aria-label={label}
++      aria-orientation="vertical"
++      aria-valuemin={min}
++      aria-valuemax={max}
++      aria-valuenow={Math.round(value * 100) / 100}
++      aria-disabled={disabled}
++      tabIndex={disabled ? -1 : 0}
++      onPointerDown={(event) => {
++        if (!disabled && event.button === 0 && event.isPrimary !== false) onPointerDown(event)
++      }}
++      onKeyDown={(event) => {
++        if (disabled || event.target !== event.currentTarget) return
++        const step = event.shiftKey ? 10 : 1
++        let next = value
++        if (event.key === 'ArrowLeft') next -= step * (reversed ? -1 : 1)
++        else if (event.key === 'ArrowRight') next += step * (reversed ? -1 : 1)
++        else if (event.key === 'Home') next = min
++        else if (event.key === 'End') next = max
++        else if (event.key !== 'Enter') return
++        event.preventDefault()
++        event.stopPropagation()
++        if (event.key === 'Enter') onReset()
++        else onChange(Math.max(min, Math.min(max, next)))
++      }}
++      className="w-6 h-full touch-none cursor-col-resize hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-2 focus-visible:outline-primary flex-shrink-0 relative group before:absolute before:inset-y-0 before:left-1/2 before:w-1.5 before:-translate-x-1/2 before:bg-border"
+     >
+       {showReset && (
+         <button
+-          onMouseDown={(event) => event.stopPropagation()}
++          type="button"
++          disabled={disabled}
++          onPointerDown={(event) => event.stopPropagation()}
+           onClick={onReset}
+-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-primary hover:border-primary hover:[&>svg]:text-primary-foreground"
++          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity cursor-pointer hover:bg-primary hover:border-primary hover:[&>svg]:text-primary-foreground"
+           aria-label={resetLabel}
+           data-tooltip={resetTooltip}
+         >
+@@ -380,17 +420,20 @@
+   }, [scopesResetPercent])
+ 
+   const handleSourceSplitDragStart = useCallback(
+-    (event: React.MouseEvent<HTMLDivElement>) => {
++    (event: React.PointerEvent<HTMLDivElement>) => {
+       event.preventDefault()
++      const pointerId = event.pointerId
+       isDraggingSourceSplitRef.current = true
+       setIsPanelDragging(true)
+       document.body.style.cursor = 'col-resize'
+       document.body.style.userSelect = 'none'
+ 
+-      const handleMouseMove = (mouseEvent: MouseEvent) => {
++      const handlePointerMove = (pointerEvent: PointerEvent) => {
++        if (pointerEvent.pointerId !== pointerId) return
+         if (!isDraggingSourceSplitRef.current || !splitContainerRef.current) return
+         const rect = splitContainerRef.current.getBoundingClientRect()
+-        const absPercent = ((mouseEvent.clientX - rect.left) / rect.width) * 100
++        if (rect.width <= 0) return
++        const absPercent = ((pointerEvent.clientX - rect.left) / rect.width) * 100
+         // Convert absolute position to ratio of source+program space
+         const available = 100 - (scopesPanelOpen ? displayedScopesSplitPercent : 0)
+         pendingSourceSplitPercentRef.current =
+@@ -425,33 +468,40 @@
+         setIsPanelDragging(false)
+         document.body.style.cursor = ''
+         document.body.style.userSelect = ''
+-        document.removeEventListener('mousemove', handleMouseMove)
+-        document.removeEventListener('mouseup', handleMouseUp)
++        document.removeEventListener('pointermove', handlePointerMove)
++        document.removeEventListener('pointerup', handlePointerUp)
++        document.removeEventListener('pointercancel', handlePointerUp)
+         sourceSplitDragCleanupRef.current = null
+       }
+ 
+-      const handleMouseUp = () => {
++      const handlePointerUp = (event: PointerEvent) => {
++        if (event.pointerId !== pointerId) return
+         cleanup()
+       }
+ 
+       sourceSplitDragCleanupRef.current = cleanup
+-      document.addEventListener('mousemove', handleMouseMove)
+-      document.addEventListener('mouseup', handleMouseUp)
++      document.addEventListener('pointermove', handlePointerMove)
++      document.addEventListener('pointerup', handlePointerUp)
++      document.addEventListener('pointercancel', handlePointerUp)
+     },
+     [scopesPanelOpen, displayedScopesSplitPercent],
+   )
+ 
+-  const handleScopesSplitDragStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
++  const handleScopesSplitDragStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+     event.preventDefault()
++    const pointerId = event.pointerId
+     isDraggingScopesSplitRef.current = true
+     setIsPanelDragging(true)
+     document.body.style.cursor = 'col-resize'
+     document.body.style.userSelect = 'none'
+ 
+-    const handleMouseMove = (mouseEvent: MouseEvent) => {
++    const handlePointerMove = (pointerEvent: PointerEvent) => {
++      if (pointerEvent.pointerId !== pointerId) return
+       if (!isDraggingScopesSplitRef.current || !splitContainerRef.current) return
+       const rect = splitContainerRef.current.getBoundingClientRect()
+-      pendingScopesSplitPercentRef.current = ((rect.right - mouseEvent.clientX) / rect.width) * 100
++      if (rect.width <= 0) return
++      pendingScopesSplitPercentRef.current =
++        ((rect.right - pointerEvent.clientX) / rect.width) * 100
+ 
+       if (scopesSplitDragRafRef.current !== null) return
+       scopesSplitDragRafRef.current = requestAnimationFrame(() => {
+@@ -492,18 +542,21 @@
+       setIsPanelDragging(false)
+       document.body.style.cursor = ''
+       document.body.style.userSelect = ''
+-      document.removeEventListener('mousemove', handleMouseMove)
+-      document.removeEventListener('mouseup', handleMouseUp)
++      document.removeEventListener('pointermove', handlePointerMove)
++      document.removeEventListener('pointerup', handlePointerUp)
++      document.removeEventListener('pointercancel', handlePointerUp)
+       scopesSplitDragCleanupRef.current = null
+     }
+ 
+-    const handleMouseUp = () => {
++    const handlePointerUp = (event: PointerEvent) => {
++      if (event.pointerId !== pointerId) return
+       cleanup()
+     }
+ 
+     scopesSplitDragCleanupRef.current = cleanup
+-    document.addEventListener('mousemove', handleMouseMove)
+-    document.addEventListener('mouseup', handleMouseUp)
++    document.addEventListener('pointermove', handlePointerMove)
++    document.addEventListener('pointerup', handlePointerUp)
++    document.addEventListener('pointercancel', handlePointerUp)
+   }, [])
+ 
+   useEffect(() => {
+@@ -547,9 +600,15 @@
+           </InteractionLockRegion>
+           <InteractionLockRegion locked={isMaskEditingActive} overlayClassName="rounded-none">
+             <PreviewSplitHandle
+-              onMouseDown={handleSourceSplitDragStart}
++              onPointerDown={handleSourceSplitDragStart}
+               onReset={handleResetSourceSplit}
+-              showReset={Math.abs(displayedSourceSplitPercent - sourceResetPercent) > 0.5}
++              onChange={(value) => setSourceSplitPercent((value * 100) / availableForSourceProgram)}
++              value={displayedSourceSplitPercent}
++              min={PREVIEW_SIDE_PANEL_MIN_PERCENT}
++              max={availableForSourceProgram - PREVIEW_SIDE_PANEL_MIN_PERCENT}
++              label="Source monitor width"
++              disabled={isMaskEditingActive}
++              showReset={Math.abs(sourceSplitPercent - sourceResetPercent) > 0.5}
+               resetLabel="Reset source monitor width"
+               resetTooltip="Reset Source Monitor Width"
+             />
+@@ -732,8 +791,15 @@
+         <>
+           <InteractionLockRegion locked={isMaskEditingActive} overlayClassName="rounded-none">
+             <PreviewSplitHandle
+-              onMouseDown={handleScopesSplitDragStart}
++              onPointerDown={handleScopesSplitDragStart}
+               onReset={handleResetScopesSplit}
++              onChange={setScopesSplitPercent}
++              value={displayedScopesSplitPercent}
++              min={PREVIEW_SIDE_PANEL_MIN_PERCENT}
++              max={PREVIEW_SIDE_PANEL_MAX_PERCENT}
++              label="Color scopes width"
++              reversed
++              disabled={isMaskEditingActive}
+               showReset={Math.abs(displayedScopesSplitPercent - scopesResetPercent) > 0.5}
+               resetLabel="Reset color scopes width"
+               resetTooltip="Reset Color Scopes Width"
+diff --git a/src/features/editor/components/preview-area.test.tsx b/src/features/editor/components/preview-area.test.tsx
+--- a/src/features/editor/components/preview-area.test.tsx
++++ b/src/features/editor/components/preview-area.test.tsx
+@@ -6,12 +6,15 @@
+ import { useEditorStore } from '@/shared/state/editor'
+ 
+ vi.mock('@/features/editor/deps/preview', async () => {
+-  const actual = await vi.importActual<typeof import('@/features/editor/deps/preview')>(
+-    '@/features/editor/deps/preview',
+-  )
+-
++  const { useMaskEditorStore } = await vi.importActual<
++    typeof import('@/features/preview/stores/mask-editor-store')
++  >('@/features/preview/stores/mask-editor-store')
++  const { useItemsStore } = await vi.importActual<
++    typeof import('@/features/timeline/stores/items-store')
++  >('@/features/timeline/stores/items-store')
+   return {
+-    ...actual,
++    useMaskEditorStore,
++    useItemsStore,
+     VideoPreview: ({
+       chrome,
+       project,
+@@ -250,10 +253,7 @@
+     expect(screen.getByTestId('video-preview')).toHaveAttribute('data-width', '1440')
+     expect(screen.getByTestId('video-preview')).toHaveAttribute('data-height', '1080')
+     expect(screen.getByTestId('video-preview')).toHaveAttribute('data-fps', '24')
+-    expect(screen.getByTestId('video-preview')).toHaveAttribute(
+-      'data-background-color',
+-      '#123456',
+-    )
++    expect(screen.getByTestId('video-preview')).toHaveAttribute('data-background-color', '#123456')
+     expect(screen.getByTestId('playback-controls')).toHaveAttribute('data-total-frames', '240')
+     expect(screen.getByTestId('timecode-display')).toHaveAttribute('data-total-frames', '240')
+   })
+@@ -269,9 +269,7 @@
+   })
+ 
+   it('preserves the program preview DOM while switching workspace chrome', () => {
+-    const { rerender } = render(
+-      <PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />,
+-    )
++    const { rerender } = render(<PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />)
+     const previewNode = screen.getByTestId('video-preview')
+ 
+     act(() => {
+@@ -323,3 +321,76 @@
+     expect(screen.getByText('4 points selected for knot conversion.')).toBeInTheDocument()
+   })
+ })
++
++describe('FL-98 preview panel keyboard resizing', () => {
++  beforeEach(resetStores)
++
++  it('resizes both panels within the displayed bounds, resets, and respects the mask lock', async () => {
++    useEditorStore.setState({
++      sourcePreviewMediaId: 'media-1',
++      colorScopesOpen: true,
++      workspace: 'color',
++    })
++    render(<PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />)
++    await screen.findByTestId('source-monitor')
++    const source = screen.getByRole('separator', { name: 'Source monitor width' })
++    const scopes = screen.getByRole('separator', { name: 'Color scopes width' })
++    expect(source).toHaveAttribute('tabindex', '0')
++    expect(source).toHaveAttribute('aria-valuenow', '34')
++    fireEvent.keyDown(source, { key: 'ArrowRight' })
++    expect(source).toHaveAttribute('aria-valuenow', '35')
++    fireEvent.keyDown(source, { key: 'Home' })
++    expect(source).toHaveAttribute('aria-valuenow', '22')
++    fireEvent.keyDown(source, { key: 'End' })
++    expect(source).toHaveAttribute('aria-valuenow', '46')
++    fireEvent.keyDown(source, { key: 'Enter' })
++    expect(source).toHaveAttribute('aria-valuenow', '34')
++    fireEvent.keyDown(scopes, { key: 'ArrowRight' })
++    expect(scopes).toHaveAttribute('aria-valuenow', '31')
++    fireEvent.keyDown(scopes, { key: 'ArrowLeft', shiftKey: true })
++    expect(scopes).toHaveAttribute('aria-valuenow', '41')
++    fireEvent.keyDown(scopes, { key: 'End' })
++    fireEvent.keyDown(scopes, { key: 'ArrowLeft' })
++    expect(scopes).toHaveAttribute('aria-valuenow', '55')
++    fireEvent.keyDown(scopes, { key: 'Enter' })
++    expect(scopes).toHaveAttribute('aria-valuenow', '32')
++    act(() => useMaskEditorStore.getState().startEditing('mask-1'))
++    expect(source).toHaveAttribute('aria-disabled', 'true')
++    expect(source).toHaveAttribute('tabindex', '-1')
++    fireEvent.keyDown(source, { key: 'ArrowRight' })
++    expect(source).toHaveAttribute('aria-valuenow', '34')
++  })
++  it.each([
++    { panel: 'source', name: 'Source monitor width', expected: '60' },
++    { panel: 'scopes', name: 'Color scopes width', expected: '40' },
++  ])('owns and cleans up the $panel pointer drag', ({ panel, name, expected }) => {
++    useEditorStore.setState(
++      panel === 'source'
++        ? { sourcePreviewMediaId: 'media-1' }
++        : { workspace: 'color', colorScopesOpen: true },
++    )
++    render(<PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />)
++    const handle = screen.getByRole('separator', { name })
++    vi.spyOn(
++      screen.getByRole('region', { name: 'Preview area' }),
++      'getBoundingClientRect',
++    ).mockReturnValue({ left: 0, right: 1000, width: 1000 } as DOMRect)
++    const pointer = (target: Element | Document, type: string, id: number, clientX: number) => {
++      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX })
++      Object.defineProperties(event, { pointerId: { value: id }, isPrimary: { value: true } })
++      fireEvent(target, event)
++    }
++    pointer(handle, 'pointerdown', 1, 500)
++    pointer(document, 'pointermove', 2, 700)
++    pointer(document, 'pointerup', 2, 700)
++    expect(document.body.style.cursor).toBe('col-resize')
++    pointer(document, 'pointermove', 1, 600)
++    pointer(document, 'pointercancel', 1, 600)
++    expect(handle).toHaveAttribute('aria-valuenow', expected)
++    expect(document.body.style.cursor).toBe('')
++    expect(document.body.style.userSelect).toBe('')
++    pointer(document, 'pointermove', 1, 700)
++    pointer(document, 'pointerup', 1, 700)
++    expect(handle).toHaveAttribute('aria-valuenow', expected)
++  })
++})
+diff --git a/src/features/timeline/components/bento-layout-dialog.tsx b/src/features/timeline/components/bento-layout-dialog.tsx
+--- a/src/features/timeline/components/bento-layout-dialog.tsx
++++ b/src/features/timeline/components/bento-layout-dialog.tsx
+@@ -11,7 +11,7 @@
+ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
+ import { cn } from '@/shared/ui/cn'
+-import { X } from 'lucide-react'
++import { ArrowLeft, ArrowRight, X } from 'lucide-react'
+ import { useBentoLayoutDialogStore } from './bento-layout-dialog-store'
+ import { useBentoPresetsStore } from '../stores/bento-presets-store'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
+@@ -75,7 +75,7 @@
+   max: number
+ }) {
+   return (
+-    <div className="flex items-center gap-1.5">
++    <label className="flex items-center gap-1.5">
+       <span className="text-xs text-muted-foreground whitespace-nowrap">{label}</span>
+       <Input
+         type="number"
+@@ -85,7 +85,7 @@
+         onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value) || 0)))}
+         className="w-16 h-7 text-xs px-2"
+       />
+-    </div>
++    </label>
+   )
+ }
+ 
+@@ -306,28 +306,78 @@
+     setDragOffset({ x: 0, y: 0 })
+   }, [])
+ 
++  const swapFromButton = (event: React.MouseEvent<HTMLButtonElement>, from: number, to: number) => {
++    const button = event.currentTarget
++    onSwap(from, to)
++    requestAnimationFrame(() => {
++      const target = button.disabled
++        ? button.parentElement?.querySelector<HTMLButtonElement>('button:not(:disabled)')
++        : button
++      target?.focus()
++    })
++  }
++
+   return (
+-    <div
+-      ref={containerRef}
+-      className="relative w-full rounded-md border border-border bg-muted/30 overflow-hidden"
+-      style={{ height: displayHeight > 0 ? displayHeight : 200 }}
+-    >
+-      {canvasRects.map((rect, i) => (
+-        <CanvasItem
+-          key={rect.id}
+-          rect={rect}
+-          isDragging={dragIndex === i}
+-          isDropTarget={dropTargetIndex === i}
+-          dragOffset={dragIndex === i ? dragOffset : null}
+-          onMouseDown={(e) => handleItemMouseDown(i, e)}
+-        />
+-      ))}
+-      {canvasRects.length === 0 && (
+-        <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+-          {t('timeline.bento.noItemsToArrange')}
+-        </div>
+-      )}
+-    </div>
++    <>
++      <div
++        ref={containerRef}
++        className="relative w-full rounded-md border border-border bg-muted/30 overflow-hidden"
++        style={{ height: displayHeight > 0 ? displayHeight : 200 }}
++      >
++        {canvasRects.map((rect, i) => (
++          <CanvasItem
++            key={rect.id}
++            rect={rect}
++            isDragging={dragIndex === i}
++            isDropTarget={dropTargetIndex === i}
++            dragOffset={dragIndex === i ? dragOffset : null}
++            onMouseDown={(e) => handleItemMouseDown(i, e)}
++          />
++        ))}
++        {canvasRects.length === 0 && (
++          <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
++            {t('timeline.bento.noItemsToArrange')}
++          </div>
++        )}
++      </div>
++      <ol className="max-h-40 overflow-y-auto space-y-1">
++        {canvasRects.map((rect, index) => (
++          <li key={rect.id} className="flex items-center gap-2">
++            <span className="min-w-0 flex-1 truncate text-xs" aria-live="polite">
++              {rect.label} · {index + 1}/{canvasRects.length}
++            </span>
++            <Button
++              type="button"
++              variant="ghost"
++              size="icon"
++              className="h-6 w-6"
++              aria-label={t('timeline.bento.moveEarlier', {
++                defaultValue: 'Move {{label}} earlier',
++                label: rect.label,
++              })}
++              disabled={index === 0}
++              onClick={(event) => swapFromButton(event, index, index - 1)}
++            >
++              <ArrowLeft className="h-4 w-4" />
++            </Button>
++            <Button
++              type="button"
++              variant="ghost"
++              size="icon"
++              className="h-6 w-6"
++              aria-label={t('timeline.bento.moveLater', {
++                defaultValue: 'Move {{label}} later',
++                label: rect.label,
++              })}
++              disabled={index === canvasRects.length - 1}
++              onClick={(event) => swapFromButton(event, index, index + 1)}
++            >
++              <ArrowRight className="h-4 w-4" />
++            </Button>
++          </li>
++        ))}
++      </ol>
++    </>
+   )
+ }
+ 
+@@ -493,9 +543,10 @@
+           return (
+             <button
+               key={`${preset.type}-${idx}`}
++              aria-pressed={isSelected}
+               onClick={() => handleSelectPreset({ kind: 'builtin', index: idx })}
+               className={cn(
+-                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
++                'min-h-6 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                 'hover:bg-accent',
+                 isSelected
+                   ? 'ring-2 ring-primary bg-accent text-accent-foreground'
+@@ -509,11 +560,12 @@
+         {customPresets.map((preset) => {
+           const isSelected = selected.kind === 'custom' && selected.id === preset.id
+           return (
+-            <div key={preset.id} className="relative group">
++            <div key={preset.id} className="flex items-center gap-1">
+               <button
++                aria-pressed={isSelected}
+                 onClick={() => handleSelectPreset({ kind: 'custom', id: preset.id })}
+                 className={cn(
+-                  'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
++                  'min-h-6 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                   'hover:bg-accent',
+                   isSelected
+                     ? 'ring-2 ring-primary bg-accent text-accent-foreground'
+@@ -530,7 +582,11 @@
+                     setSelected({ kind: 'builtin', index: 0 })
+                   }
+                 }}
+-                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
++                aria-label={t('timeline.bento.deletePreset', {
++                  defaultValue: 'Delete {{name}} preset',
++                  name: preset.name,
++                })}
++                className="flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+               >
+                 <X className="h-2.5 w-2.5" />
+               </button>
+@@ -572,6 +628,7 @@
+         <div className="flex items-center gap-2">
+           <Input
+             placeholder={t('timeline.bento.presetNamePlaceholder')}
++            aria-label={t('timeline.bento.presetNamePlaceholder')}
+             value={presetName}
+             onChange={(e) => setPresetName(e.target.value)}
+             onKeyDown={(e) => {
+@@ -668,7 +725,7 @@
+ 
+   return (
+     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+-      <DialogContent className="max-w-lg">
++      <DialogContent className="max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto">
+         {isOpen ? (
+           <BentoLayoutDialogBody
+             key={dialogBodyKey}
+diff --git a/src/features/timeline/components/bento-layout-dialog.test.tsx b/src/features/timeline/components/bento-layout-dialog.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/components/bento-layout-dialog.test.tsx
+@@ -0,0 +1,106 @@
++import { beforeEach, afterEach, describe, expect, it } from 'vite-plus/test'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { i18nReady } from '@/i18n'
++import { BentoLayoutDialog } from './bento-layout-dialog'
++import { useBentoLayoutDialogStore } from './bento-layout-dialog-store'
++import { useBentoPresetsStore } from '../stores/bento-presets-store'
++import { useItemsStore } from '../stores/items-store'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
++import { usePlaybackShortcuts } from '../hooks/shortcuts/use-playback-shortcuts'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { useSourcePlayerStore } from '@/shared/state/source-player'
++import { makeTimelineTrack, resetTimelineCompositionTestState } from '../test-helpers'
++
++function PlaybackShortcutsController() {
++  usePlaybackShortcuts({})
++  return null
++}
++
++beforeEach(async () => {
++  await i18nReady
++  resetTimelineCompositionTestState()
++  usePlaybackStore.setState({ isPlaying: false })
++  useSourcePlayerStore.setState({ hoveredPanel: null, playerMethods: null })
++  useBentoPresetsStore.setState({ customPresets: [] })
++  useItemsStore
++    .getState()
++    .setTracks([makeTimelineTrack({ id: 'v1', name: 'V1', order: 0, kind: 'video' })])
++  useItemsStore.getState().setItems(
++    ['Left', 'Right'].map((label) => ({
++      id: label,
++      label,
++      trackId: 'v1',
++      type: 'shape' as const,
++      from: 0,
++      durationInFrames: 60,
++      shapeType: 'rectangle' as const,
++      fillColor: '#ffffff',
++      transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, opacity: 1 },
++    })),
++  )
++  useBentoLayoutDialogStore.getState().open(['Left', 'Right'])
++})
++afterEach(() => {
++  cleanup()
++  useBentoLayoutDialogStore.getState().close()
++})
++
++describe('FL-98 Bento keyboard alternatives', () => {
++  it('yields Space to Bento and native buttons, applies real transforms, and can undo', async () => {
++    render(
++      <>
++        <PlaybackShortcutsController />
++        <button type="button">Outside action</button>
++        <BentoLayoutDialog />
++      </>,
++    )
++    const dialog = screen.getByRole('dialog')
++    expect(fireEvent.keyDown(dialog, { key: ' ', code: 'Space' })).toBe(true)
++    fireEvent.keyUp(dialog, { key: ' ', code: 'Space' })
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    const later = screen.getByRole('button', { name: 'Move Left later' })
++    expect(screen.getByRole('button', { name: 'Move Left earlier' })).toBeDisabled()
++    later.focus()
++    expect(fireEvent.keyDown(later, { key: ' ', code: 'Space' })).toBe(true)
++    expect(fireEvent.keyUp(later, { key: ' ', code: 'Space' })).toBe(true)
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    // JSDOM has no native Space activation; perform its default only after checking it was not cancelled.
++    fireEvent.click(later)
++    await waitFor(() =>
++      expect(screen.getByRole('button', { name: 'Move Left earlier' })).toHaveFocus(),
++    )
++    expect(later).toBeDisabled()
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    const before = structuredClone(useItemsStore.getState().items)
++    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
++    const [left, right] = useItemsStore.getState().items
++    expect(left?.transform?.x).toBeGreaterThan(right?.transform?.x ?? Infinity)
++    expect(useTimelineCommandStore.getState().canUndo).toBe(true)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual(before)
++
++    const outside = screen.getByRole('button', { name: 'Outside action' })
++    outside.focus()
++    expect(fireEvent.keyDown(outside, { key: ' ', code: 'Space' })).toBe(true)
++    fireEvent.keyUp(outside, { key: ' ', code: 'Space' })
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    outside.blur()
++    // Prove the real capture listener remains active away from controls.
++    expect(fireEvent.keyDown(document.body, { key: ' ', code: 'Space' })).toBe(false)
++    fireEvent.keyUp(document.body, { key: ' ', code: 'Space' })
++    expect(usePlaybackStore.getState().isPlaying).toBe(true)
++  })
++
++  it('labels the numeric controls and makes a saved preset removable without hover', () => {
++    useBentoPresetsStore
++      .getState()
++      .addPreset({ name: 'Saved', preset: 'row', cols: 2, rows: 1, gap: 0, padding: 0 })
++    render(<BentoLayoutDialog />)
++    expect(screen.getByRole('spinbutton', { name: 'Gap' })).toBeInTheDocument()
++    expect(screen.getByRole('spinbutton', { name: 'Padding' })).toBeInTheDocument()
++    const remove = screen.getByRole('button', { name: 'Delete Saved preset' })
++    expect(remove).toBeVisible()
++    fireEvent.click(remove)
++    expect(useBentoPresetsStore.getState().customPresets).toHaveLength(0)
++  })
++})
+diff --git a/src/features/timeline/hooks/shortcuts/use-playback-shortcuts.ts b/src/features/timeline/hooks/shortcuts/use-playback-shortcuts.ts
+--- a/src/features/timeline/hooks/shortcuts/use-playback-shortcuts.ts
++++ b/src/features/timeline/hooks/shortcuts/use-playback-shortcuts.ts
+@@ -70,7 +70,13 @@
+         callbacks.onPlay()
+       }
+     },
+-    { ...HOTKEY_OPTIONS, eventListenerOptions: { capture: true } },
++    {
++      ...HOTKEY_OPTIONS,
++      eventListenerOptions: { capture: true },
++      ignoreEventWhen: (event) =>
++        event.target instanceof Element &&
++        !!event.target.closest('button, [role="button"], [role="dialog"], [role="alertdialog"]'),
++    },
+     [togglePlayPause, isPlaying, callbacks],
+   )
+ 
+diff --git a/src/features/preview/components/color-scopes-view.tsx b/src/features/preview/components/color-scopes-view.tsx
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -415,7 +415,7 @@
+         <button
+           key={m.value}
+           className={cn(
+-            'h-4 px-1 text-[9px] font-semibold font-mono rounded transition-colors',
++            'h-6 min-w-6 px-1 text-[9px] font-semibold font-mono rounded transition-colors',
+             mode === m.value ? 'text-white' : 'text-muted-foreground hover:text-foreground',
+           )}
+           style={
+@@ -1183,7 +1183,7 @@
+             >
+               <SelectTrigger
+                 aria-label="Scope"
+-                className="h-5 w-[104px] gap-1 rounded border-border/70 px-1.5 py-0 text-[10px]"
++                className="h-6 w-[104px] gap-1 rounded border-border/70 px-1.5 py-0 text-[10px]"
+               >
+                 <SelectValue />
+               </SelectTrigger>
+diff --git a/src/features/preview/components/color-scopes-monitor.tsx b/src/features/preview/components/color-scopes-monitor.tsx
+--- a/src/features/preview/components/color-scopes-monitor.tsx
++++ b/src/features/preview/components/color-scopes-monitor.tsx
+@@ -16,7 +16,7 @@
+         <span className="text-xs text-muted-foreground truncate">Color Scopes</span>
+         <button
+           onClick={onClose}
+-          className="p-1 rounded hover:bg-muted transition-colors shrink-0"
++          className="h-6 w-6 flex items-center justify-center p-1 rounded hover:bg-muted transition-colors shrink-0"
+           aria-label="Close color scopes"
+         >
+           <X className="w-3.5 h-3.5 text-muted-foreground" />
+diff --git a/src/features/effects/components/panels/gpu-wheels-panel.tsx b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+--- a/src/features/effects/components/panels/gpu-wheels-panel.tsx
++++ b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+@@ -150,7 +150,7 @@
+       <Button
+         variant="ghost"
+         size="icon"
+-        className="h-5 w-5 text-muted-foreground"
++        className="h-6 w-6 text-muted-foreground"
+         onClick={onReset}
+         disabled={disabled}
+         title={resetLabel}

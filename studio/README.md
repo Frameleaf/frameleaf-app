@@ -436,6 +436,10 @@ The dedicated read-only Actions workflow runs the upstream unit and Node headles
 
 No library startup script, web/server entry point or Docker image invokes this build or imports its output. Ordinary Frameleaf library startup therefore does not fetch the Freecut archive or any engine model/font/asset. Launching the standalone upstream editor is outside this isolation guarantee; its resource refusals are tested independently, while complete project-resource admission and offline lifecycle still require qualification before production integration. This slice does not mount or ship that editor.
 
+Patch `0058-preview-layout-keyboard-accessibility.patch` adds keyboard and pointer resizing,
+Bento reorder alternatives and control hit targets while retaining Freecut's MIT terms.
+The playback shortcut yields to buttons and dialog controls so Space can activate them.
+
 ## Web integration boundary
 
 The Svelte host for the editor is already in the production application. The isolated build
