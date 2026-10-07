@@ -324,7 +324,12 @@
       "path": "patches/0067-persisted-clip-mute.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "b2d7cae5041561c510ed7bda6036592ee72bfe9a056371ad03051b6806892538"
+    },
+    {
+      "path": "patches/0068-linear-hdr-brightness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "aa162a5234a2bfa65ca65ec47c9a76d43e8d4e14610310cc48a0492585f4b9cc"
     }
   ],
-  "sourceSha256": "881a0c661deb3c30a2202d59c9fccf6cc979e7ff1507b1de661f7a8492142aeb"
+  "sourceSha256": "2b7bfaa6f2b6d3aca66256faffae7a4cba05773abf7df7c8f35f6df0f347f71b"
 }

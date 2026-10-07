@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { WORKING_DOMAINS, REPORT_BINDINGS, observedFixtureIds } from "../studio/tools/lib/working-domain-report.mjs";
+import { WORKING_DOMAINS, REPORT_BINDINGS, domainObservations, observedFixtureIds } from "../studio/tools/lib/working-domain-report.mjs";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -749,4 +749,32 @@ test("applyCommandMatrixCoverage leaves a ruled command-axis waiver as it is", a
   assert.equal(summary.waived, 1);
   assert.equal(summary.untested, 0);
   assert.equal(summary.blocked, 0);
+});
+
+test('brightness HDR coverage is bound only to its actual migrated routes', async () => {
+  const report = await familyReport();
+  const runner = 'studio/tools/effects-matrix.browser.mjs';
+  report.source.runner = { path: runner, sha256: createHash('sha256').update(await readFile(path.join(ROOT,runner))).digest('hex') };
+  const pixels = () => ({ pixels: [-.5,2,4,.5] });
+  const cases = () => [pixels(),pixels(),pixels()];
+  report.effects = [
+    { id:'gpu-brightness',cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),
+      hdr:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
+    { id:'gpu-exposure',cases:cases(),hdrRefusal:{outcome:'refused',errorType:'HdrRenderUnavailableError'} },
+  ];
+  report.observations = domainObservations(report);
+  const args = [{engineRevision:'e',rows:[overlayRow('effect.gpu-brightness'),overlayRow('effect.gpu-exposure')]},
+    {rows:[fixture('effect.gpu-brightness'),fixture('effect.gpu-exposure')]},manifest(),build(),'effect','chromium'];
+  const overlay = structuredClone(args);
+  assert.equal((await applyFamilyCoverage(...overlay,report)).pendingArtifact,1);
+  assert.equal(overlay[0].rows[0].axes.chromium.status,'blocked');
+  assert.match(overlay[0].rows[1].axes.chromium.reason,/typed-refused/);
+  for (const change of [
+    r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.cases';},
+    r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/animated' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.hdr.stack';},
+    r => {const e=r.observations.find(e=>e.fixtureId==='effect.gpu-exposure/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id);Object.assign(e,{expected:'rendered',observed:'rendered',witness:'effects.0.hdr.cases'});},
+  ]) {
+    const forged=structuredClone(report);change(forged);
+    await assert.rejects(applyFamilyCoverage(...structuredClone(args),forged),/route binding/);
+  }
 });

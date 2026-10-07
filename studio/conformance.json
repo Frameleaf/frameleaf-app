@@ -2900,7 +2900,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "Linear HDR brightness has a candidate regression runner; a complete source-bound Chromium measured-conformance artifact has not been admitted (FL-112)."
         },
         "firefox": {
           "status": "not-tested"

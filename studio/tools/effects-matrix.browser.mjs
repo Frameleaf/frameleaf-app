@@ -1,4 +1,4 @@
-// All registered effects: real pinned SDR measurements and per-operator typed HDR refusals.
+// All registered effects: real pinned SDR measurements, linear HDR brightness and typed refusals.
 // HDR refusals never qualify rendered HDR fixtures. Historical encoded-HDR classifications
 // are retained in effect-hdr-semantics.json; current HDR is linear display-referred BT.709.
 import assert from 'node:assert/strict';
@@ -6,7 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-import { photometricCases, photometricInput, validatePhotometricResults } from './photometric-goldens.mjs';
+import { photometricCases, photometricInput, linearBrightnessCases, photometricTolerance, validatePhotometricResults } from './photometric-goldens.mjs';
 import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
@@ -72,8 +72,9 @@ const photometricSource = {};
 for (const [file, expected] of Object.entries({
   'effects/color.ts': '53e8a9b6c748a9c04bfa02edad3d068e14872c5ff9652912ec42e1d6e8e85d5c',
   'common.ts': 'e8ae09970e48879996b7f64ee6daa9bdd822cb66233ca374adb9ad65a996a349',
-  // Reviewed 0065 changes the HDR admission guard; SDR colour/common shader bytes above are unchanged.
-  'effects-pipeline.ts': '58bdc568dce442ea4a9dd7c8638054f45211cbd79125e309efe72eb38a5655af',
+  // Candidate 0068 admits only brightness and decodes SDR ingress before addition.
+  // Pinned SDR colour/common shader bytes above remain unchanged; review is still required.
+  'effects-pipeline.ts': '9356bc5415a881b31555ef27f68ddeadf34588448904362003fc3fe8f83bb2d6',
 })) {
   const observed = createHash('sha256').update(await readFile(new URL(`../engine/src/infrastructure/gpu-effects/${file}`, import.meta.url))).digest('hex');
   assert.equal(observed, expected, `photometric source contract changed: ${file}; numerical qualification requires source review`);
@@ -105,7 +106,7 @@ const floatInput = [...sdrRows, hdrRow, alphaRow].flat(2);
 const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
-  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput }) => {
+  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearBrightnessCases }) => {
     const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
@@ -197,6 +198,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     const effects = [];
     for (const definition of GPU_EFFECT_REGISTRY.values()) {
       const entry = { id: definition.id, category: definition.category, cases: [] };
+      if (definition.id === 'gpu-brightness') entry.hdr = { cases: [], invalid: [] };
       for (const { name, params } of cases(definition)) {
         const effect = [instance(definition.id, params)];
         // SDR project: Freecut's reference behaviour on both routes.
@@ -206,9 +208,13 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         const sdr = await render(inputs.rgba8unorm, effect);
         const again = await render(sdrFloatInput, effect);
         entry.cases.push({ name, again, floatSdr, sdrFloat, sdr });
+        if (entry.hdr) {
+          pipeline.setWorkingRange('hdr');
+          entry.hdr.cases.push({ name, amount: params.amount, ...await render(inputs.rgba16float, effect) });
+        }
       }
       pipeline.setWorkingRange('hdr');
-      entry.hdrRefusal = await render(inputs.rgba16float, [instance(definition.id, getGpuEffectDefaultParams(definition.id))]);
+      if (!entry.hdr) entry.hdrRefusal = await render(inputs.rgba16float, [instance(definition.id, getGpuEffectDefaultParams(definition.id))]);
       pipeline.setWorkingRange('sdr');
 
       // Animation: keyframe the first animatable numeric parameter between its
@@ -229,18 +235,25 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
           ],
         }] };
         const frames = {};
+        const hdrFrames = {};
         for (const frame of [0, 5, 10]) {
           const resolved = getGpuEffectInstances(resolveAnimatedGpuEffects([itemEffect], keyframes, frame));
           const value = resolved[0]?.params?.[key];
           const rendered = await render(sdrFloatInput,
             resolved.map((e) => ({ ...e, params: { ...e.params, [EFFECT_CLOCK_PARAM]: 0.75 } })));
           frames[frame] = { value, ...rendered };
+          if (entry.hdr) {
+            pipeline.setWorkingRange('hdr');
+            hdrFrames[frame] = { value, ...await render(inputs.rgba16float, resolved) };
+            pipeline.setWorkingRange('sdr');
+          }
         }
         const statics = {};
         for (const bound of ['min', 'max']) {
           statics[bound] = await render(sdrFloatInput, [instance(definition.id, { ...defaults, [key]: param[bound] })]);
         }
         entry.animation = { key, min: param.min, max: param.max, frames, statics };
+        if (entry.hdr) entry.hdr.animation = { key, min: param.min, max: param.max, frames: hdrFrames };
       }
 
       // Stack order: this effect then Brightness equals the two applied in turn.
@@ -257,6 +270,17 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         intermediate.destroy();
       }
       entry.stack = { stacked, sequential };
+      if (entry.hdr) {
+        pipeline.setWorkingRange('hdr');
+        const chain = [instance('gpu-brightness', { amount: .125 }, 'a'), instance('gpu-brightness', { amount: -.25 }, 'b')];
+        const stacked = await render(inputs.rgba16float, chain);
+        const first = await render(inputs.rgba16float, [chain[0]]);
+        if (!first.pixels) throw new Error('linear brightness first pass failed');
+        const intermediate = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
+        device.queue.writeTexture({ texture: intermediate }, new Float16Array(first.pixels), { bytesPerRow: W * 8 }, [W, H]);
+        try { entry.hdr.stack = { stacked, sequential: await render(intermediate, [chain[1]]) }; }
+        finally { intermediate.destroy(); pipeline.setWorkingRange('sdr'); }
+      }
 
       // Invalid parameters (FL-99): each set draws exactly as its declared meaning, the
       // test's own restatement of the contract (not the engine's sanitiser): a finite
@@ -287,6 +311,13 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         const got = await render(sdrFloatInput, [instance(definition.id, given)]);
         const want = await render(sdrFloatInput, [instance(definition.id, meant)]);
         entry.invalid.push({ name, touched, got, want });
+        if (entry.hdr) {
+          pipeline.setWorkingRange('hdr');
+          entry.hdr.invalid.push({ name, amount: meant.amount,
+            got: await render(inputs.rgba16float, [instance(definition.id, given)]),
+            want: await render(inputs.rgba16float, [instance(definition.id, meant)]) });
+          pipeline.setWorkingRange('sdr');
+        }
       }
       // A parameter the effect does not declare is ignored.
       entry.invalid.push({ name: 'undeclared', touched: 1,
@@ -308,12 +339,16 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       if (!GPU_EFFECT_REGISTRY.has(entry.id)) throw new Error(`missing numerical node ${entry.id}`);
       photometric.push({ ...entry, ...await render(numericalInput, [instance(entry.id, entry.params)]) });
     }
+    pipeline.setWorkingRange('hdr');
+    const linearBrightness = [];
+    for (const entry of linearBrightnessCases)
+      linearBrightness.push({ ...entry, ...await render(numericalInput, [instance(entry.id, entry.params)]) });
     numericalInput.destroy();
     pipeline.destroy();
     for (const texture of [...Object.values(inputs), sdrFloatInput]) texture.destroy();
     device.destroy();
-    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric };
-  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput }),
+    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric, linearBrightness };
+  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearBrightnessCases }),
 );
 report.photometricSource = photometricSource;
 
@@ -325,6 +360,7 @@ if (process.env.EFFECTS_MATRIX_EXPLORE) return;
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
 const photometric = validatePhotometricResults(report.photometric, 'srgb-display-bt709');
+const linearBrightness = validatePhotometricResults(report.linearBrightness, 'linear-display-bt709-v1');
 const declared = new Map(Object.entries(semantics.effects));
 const ids = report.effects.map((effect) => effect.id);
 assert.deepEqual([...declared.keys()].sort(), [...ids].sort(),
@@ -334,7 +370,33 @@ const rows = (pixels, wanted) => wanted.flatMap((y) => pixels.slice(pixelIndex(0
 let caseCount = 0;
 for (const effect of report.effects) {
   const rule = declared.get(effect.id);
-  check(effect.hdrRefusal.errorType === 'HdrRenderUnavailableError', `${effect.id}: missing typed HDR refusal`);
+  if (effect.id === 'gpu-brightness') {
+    check(rule.hdr === 'linear-display-bt709-v1', 'brightness must declare the measured linear domain');
+    const input = Array.from(new Float16Array(floatInput));
+    const expected = amount => input.map((v, i) => i % 4 === 3 ? v : Math.max(-65504, Math.min(65504, v + amount)));
+    const pixels = (result, want, label) => {
+      check(!result.error && !result.errorType && result.pixels?.length === want.length, `${label}: linear render failed`);
+      if (result.pixels) want.forEach((v,i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i]-v) <= photometricTolerance(v,i), `${label}: independent channel ${i}`));
+    };
+    check(effect.hdr.cases.length === 3, 'brightness requires default/min/max HDR cases');
+    for (const entry of effect.hdr.cases) pixels(entry, expected(entry.amount), `HDR brightness ${entry.name}`);
+    for (const frame of [0,5,10]) {
+      const entry = effect.hdr.animation.frames[frame];
+      check(entry.value === [-1,0,1][frame/5], `HDR brightness animation ${frame}: resolver`);
+      pixels(entry, expected(entry.value), `HDR brightness animation ${frame}`);
+    }
+    const first = Array.from(new Float16Array(expected(.125)));
+    const stackWant = first.map((v,i) => i % 4 === 3 ? v : v-.25);
+    for (const route of ['stacked','sequential']) pixels(effect.hdr.stack[route],stackWant,`HDR brightness ${route}`);
+    check(effect.hdr.invalid.length === 4, 'brightness requires all HDR invalid-number contracts');
+    for (const entry of effect.hdr.invalid) {
+      pixels(entry.got,expected(entry.amount),`HDR brightness invalid ${entry.name}`);
+      pixels(entry.want,expected(entry.amount),`HDR brightness invalid meaning ${entry.name}`);
+    }
+  } else {
+    check(rule.hdr === 'refused', `${effect.id}: undeclared HDR admission`);
+    check(effect.hdrRefusal.errorType === 'HdrRenderUnavailableError', `${effect.id}: missing typed HDR refusal`);
+  }
   for (const entry of effect.cases) {
     caseCount++;
     const label = `${effect.id} [${entry.name}]`;
@@ -404,9 +466,9 @@ assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested i
 Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
 report.observations = domainObservations(report);
 if (process.env.EFFECTS_MATRIX_REPORT) await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
-console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; typed HDR refusals',
+console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; linear HDR brightness and remaining typed refusals',
   browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
-  photometric, photometricSource,
+  photometric, linearBrightness, photometricSource,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
 }
 

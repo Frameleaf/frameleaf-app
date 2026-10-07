@@ -206,8 +206,10 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
   converts to PQ/HLG BT.2020 or the selected SDR monitoring policy.
 - **Admitted HDR graph.** Effect-free items, normal straight-alpha source-over,
   masks, nested viewports, cuts and explicit output have bounded regression
-  witnesses. All 54 enabled effects, 21 transitions and 24 non-normal blends
-  throw the shared `HdrRenderUnavailableError` until individually migrated and
+  witnesses. Brightness adds its amount in linear reference-white units before
+  straight-alpha compositing; its [-1, 1] parameter bounds and SDR encoded
+  addition stay pinned. The other 53 enabled effects, 21 transitions and 24
+  non-normal blends throw the shared `HdrRenderUnavailableError` until individually migrated and
   measured in this domain. Nested compositions containing a transition refuse
   as a whole. A declined HDR float item also refuses Canvas fallback.
 - **Historical contracts.** Patch 0031's extended sRGB-encoded HDR classifications
@@ -218,11 +220,14 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
 The effects, blend and transition matrices retain production SDR measurements:
 parameter extremes and meanings, animation, stack order, blend equations,
 transition endpoints/directions and rgba8/float parity. They also observe each
-registered HDR operator's typed refusal; normal HDR blend remains a positive
-source-over measurement. The independent photometric equations and signed/gamma/
+unmigrated HDR operator's typed refusal. Brightness and normal HDR blend have
+positive linear-domain measurements, including signed/highlight and alpha checks.
+The independent photometric equations and signed/gamma/
 highlight discriminators remain historical checks, with a separate current SDR
 oracle and reviewed source hash guard. `tools/linear-hdr-subtree.browser.mjs`
-provides separate physical PQ/HLG/SDR equations for admitted linear HDR paths.
+provides separate physical PQ/HLG/SDR equations for admitted linear HDR paths,
+including brightness on authored snapshots, shapes, decoded HDR video, and nested
+children/instances. Canvas/video effect fallbacks remain typed-refused in HDR.
 `tools/graphics-float.browser.mjs` measures admitted effect-free graphics.
 
 Browser reports bind actual prepared input and patch hashes, the tested commit,
