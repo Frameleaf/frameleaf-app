@@ -4209,6 +4209,13 @@ export type AssetResponseDto = {
     id: string;
     /** Source image color encoding; unprocessed or unavailable evidence remains unknown */
     imageEncoding?: ImageEncodingInfo;
+    /** Available current still renditions; omitted when file evidence was not loaded */
+    imageRenditions?: {
+        hdrFullsize: boolean;
+        hdrPreview: boolean;
+        sdrFullsize: boolean;
+        sdrPreview: boolean;
+    };
     /** Is archived */
     isArchived: boolean;
     /** Is edited */
@@ -4984,6 +4991,13 @@ export type BestPhotoAssetResponseDto = {
     id: string;
     /** Source image color encoding; unprocessed or unavailable evidence remains unknown */
     imageEncoding?: ImageEncodingInfo;
+    /** Available current still renditions; omitted when file evidence was not loaded */
+    imageRenditions?: {
+        hdrFullsize: boolean;
+        hdrPreview: boolean;
+        sdrFullsize: boolean;
+        sdrPreview: boolean;
+    };
     /** Is archived */
     isArchived: boolean;
     /** Is edited */
@@ -18855,7 +18869,8 @@ export function rejectAssetRestoration({ id, restorationId }: {
 /**
  * View asset thumbnail
  */
-export function viewAsset({ edited, faceSource, id, key, size, slug }: {
+export function viewAsset({ dynamicRange, edited, faceSource, id, key, size, slug }: {
+    dynamicRange?: "auto" | "sdr" | "hdr";
     edited?: boolean;
     faceSource?: boolean;
     id: string;
@@ -18867,6 +18882,7 @@ export function viewAsset({ edited, faceSource, id, key, size, slug }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        dynamicRange,
         edited,
         faceSource,
         key,
@@ -28625,6 +28641,8 @@ export enum ArchiveOperationPrepareScope {
 export enum AssetFileType {
     Fullsize = "fullsize",
     Preview = "preview",
+    HdrPreview = "hdr_preview",
+    HdrFullsize = "hdr_fullsize",
     Thumbnail = "thumbnail",
     Sidecar = "sidecar",
     EncodedVideo = "encoded_video"

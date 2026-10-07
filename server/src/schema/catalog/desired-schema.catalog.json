@@ -9752,6 +9752,15 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "renditionIdentity",
+          "tableName": "asset_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [

@@ -46,6 +46,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -79,6 +80,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -205,6 +207,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -237,6 +240,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited",
           "asset_file"."isProgressive",
           "asset_file"."isTransparent"
@@ -244,7 +248,7 @@ select
           "asset_file"
         where
           "asset_file"."assetId" = "asset"."id"
-          and "asset_file"."type" in ($1, $2, $3)
+          and "asset_file"."type" in ($1, $2, $3, $4, $5)
       ) as agg
   ) as "files",
   (
@@ -332,7 +336,7 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   left join "asset_video" on "asset_video"."assetId" = "asset"."id"
 where
-  "asset"."id" = $4
+  "asset"."id" = $6
 
 -- AssetJobRepository.getForMetadataExtraction
 select
@@ -387,6 +391,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -416,6 +421,7 @@ select
   "asset_file"."path",
   "asset_file"."type",
   "asset_file"."physicalFileId",
+  "asset_file"."renditionIdentity",
   "asset_file"."isEdited"
 from
   "asset_file"
@@ -592,6 +598,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -634,6 +641,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -800,6 +808,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -874,6 +883,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -1010,6 +1020,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -1054,6 +1065,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"

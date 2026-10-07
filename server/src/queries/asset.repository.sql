@@ -348,6 +348,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -1099,11 +1100,14 @@ select
   "asset"."ownerId",
   "asset"."originalPath",
   "asset"."originalFileName",
-  "asset_file"."path" as "path"
+  "asset_file"."path" as "path",
+  "asset_file"."renditionIdentity",
+  "asset_exif"."imageEncoding"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
   and "asset_file"."type" = $1
+  left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "asset"."id" = $2
 order by
