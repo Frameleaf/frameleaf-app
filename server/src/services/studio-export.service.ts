@@ -82,6 +82,8 @@ import { settleOperationStop, withOperationExecution } from 'src/utils/operation
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
   StudioExportContract,
+  StudioExportMastering,
+  StudioExportMasteringError,
   buildStudioExportContract,
   declareStudioTiming,
   findStudioExportOutputMismatch,
@@ -337,6 +339,7 @@ export class StudioExportService {
       resolution: dto.resolution,
       quality: dto.quality ?? 'high',
       audio: dto.audio ?? 'preserve',
+      ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),
     };
     const smoothMotion = await this.requireSmoothMotion(dto.smoothMotion);
     await this.requireRenderableOutput(dto.destination, settings);
@@ -407,7 +410,7 @@ export class StudioExportService {
   private async declareOutput(
     graph: unknown,
     entries: readonly StudioAuthorizedEntry[],
-    settings: { format: string; color: string; audio: 'preserve' | 'stereo' },
+    settings: { format: string; color: string; audio: 'preserve' | 'stereo'; mastering?: StudioExportMastering },
   ): Promise<{ timing: ReturnType<typeof resolveStudioExportTiming>; contract: StudioExportContract }> {
     const facts: StudioSourceMediaFacts[] = await this.repository.getSourceMediaFacts(studioMediaSources(entries).ids);
     try {
@@ -416,6 +419,9 @@ export class StudioExportService {
     } catch (error) {
       if (error instanceof StudioTimingError) {
         throw new ConflictException({ message: error.message, code: 'studio_export_timing_unknown' });
+      }
+      if (error instanceof StudioExportMasteringError) {
+        throw new ConflictException({ message: error.message, code: 'studio_export_mastering_unknown' });
       }
       throw error;
     }
@@ -1085,13 +1091,18 @@ export class StudioExportService {
     version: StudioExportVersion,
     contract: StudioExportContract | null,
   ): Promise<void> {
-    const settings = version.settings as { format: string; color: string };
+    const settings = version.settings as { format: string; color: string; mastering?: StudioExportMastering };
     const expected = contract ?? buildStudioExportContract(settings, null, []);
     const probe = await this.media.probe(path).catch(() => null);
     if (!probe) {
       throw new StudioExportRefusal('output-rejected', 'The rendered file could not be read as video');
     }
-    const mismatch = findStudioExportOutputMismatch(expected, probe, settings.format);
+    const [video] = probe.videoStreams;
+    const mastering =
+      expected.video.mastering && video
+        ? await this.media.probeHdrMastering(path, video.index).catch(() => [])
+        : undefined;
+    const mismatch = findStudioExportOutputMismatch(expected, { ...probe, mastering }, settings.format);
     if (mismatch) {
       throw new StudioExportRefusal('output-rejected', mismatch);
     }

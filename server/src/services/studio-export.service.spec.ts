@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { MediaRepository } from 'src/repositories/media.repository.js';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -254,7 +255,10 @@ describe(StudioExportService.name, () => {
     listLiveSessions: ReturnType<typeof vi.fn>;
     getSessionCapabilities: ReturnType<typeof vi.fn<RenderWorkerRepository['getSessionCapabilities']>>;
   };
-  let media: { probe: ReturnType<typeof vi.fn> };
+  let media: {
+    probe: ReturnType<typeof vi.fn>;
+    probeHdrMastering: ReturnType<typeof vi.fn<MediaRepository['probeHdrMastering']>>;
+  };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
@@ -374,7 +378,10 @@ describe(StudioExportService.name, () => {
       getSessionCapabilities: vi.fn<RenderWorkerRepository['getSessionCapabilities']>(),
     };
     mockRenderSessions([liveSession()]);
-    media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
+    media = {
+      probe: vi.fn().mockResolvedValue(renderedOutput()),
+      probeHdrMastering: vi.fn<MediaRepository['probeHdrMastering']>().mockResolvedValue([]),
+    };
     restorations = {
       queueExportSmoothMotion: vi
         .fn()
@@ -589,7 +596,12 @@ describe(StudioExportService.name, () => {
       repository.createWithRender.mockRejectedValue(new Error('created'));
 
       await expect(
-        sut.create(auth(), PROJECT, { ...(dto as object), format: 'mp4-hevc-main10', color: 'hdr10' } as never),
+        sut.create(auth(), PROJECT, {
+          ...(dto as object),
+          format: 'mp4-hevc-main10',
+          color: 'hdr10',
+          mastering: { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 },
+        } as never),
       ).rejects.toThrow('created');
     });
 
@@ -839,8 +851,23 @@ describe(StudioExportService.name, () => {
           { id: 'a', type: 'audio', trackId: 'a1', mediaId: CLIP, from: 0, durationInFrames: 30, muted: true },
         ],
       });
-      const { snapshot } = await snapshotOf(graph, { format: 'mp4-hevc-main10', color: 'hdr10' });
-      expect(snapshot.contract).toEqual({ video: { minBitDepth: 10, transfer: 'smpte2084' }, audio: null });
+      const mastering = { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 };
+      const { snapshot, version } = await snapshotOf(graph, { format: 'mp4-hevc-main10', color: 'hdr10', mastering });
+      expect(snapshot.contract).toEqual({ video: { minBitDepth: 10, transfer: 'smpte2084', mastering }, audio: null });
+      expect(version.settings).toMatchObject({ mastering });
+      mastering.maxNits = 4000;
+      expect(version.settings.mastering.maxNits).toBe(1000);
+      expect(snapshot.contract.video.mastering.maxNits).toBe(1000);
+    });
+
+    it('refuses PQ submission with unknown mastering instead of guessing a display (FL-107)', async () => {
+      mockRenderSessions([
+        liveSession({ codecs: ['hevc_nvenc'], colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } }),
+      ]);
+      await expect(snapshotOf(clipGraph(), { format: 'mp4-hevc-main10', color: 'hdr10' })).rejects.toMatchObject({
+        response: { code: 'studio_export_mastering_unknown' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
     });
   });
 
@@ -1298,6 +1325,80 @@ describe(StudioExportService.name, () => {
           expect.objectContaining({ error: expect.stringContaining('smpte2084') }),
         );
       });
+
+      it.each(['missing', 'unreadable', 'different', 'matching', 'different default stream'])(
+        'checks %s mastering before publication (FL-107)',
+        async (mode) => {
+          repository.publish.mockResolvedValue(published());
+          const selectedIndex = mode === 'different default stream' ? 1 : 0;
+          const output = renderedOutput({
+            video: {
+              index: selectedIndex,
+              pixelFormat: 'yuv420p10le',
+              colorTransfer: ColorTransfer.Smpte2084,
+              colorPrimaries: ColorPrimaries.Bt2020,
+              colorMatrix: ColorMatrix.Bt2020Nc,
+            },
+            audio: [],
+          });
+          if (selectedIndex === 1) output.videoStreams.push({ ...output.videoStreams[0], index: 0 });
+          media.probe.mockResolvedValue(output);
+          const metadata = {
+            side_data_type: 'Mastering display metadata',
+            red_x: '35400/50000',
+            red_y: '14600/50000',
+            green_x: '8500/50000',
+            green_y: '39850/50000',
+            blue_x: '6550/50000',
+            blue_y: '2300/50000',
+            white_point_x: '15635/50000',
+            white_point_y: '16450/50000',
+            max_luminance: mode === 'different' ? '40000000/10000' : '10000000/10000',
+            min_luminance: '50/10000',
+          };
+          if (mode === 'unreadable') {
+            media.probeHdrMastering.mockRejectedValue(new Error('probe failed'));
+          } else if (mode === 'different default stream') {
+            media.probeHdrMastering.mockImplementation((_path, index) =>
+              Promise.resolve([
+                {
+                  ...metadata,
+                  max_luminance: index === 1 ? '40000000/10000' : '10000000/10000',
+                },
+              ]),
+            );
+          } else {
+            media.probeHdrMastering.mockResolvedValue(mode === 'missing' ? [] : [metadata]);
+          }
+          await sut.run(
+            contracted({
+              video: {
+                minBitDepth: 10,
+                transfer: 'smpte2084',
+                mastering: { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 },
+              },
+              audio: null,
+            }),
+          );
+          if (mode === 'matching') {
+            expect(storage.rename).toHaveBeenCalledWith(staged, expect.any(String));
+            expect(repository.publish).toHaveBeenCalledOnce();
+            expect(operations.fail).not.toHaveBeenCalled();
+          } else {
+            expect(storage.rename).not.toHaveBeenCalled();
+            expect(repository.publish).not.toHaveBeenCalled();
+            expect(operations.fail).toHaveBeenCalledWith(
+              PUBLISH,
+              'claim-p',
+              expect.objectContaining({
+                errorCode: 'studio_export_output_rejected',
+                error: expect.stringContaining('mastering display'),
+              }),
+            );
+          }
+          expect(media.probeHdrMastering).toHaveBeenCalledWith(staged, selectedIndex);
+        },
+      );
 
       describe.each([
         ['PQ', 'smpte2084', ColorTransfer.Smpte2084],

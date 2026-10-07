@@ -254,8 +254,11 @@ const artifactInputDigestOf = (operation: MediaOperation, manifest: StudioAuthor
     .map(({ key, id, checksum }) => ({ key, id, checksum }))
     // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const mastering = asObject(asObject(asObject(operation.snapshot).contract).video).mastering;
   return createHash('sha256')
-    .update(JSON.stringify({ revisionId: operation.revisionId, sources }))
+    .update(
+      JSON.stringify({ revisionId: operation.revisionId, sources, ...(mastering !== undefined && { mastering }) }),
+    )
     .digest('hex');
 };
 

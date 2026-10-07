@@ -360,6 +360,21 @@ export class MediaRepository {
     };
   }
 
+  /** Read static mastering SEI from the selected output stream's first decoded picture. */
+  async probeHdrMastering(input: string, streamIndex: number): Promise<Record<string, unknown>[]> {
+    const data = (await probe(input, [
+      '-select_streams',
+      String(streamIndex),
+      '-read_intervals',
+      '%+#1',
+      '-show_frames',
+    ])) as FfprobeData & {
+      frames?: { side_data_list?: Record<string, unknown>[] }[];
+    };
+    const stream = data.streams[0] as (FfprobeStream & { side_data_list?: Record<string, unknown>[] }) | undefined;
+    return [...(stream?.side_data_list ?? []), ...(data.frames?.[0]?.side_data_list ?? [])];
+  }
+
   /**
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
