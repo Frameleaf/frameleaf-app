@@ -369,6 +369,13 @@ Tests:
 - `tools/color-output.browser.mjs` checks the GPU conversion against the reference.
 - `tools/hdr-signal.browser.mjs` checks the old edited HDR graph as a typed refusal
   and admitted effect-free HDR/SDR graphics through the production renderer.
+- Patch 0071 admits owned linear Float32 RGBA reconstructed from HDR images, with
+  explicit sRGB/P3/BT.2020 gamut and source reference white. The existing float
+  compositor preserves alpha and headroom; it never routes these pixels through
+  an SDR canvas. `tools/hdr-source.browser.mjs` measures six gamut/white cases
+  through that compositor against an independent color conversion reference.
+  This is renderer coverage, not HEIC/gain-map resource-adapter or HDR still-export
+  qualification; those delivery paths remain gated until their checks pass.
 - `tools/hdr-master.browser.mjs` checks the old effect/blend graph as a typed refusal,
   then renders admitted HDR raster cuts, SDR graphics and opacity keyframes. It
   encodes PQ/HLG Main10 diagnostic masters and decodes them within two 10-bit codes.
