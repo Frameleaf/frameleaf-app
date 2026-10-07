@@ -483,11 +483,275 @@ window.__vite_plugin_react_preamble_installed__ = true
     } finally {
       rasterRenderer?.dispose();
     }
+    // 6. Root masked transitions explicitly take the Canvas2D fallback in
+    // client-render-engine. Real registered HDR videos must refuse that path
+    // before a signal is emitted, rather than importing their SDR playback.
+    const { CanvasPool } = await import('/src/features/export/utils/canvas-pool.ts');
+    const { GpuTexturePool } = await import('/src/infrastructure/gpu-compositor/gpu-texture-pool.ts');
+    const { useMediaLibraryStore } = await import('/src/features/media-library/stores/media-library-store.ts');
+    const pools = { canvas: new Set(), texture: new Set() };
+    const acquireCanvas = CanvasPool.prototype.acquire;
+    const acquireTexture = GpuTexturePool.prototype.acquire;
+    CanvasPool.prototype.acquire = function (...args) { pools.canvas.add(this); return acquireCanvas.apply(this, args); };
+    GpuTexturePool.prototype.acquire = function (...args) { pools.texture.add(this); return acquireTexture.apply(this, args); };
+    const poolUsage = () => Object.fromEntries(Object.entries(pools).map(([kind, entries]) =>
+      [kind, [...entries].reduce((sum, pool) => sum + pool.getStats().inUse, 0)]));
+    const poolRefusals = [];
+    const refuseWithReleasedPools = async (renderer, frame, target, scenario) => {
+      const before = poolUsage();
+      let emitted = 0;
+      try {
+        await renderer.renderFrameSignal(frame, target);
+        emitted++;
+        throw new Error('HDR Canvas fallback emitted a signal');
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'HDR video cannot be drawn through a canvas') throw error;
+        const after = poolUsage();
+        if (before.canvas !== after.canvas || before.texture !== after.texture) {
+          throw new Error(`${scenario}: refusal retained pooled resources: ${JSON.stringify({ before, after })}`);
+        }
+        poolRefusals.push({ scenario, target, before, after });
+        return { emitted, reason: error.message };
+      }
+    };
+    const canvasRefusals = [];
+    try {
+      for (const transfer of ['pq', 'hlg']) {
+        const mediaId = `canvas-refusal-${transfer}`;
+        const url = `/hdr-fixture/${transfer}.mp4`;
+        registerHdrSourceUrl(mediaId, url);
+        let renderer;
+        try {
+          const canvas = new OffscreenCanvas(SIZE, SIZE);
+          const clip = (id, from) => ({ id, type: 'video', mediaId, trackId: 'refusal-clips',
+            src: url, label: id, from, durationInFrames: 30, sourceStart: 0, sourceEnd: 30,
+            sourceFps: FPS, sourceDuration: 30, speed: 1, sourceWidth: SIZE, sourceHeight: SIZE,
+            transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 } });
+          renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+            durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+            tracks: [nestedTrack('raster-mask', 0, [rasterMask]),
+              nestedTrack('refusal-clips', 1, [clip('refusal-left', 0), clip('refusal-right', 30)])],
+            transitions: [{ id: 'refusal-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+              trackId: 'refusal-clips', leftClipId: 'refusal-left', rightClipId: 'refusal-right',
+              durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'), { mode: 'export' });
+          await renderer.preload?.();
+          for (const target of ['pq', 'hlg']) {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const refusal = await refuseWithReleasedPools(renderer, 30 + attempt, target, `masked-${transfer}`);
+              canvasRefusals.push({ transfer, target, attempt, ...refusal });
+            }
+          }
+        } finally {
+          renderer?.dispose();
+          registerHdrSourceUrl(mediaId, null);
+        }
+      }
+      // Metadata identifies HDR even while no float intermediate is registered.
+      // Retain the renderer across failures; successful sibling results must drain
+      // and release before the rejection, including the parallel export lane.
+      const previousMedia = useMediaLibraryStore.getState().mediaById;
+      const mediaId = 'pending-hdr-source';
+      useMediaLibraryStore.setState({ mediaById: { ...previousMedia, [mediaId]: { colorTransfer: 'pq' } } });
+      try {
+        for (const scenario of ['item', 'transition']) {
+          const clip = (id, from) => ({ id, type: 'video', mediaId, trackId: 'pending-clips',
+            src: '/hdr-fixture/pq.mp4', label: id, from, durationInFrames: 30,
+            sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
+            transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 } });
+          const graphic = { id: 'pending-sibling', type: 'shape', trackId: 'pending-sibling',
+            label: 'SDR sibling', from: 0, durationInFrames: 60, shapeType: 'rectangle',
+            fillColor: '#406080', strokeEnabled: false, strokeWidth: 0,
+            transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 } };
+          for (const mode of ['preview', 'export']) {
+            const canvas = new OffscreenCanvas(SIZE, SIZE);
+            const renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+              durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+              tracks: [nestedTrack('pending-sibling', 2, [graphic]), nestedTrack('pending-clips', 1,
+                scenario === 'item' ? [clip('pending-left', 0)] : [clip('pending-left', 0), clip('pending-right', 30)])],
+              transitions: scenario === 'item' ? [] : [{ id: 'pending-cut', type: 'crossfade',
+                presentation: 'dissolve', timing: 'linear', trackId: 'pending-clips',
+                leftClipId: 'pending-left', rightClipId: 'pending-right', durationInFrames: 20, alignment: 0.5 }] },
+              canvas, canvas.getContext('2d'), { mode });
+            try {
+              await renderer.preload?.();
+              for (let attempt = 0; attempt < 3; attempt++) {
+                await refuseWithReleasedPools(renderer, (scenario === 'item' ? 0 : 30) + attempt,
+                  'pq', `pending-${scenario}-${mode}`);
+              }
+            } finally { renderer.dispose(); }
+          }
+        }
+      } finally { useMediaLibraryStore.setState({ mediaById: previousMedia }); }
+    } finally {
+      CanvasPool.prototype.acquire = acquireCanvas;
+      GpuTexturePool.prototype.acquire = acquireTexture;
+    }
+    // 7. An inner transition must join its delayed SDR decoder before it
+    // rejects for HDR or restores/releases the participant state.
+    const { renderTransitionToCanvas } = await import('/src/features/export/utils/canvas-item-renderer/transition.ts');
+    const { renderItem } = await import('/src/features/export/utils/canvas-item-renderer/render-item.ts');
+    const contextForPool = (canvasPool) => ({ fps: FPS, canvasSettings: { width: SIZE, height: SIZE, fps: FPS },
+      renderMode: 'preview', canvasPool, renderItem, keyframesMap: new Map(), adjustmentLayers: [],
+      subCompRenderData: new Map(), videoExtractors: new Map(), videoElements: new Map(),
+      useMediabunny: new Set(), mediabunnyDisabledItems: new Set(), mediabunnyFailureCountByItem: new Map(),
+      imageElements: new Map(), gifFramesMap: new Map() });
+    const transform = { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1, cornerRadius: 0 };
+    const hdrItem = { id: 'owner-hdr', type: 'video', mediaId: 'owner-hdr', trackId: 'owner-track',
+      src: 'unused-hdr.mp4', from: 0, durationInFrames: 30, sourceFps: FPS, sourceDuration: 30,
+      speed: 1, transform };
+    const raster = new OffscreenCanvas(SIZE, SIZE);
+    const rasterCtx = raster.getContext('2d');
+    for (const [x, y, fill] of [[0, 0, '#f04020'], [SIZE / 2, 0, '#30a050'],
+      [0, SIZE / 2, '#2050e0'], [SIZE / 2, SIZE / 2, '#d0b030']]) {
+      rasterCtx.fillStyle = fill; rasterCtx.fillRect(x, y, SIZE / 2, SIZE / 2);
+    }
+    const bitmap = await createImageBitmap(raster);
+    const transitionPool = new CanvasPool(SIZE, SIZE, 2, 2);
+    const delayedCtx = contextForPool(transitionPool);
+    const gate = Promise.withResolvers();
+    const started = Promise.withResolvers();
+    const drawn = Promise.withResolvers();
+    const waitForDecoder = (promise) => Promise.race([promise, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('SDR participant did not reach controlled decode/draw')), 5000))]);
+    delayedCtx.isRenderingTransition = false;
+    delayedCtx.waitForInflightPredecodedBitmap = async () => { started.resolve(); return gate.promise; };
+    let acquireCount = 0;
+    let drawOwnership;
+    const acquireParticipant = transitionPool.acquire.bind(transitionPool);
+    transitionPool.acquire = () => {
+      const acquired = acquireParticipant();
+      if (++acquireCount === 2) {
+        const drawImage = acquired.ctx.drawImage.bind(acquired.ctx);
+        acquired.ctx.drawImage = (...args) => {
+          drawImage(...args);
+          drawOwnership = { inUse: transitionPool.getStats().inUse, transitionFlag: delayedCtx.isRenderingTransition };
+          drawn.resolve();
+        };
+      }
+      return acquired;
+    };
+    registerHdrSourceUrl(hdrItem.mediaId, '/hdr-fixture/pq.mp4');
+    let delayedTransition;
+    let canvasStateReuse;
+    try {
+      const right = { ...hdrItem, id: 'owner-sdr', mediaId: undefined, src: 'delayed-sdr.mp4', from: 30 };
+      const active = { transition: { id: 'owner-cut', type: 'crossfade', presentation: 'dissolve',
+        timing: 'linear', trackId: 'owner-track', leftClipId: hdrItem.id, rightClipId: right.id, durationInFrames: 20 },
+        leftClip: hdrItem, rightClip: right, progress: 0.5, transitionStart: 20, transitionEnd: 40,
+        durationInFrames: 20, leftPortion: 10, rightPortion: 10, cutPoint: 30 };
+      let settled = false;
+      const target = new OffscreenCanvas(SIZE, SIZE);
+      const transitionTask = renderTransitionToCanvas(target.getContext('2d'), active, 30, delayedCtx, 0)
+        .then(() => { settled = true; return null; }, (error) => { settled = true; return error; });
+      await waitForDecoder(started.promise);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const beforeDecode = { settled, inUse: transitionPool.getStats().inUse,
+        transitionFlag: delayedCtx.isRenderingTransition };
+      gate.resolve(bitmap);
+      const error = await transitionTask;
+      await waitForDecoder(drawn.promise);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      delayedTransition = { beforeDecode, drawOwnership, reason: error?.message,
+        afterDecode: { inUse: transitionPool.getStats().inUse, transitionFlag: delayedCtx.isRenderingTransition } };
+
+      // The same-size pool intentionally retains the canvas/context. An HDR
+      // throw after rotate/flip/clip must not contaminate its next SDR raster.
+      const reusedPool = new CanvasPool(SIZE, SIZE, 1, 1);
+      const freshPool = new CanvasPool(SIZE, SIZE, 1, 1);
+      try {
+        const stateCtx = contextForPool(reusedPool);
+        const first = reusedPool.acquire();
+        try {
+          await renderItem(first.ctx, { ...hdrItem, transform: { ...transform, flipHorizontal: true } },
+            { ...transform, x: 11, y: -7, width: 24, height: 32, rotation: 37, opacity: 0.5, cornerRadius: 7 }, 0, stateCtx);
+          throw new Error('HDR state test did not refuse');
+        } catch (error) {
+          if (error.message !== 'HDR video cannot be drawn through a canvas') throw error;
+        } finally { reusedPool.release(first.canvas); }
+        const image = { id: 'owner-raster', type: 'image', from: 0, durationInFrames: 30, transform };
+        stateCtx.imageElements.set(image.id, { source: bitmap, width: SIZE, height: SIZE });
+        const reused = reusedPool.acquire();
+        const fresh = freshPool.acquire();
+        const freshCtx = contextForPool(freshPool);
+        freshCtx.imageElements = stateCtx.imageElements;
+        await renderItem(reused.ctx, image, transform, 0, stateCtx);
+        await renderItem(fresh.ctx, image, transform, 0, freshCtx);
+        const got = reused.ctx.getImageData(0, 0, SIZE, SIZE).data;
+        const want = fresh.ctx.getImageData(0, 0, SIZE, SIZE).data;
+        canvasStateReuse = { sameCanvas: reused.canvas === first.canvas, comparedChannels: want.length,
+          mismatchedChannels: got.reduce((count, value, index) => count + Number(value !== want[index]), 0),
+          freshOpaquePixels: want.filter((value, index) => index % 4 === 3 && value === 255).length };
+        reusedPool.release(reused.canvas); freshPool.release(fresh.canvas);
+      } finally { reusedPool.dispose(); freshPool.dispose(); }
+    } finally {
+      gate.resolve(bitmap);
+      registerHdrSourceUrl(hdrItem.mediaId, null);
+      transitionPool.dispose(); bitmap.close();
+    }
+    // 8. Both joined layers preserve HDR refusal even when the first task
+    // and the opposite transition participant reject with ordinary Errors.
+    const mixedFailures = [];
+    const priorityMedia = 'priority-hdr-video';
+    registerHdrSourceUrl(priorityMedia, '/hdr-fixture/pq.mp4');
+    try {
+      for (const hdrSide of ['right', 'left']) {
+        const video = (id, from) => ({ id, type: 'video', mediaId: priorityMedia, trackId: 'priority-track',
+          src: '/hdr-fixture/pq.mp4', from, durationInFrames: 30, sourceStart: 0, sourceEnd: 30,
+          sourceFps: FPS, sourceDuration: 30, speed: 1, sourceWidth: SIZE, sourceHeight: SIZE, transform });
+        const image = (id, from) => ({ ...rasterClip(id, from), trackId: 'priority-track' });
+        const left = hdrSide === 'left' ? video('priority-left', 0) : image('priority-left', 0);
+        const right = hdrSide === 'right' ? video('priority-right', 30) : image('priority-right', 30);
+        const sibling = { ...rasterClip('priority-sibling', 0), trackId: 'priority-sibling', durationInFrames: 60,
+          cornerPin: { topLeft: [0, 0], topRight: [24, -12], bottomRight: [10, 16], bottomLeft: [-18, 8] },
+          transform: { ...transform, opacity: 0.5 } };
+        const canvas = new OffscreenCanvas(SIZE, SIZE);
+        const renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+          durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+          tracks: [nestedTrack('raster-mask', 0, [rasterMask]), nestedTrack('priority-track', 1, [left, right]),
+            nestedTrack('priority-sibling', 2, [sibling])],
+          transitions: [{ id: 'priority-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+            trackId: 'priority-track', leftClipId: left.id, rightClipId: right.id, durationInFrames: 20, alignment: 0.5 }] },
+          canvas, canvas.getContext('2d'), { mode: 'export', hdrRasters: { 'masked-raster': rasterInput } });
+        try {
+          await renderer.preload?.();
+          await renderer.renderFrame(30);
+          throw new Error('Mixed-failure HDR frame unexpectedly rendered');
+        } catch (error) {
+          mixedFailures.push({ hdrSide, name: error.name, reason: error.message });
+        } finally { renderer.dispose(); }
+      }
+    } finally { registerHdrSourceUrl(priorityMedia, null); }
     device.destroy();
-    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition };
+    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition, canvasRefusals, poolRefusals,
+      delayedTransition, canvasStateReuse, mixedFailures };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
   if (process.env.HDR_SOURCE_REPORT) await writeFile(process.env.HDR_SOURCE_REPORT, JSON.stringify(result));
+
+  assert.deepEqual(result.canvasRefusals.map(({ transfer, target, emitted }) => [transfer, target, emitted]),
+    [['pq', 'pq', 0], ['pq', 'hlg', 0], ['hlg', 'pq', 0], ['hlg', 'hlg', 0]].flatMap((row) => Array.from({ length: 3 }, () => row)),
+    'every real HDR Canvas fallback must refuse without emitting a signal');
+  assert.deepEqual(result.poolRefusals.map(({ scenario }) => scenario),
+    [['masked-pq', 6], ['masked-hlg', 6], ['pending-item-preview', 3], ['pending-item-export', 3],
+      ['pending-transition-preview', 3], ['pending-transition-export', 3]]
+      .flatMap(([scenario, count]) => Array(count).fill(scenario)));
+  console.log(JSON.stringify({ check: 'HDR refusal resource ownership', attempts: result.poolRefusals.length,
+    retainedAllocations: 0 }));
+
+  assert.deepEqual(result.delayedTransition.beforeDecode,
+    { settled: false, inUse: 2, transitionFlag: true }, 'HDR refusal must join the delayed SDR participant');
+  assert.deepEqual(result.delayedTransition.drawOwnership,
+    { inUse: 2, transitionFlag: true }, 'SDR draws before participant release and flag restoration');
+  assert.deepEqual(result.delayedTransition.afterDecode, { inUse: 0, transitionFlag: false });
+  assert.equal(result.delayedTransition.reason, 'HDR video cannot be drawn through a canvas');
+  assert.deepEqual(result.canvasStateReuse, { sameCanvas: true, comparedChannels: SIZE * SIZE * 4,
+    mismatchedChannels: 0, freshOpaquePixels: SIZE * SIZE }, 'refused context reuse must match a fresh pool');
+  console.log(JSON.stringify({ check: 'HDR participant ownership and canvas state', delayedTransition: 'joined',
+    reusedRasterChannels: result.canvasStateReuse.comparedChannels }));
+
+  assert.deepEqual(result.mixedFailures, ['right', 'left'].map((hdrSide) => ({ hdrSide,
+    name: 'HdrVideoUnavailableError', reason: 'HDR video cannot be drawn through a canvas' })),
+    'HDR refusal must survive ordinary sibling and opposite-participant errors');
 
   let compared = 0;
   for (const transfer of ['pq', 'hlg']) {
