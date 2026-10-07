@@ -732,9 +732,9 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'machineLearning.duplicateDetection.preferOriginalFormat',
-    kind: 'control',
+    kind: 'policy',
     file: 'src/routes/admin/system-settings/machine-learning/DuplicateDetectionSection.svelte',
-    evidence: 'duplicateDetection.preferOriginalFormat',
+    evidence: 'machine_learning_duplicate_detection_prefer_original_format_description',
   },
   {
     pattern: 'machineLearning.enabled',
