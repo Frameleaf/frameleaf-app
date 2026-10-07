@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
+import { assertExecutionActive, operationExecution } from 'src/utils/execution-signal.js';
+import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { PreservationPackageError } from 'src/utils/preservation.js';
 
 const digests = (bytes: Buffer) => ({
@@ -45,6 +48,76 @@ describe(PreservationFileRepository.name, () => {
       await symlink(join(root, 'secret.jpg'), join(root, 'link.jpg'));
       await expect(sut.copyOriginal(join(root, 'link.jpg'), join(root, 'package', 'a.jpg'))).rejects.toBeDefined();
     });
+  });
+
+  it.each(['copy', 'document', 'index'])(
+    'a stopped %s cannot replace published bytes and removes its partial',
+    async (kind) => {
+      const source = join(root, 'source.jpg');
+      const destination = join(root, 'package', 'result');
+      await writeFile(source, 'original bytes');
+      await mkdir(join(root, 'package'));
+      await writeFile(destination, 'accepted bytes');
+      const controller = new AbortController();
+      const started = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      const commit = async (write: () => Promise<void>) => {
+        started.resolve();
+        await released.promise;
+        assertExecutionActive();
+        await write();
+      };
+      const pages = Readable.from([['replacement']]);
+      const work = operationExecution.run(
+        { signal: controller.signal, progress: () => {}, settled: false, completed: new Map(), settle: async () => {} },
+        () =>
+          kind === 'copy'
+            ? sut.copyOriginal(source, destination, commit)
+            : kind === 'document'
+              ? sut.writeDocument(destination, Buffer.from('replacement'), commit)
+              : sut.writeLines(destination, pages, commit),
+      );
+      const rejected = expect(work).rejects.toBeInstanceOf(OperationClaimLostError);
+      await started.promise;
+      controller.abort(new OperationClaimLostError());
+      released.resolve();
+      await rejected;
+      expect(await readFile(source, 'utf8')).toBe('original bytes');
+      expect(await readFile(destination, 'utf8')).toBe('accepted bytes');
+      expect(await readdir(join(root, 'package'))).toEqual(['result']);
+    },
+  );
+
+  it.each(['sha1', 'sha256'] as const)(
+    'reuses a renamed original after lost acknowledgement with %s verification',
+    async (algorithm) => {
+      const source = join(root, 'source.jpg');
+      const destination = join(root, 'package', 'original.jpg');
+      const bytes = Buffer.from('original bytes');
+      await writeFile(source, bytes);
+      const checksum = Buffer.from(digests(bytes)[algorithm], 'hex');
+      const first = await sut.copyOriginal(source, destination, undefined, checksum);
+      const before = await stat(destination);
+      const commit = vi.fn(async (write: () => Promise<void>) => write());
+      const second = await sut.copyOriginal(source, destination, commit, checksum);
+      expect(second).toEqual(first);
+      expect(commit).not.toHaveBeenCalled();
+      expect((await stat(destination)).ino).toBe(before.ino);
+      expect(await readdir(join(root, 'package'))).toEqual(['original.jpg']);
+    },
+  );
+
+  it('does not reuse an existing copy with the wrong checksum', async () => {
+    const source = join(root, 'source.jpg');
+    const destination = join(root, 'package', 'original.jpg');
+    const bytes = Buffer.from('original bytes');
+    await writeFile(source, bytes);
+    await mkdir(join(root, 'package'));
+    await writeFile(destination, 'incorrect');
+    const commit = vi.fn(async (write: () => Promise<void>) => write());
+    await sut.copyOriginal(source, destination, commit, Buffer.from(digests(bytes).sha256, 'hex'));
+    expect(commit).toHaveBeenCalledOnce();
+    expect(await readFile(destination)).toEqual(bytes);
   });
 
   describe('directory packages', () => {
