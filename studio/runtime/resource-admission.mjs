@@ -87,9 +87,18 @@ function rewriteHuggingFace(input) {
 
 const PINNED = Symbol.for('frameleaf.resource-admission.fetch-pinned');
 const STORES = new Set(['transformers-cache', 'kokoro-voices']);
-const nativeRequestUrl = Object.getOwnPropertyDescriptor(Request.prototype, 'url').get;
+// Native Request subclasses (including jsdom's compatibility wrapper) inherit
+// this getter. Retain its brand check instead of reading user-controlled .url.
+let requestPrototype = globalThis.Request?.prototype;
+let nativeRequestUrl;
+while (requestPrototype && !nativeRequestUrl) {
+  nativeRequestUrl = Object.getOwnPropertyDescriptor(requestPrototype, 'url')?.get;
+  requestPrototype = Object.getPrototypeOf(requestPrototype);
+}
 
 function fileRequest(input, init) {
+  // Non-native test realms may import policy consumers, but cannot admit model transport.
+  if (!nativeRequestUrl) throw new ResourceBlockedError('Native Request unavailable');
   let url;
   let native = false;
   try { url = nativeRequestUrl.call(input); native = true; } catch { url = String(input); }
@@ -131,6 +140,7 @@ async function verifiedResponse(request, response) {
 if (typeof globalThis.fetch === 'function' && !globalThis[PINNED]) {
   const original = globalThis.fetch;
   globalThis.fetch = async function pinnedFetch(input, init) {
+    if (!nativeRequestUrl) throw new ResourceBlockedError('Native Request unavailable');
     let requestUrl;
     try { requestUrl = nativeRequestUrl.call(input); } catch { /* Native string form across realms. */ }
     const normalized = requestUrl ?? String(input);
@@ -207,6 +217,7 @@ if (globalThis.caches && !globalThis[CACHE_PINNED]) {
     const name = cacheName === undefined ? undefined : String(cacheName);
     if (STORES.has(name)) return (await storage.open(name)).match(input, options);
     if (name !== undefined) return storageMatch(input, { ...options, cacheName: name });
+    if (!nativeRequestUrl) throw new ResourceBlockedError('Native Request unavailable');
     let url;
     try { url = nativeRequestUrl.call(input); } catch { url = String(input); }
     if (new URL(url, globalThis.location?.href).hostname !== 'huggingface.co') return storageMatch(input, options);
