@@ -77,7 +77,6 @@ describe(PhysicalFileTrashService.name, () => {
       [Buffer.from('c'.repeat(40), 'hex'), ChecksumAlgorithm.sha1File],
     ])('re-imports the file with its retained checksum algorithm (%s, %s)', async (checksum, checksumAlgorithm) => {
       mocks.physicalFileTrash.getById.mockResolvedValue({ ...entry, checksum });
-      mocks.physicalFileTrash.untrash.mockResolvedValue({ ...entry, checksum });
       mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
         physicalFile: { id: 'new-physical' },
         linked: false,
@@ -166,6 +165,7 @@ describe(PhysicalFileTrashService.name, () => {
 
       await expect(sut.restore(entry.id)).rejects.toMatchObject({
         errors: [inspectionError, compensationError],
+        cause: compensationError,
       });
 
       const target = mocks.physicalFileTrash.untrash.mock.calls[0][1];

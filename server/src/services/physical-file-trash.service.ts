@@ -104,6 +104,7 @@ export class PhysicalFileTrashService extends BaseService {
           throw new AggregateError(
             [error, compensationError],
             `File-trash inspection failed and the file could not be moved back from ${to} to ${from}`,
+            { cause: compensationError },
           );
         }
         throw error;
