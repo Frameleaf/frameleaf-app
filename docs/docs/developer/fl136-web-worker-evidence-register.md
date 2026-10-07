@@ -1,16 +1,19 @@
 # FL-136 web and worker distribution evidence register
 
-Static source/data checkpoint, 2026-10-04. Source commit:
-`6394cdd4e7ad92b72240fe5c654544d4e355872e`. Scope: the Frameleaf web bundle,
+Source/data checkpoint reviewed 2026-10-06. Source commit:
+`d78bb71b1bd4a5aed4735dddea02c8aa271cdcd9`. Scope: the Frameleaf web bundle,
 Studio browser assets, server/LAN workers and machine-learning containers.
 Mobile applications, stores and their dependencies are excluded.
 
-Adapted from the original PR177 evidence register at `642590bd27925a78588ead07b563f0e96c6104cd`. The input hashes below identify the accepted canonical source checkpoint above, not the donor branch or a delivered artifact.
+Supersedes the source-input checkpoint at `6394cdd4e7ad92b72240fe5c654544d4e355872e`.
+The web manifest and workspace lock changed: the UI, SDK and layout WASM now
+resolve to local workspace packages. The input hashes identify the source
+checkpoint above, not a delivered artifact or a new rights approval.
 
 This register records source identities and missing evidence. It does not grant
 rights, clear an existing gate, change resource admission, certify a delivered
-SBOM, or qualify an installed worker. No dependencies, models or tools were
-downloaded, installed or executed to prepare it. References to captured license
+SBOM, or qualify an installed worker. No product dependency, model or licensed
+Dolby tool was downloaded, installed or executed for this checkpoint. References to captured license
 texts and prior approvals describe repository evidence, not fresh legal review.
 
 ## Authorities and exact inputs
@@ -21,8 +24,8 @@ do not treat this checkpoint as approval of the changed version.
 
 | Source authority                                              | SHA-256                                                            |
 | ------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `pnpm-lock.yaml`                                              | `7c46f2842ce83d333134d32fe42f7cebcff3a847e16b80fdd3c99110b6f50826` |
-| `web/package.json`                                            | `eb1be3c88579575581c19871135b10692718855a16ee1b4260a5966aa638369d` |
+| `pnpm-lock.yaml`                                              | `edb4c4139cb20c5bd9d2116b1e6f9042a3dcc7944130693b304367a82c281bd2` |
+| `web/package.json`                                            | `987d7c0b6989de57cd1e90b2788b837b95ebcae9cda1013eed9a1fd3efcf5322` |
 | `machine-learning/uv.lock`                                    | `45acd08c52ed855387b434b7ce8fc087f26892362c5864799e3e95e81422b8bf` |
 | `machine-learning/pyproject.toml`                             | `e34ed0a752d3dcbc746c27cd72948289af25676e1ad51c182d267bc37905cb92` |
 | `studio/engine-build.json`                                    | `7ff83e01618d5f1798d618add888289b07f7fd3bffb7830e723ae55409fe9ca1` |
@@ -32,24 +35,31 @@ do not treat this checkpoint as approval of the changed version.
 | `studio/distribution-gates.json`                              | `517decef8ca1cea63fe28781b4419d32ad835c11caf8330beb2c0fb4b1ca35f0` |
 | `licenses/acknowledgements.json`                              | `1987600c3ec93f0d3ac211110f43e6246b55ea8d941fe7c747dff5b8cdb1e5de` |
 | `machine-learning/immich_ml/models/semantic-mask-models.json` | `7683ad4fd11d70b17dd02bb738bd95fce1f84aa54dcc28947f1669833d2adca8` |
+| `studio/freecut-provenance.json` | `615f4e3c758ff6ff092281d1b41275f650e45d93b86e77f0bd3b0a7151310487` |
+| `packages/sdk/package.json` | `b8035fd0eb3f8f40891029b30202ad156d933863a4c79d5e6144fd2f49bcc3ea` |
+| `packages/ui/package.json` | `0e40ac3e192eca8fabf91e774e84d17c0ad45668f9f53c9f2a09fadf7d8e1d66` |
+| `packages/ui/LICENSE` | `39121dfe51a7919c78393a9a905f2ab64e02ba5c8e3be277631db4520fcb789f` |
+| `packages/justified-layout-wasm/package.json` | `f6a2fce0344d166240431f38d69fa9ea7ad61a272dcbdbe5a05a024c5116132b` |
+| `packages/justified-layout-wasm/LICENSE` | `ce3fb82d9ee80a1cb0e548f9b0560ead52378ee2b4e826fd9459b4acf7075d89` |
 
 The existing [rights foundation](frameleaf-studio-foundation.md) explains the
 attribution inventory, digest-bound owner approvals, generated runtime admission,
 public credits and distribution gates. Keep those authorities separate. In
 particular, raw `resources[].decisions` are not the effective owner-approved
-runtime decision by themselves. This packet does not run their generators.
+runtime decision by themselves. Reproduction commands below verify the generated
+rights and notices without changing approvals.
 
 ## Exact package versions and delivery gaps
 
 `pnpm-lock.yaml`'s `web` importer is the complete direct dependency resolution
-authority, including peer contexts, workspace links and the `@frameleaf/ui` patch
-hash. The following compact inventory records its external version numbers;
+authority, including peer contexts and workspace links. The following compact
+inventory records its external version numbers;
 it is not a license or transitive/delivered-file inventory.
 
 | Web package(s)                                                                                                               | Locked version(s)                                                                   |
 | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `@formatjs/icu-messageformat-parser`, `intl-messageformat`                                                                   | 3.5.17; 11.2.14                                                                     |
-| `@frameleaf/justified-layout-wasm`, `@frameleaf/ui`                                                                          | 0.4.3; 0.86.0 (patched; exact context in lock)                                      |
+| `@frameleaf/justified-layout-wasm`, `@frameleaf/ui` | Workspace links `../packages/justified-layout-wasm` (0.4.3; AGPL-3 declaration) and `../packages/ui` (0.86.0; MIT declaration); bind Git source and emitted bytes |
 | `@mdi/js`, `@noble/hashes`                                                                                                   | 7.4.47; 2.3.0                                                                       |
 | `@photo-sphere-viewer/core`, equirectangular-video-adapter, markers-plugin, resolution-plugin, settings-plugin, video-plugin | 5.15.1 each                                                                         |
 | `@types/geojson`, `@zoom-image/core`, `@zoom-image/svelte`                                                                   | 7946.0.16; 0.42.0; 0.3.9                                                            |
@@ -111,8 +121,8 @@ license covers the weights, tokenizer, voices or intended service use.
 MusicGen's existing owner-approved row digest is
 `ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650`.
 Its `excludedUses.hostedUse` retains the explicit Frameleaf Cloud exclusion and
-existing local/server/LAN-worker approval. This packet neither revokes that
-approval nor expands it into hosted use or a legal opinion. The attribution row
+existing local/server/LAN-worker approval. This packet preserves that
+approval and its hosted exclusion; it supplies no legal opinion. The attribution row
 still has no per-file weights inventory. Resolve exact downloaded files, notice
 delivery and consent evidence for the actual approved distribution; never clear
 the hosted exclusion to resolve an engineering test.
@@ -125,6 +135,65 @@ buffalo_l license assertion, not independent license evidence. Obtain exact mode
 files/revisions, applicable terms, license evidence and actual selected model
 image/download receipt. Preserve NLLB/MusicGen hosted exclusions and model-source
 selection/consent controls; provider access is outside this packet.
+
+## Reproduce the source checkpoint and reconcile a delivered artifact
+
+From the repository root, verify the hashes above against the current checkout.
+The check fails on drift; a changed hash requires a new review, not a refreshed
+approval. It reads only the listed source files and downloads nothing.
+
+```sh
+python3 - <<'PY'
+import hashlib
+import re
+from pathlib import Path
+
+register = Path('docs/docs/developer/fl136-web-worker-evidence-register.md').read_text()
+inputs = re.findall(r'\|\s*`([^`]+)`\s*\|\s*`([0-9a-f]{64})`\s*\|', register)
+assert len(inputs) == 17, 'Source-input table is incomplete'
+changed = [file for file, expected in inputs
+           if hashlib.sha256(Path(file).read_bytes()).hexdigest() != expected]
+assert not changed, f'Source inputs changed: {changed}'
+print(f'Verified {len(inputs)} source inputs; delivered artifact and rights qualification remain separate')
+PY
+node scripts/frameleaf-studio-rights.mjs
+node scripts/frameleaf-acknowledgements.mjs
+node scripts/frameleaf-distribution-gates.mjs
+node --test scripts/frameleaf-distribution-gates.test.mjs
+```
+
+The acknowledgements generator validates and reproduces the committed public
+credits and notice texts in memory. The rights generator verifies its committed
+server mirror. Neither operation supplies a license opinion or artifact SBOM.
+
+For the actual Studio candidate built with the pinned source and toolchain, reuse
+`node studio/tools/engine.mjs attest` and
+`node studio/tools/engine.mjs audit-attribution`. They bind the adapted source,
+lockfile, delivered files and notices; the audit recomputes attribution from
+trusted inputs and rejects changed, missing or extra notice artifacts. A fresh
+worktree without `studio/vendor/freecut`, the installed engine and its `dist`
+cannot run that artifact check. This packet does not build or attest an artifact.
+
+For each delivered web/worker/container target, attach its immutable artifact
+digest, platform, source SHA, generated package/file SBOM and build provenance.
+Compare exact package versions and workspace source to the locks and manifests
+above; compare Studio resources and embedded binaries to attribution and its
+digest-bound approvals. Record unresolved versions, missing file identities,
+unmatched SBOM components, notices and corresponding-source materials as release
+blockers. A package found in a lock or a scanner's license field supplies no
+redistribution or service-use approval. Model downloads require their own file
+digests and consent receipts. No delivered SBOM was supplied for this review.
+
+## Acceptance mapping at the reviewed source
+
+| FL-136 requirement | Committed behavior / evidence | Remaining acceptance |
+| --- | --- | --- |
+| Qualified worker and administrator-installed Dolby chain | `distribution-gates.json` tracks `dolby-tool-admission`; preflight remains fail-closed | Worker address, tool paths/versions and actual edited-output VID-204 QC from FL-109 |
+| Web/worker/cloud component, model, font and media register | Attribution, digest-bound approvals, public notices and this 17-input source checkpoint; MusicGen hosted exclusion preserved | Actual delivered package/file SBOM, embedded-source obligations and legal/distribution review |
+| Credentials, billing, privacy and download consent gates | Ten recorded gates; four remain blocked on owner input; secrets stay outside Git | Named responsible owner/evidence for each unresolved gate; current Cloud billing and feature disclosures require their own owner reconciliation |
+| Manifest/provenance and license reconciliation | Rights/credits generators and gate validator reproduce source records; existing engine attestation/audit handles a built candidate | Actual candidate artifacts and source/toolchain required to execute artifact reconciliation |
+| Signed native inspection | Native acceptance moved to FL-210/211 by the owner on 2026-09-30 | Excluded from this repository and this packet |
+| Owner/legal/distribution evidence | Prior digest-bound approvals retained for their exact rows | No new approval supplied; source availability does not establish rights |
 
 ## Next evidence packets and limitations
 
