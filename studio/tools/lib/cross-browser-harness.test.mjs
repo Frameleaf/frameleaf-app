@@ -229,6 +229,79 @@ test('checks overrides in order and only ever uses the first match', async () =>
   }
 });
 
+test('inspected CONNECT cannot bypass substitutions, origin checks or upgrade refusal', {timeout: 5_000}, async () => {
+  const hits = [];
+  const upstream = await startFakeUpstream((req, res) => { hits.push(req.url); res.end('ordinary module'); });
+  let foreignHits = 0;
+  const foreign = await startFakeUpstream((req, res) => { foreignHits++; res.end('foreign bytes'); });
+  const harness = createHarness({ upstream: upstream.url, inspectConnect: true,
+    overrides: [{test: url => url.pathname === '/weights.bin', respond: () => ({status: 403, body: 'no model bytes'})}],
+  });
+  const origin = new URL(await harness.listen());
+  const authority = new URL(upstream.url).host;
+  const exchange = async (payload, target = authority) => {
+    const socket = net.connect(Number(origin.port), origin.hostname);
+    const chunks = [];
+    socket.on('data', chunk => chunks.push(chunk));
+    const ended = once(socket, 'end');
+    await once(socket, 'connect');
+    socket.write(Buffer.concat([Buffer.from(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`), Buffer.from(payload)]));
+    try { await ended; return Buffer.concat(chunks).toString(); }
+    finally { socket.destroy(); }
+  };
+  try {
+    assert.match(await exchange(`GET /weights.bin HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`), /403 Forbidden[\s\S]*no model bytes/);
+    assert.deepEqual(hits, [], 'model request inside CONNECT must not reach upstream');
+    assert.match(await exchange(`GET /module.js HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`), /ordinary module/);
+    assert.deepEqual(hits, ['/module.js']);
+    assert.match(await exchange('GET http://models.example/weights.bin HTTP/1.1\r\nHost: models.example\r\nConnection: close\r\n\r\n'), /403 Forbidden/);
+    assert.match(await exchange(`GET https://${authority}/weights.bin HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`), /403 Forbidden/);
+    assert.match(await exchange(`GET /?token=hmr HTTP/1.1\r\nHost: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n`), /403 Forbidden/);
+    assert.match(await exchange(`GET /unknown HTTP/1.1\r\nHost: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`), /403 Forbidden/);
+    assert.match(await exchange('GET /bad-host HTTP/1.1\r\nHost: [invalid\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n'), /403 Forbidden/);
+    assert.match(await exchange(Buffer.from([0x16, 0x03, 0x01, 0, 0])), /400 Bad Request/);
+    assert.match(await exchange(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`), /403 Forbidden/);
+    assert.match(await exchange('', 'models.example:443'), /403 Forbidden/);
+    assert.deepEqual(hits, ['/module.js'], 'refused upgrades and opaque traffic must never reach upstream');
+    assert.ok(!harness.observations.some(o => o.kind === 'tunnelled'));
+    assert.ok(harness.observations.some(o => o.kind === 'override' && o.url === upstream.url + '/weights.bin'));
+    assert.ok(harness.observations.some(o => o.kind === 'proxied' && o.url === upstream.url + '/module.js'));
+    assert.ok(harness.observations.some(o => o.kind === 'blocked' && o.upgradeProtocol === 'vite-hmr'));
+    assert.ok(harness.observations.some(o => o.kind === 'error' && o.url === upstream.url + '/unknown'));
+    assert.ok(harness.observations.some(o => o.kind === 'error' && o.method === 'CONNECT'));
+    const alternate = `//${new URL(foreign.url).host}/weights.bin`;
+    for (const response of [
+      await proxiedGet(`http://${origin.host}`, upstream.url + alternate),
+      {body: await exchange(`GET ${upstream.url}${alternate} HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`)},
+    ]) assert.match(response.body, /ordinary module/);
+    assert.equal(foreignHits, 0, 'a double-slash path must never replace the checked authority');
+    assert.deepEqual(hits, ['/module.js', alternate, alternate]);
+  } finally { await harness.close(); await upstream.close(); await foreign.close(); }
+});
+
+test('inspected CONNECT sockets close with their harness', {timeout: 5_000}, async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('observed body'));
+  const harness = createHarness({upstream: upstream.url, inspectConnect: true});
+  const origin = new URL(await harness.listen());
+  const authority = new URL(upstream.url).host;
+  const socket = net.connect(Number(origin.port), origin.hostname);
+  try {
+    let received = '';
+    const body = new Promise(resolve => socket.on('data', chunk => {
+      received += chunk.toString();
+      if (received.includes('observed body')) resolve();
+    }));
+    await once(socket, 'connect');
+    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\nGET /live HTTP/1.1\r\nHost: ${authority}\r\n\r\n`);
+    await body;
+    assert.ok(harness.observations.some(o => o.kind === 'proxied' && o.url === upstream.url + '/live'));
+    const closed = once(socket, 'close');
+    await harness.close();
+    await closed;
+    assert.equal(socket.destroyed, true);
+  } finally { socket.destroy(); await harness.close(); await upstream.close(); }
+});
+
 // Use a real TCP peer and verify data reaches it before exercising teardown. Closing
 // only the HTTP listener must not count as disposal of an established tunnel.
 for (const termination of ['harness shutdown', 'client disconnect']) {
