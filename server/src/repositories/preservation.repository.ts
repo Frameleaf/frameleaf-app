@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
-import { AlbumKind, AlbumUserRole, AssetStatus, MediaOperationKind, SourceType, VideoMomentSource } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetStatus,
+  MediaOperationKind,
+  MediaOperationStatus,
+  SourceType,
+  VideoMomentSource,
+} from 'src/enum.js';
 
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -13,7 +21,9 @@ import {
   PreservationRestoreTable,
 } from 'src/schema/tables/preservation.table.js';
 import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
+import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -78,7 +88,32 @@ export class PreservationRepository {
   ) {}
   /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-    return this.db.transaction().execute(query);
+    return this.db.isTransaction ? query(this.db) : this.db.transaction().execute(query);
+  }
+  /** Only short export commits: copy/hash work runs outside this claim lock. */
+  async withExportClaim<T>(
+    operationId: string,
+    claimToken: string,
+    callback: (repository: PreservationRepository) => Promise<T>,
+  ): Promise<T> {
+    assertExecutionActive();
+    return this.db.transaction().execute(async (tx) => {
+      const held = await tx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', operationId)
+        .where('kind', '=', MediaOperationKind.PreservationExport)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('cancelRequestedAt', 'is', null)
+        .where('pauseRequestedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      assertExecutionActive();
+      if (!held) throw new OperationClaimLostError();
+      return callback(new PreservationRepository(tx));
+    });
   }
   /* ---------------------------------------------------------------- */
   /* Selection                                                         */
@@ -457,7 +492,7 @@ export class PreservationRepository {
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
-  /** Record an attempt at an item before it is made, so a crash still counts it. */
+  /** Record a completed attempt in the same transaction as its item outcome. */
   async beginItemAttempt(id: string): Promise<void> {
     await this.write((db) =>
       db
