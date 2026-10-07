@@ -337,6 +337,7 @@ const TEN_BIT_FORMATS = new Set(['mp4-hevc-main10', 'webm-av1', 'prores-422-hq']
 const FORMAT_CODECS: Readonly<Record<string, string>> = {
   'mp4-hevc-main10': 'hevc',
   'mp4-h264': 'h264',
+  'mov-h264': 'h264',
   'webm-av1': 'av1',
   'prores-422-hq': 'prores',
 };

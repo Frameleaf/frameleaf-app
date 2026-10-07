@@ -1272,6 +1272,7 @@ export class RenderWorkerService {
       const contentTypes: Record<string, string> = {
         'mp4-hevc-main10': 'video/mp4',
         'mp4-h264': 'video/mp4',
+        'mov-h264': 'video/quicktime',
         'webm-av1': 'video/webm',
         'prores-422-hq': 'video/quicktime',
       };

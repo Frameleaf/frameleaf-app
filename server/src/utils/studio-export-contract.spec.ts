@@ -281,6 +281,7 @@ describe('findStudioExportOutputMismatch (FL-102)', () => {
 
   it.each([
     ['mp4-h264', 'h264'],
+    ['mov-h264', 'h264'],
     ['mp4-hevc-main10', 'hevc'],
     ['webm-av1', 'av1'],
     ['prores-422-hq', 'prores'],

@@ -109402,6 +109402,7 @@
         "enum": [
           "mp4-hevc-main10",
           "mp4-h264",
+          "mov-h264",
           "webm-av1",
           "prores-422-hq"
         ],

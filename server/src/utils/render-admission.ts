@@ -404,6 +404,18 @@ export const evaluateRunningLimits = ({
  * exactly: a decoder such as `h264_cuvid` or `hevc_qsv`'s decode-only sibling proves nothing about
  * writing the format, so substring matching is not allowed.
  */
+const H264_ENCODERS = [
+  // Explicit encoder evidence from a real WebCodecs AVC encode, never a decoder name.
+  'webcodecs-avc',
+  'libx264',
+  'h264_nvenc',
+  'h264_qsv',
+  'h264_vaapi',
+  'h264_videotoolbox',
+  'h264_amf',
+  'h264_rkmpp',
+  'h264_v4l2m2m',
+];
 const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; container: string }>> = {
   'mp4-hevc-main10': {
     codec: [
@@ -419,20 +431,10 @@ const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; contai
     container: 'mp4',
   },
   'mp4-h264': {
-    codec: [
-      // Explicit encoder evidence from a real WebCodecs AVC encode, never a decoder name.
-      'webcodecs-avc',
-      'libx264',
-      'h264_nvenc',
-      'h264_qsv',
-      'h264_vaapi',
-      'h264_videotoolbox',
-      'h264_amf',
-      'h264_rkmpp',
-      'h264_v4l2m2m',
-    ],
+    codec: H264_ENCODERS,
     container: 'mp4',
   },
+  'mov-h264': { codec: H264_ENCODERS, container: 'mov' },
   'webm-av1': {
     codec: ['libsvtav1', 'libaom-av1', 'librav1e', 'av1_nvenc', 'av1_qsv', 'av1_vaapi', 'av1_amf'],
     container: 'webm',
@@ -610,6 +612,7 @@ export const RENDER_MEMORY_BY_RESOLUTION: Readonly<Record<string, number>> = Obj
 const FORMAT_BIT_DEPTH: Readonly<Record<string, number>> = Object.freeze({
   'mp4-hevc-main10': 10,
   'mp4-h264': 8,
+  'mov-h264': 8,
   'webm-av1': 10,
   'prores-422-hq': 10,
 });

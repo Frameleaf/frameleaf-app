@@ -53,6 +53,21 @@ describe('Studio render output (FL-42)', () => {
     expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
   });
 
+  it('holds MOV/H264 to eight-bit precision on the candidate that proved MOV', () => {
+    const mov = StudioExportFormat.MovH264;
+    const [candidate] = evidence().candidates!;
+    expect(
+      evaluateStudioRender(
+        [evidence({ candidates: [{ ...candidate, outputFormats: [mov], maxBitDepth: 7 }] })],
+        MediaOperationDestination.Lan,
+        { ...settings, format: mov, color: StudioExportColor.Preserve },
+      ),
+    ).toEqual({
+      supported: false,
+      refusal: 'incompatible-color',
+    });
+  });
+
   it('refuses in the order the server does: worker, memory, encoder, colour', () => {
     const lan = MediaOperationDestination.Lan;
     expect(evaluateStudioRender([], lan, settings)).toEqual({ supported: false, refusal: 'no-qualified-worker' });

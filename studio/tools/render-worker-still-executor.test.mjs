@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { stillRecipe, renderStillImage } from './render-worker-still-executor.mjs';
+import { stillRecipe, renderStillImage, probeStillOutput } from './render-worker-still-executor.mjs';
 const claim = () => ({
   settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
   snapshot: {
@@ -37,6 +42,8 @@ test('fresh one-still recipe applies stricter server ceilings and fixed measured
   assert.equal(recipe.maxMs, 30000);
   assert.equal(recipe.maxBytes, 1048576);
   assert.equal(recipe.settings.codec, 'avc');
+  assert.equal(createHash('sha256').update(JSON.stringify({ recipe: 'single-still-sdr-v1', settings: recipe.settings })).digest('hex'),
+    '95146e1c29cb2febb4fb2673c591e92d4d9c9e899b5e2835ce1e0953d5d145a9');
 });
 test('quality presets reach the encoder, preserve the legacy default and refuse invalid presets', () => {
   assert.equal(stillRecipe(claim()).settings.quality, 'high');
@@ -54,6 +61,37 @@ test('quality presets reach the encoder, preserve the legacy default and refuse 
     const input = claim();
     input.settings.quality = quality;
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_EXPORT_QUALITY/);
+  }
+});
+test('MOV selection reaches the native AVC/QuickTime recipe without widening graph support', () => {
+  const input = claim();
+  input.settings.format = 'mov-h264';
+  input.settings.subtitleMode = 'off';
+  const recipe = stillRecipe(input);
+  assert.equal(recipe.settings.container, 'mov');
+  assert.equal(recipe.settings.codec, 'avc');
+  assert.equal(recipe.settings.subtitleMode, 'off');
+  assert.equal(stillRecipe(claim()).settings.container, 'mp4');
+  input.snapshot.studio.graph.timeline.items[0].type = 'video';
+  assert.throws(() => stillRecipe(input), /UNSUPPORTED_STILL/);
+});
+test('actual H264 files prove the selected container, not the shared ffprobe name or file suffix', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'still-containers-'));
+  try {
+    // Software-encoded specimens check the output verifier, not production GPU qualification.
+    for (const container of ['mp4', 'mov']) {
+      const file = path.join(folder, `${container}.artifact`);
+      execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=1280x720:r=24',
+        '-frames:v', '8', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+        '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
+        '-bsf:v', 'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0',
+        '-video_track_timescale', '24', '-f', container, file], { timeout: 10_000, stdio: 'pipe' });
+      assert.equal(probeStillOutput(file, 8, 'ffprobe', container).streams[0].codec_name, 'h264');
+      assert.throws(() => probeStillOutput(file, 8, 'ffprobe', container === 'mov' ? 'mp4' : 'mov'),
+        /CONTAINER_MISMATCH/);
+    }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
   }
 });
 test('native subtitle modes preserve legacy settings, reject unsupported modes and keep caption graphs refused', () => {

@@ -1061,6 +1061,7 @@ describe(MlDestinationService.name, () => {
         ]);
         for (const [codec, container, outputFormat] of [
           ['webcodecs-avc', 'mp4', 'mp4-h264'],
+          ['webcodecs-avc', 'mov', 'mov-h264'],
           ['hevc_nvenc', 'mp4', 'mp4-hevc-main10'],
           ['libaom-av1', 'webm', 'webm-av1'],
           ['prores_ks', 'mov', 'prores-422-hq'],

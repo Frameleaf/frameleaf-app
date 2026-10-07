@@ -533,6 +533,26 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('admits MOV/H264 only with MOV writer proof and persists the selected format', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      mockRenderSessions([liveSession({ codecs: ['webcodecs-avc'], formats: ['mov'] })]);
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+      const request = StudioExportCreateDto.schema.parse({ ...(dto as object), format: 'mov-h264' });
+      await sut.create(auth(), PROJECT, request);
+      const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+      expect(job.settings).toMatchObject({ format: 'mov-h264' });
+      expect(version.settings).toEqual(job.settings);
+      repository.createWithRender.mockClear();
+      mockRenderSessions([liveSession({ codecs: ['webcodecs-avc'], formats: ['mp4'] })]);
+      await expect(sut.create(auth(), PROJECT, request)).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('validates quality at admission and keeps the chosen preset in both durable records', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       repository.createWithRender.mockResolvedValue({
@@ -1312,6 +1332,55 @@ describe(StudioExportService.name, () => {
         video: { minBitDepth: 10, transfer: null },
         audio: { policy: 'preserve', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
       };
+      it.each([
+        ['qt  ', 'video/quicktime', true],
+        ['isom', 'video/quicktime', false],
+        ['qt  ', 'video/mp4', false],
+      ])(
+        'publishes MOV only with independently read QuickTime bytes and matching result MIME: %s/%s',
+        async (brand, contentType, accepted) => {
+          repository.getById.mockResolvedValue(
+            versionRow({
+              settings: { format: 'mov-h264', color: 'preserve', resolution: '720p' },
+              outputPath: staged,
+              outputContentType: contentType,
+            }),
+          );
+          const header = Buffer.alloc(64);
+          header.writeUInt32BE(20, 0);
+          header.write('ftyp', 4);
+          header.write(brand, 8);
+          Object.assign(storage, { readFile: vi.fn().mockResolvedValue(header) });
+          repository.publish.mockResolvedValue(published());
+          media.probe.mockResolvedValue({
+            videoStreams: [
+              {
+                codecName: 'h264',
+                pixelFormat: 'yuv420p',
+                colorTransfer: null,
+              },
+            ],
+            audioStreams: [],
+          } as never);
+          await sut.run(contracted({ video: { minBitDepth: 8, transfer: null }, audio: null }));
+          if (accepted) {
+            expect(repository.publish).toHaveBeenCalled();
+            expect(storage.rename).toHaveBeenCalledWith(staged, expect.stringContaining('.mov'));
+            expect(operations.fail).not.toHaveBeenCalled();
+          } else {
+            expect(repository.publish).not.toHaveBeenCalled();
+            expect(storage.rename).not.toHaveBeenCalled();
+            expect(operations.fail).toHaveBeenCalledWith(
+              PUBLISH,
+              'claim-p',
+              expect.objectContaining({
+                errorCode: 'studio_export_output_rejected',
+                error: expect.stringMatching(/QuickTime/),
+              }),
+            );
+          }
+        },
+      );
       const surroundTrack = {
         index: 1,
         codecName: 'eac3',

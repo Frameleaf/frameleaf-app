@@ -57,7 +57,7 @@ export const STUDIO_EXPORT_CONTENT_TYPES: Readonly<Record<string, { extension: s
 export const isStudioExportContentType = (value: string): boolean => Object.hasOwn(STUDIO_EXPORT_CONTENT_TYPES, value);
 
 /** Export formats, colour handling and resolutions offered by the Studio export dialog. */
-export const STUDIO_EXPORT_FORMATS = ['mp4-hevc-main10', 'mp4-h264', 'webm-av1', 'prores-422-hq'] as const;
+export const STUDIO_EXPORT_FORMATS = ['mp4-hevc-main10', 'mp4-h264', 'mov-h264', 'webm-av1', 'prores-422-hq'] as const;
 export const STUDIO_EXPORT_COLORS = ['preserve', 'hdr10', 'dolby-vision'] as const;
 export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p'] as const;
 export const STUDIO_EXPORT_QUALITIES = ['low', 'medium', 'high', 'ultra'] as const;

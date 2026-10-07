@@ -9273,6 +9273,7 @@
   "frameleaf_studio_export_format_av1": "WebM · AV1",
   "frameleaf_studio_export_format_h264": "MP4 · H.264",
   "frameleaf_studio_export_format_hevc": "MP4 · H.265 Main10",
+  "frameleaf_studio_export_format_mov_h264": "MOV · H.264",
   "frameleaf_studio_export_format_prores": "ProRes 422 HQ",
   "frameleaf_studio_export_mastering_hint": "Enter the limits of your mastering display for PQ video. SDR and HLG do not use this profile.",
   "frameleaf_studio_export_mastering_invalid": "Enter a maximum above the minimum, up to 10,000 nits, and a minimum of at least zero. Use no more than four decimal places.",

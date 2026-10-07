@@ -1981,6 +1981,22 @@ describe(RenderWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('stages the selected QuickTime output through the existing verified-artifact completion', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...validating, settings: { format: 'mov-h264' } } as never);
+      const result = await sut.complete(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        artifactSequence: 0,
+      } as never);
+      expect(result.accepted).toBe(true);
+      expect(studioExports.onRenderCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: validating.id }),
+        workerA.id,
+        expect.objectContaining({ path: output.path, contentType: 'video/quicktime' }),
+        true,
+      );
+    });
+
     it('stages the output for publication and completes the render without a result asset', async () => {
       const result = await sut.complete(SESSION_A, validating.id, {
         claimToken: 'claim-1',

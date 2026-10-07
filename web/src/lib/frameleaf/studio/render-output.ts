@@ -41,6 +41,7 @@ const MEMORY_BY_RESOLUTION: Readonly<Record<StudioExportResolution, number>> = {
 const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.Mp4HevcMain10]: 10,
   [StudioExportFormat.Mp4H264]: 8,
+  [StudioExportFormat.MovH264]: 8,
   [StudioExportFormat.WebmAv1]: 10,
   [StudioExportFormat.Prores422Hq]: 10,
 };

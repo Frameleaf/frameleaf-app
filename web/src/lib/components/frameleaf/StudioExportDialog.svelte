@@ -79,6 +79,7 @@
   const formats: { value: StudioExportFormat; label: Translations }[] = [
     { value: StudioExportFormat.Mp4HevcMain10, label: 'frameleaf_studio_export_format_hevc' },
     { value: StudioExportFormat.Mp4H264, label: 'frameleaf_studio_export_format_h264' },
+    { value: StudioExportFormat.MovH264, label: 'frameleaf_studio_export_format_mov_h264' },
     { value: StudioExportFormat.WebmAv1, label: 'frameleaf_studio_export_format_av1' },
     { value: StudioExportFormat.Prores422Hq, label: 'frameleaf_studio_export_format_prores' },
   ];

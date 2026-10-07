@@ -20,7 +20,8 @@ const only = (object, keys) =>
 
 /** An explicit first recipe, not general Studio/FL-107 capability admission. */
 export function stillRecipe(claim) {
-  const { quality = 'high', range, subtitleMode, ...settings } = claim.settings ?? {};
+  const { format, quality = 'high', range, subtitleMode, ...settings } = claim.settings ?? {};
+  assert.ok(format === 'mp4-h264' || format === 'mov-h264', 'UNSUPPORTED_EXPORT_SETTINGS');
   // Same four bitrate presets as the pinned engine's headless render core.
   const bitrates = { low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 };
   assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
@@ -28,7 +29,7 @@ export function stillRecipe(claim) {
     'UNSUPPORTED_SUBTITLE_MODE');
   assert.deepEqual(
     settings,
-    { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
+    { color: 'preserve', resolution: '720p', audio: 'preserve' },
     'UNSUPPORTED_EXPORT_SETTINGS',
   );
   assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
@@ -102,7 +103,7 @@ export function stillRecipe(claim) {
     settings: {
       mode: 'video',
       codec: 'avc',
-      container: 'mp4',
+      container: format === 'mov-h264' ? 'mov' : 'mp4',
       audioCodec: 'aac',
       quality,
       ...(subtitleMode !== undefined && { subtitleMode }),
@@ -114,7 +115,7 @@ export function stillRecipe(claim) {
   };
 }
 
-export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
+export function probeStillOutput(file, frames, ffprobe = 'ffprobe', container = 'mp4') {
   const result = JSON.parse(
     execFileSync(
       ffprobe,
@@ -145,7 +146,11 @@ export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
     video.time_base === '1/24' && video.start_pts === 0 && video.duration_ts === frames,
     'OUTPUT_TIMING_MISMATCH',
   );
-  assert.ok(result.format.format_name.split(',').includes('mp4'), 'CONTAINER_MISMATCH');
+  const brand = result.format.tags?.major_brand;
+  assert.ok((container === 'mov' || container === 'mp4') &&
+    result.format.format_name.split(',').includes(container) &&
+    (container === 'mov' ? brand === 'qt  ' : /^(?:isom|iso[2-9]|mp4[12]|avc1)$/.test(brand)),
+    'CONTAINER_MISMATCH');
   return result;
 }
 
@@ -310,7 +315,7 @@ export async function renderStillImage(context, consume) {
         inPoint: recipe.range?.inPoint ?? null,
         outPoint: recipe.range?.outPoint ?? null,
         missing: [],
-        outPath: path.join(folder, 'output.mp4'),
+        outPath: path.join(folder, `output.${recipe.settings.container}`),
         strict: true,
       },
       { onWarn: () => {}, downloadTimeoutMs: recipe.maxMs },
@@ -322,12 +327,13 @@ export async function renderStillImage(context, consume) {
     assert.equal(result.ok, true, 'RENDER_REFUSED');
     assert.equal(result.warnings.length, 0, 'RENDER_WARNING_REFUSED');
     assert.equal(result.effectiveSettings.codec, 'avc', 'CODEC_FALLBACK_REFUSED');
+    assert.equal(result.effectiveSettings.container, recipe.settings.container, 'CONTAINER_FALLBACK_REFUSED');
     assert.equal(result.effectiveSettings.quality, recipe.settings.quality, 'QUALITY_CHANGED');
     assert.equal(result.effectiveSettings.subtitleMode, recipe.settings.subtitleMode, 'SUBTITLE_MODE_CHANGED');
     assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
     const file = await stat(result.outputPath);
     assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
-    const probe = probeStillOutput(result.outputPath, recipe.frames);
+    const probe = probeStillOutput(result.outputPath, recipe.frames, 'ffprobe', recipe.settings.container);
     const bytes = await readFile(result.outputPath);
     const checksum = digest(bytes);
     bytes.fill(0);

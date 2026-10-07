@@ -29319,6 +29319,7 @@ export enum MemoryShowLessKind {
 export enum StudioExportFormat {
     Mp4HevcMain10 = "mp4-hevc-main10",
     Mp4H264 = "mp4-h264",
+    MovH264 = "mov-h264",
     WebmAv1 = "webm-av1",
     Prores422Hq = "prores-422-hq"
 }

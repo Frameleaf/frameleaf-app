@@ -297,6 +297,33 @@ describe('Studio export dialog', () => {
     });
   });
 
+  it('reaches MOV/H264 at 720p only from the candidate that proved that container', async () => {
+    const onExport = vi.fn();
+    const [candidate] = evidence().candidates!;
+    const mov = StudioExportFormat.MovH264;
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      onExport,
+      renderEvidence: [
+        evidence({
+          candidates: [
+            { ...candidate, outputFormats: [mov], gpuMemoryBytes: 2 * 1024 ** 3, maxBitDepth: 8, hdr10: false },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByRole('option', { name: 'frameleaf_studio_export_format_mov_h264' })).not.toBeDisabled();
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), { target: { value: mov } });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+      target: { value: StudioExportResolution.$720P },
+    });
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: mov, subtitleMode: StudioExportSubtitleMode.Burn }),
+    );
+  });
+
   it('refuses every export when no qualified render worker is online', () => {
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', onExport: vi.fn() });
     expect(screen.getByText('frameleaf_studio_render_refusal_no_qualified_worker')).toBeInTheDocument();

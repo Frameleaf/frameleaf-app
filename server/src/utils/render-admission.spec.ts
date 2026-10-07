@@ -282,6 +282,31 @@ describe(evaluateClaimAdmission.name, () => {
       ).toEqual({ admitted: true });
     });
 
+    it('requires MOV and the AVC writer together at submission and claim', () => {
+      for (const [codecs, formats, supported] of [
+        [['webcodecs-avc'], ['mov'], true],
+        [['webcodecs-avc'], ['mp4'], false],
+        [['h264_cuvid'], ['mov'], false],
+      ] as const) {
+        const capabilities = { codecs: [...codecs], formats: [...formats] };
+        expect(
+          evaluateRenderOutput(
+            [
+              {
+                ...capabilities,
+                gpuMemoryBytes: 2 * 1024 ** 3,
+                colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false },
+              },
+            ],
+            { format: 'mov-h264', color: 'preserve', resolution: '720p' },
+          ).supported,
+        ).toBe(supported);
+        expect(
+          evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: exporting('mov-h264') })).admitted,
+        ).toBe(supported);
+      }
+    });
+
     it('refuses an encoder or a container the session did not verify, and an unknown format', () => {
       for (const format of ['webm-av1', 'prores-422-hq', 'gif-89a']) {
         expect(

@@ -110,6 +110,7 @@ import {
   studioExportProjectPath,
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
+import { sniffStudioImport } from 'src/utils/studio-imports.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
@@ -1112,6 +1113,15 @@ export class StudioExportService {
       range?: StudioExportRange;
       mastering?: StudioExportMastering;
     };
+    if (settings.format === 'mov-h264') {
+      const contentType = await this.storage
+        .readFile(path, { buffer: Buffer.alloc(64), position: 0 })
+        .then((head) => sniffStudioImport(head, undefined).contentType)
+        .catch(() => null);
+      if (contentType !== 'video/quicktime' || version.outputContentType !== 'video/quicktime') {
+        throw new StudioExportRefusal('output-rejected', 'The selected MOV export is not a QuickTime result');
+      }
+    }
     const range = contract?.range;
     if (
       (settings.range || range) &&
