@@ -122,7 +122,7 @@ index 68a8494..a800ddf 100644
      std::unique_ptr<uhdr_raw_image_ext_t> dst = nullptr;
      const uint16_t* coeffs_ptr = nullptr;
 diff --git a/lib/src/heifultrahdr.cpp b/lib/src/heifultrahdr.cpp
-index b6480c6..e5bf54b 100644
+index b6480c6..d6275cd 100644
 --- a/lib/src/heifultrahdr.cpp
 +++ b/lib/src/heifultrahdr.cpp
 @@ -18,10 +18,14 @@
@@ -140,7 +140,7 @@ index b6480c6..e5bf54b 100644
  
  #define UHDR_CG_BT_601 static_cast<uhdr_color_gamut_t>(3)
  
-@@ -553,12 +557,137 @@ CleanUp:
+@@ -553,12 +557,138 @@ CleanUp:
    return status;
  }
  
@@ -157,7 +157,8 @@ index b6480c6..e5bf54b 100644
 +
 +bool getHeifBaseIccGamut(heif_image_handle* handle, uhdr_color_gamut_t& gamut) {
 +  const size_t size = heif_image_handle_get_raw_color_profile_size(handle);
-+  if (heif_image_handle_is_premultiplied_alpha(handle) || heif_image_handle_get_luma_bits_per_pixel(handle) != 8)
++  const int bits = heif_image_handle_get_luma_bits_per_pixel(handle);
++  if (heif_image_handle_is_premultiplied_alpha(handle) || bits < 8 || bits > 16)
 +    return false;
 +  if (size == 0) {
 +    heif_color_profile_nclx* raw = nullptr;
@@ -279,7 +280,7 @@ index b6480c6..e5bf54b 100644
    uhdr_error_info_t status = g_no_error;
    struct heif_image_handle* base_handle = nullptr;
    struct heif_image* sdr_image = nullptr;
-@@ -590,6 +719,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -590,6 +720,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
      snprintf(status.detail, sizeof status.detail, "failed to allocate heif context");
      return status;
    }
@@ -287,7 +288,7 @@ index b6480c6..e5bf54b 100644
    HEIF_ERR_CHECK(heif_context_read_from_memory_without_copy(
        ctx, static_cast<const uint8_t*>(uhdr_compressed_img->data), uhdr_compressed_img->data_sz,
        nullptr))
-@@ -598,7 +728,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -598,7 +729,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
    out_colorspace = heif_colorspace_RGB;
    out_chroma = heif_chroma_interleaved_RGBA;
    HEIF_ERR_CHECK(
@@ -296,10 +297,12 @@ index b6480c6..e5bf54b 100644
    nclx_err = heif_image_handle_get_nclx_color_profile(base_handle, &nclx);
    if (nclx_err.code != heif_error_Ok) {
      nclx_err = heif_image_get_nclx_color_profile(sdr_image, &nclx);
-@@ -615,15 +745,39 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -615,19 +746,68 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
    sdr_range = (nclx_err.code == heif_error_Ok && nclx != nullptr)
                    ? (nclx->full_range_flag ? UHDR_CR_FULL_RANGE : UHDR_CR_LIMITED_RANGE)
                    : UHDR_CR_FULL_RANGE;
+-  sdr_intent = std::make_unique<uhdr_raw_image_ext_t>(
+-      fmt, sdr_cg, sdr_ct, sdr_range, sdr_width, sdr_height, 64);
 +  // ICC describes RGB color; NCLX may specify only the YCbCr matrix.
 +  if (!getHeifBaseIccGamut(base_handle, sdr_cg)) {
 +    status.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
@@ -308,8 +311,6 @@ index b6480c6..e5bf54b 100644
 +    goto CleanUp;
 +  }
 +  if (heif_image_handle_get_raw_color_profile_size(base_handle)) sdr_ct = UHDR_CT_SRGB;
-   sdr_intent = std::make_unique<uhdr_raw_image_ext_t>(
-       fmt, sdr_cg, sdr_ct, sdr_range, sdr_width, sdr_height, 64);
    if (nclx) {
      heif_nclx_color_profile_free(nclx);
      nclx = nullptr;
@@ -319,35 +320,83 @@ index b6480c6..e5bf54b 100644
 -                                sdr_intent->stride[UHDR_PLANE_PACKED] * 4, 4))
 +  {
 +    const heif_channel channels[] = {heif_channel_R, heif_channel_G, heif_channel_B};
-+    int strides[3]; const uint8_t* planes[3];
++    int strides[3], depths[3]; const uint8_t* planes[3];
++    int max_depth = 8;
 +    for (int c = 0; c < 3; ++c) {
 +      planes[c] = heif_image_get_plane_readonly(sdr_image, channels[c], &strides[c]);
-+      if (!planes[c] || heif_image_get_bits_per_pixel_range(sdr_image, channels[c]) != 8) {
++      depths[c] = heif_image_get_bits_per_pixel_range(sdr_image, channels[c]);
++      if (!planes[c] || depths[c] < 8 || depths[c] > 16
++          || strides[c] < sdr_width * (depths[c] > 8 ? 2 : 1)) {
 +        status.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
 +        status.has_detail = 1;
-+        snprintf(status.detail, sizeof status.detail, "ISO gain-map base requires 8-bit RGB");
++        snprintf(status.detail, sizeof status.detail, "Invalid ISO gain-map RGB plane");
 +        goto CleanUp;
 +      }
++      max_depth = std::max(max_depth, depths[c]);
 +    }
-+    auto* pixels = static_cast<uint8_t*>(sdr_intent->planes[UHDR_PLANE_PACKED]);
++    // Only an explicitly requested SDR output is quantized to 8 bits.
++    fmt = max_depth == 8 || output_ct == UHDR_CT_SRGB ? UHDR_IMG_FMT_32bppRGBA8888
++        : max_depth <= 10 ? UHDR_IMG_FMT_32bppRGBA1010102 : UHDR_IMG_FMT_64bppRGBAHalfFloat;
++    sdr_intent = std::make_unique<uhdr_raw_image_ext_t>(
++        fmt, sdr_cg, sdr_ct, sdr_range, sdr_width, sdr_height, 64);
 +    for (int y = 0; y < sdr_height; ++y) for (int x = 0; x < sdr_width; ++x) {
-+      auto* pixel = pixels + (y * sdr_intent->stride[UHDR_PLANE_PACKED] + x) * 4;
-+      for (int c = 0; c < 3; ++c) pixel[c] = planes[c][y * strides[c] + x];
-+      pixel[3] = 255;
++      float rgb[3];
++      for (int c = 0; c < 3; ++c) {
++        uint16_t value = planes[c][y * strides[c] + x];
++        if (depths[c] > 8) memcpy(&value, planes[c] + y * strides[c] + x * 2, sizeof(value));
++        const uint32_t maximum = (1U << depths[c]) - 1;
++        if (value > maximum) { status.error_code = UHDR_CODEC_ERROR; goto CleanUp; }
++        rgb[c] = float(value) / maximum;
++      }
++      const size_t pixel = y * sdr_intent->stride[UHDR_PLANE_PACKED] + x;
++      if (fmt == UHDR_IMG_FMT_32bppRGBA8888) {
++        auto* dst = static_cast<uint8_t*>(sdr_intent->planes[UHDR_PLANE_PACKED]) + pixel * 4;
++        for (int c = 0; c < 3; ++c) dst[c] = uint8_t(rgb[c] * 255 + 0.5f);
++        dst[3] = 255;
++      } else if (fmt == UHDR_IMG_FMT_32bppRGBA1010102) {
++        static_cast<uint32_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[pixel] =
++            uint32_t(rgb[0] * 1023 + 0.5f) | (uint32_t(rgb[1] * 1023 + 0.5f) << 10)
++            | (uint32_t(rgb[2] * 1023 + 0.5f) << 20) | 0xc0000000U;
++      } else {
++        auto* dst = static_cast<uint16_t*>(sdr_intent->planes[UHDR_PLANE_PACKED]) + pixel * 4;
++        for (int c = 0; c < 3; ++c) dst[c] = floatToHalf(rgb[c]);
++        dst[3] = floatToHalf(1.0f);
++      }
 +    }
 +  }
    if (gainmap_metadata != nullptr || output_ct != UHDR_CT_SRGB) {
      HEIF_ERR_CHECK(heif_image_handle_get_gain_map_image_handle(base_handle, &gainmap_handle))
      status = heif_get_gainmap_metadata(base_handle, &metadata);
-@@ -646,6 +800,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+-    if (status.error_code != UHDR_CODEC_OK) return status;
++    if (status.error_code != UHDR_CODEC_OK) goto CleanUp;
+     if (gainmap_metadata != nullptr) {
+       std::copy(metadata.min_content_boost, metadata.min_content_boost + 3,
+                 gainmap_metadata->min_content_boost);
+@@ -646,27 +826,25 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
        out_colorspace = heif_colorspace_RGB;
        out_chroma = heif_chroma_interleaved_RGBA;
      }
 +    decoding_options->ignore_transformations = true;
      heif_error decode_err = heif_decode_image(gainmap_handle, &gainmap_image, out_colorspace,
                                                out_chroma, decoding_options);
-     if (decode_err.code != heif_error_Ok && out_colorspace == heif_colorspace_monochrome) {
-@@ -665,8 +820,8 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+-    if (decode_err.code != heif_error_Ok && out_colorspace == heif_colorspace_monochrome) {
++    if (decode_err.code == heif_error_Unsupported_feature &&
++        decode_err.subcode != heif_suberror_Security_limit_exceeded &&
++        out_colorspace == heif_colorspace_monochrome) {
+       out_colorspace = heif_colorspace_RGB;
+       out_chroma = heif_chroma_interleaved_RGBA;
+       decode_err = heif_decode_image(gainmap_handle, &gainmap_image, out_colorspace, out_chroma,
+                                      decoding_options);
+     }
+-    if (decode_err.code != heif_error_Ok) {
+-      status.error_code = UHDR_CODEC_ERROR;
+-      status.has_detail = 1;
+-      snprintf(status.detail, sizeof status.detail, "%s", decode_err.message);
+-      goto CleanUp;
+-    }
++    HEIF_ERR_CHECK(decode_err)
+     nclx_err = heif_image_handle_get_nclx_color_profile(gainmap_handle, &nclx);
+     if (nclx_err.code != heif_error_Ok) {
        nclx_err = heif_image_get_nclx_color_profile(gainmap_image, &nclx);
      }
      HEIF_ERR_CHECK(map_heif_chroma_vars_to_fmt(out_colorspace, out_chroma, fmt))
@@ -358,7 +407,7 @@ index b6480c6..e5bf54b 100644
      gm_cg = (nclx_err.code == heif_error_Ok && nclx != nullptr)
                  ? map_matrix_inverse(nclx->matrix_coefficients)
                  : UHDR_CG_BT_709;
-@@ -691,6 +846,24 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -691,6 +869,24 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
                                      gainmap->planes[UHDR_PLANE_PACKED], gainmap_width,
                                      gainmap_height, gainmap->stride[UHDR_PLANE_PACKED] * 4, 4))
      }
@@ -383,7 +432,7 @@ index b6480c6..e5bf54b 100644
      if (gainmap_img != nullptr) {
        status = copy_raw_image(gainmap.get(), gainmap_img);
        if (status.error_code != UHDR_CODEC_OK) goto CleanUp;
-@@ -715,6 +888,33 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -715,6 +911,33 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
    } else {
      status = copy_raw_image(sdr_intent.get(), dest);
    }
@@ -417,6 +466,41 @@ index b6480c6..e5bf54b 100644
  
  CleanUp:
    if (decoding_options) heif_decoding_options_free(decoding_options);
+diff --git a/lib/src/jpegr.cpp b/lib/src/jpegr.cpp
+index aeae7bd..3415fa4 100644
+--- a/lib/src/jpegr.cpp
++++ b/lib/src/jpegr.cpp
+@@ -1587,15 +1587,13 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+       sdr_intent->fmt != UHDR_IMG_FMT_16bppYCbCr422 &&
+       sdr_intent->fmt != UHDR_IMG_FMT_12bppYCbCr420 &&
+       sdr_intent->fmt != UHDR_IMG_FMT_24bppRGB888 &&
+-      sdr_intent->fmt != UHDR_IMG_FMT_32bppRGBA8888) {
++      sdr_intent->fmt != UHDR_IMG_FMT_32bppRGBA8888 &&
++      sdr_intent->fmt != UHDR_IMG_FMT_32bppRGBA1010102 &&
++      sdr_intent->fmt != UHDR_IMG_FMT_64bppRGBAHalfFloat) {
+     uhdr_error_info_t status;
+     status.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
+     status.has_detail = 1;
+-    snprintf(status.detail, sizeof status.detail,
+-             "apply gainmap method expects base image color format to be one of "
+-             "{UHDR_IMG_FMT_24bppYCbCr444, UHDR_IMG_FMT_16bppYCbCr422, "
+-             "UHDR_IMG_FMT_12bppYCbCr420, UHDR_IMG_FMT_24bppRGB888, UHDR_IMG_FMT_32bppRGBA8888}. "
+-             "Received %d",
++    snprintf(status.detail, sizeof status.detail, "Unsupported gain-map base pixel format %d",
+              sdr_intent->fmt);
+     return status;
+   }
+@@ -1724,7 +1722,9 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+           }
+           // We are assuming the SDR base image is always sRGB transfer.
+ #if USE_SRGB_INVOETF_LUT
+-          Color rgb_sdr = srgbInvOetfLUT(rgb_gamma_sdr);
++          Color rgb_sdr = sdr_intent->fmt == UHDR_IMG_FMT_32bppRGBA1010102 ||
++              sdr_intent->fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat
++                  ? srgbInvOetf(rgb_gamma_sdr) : srgbInvOetfLUT(rgb_gamma_sdr);
+ #else
+           Color rgb_sdr = srgbInvOetf(rgb_gamma_sdr);
+ #endif
 diff --git a/lib/src/ultrahdr_api.cpp b/lib/src/ultrahdr_api.cpp
 index 2fd0062..058e24b 100644
 --- a/lib/src/ultrahdr_api.cpp

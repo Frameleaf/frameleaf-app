@@ -225,7 +225,7 @@ until real-media and physical-display acceptance pass. An absent field means an
 older server with unknown capabilities. A missing codec reports empty lists,
 without preventing ordinary server feature discovery. Apple gain-map HEIC and ISO
 adaptive HEIF decoding are reported separately when installed. ISO support currently
-requires an SDR base with 8-bit RGB, supported sRGB transfer/profile, and aligned
+requires an SDR base with 8–16-bit RGB, supported sRGB transfer/profile, and aligned
 integral geometry; unsupported reconstruction is refused explicitly. It does not
 claim adaptive HEIF encoding. HDR HEIC export is
 offered only after the installed encoder passes the worker's ten-bit PQ probe.

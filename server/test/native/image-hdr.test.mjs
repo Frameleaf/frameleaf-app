@@ -617,3 +617,41 @@ test(
     }
   },
 );
+
+// A 10-bit primary is reconstructed before any SDR rendition quantization.
+test(
+  'ISO 10-bit reconstruction agrees with the independent linear reference',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  () => {
+    const input = readFileSync(new URL('./fixtures/iso-gain-map-10bit.heic', import.meta.url));
+    const reference = JSON.parse(
+      readFileSync(new URL('./fixtures/iso-gain-map-10bit-reference.json', import.meta.url), 'utf8'),
+    );
+    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
+    const info = codec.inspect(input, ...limits);
+    assert.equal(info.bitDepth, 10);
+    assert.equal(info.reconstructionAvailable, true);
+    const image = codec.decode(input, ...limits);
+    assert.deepEqual([image.width, image.height, image.gamut], [reference.width, reference.height, 2]);
+    const pixels = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+    let maximum = 0,
+      squared = 0,
+      count = 0;
+    for (let row = 0; row < reference.rgb.length; row++)
+      for (let x = 0; x < reference.rgb[row].length; x++)
+        for (let c = 0; c < 3; c++) {
+          const at = (reference.sampleY[row] * image.width + x * reference.sampleStep + reference.sampleOffset) * 4 + c;
+          const error = pixels[at] - reference.rgb[row][x][c];
+          maximum = Math.max(maximum, Math.abs(error));
+          squared += error * error;
+          count++;
+        }
+    assert.ok(maximum < 0.003, `ISO 10-bit reference maximum ${maximum}`);
+    assert.ok(Math.sqrt(squared / count) < 0.001, `ISO 10-bit reference RMS ${Math.sqrt(squared / count)}`);
+    assert.ok(pixels.some((value) => value > 7.9));
+    for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
+      assert.throws(() => operation(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+  },
+);
