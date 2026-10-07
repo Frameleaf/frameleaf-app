@@ -211,7 +211,11 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
   addition stay pinned. Contrast uses dimensionless gain [0, 3] around a fixed
   linear pivot 0.5 (101.5 cd/m² at reference white 203), with straight alpha
   unchanged and signed RGB kept until explicit output. SDR retains its encoded
-  0.5 pivot and clamp. The other 52 enabled effects, 21 transitions and 24
+  0.5 pivot and clamp. Exposure multiplies linear RGB by 2^EV ([-3, 3]), adds
+  offset [-0.5, 0.5] reference-white units (±101.5 cd/m²), then applies artistic
+  sign-preserving power 1/gamma (gamma [0.2, 3]) about unit reference white;
+  alpha stays unchanged. SDR keeps encoded gain/offset, unsigned gamma and clamp.
+  The other 51 enabled effects, 21 transitions and 24
   non-normal blends throw the shared `HdrRenderUnavailableError` until individually migrated and
   measured in this domain. Nested compositions containing a transition refuse
   as a whole. A declined HDR float item also refuses Canvas fallback.
@@ -223,7 +227,7 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
 The effects, blend and transition matrices retain production SDR measurements:
 parameter extremes and meanings, animation, stack order, blend equations,
 transition endpoints/directions and rgba8/float parity. They also observe each
-unmigrated HDR operator's typed refusal. Brightness, contrast and normal HDR blend have
+unmigrated HDR operator's typed refusal. Brightness, contrast, exposure and normal HDR blend have
 positive linear-domain measurements, including signed/highlight and alpha checks.
 The independent photometric equations and signed/gamma/
 highlight discriminators remain historical checks, with a separate current SDR

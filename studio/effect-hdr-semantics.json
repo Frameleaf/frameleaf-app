@@ -98,8 +98,8 @@
     "gpu-exposure": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR multiplies linear RGB by 2^exposure (EV [-3, 3]), adds offset [-0.5, 0.5] in reference-white units ([-101.5, 101.5] cd/m² at 203 cd/m²), then applies sign(x)*abs(x)^(1/gamma), gamma [0.2, 3], about unit reference white. This artistic signed power is not a transfer-function conversion. Signed binary16 RGB limits and straight alpha are retained. SDR keeps encoded gain/offset, unsigned gamma and [0, 1] RGB clamp."
     },
     "gpu-fluted-glass": {
       "sdrParity": true,

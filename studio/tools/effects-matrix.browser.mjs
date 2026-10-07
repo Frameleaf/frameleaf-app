@@ -72,7 +72,7 @@ const photometricSource = {};
 for (const [file, expected] of Object.entries({
   'effects/color.ts': '53e8a9b6c748a9c04bfa02edad3d068e14872c5ff9652912ec42e1d6e8e85d5c',
   'common.ts': 'e8ae09970e48879996b7f64ee6daa9bdd822cb66233ca374adb9ad65a996a349',
-  // Candidate 0068 admits only brightness and decodes SDR ingress before addition.
+  // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
   // Pinned SDR colour/common shader bytes above remain unchanged; review is still required.
   'effects-pipeline.ts': '9356bc5415a881b31555ef27f68ddeadf34588448904362003fc3fe8f83bb2d6',
 })) {
@@ -198,7 +198,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     const effects = [];
     for (const definition of GPU_EFFECT_REGISTRY.values()) {
       const entry = { id: definition.id, category: definition.category, cases: [] };
-      if (definition.id === 'gpu-brightness' || definition.id === 'gpu-contrast') entry.hdr = { cases: [], invalid: [] };
+      if (['gpu-brightness','gpu-contrast','gpu-exposure'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
       for (const { name, params } of cases(definition)) {
         const effect = [instance(definition.id, params)];
         // SDR project: Freecut's reference behaviour on both routes.
@@ -210,7 +210,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         entry.cases.push({ name, again, floatSdr, sdrFloat, sdr });
         if (entry.hdr) {
           pipeline.setWorkingRange('hdr');
-          entry.hdr.cases.push({ name, amount: params.amount, ...await render(inputs.rgba16float, effect) });
+          entry.hdr.cases.push({ name, amount: params.amount, params, ...await render(inputs.rgba16float, effect) });
         }
       }
       pipeline.setWorkingRange('hdr');
@@ -272,20 +272,20 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       entry.stack = { stacked, sequential };
       if (entry.hdr) {
         pipeline.setWorkingRange('hdr');
-        const chain = [instance(definition.id, { amount: definition.id === 'gpu-contrast' ? 1.5 : .125 }, 'a'), instance('gpu-brightness', { amount: definition.id === 'gpu-contrast' ? .125 : -.25 }, 'b')];
+        const chain = [instance(definition.id, definition.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : { amount: definition.id === 'gpu-contrast' ? 1.5 : .125 }, 'a'), instance('gpu-brightness', { amount: definition.id === 'gpu-brightness' ? -.25 : .125 }, 'b')];
         const stacked = await render(inputs.rgba16float, chain);
         const first = await render(inputs.rgba16float, [chain[0]]);
-        if (!first.pixels) throw new Error('linear brightness first pass failed');
+        if (!first.pixels) throw new Error(`linear ${definition.id} first pass failed`);
         const intermediate = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
         device.queue.writeTexture({ texture: intermediate }, new Float16Array(first.pixels), { bytesPerRow: W * 8 }, [W, H]);
-        if (definition.id === 'gpu-contrast') {
+        if (definition.id !== 'gpu-brightness') {
           const limitInput = device.createTexture({ size: [W,H], format: 'rgba16float', usage });
           device.queue.writeTexture({texture:limitInput},new Float16Array(Array.from({length:W*H},(_,i)=>[65504,-65504,.5,i%2 ? .5 : 0]).flat()),{bytesPerRow:W*8},[W,H]);
-          try { entry.hdr.rangeLimit=await render(limitInput,[instance(definition.id,{amount:3})]); }
+          try { entry.hdr.rangeLimit=await render(limitInput,[instance(definition.id,definition.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:3})]); }
           finally { limitInput.destroy(); }
         }
         try { entry.hdr.stack = { stacked, sequential: await render(intermediate, [chain[1]]) };
-          if (definition.id === 'gpu-contrast') entry.hdr.stack.reverse = await render(inputs.rgba16float, [...chain].reverse());
+          if (definition.id !== 'gpu-brightness') entry.hdr.stack.reverse = await render(inputs.rgba16float, [...chain].reverse());
         }
         finally { intermediate.destroy(); pipeline.setWorkingRange('sdr'); }
       }
@@ -321,7 +321,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         entry.invalid.push({ name, touched, got, want });
         if (entry.hdr) {
           pipeline.setWorkingRange('hdr');
-          entry.hdr.invalid.push({ name, amount: meant.amount,
+          entry.hdr.invalid.push({ name, amount: meant.amount, params: meant,
             got: await render(inputs.rgba16float, [instance(definition.id, given)]),
             want: await render(inputs.rgba16float, [instance(definition.id, meant)]) });
           pipeline.setWorkingRange('sdr');
@@ -378,36 +378,45 @@ const rows = (pixels, wanted) => wanted.flatMap((y) => pixels.slice(pixelIndex(0
 let caseCount = 0;
 for (const effect of report.effects) {
   const rule = declared.get(effect.id);
-  if (effect.id === 'gpu-brightness' || effect.id === 'gpu-contrast') {
+  if (['gpu-brightness','gpu-contrast','gpu-exposure'].includes(effect.id)) {
     check(rule.hdr === 'linear-display-bt709-v1', `${effect.id} must declare the measured linear domain`);
     const input = Array.from(new Float16Array(floatInput));
-    const transform = (v, amount) => effect.id === 'gpu-contrast' ? (v-.5)*amount+.5 : v+amount;
-    const expected = amount => input.map((v, i) => i % 4 === 3 ? v : Math.max(-65504, Math.min(65504, transform(v,amount))));
+    const transform = (v, p) => {
+      if (effect.id === 'gpu-exposure') {const x=v*2**p.exposure+p.offset;return Math.sign(x)*Math.abs(x)**(1/p.gamma);}
+      return effect.id === 'gpu-contrast' ? (v-.5)*p.amount+.5 : v+p.amount;
+    };
+    const expected = (params,values=input) => values.map((v, i) => i % 4 === 3 ? v : Math.max(-65504, Math.min(65504, transform(v,params))));
     const pixels = (result, want, label) => {
       check(!result.error && !result.errorType && result.pixels?.length === want.length, `${label}: linear render failed`);
       if (result.pixels) want.forEach((v,i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i]-v) <= photometricTolerance(v,i), `${label}: independent channel ${i}`));
     };
-    check(effect.hdr.cases.length === 3, `${effect.id} requires default/min/max HDR cases`);
-    for (const entry of effect.hdr.cases) pixels(entry, expected(entry.amount), `HDR ${effect.id} ${entry.name}`);
+    check(effect.hdr.cases.length === (effect.id === 'gpu-exposure' ? 7 : 3), `${effect.id} requires default/min/max HDR cases`);
+    if (effect.id === 'gpu-exposure') check(JSON.stringify(effect.hdr.cases.map(e=>e.params)) === JSON.stringify([
+      {exposure:0,offset:0,gamma:1},{exposure:-3,offset:0,gamma:1},{exposure:3,offset:0,gamma:1},
+      {exposure:0,offset:-.5,gamma:1},{exposure:0,offset:.5,gamma:1},{exposure:0,offset:0,gamma:.2},{exposure:0,offset:0,gamma:3},
+    ]),'HDR exposure must retain declared EV/offset/gamma defaults and limits');
+    for (const entry of effect.hdr.cases) pixels(entry, expected(entry.params), `HDR ${effect.id} ${entry.name}`);
     for (const frame of [0,5,10]) {
       const entry = effect.hdr.animation.frames[frame];
-      check(entry.value === (effect.id === 'gpu-contrast' ? [0,1.5,3] : [-1,0,1])[frame/5], `HDR ${effect.id} animation ${frame}: resolver`);
-      pixels(entry, expected(entry.value), `HDR ${effect.id} animation ${frame}`);
+      check(entry.value === (effect.id === 'gpu-exposure' ? [-3,0,3] : effect.id === 'gpu-contrast' ? [0,1.5,3] : [-1,0,1])[frame/5], `HDR ${effect.id} animation ${frame}: resolver`);
+      pixels(entry, expected(effect.id === 'gpu-exposure' ? {exposure:entry.value,offset:0,gamma:1} : {amount:entry.value}), `HDR ${effect.id} animation ${frame}`);
     }
-    const first = Array.from(new Float16Array(expected(effect.id === 'gpu-contrast' ? 1.5 : .125)));
-    const stackWant = first.map((v,i) => i % 4 === 3 ? v : v+(effect.id === 'gpu-contrast' ? .125 : -.25));
+    const firstParams=effect.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : {amount:effect.id === 'gpu-contrast' ? 1.5 : .125};
+    const first = Array.from(new Float16Array(expected(firstParams)));
+    const stackWant = first.map((v,i) => i % 4 === 3 ? v : v+(effect.id === 'gpu-brightness' ? -.25 : .125));
     for (const route of ['stacked','sequential']) pixels(effect.hdr.stack[route],stackWant,`HDR ${effect.id} ${route}`);
-    if (effect.id === 'gpu-contrast') {
+    if (effect.id !== 'gpu-brightness') {
       const lifted = Array.from(new Float16Array(input.map((v,i) => i%4 === 3 ? v : v+.125)));
-      const reverseWant = lifted.map((v,i) => i%4 === 3 ? v : (v-.5)*1.5+.5);
-      pixels(effect.hdr.stack.reverse,reverseWant,'HDR contrast reverse mixed stack');
-      pixels(effect.hdr.rangeLimit,Array.from({length:W*H},(_,i)=>[65504,-65504,.5,i%2 ? .5 : 0]).flat(),'HDR contrast binary16 signed limit and hidden RGB');
+      const reverseWant = expected(firstParams,lifted);
+      pixels(effect.hdr.stack.reverse,reverseWant,`HDR ${effect.id} reverse mixed stack`);
+      const limits=Array.from({length:W*H},(_,i)=>[65504,-65504,.5,i%2 ? .5 : 0]).flat();
+      pixels(effect.hdr.rangeLimit,expected(effect.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:3},limits),`HDR ${effect.id} binary16 signed limit and hidden RGB`);
       check(stackWant.some((v,i) => i%4 !== 3 && Math.abs(v-reverseWant[i])>.05),'mixed HDR stack must discriminate order');
     }
     check(effect.hdr.invalid.length === 4, `${effect.id} requires all HDR invalid-number contracts`);
     for (const entry of effect.hdr.invalid) {
-      pixels(entry.got,expected(entry.amount),`HDR ${effect.id} invalid ${entry.name}`);
-      pixels(entry.want,expected(entry.amount),`HDR ${effect.id} invalid meaning ${entry.name}`);
+      pixels(entry.got,expected(entry.params),`HDR ${effect.id} invalid ${entry.name}`);
+      pixels(entry.want,expected(entry.params),`HDR ${effect.id} invalid meaning ${entry.name}`);
     }
   } else {
     check(rule.hdr === 'refused', `${effect.id}: undeclared HDR admission`);
@@ -482,7 +491,7 @@ assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested i
 Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
 report.observations = domainObservations(report);
 if (process.env.EFFECTS_MATRIX_REPORT) await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
-console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; linear HDR brightness/contrast and remaining typed refusals',
+console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; linear HDR brightness/contrast/exposure and remaining typed refusals',
   browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
   photometric, linearColor, photometricSource,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
