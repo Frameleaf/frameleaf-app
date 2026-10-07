@@ -48,9 +48,9 @@ test('current SDR measurements use pinned clamps and gamma; the historical signe
   assert.throws(() => validatePhotometricResults(wrong, 'srgb-display-bt709'), /channel/);
 });
 
-test('linear HDR admits exactly brightness/contrast/exposure cases and rejects clipping, identity and changed alpha', () => {
+test('linear HDR admits exactly brightness/contrast/exposure/saturation cases and rejects clipping, identity and changed alpha', () => {
   const samples = () => linearColorCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
-  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 6, channels: 768 });
+  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 8, channels: 1024 });
   assert.throws(() => validatePhotometricResults(fixture(), 'linear-display-bt709-v1'), /complete, ordered, unique/);
   for (const mutate of [
     entry => { entry.pixels = [...photometricInput]; },
@@ -73,6 +73,19 @@ test('linear exposure retains EV gain, linear offset, signed gamma and straight 
   ]) {
     const results=samples();mutate(results.find(entry=>entry.id==='gpu-exposure'));
     assert.throws(()=>validatePhotometricResults(results,'linear-display-bt709-v1'),/exposure-lift-gamma: channel/);
+  }
+});
+
+test('linear saturation retains artistic 601 grey weights, signed RGB and straight alpha', () => {
+  for (const mutate of [
+    entry=>{entry.pixels=photometricInput.map((v,i)=>{if(i%4===3)return v;const at=i-i%4;const gray=.2126*photometricInput[at]+.7152*photometricInput[at+1]+.0722*photometricInput[at+2];return gray+(v-gray)*entry.params.amount;});},
+    entry=>{entry.pixels=[...photometricInput];},
+    entry=>{entry.pixels=entry.pixels.map((v,i)=>i%4===3?v:Math.max(0,Math.min(1,v)));},
+    entry=>{entry.pixels[3]=.5;},
+  ]) {
+    const samples=linearColorCases.map(entry=>({...entry,pixels:photometricExpected(entry)}));
+    mutate(samples.find(entry=>entry.id==='gpu-saturation'));
+    assert.throws(()=>validatePhotometricResults(samples,'linear-display-bt709-v1'),/saturation-expand: channel/);
   }
 });
 

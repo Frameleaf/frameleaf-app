@@ -349,7 +349,12 @@
       "path": "patches/0071-linear-hdr-exposure.patch",
       "sha256": "49efc3a2f4146e20611d7164aee8ca365411b6f4bcc734b38e28e797fb3dc813",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0072-linear-hdr-saturation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "759136860afe1eec83a23d7f63a932915ed749509235573fd8ce452694dddb1a"
     }
   ],
-  "sourceSha256": "bfcbf3c96c0475de7974983a12ff7c811a8be2b8c0f472794e3c53cbec282ef6"
+  "sourceSha256": "d502610febd8cfce05471c4f42fc34b1ecdd881f71b13082ea0655d96977f737"
 }

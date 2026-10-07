@@ -31,6 +31,11 @@ export function photometricExpected(entry, unsigned = false) {
       case 'gpu-brightness': return limit(c + p.amount);
       case 'gpu-contrast': return limit((c - 0.5) * p.amount + 0.5);
       case 'gpu-exposure': return limit(power(c * 2 ** p.exposure + p.offset, p.gamma, unsigned));
+      case 'gpu-saturation': {
+        const at=i-i%4;
+        const gray=.299*photometricInput[at]+.587*photometricInput[at+1]+.114*photometricInput[at+2];
+        return limit(gray+(c-gray)*p.amount);
+      }
       case 'gpu-levels': {
         const span = p.inputWhite - p.inputBlack;
         const safeSpan = Math.abs(span) < 1e-4 ? (span >= 0 ? 1e-4 : -1e-4) : span;
@@ -65,7 +70,11 @@ export function photometricSdrExpected(entry) {
 
 // Brightness/contrast are affine; exposure uses EV gain, linear offset and signed gamma.
 // Other historical encoded equations remain ineligible for the linear domain.
-export const linearColorCases = photometricCases.filter(entry => ['gpu-brightness', 'gpu-contrast', 'gpu-exposure'].includes(entry.id));
+export const linearColorCases = [
+  ...photometricCases.filter(entry => ['gpu-brightness', 'gpu-contrast', 'gpu-exposure'].includes(entry.id)),
+  {name:'saturation-expand',id:'gpu-saturation',params:{amount:1.5}},
+  {name:'saturation-contract',id:'gpu-saturation',params:{amount:.5}},
+];
 
 export function validatePhotometricResults(results, domain = 'historical-encoded-hdr') {
   assert(['historical-encoded-hdr', 'srgb-display-bt709', 'linear-display-bt709-v1'].includes(domain), 'unqualified photometric working domain');
@@ -95,6 +104,6 @@ export function validatePhotometricResults(results, domain = 'historical-encoded
       channels++;
     });
   }
-  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 768 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
+  assert.equal(channels, 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
   return { cases: results.length, channels };
 }
