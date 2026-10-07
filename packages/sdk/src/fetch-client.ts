@@ -4341,10 +4341,13 @@ export type AssetDevelopRevisionResponseDto = {
     exportId: string | null;
     /** Name of the imported file, for a version developed elsewhere */
     fileName: string | null;
+    hasHdrMaster?: boolean;
+    hasHdrPreview?: boolean;
     /** True once the edited master file exists */
     hasMaster: boolean;
     /** True once the preview file exists */
     hasPreview: boolean;
+    hdrRenderStatus?: HdrRenderStatus;
     /** Height of the edited master in pixels */
     height: number | null;
     /** Develop revision ID */
@@ -4354,6 +4357,7 @@ export type AssetDevelopRevisionResponseDto = {
     kind: AssetDevelopRevisionKind;
     /** Name given when the version was saved */
     label: string | null;
+    outputDynamicRange?: OutputDynamicRange;
     /** Render progress as a percentage */
     progress: number;
     recipe: AssetDevelopRecipeDto;
@@ -4440,6 +4444,8 @@ export type AssetDevelopSemanticMaskDto = {
     target: Target;
 };
 export type AssetDevelopPreviewDto = {
+    /** Omitted requests retain SDR-compatible previews */
+    dynamicRange?: DynamicRange2;
     recipe: AssetDevelopRecipeDto;
     /** Longest edge of the preview in pixels; the original is never upscaled */
     size?: number;
@@ -14592,6 +14598,66 @@ export type KnownAssetDevelopCrop = {
     /** Top edge of the crop as a fraction of the oriented frame height */
     y: number;
 };
+export type HdrAssetDevelopRecipe = {
+    /** Black point */
+    blacks?: number;
+    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    brilliance?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    cleanup?: AssetDevelopCleanup[];
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: KnownAssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    hdr?: {
+        intent?: Intent;
+        referenceWhite?: ReferenceWhite;
+        sdrToneMapper?: SdrToneMapper;
+        version?: Version3;
+    };
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    renderer?: Renderer2;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    version: Version4;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
 export type KnownAssetDevelopRecipe = {
     /** Black point */
     blacks?: number;
@@ -14638,7 +14704,7 @@ export type KnownAssetDevelopRecipe = {
     /** Magenta (positive) or green (negative) tint */
     tint?: number;
     /** Recipe contract version */
-    version: Version3;
+    version: Version5;
     /** Saturation weighted towards muted colours */
     vibrance?: number;
     /** Darkened (positive) or lightened (negative) edges */
@@ -18463,7 +18529,8 @@ export function revertAssetDevelop({ id, assetDevelopRevertDto }: {
 /**
  * View a rendered develop file
  */
-export function viewAssetDevelopFile({ id, kind, revisionId }: {
+export function viewAssetDevelopFile({ dynamicRange, id, kind, revisionId }: {
+    dynamicRange?: "auto" | "sdr" | "hdr";
     id: string;
     kind?: AssetDevelopFileKind;
     revisionId: string;
@@ -18472,6 +18539,7 @@ export function viewAssetDevelopFile({ id, kind, revisionId }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file${QS.query(QS.explode({
+        dynamicRange,
         kind
     }))}`, {
         ...opts
@@ -28694,9 +28762,21 @@ export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
 }
+export enum HdrRenderStatus {
+    NotRequested = "not-requested",
+    Pending = "pending",
+    Rendered = "rendered",
+    Failed = "failed",
+    Disabled = "disabled"
+}
 export enum AssetDevelopRevisionKind {
     Recipe = "recipe",
     External = "external"
+}
+export enum OutputDynamicRange {
+    Hdr = "hdr",
+    Sdr = "sdr",
+    Unknown = "unknown"
 }
 export enum AssetDevelopPreset {
     Original = "Original",
@@ -28724,6 +28804,11 @@ export enum AssetDevelopArtifactKind {
 export enum Target {
     Subject = "subject",
     Sky = "sky"
+}
+export enum DynamicRange2 {
+    Auto = "auto",
+    Sdr = "sdr",
+    Hdr = "hdr"
 }
 export enum AssetDevelopFileKind {
     Master = "master",
@@ -30863,7 +30948,25 @@ export enum AssetDevelopCleanupMethod {
     Remove = "remove",
     Pixelate = "pixelate"
 }
+export enum Intent {
+    Preserve = "preserve"
+}
+export enum ReferenceWhite {
+    $203 = 203
+}
+export enum SdrToneMapper {
+    Libultrahdr202 = "libultrahdr/2.0.2"
+}
 export enum Version3 {
+    $1 = 1
+}
+export enum Renderer2 {
+    FrameleafDevelopHdr1 = "frameleaf-develop-hdr/1"
+}
+export enum Version4 {
+    $3 = 3
+}
+export enum Version5 {
     $1 = 1
 }
 export enum Status12 {

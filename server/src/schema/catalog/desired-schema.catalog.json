@@ -1183,6 +1183,33 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrMasterPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrPreviewPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "hdrRenditionChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -1315,6 +1342,14 @@
           "columnNames": [
             "id"
           ],
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_hdr_set_check",
+          "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
+          "tableName": "asset_develop_revision",
+          "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
           "synchronize": true
         }
       ],
