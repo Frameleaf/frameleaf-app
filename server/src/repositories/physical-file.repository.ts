@@ -945,7 +945,9 @@ export class PhysicalFileRepository {
         .execute();
     });
   }
-  async getCanonicalGeneratedFile(assetId: string, type: AssetFileType) {
+  async getCanonicalGeneratedFile(assetId: string, type: AssetFileType, renditionIdentity?: string | null) {
+    const hdr = type === AssetFileType.HdrPreview || type === AssetFileType.HdrFullSize;
+    if (hdr && !renditionIdentity) return;
     const physicalType = this.toPhysicalFileType(type);
     return this.db
       .selectFrom('asset as duplicateAsset')
@@ -954,6 +956,13 @@ export class PhysicalFileRepository {
         join
           .onRef('generatedPhysical.canonicalAssetId', '=', 'originalPhysical.canonicalAssetId')
           .on('generatedPhysical.type', '=', physicalType),
+      )
+      .$if(hdr, (query) =>
+        query
+          .innerJoin('asset_file as generatedFile', (join) =>
+            join.onRef('generatedFile.physicalFileId', '=', 'generatedPhysical.id').on('generatedFile.type', '=', type),
+          )
+          .where('generatedFile.renditionIdentity', '=', renditionIdentity!),
       )
       .select(['generatedPhysical.id', 'generatedPhysical.path'])
       .where('duplicateAsset.id', '=', asUuid(assetId))
@@ -1306,7 +1315,7 @@ export class PhysicalFileRepository {
   getGeneratedFile(assetId: string, type: AssetFileType) {
     return this.db
       .selectFrom('asset_file')
-      .select(['id', 'assetId', 'type', 'path', 'physicalFileId'])
+      .select(['id', 'assetId', 'type', 'path', 'physicalFileId', 'renditionIdentity'])
       .where('assetId', '=', asUuid(assetId))
       .where('type', '=', type)
       .where('isEdited', '=', false)
@@ -1315,12 +1324,14 @@ export class PhysicalFileRepository {
   getGeneratedFiles(assetId: string) {
     return this.db
       .selectFrom('asset_file')
-      .select(['id', 'assetId', 'type', 'path', 'physicalFileId'])
+      .select(['id', 'assetId', 'type', 'path', 'physicalFileId', 'renditionIdentity'])
       .where('assetId', '=', asUuid(assetId))
       .where('type', 'in', [
         AssetFileType.Thumbnail,
         AssetFileType.Preview,
         AssetFileType.FullSize,
+        AssetFileType.HdrPreview,
+        AssetFileType.HdrFullSize,
         AssetFileType.EncodedVideo,
       ])
       .where('isEdited', '=', false)
@@ -1330,6 +1341,12 @@ export class PhysicalFileRepository {
     switch (type) {
       case AssetFileType.Thumbnail: {
         return PhysicalFileType.Thumbnail;
+      }
+      case AssetFileType.HdrPreview: {
+        return PhysicalFileType.HdrPreview;
+      }
+      case AssetFileType.HdrFullSize: {
+        return PhysicalFileType.HdrFullSize;
       }
       case AssetFileType.Preview: {
         return PhysicalFileType.Preview;

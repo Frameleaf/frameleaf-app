@@ -363,7 +363,14 @@ export class BuddyBackupCaptureService {
             const types = [
               AssetFileType.Sidecar,
               ...(settings.includeDerived
-                ? [AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail, AssetFileType.EncodedVideo]
+                ? [
+                    AssetFileType.FullSize,
+                    AssetFileType.Preview,
+                    AssetFileType.Thumbnail,
+                    AssetFileType.HdrPreview,
+                    AssetFileType.HdrFullSize,
+                    AssetFileType.EncodedVideo,
+                  ]
                 : []),
             ];
             const required = await sql<{ path: string }>`SELECT "originalPath" AS path FROM public.asset

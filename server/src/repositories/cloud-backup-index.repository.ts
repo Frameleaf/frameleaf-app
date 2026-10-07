@@ -985,7 +985,13 @@ export class CloudBackupIndexRepository {
     const checksumOf = new Map(checksums.rows.map((row) => [row.assetId, row]));
     const types: AssetFileType[] = [AssetFileType.Sidecar];
     if (options.includeThumbs) {
-      types.push(AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail);
+      types.push(
+        AssetFileType.FullSize,
+        AssetFileType.Preview,
+        AssetFileType.Thumbnail,
+        AssetFileType.HdrPreview,
+        AssetFileType.HdrFullSize,
+      );
     }
     if (options.includeEncodedVideo) {
       types.push(AssetFileType.EncodedVideo);

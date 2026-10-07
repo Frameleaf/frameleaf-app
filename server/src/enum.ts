@@ -76,6 +76,8 @@ export enum AssetFileType {
    */
   FullSize = 'fullsize',
   Preview = 'preview',
+  HdrPreview = 'hdr_preview',
+  HdrFullSize = 'hdr_fullsize',
   Thumbnail = 'thumbnail',
   Sidecar = 'sidecar',
   EncodedVideo = 'encoded_video',
@@ -738,6 +740,8 @@ export enum PhysicalFileType {
   Original = 'original',
   Thumbnail = 'thumbnail',
   Preview = 'preview',
+  HdrPreview = 'hdr_preview',
+  HdrFullSize = 'hdr_fullsize',
   FullSize = 'fullsize',
   EncodedVideo = 'encoded_video',
 }

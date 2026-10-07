@@ -416,7 +416,7 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { ownerId, originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const { ownerId, originalPath, originalFileName, path, imageEncoding } = await this.assetRepository.getForThumbnail(
       id,
       size,
       dto.edited ?? false,
@@ -443,6 +443,7 @@ export class AssetMediaService extends BaseService {
         if (!developedPath) {
           throw new NotFoundException('Current developed preview is unavailable');
         }
+        if (dto.dynamicRange === 'hdr') throw new NotFoundException('Current developed HDR rendition is unavailable');
         return new ImmichFileResponse({
           fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
           path: developedPath,
@@ -452,7 +453,38 @@ export class AssetMediaService extends BaseService {
       }
     }
 
-    if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+    const hdrEnabled = process.env.FRAMELEAF_HDR_IMAGES === 'experimental';
+    const hdrSize = size === AssetFileType.Preview || size === AssetFileType.FullSize;
+    if (dto.dynamicRange === 'hdr' && (!hdrSize || dto.faceSource)) {
+      throw new BadRequestException('HDR is available for focused previews and full-size stills only');
+    }
+    if (dto.dynamicRange === 'hdr' && !hdrEnabled) throw new NotFoundException('HDR rendition is unavailable');
+    if (hdrEnabled && hdrSize && !dto.faceSource && (dto.dynamicRange === 'auto' || dto.dynamicRange === 'hdr')) {
+      if (size === AssetFileType.FullSize && !(await this.fullSizeAllowed(via))) {
+        return { targetSize: AssetMediaSize.PREVIEW };
+      }
+      const type = size === AssetFileType.FullSize ? AssetFileType.HdrFullSize : AssetFileType.HdrPreview;
+      const hdr = await this.assetRepository.getForThumbnail(id, type, dto.edited ?? false);
+      if (hdr.path && hdr.renditionIdentity && /^[a-f0-9]{64}$/.test(hdr.renditionIdentity)) {
+        // The worker re-encodes pixels without source EXIF/XMP and validates required HDR metadata.
+        // These are sanitized derivatives, as are ordinary previews; original-file stripping is not needed.
+        const base = auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
+        return new ImmichFileResponse({
+          path: hdr.path,
+          fileName: `${base}_${type}.jpg`,
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      }
+      if (dto.dynamicRange === 'hdr') throw new NotFoundException('HDR rendition is unavailable for this still');
+    }
+
+    if (
+      size === AssetFileType.FullSize &&
+      mimeTypes.isWebSupportedImage(originalPath) &&
+      !dto.edited &&
+      imageEncoding?.dynamicRange === 'sdr'
+    ) {
       // FL-161: through the relay the original is refused unless an administrator allowed it, so the
       // viewer gets the preview instead of a redirect it cannot follow
       if (!(await this.fullSizeAllowed(via))) {

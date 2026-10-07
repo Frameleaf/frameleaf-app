@@ -127,6 +127,24 @@ processing reference in cd/m², never a screen measurement. `fallbackReason` and
 `inspectionStatus` distinguish unsupported reconstruction from failed inspection.
 Existing media requests still return SDR-compatible renditions.
 
+Asset responses may include `imageRenditions` with current-still availability for
+`sdrPreview`, `sdrFullsize`, `hdrPreview`, and `hdrFullsize`. Omission means file
+evidence was not loaded. Source HDR identification alone never enables an HDR
+display or export action. Rendition identities remain server-private.
+
+Focused `thumbnail` requests accept `dynamicRange=auto|sdr|hdr` with `size=preview`
+or `size=fullsize`. Omission retains SDR-compatible delivery. `auto` uses an HDR
+derivative when available, otherwise SDR; explicit `hdr` fails if unavailable.
+Grids, face sources and thumbhash remain SDR. These routes retain existing asset
+authorization, shared-link access, revocation and relay full-size restrictions.
+
+HDR processing and delivery currently require `FRAMELEAF_HDR_IMAGES=experimental`.
+This is a qualification gate, disabled by default. The candidate codec build has
+not passed camera-media or physical-display acceptance. Existing derivatives
+remain registered when the gate is disabled. New HDR and SDR renditions publish
+together through the existing job lease; failed regeneration retains the prior
+set. No original or Live Photo motion is rewritten.
+
 The historical Develop renderer refuses detected HDR rather than silently
 flattening it. Its `develop_hdr_render_unavailable` response retains the original,
 previous working version, and Live Photo motion. Native clients retain their

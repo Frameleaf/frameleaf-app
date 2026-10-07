@@ -134,7 +134,7 @@ export class SharpOperations {
         } finally {
           await file.close();
         }
-        results.push({ path, width: image.width, height: image.height, encoding: metadata });
+        results.push({ path, width: image.width, height: image.height, gamut: image.gamut, encoding: metadata });
         this.progress();
       }
       return results;

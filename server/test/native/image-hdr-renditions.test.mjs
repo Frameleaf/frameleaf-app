@@ -25,7 +25,14 @@ test('worker renditions retain authored SDR, HDR headroom, and the immutable sou
       pixels.set([8, 8, 8, 1], i);
       sdr[i + 3] = 255;
     }
-    const original = codec.encodePaired(Buffer.from(pixels.buffer), 64, 64, 1, ...limits, sdr, 0);
+    const encoded = codec.encodePaired(Buffer.from(pixels.buffer), 64, 64, 1, ...limits, sdr, 0);
+    const xml = Buffer.from(
+      'http://ns.adobe.com/xap/1.0/\0<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:GPSLatitude="49,16.0N" /></rdf:RDF></x:xmpmeta>',
+    );
+    const app1 = Buffer.alloc(4);
+    app1.set([255, 225]);
+    app1.writeUInt16BE(xml.length + 2, 2);
+    const original = Buffer.concat([encoded.subarray(0, 2), app1, xml, encoded.subarray(2)]);
     await writeFile(source, original);
     const result = await generate(source, [{ path: preview, size: 32 }, { path: master }]);
     assert.deepEqual(
@@ -37,7 +44,9 @@ test('worker renditions retain authored SDR, HDR headroom, and the immutable sou
     );
     assert.deepEqual(await readFile(source), original);
     for (const path of [preview, master]) {
-      const paired = codec.decodePaired(await readFile(path), ...limits);
+      const rendition = await readFile(path);
+      assert.equal(rendition.includes(Buffer.from('GPSLatitude')), false);
+      const paired = codec.decodePaired(rendition, ...limits);
       assert.equal(paired.sdrGamut, 0);
       for (let i = 0; i < paired.sdr.length; i++) assert.ok(Math.abs(paired.sdr[i] - (i % 4 === 3 ? 255 : 60)) <= 2);
       const linear = new Float32Array(paired.data.buffer, paired.data.byteOffset, paired.data.length / 4);

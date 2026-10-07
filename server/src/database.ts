@@ -34,6 +34,7 @@ export type AlbumUser = {
 };
 
 export type AssetFile = {
+  renditionIdentity?: string | null;
   id: string;
   type: AssetFileType;
   path: string;
@@ -398,6 +399,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.type',
     'asset_file.physicalFileId',
+    'asset_file.renditionIdentity',
     'asset_file.isEdited',
   ],
   assetFilesForThumbnail: [
@@ -405,6 +407,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.type',
     'asset_file.physicalFileId',
+    'asset_file.renditionIdentity',
     'asset_file.isEdited',
     'asset_file.isProgressive',
     'asset_file.isTransparent',
