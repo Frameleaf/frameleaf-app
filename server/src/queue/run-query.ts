@@ -305,7 +305,10 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
       select s.* from stages s
     ), selected as (
       select "runId", "rootItemKey", ${selectedOutcome} outcome
-      from run_stages where "rootItemKey" is not null group by "runId", "rootItemKey"
+      -- Bytewise sorted grouping bounds spill work when distinct root counts are underestimated.
+      from (select "runId", "rootItemKey" collate "C" "rootItemKey", state, outcome from run_stages
+        where "rootItemKey" is not null order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
+      group by "runId", "rootItemKey"
     ), item_counts as (
       select s."runId", ${counts('s')} totals from selected s group by s."runId"
     ), stage_counts as (
