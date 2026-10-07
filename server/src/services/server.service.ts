@@ -219,6 +219,10 @@ export class ServerService extends BaseService {
         ...(codec.heicDecoder ? ['sdr-heic', 'pq-heic', 'hlg-heic'] : []),
         ...(codec.avifDecoder ? ['sdr-avif', 'pq-avif', 'hlg-avif'] : []),
       ];
+      if (codec.heicDecoder && codec.appleGainMapDecoder) {
+        result.decode.push('apple-gain-map-heic');
+        result.unavailable = result.unavailable.filter((format) => format !== 'apple-gain-map-heic');
+      }
       result.render = ['linear-hdr-develop'];
       result.export = ['sdr-jpeg', 'hdr-jpeg'];
       if (codec.heicPqEncoder) {

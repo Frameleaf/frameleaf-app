@@ -14,6 +14,7 @@ export type HdrCodecCapabilities = {
   libultrahdr: string;
   heicDecoder: boolean;
   avifDecoder: boolean;
+  appleGainMapDecoder?: boolean;
   heicPqEncoder?: boolean;
 };
 type NativeCodec = {

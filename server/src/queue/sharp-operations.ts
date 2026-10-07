@@ -227,7 +227,7 @@ export class SharpOperations {
     if (decodeBudget <= 0) throw new SharpResourceLimitError('HDR artifacts exceed the combined surface budget');
     const authored =
       !develop &&
-      encoding.container === 'jpeg' &&
+      (encoding.container === 'jpeg' || encoding.gainMap === 'apple-legacy') &&
       encoding.gainMap !== 'none' &&
       outputs.some(({ format }) => format !== 'heic');
     let source = imageHdrOperation<LinearHdrImage | PairedHdrImage>((codec) =>
