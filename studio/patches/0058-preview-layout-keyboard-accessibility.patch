@@ -5512,3 +5512,1090 @@ diff --git a/src/features/preview/stores/mask-editor-store.ts b/src/features/pre
 
    requestFinishPenMode: () =>
      set((state) => ({
+diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/features/preview/components/mask-editor-overlay.tsx
+--- a/src/features/preview/components/mask-editor-overlay.tsx
++++ b/src/features/preview/components/mask-editor-overlay.tsx
+@@ -29,6 +29,8 @@
+   screenToCanvas,
+   getEffectiveScale,
+   transformToScreenBounds,
++  getTransformCenter,
++  rotatePoint,
+ } from '../utils/coordinate-transform'
+ import {
+   convertVertexToBezier,
+@@ -41,6 +43,7 @@
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import type { CoordinateParams, Transform } from '../types/gizmo'
+ import type { MaskVertex } from '@/types/masks'
++import { getDirectPropertyLinks, getPropertyExpressions } from '@/types/keyframe'
+ import type { ShapeItem, TimelineTrack } from '@/types/timeline'
+ import type { TransformProperties } from '@/types/transform'
+ import {
+@@ -181,6 +184,9 @@
+ }: MaskEditorOverlayProps) {
+   const canvasRef = useRef<HTMLCanvasElement>(null)
+   const pointSelectorRef = useRef<HTMLSelectElement>(null)
++  const pointCoordinatesRef = useRef<HTMLFormElement>(null)
++  const pointDraftRef = useRef<{ isValid: () => boolean; dispose: () => void } | null>(null)
++  const coordinateContextRef = useRef('')
+   const penControlsRef = useRef<HTMLFormElement>(null)
+   const penProjectSizeRef = useRef(coordParams.projectSize)
+   penProjectSizeRef.current = coordParams.projectSize
+@@ -204,6 +210,22 @@
+   // Edit mode state
+   const isEditing = useMaskEditorStore((s) => s.isEditing)
+   const editingItemId = useMaskEditorStore((s) => s.editingItemId)
++  const editSessionVersion = useMaskEditorStore((s) => s.penSessionVersion)
++  const pointTransformUnsupported = useItemsStore((state) => {
++    const item = state.itemById[editingItemId ?? '']
++    return (
++      !!item?.transformParent ||
++      item?.transform?.anchorX !== undefined ||
++      item?.transform?.anchorY !== undefined
++    )
++  })
++  const pointExpressionUnsupported = useKeyframesStore((state) => {
++    const keys = state.keyframesByItemId[editingItemId ?? '']
++    // ponytail: refuse all enabled expressions/links; narrow to geometry properties when the shared writer supports them.
++    return [...getDirectPropertyLinks(keys), ...getPropertyExpressions(keys)].some(
++      (entry) => entry.enabled,
++    )
++  })
+   const editingPathClosed = useItemsStore(
+     useCallback(
+       (state) => {
+@@ -1654,7 +1676,11 @@
+   // ============================================================
+
+   const commitVertices = useCallback(
+-    (vertices: MaskVertex[], geometryTransform: Transform = itemTransform) => {
++    (
++      vertices: MaskVertex[],
++      geometryTransform: Transform = itemTransform,
++      admit?: () => boolean,
++    ) => {
+       if (!editingItemId) return false
+       const { itemById, tracks } = useItemsStore.getState()
+       const item = itemById[editingItemId]
+@@ -1663,29 +1689,48 @@
+           (track) => track.id === item?.trackId && track.locked,
+         )
+       ) {
+-        scheduleEditCommitCleanup()
++        if (!admit) scheduleEditCommitCleanup()
+         return false
+       }
+       if (item?.type === 'shape' && item.shapeType === 'path') {
+         const currentFrame = usePlaybackStore.getState().currentFrame
+         const directPathPersistence = buildPathGeometryPersistence(item, vertices, currentFrame)
+         if (directPathPersistence.blocked) {
+-          scheduleEditCommitCleanup()
++          if (!admit) scheduleEditCommitCleanup()
+           return false
+         }
+         if (directPathPersistence.pathVertices === undefined) {
+-          setCommittedEditSnapshot({
+-            vertices: cloneVertices(vertices),
+-            transform: geometryTransform,
+-          })
++          if (admit && !admit()) return false
++          if (!admit)
++            setCommittedEditSnapshot({
++              vertices: cloneVertices(vertices),
++              transform: geometryTransform,
++            })
+           commitMaskEdit(editingItemId, {
+             autoKeyframeOperations: directPathPersistence.autoKeyframeOperations,
+           })
+-          scheduleEditCommitCleanup()
++          if (!admit) scheduleEditCommitCleanup()
+           return true
+         }
+
+         const fitted = fitShapePathToBounds(vertices, geometryTransform, item.transform)
++        if (
++          admit &&
++          ![
++            fitted.transform.x,
++            fitted.transform.y,
++            fitted.transform.width,
++            fitted.transform.height,
++          ].every(Number.isFinite)
++        )
++          return false
++        if (
++          admit &&
++          !fitted.pathVertices.every((vertex) =>
++            [...vertex.position, ...vertex.inHandle, ...vertex.outHandle].every(Number.isFinite),
++          )
++        )
++          return false
+         const pathPersistence = buildPathGeometryPersistence(
+           item,
+           fitted.pathVertices,
+@@ -1702,10 +1747,12 @@
+           },
+           currentFrame,
+         )
+-        setCommittedEditSnapshot({
+-          vertices: cloneVertices(fitted.pathVertices),
+-          transform: toOverlayTransform(fitted.transform, geometryTransform),
+-        })
++        if (admit && !admit()) return false
++        if (!admit)
++          setCommittedEditSnapshot({
++            vertices: cloneVertices(fitted.pathVertices),
++            transform: toOverlayTransform(fitted.transform, geometryTransform),
++          })
+         commitMaskEdit(editingItemId, {
+           pathVertices: pathPersistence.pathVertices,
+           transform: baseTransform,
+@@ -1714,7 +1761,7 @@
+             ...pathPersistence.autoKeyframeOperations,
+           ],
+         })
+-        scheduleEditCommitCleanup()
++        if (!admit) scheduleEditCommitCleanup()
+         return true
+       }
+       return false
+@@ -2241,12 +2288,14 @@
+   // Render
+   // ============================================================
+
+-  const nudgeSelectedVertices = (dx: number, dy: number) => {
++  const nudgeSelectedVertices = (dx: number, dy: number, admit?: () => boolean) => {
+     const vertices = getVertices()
+     const { width, height, rotation, flipHorizontal, flipVertical } = effectiveItemTransform
+     if (
+       !vertices ||
+       editDraggingRef.current ||
++      !Number.isFinite(dx) ||
++      !Number.isFinite(dy) ||
+       !Number.isFinite(width) ||
+       width <= 0 ||
+       !Number.isFinite(height) ||
+@@ -2282,16 +2331,214 @@
+         )
+       }
+     }
+-    commitVertices(next, effectiveItemTransform)
++    if (
++      admit &&
++      !next.every((vertex) =>
++        [...vertex.position, ...vertex.inHandle, ...vertex.outHandle].every(Number.isFinite),
++      )
++    )
++      return false
++    return commitVertices(next, effectiveItemTransform, admit)
+   }
+
+-  if (!isEditing) return null
++  coordinateContextRef.current = JSON.stringify([
++    effectiveItemTransform,
++    coordParams.projectSize,
++    pathControl,
++  ])
++
++  const discardPointDraft = (restoreFocus = false) => {
++    const mask = useMaskEditorStore.getState()
++    const form = pointCoordinatesRef.current
++    pointDraftRef.current?.dispose()
++    form?.reset()
++    const current = useMaskEditorStore.getState()
++    if (
++      restoreFocus &&
++      form?.isConnected &&
++      form === pointCoordinatesRef.current &&
++      current.penSessionVersion === mask.penSessionVersion &&
++      current.editingItemId === mask.editingItemId &&
++      current.selectedVertexIndex === mask.selectedVertexIndex &&
++      current.isEditing &&
++      !current.penMode
++    )
++      pointSelectorRef.current?.focus()
++  }
++
++  const renderedPointItems = useItemsStore.getState().items
++  const renderedPointKeys = useKeyframesStore.getState().keyframes
++  const renderedPointFrame = usePlaybackStore.getState().currentFrame
++  const capturePointDraft = () => {
++    if (pointCoordinatesDisabled || pointDraftRef.current) return
++    const mask = useMaskEditorStore.getState()
++    const { items, tracks } = useItemsStore.getState()
++    const keys = useKeyframesStore.getState().keyframes
++    const transitions = useTransitionsStore.getState().transitions
++    const { currentFrame } = usePlaybackStore.getState()
++    const { fps, isTimelineLoading } = useTimelineSettingsStore.getState()
++    const { activeCompositionId } = useCompositionNavigationStore.getState()
++    const item = items.find((candidate) => candidate.id === mask.editingItemId)
++    if (
++      !item ||
++      mask.penSessionVersion !== editSessionVersion ||
++      mask.editingItemId !== editingItemId ||
++      mask.selectedVertexIndex !== selectedVertexIndex ||
++      !mask.isEditing ||
++      mask.penMode ||
++      items !== renderedPointItems ||
++      keys !== renderedPointKeys ||
++      currentFrame !== renderedPointFrame ||
++      resolveEffectiveTrackStates(tracks).some(
++        (track) => track.id === item.trackId && track.locked,
++      ) ||
++      !Number.isFinite(currentFrame) ||
++      currentFrame < item.from ||
++      currentFrame >= item.from + item.durationInFrames ||
++      isFrameInTransitionRegion(currentFrame - item.from, item.id, item, transitions) ||
++      !Number.isFinite(fps) ||
++      fps <= 0
++    )
++      return
++    const context = coordinateContextRef.current
++    const form = pointCoordinatesRef.current
++    let retired = false
++    // ponytail: retire on any timeline edit; narrow participants if concurrent editing is needed.
++    const isValid = () => {
++      const current = useMaskEditorStore.getState()
++      return (
++        !retired &&
++        pointDraftRef.current === session &&
++        form === pointCoordinatesRef.current &&
++        !!form?.isConnected &&
++        current.penSessionVersion === mask.penSessionVersion &&
++        current.isEditing &&
++        !current.penMode &&
++        current.editingItemId === mask.editingItemId &&
++        current.selectedVertexIndex === mask.selectedVertexIndex &&
++        current.selectedVertexIndices === mask.selectedVertexIndices &&
++        current.draggingVertexIndex === null &&
++        current.draggingHandle === null &&
++        current.previewVertices === null &&
++        useGizmoStore.getState().activeGizmo === null &&
++        useGizmoStore.getState().previewTransform === null &&
++        useItemsStore.getState().items === items &&
++        useItemsStore.getState().tracks === tracks &&
++        useKeyframesStore.getState().keyframes === keys &&
++        useTransitionsStore.getState().transitions === transitions &&
++        usePlaybackStore.getState().currentFrame === currentFrame &&
++        useTimelineSettingsStore.getState().fps === fps &&
++        !isTimelineLoading &&
++        !useTimelineSettingsStore.getState().isTimelineLoading &&
++        useCompositionNavigationStore.getState().activeCompositionId === activeCompositionId &&
++        coordinateContextRef.current === context
++      )
++    }
++    const invalidate = () => {
++      if (retired) return
++      if (!isValid()) {
++        session.dispose()
++        // Reset only the captured form; never clear or focus a replacement session.
++        if (
++          form === pointCoordinatesRef.current &&
++          useMaskEditorStore.getState().penSessionVersion === mask.penSessionVersion
++        )
++          form?.reset()
++      }
++    }
++    const unsubscribers = [
++      useItemsStore,
++      useKeyframesStore,
++      useTransitionsStore,
++      usePlaybackStore,
++      useTimelineSettingsStore,
++      useCompositionNavigationStore,
++      useMaskEditorStore,
++      useGizmoStore,
++    ].map((store) => store.subscribe(invalidate))
++    const session = {
++      isValid,
++      dispose: () => {
++        retired = true
++        unsubscribers.forEach((unsubscribe) => unsubscribe())
++        if (pointDraftRef.current === session) pointDraftRef.current = null
++      },
++    }
++    pointDraftRef.current = session
++    if (!isValid()) invalidate()
++  }
++
++  useEffect(() => {
++    const blur = () => {
++      pointDraftRef.current?.dispose()
++      pointCoordinatesRef.current?.reset()
++    }
++    window.addEventListener('blur', blur)
++    return () => {
++      window.removeEventListener('blur', blur)
++      pointDraftRef.current?.dispose()
++    }
++  }, [])
+
+   const cursor = hoveredShapeBody ? 'move' : 'crosshair'
+   const vertices = getVertices()
++  const selectedPoint = selectedVertexIndex === null ? null : vertices?.[selectedVertexIndex]
++  const center = getTransformCenter(
++    effectiveItemTransform,
++    coordParams.projectSize.width,
++    coordParams.projectSize.height,
++  )
++  const pointPosition = selectedPoint
++    ? rotatePoint(
++        {
++          x:
++            center.x +
++            (selectedPoint.position[0] - 0.5) *
++              effectiveItemTransform.width *
++              (effectiveItemTransform.flipHorizontal ? -1 : 1),
++          y:
++            center.y +
++            (selectedPoint.position[1] - 0.5) *
++              effectiveItemTransform.height *
++              (effectiveItemTransform.flipVertical ? -1 : 1),
++        },
++        center,
++        effectiveItemTransform.rotation,
++      )
++    : null
++  const pointCoordinatesDisabled =
++    editingTrackLocked ||
++    pointTransformUnsupported ||
++    pointExpressionUnsupported ||
++    !!committedEditSnapshot ||
++    previewVertices !== null ||
++    draggingVertexIndex !== null ||
++    draggingHandle !== null ||
++    !pointPosition ||
++    !Number.isFinite(pointPosition.x) ||
++    !Number.isFinite(pointPosition.y) ||
++    !Number.isFinite(effectiveItemTransform.width) ||
++    effectiveItemTransform.width <= 0 ||
++    !Number.isFinite(effectiveItemTransform.height) ||
++    effectiveItemTransform.height <= 0
+   const selectedPointCount = selectedVertexIndices.length || (selectedVertexIndex !== null ? 1 : 0)
+   const topologyDisabled =
+     editingTrackLocked || pathIsAnimated || draggingVertexIndex !== null || draggingHandle !== null
++
++  useEffect(() => {
++    const session = pointDraftRef.current
++    if (session && !session.isValid()) session.dispose()
++    if (pointDraftRef.current || !pointPosition) return
++    for (const axis of ['x', 'y'] as const) {
++      const input = pointCoordinatesRef.current?.elements.namedItem(axis)
++      if (input instanceof HTMLInputElement) {
++        input.defaultValue = String(pointPosition[axis])
++        input.value = input.defaultValue
++      }
++    }
++  })
++
++  if (!isEditing) return null
+
+   return (
+     <div
+@@ -2435,6 +2682,107 @@
+             <option value="in">Incoming handle</option>
+             <option value="out">Outgoing handle</option>
+           </select>
++          {pathControl === 'point' && pointPosition && (
++            <form
++              key={`${editSessionVersion}:${editingItemId}:${selectedVertexIndex}`}
++              ref={pointCoordinatesRef}
++              aria-label="Path point coordinates"
++              className="flex flex-wrap items-center gap-1"
++              title={
++                pointTransformUnsupported || pointExpressionUnsupported
++                  ? 'Point coordinates are unavailable for linked transforms or explicit anchors.'
++                  : undefined
++              }
++              onChange={(event) => {
++                if (event.currentTarget === pointCoordinatesRef.current) capturePointDraft()
++              }}
++              onBlur={(event) => {
++                if (
++                  event.currentTarget === pointCoordinatesRef.current &&
++                  useMaskEditorStore.getState().penSessionVersion === editSessionVersion &&
++                  !event.currentTarget.contains(event.relatedTarget as Node | null)
++                )
++                  discardPointDraft()
++              }}
++              onKeyDown={(event) => {
++                if (
++                  event.currentTarget === pointCoordinatesRef.current &&
++                  useMaskEditorStore.getState().penSessionVersion === editSessionVersion &&
++                  event.key === 'Escape'
++                ) {
++                  event.preventDefault()
++                  event.stopPropagation()
++                  discardPointDraft(true)
++                }
++              }}
++              onSubmit={(event) => {
++                event.preventDefault()
++                const session = pointDraftRef.current
++                if (
++                  event.currentTarget !== pointCoordinatesRef.current ||
++                  pointCoordinatesDisabled ||
++                  !session?.isValid()
++                )
++                  return
++                const data = new FormData(event.currentTarget)
++                const xText = String(data.get('x') ?? '')
++                const yText = String(data.get('y') ?? '')
++                const x = Number(xText)
++                const y = Number(yText)
++                if (!xText.trim() || !yText.trim() || !Number.isFinite(x) || !Number.isFinite(y))
++                  return
++                const dx = x - pointPosition.x
++                const dy = y - pointPosition.y
++                if (dx === 0 && dy === 0) {
++                  discardPointDraft()
++                  return
++                }
++                nudgeSelectedVertices(dx, dy, () => {
++                  if (!session.isValid()) return false
++                  session.dispose()
++                  return true
++                })
++              }}
++            >
++              {(['x', 'y'] as const).map((axis) => (
++                <label key={axis} className="flex items-center gap-1 text-xs">
++                  {axis.toUpperCase()}
++                  <input
++                    name={axis}
++                    type="number"
++                    required
++                    step="any"
++                    aria-label={`Path point ${axis.toUpperCase()} (project pixels)`}
++                    defaultValue={pointPosition[axis]}
++                    disabled={pointCoordinatesDisabled}
++                    className="h-6 w-20 rounded border border-border bg-background px-1 focus-visible:outline-2 focus-visible:outline-primary"
++                  />
++                </label>
++              ))}
++              <button
++                type="submit"
++                aria-label="Apply path point coordinates"
++                disabled={pointCoordinatesDisabled}
++                className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++              >
++                Apply
++              </button>
++              <button
++                type="button"
++                aria-label="Cancel path point coordinates"
++                className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++                onClick={(event) => {
++                  if (
++                    event.currentTarget.form === pointCoordinatesRef.current &&
++                    useMaskEditorStore.getState().penSessionVersion === editSessionVersion
++                  )
++                    discardPointDraft(true)
++                }}
++              >
++                Cancel
++              </button>
++            </form>
++          )}
+           {pathControl !== 'point' && (
+             <label className="flex h-6 items-center gap-1 px-1 text-xs">
+               <input
+diff --git a/src/features/preview/components/mask-editor-overlay.test.tsx b/src/features/preview/components/mask-editor-overlay.test.tsx
+--- a/src/features/preview/components/mask-editor-overlay.test.tsx
++++ b/src/features/preview/components/mask-editor-overlay.test.tsx
+@@ -2486,3 +2486,594 @@
+   expect(useItemsStore.getState().items).toHaveLength(1)
+   expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
+ })
++
++describe('existing path point project coordinates', () => {
++  beforeEach(() => {
++    resetStores()
++    useItemsStore.getState().setItems([
++      {
++        id: 'path-1',
++        type: 'shape',
++        trackId: 'track-1',
++        from: 0,
++        durationInFrames: 90,
++        label: 'Path',
++        shapeType: 'path',
++        fillColor: '#ffffff',
++        pathClosed: true,
++        transform: { ...PATH_ITEM_TRANSFORM },
++        pathVertices: [
++          { position: [0, 0], inHandle: [0, 0], outHandle: [0.2, 0.1] },
++          { position: [1, 0], inHandle: [-0.2, 0.1], outHandle: [0, 0] },
++          { position: [1, 1], inHandle: [0, 0], outHandle: [0, 0] },
++          { position: [0, 1], inHandle: [0, 0], outHandle: [0, 0] },
++        ],
++      },
++    ])
++    useMaskEditorStore.getState().startEditing('path-1')
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  function mount(zoom = 1) {
++    const view = render(
++      <MaskEditorContainer
++        containerRect={createRect()}
++        playerSize={PLAYER_SIZE}
++        projectSize={PROJECT_SIZE}
++        zoom={zoom}
++      />,
++    )
++    act(() => useMaskEditorStore.getState().selectVertex(1))
++    return view
++  }
++
++  function point(index: number) {
++    const item = useItemsStore.getState().items[0] as ShapeItem
++    const keys = useTimelineStore.getState().keyframes.find((k) => k.itemId === item.id)
++    const vertex = resolveAnimatedShapeItem(item, keys, usePlaybackStore.getState().currentFrame)
++      .pathVertices![index]!
++    const t = item.transform!
++    const angle = ((t.rotation ?? 0) * Math.PI) / 180
++    const x = (vertex.position[0] - 0.5) * t.width! * (t.flipHorizontal ? -1 : 1)
++    const y = (vertex.position[1] - 0.5) * t.height! * (t.flipVertical ? -1 : 1)
++    return [
++      PROJECT_SIZE.width / 2 + (t.x ?? 0) + x * Math.cos(angle) - y * Math.sin(angle),
++      PROJECT_SIZE.height / 2 + (t.y ?? 0) + x * Math.sin(angle) + y * Math.cos(angle),
++    ]
++  }
++
++  function fields() {
++    return [
++      screen.getByRole('spinbutton', { name: 'Path point X (project pixels)' }),
++      screen.getByRole('spinbutton', { name: 'Path point Y (project pixels)' }),
++    ] as HTMLInputElement[]
++  }
++
++  function draft(x: string, y: string) {
++    const [xInput, yInput] = fields()
++    xInput!.focus()
++    fireEvent.change(xInput!, { target: { value: x } })
++    fireEvent.change(yInput!, { target: { value: y } })
++  }
++
++  function submit() {
++    fireEvent.submit(screen.getByRole('form', { name: 'Path point coordinates' }))
++  }
++
++  it.each([0, 37, -65])(
++    'sets a curved mirrored point at rotation %s with one undo/redo step',
++    (rotation) => {
++      const item = useItemsStore.getState().items[0] as ShapeItem
++      useItemsStore.getState().setItems([
++        {
++          ...item,
++          transform: {
++            ...item.transform,
++            x: 12,
++            y: -8,
++            rotation,
++            flipHorizontal: true,
++            flipVertical: true,
++          },
++        },
++      ])
++      useTimelineStore.temporal.getState().clear()
++      const before = structuredClone(useItemsStore.getState().items)
++      const otherPoints = [0, 2, 3].map(point)
++      const initial = point(1)
++      mount(2.5)
++      const [xInput, yInput] = fields()
++      expect(Number(xInput!.value)).toBeCloseTo(initial[0]!)
++      expect(Number(yInput!.value)).toBeCloseTo(initial[1]!)
++      draft('-12.5', '142.25')
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      submit()
++      expect(point(1)[0]).toBeCloseTo(-12.5)
++      expect(point(1)[1]).toBeCloseTo(142.25)
++      for (const [i, index] of [0, 2, 3].entries()) {
++        expect(point(index)[0]).toBeCloseTo(otherPoints[i]![0]!)
++        expect(point(index)[1]).toBeCloseTo(otherPoints[i]![1]!)
++      }
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      const after = structuredClone(useItemsStore.getState().items)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(before)
++      act(() => useTimelineStore.temporal.getState().redo())
++      expect(useItemsStore.getState().items).toEqual(after)
++    },
++  )
++
++  it('moves the selected group by the primary point delta without changing topology', () => {
++    mount()
++    act(() => useMaskEditorStore.getState().selectVertices([0, 1], 1))
++    const before = [0, 1, 2, 3].map(point)
++    draft('160', '42')
++    submit()
++    for (const index of [0, 1]) {
++      expect(point(index)[0]).toBeCloseTo(before[index]![0]! + 10)
++      expect(point(index)[1]).toBeCloseTo(before[index]![1]! + 12)
++    }
++    expect(point(2)).toEqual(before[2])
++    expect((useItemsStore.getState().items[0] as ShapeItem).pathVertices).toHaveLength(4)
++  })
++
++  it('writes existing path animation only at the current frame and undoes both coordinates', () => {
++    useTimelineStore.setState({
++      keyframes: [
++        {
++          itemId: 'path-1',
++          properties: [
++            {
++              property: 'pathVertex:1:positionX',
++              keyframes: [{ id: 'start', frame: 0, value: 1, easing: 'linear' }],
++            },
++          ],
++        },
++      ],
++    })
++    usePlaybackStore.getState().setCurrentFrame(15)
++    useTimelineStore.temporal.getState().clear()
++    const beforeItems = structuredClone(useItemsStore.getState().items)
++    const beforeKeys = structuredClone(useTimelineStore.getState().keyframes)
++    mount()
++    draft('172', '49')
++    submit()
++    expect(point(1)[0]).toBeCloseTo(172)
++    expect(point(1)[1]).toBeCloseTo(49)
++    expect(useItemsStore.getState().items).toEqual(beforeItems)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useTimelineStore.getState().keyframes).toEqual(beforeKeys)
++  })
++
++  it.each(['', 'Infinity', 'NaN', '1e999', '150'])(
++    'refuses empty/nonfinite/identity X %s without history',
++    (x) => {
++      mount()
++      const before = structuredClone(useItemsStore.getState().items)
++      draft(x, '30')
++      submit()
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it.each(['Escape', 'Cancel', 'outside focus', 'window blur', 'unmount'])(
++    'discards the draft on %s',
++    (route) => {
++      const view = mount()
++      draft('180', '50')
++      const before = structuredClone(useItemsStore.getState().items)
++      if (route === 'Escape') fireEvent.keyDown(fields()[0]!, { key: 'Escape' })
++      if (route === 'Cancel')
++        fireEvent.click(screen.getByRole('button', { name: 'Cancel path point coordinates' }))
++      if (route === 'outside focus') screen.getByRole('combobox', { name: 'Path point' }).focus()
++      if (route === 'window blur') fireEvent.blur(window)
++      if (route === 'unmount') view.unmount()
++      else {
++        submit()
++        expect(fields()[0]).toHaveValue(150)
++        if (route === 'Escape' || route === 'Cancel')
++          expect(screen.getByRole('combobox', { name: 'Path point' })).toHaveFocus()
++      }
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useMaskEditorStore.getState().editingItemId).toBe('path-1')
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it.each([
++    'lock/unlock',
++    'frame/back',
++    'fps/back',
++    'item replace',
++    'keys/back',
++    'transitions/back',
++    'composition/back',
++    'selection/back',
++    'drag/end',
++  ])('latches cancellation after %s', (route) => {
++    mount()
++    draft('180', '50')
++    const before = structuredClone(useItemsStore.getState().items)
++    act(() => {
++      if (route === 'lock/unlock') {
++        const tracks = useItemsStore.getState().tracks
++        useItemsStore.getState().setTracks(tracks.map((t) => ({ ...t, locked: true })))
++        useItemsStore.getState().setTracks(tracks)
++      }
++      if (route === 'frame/back') {
++        usePlaybackStore.getState().setCurrentFrame(1)
++        usePlaybackStore.getState().setCurrentFrame(0)
++      }
++      if (route === 'fps/back') {
++        useTimelineSettingsStore.setState({ fps: 60 })
++        useTimelineSettingsStore.setState({ fps: 30 })
++      }
++      if (route === 'item replace') useItemsStore.getState().setItems(structuredClone(before))
++      if (route === 'keys/back') {
++        useTimelineStore.setState({ keyframes: [{ itemId: 'path-1', properties: [] }] })
++        useTimelineStore.setState({ keyframes: [] })
++      }
++      if (route === 'transitions/back') {
++        useTransitionsStore
++          .getState()
++          .setTransitions([...useTransitionsStore.getState().transitions])
++        useTransitionsStore.getState().setTransitions([])
++      }
++      if (route === 'composition/back') {
++        useCompositionNavigationStore.setState({ activeCompositionId: 'other' })
++        useCompositionNavigationStore.setState({ activeCompositionId: null })
++      }
++      if (route === 'selection/back') {
++        useMaskEditorStore.getState().selectVertex(0)
++        useMaskEditorStore.getState().selectVertex(1)
++      }
++      if (route === 'drag/end') {
++        useMaskEditorStore.getState().startVertexDrag(1)
++        useMaskEditorStore.getState().endDrag()
++      }
++    })
++    useTimelineStore.temporal.getState().clear()
++    submit()
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    draft('181', '51')
++    submit()
++    expect(point(1)[0]).toBeCloseTo(181)
++  })
++
++  it.each(['edit', 'pen'])(
++    'never submits an old detached form into replacement %s mode',
++    (mode) => {
++      mount()
++      draft('180', '50')
++      const oldForm = screen.getByRole('form', { name: 'Path point coordinates' })
++      const before = structuredClone(useItemsStore.getState().items)
++      act(() => {
++        useMaskEditorStore.getState().stopEditing()
++        if (mode === 'edit') {
++          useMaskEditorStore.getState().startEditing('path-1')
++          useMaskEditorStore.getState().selectVertex(1)
++        } else useMaskEditorStore.getState().startShapePenMode()
++      })
++      fireEvent.submit(oldForm)
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      if (mode === 'edit') {
++        draft('181', '51')
++        submit()
++        expect(point(1)[0]).toBeCloseTo(181)
++      } else expect(useMaskEditorStore.getState().shapePenMode).toBe(true)
++    },
++  )
++
++  it('keeps native editing keys and handle controls independent', () => {
++    mount()
++    const [x] = fields()
++    x!.focus()
++    for (const key of ['Backspace', 'Delete', 'ArrowUp', 'ArrowLeft', 'Tab', 'Enter'])
++      expect(fireEvent.keyDown(x!, { key })).toBe(true)
++    expect((useItemsStore.getState().items[0] as ShapeItem).pathVertices).toHaveLength(4)
++    fireEvent.change(screen.getByRole('combobox', { name: 'Path control' }), {
++      target: { value: 'in' },
++    })
++    expect(screen.queryByRole('form', { name: 'Path point coordinates' })).not.toBeInTheDocument()
++    expect(
++      screen.getByRole('button', { name: 'Nudge selected incoming handles right' }),
++    ).toBeEnabled()
++  })
++
++  it.each(['Cancel', 'Escape'])(
++    'does not refocus after %s reset replaces the editing session',
++    (route) => {
++      mount()
++      draft('180', '50')
++      const form = screen.getByRole('form', { name: 'Path point coordinates' })
++      const outside = document.createElement('button')
++      document.body.append(outside)
++      form.addEventListener(
++        'reset',
++        () => {
++          useMaskEditorStore.getState().stopEditing()
++          useMaskEditorStore.getState().startEditing('path-1')
++          useMaskEditorStore.getState().selectVertex(1)
++          outside.focus()
++        },
++        { once: true },
++      )
++      if (route === 'Cancel')
++        fireEvent.click(screen.getByRole('button', { name: 'Cancel path point coordinates' }))
++      else fireEvent.keyDown(fields()[0]!, { key: 'Escape' })
++      expect(outside).toHaveFocus()
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      expect(useMaskEditorStore.getState().editingItemId).toBe('path-1')
++      outside.remove()
++      draft('181', '51')
++      submit()
++      expect(point(1)[0]).toBeCloseTo(181)
++    },
++  )
++
++  it.each(['before', 'after'])(
++    'keeps replacement geometry when a %s cancellation subscriber runs',
++    (order) => {
++      let armed = false
++      let replaced = false
++      const replace = () => {
++        if (!armed || replaced) return
++        replaced = true
++        useMaskEditorStore.getState().stopEditing()
++        useMaskEditorStore.getState().startEditing('path-1')
++        useMaskEditorStore.getState().selectVertex(1)
++      }
++      let unsubscribe = order === 'before' ? useItemsStore.subscribe(replace) : () => {}
++      mount()
++      draft('180', '50')
++      if (order === 'after') unsubscribe = useItemsStore.subscribe(replace)
++      const oldForm = screen.getByRole('form', { name: 'Path point coordinates' })
++      armed = true
++      act(() => {
++        const tracks = useItemsStore.getState().tracks
++        useItemsStore.getState().setTracks(tracks.map((t) => ({ ...t, locked: true })))
++        useItemsStore.getState().setTracks(tracks)
++      })
++      unsubscribe()
++      fireEvent.submit(oldForm)
++      expect(replaced).toBe(true)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      draft('181', '51')
++      submit()
++      expect(point(1)[0]).toBeCloseTo(181)
++    },
++  )
++
++  it.each(['parent', 'anchor', 'link', 'expression', 'inherited lock'])(
++    'refuses unsupported %s through the native form',
++    (reason) => {
++      const item = useItemsStore.getState().items[0] as ShapeItem
++      if (reason === 'parent')
++        useItemsStore.getState().setItems([
++          {
++            ...item,
++            transformParent: {
++              childLocalReference: { x: 0, y: 0, width: 100, height: 60, rotation: 0 },
++              childWorldReference: { x: 30, y: 20, width: 200, height: 120, rotation: 20 },
++            },
++          },
++        ])
++      if (reason === 'anchor')
++        useItemsStore
++          .getState()
++          .setItems([{ ...item, transform: { ...item.transform, anchorX: 25 } }])
++      if (reason === 'link')
++        useTimelineStore.setState({
++          keyframes: [
++            {
++              itemId: 'path-1',
++              properties: [],
++              propertyLinks: [
++                {
++                  type: 'link',
++                  targetProperty: 'x',
++                  sourceItemId: 'source',
++                  sourceProperty: 'x',
++                  enabled: true,
++                  timeOffsetFrames: 0,
++                },
++              ],
++            },
++          ],
++        })
++      if (reason === 'expression')
++        useTimelineStore.setState({
++          keyframes: [
++            {
++              itemId: 'path-1',
++              properties: [],
++              expressions: [
++                {
++                  type: 'expression',
++                  targetProperty: 'x',
++                  source: '100',
++                  enabled: true,
++                },
++              ],
++            },
++          ],
++        })
++      if (reason === 'inherited lock') {
++        const track = useItemsStore.getState().tracks[0]!
++        useItemsStore.getState().setTracks([
++          { ...track, id: 'group', isGroup: true, locked: true },
++          { ...track, parentTrackId: 'group' },
++        ])
++      }
++      useTimelineStore.temporal.getState().clear()
++      mount()
++      expect(fields()[0]).toBeDisabled()
++      expect(screen.getByRole('button', { name: 'Apply path point coordinates' })).toBeDisabled()
++      submit()
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it.each([-1, 90])('refuses a point edit outside its frame range at %s', (frame) => {
++    usePlaybackStore.setState({ currentFrame: frame })
++    mount()
++    draft('180', '50')
++    submit()
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    expect(point(1)).toEqual([150, 30])
++  })
++
++  it('refuses animated path geometry in a transition without changing base or keys', () => {
++    useTimelineStore.setState({
++      keyframes: [
++        {
++          itemId: 'path-1',
++          properties: [
++            {
++              property: 'pathVertex:1:positionX',
++              keyframes: [{ id: 'start', frame: 0, value: 1, easing: 'linear' }],
++            },
++          ],
++        },
++      ],
++    })
++    useTransitionsStore.getState().setTransitions([
++      {
++        id: 'transition',
++        type: 'crossfade',
++        presentation: 'fade',
++        timing: 'linear',
++        leftClipId: 'left',
++        rightClipId: 'path-1',
++        trackId: 'track-1',
++        durationInFrames: 10,
++        alignment: 0,
++      },
++    ])
++    usePlaybackStore.getState().setCurrentFrame(5)
++    useTimelineStore.temporal.getState().clear()
++    const beforeItems = structuredClone(useItemsStore.getState().items)
++    const beforeKeys = structuredClone(useTimelineStore.getState().keyframes)
++    mount()
++    draft('180', '50')
++    submit()
++    expect(useItemsStore.getState().items).toEqual(beforeItems)
++    expect(useTimelineStore.getState().keyframes).toEqual(beforeKeys)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it('refuses a finite input whose rotated fitting overflows', () => {
++    const item = useItemsStore.getState().items[0] as ShapeItem
++    useItemsStore.getState().setItems([{ ...item, transform: { ...item.transform, rotation: 45 } }])
++    useTimelineStore.temporal.getState().clear()
++    const before = structuredClone(useItemsStore.getState().items)
++    mount()
++    draft('1.79e308', '1.79e308')
++    submit()
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it('retires a draft when project coordinates resize and preserves the editing session', () => {
++    const view = mount()
++    draft('180', '50')
++    view.rerender(
++      <MaskEditorContainer
++        containerRect={createRect()}
++        playerSize={PLAYER_SIZE}
++        projectSize={{ width: 300, height: 120 }}
++        zoom={0.5}
++      />,
++    )
++    submit()
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    expect(fields()[0]).toHaveValue(200)
++    expect(fields()[1]).toHaveValue(30)
++    expect(useMaskEditorStore.getState().editingItemId).toBe('path-1')
++  })
++
++  it('fits a point using animated transform values at the playhead in one history step', () => {
++    useTimelineStore.setState({
++      keyframes: [
++        {
++          itemId: 'path-1',
++          properties: [
++            { property: 'x', keyframes: [{ id: 'x', frame: 0, value: 20, easing: 'linear' }] },
++            {
++              property: 'width',
++              keyframes: [{ id: 'width', frame: 0, value: 160, easing: 'linear' }],
++            },
++            {
++              property: 'rotation',
++              keyframes: [{ id: 'rotation', frame: 0, value: 35, easing: 'linear' }],
++            },
++          ],
++        },
++      ],
++    })
++    usePlaybackStore.getState().setCurrentFrame(15)
++    useTimelineStore.temporal.getState().clear()
++    const beforeItems = structuredClone(useItemsStore.getState().items)
++    const beforeKeys = structuredClone(useTimelineStore.getState().keyframes)
++    mount()
++    const xInput = fields()[0]!
++    draft('190', '67')
++    submit()
++    expect(xInput).toBe(fields()[0])
++    expect(fields()[0]).toHaveFocus()
++    expect(Number(fields()[0]!.value)).toBeCloseTo(190)
++    expect(Number(fields()[1]!.value)).toBeCloseTo(67)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    expect((useItemsStore.getState().items[0] as ShapeItem).transform?.x).toBe(
++      (beforeItems[0] as ShapeItem).transform?.x,
++    )
++    expect((useItemsStore.getState().items[0] as ShapeItem).transform?.width).toBe(
++      (beforeItems[0] as ShapeItem).transform?.width,
++    )
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(beforeItems)
++    expect(useTimelineStore.getState().keyframes).toEqual(beforeKeys)
++  })
++
++  it('refuses a numeric fit in an animated-transform transition instead of rewriting the base', () => {
++    useTimelineStore.setState({
++      keyframes: [
++        {
++          itemId: 'path-1',
++          properties: [
++            {
++              property: 'x',
++              keyframes: [{ id: 'x', frame: 0, value: 20, easing: 'linear' }],
++            },
++          ],
++        },
++      ],
++    })
++    useTransitionsStore.getState().setTransitions([
++      {
++        id: 'transition',
++        type: 'crossfade',
++        presentation: 'fade',
++        timing: 'linear',
++        leftClipId: 'left',
++        rightClipId: 'path-1',
++        trackId: 'track-1',
++        durationInFrames: 10,
++        alignment: 0,
++      },
++    ])
++    usePlaybackStore.getState().setCurrentFrame(5)
++    useTimelineStore.temporal.getState().clear()
++    const before = structuredClone(useItemsStore.getState().items)
++    mount()
++    draft('180', '50')
++    submit()
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++})
