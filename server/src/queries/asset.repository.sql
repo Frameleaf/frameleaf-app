@@ -614,7 +614,6 @@ with
       inner join asset_exif e on e."assetId" = a.id
     where
       true
-      and true
       and coalesce(
         nullif(trim(e.city), ''),
         nullif(trim(e.state), ''),

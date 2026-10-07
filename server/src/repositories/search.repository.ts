@@ -54,8 +54,6 @@ export interface SearchAssetIdOptions {
 export interface SearchUserIdOptions {
   libraryId?: string | null;
   userIds?: string[];
-  /** FL-54: server derived; owners whose assets a place filter must never match. Never client-controlled. */
-  locationHiddenOwnerIds?: string[];
   /** FL-137: server derived; the search comes from a shared-link visitor, who never sees anything trashed. */
   sharedLink?: boolean;
 }
@@ -218,8 +216,6 @@ export type AssetSearchScope = {
    * except those of `lockedMotion.lockedOwnerId`, the viewer when their session is elevated.
    */
   lockedMotion?: LockedVisibilityOptions;
-  /** FL-54: owners whose assets a place filter must never match (set only when the filter uses a place) */
-  locationHiddenOwnerIds?: string[];
   /**
    * FL-137: a shared-link visitor. The session carries the link creator's user id, but the visitor
    * is not the owner: nothing from the trash is theirs to see.
@@ -311,8 +307,6 @@ export interface SearchFacetOptions {
   viewerId: string;
   facets: SearchFacetField[];
   limit: number;
-  /** partners who hide their locations from the viewer: they contribute no city or country */
-  locationHiddenOwnerIds: string[];
   /** a session that is not unlocked: these people and tags (with their descendants) are never named */
   suppressedPersonIds: string[];
   suppressedTagIds: string[];
@@ -342,7 +336,6 @@ const facetExample: SearchFacetOptions = {
   viewerId: DummyValue.UUID,
   facets: Object.values(SearchFacetField),
   limit: 10,
-  locationHiddenOwnerIds: [DummyValue.UUID_1],
   suppressedPersonIds: [DummyValue.UUID_1],
   suppressedTagIds: [DummyValue.UUID_1],
   covers: true,
@@ -1082,11 +1075,6 @@ export class SearchRepository {
         inner join asset_exif e on e."assetId" = m.id
         where ${trimmed(column)} is not null and ${where}
         group by 2`;
-    const locationShared =
-      options.locationHiddenOwnerIds.length > 0
-        ? sql`not (m."ownerId" = ${anyUuid(options.locationHiddenOwnerIds)})`
-        : sql`true`;
-
     const parts: Array<[SearchFacetField, RawBuilder<unknown>]> = [
       [
         SearchFacetField.Type,
@@ -1109,8 +1097,8 @@ export class SearchRepository {
             null::text as label, count(*) as count, ${cover} as cover
           from matched m left join asset_exif e on e."assetId" = m.id group by 2`,
       ],
-      [SearchFacetField.City, exifFacet(SearchFacetField.City, 'e.city', locationShared)],
-      [SearchFacetField.Country, exifFacet(SearchFacetField.Country, 'e.country', locationShared)],
+      [SearchFacetField.City, exifFacet(SearchFacetField.City, 'e.city')],
+      [SearchFacetField.Country, exifFacet(SearchFacetField.Country, 'e.country')],
       [SearchFacetField.Make, exifFacet(SearchFacetField.Make, 'e.make')],
       [SearchFacetField.Model, exifFacet(SearchFacetField.Model, 'e.model')],
       [SearchFacetField.LensModel, exifFacet(SearchFacetField.LensModel, 'e.lensModel')],
