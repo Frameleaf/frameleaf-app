@@ -873,14 +873,14 @@
           "synchronize": true
         },
         {
-          "name": "asset_develop_artifact_path_key",
-          "definition": "CREATE UNIQUE INDEX asset_develop_artifact_path_key ON public.asset_develop_artifact USING btree (path)",
+          "name": "asset_develop_artifact_path_idx",
+          "definition": "CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)",
           "tableName": "asset_develop_artifact",
           "columnNames": [
             "path"
           ],
           "using": "btree",
-          "unique": true,
+          "unique": false,
           "synchronize": true
         }
       ],

@@ -15,11 +15,10 @@ import {
   effectiveVisibility,
   getLockedOwnerId,
   isDefaultVisible,
-  isLocked,
   isTimelineVisible,
   notLockedOrOwnedBy,
 } from 'src/utils/locked.js';
-import { mapPartnerAsset, mapSyncAssetV2 } from 'src/utils/sync.js';
+import { mapSyncAssetV2 } from 'src/utils/sync.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -117,24 +116,6 @@ const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
 );
 const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
   [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
-const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
-);
-/**
- * A partner's Locked asset stays in the partner streams (FL-34) so a device that already holds it
- * learns it is now `locked` and hides it, exactly as the upstream Locked folder behaved. `isLocked`
- * lets the service blank its file name, thumbhash, live-photo link and exif before sending; the flag
- * itself is stripped and never reaches the device.
- */
-const syncPartnerLocked = () => isLocked('asset').as('isLocked');
-const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
-  [
-    ...syncPartnerAssetColumns,
-    syncChecksum(),
-    syncLivePhotoVideoId(options),
-    syncVisibility(),
-    syncPartnerLocked(),
-  ] as const;
 @Injectable()
 export class SyncRepository {
   tag: TagSync;
@@ -153,7 +134,6 @@ export class SyncRepository {
   memory: MemorySync;
   memoryToAsset: MemoryToAssetSync;
   partner: PartnerSync;
-  partnerAsset: PartnerAssetsSync;
   person: PersonSync;
   personGroup: PersonGroupSync;
   stack: StackSync;
@@ -164,26 +144,14 @@ export class SyncRepository {
     private db: Kysely<DB>,
   ) {
     this.tag = new TagSync(this.db, async (db, auth, kind, key) => {
-      const rows =
-        kind === 'albumAsset'
-          ? await new AlbumAssetSync(db).getCurrent(auth, key)
-          : await new PartnerAssetsSync(db).getCurrent(auth, key);
+      if (kind !== 'albumAsset') return [];
+      const rows = await new AlbumAssetSync(db).getCurrent(auth, key);
       return rows.map(({ scopeId, updateId, ...asset }) => ({
         key: `${scopeId}:${asset.id}`,
         entityId: scopeId,
         assetId: asset.id,
         sourceId: updateId,
-        data:
-          kind === 'albumAsset'
-            ? { albumId: scopeId, asset: mapSyncAssetV2(asset) }
-            : {
-                sharedById: scopeId,
-                asset: mapPartnerAsset(
-                  asset as typeof asset & {
-                    isLocked: boolean;
-                  },
-                ),
-              },
+        data: { albumId: scopeId, asset: mapSyncAssetV2(asset) },
       }));
     });
     this.album = new AlbumSync(this.db);
@@ -201,7 +169,6 @@ export class SyncRepository {
     this.memory = new MemorySync(this.db);
     this.memoryToAsset = new MemoryToAssetSync(this.db);
     this.partner = new PartnerSync(this.db);
-    this.partnerAsset = new PartnerAssetsSync(this.db);
     this.person = new PersonSync(this.db);
     this.personGroup = new PersonGroupSync(this.db);
     this.stack = new StackSync(this.db);
@@ -940,59 +907,6 @@ class PartnerSync extends BaseSync {
     return this.upsertQuery('partner', options)
       .select(['sharedById', 'sharedWithId', 'inTimeline', 'updateId'])
       .where((eb) => eb.or([eb('sharedById', '=', userId), eb('sharedWithId', '=', userId)]))
-      .stream();
-  }
-}
-class PartnerAssetsSync extends BaseSync {
-  getCurrent(auth: AuthDto, key?: string) {
-    const options = getHiddenContentQueryOptions(auth);
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('partner', 'partner.sharedById', 'asset.ownerId')
-      .innerJoin('user as mediaOwner', 'mediaOwner.id', 'asset.ownerId')
-      .where('mediaOwner.deletedAt', 'is', null)
-      .where('partner.sharedWithId', '=', auth.user.id)
-      .where('asset.deletedAt', 'is', null)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .$if(!!key, (qb) =>
-        qb.where('partner.sharedById', '=', key!.split(':', 1)[0]).where('asset.id', '=', key!.split(':', 2)[1]),
-      )
-      .select(syncPartnerAsset(options))
-      .select(['partner.sharedById as scopeId', 'asset.updateId'])
-      .select(sql.val(false).as('isFavorite'))
-      .orderBy(sql`asset."fileCreatedAt" desc nulls last`)
-      .orderBy('asset.id', 'desc')
-      .execute();
-  }
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, partnerId: string) {
-    return this.backfillQuery('asset', options)
-      .select(syncPartnerAsset(options))
-      .select(sql.val(false).as('isFavorite'))
-      .select('asset.updateId')
-      .where('asset.ownerId', '=', partnerId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
-  }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getDeletes(options: SyncQueryOptions) {
-    return this.auditQuery('asset_audit', options)
-      .select(['id', 'assetId'])
-      .where('ownerId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
-      .stream();
-  }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getUpserts(options: SyncQueryOptions) {
-    return this.upsertQuery('asset', options)
-      .select(syncPartnerAsset(options))
-      .select(sql.val(false).as('isFavorite'))
-      .select('asset.updateId')
-      .where('asset.ownerId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
-      .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
 }
