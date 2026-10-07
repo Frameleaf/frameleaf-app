@@ -1150,8 +1150,13 @@ export class MediaOperationRepository {
     });
   }
   /** Move a claimed job to `validating`. The last gate before anything is published. */
-  async beginValidation(id: string, claimToken: string, requireActiveClaim = false): Promise<boolean> {
-    const row = await this.write((db) =>
+  async beginValidation(
+    id: string,
+    claimToken: string,
+    requireActiveClaim = false,
+    executor?: Kysely<DB>,
+  ): Promise<boolean> {
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set({ status: MediaOperationStatus.Validating, heartbeatAt: sql<Date>`now()` })
@@ -1165,9 +1170,9 @@ export class MediaOperationRepository {
             .where('pauseRequestedAt', 'is', null),
         )
         .returning(['id', 'ownerId'])
-        .executeTakeFirst(),
-    );
-    this.changed(row);
+        .executeTakeFirst();
+    const row = await (executor ? write(executor) : this.write(write));
+    this.changed(row, executor);
     return !!row;
   }
   /**
@@ -1275,8 +1280,9 @@ export class MediaOperationRepository {
     claimToken: string,
     options: { delayMs: number; returnAttempt?: boolean },
     settled?: (trx: Transaction<DB>) => Promise<void>,
+    executor?: Transaction<DB>,
   ): Promise<boolean> {
-    const result = await this.db.transaction().execute(async (trx) => {
+    const requeue = async (trx: Transaction<DB>) => {
       const row = await trx
         .updateTable('media_operation')
         .set({
@@ -1296,8 +1302,9 @@ export class MediaOperationRepository {
         .executeTakeFirst();
       if (row) await settled?.(trx);
       return row;
-    });
-    this.changed(result);
+    };
+    const result = await (executor ? requeue(executor) : this.db.transaction().execute(requeue));
+    this.changed(result, executor);
     return !!result;
   }
   /* ------------------------------------------------------------------ */
