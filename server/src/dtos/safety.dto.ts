@@ -34,6 +34,12 @@ const AssetSafety = z
   .object({
     id: z.uuid(),
     sha256: z.string(),
+    deliveredBy: z
+      .string()
+      .nullable()
+      .describe(
+        'First recorded delivery of this current original: icloud-sync:<connectionId> or device:<deviceKey>; null when unknown. This is provenance, not integrity or audit proof',
+      ),
     onServerSince: DateTime.describe('When this current asset was registered on the server; not checksum proof'),
     lastIntegrityAt: DateTime.nullable(),
     integrityResult: z.enum(['unknown', 'passed', 'mismatched', 'missing', 'unreadable']),
@@ -72,6 +78,12 @@ export const SafetySummarySchema = z
       .min(0)
       .describe('Registered assets not marked offline or last checked missing; not a new filesystem verification'),
     onServerPercent: z.number().min(0).max(100).meta({ format: 'double' }),
+    fromICloudSync: z
+      .int()
+      .min(0)
+      .describe(
+        'Current own accessible assets whose first recorded delivery of the current original is iCloud Photos Sync',
+      ),
     backedUp: z.int().min(0).nullable(),
     backedUpPercent: z
       .number()

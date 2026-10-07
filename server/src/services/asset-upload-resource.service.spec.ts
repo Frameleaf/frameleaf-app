@@ -10,19 +10,23 @@ import type { AddressInfo } from 'node:net';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { writeAssetUploadPart } from 'src/utils/asset-upload-resource.js';
 
 describe('resumable asset byte commit boundaries', () => {
   let folder: string;
   beforeEach(async () => {
-    folder = await mkdtemp(join(tmpdir(), 'asset-upload-boundary-'));
+    folder = await mkdtemp(join(process.env.FL285_VOLUME_FOLDER ?? tmpdir(), 'asset-upload-boundary-'));
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(folder, { recursive: true, force: true });
   });
 
   const setup = () => {
+    vi.spyOn(StorageCore, 'getBaseFolder').mockReturnValue(folder);
     let locked = false;
     let row = {
       id: randomUUID(),
@@ -85,6 +89,7 @@ describe('resumable asset byte commit boundaries', () => {
       getUploadAssetIdByChecksum: vi.fn(() => Promise.resolve({ id: 'asset' })),
     };
     const storage = {
+      checkDiskUsage: vi.fn().mockResolvedValue({ available: 1024 }),
       unlink: vi.fn((path: string) => rm(path, { force: true })),
       utimes: vi.fn(() => {
         expect(locked).toBe(false);
@@ -132,6 +137,7 @@ describe('resumable asset byte commit boundaries', () => {
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
     return {
       service,
+      media,
       uploads,
       inserts,
       storage,
@@ -145,6 +151,84 @@ describe('resumable asset byte commit boundaries', () => {
     };
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
+
+  it.runIf(process.env.FL285_VOLUME_FOLDER)(
+    'retains the acknowledged prefix when a real constrained volume runs out of space',
+    async () => {
+      const harness = setup();
+      harness.mutate({ expectedSize: null, maxSize: 64 * 2 ** 20, maxAppendSize: 64 * 2 ** 20 });
+      const storage = new StorageRepository({ setContext: vi.fn() } as never);
+      const disk = await storage.checkDiskUsage(folder);
+      expect(disk.available).toBeLessThanOrEqual(32 * 2 ** 20);
+      expect(disk.available).toBeGreaterThan(2 ** 20);
+      harness.storage.checkDiskUsage.mockImplementation(() => storage.checkDiskUsage(folder));
+      expect((await harness.service.limits()).maxSize).toBe(Math.floor(disk.available / 2));
+      await harness.service['receive'](auth, harness.row().id, Readable.from([Buffer.from('ab')]), 0, false);
+      const files = await readdir(folder);
+      await expect(
+        harness.service['receive'](
+          auth,
+          harness.row().id,
+          Readable.from(
+            (function* () {
+              const chunk = Buffer.alloc(2 ** 20);
+              for (let index = 0; index < 64; index++) yield chunk;
+            })(),
+          ),
+          2,
+          false,
+        ),
+      ).rejects.toMatchObject({ status: 507 });
+      expect(harness.row().offset).toBe(2);
+      expect(harness.inserts).toHaveLength(1);
+      expect(await readdir(folder)).toEqual(files);
+      await harness.service['receive'](auth, harness.row().id, Readable.from([Buffer.from('cd')]), 2, false);
+      expect(harness.row().offset).toBe(4);
+    },
+  );
+
+  it('resumes persisted parts after service replacement and a temporary storage refusal without publishing twice', async () => {
+    const harness = setup();
+    harness.uploads.parts.mockImplementation(() => Promise.resolve(harness.inserts));
+    await harness.service['receive'](auth, harness.row().id, Readable.from([Buffer.from('ab')]), 0, false);
+    await harness.service.onShutdown();
+    const replacement = new AssetUploadResourceService(
+      harness.uploads as never,
+      harness.media as never,
+      {} as never,
+      {} as never,
+      harness.storage as never,
+      harness.physical as never,
+      { warn: vi.fn() } as never,
+      harness.rateLimits as never,
+      {} as never,
+    );
+    vi.spyOn(replacement as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue(
+      'owner',
+    );
+    vi.spyOn(replacement as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
+    harness.storage.checkDiskUsage.mockResolvedValue({ available: 5 });
+    const append = {
+      'upload-draft-interop-version': '9',
+      'content-type': 'application/partial-upload',
+      'upload-offset': '2',
+      'upload-complete': '?1',
+    };
+    await expect(
+      replacement.append(auth, harness.row().id, append, Readable.from([Buffer.from('cd')])),
+    ).rejects.toMatchObject({ status: 507 });
+    expect((await replacement.head(auth, harness.row().id)).offset).toBe(2);
+    expect(harness.inserts).toHaveLength(1);
+    // The replacement advertises a smaller ceiling for NEW resources; the persisted resource still completes.
+    harness.storage.checkDiskUsage.mockResolvedValue({ available: 6 });
+    expect((await replacement.limits()).maxSize).toBe(3);
+    const outcome = await replacement.append(auth, harness.row().id, append, Readable.from([Buffer.from('cd')]));
+    expect(outcome.resource).toMatchObject({ offset: 4, state: 'published', ingested: true, maxSize: 8 });
+    expect(outcome.resource.verifiedChecksum).toEqual(createHash('sha256').update('abcd').digest());
+    await replacement.append(auth, harness.row().id, { ...append, 'upload-offset': '4' }, Readable.from([]));
+    expect(harness.uploads.publish).toHaveBeenCalledOnce();
+    expect(harness.inserts).toHaveLength(2);
+  });
 
   it('retries lost final responses through the real empty PATCH wire without creating another asset', async () => {
     const harness = setup();

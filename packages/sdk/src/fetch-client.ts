@@ -3999,6 +3999,8 @@ export type AssetSafetyDto = {
         since: string | null;
         state: State2;
     };
+    /** First recorded delivery of this current original: icloud-sync:<connectionId> or device:<deviceKey>; null when unknown. This is provenance, not integrity or audit proof */
+    deliveredBy: string | null;
     id: string;
     integrityResult: IntegrityResult;
     lastIntegrityAt: string | null;
@@ -4023,6 +4025,8 @@ export type SafetySummaryDto = {
     cloudReadOnly: boolean;
     /** Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given */
     cloudReadOnlyReason: string | null;
+    /** Current own accessible assets whose first recorded delivery of the current original is iCloud Photos Sync */
+    fromICloudSync: number;
     /** Latest qualifying completion containing at least one current own accessible asset */
     lastCompletedRunAt: string | null;
     /** Latest successful completed GET + SHA-256 run qualifying a current own accessible backed-up asset */

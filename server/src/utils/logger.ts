@@ -9,19 +9,19 @@ export const isConnectionAbortedError = (error: Error | any) => error.code === '
 export const onRouteError = (req: Request | undefined, res: Response, error: Error, logger: LoggingRepository) => {
   // ignore client-closed connection
   if (res.headersSent || isConnectionAbortedError(error) || (req && isRequestAborted(req))) {
-    logger.debug(`Client aborted request: ${error}`);
+    logger.debug('Client aborted request');
     return { canWrite: false };
   }
 
   if (isHttpException(error)) {
     const status = error.getStatus();
-    const response = error.getResponse();
-    logger.debug(`HttpException(${status}): ${JSON.stringify(response)}`);
+    logger.debug(`HttpException(${status})`);
     return { canWrite: true };
   }
 
   if (error instanceof Error) {
-    logger.error(`Unknown error: ${error}`, error?.stack);
+    // Error text and stacks can contain credentials, provider bodies and another account's content.
+    logger.error('Unknown route error');
     return { canWrite: true };
   }
 

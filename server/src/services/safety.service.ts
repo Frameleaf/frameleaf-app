@@ -29,6 +29,7 @@ export class SafetyService {
       assets: assets.map((row) => ({
         id: row.id,
         sha256: row.sha256!,
+        deliveredBy: row.deliveredBy,
         onServerSince: row.onServerSince.toISOString(),
         lastIntegrityAt: date(row.lastIntegrityAt),
         integrityResult: row.integrityResult ?? 'unknown',
@@ -50,6 +51,7 @@ export class SafetyService {
       cloudReadOnlyReason: availability.readOnlyReason,
       total: row.total,
       onServer: row.onServer,
+      fromICloudSync: row.fromICloudSync,
       onServerPercent: percent(row.onServer, row.total),
       backedUp: availability.bucket ? row.backedUp : null,
       backedUpPercent: availability.bucket ? percent(row.backedUp, row.total) : null,

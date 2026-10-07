@@ -60034,6 +60034,11 @@
             ],
             "type": "object"
           },
+          "deliveredBy": {
+            "description": "First recorded delivery of this current original: icloud-sync:<connectionId> or device:<deviceKey>; null when unknown. This is provenance, not integrity or audit proof",
+            "nullable": true,
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -60065,6 +60070,7 @@
         },
         "required": [
           "cloudBackup",
+          "deliveredBy",
           "id",
           "integrityResult",
           "lastIntegrityAt",
@@ -103006,6 +103012,12 @@
             "nullable": true,
             "type": "string"
           },
+          "fromICloudSync": {
+            "description": "Current own accessible assets whose first recorded delivery of the current original is iCloud Photos Sync",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "lastCompletedRunAt": {
             "description": "Latest qualifying completion containing at least one current own accessible asset",
             "format": "date-time",
@@ -103043,6 +103055,7 @@
           "cloudAvailability",
           "cloudReadOnly",
           "cloudReadOnlyReason",
+          "fromICloudSync",
           "lastCompletedRunAt",
           "lastVerifiedRunAt",
           "onServer",

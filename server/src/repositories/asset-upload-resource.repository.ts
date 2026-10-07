@@ -41,6 +41,7 @@ export class AssetUploadResourceRepository {
       checksum: Buffer;
       contentType: string;
       size?: number;
+      maxSize?: number;
     },
   ) {
     return this.db.transaction().execute(async (tx) => {
@@ -76,8 +77,8 @@ export class AssetUploadResourceRepository {
           expectedChecksum: input.checksum,
           contentType: input.contentType,
           expectedSize: input.size ?? null,
-          maxSize: ASSET_UPLOAD_LIMITS.maxSize,
-          maxAppendSize: ASSET_UPLOAD_LIMITS.maxAppendSize,
+          maxSize: input.maxSize ?? ASSET_UPLOAD_LIMITS.maxSize,
+          maxAppendSize: Math.min(ASSET_UPLOAD_LIMITS.maxAppendSize, input.maxSize ?? ASSET_UPLOAD_LIMITS.maxSize),
           expiresAt: new Date(Date.now() + ASSET_UPLOAD_LIMITS.maxAge * 1000),
         })
         .returningAll()

@@ -113,6 +113,7 @@ export class CloudBackupIndexRepository {
     return sql<{
       id: string;
       sha256: string | null;
+      deliveredBy: string | null;
       onServerSince: Date;
       isOffline: boolean;
       lastIntegrityAt: Date | null;
@@ -120,8 +121,15 @@ export class CloudBackupIndexRepository {
       backedUpSince: Date | null;
       lastCompletedAt: Date | null;
       lastVerifiedAt: Date | null;
-    }>`SELECT assets.*, backup."backedUpSince", backup."lastCompletedAt", verification."lastVerifiedAt"
+    }>`SELECT assets.*, delivery."deliveredBy", backup."backedUpSince", backup."lastCompletedAt", verification."lastVerifiedAt"
       FROM (${assets}) assets
+      LEFT JOIN LATERAL (
+        SELECT identity."deliveredBy"
+        FROM public.icloud_source_identity identity
+        JOIN public.asset original ON original.id = identity."assetId" AND original."ownerId" = identity."ownerId"
+        WHERE identity."assetId" = assets.id AND identity.sha256 = decode(assets.sha256, 'hex')
+        ORDER BY identity."deliveredAt", identity.id LIMIT 1
+      ) delivery ON true
       LEFT JOIN LATERAL (
         SELECT min(m."finishedAt") AS "backedUpSince", max(m."finishedAt") AS "lastCompletedAt"
         FROM cloud_backup_manifest_original membership
@@ -158,11 +166,13 @@ export class CloudBackupIndexRepository {
     const { rows } = await sql<{
       total: number;
       onServer: number;
+      fromICloudSync: number;
       backedUp: number;
       lastCompletedAt: Date | null;
       lastVerifiedAt: Date | null;
     }>`SELECT count(*)::int AS total,
       count(*) FILTER (WHERE NOT "isOffline" AND "integrityResult" IS DISTINCT FROM 'missing')::int AS "onServer",
+      count(*) FILTER (WHERE "deliveredBy" LIKE 'icloud-sync:%')::int AS "fromICloudSync",
       count(*) FILTER (WHERE "backedUpSince" IS NOT NULL)::int AS "backedUp",
       max("lastCompletedAt") AS "lastCompletedAt", max("lastVerifiedAt") AS "lastVerifiedAt"
       FROM (${this.safetyQuery(assets, bucket)}) safety`.execute(this.db);

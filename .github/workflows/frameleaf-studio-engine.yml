@@ -104,6 +104,8 @@ jobs:
           name: frameleaf-studio-source-recovery
           path: ${{ runner.temp }}/frameleaf-studio-source-recovery.json
           if-no-files-found: error
+      - name: Direct ONNX cache byte admission (FL-111)
+        run: node --test studio/tools/onnx-cache-byte-admission.test.mjs
       - name: Graph allocation audit (FL-97)
         run: node studio/tools/allocation-audit.mjs
       - name: Install locked dependencies without lifecycle scripts
@@ -165,6 +167,7 @@ jobs:
           EFFECTS_MATRIX_REPORT="$RUNNER_TEMP/effects-matrix-report.json" node studio/tools/effects-matrix.browser.mjs
           BLEND_MATRIX_REPORT="$RUNNER_TEMP/blend-matrix-report.json" node studio/tools/blend-matrix.browser.mjs
           TRANSITION_MATRIX_REPORT="$RUNNER_TEMP/transition-matrix-report.json" node studio/tools/transition-matrix.browser.mjs
+          MASK_PATH_KEYFRAMES_REPORT="$RUNNER_TEMP/mask-path-keyframes-report.json" node studio/tools/mask-path-keyframes.browser.mjs
           node studio/tools/color-output.browser.mjs
           node studio/tools/hdr-signal.browser.mjs
           node studio/tools/hdr-source.browser.mjs
@@ -288,5 +291,6 @@ jobs:
             ${{ runner.temp }}/hdr-master-timing-report.json.artifacts-*/
             ${{ runner.temp }}/hdr-master-browser-report.json
             ${{ runner.temp }}/hdr-master-browser-report.json.artifacts-*/
+            ${{ runner.temp }}/mask-path-keyframes-report.json
             studio/engine/frameleaf-build.json
           if-no-files-found: error

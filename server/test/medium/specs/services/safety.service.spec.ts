@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AlbumKind,
@@ -107,6 +107,67 @@ const recordSafetyProof = async (
 };
 
 describe('own safety API PostgreSQL authorization and proof qualification', () => {
+  it('reports current-original delivery once, excluding stale, foreign and Locked identities', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { user: foreign } = await ctx.newUser();
+    const hashes = ['sync', 'device', 'stale', 'unknown', 'foreign'].map((value) => hash(`delivery-${value}`));
+    const assets = await Promise.all(
+      hashes.map((sha, index) =>
+        ctx.newAsset({
+          ownerId: index === 4 ? foreign.id : user.id,
+          checksum: Buffer.from(sha, 'hex'),
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        }),
+      ),
+    );
+    const connection = randomUUID();
+    const device = randomUUID();
+    const delivery = `icloud-sync:${connection}`;
+    const fromDevice = `device:${device}`;
+    for (const [index, ownerId, sha, deliveredBy, at] of [
+      [0, user.id, hashes[0], delivery, '2026-09-01'],
+      [0, user.id, hashes[0], fromDevice, '2026-09-02'],
+      [1, user.id, hashes[1], fromDevice, '2026-09-01'],
+      [1, user.id, hashes[1], delivery, '2026-09-02'],
+      [2, user.id, hash('old-original'), delivery, '2026-09-01'],
+      [3, foreign.id, hashes[3], delivery, '2026-09-01'],
+      [4, foreign.id, hashes[4], delivery, '2026-09-01'],
+    ] as const) {
+      await sql`INSERT INTO public.icloud_source_identity
+        ("ownerId", "assetId", "cplAssetRecordName", role, sha256, "deliveredBy", "deliveredAt")
+        VALUES (${ownerId}::uuid, ${assets[index].asset.id}::uuid, ${randomUUID()}, 'original',
+          ${Buffer.from(sha, 'hex')}, ${deliveredBy}, ${at}::timestamptz)`.execute(db);
+    }
+    const auth = factory.auth({ user });
+    const lookup = await sut.lookup(auth, { hashes });
+    expect(new Map(lookup.assets.map(({ id, deliveredBy }) => [id, deliveredBy]))).toEqual(
+      new Map([
+        [assets[0].asset.id, delivery],
+        [assets[1].asset.id, fromDevice],
+        [assets[2].asset.id, null],
+        [assets[3].asset.id, null],
+      ]),
+    );
+    expect(await sut.summary(auth)).toMatchObject({ total: 4, onServer: 4, fromICloudSync: 1 });
+    await db
+      .insertInto('asset_lock')
+      .values({ assetId: assets[0].asset.id, reason: AssetLockReason.Marked, lockedBy: null })
+      .execute();
+    expect((await sut.lookup(auth, { hashes: [hashes[0]] })).assets).toEqual([]);
+    expect(await sut.summary(auth)).toMatchObject({ total: 3, fromICloudSync: 0 });
+    const unlocked = factory.auth({ user, session: { hasElevatedPermission: true } });
+    expect(await sut.summary(unlocked)).toMatchObject({ total: 4, fromICloudSync: 1 });
+    const replacement = hash('delivery-replacement');
+    await db
+      .updateTable('asset')
+      .set({ checksum: Buffer.from(replacement, 'hex') })
+      .where('id', '=', assets[0].asset.id)
+      .execute();
+    expect((await sut.lookup(unlocked, { hashes: [replacement] })).assets[0].deliveredBy).toBeNull();
+    expect(await sut.summary(unlocked)).toMatchObject({ total: 4, fromICloudSync: 0 });
+  });
+
   it('returns 1000 matching own assets in one bulk query with matching summary counts', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
@@ -199,6 +260,7 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       cloudReadOnlyReason: null,
       total: 0,
       onServer: 0,
+      fromICloudSync: 0,
       onServerPercent: 0,
       backedUp: 0,
       backedUpPercent: 0,
@@ -238,6 +300,7 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       cloudReadOnlyReason: null,
       total: 2,
       onServer: 2,
+      fromICloudSync: 0,
       onServerPercent: 100,
       backedUp: 1,
       backedUpPercent: 50,

@@ -1,0 +1,66 @@
+Subject: Verify direct ONNX downloads and cache hits before inference
+
+Freecut MIT adaptation for FL-111. Reuse the existing owner-bound byte
+verifier for direct ONNX weights, vocabulary and configuration. Reject and
+evict corrupt or no-longer-matching cache entries; never persist unverified
+network bytes. Text and JSON use the same verified download path. This adds
+no model approvals and does not qualify any model, browser or workload.
+
+--- a/src/shared/utils/onnx-model-cache.ts
++++ b/src/shared/utils/onnx-model-cache.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { requireResource, verifyResourceBytes } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Durable Cache Storage layer for models loaded directly through onnxruntime-web.
+  *
+@@ -132,7 +132,13 @@
+   const cached = cache ? await cache.match(url).catch(() => undefined) : undefined
+
+   if (cached) {
+-    return readWithProgress(cached, onBytes, true)
++    const bytes = await readWithProgress(cached, onBytes, true)
++    try {
++      return (await verifyResourceBytes(url, bytes)).buffer as ArrayBuffer
++    } catch (error) {
++      await cache?.delete(url).catch(() => {})
++      throw error
++    }
+   }
+
+   const response = await fetch(url)
+@@ -141,7 +147,10 @@
+   }
+
+   const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
+-  const bytes = await readWithProgress(response, onBytes, false)
++  const bytes = (await verifyResourceBytes(
++    url,
++    await readWithProgress(response, onBytes, false),
++  )).buffer as ArrayBuffer
+
+   if (cache) {
+     // Rebuild a Response from the downloaded bytes; the original stream is already consumed.
+@@ -190,21 +199,7 @@
+
+ /** Fetch a small text asset (vocab, etc.), serving from / populating Cache Storage. */
+ export async function fetchOnnxModelText(url: string): Promise<string> {
+-    requireResource(url)
+-  const cache = await openCache()
+-  const cached = cache ? await cache.match(url).catch(() => undefined) : undefined
+-  if (cached) {
+-    return cached.text()
+-  }
+-
+-  const response = await fetch(url)
+-  if (!response.ok) {
+-    throw new Error(`Failed to fetch ${url} (${response.status} ${response.statusText})`)
+-  }
+-  if (cache) {
+-    await cache.put(url, response.clone()).catch(() => {})
+-  }
+-  return response.text()
++  return new TextDecoder().decode(await fetchOnnxModelBytes(url))
+ }
+
+ /** Fetch a small JSON asset (config, tokenizer, voice style), with the same caching. */

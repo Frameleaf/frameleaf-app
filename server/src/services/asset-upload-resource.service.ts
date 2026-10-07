@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -33,6 +34,7 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { identityMatchingEnabled } from 'src/services/icloud-identity.service.js';
 import { requireAccess, requireUploadAccess } from 'src/utils/access.js';
 import {
+  ASSET_UPLOAD_LIMITS,
   UploadSourceIdentity,
   assembleAssetUploadParts,
   parseAssetUploadHeaders,
@@ -59,6 +61,19 @@ export class AssetUploadResourceService {
     private rateLimits: RateLimitRepository,
     private identities: ICloudIdentityRepository,
   ) {}
+
+  async limits() {
+    let available: number;
+    try {
+      ({ available } = await this.storage.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Upload)));
+    } catch {
+      throw new ServiceUnavailableException('Upload storage unavailable');
+    }
+    // Parts remain until assembly is durable, so the complete file needs a second copy.
+    // ponytail: this is a capacity snapshot; add reservations if competing writers need guarantees.
+    const maxSize = Math.min(ASSET_UPLOAD_LIMITS.maxSize, Math.max(0, Math.floor(available / 2)));
+    return { ...ASSET_UPLOAD_LIMITS, maxSize, maxAppendSize: Math.min(ASSET_UPLOAD_LIMITS.maxAppendSize, maxSize) };
+  }
 
   private folder(id: string) {
     return join(StorageCore.getBaseFolder(StorageFolder.Upload), '.resumable', id);
@@ -103,6 +118,10 @@ export class AssetUploadResourceService {
   ) {
     const ownerId = await this.owner(auth);
     const parsed = parseAssetUploadHeaders(headers);
+    const limits = await this.limits();
+    if (limits.maxSize === 0 || (parsed.size !== undefined && parsed.size > limits.maxSize)) {
+      throw new HttpException('Insufficient upload storage', 507);
+    }
     const id = randomUUID();
     this.media.canUploadFile({
       auth,
@@ -118,7 +137,7 @@ export class AssetUploadResourceService {
     });
     await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
-    const resource = await this.uploads.create(id, ownerId, parsed);
+    const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
     resume(resource);
     return this.receive(auth, resource.id, input, 0, parsed.complete, parsed.size);
   }
@@ -262,6 +281,12 @@ export class AssetUploadResourceService {
       };
       validate(initial);
       const expectedSize = initial.expectedSize ?? length ?? null;
+      if (expectedSize !== null) {
+        const { available } = await this.storage.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Upload));
+        if (expectedSize * 2 - offset > available) {
+          throw new HttpException('Insufficient upload storage', 507);
+        }
+      }
       const part = await writeAssetUploadPart(
         this.folder(id),
         input,
@@ -320,6 +345,11 @@ export class AssetUploadResourceService {
         return this.resolveResult(auth, id, check);
       }
       return { resource };
+    } catch (error) {
+      if (['ENOSPC', 'EDQUOT'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {
+        throw new HttpException('Insufficient upload storage', 507);
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -360,6 +390,9 @@ export class AssetUploadResourceService {
           getFilenameExtension(initial.metadata.filename!),
         );
       } catch (error) {
+        if (['ENOSPC', 'EDQUOT'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {
+          throw new HttpException('Insufficient upload storage', 507);
+        }
         if (error instanceof BadRequestException) {
           await check();
           const rejected = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
