@@ -526,6 +526,7 @@ export class AssetRepository {
                   profileDescription: ref('profileDescription'),
                   colorspace: ref('colorspace'),
                   bitsPerSample: ref('bitsPerSample'),
+                  imageEncoding: eb.ref('excluded.imageEncoding'),
                   rating: ref('rating'),
                   fps: ref('fps'),
                   tags: ref('tags'),

@@ -221,7 +221,9 @@ export class MetadataService extends BaseService {
 
     await this.jobRepository.queueSelection(
       JobName.AssetExtractMetadata,
-      this.assetJobRepository.selectionForMetadataExtraction(force),
+      process.env.FRAMELEAF_HDR_IMAGES === 'experimental'
+        ? this.assetJobRepository.selectionForMetadataExtraction(force, true)
+        : this.assetJobRepository.selectionForMetadataExtraction(force),
     );
 
     return JobStatus.Success;

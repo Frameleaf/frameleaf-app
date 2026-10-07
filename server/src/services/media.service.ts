@@ -208,7 +208,11 @@ export class MediaService extends BaseService {
     const config = await this.getConfig({ withCache: true });
 
     const isFullsizeEnabled = config.image.fullsize.enabled;
-    const selected = this.assetJobRepository.selectionForThumbnailJob({ force, fullsizeEnabled: isFullsizeEnabled });
+    const selected = this.assetJobRepository.selectionForThumbnailJob({
+      force,
+      fullsizeEnabled: isFullsizeEnabled,
+      ...(process.env.FRAMELEAF_HDR_IMAGES === 'experimental' && { hdrBackfill: true }),
+    });
     await this.jobRepository.queueSelection(
       JobName.AssetGenerateThumbnails,
       force ? selected : selected.where('asset.isEdited', '=', false),

@@ -80,7 +80,7 @@ export class AssetJobRepository {
     return this.selectionForThumbnailJob(options).stream();
   }
 
-  selectionForThumbnailJob(options: { force: boolean | undefined; fullsizeEnabled: boolean }) {
+  selectionForThumbnailJob(options: { force: boolean | undefined; fullsizeEnabled: boolean; hdrBackfill?: boolean }) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id', 'asset.isEdited'])
@@ -103,6 +103,25 @@ export class AssetJobRepository {
               ]),
               eb('asset.thumbhash', 'is', null),
             ];
+
+            if (options.hdrBackfill) {
+              conditions.push(
+                and([
+                  eb('asset.type', '=', sql.lit(AssetType.Image)),
+                  eb('asset.isEdited', '=', false),
+                  exists(
+                    selectFrom('asset_exif')
+                      .whereRef('assetId', '=', 'asset.id')
+                      .where(sql<string>`"imageEncoding"->>'dynamicRange'`, '=', 'hdr')
+                      .where(sql<string>`"imageEncoding"->>'reconstructionAvailable'`, '=', 'true'),
+                  ),
+                  or([
+                    not(exists(file(AssetFileType.HdrPreview).where('asset_file.isEdited', '=', false))),
+                    not(exists(file(AssetFileType.HdrFullSize).where('asset_file.isEdited', '=', false))),
+                  ]),
+                ]),
+              );
+            }
 
             if (options.fullsizeEnabled) {
               const isWebUnsupported = sql.join(
@@ -536,16 +555,35 @@ export class AssetJobRepository {
     return this.selectionForMetadataExtraction(force).stream();
   }
 
-  selectionForMetadataExtraction(force?: boolean) {
+  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
       .$if(!force, (qb) =>
-        qb
-          .leftJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
-          .where((eb) =>
-            eb.or([eb('asset_job_status.metadataExtractedAt', 'is', null), eb('asset_job_status.assetId', 'is', null)]),
-          ),
+        qb.leftJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id').where((eb) => {
+          const conditions = [
+            eb('asset_job_status.metadataExtractedAt', 'is', null),
+            eb('asset_job_status.assetId', 'is', null),
+          ];
+          if (encodingBackfill) {
+            const raw = Object.keys(mimeTypes.raw).map((extension) => sql.lit(`%${extension}`));
+            conditions.push(
+              eb.and([
+                eb('asset.type', '=', sql.lit(AssetType.Image)),
+                sql<boolean>`lower(asset."originalFileName") not like all(array[${sql.join(raw)}]::text[])`,
+                eb.not(
+                  eb.exists(
+                    eb
+                      .selectFrom('asset_exif')
+                      .whereRef('assetId', '=', 'asset.id')
+                      .where('imageEncoding', 'is not', null),
+                  ),
+                ),
+              ]),
+            );
+          }
+          return eb.or(conditions);
+        }),
       )
       .where('asset.deletedAt', 'is', null);
   }
