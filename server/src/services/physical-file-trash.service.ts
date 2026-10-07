@@ -90,12 +90,29 @@ export class PhysicalFileTrashService extends BaseService {
       owner.id,
       `${this.cryptoRepository.randomUUID()}${extension}`,
     );
-    const restored = await this.physicalFileTrashRepository.untrash(id, target, (from, to) => this.move(from, to));
+    let stat!: Awaited<ReturnType<typeof this.storageRepository.stat>>;
+    const restored = await this.physicalFileTrashRepository.untrash(id, target, async (from, to) => {
+      await this.move(from, to);
+      try {
+        stat = await this.storageRepository.stat(to);
+      } catch (error) {
+        try {
+          await this.move(to, from);
+        } catch (compensationError) {
+          this.logger.error('File-trash inspection failed', error);
+          this.logger.error('File-trash move-back failed', compensationError);
+          throw new AggregateError(
+            [error, compensationError],
+            `File-trash inspection failed and the file could not be moved back from ${to} to ${from}`,
+          );
+        }
+        throw error;
+      }
+    });
     if (!restored) {
       throw new NotFoundException('File not found in the file trash');
     }
 
-    const stat = await this.storageRepository.stat(target);
     let asset: Asset | undefined;
     try {
       asset = await this.assetRepository.create({
