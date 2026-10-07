@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
+import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
 import type { SharpArguments } from 'src/queue/sharp-protocol.js';
 import type {
   DecodeToBufferOptions,
@@ -108,6 +109,20 @@ export type ExtractResult = {
 
 @Injectable()
 export class MediaRepository {
+  private hdrCodecProbe?: { value: Promise<HdrCodecCapabilities | null>; expires: number };
+
+  getHdrCodecCapabilities(): Promise<HdrCodecCapabilities | null> {
+    if (this.hdrCodecProbe && this.hdrCodecProbe.expires > Date.now()) return this.hdrCodecProbe.value;
+    const value = sharpProcessPool.run('getHdrCodecCapabilities', [], AbortSignal.timeout(2000)).catch(() => null);
+    const probe = { value, expires: Infinity };
+    this.hdrCodecProbe = probe;
+    void value.then((codec) => {
+      // Installed codecs do not change without a restart; retry a busy/unavailable worker after 30 seconds.
+      if (!codec) probe.expires = Date.now() + 30_000;
+    });
+    return value;
+  }
+
   inspectImageEncoding(input: string | Buffer) {
     return sharpProcessPool.run('inspectImageEncoding', [input]);
   }

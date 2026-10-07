@@ -170,3 +170,12 @@ and `hasHdrPreview`. Availability remains capability-gated; saved HDR pixels
 do not prove the current display can show HDR. The experimental gate is not
 camera-media or physical-display qualification. Still-only Live Photo saves
 retain original motion and pairing.
+
+`GET /server/features` also exposes optional `imageCapabilities`. Its `decode`,
+`render`, and `export` lists are independent and come from a probe inside the
+existing isolated image worker. `codecs` records the installed library versions.
+`experimentalEnabled` reports the administrator gate; `qualified` remains false
+until real-media and physical-display acceptance pass. An absent field means an
+older server with unknown capabilities. A missing codec reports empty lists,
+without preventing ordinary server feature discovery. Apple gain-map HEIC, ISO
+adaptive HEIF and HDR HEIC export remain explicitly unavailable in this build.

@@ -12258,6 +12258,26 @@ export type RemoteConnectionsResponseDto = {
     /** The address this server publishes for remote access */
     publicUrl: string | null;
 };
+export type ImageCapabilitiesDto = {
+    /** Versions reported by the installed isolated codec */
+    codecs: {
+        [key: string]: string;
+    };
+    /** Available source decoders; availability alone does not establish qualification */
+    decode: string[];
+    /** Whether the administrator enabled experimental HDR processing and delivery */
+    experimentalEnabled: boolean;
+    /** Available encoded still output formats, independently of input formats */
+    "export": string[];
+    /** Whether the exact build passed the real-media and physical-display acceptance gates */
+    qualified: boolean;
+    /** Available still-image render operations */
+    render: string[];
+    /** HDR renderer identity, or null when the isolated codec is unavailable */
+    renderer: string | null;
+    /** Known unsupported capabilities; never infer support from the container extension */
+    unavailable: string[];
+};
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
@@ -12275,6 +12295,7 @@ export type ServerFeaturesDto = {
     facialRecognition: boolean;
     /** Whether this server is linked to Frameleaf Cloud (FL-156) */
     frameleafCloud: boolean;
+    imageCapabilities?: ImageCapabilitiesDto;
     /** Whether image description and tag generation is enabled */
     imageDescription: boolean;
     /** Whether face import is enabled */

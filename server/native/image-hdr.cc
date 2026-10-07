@@ -513,8 +513,19 @@ napi_value encode(napi_env env, napi_callback_info info) {
 napi_value encodePaired(napi_env env, napi_callback_info info) {
   return invoke(env, info, 8, [&](napi_value* args) { return encodeLinear(env, args, true); });
 }
+napi_value capabilities(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 0, [&](napi_value*) {
+  napi_value result = object(env);
+  field(env, result, "libheif", heif_get_version());
+  field(env, result, "libultrahdr", UHDR_LIB_VERSION_STR);
+  field(env, result, "heicDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
+  field(env, result, "avifDecoder", heif_have_decoder_for_format(heif_compression_AV1) != 0);
+  return result;
+  });
+}
 napi_value init(napi_env env, napi_value exports) {
   const napi_property_descriptor functions[] = {
+    {"capabilities", nullptr, capabilities, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"inspect", nullptr, inspect, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"decode", nullptr, decode, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"encode", nullptr, encode, nullptr, nullptr, nullptr, napi_default, nullptr},

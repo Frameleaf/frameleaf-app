@@ -423,6 +423,16 @@ describe(ServerService.name, () => {
   describe('getFeatures', () => {
     it('should respond the server features', async () => {
       await expect(sut.getFeatures()).resolves.toEqual({
+        imageCapabilities: {
+          experimentalEnabled: false,
+          qualified: false,
+          renderer: null,
+          codecs: {},
+          decode: [],
+          render: [],
+          export: [],
+          unavailable: ['apple-gain-map-heic', 'iso-adaptive-heif', 'hdr-heic'],
+        },
         smartSearch: true,
         askSearch: true,
         duplicateDetection: true,
@@ -451,6 +461,28 @@ describe(ServerService.name, () => {
         supporter: false,
       });
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
+    });
+
+    it('reports installed decoders independently from render, export and qualification', async () => {
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+        libheif: '1.23.3',
+        libultrahdr: '2.0.2',
+        heicDecoder: true,
+        avifDecoder: false,
+      });
+      const features = await sut.getFeatures();
+      expect(features.imageCapabilities).toMatchObject({
+        qualified: false,
+        renderer: 'frameleaf-develop-hdr/1',
+        decode: ['gain-map-jpeg', 'sdr-heic', 'pq-heic', 'hlg-heic'],
+        render: ['linear-hdr-develop'],
+        export: ['sdr-jpeg', 'hdr-jpeg'],
+        unavailable: ['apple-gain-map-heic', 'iso-adaptive-heif', 'hdr-heic'],
+      });
+      mocks.media.getHdrCodecCapabilities.mockRejectedValue(new Error('worker unavailable'));
+      await expect(sut.getFeatures()).resolves.toMatchObject({
+        imageCapabilities: { renderer: null, decode: [], export: [] },
+      });
     });
 
     it('reports cloud entitlements only while linked, and the supporter flag from the licence (FL-156)', async () => {

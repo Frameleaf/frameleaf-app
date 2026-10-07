@@ -74,6 +74,10 @@ export class SharpOperations {
     private readonly maxBytes = 1024 ** 3,
   ) {}
 
+  getHdrCodecCapabilities() {
+    return imageHdrOperation((codec) => codec.capabilities());
+  }
+
   async inspectImageEncoding(input: string | Buffer) {
     const bytes = await imageHdrInput(input, this.maxBytes);
     return imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
