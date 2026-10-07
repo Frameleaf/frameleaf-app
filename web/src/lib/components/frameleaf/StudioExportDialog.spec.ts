@@ -75,6 +75,25 @@ describe('Studio export dialog', () => {
     }
   });
 
+  it('submits included/excluded integer frame boundaries and refuses invalid ranges', async () => {
+    const onExport = vi.fn();
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_range'), { target: { value: 'frames' } });
+    const start = screen.getByLabelText('frameleaf_studio_export_range_start');
+    const end = screen.getByLabelText('frameleaf_studio_export_range_end');
+    await fireEvent.input(start, { target: { value: '4' } });
+    await fireEvent.input(end, { target: { value: '4' } });
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.input(end, { target: { value: '12' } });
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ range: { inPoint: 4, outPoint: 12 } }));
+    await fireEvent.input(start, { target: { value: '4.5' } });
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_range'), { target: { value: 'all' } });
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls.at(-1)![0]).not.toHaveProperty('range');
+  });
+
   it('renders at home only: this server or the home network, never Frameleaf Cloud (FL-159 §2.7)', () => {
     render(StudioExportDialog, {
       open: true,

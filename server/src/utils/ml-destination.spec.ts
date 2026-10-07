@@ -1004,13 +1004,13 @@ describe('storedAdmission downstream model mechanics (workload-policy mocked; no
   });
 });
 
-describe('FL-201 approved restoration disclosure', () => {
+describe('FL-286 approved Cloud workload disclosure', () => {
   it.each([
     MlWorkload.RestorationFaithful,
     MlWorkload.RestorationCreative,
     MlWorkload.Upscale,
     MlWorkload.Interpolation,
-  ])('refuses %s before any probe despite current generic ML consent', async (workload) => {
+  ])('admits %s only with current consent and administrator opt-in', async (workload) => {
     expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
     const destination = {
       ...mlDestinationStub.frameleafCloudConsented,
@@ -1030,47 +1030,46 @@ describe('FL-201 approved restoration disclosure', () => {
       },
     };
     const d = deps({ destination, probe });
-    await expect(selectMlDestination(d, { workload, destinationId: destination.id })).rejects.toMatchObject({
-      refusal: 'disclosure-pending',
+    await expect(selectMlDestination(d, { workload, destinationId: destination.id })).resolves.toMatchObject({
+      kind: MlDestinationKind.FrameleafCloud,
+      cloudModelId: 'fixture-model',
     });
-    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
-    expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledOnce();
+    expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledOnce();
+
+    const input = { destination, workload, endpoint: FRAMELEAF_CLOUD_ENDPOINT, probe, spentUsd: 0 };
+    expect(evaluateAdmission(input)).toEqual({ admitted: true });
+    expect(
+      storedAdmission({
+        destination: { ...destination, lastProbeWorkloads: [workload], lastProbeCloud: probe.cloud },
+        workload,
+        spentUsd: 0,
+        choices: {},
+      }),
+    ).toEqual({ admitted: true });
+    expect(evaluateAdmission({ ...input, destination: { ...destination, consentAcknowledgedAt: null } })).toMatchObject(
+      { admitted: false, refusal: MlAdmissionRefusal.ConsentMissing },
+    );
+    expect(evaluateAdmission({ ...input, destination: { ...destination, consentVersion: 'stale' } })).toMatchObject({
+      admitted: false,
+      refusal: MlAdmissionRefusal.ConsentVersionOutdated,
+    });
+    expect(evaluateAdmission({ ...input, destination: { ...destination, enabled: false } })).toMatchObject({
+      admitted: false,
+      refusal: MlAdmissionRefusal.DestinationDisabled,
+    });
+    expect(evaluateAdmission({ ...input, destination: { ...destination, workloads: [] } })).toMatchObject({
+      admitted: false,
+      refusal: MlAdmissionRefusal.WorkloadNotAllowed,
+    });
   });
 });
 
 describe('FL-201 real disclosure policy and approved workloads', () => {
-  it('does not treat a future generic consent version as restoration disclosure approval', () => {
-    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
-    const destination = { ...mlDestinationStub.frameleafCloudConsented, consentVersion: '2099-01-01.1' };
-    const probe = {
-      ...mlProbeStub.frameleafCloud,
-      cloud: { ...mlProbeStub.frameleafCloud.cloud!, consentRequiredVersion: '2099-01-01.1' },
-    };
-    expect(
-      evaluateAdmission({
-        destination,
-        workload: MlWorkload.RestorationFaithful,
-        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
-        probe,
-        spentUsd: 0,
-      }),
-    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.DisclosurePending });
+  it('keeps pending disclosure terminal for created jobs and unsupported workloads pending', () => {
+    expect(cloudDisclosure.hasPendingCloudDisclosure(MlWorkload.Face)).toBe(true);
     expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.DisclosurePending)).toBe(true);
     expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.WalletInsufficient)).toBe(false);
-  });
-
-  it.each([
-    MlWorkload.RestorationFaithful,
-    MlWorkload.RestorationCreative,
-    MlWorkload.Upscale,
-    MlWorkload.Interpolation,
-  ])('projects %s as unavailable without probing', (workload) => {
-    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
-    const destination = { ...mlDestinationStub.frameleafCloudConsented, workloads: [workload] };
-    expect(storedAdmission({ destination, workload, spentUsd: 0, choices: {} })).toMatchObject({
-      admitted: false,
-      refusal: MlAdmissionRefusal.DisclosurePending,
-    });
   });
 
   it('retains real missing, stale and current consent checks for approved description', () => {

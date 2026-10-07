@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './browser-driver.mjs';
 
 /**
@@ -11,7 +12,7 @@ import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicD
  * receives so tests can assert on the wire format itself (the proxy capability shape, the
  * execute/sync vs execute/async routing).
  */
-async function startStubDriver() {
+async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, viewport = {width: 500, height: 400}} = {}) {
   const requests = [];
   let sessionCounter = 0;
   const server = http.createServer((req, res) => {
@@ -42,6 +43,14 @@ async function startStubDriver() {
         return;
       }
       if (req.method === 'POST' && req.url.endsWith('/execute/sync')) {
+        if (body.args[0]?.selector && body.args[0]?.position) {
+          const value = runInNewContext(`(() => { ${body.script} })()`, {
+            arguments: body.args, innerWidth: viewport.width, innerHeight: viewport.height,
+            document: {querySelector: () => ({getClientRects: () => [rect]})},
+          });
+          res.end(JSON.stringify({value}));
+          return;
+        }
         res.end(JSON.stringify({ value: { sawScript: body.script, sawArgs: body.args } }));
         return;
       }
@@ -294,6 +303,46 @@ test('Chromium iframe hover uses the native locator position without forced even
     await page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', {x: 50, y: 8}));
     assert.deepEqual(calls, [{selector:'[data-testid="dopesheet-ruler"]', options:{position:{x:50,y:8}}}]);
   } finally { await driver.close(); }
+});
+
+test('Chromium iframe inputs and background clicks preserve native locator options', async () => {
+  const calls = [];
+  const nativeFrame = { locator: selector => ({
+    fill: async value => calls.push({selector, value}),
+    click: async options => calls.push({selector, options}),
+  }) };
+  const driver = await createChromiumDriver({ harnessOrigin: 'http://127.0.0.1:5555', chromium: {
+    launch: async () => ({ newContext: async () => ({ newPage: async () => ({
+      locator: () => ({ waitFor: async () => {}, elementHandle: async () => ({ contentFrame: async () => nativeFrame }) }),
+    }) }), close: async () => {} }),
+  } });
+  try {
+    await (await driver.newPage()).inFrame('iframe', async frame => {
+      await frame.fill('input[aria-label="Position X"]', '12');
+      await frame.click('[aria-label="Video Preview"]', {position: {x: 5, y: 5}});
+    });
+    assert.deepEqual(calls, [
+      {selector: 'input[aria-label="Position X"]', value: '12'},
+      {selector: '[aria-label="Video Preview"]', options: {position: {x: 5, y: 5}}},
+    ]);
+  } finally { await driver.close(); }
+});
+
+test('WebDriver positioned iframe click uses pointer down/up and restores frame on refusal', async () => {
+  for (const clipped of [false, true]) {
+  const stub = await startStubDriver(clipped ? {rect: {x: 100, y: 120, width: 700, height: 450}} : {});
+  const driver = await createWebDriverClassicDriver({endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555'});
+  try {
+    const page = await driver.newPage();
+    await assert.rejects(page.inFrame('iframe', frame => frame.click('[aria-label="Video Preview"]', {position: {x: 5, y: 5}})), /unknown command/);
+    const action = stub.requests.find(r => r.url.endsWith('/actions'));
+    assert.deepEqual(action.body.actions[0].actions, [
+      {type: 'pointerMove', origin: {'element-6066-11e4-a52e-4f735466cecf': 'native-frame'}, x: clipped ? -195 : -95, y: clipped ? -135 : -5, duration: 0},
+      {type: 'pointerDown', button: 0}, {type: 'pointerUp', button: 0},
+    ]);
+    assert.equal(stub.requests.at(-1).url, '/session/s1/frame/parent');
+  } finally { await driver.close(); await stub.close(); }
+  }
 });
 
 test('WebDriver native iframe hover sends one element-origin pointerMove and restores frame on refusal', async () => {

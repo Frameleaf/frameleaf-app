@@ -489,6 +489,23 @@ export class MediaRepository {
           return resolve(null);
         }
 
+        // The existing CFR calculation sorts packets by PTS, allowing decode-order reordering.
+        const outputFrames = this.cfrOutputFrames(postDiscard, postDiscard.length / totalDuration);
+        const duration = postDiscard[0].duration;
+        const presentationCadenceTicks =
+          presentationValid &&
+          postDiscard.every((packet, index) => {
+            const offset = index * duration;
+            const pts = postDiscard[0].pts + offset;
+            return (
+              Number.isSafeInteger(offset) &&
+              Number.isSafeInteger(pts) &&
+              packet.duration === duration &&
+              packet.pts === pts
+            );
+          })
+            ? duration
+            : null;
         let presentation: VideoPacketInfo['presentation'] = null;
         if (presentationValid) {
           presentation = { startPts: Infinity, endPts: -Infinity };
@@ -500,9 +517,10 @@ export class MediaRepository {
 
         resolve({
           presentation,
+          presentationCadenceTicks,
           totalDuration,
           packetCount: postDiscard.length,
-          outputFrames: this.cfrOutputFrames(postDiscard, postDiscard.length / totalDuration),
+          outputFrames,
           keyframePts,
           keyframeAccDuration,
           keyframeOwnDuration,

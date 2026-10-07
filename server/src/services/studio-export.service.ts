@@ -84,9 +84,11 @@ import {
   StudioExportContract,
   StudioExportMastering,
   StudioExportMasteringError,
+  StudioExportRange,
   buildStudioExportContract,
   declareStudioTiming,
   findStudioExportOutputMismatch,
+  findStudioExportRangeMismatch,
   parseStudioExportContract,
   resolveStudioExportTiming,
   studioMediaSources,
@@ -338,6 +340,7 @@ export class StudioExportService {
       color: dto.color,
       resolution: dto.resolution,
       quality: dto.quality ?? 'high',
+      ...(dto.range && { range: dto.range }),
       audio: dto.audio ?? 'preserve',
       ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),
     };
@@ -410,11 +413,22 @@ export class StudioExportService {
   private async declareOutput(
     graph: unknown,
     entries: readonly StudioAuthorizedEntry[],
-    settings: { format: string; color: string; audio: 'preserve' | 'stereo'; mastering?: StudioExportMastering },
+    settings: {
+      format: string;
+      color: string;
+      audio: 'preserve' | 'stereo';
+      mastering?: StudioExportMastering;
+      range?: StudioExportRange;
+    },
   ): Promise<{ timing: ReturnType<typeof resolveStudioExportTiming>; contract: StudioExportContract }> {
     const facts: StudioSourceMediaFacts[] = await this.repository.getSourceMediaFacts(studioMediaSources(entries).ids);
     try {
       const timing = declareStudioTiming(graph, entries, facts);
+      if (settings.range && timing.decision.mode !== 'convert') {
+        throw new StudioTimingError(
+          'Frame ranges require rendered output at the declared cadence; timestamp passthrough is unsupported.',
+        );
+      }
       return { timing, contract: buildStudioExportContract(settings, graph, facts) };
     } catch (error) {
       if (error instanceof StudioTimingError) {
@@ -1091,7 +1105,22 @@ export class StudioExportService {
     version: StudioExportVersion,
     contract: StudioExportContract | null,
   ): Promise<void> {
-    const settings = version.settings as { format: string; color: string; mastering?: StudioExportMastering };
+    const settings = version.settings as {
+      format: string;
+      color: string;
+      range?: StudioExportRange;
+      mastering?: StudioExportMastering;
+    };
+    const range = contract?.range;
+    if (
+      (settings.range || range) &&
+      (!settings.range ||
+        !range ||
+        settings.range.inPoint !== range.inPoint ||
+        settings.range.outPoint !== range.outPoint)
+    ) {
+      throw new StudioExportRefusal('output-rejected', 'The render has no matching frame range contract');
+    }
     const expected = contract ?? buildStudioExportContract(settings, null, []);
     const probe = await this.media.probe(path).catch(() => null);
     if (!probe) {
@@ -1105,6 +1134,12 @@ export class StudioExportService {
     const mismatch = findStudioExportOutputMismatch(expected, { ...probe, mastering }, settings.format);
     if (mismatch) {
       throw new StudioExportRefusal('output-rejected', mismatch);
+    }
+    if (range) {
+      const video = probe.videoStreams[0];
+      const packets = await this.media.probePackets(path, video.index).catch(() => null);
+      const rangeMismatch = findStudioExportRangeMismatch(range, video, packets);
+      if (rangeMismatch) throw new StudioExportRefusal('output-rejected', rangeMismatch);
     }
   }
 

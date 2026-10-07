@@ -12882,6 +12882,12 @@ export type StudioExportMastering = {
     /** Declared BT.2020 mastering display primaries and D65 white point */
     primaries: Primaries;
 };
+export type StudioExportRangeDto = {
+    /** First included frame on the main timeline */
+    inPoint: number;
+    /** First excluded frame on the main timeline */
+    outPoint: number;
+};
 export type StudioExportSettingsDto = {
     /** Absent on exports made before audio was a choice */
     audio?: StudioExportAudio;
@@ -12891,6 +12897,8 @@ export type StudioExportSettingsDto = {
     mastering?: StudioExportMastering;
     /** Absent on exports made before quality was a choice */
     quality?: StudioExportQuality;
+    /** Absent renders the whole main timeline */
+    range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
 };
 export type StudioExportVersionDto = {
@@ -13241,6 +13249,8 @@ export type StudioExportCreateDto = {
     mastering?: StudioExportMastering;
     /** Defaults to `high` */
     quality?: StudioExportQuality;
+    /** Absent renders the whole main timeline */
+    range?: StudioExportRangeDto;
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;

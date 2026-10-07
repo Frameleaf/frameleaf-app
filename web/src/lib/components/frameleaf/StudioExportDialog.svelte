@@ -5,6 +5,7 @@
     color: StudioExportColor;
     resolution: StudioExportResolution;
     quality: StudioExportQuality;
+    range?: { inPoint: number; outPoint: number };
     destination: MediaOperationDestination;
     /**
      * FL-162 Smooth motion of the exported video, as its own job once it is in the library. The export
@@ -103,6 +104,9 @@
   let color = $state(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);
   let quality = $state(StudioExportQuality.High);
+  let rangeMode = $state('all');
+  let inPoint = $state<number | undefined>(0);
+  let outPoint = $state<number | undefined>(1);
   let destination = $state(MediaOperationDestination.Local);
   const fieldId = $props.id();
 
@@ -170,6 +174,9 @@
     color = StudioExportColor.Preserve;
     resolution = StudioExportResolution.$2160P;
     quality = StudioExportQuality.High;
+    rangeMode = 'all';
+    inPoint = 0;
+    outPoint = 1;
     destination = MediaOperationDestination.Local;
     smoothFactor = null;
   });
@@ -183,7 +190,23 @@
     }),
   );
   const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
-  const canExport = $derived(!busy && verdict.supported && (smoothFactor === null || !!smoothDestination));
+  const selectedRange = $derived(
+    rangeMode === 'frames' &&
+      typeof inPoint === 'number' &&
+      typeof outPoint === 'number' &&
+      Number.isSafeInteger(inPoint) &&
+      Number.isSafeInteger(outPoint) &&
+      inPoint >= 0 &&
+      outPoint > inPoint
+      ? { inPoint, outPoint }
+      : null,
+  );
+  const canExport = $derived(
+    !busy &&
+      verdict.supported &&
+      (rangeMode === 'all' || selectedRange !== null) &&
+      (smoothFactor === null || !!smoothDestination),
+  );
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
     list.find((entry) => entry.value === value)?.verdict.supported === false;
 
@@ -194,6 +217,7 @@
         color,
         resolution,
         quality,
+        ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
           smoothDestination && { smoothMotion: { factor: smoothFactor, destinationId: smoothDestination.id } }),
@@ -253,7 +277,27 @@
           {/each}
         </select>
       </label>
+      <label class="field" for="{fieldId}-range">
+        <span>{$t('frameleaf_studio_export_range')}</span>
+        <select id="{fieldId}-range" bind:value={rangeMode}>
+          <option value="all">{$t('frameleaf_studio_export_range_all')}</option>
+          <option value="frames">{$t('frameleaf_studio_export_range_frames')}</option>
+        </select>
+      </label>
+      {#if rangeMode === 'frames'}
+        <label class="field" for="{fieldId}-in-point">
+          <span>{$t('frameleaf_studio_export_range_start')}</span>
+          <input id="{fieldId}-in-point" type="number" min="0" step="1" bind:value={inPoint} />
+        </label>
+        <label class="field" for="{fieldId}-out-point">
+          <span>{$t('frameleaf_studio_export_range_end')}</span>
+          <input id="{fieldId}-out-point" type="number" min="1" step="1" bind:value={outPoint} />
+        </label>
+      {/if}
     </div>
+    {#if rangeMode === 'frames' && selectedRange === null}
+      <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
+    {/if}
 
     {#if color === StudioExportColor.DolbyVision}
       <p class="note warning">
@@ -349,7 +393,8 @@
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
-  .field select {
+  .field select,
+  .field input {
     min-height: 34px;
     padding: 0 0.5rem;
     border: 1px solid var(--fl-border);

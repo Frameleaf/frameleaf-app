@@ -24,12 +24,17 @@ pointer/keyboard/touch coverage, measured performance budgets and long-timeline 
 remain required on each browser against an admitted worker. Real Safari/iPad evidence remains
 separate from Playwright WebKit; the committed conformance statuses are unchanged.
 
-The admitted-host `STUDIO_HOST_SCENARIO=ease-out` save/reopen scenario accepts
+The admitted-host `STUDIO_HOST_SCENARIO=track`, `auto-key` and `ease-out` save/reopen scenarios accept
 `BROWSER=chromium`, `firefox` or `safari`. Firefox and Safari use the supplied
 `WEBDRIVER_ENDPOINT` for real geckodriver or safaridriver; Safari receives no Firefox
 binary or preferences. The same GPU admission, visible-canvas and pixel oracle gates apply.
-The track and auto-key host scenarios still use Chromium. This dispatch support does not
-qualify Safari/iPad hardware, touch, every manifest row or exported-media parity.
+Track/auto-key use real native iframe input and undo/save controls, observed stage drafts,
+real backend revisions and project-only reopening. Their pixel comparison crops the actual
+browser screenshot using iframe/preview bounds and measured device scale; no render is substituted.
+Project-only evidence requires an HTTP `HOST_ORIGIN`, a proxied browser GET for that exact
+project within the reopen window, and no asset listing/search or opaque CONNECT tunnel in that window.
+Empty observations, HTTPS origins and tunneled traffic cannot produce a passing project-only result.
+This dispatch support does not qualify Safari/iPad hardware, touch, every manifest row or exported-media parity.
 
 ## Studio graph protocol (native apps)
 

@@ -89,18 +89,29 @@ const PINNED = Symbol.for('frameleaf.resource-admission.fetch-pinned');
 if (typeof globalThis.fetch === 'function' && !globalThis[PINNED]) {
   const original = globalThis.fetch;
   globalThis.fetch = function pinnedFetch(input, init) {
-    if (typeof input === 'string' || input instanceof URL) {
-      return original.call(globalThis, rewriteHuggingFace(String(input)), init);
+    let requestUrl;
+    try {
+      requestUrl = Object.getOwnPropertyDescriptor(Request.prototype, 'url').get.call(input);
+    } catch { /* Non-Requests use native fetch's string input form, regardless of realm. */ }
+    let normalized;
+    try { normalized = requestUrl ?? String(input); }
+    catch (error) { return Promise.reject(error); }
+    let destination;
+    try {
+      destination = new URL(normalized, globalThis.location?.href);
+    } catch { /* Invalid inputs retain native fetch handling. */ }
+    if (destination?.hostname.replace(/\.$/, '') === 'huggingface.co') {
+      let request;
+      try { request = new Request(requestUrl === undefined ? normalized : input, init); }
+      catch { return Promise.reject(new ResourceBlockedError(destination.origin + destination.pathname)); }
+      if ((request.method !== 'GET' && request.method !== 'HEAD') || request.body !== null) {
+        return Promise.reject(new ResourceBlockedError(destination.origin + destination.pathname));
+      }
+      // Forward only the checked native state; caller accessors are never evaluated again.
+      const target = rewriteHuggingFace(request.url);
+      return original.call(globalThis, target === request.url ? request : new Request(target, request));
     }
-    // A Request, from this frame or another. Hugging Face model downloads are GET or HEAD; a
-    // request with a body is sent as it is rather than copied.
-    if (input && typeof input === 'object' && typeof input.url === 'string') {
-      const method = String(input.method ?? 'GET').toUpperCase();
-      const target = rewriteHuggingFace(input.url);
-      if (target === input.url || (method !== 'GET' && method !== 'HEAD')) return original.call(globalThis, input, init);
-      return original.call(globalThis, new Request(target, input), init);
-    }
-    return original.call(globalThis, input, init);
+    return original.call(globalThis, requestUrl === undefined ? normalized : input, init);
   };
   globalThis[PINNED] = true;
 }

@@ -15,13 +15,19 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
  * against its contract first (`cloudRequestBody`).
  */
 
-/** FL-201: no approved disclosure exists for these Cloud workloads. No generic version grants it. */
+/**
+ * FL-286: reviewed workloads covered by the October 3, 2026 AI GPU and AI Credits Terms:
+ * https://frameleaf.app/legal/ai-gpu-and-ai-credits/
+ * Cloud's current consent version/digest and per-job authorization remain required.
+ */
 export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
-  [
+  ![
+    MlWorkload.Enrichment,
     MlWorkload.RestorationFaithful,
     MlWorkload.RestorationCreative,
     MlWorkload.Upscale,
     MlWorkload.Interpolation,
+    MlWorkload.StudioAi,
   ].includes(workload);
 
 /** Longest a cloud response body may be; discovery, capabilities, catalogue and wallet are small. */

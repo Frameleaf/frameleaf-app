@@ -56,6 +56,24 @@ test('quality presets reach the encoder, preserve the legacy default and refuse 
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_EXPORT_QUALITY/);
   }
 });
+test('ranges retain source-frame bounds, render only the selected frames and require the bound contract', () => {
+  const input = claim();
+  input.settings.range = { inPoint: 4, outPoint: 12 };
+  input.snapshot.contract.range = { ...input.settings.range, cadence: '24/1' };
+  const before = structuredClone(input);
+  const recipe = stillRecipe(input);
+  assert.equal(recipe.frames, 8);
+  assert.deepEqual(recipe.range, { inPoint: 4, outPoint: 12 });
+  assert.deepEqual(input, before);
+  for (const range of [{ inPoint: -1, outPoint: 12 }, { inPoint: 4.5, outPoint: 12 },
+    { inPoint: 12, outPoint: 12 }, { inPoint: 4, outPoint: 25 }, { inPoint: 4, outPoint: 12, extra: true }, null]) {
+    const invalid = structuredClone(before);
+    invalid.settings.range = range;
+    assert.throws(() => stillRecipe(invalid));
+  }
+  delete input.snapshot.contract.range;
+  assert.throws(() => stillRecipe(input), /RANGE_CONTRACT_CHANGED/);
+});
 for (const [name, change] of [
   [
     'HDR graph',

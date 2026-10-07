@@ -45,6 +45,15 @@ const StudioExportQualitySchema = z
   .describe('Encoder quality preset')
   .meta({ id: 'StudioExportQuality' });
 
+const StudioExportRangeSchema = z
+  .object({
+    inPoint: z.int().min(0).describe('First included frame on the main timeline'),
+    outPoint: z.int().min(1).describe('First excluded frame on the main timeline'),
+  })
+  .strict()
+  .refine((range) => range.outPoint > range.inPoint, { message: 'The end frame must follow the start frame' })
+  .meta({ id: 'StudioExportRangeDto' });
+
 export const StudioExportResolutionSchema = z
   .enum(STUDIO_EXPORT_RESOLUTIONS)
   .describe('Output resolution')
@@ -63,6 +72,7 @@ const StudioExportCreateSchema = z
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
     quality: StudioExportQualitySchema.optional().describe('Defaults to `high`'),
+    range: StudioExportRangeSchema.optional().describe('Absent renders the whole main timeline'),
     audio: StudioExportAudioSchema.optional().describe(
       'Defaults to `preserve`; a stereo downmix happens only when asked for',
     ),
@@ -97,6 +107,7 @@ const StudioExportSettingsSchema = z
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
     quality: StudioExportQualitySchema.optional().describe('Absent on exports made before quality was a choice'),
+    range: StudioExportRangeSchema.optional().describe('Absent renders the whole main timeline'),
     audio: StudioExportAudioSchema.optional().describe('Absent on exports made before audio was a choice'),
     mastering: StudioExportMasteringSchema.optional().describe(
       'Declared PQ mastering display, fixed when this export was submitted',

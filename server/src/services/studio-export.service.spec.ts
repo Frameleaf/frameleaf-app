@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import type { MediaRepository } from 'src/repositories/media.repository.js';
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -22,6 +24,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import {
   StudioExportPublished,
   StudioExportRefusal,
@@ -37,6 +40,10 @@ import { StudioResourceKind } from 'src/utils/studio-resources.js';
 vi.mock('src/utils/config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/config.js')>()),
   getConfig: vi.fn().mockResolvedValue({ machineLearning: { nsfwDetection: { hideFromLibrary: true } } }),
+}));
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: vi.fn(),
 }));
 
 const OWNER = '0195e2a0-0000-4000-8000-00000000000a';
@@ -258,6 +265,7 @@ describe(StudioExportService.name, () => {
   let media: {
     probe: ReturnType<typeof vi.fn>;
     probeHdrMastering: ReturnType<typeof vi.fn<MediaRepository['probeHdrMastering']>>;
+    probePackets: ReturnType<typeof vi.fn>;
   };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
@@ -381,6 +389,7 @@ describe(StudioExportService.name, () => {
     media = {
       probe: vi.fn().mockResolvedValue(renderedOutput()),
       probeHdrMastering: vi.fn<MediaRepository['probeHdrMastering']>().mockResolvedValue([]),
+      probePackets: vi.fn().mockResolvedValue(null),
     };
     restorations = {
       queueExportSmoothMotion: vi
@@ -531,14 +540,14 @@ describe(StudioExportService.name, () => {
         version: versionRow({ state: StudioExportVersionState.Rendering }),
       });
       for (const quality of ['low', 'medium', 'high', 'ultra'] as const) {
-        const request = StudioExportCreateDto.schema.parse({ ...dto, quality });
+        const request = StudioExportCreateDto.schema.parse({ ...(dto as object), quality });
         await sut.create(auth(), PROJECT, request);
         const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
         expect(job.settings).toEqual(expect.objectContaining({ quality }));
         expect(version.settings).toEqual(job.settings);
       }
       for (const quality of ['lossless', null, 10, {}]) {
-        expect(StudioExportCreateDto.schema.safeParse({ ...dto, quality }).success).toBe(false);
+        expect(StudioExportCreateDto.schema.safeParse({ ...(dto as object), quality }).success).toBe(false);
       }
     });
 
@@ -735,6 +744,31 @@ describe(StudioExportService.name, () => {
       const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
       return { snapshot: job.snapshot, version };
     };
+
+    it('binds frame ranges to the stored graph and refuses invalid bounds and timestamp passthrough before jobs', async () => {
+      const graph = clipGraph({
+        items: [{ id: 'still', type: 'image', mediaId: CLIP, from: 0, durationInFrames: 30 }],
+      });
+      const range = { inPoint: 5, outPoint: 7 };
+      const parsed = StudioExportCreateDto.schema.parse({ ...dto, range });
+      const { snapshot, version } = await snapshotOf(graph, parsed);
+      expect(version.settings.range).toEqual(range);
+      expect(snapshot.contract.range).toEqual({ ...range, cadence: '30000/1001' });
+      expect(snapshot.studio).not.toHaveProperty('graph');
+      repository.createWithRender.mockClear();
+      for (const invalid of [
+        { inPoint: 2, outPoint: 2 },
+        { inPoint: 0.5, outPoint: 2 },
+        null,
+        { inPoint: 1, outPoint: 2, extra: true },
+      ]) {
+        expect(StudioExportCreateDto.schema.safeParse({ ...dto, range: invalid }).success).toBe(false);
+      }
+      await expect(snapshotOf(graph, { range: { inPoint: 0, outPoint: 31 } })).rejects.toThrow('exceeds');
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      await expect(snapshotOf(clipGraph(), { range })).rejects.toThrow('timestamp passthrough');
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
 
     it('keeps the presentation timestamps of one variable-rate source the edit does not retime', async () => {
       repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { ownDuration: [1001, 1502], startPts: 2002 })]);
@@ -1233,6 +1267,20 @@ describe(StudioExportService.name, () => {
     });
 
     describe('holds the rendered file to its contract (FL-102)', () => {
+      const probePacketRecords = async (records: string, index: number) => {
+        const child = Object.assign(new EventEmitter(), {
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          kill: vi.fn(),
+        });
+        vi.mocked(spawn).mockReturnValueOnce(child as never);
+        const probe = new MediaRepository({ setContext: vi.fn() } as never).probePackets(staged, index);
+        child.stdout.write(records.slice(0, 5));
+        child.stdout.write(records.slice(5));
+        child.emit('close', 0);
+        return probe;
+      };
+
       const contracted = (contract: Record<string, unknown>) => {
         const run = job();
         (run.operation.snapshot as Record<string, unknown>).contract = contract;
@@ -1250,6 +1298,110 @@ describe(StudioExportService.name, () => {
         sampleRate: 48_000,
         duration: 10,
       };
+
+      it.each([
+        [
+          'the exact selected span',
+          { presentation: { startPts: 0, endPts: 8 }, packetCount: 8, totalDuration: 8 },
+          true,
+        ],
+        ['the whole movie', { presentation: { startPts: 0, endPts: 24 }, packetCount: 24, totalDuration: 24 }, false],
+        ['a nonzero origin', { presentation: { startPts: 4, endPts: 12 }, packetCount: 8, totalDuration: 8 }, false],
+        ['missing packet proof', null, false],
+      ])('accepts only range proof before moving or publishing: %s', async (_, packets, accepted) => {
+        const range = { inPoint: 4, outPoint: 12 };
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', range },
+          }),
+        );
+        repository.publish.mockResolvedValue(published());
+        media.probe.mockResolvedValue(renderedOutput({ video: { timeBaseRational: { num: 1, den: 24 } }, audio: [] }));
+        media.probePackets.mockResolvedValue(
+          packets && { ...packets, variableFrameRate: false, presentationCadenceTicks: 1 },
+        );
+        await sut.run(
+          contracted({ video: { minBitDepth: 8, transfer: null }, audio: null, range: { ...range, cadence: '24/1' } }),
+        );
+        expect(media.probePackets).toHaveBeenCalledWith(staged, 0);
+        if (accepted) {
+          expect(repository.publish).toHaveBeenCalledOnce();
+        } else {
+          expect(repository.publish).not.toHaveBeenCalled();
+          expect(storage.rename).not.toHaveBeenCalled();
+          expect(operations.fail).toHaveBeenCalledWith(
+            PUBLISH,
+            'claim-p',
+            expect.objectContaining({ errorCode: 'studio_export_output_rejected' }),
+          );
+        }
+      });
+
+      it('refuses a requested range with no matching immutable contract before probing or publishing', async () => {
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: {
+              format: 'mp4-h264',
+              color: 'preserve',
+              resolution: '720p',
+              range: { inPoint: 4, outPoint: 12 },
+            },
+          }),
+        );
+        await sut.run(contracted({ video: { minBitDepth: 8, transfer: null }, audio: null }));
+        expect(media.probe).not.toHaveBeenCalled();
+        expect(storage.rename).not.toHaveBeenCalled();
+        expect(repository.publish).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ errorCode: 'studio_export_output_rejected' }),
+        );
+      });
+
+      it.each([
+        ['decode-order reordering', '0,1,K_\n2,1,__\n1,1,__', 24, true],
+        ['duplicate and missing cadence slots', '0,1,K_\n0,1,__\n2,1,__', 24, false],
+        ['off-grid presentation slots', '0,2,K_\n1,2,__\n4,2,__', 48, false],
+      ])('checks actual probe packet records before range publication: %s', async (_, records, timescale, accepted) => {
+        const packets = await probePacketRecords(records, 0);
+        expect(packets?.presentationCadenceTicks).toBe(accepted ? timescale / 24 : null);
+        const ticks = (3 * timescale) / 24;
+        expect(packets).toMatchObject({
+          packetCount: 3,
+          totalDuration: ticks,
+          presentation: { startPts: 0, endPts: ticks },
+          variableFrameRate: false,
+        });
+        const range = { inPoint: 4, outPoint: 7 };
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', range },
+          }),
+        );
+        repository.publish.mockResolvedValue(published());
+        media.probe.mockResolvedValue(
+          renderedOutput({ video: { timeBaseRational: { num: 1, den: timescale } }, audio: [] }),
+        );
+        media.probePackets.mockResolvedValue(packets);
+        await sut.run(
+          contracted({ video: { minBitDepth: 8, transfer: null }, audio: null, range: { ...range, cadence: '24/1' } }),
+        );
+        if (accepted) {
+          expect(repository.publish).toHaveBeenCalledOnce();
+        } else {
+          expect(repository.publish).not.toHaveBeenCalled();
+          expect(storage.rename).not.toHaveBeenCalled();
+          expect(operations.fail).toHaveBeenCalledWith(
+            PUBLISH,
+            'claim-p',
+            expect.objectContaining({ errorCode: 'studio_export_output_rejected' }),
+          );
+        }
+      });
 
       it('publishes a result that kept its precision and its 5.1 audio', async () => {
         repository.publish.mockResolvedValue(published());
@@ -1326,79 +1478,109 @@ describe(StudioExportService.name, () => {
         );
       });
 
-      it.each(['missing', 'unreadable', 'different', 'matching', 'different default stream'])(
-        'checks %s mastering before publication (FL-107)',
-        async (mode) => {
-          repository.publish.mockResolvedValue(published());
-          const selectedIndex = mode === 'different default stream' ? 1 : 0;
-          const output = renderedOutput({
-            video: {
-              index: selectedIndex,
-              pixelFormat: 'yuv420p10le',
-              colorTransfer: ColorTransfer.Smpte2084,
-              colorPrimaries: ColorPrimaries.Bt2020,
-              colorMatrix: ColorMatrix.Bt2020Nc,
-            },
-            audio: [],
-          });
-          if (selectedIndex === 1) output.videoStreams.push({ ...output.videoStreams[0], index: 0 });
-          media.probe.mockResolvedValue(output);
-          const metadata = {
-            side_data_type: 'Mastering display metadata',
-            red_x: '35400/50000',
-            red_y: '14600/50000',
-            green_x: '8500/50000',
-            green_y: '39850/50000',
-            blue_x: '6550/50000',
-            blue_y: '2300/50000',
-            white_point_x: '15635/50000',
-            white_point_y: '16450/50000',
-            max_luminance: mode === 'different' ? '40000000/10000' : '10000000/10000',
-            min_luminance: '50/10000',
-          };
-          if (mode === 'unreadable') {
-            media.probeHdrMastering.mockRejectedValue(new Error('probe failed'));
-          } else if (mode === 'different default stream') {
-            media.probeHdrMastering.mockImplementation((_path, index) =>
-              Promise.resolve([
-                {
-                  ...metadata,
-                  max_luminance: index === 1 ? '40000000/10000' : '10000000/10000',
-                },
-              ]),
-            );
-          } else {
-            media.probeHdrMastering.mockResolvedValue(mode === 'missing' ? [] : [metadata]);
-          }
-          await sut.run(
-            contracted({
-              video: {
-                minBitDepth: 10,
-                transfer: 'smpte2084',
-                mastering: { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 },
-              },
-              audio: null,
+      it.each([
+        ['missing', false],
+        ['unreadable', false],
+        ['different', false],
+        ['matching', false],
+        ['different default stream', false],
+        ['matching', true],
+        ['different default stream', true],
+        ['different packet cadence', true],
+        ['different packet span', true],
+      ] as const)('checks %s mastering with range=%s before publication (FL-105/FL-107)', async (mode, withRange) => {
+        repository.publish.mockResolvedValue(published());
+        const selectedIndex = withRange || mode === 'different default stream' ? 1 : 0;
+        const range = { inPoint: 4, outPoint: 12 };
+        const mastering = { primaries: 'bt2020' as const, maxNits: 1000, minNits: 0.005 };
+        if (withRange) {
+          repository.getById.mockResolvedValue(
+            versionRow({
+              outputPath: staged,
+              settings: { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '720p', mastering, range },
             }),
           );
-          if (mode === 'matching') {
-            expect(storage.rename).toHaveBeenCalledWith(staged, expect.any(String));
-            expect(repository.publish).toHaveBeenCalledOnce();
-            expect(operations.fail).not.toHaveBeenCalled();
-          } else {
-            expect(storage.rename).not.toHaveBeenCalled();
-            expect(repository.publish).not.toHaveBeenCalled();
-            expect(operations.fail).toHaveBeenCalledWith(
-              PUBLISH,
-              'claim-p',
-              expect.objectContaining({
-                errorCode: 'studio_export_output_rejected',
-                error: expect.stringContaining('mastering display'),
-              }),
-            );
-          }
-          expect(media.probeHdrMastering).toHaveBeenCalledWith(staged, selectedIndex);
-        },
-      );
+          const records = Array.from({ length: 8 }, (_, i) => {
+            const pts =
+              mode === 'different packet cadence' && i === 1 ? 0 : i + Number(mode === 'different packet span');
+            return `${pts},1,${i === 0 ? 'K_' : '__'}`;
+          }).join('\n');
+          media.probePackets.mockResolvedValue(await probePacketRecords(records, selectedIndex));
+        }
+        const output = renderedOutput({
+          video: {
+            index: selectedIndex,
+            ...(withRange && { codecName: 'hevc', timeBaseRational: { num: 1, den: 24 } }),
+            pixelFormat: 'yuv420p10le',
+            colorTransfer: ColorTransfer.Smpte2084,
+            colorPrimaries: ColorPrimaries.Bt2020,
+            colorMatrix: ColorMatrix.Bt2020Nc,
+          },
+          audio: [],
+        });
+        if (selectedIndex === 1) output.videoStreams.push({ ...output.videoStreams[0], index: 0 });
+        media.probe.mockResolvedValue(output);
+        const metadata = {
+          side_data_type: 'Mastering display metadata',
+          red_x: '35400/50000',
+          red_y: '14600/50000',
+          green_x: '8500/50000',
+          green_y: '39850/50000',
+          blue_x: '6550/50000',
+          blue_y: '2300/50000',
+          white_point_x: '15635/50000',
+          white_point_y: '16450/50000',
+          max_luminance: mode === 'different' ? '40000000/10000' : '10000000/10000',
+          min_luminance: '50/10000',
+        };
+        if (mode === 'unreadable') {
+          media.probeHdrMastering.mockRejectedValue(new Error('probe failed'));
+        } else if (mode === 'different default stream') {
+          media.probeHdrMastering.mockImplementation((_path, index) =>
+            Promise.resolve([
+              {
+                ...metadata,
+                max_luminance: index === 1 ? '40000000/10000' : '10000000/10000',
+              },
+            ]),
+          );
+        } else {
+          media.probeHdrMastering.mockResolvedValue(mode === 'missing' ? [] : [metadata]);
+        }
+        await sut.run(
+          contracted({
+            video: {
+              minBitDepth: 10,
+              transfer: 'smpte2084',
+              mastering,
+            },
+            audio: null,
+            ...(withRange && { range: { ...range, cadence: '24/1' } }),
+          }),
+        );
+        if (mode === 'matching') {
+          expect(storage.rename).toHaveBeenCalledWith(staged, expect.any(String));
+          expect(repository.publish).toHaveBeenCalledOnce();
+          expect(operations.fail).not.toHaveBeenCalled();
+        } else {
+          expect(storage.rename).not.toHaveBeenCalled();
+          expect(repository.publish).not.toHaveBeenCalled();
+          expect(operations.fail).toHaveBeenCalledWith(
+            PUBLISH,
+            'claim-p',
+            expect.objectContaining({
+              errorCode: 'studio_export_output_rejected',
+              error: expect.stringMatching(
+                mode.startsWith('different packet') ? /frame count|presentation span/ : /mastering display/,
+              ),
+            }),
+          );
+        }
+        expect(media.probeHdrMastering).toHaveBeenCalledWith(staged, selectedIndex);
+        if (withRange && mode !== 'different default stream') {
+          expect(media.probePackets).toHaveBeenCalledWith(staged, selectedIndex);
+        }
+      });
 
       describe.each([
         ['PQ', 'smpte2084', ColorTransfer.Smpte2084],
