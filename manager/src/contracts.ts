@@ -74,6 +74,7 @@ export type Operation = {
   receipts: Record<string, unknown>;
 };
 export type Installation = {
+  name?: string;
   id: string;
   project: string;
   release: string;
@@ -82,6 +83,8 @@ export type Installation = {
   origin: 'new_library' | 'new_import' | 'restored_library';
   /** Original Manager import identity carried by reviewed canonical restore lineage. */
   importInstallation?: string;
+  /** Stable database-backup lineage, independent of the current Compose stack identity. */
+  libraryId?: string;
   mounts: Mount[];
   sourceId: string | null;
   mayHaveWrittenMedia: boolean;

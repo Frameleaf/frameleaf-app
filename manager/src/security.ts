@@ -45,17 +45,51 @@ export class Security {
     if (!this.store.createOnce('administrator', { name, salt, hash })) throw new Refusal('already_claimed');
   }
   async login(password: string): Promise<{ session: string; csrf: string }> {
-    await this.confirm(password);
+    const verified = await this.confirm(password);
+    this.store.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (JSON.stringify(verified) !== JSON.stringify(this.store.get('administrator')))
+        throw new Refusal('invalid_credentials', 401);
+      const session = this.createSession();
+      this.store.db.exec('COMMIT');
+      return session;
+    } catch (error) {
+      this.store.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  private createSession(): { session: string; csrf: string } {
     const session = token(),
       csrf = token();
     this.store.db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
     this.store.db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(sha256(session), csrf, Date.now() + LIFETIME);
     return { session, csrf };
   }
-  async confirm(password: string): Promise<void> {
-    const admin = this.store.get<{ salt: string; hash: string }>('administrator');
+  async confirm(password: string): Promise<{ name: string; salt: string; hash: string }> {
+    const admin = this.store.get<{ name: string; salt: string; hash: string }>('administrator');
     const hash = ((await scrypt(password, admin?.salt ?? 'unclaimed-manager', 64)) as Buffer).toString('hex');
-    if (!admin || !same(admin.hash, hash)) throw new Refusal('invalid_credentials', 401);
+    if (!admin || !same(admin.hash, hash) || JSON.stringify(admin) !== JSON.stringify(this.store.get('administrator')))
+      throw new Refusal('invalid_credentials', 401);
+    return admin;
+  }
+  async updateAdministrator(name: string, password: string, newPassword?: string) {
+    const previous = await this.confirm(password);
+    const salt = newPassword ? token() : previous.salt;
+    const hash = newPassword ? ((await scrypt(newPassword, salt, 64)) as Buffer).toString('hex') : previous.hash;
+    this.store.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = this.store.db
+        .prepare('UPDATE settings SET value=? WHERE key=? AND value=?')
+        .run(JSON.stringify({ name, salt, hash }), 'administrator', JSON.stringify(previous));
+      if (result.changes !== 1) throw new Refusal('invalid_credentials', 401);
+      this.store.db.exec('DELETE FROM sessions');
+      const session = this.createSession();
+      this.store.db.exec('COMMIT');
+      return session;
+    } catch (error) {
+      this.store.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   cookie(res: Response, session: string): void {
     res.cookie(COOKIE, session, { secure: true, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
@@ -93,7 +127,8 @@ export class Security {
       if (!req.path.startsWith('/manager-api/')) return next();
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
-      this.limit(req.socket.remoteAddress ?? 'unknown', publicRoute && write ? 'login' : 'api');
+      const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
+      this.limit(req.socket.remoteAddress ?? 'unknown', write && (publicRoute || credential) ? 'login' : 'api');
       if (write && (req.headers.origin !== this.origin || !req.is('application/json')))
         throw new Refusal('invalid_origin', 403);
       if (!publicRoute) {

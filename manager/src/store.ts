@@ -45,14 +45,8 @@ export class Store {
     requestKey: string,
     input: Record<string, unknown>,
   ): { operation: Operation; created: boolean } {
-    const prior = this.db.prepare('SELECT value FROM operations WHERE request_key=?').get(requestKey) as
-      { value: string } | undefined;
-    if (prior) {
-      const operation: Operation = JSON.parse(prior.value);
-      if (operation.kind !== kind || JSON.stringify(operation.input) !== JSON.stringify(input))
-        throw new Refusal('request_key_reused');
-      return { operation, created: false };
-    }
+    const prior = this.request(kind, requestKey, input);
+    if (prior) return { operation: prior, created: false };
     const operation: Operation = {
       id: randomUUID(),
       kind,
@@ -73,6 +67,17 @@ export class Store {
       throw new Refusal('operation_in_progress');
     }
     return { operation, created: true };
+  }
+  request(kind: OperationKind | undefined, requestKey: string, input: Record<string, unknown>): Operation | null {
+    const prior = this.db.prepare('SELECT value FROM operations WHERE request_key=?').get(requestKey) as
+      { value: string } | undefined;
+    if (prior) {
+      const operation: Operation = JSON.parse(prior.value);
+      if ((kind && operation.kind !== kind) || JSON.stringify(operation.input) !== JSON.stringify(input))
+        throw new Refusal('request_key_reused');
+      return operation;
+    }
+    return null;
   }
   save(operation: Operation): void {
     operation.updatedAt = Date.now();

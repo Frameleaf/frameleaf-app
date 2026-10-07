@@ -37,7 +37,7 @@ export class Releases {
     private root: string,
     private seed: string,
   ) {}
-  async available(): Promise<{ tag: string; publishedAt: string }[]> {
+  async available(): Promise<{ tag: string; publishedAt: string; notes: string }[]> {
     const releases = await github('releases?per_page=30');
     return releases
       .filter(
@@ -47,7 +47,7 @@ export class Releases {
           releaseTag.safeParse(r.tag_name).success &&
           offered(r.body ?? '', this.seed, r.tag_name),
       )
-      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at }));
+      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) }));
   }
   async eligible(tag: string): Promise<any> {
     releaseTag.parse(tag);

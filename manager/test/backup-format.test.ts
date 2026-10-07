@@ -1,9 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Backups } from '../src/backups.js';
+
+test('source-only repositories retain exportable keys and an invalid unlock leaves the existing key intact', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-backup-key-')),
+    repo = join(directory, 'repo'),
+    key = join(directory, 'key');
+  await mkdir(repo);
+  await writeFile(join(repo, 'config'), 'fixture');
+  const backups = new Backups(repo, key, async (_binary, args) => {
+    if (args.includes('snapshots'))
+      return JSON.stringify([{ id: 'a'.repeat(64), tags: ['frameleaf-manager-database', 'immich-source'] }]);
+    throw Error('wrong key');
+  });
+  try {
+    assert.deepEqual(await backups.status(), { configured: true, unlocked: false, keyAvailable: false, snapshots: [] });
+    await writeFile(key, 'existing private key');
+    assert.deepEqual(await backups.status(), { configured: true, unlocked: true, keyAvailable: true, snapshots: [] });
+    await assert.rejects(backups.unlock('a'.repeat(43)), /wrong key/);
+    assert.equal(await readFile(key, 'utf8'), 'existing private key');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('ordinary restore lists canonical snapshots only and refuses source, mixed and untyped snapshots', async () => {
   const snapshots = [

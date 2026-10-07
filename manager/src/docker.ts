@@ -137,7 +137,14 @@ export class Docker {
     containerId.parse(id);
     return JSON.parse(await this.execute('docker', ['inspect', id]))[0];
   }
-  async compatibility(): Promise<{ platform: string; version: string; compose: string; dataRoot: string }> {
+  async compatibility(): Promise<{
+    platform: string;
+    version: string;
+    compose: string;
+    dataRoot: string;
+    memory: number | null;
+    processors: number | null;
+  }> {
     const info = JSON.parse(await this.execute('docker', ['info', '--format', '{{json .}}']));
     if (info.OSType !== 'linux' || info.Swarm?.LocalNodeState === 'active')
       throw new Refusal('unsupported_docker_host');
@@ -150,7 +157,14 @@ export class Docker {
     if (!/^v?[2-9]\./.test(compose)) throw new Refusal('compose_v2_required');
     if (typeof info.DockerRootDir !== 'string' || !info.DockerRootDir.startsWith('/'))
       throw new Refusal('docker_storage_unavailable');
-    return { platform: `linux/${architecture}`, version: info.ServerVersion, compose, dataRoot: info.DockerRootDir };
+    return {
+      platform: `linux/${architecture}`,
+      version: info.ServerVersion,
+      compose,
+      dataRoot: info.DockerRootDir,
+      memory: Number.isFinite(info.MemTotal) ? info.MemTotal : null,
+      processors: Number.isFinite(info.NCPU) ? info.NCPU : null,
+    };
   }
   async readFile(id: string, path: string): Promise<string> {
     containerId.parse(id);

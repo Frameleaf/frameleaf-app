@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, stat, statfs, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -115,16 +115,42 @@ class Api {
     security.logout(request, response);
     return { signedOut: true };
   }
+  @Post('administrator') async administrator(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
+    const value = z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        password: z.string().max(256),
+        newPassword: Password.optional(),
+      })
+      .strict()
+      .parse(input);
+    const session = await security.updateAdministrator(value.name, value.password, value.newPassword);
+    security.cookie(response, session.session);
+    return { csrf: session.csrf };
+  }
   @Get('dashboard') async dashboard(@Req() request: Request) {
     const installation = operations.installation();
     const containers = installation
       ? (await docker.inventory()).filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
       : [];
+    const host = await docker.compatibility().catch(() => null);
     return {
       csrf: security.session(request).csrf,
       installation,
       operations: operations.history(),
       profile: store.get('profile'),
+      administrator: { name: store.get<{ name: string }>('administrator')?.name },
+      managerOrigin: security.origin,
+      backupRoot,
+      host: {
+        name: new URL(origin!).hostname,
+        available: !!host,
+        platform: host?.platform ?? 'Unavailable',
+        version: host?.version ?? 'Unavailable',
+        memory: host?.memory,
+        processors: host?.processors,
+      },
+      summary: installation ? await operations.librarySummary().catch(() => null) : null,
       services: containers.map((c) => ({
         id: c.Id,
         service: c.Config.Labels['com.docker.compose.service'],
@@ -143,6 +169,35 @@ class Api {
   @Get('sources') async sources() {
     const result = await operations.discover();
     return { sources: result.sources.map(publicSource), refused: result.refused };
+  }
+  @Post('source-review') sourceReview(@Body() input: unknown) {
+    const { sourceId } = z.object({ sourceId: ReviewInput.shape.sourceId.unwrap() }).strict().parse(input);
+    return operations.sourceReview(sourceId);
+  }
+  @Get('storage') async storage() {
+    const roots = [
+      ...new Set([
+        ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
+        ...defaults.roots,
+        backupRoot!,
+      ]),
+    ];
+    return Promise.all(
+      roots.map(async (path) => {
+        try {
+          if ((await realpath(path)) !== path) throw new Refusal('storage_path_changed');
+          const space = await statfs(path);
+          return {
+            path,
+            totalBytes: space.blocks * space.bsize,
+            availableBytes: space.bavail * space.bsize,
+            freeBytes: space.bfree * space.bsize,
+          };
+        } catch {
+          return { path, totalBytes: null, availableBytes: null, freeBytes: null };
+        }
+      }),
+    );
   }
   @Get('releases') available() {
     return releases.available();
@@ -180,7 +235,7 @@ class Api {
     return { id: operations.update(id, key).id };
   }
   @Post('unlock-backups') async unlockBackups(@Body() input: unknown) {
-    if (operations.installation()) throw new Refusal('restore_requires_empty_installation');
+    if (store.history().some((operation) => operation.state !== 'complete')) throw new Refusal('operation_in_progress');
     const { key } = z
       .object({ key: z.string().max(128) })
       .strict()
@@ -190,6 +245,22 @@ class Api {
   }
   @Get('backups') async snapshots() {
     return (await backups.list()).map(({ id, time }) => ({ id, time }));
+  }
+  @Get('backup-status') backupStatus() {
+    return backups.status();
+  }
+  @Post('backup-key') async backupKey(@Body() input: unknown, @Res() response: Response) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    await security.confirm(password);
+    const key = await backups.recoveryKey().catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new Refusal('recovery_key_unavailable');
+      throw error;
+    });
+    response.setHeader('Content-Disposition', 'attachment; filename="frameleaf-manager-recovery-key.txt"');
+    response.type('application/octet-stream').send(key);
   }
   @Post('review-restore') reviewRestore(@Body() input: unknown) {
     const { snapshot, databaseRoot } = z
