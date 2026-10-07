@@ -1,3 +1,12 @@
-@import "../../../engine/src/index.css";
+@import '../../../engine/src/index.css';
 /* The prepared engine is generated/ignored, so Tailwind's automatic scan excludes it. */
 @source '../../../engine/src';
+
+/* An ancestor touch-action:none would also disable native touch in its editable descendants. */
+[data-timeline-item]:not(
+  [contenteditable],
+  [contenteditable] *,
+  :has(input, textarea, select, a, [contenteditable])
+) {
+  touch-action: none;
+}
