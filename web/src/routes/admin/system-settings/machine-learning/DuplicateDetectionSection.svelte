@@ -29,6 +29,10 @@
       disabled={disabled || !workingConfig.enabled || !workingConfig.clip.enabled}
     />
 
+    <p class="text-muted-foreground text-sm">
+      {$t('admin.machine_learning_duplicate_detection_prefer_original_format_description')}
+    </p>
+
     <hr />
 
     <SettingField

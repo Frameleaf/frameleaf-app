@@ -910,7 +910,7 @@
     "machine_learning_duplicate_detection_enabled": "Enable duplicate detection",
     "machine_learning_duplicate_detection_enabled_description": "If disabled, exactly identical assets will still be de-duplicated.",
     "machine_learning_duplicate_detection_prefer_original_format": "Prefer original format",
-    "machine_learning_duplicate_detection_prefer_original_format_description": "When suggesting which duplicate to keep, prefer the native original (RAW, then HEIC/HEIF) over a re-encoded copy such as JPG, even if the copy is larger.",
+    "machine_learning_duplicate_detection_prefer_original_format_description": "Duplicate suggestions rank RAW first, then HEIC/HEIF/HIF, ahead of JPEG regardless of file size.",
     "machine_learning_duplicate_detection_setting_description": "Use CLIP embeddings to find likely duplicates",
     "machine_learning_enabled": "Enable machine learning",
     "machine_learning_enabled_description": "If disabled, all ML features will be disabled regardless of the below settings.",

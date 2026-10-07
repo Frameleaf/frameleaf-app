@@ -326,7 +326,9 @@ describe('downloadAssetFile, files of unknown size (review B1)', () => {
       await flush();
       expect(downloadManager.assets.get(key)).toMatchObject({ name: 'IMG_1.jpeg', status: 'ready' });
       downloadManager.save(key, vi.fn());
-      if (Number(length) > bufferLimit()) expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'IMG_1.jpeg');
+      if (Number(length) > bufferLimit()) {
+        expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'IMG_1.jpeg');
+      }
     },
   );
 

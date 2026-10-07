@@ -279,8 +279,10 @@ export const downloadAssetFile = ({
                 'image/heic': 'heic',
                 'image/heif': 'heif',
               } as Record<string, string>
-            )[response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ?? ''];
-            if (extension) context.describe({ name: `${filename.replace(/\.[^.]+$/, '')}.${extension}` });
+            )[response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? ''];
+            if (extension) {
+              context.describe({ name: `${filename.replace(/\.[^.]+$/, '')}.${extension}` });
+            }
           }
           return response;
         },
