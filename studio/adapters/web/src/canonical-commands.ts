@@ -1,3 +1,5 @@
+import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 /**
  * Canonical Studio commands applied by the real engine (FL-92, `STU-205`).
  *
@@ -168,6 +170,8 @@ import { PROJECT_TEMPLATES } from '@/features/projects/utils/validation'
 import { isAllowedProjectFps } from '@/features/projects/utils/project-fps'
 import {
   RETIME_POLICIES,
+  scaleFrame,
+  frameRatio,
   hasTimedContent,
   retimeCompositionReaders,
   retimeContent,
@@ -1129,9 +1133,13 @@ async function applySequenceSettings(
 
   if (sequenceId === MAIN_SEQUENCE_ID) {
     const fromFps = storedRate(metadata.fps, 'the project')
-    if (toFps !== undefined && !sameRate(toFps, fromFps) && hasTimedContent(timeline as never)) {
+    if (toFps !== undefined && !sameRate(toFps, fromFps) && (hasTimedContent(timeline as never) || (timeline.masterGainEnvelope?.length ?? 0)>0)) {
       if (requirePolicy(timing, 'the main timeline') === 'keep-time') {
         next = retimeContent(timeline as never, fromFps, toFps)
+        if (timeline.masterGainEnvelope) {
+          const points=timeline.masterGainEnvelope.map(point=>({...point,frame:scaleFrame(point.frame,frameRatio(fromFps,toFps))}))
+          try {next={...next,masterGainEnvelope:validateMasterGainEnvelope(points)}} catch {invalid('Master envelope cannot be retimed exactly')}
+        }
       }
     }
     metadata = {
@@ -2510,9 +2518,9 @@ const handlers: Record<string, Handler> = {
     removeMarker(markerId)
   },
 
-  'project.setMasterAudio'(payload) {
+  'project.setMasterAudio'(payload, context) {
     for (const key of Object.keys(payload)) {
-      if (!['gainDb', 'muted', 'ducking'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`)
+      if (!['gainDb', 'muted', 'ducking', 'gainEnvelope'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`)
     }
     const gainDb = optionalNumber(payload, 'gainDb')
     if (gainDb !== undefined && (gainDb < -60 || gainDb > 12)) invalid('gainDb must be between -60 and 12 dB')
@@ -2521,10 +2529,25 @@ const handlers: Record<string, Handler> = {
       if (typeof payload.ducking !== 'boolean') invalid('ducking must be a boolean')
       throw new CommandRejection('not-implemented', 'ducking: the engine has no project-wide ducking switch')
     }
-    if (gainDb === undefined && payload.muted === undefined) invalid('project.setMasterAudio needs gainDb or muted')
-    const playback = usePlaybackStore.getState()
-    if (gainDb !== undefined) playback.setMasterBusDb(gainDb)
-    if (payload.muted !== undefined) playback.setMasterBusMuted(payload.muted as boolean)
+    let masterGainEnvelope: ReturnType<typeof validateMasterGainEnvelope> | undefined
+    if (payload.gainEnvelope !== undefined) {
+      if (!Array.isArray(payload.gainEnvelope) || payload.gainEnvelope.length > 4096) invalid('Invalid gainEnvelope')
+      const points = (payload.gainEnvelope as unknown[]).map(point => {
+        if (!point || typeof point !== 'object' || Array.isArray(point)) invalid('Invalid gainEnvelope point')
+        const value=point as Record<string,unknown>
+        if (Object.keys(value).some(key => !['id','at','gainDb'].includes(key))) invalid('Unsupported gainEnvelope field')
+        return {id:stringField(value,'id'),frame:timeField(value,'at',context.cadence),gainDb:optionalNumber(value,'gainDb')}
+      })
+      try {masterGainEnvelope=validateMasterGainEnvelope(points)} catch {invalid('Invalid gainEnvelope')}
+    }
+    if (gainDb === undefined && payload.muted === undefined && masterGainEnvelope === undefined) invalid('project.setMasterAudio needs gainDb or muted')
+    useTimelineCommandStore.getState().execute({type:'SET_MASTER_AUDIO'},()=>{
+      usePlaybackStore.getState().setMasterAudio({
+        ...(gainDb !== undefined && {masterBusDb:gainDb}),
+        ...(payload.muted !== undefined && {masterBusMuted:payload.muted as boolean}),
+        ...(masterGainEnvelope !== undefined && {masterGainEnvelope}),
+      })
+    })
   },
 
   async 'sequence.setSettings'(payload, context) {
@@ -2644,6 +2667,9 @@ export async function applyCanonicalCommands(
     }
   }
   const { project } = migrateProject(structuredClone(graph))
+  try { validateMasterGainEnvelope(project.timeline?.masterGainEnvelope ?? []) } catch {
+    return { status: 'rejected', index: 0, reason: 'invalid', detail: 'Invalid master gain envelope' }
+  }
   projectCanvas = {
     width: project.metadata.width || 1920,
     height: project.metadata.height || 1080,
@@ -2663,15 +2689,22 @@ export async function applyCanonicalCommands(
   const mediaById = new Map(media.map((entry) => [entry.id, entry]))
   const context: BatchContext = { fps, cadence, media: mediaById, project }
 
+  const historyBefore = useTimelineCommandStore.getState()
   await hydrateTimelineStoresFromProject(project)
   useMediaLibraryStore.setState({
     mediaItems: [...media],
     mediaById: Object.fromEntries(mediaById),
   })
 
+  const resetRejectedBatch = async () => {
+    await hydrateTimelineStoresFromProject(project)
+    useTimelineCommandStore.setState({undoStack:historyBefore.undoStack,redoStack:historyBefore.redoStack,canUndo:historyBefore.canUndo,canRedo:historyBefore.canRedo,stacksByContext:historyBefore.stacksByContext,activeContextKey:historyBefore.activeContextKey})
+  }
+
   for (const [index, envelope] of envelopes.entries()) {
     const handler = handlers[envelope.id]
     if (!handler) {
+      await resetRejectedBatch()
       return {
         status: 'rejected',
         index,
@@ -2685,6 +2718,7 @@ export async function applyCanonicalCommands(
         handler(envelope.payload ?? {}, context),
       )
     } catch (error) {
+      await resetRejectedBatch()
       if (error instanceof CommandRejection) {
         return { status: 'rejected', index, reason: error.reason, detail: error.message }
       }

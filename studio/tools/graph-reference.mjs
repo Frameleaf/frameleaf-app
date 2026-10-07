@@ -2919,12 +2919,17 @@ function applySettings(state, sequenceId, settings, timing) {
   if (sequenceId === 'main') {
     const from = state.fps;
     if (!exactRate(from)) invalid('the project frame rate has no exact reading');
-    if (to !== undefined && !sameRate(to, from) && timed(state) && policy('the main timeline') === 'keep-time') {
+    if (to !== undefined && !sameRate(to, from) && (timed(state) || state.timeline.masterGainEnvelope?.length) && policy('the main timeline') === 'keep-time') {
       const next = retimed(
         { items: state.items, tracks: state.tracks, transitions: state.transitions, keyframes: state.keyframes, markers: state.markers, inPoint: state.inPoint, outPoint: state.outPoint, currentFrame: state.timeline.currentFrame },
         from,
         to,
       );
+      if (state.timeline.masterGainEnvelope?.length) {
+        const points=state.timeline.masterGainEnvelope.map(point=>({...point,frame:carryFrame(point.frame,from,to)}));
+        if (new Set(points.map(point=>point.frame)).size !== points.length) invalid('Master envelope retime collides');
+        state.timeline.masterGainEnvelope=points;
+      }
       Object.assign(state, { items: next.items, transitions: next.transitions, keyframes: next.keyframes, markers: next.markers, inPoint: next.inPoint, outPoint: next.outPoint });
       state.timeline = { ...state.timeline, currentFrame: next.currentFrame };
     }
@@ -3093,7 +3098,7 @@ Object.assign(commands, {
   /* 14.7 */
   'project.setMasterAudio'(state, payload) {
     for (const key of Object.keys(payload)) {
-      if (!['gainDb', 'muted', 'ducking'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`);
+      if (!['gainDb', 'muted', 'ducking', 'gainEnvelope'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`);
     }
     const gainDb = payload.gainDb;
     if (gainDb !== undefined && !finite(gainDb)) invalid('gainDb must be a number');
@@ -3103,9 +3108,25 @@ Object.assign(commands, {
       if (typeof payload.ducking !== 'boolean') invalid('ducking must be a boolean');
       throw new Refusal('not-implemented', 'ducking: the engine has no project-wide ducking switch');
     }
-    if (gainDb === undefined && payload.muted === undefined) invalid('project.setMasterAudio needs gainDb or muted');
+    let points;
+    if (payload.gainEnvelope !== undefined) {
+      if (!Array.isArray(payload.gainEnvelope) || payload.gainEnvelope.length > 4096) invalid('Invalid gainEnvelope');
+      const ids = new Set(), frames = new Set();
+      points = payload.gainEnvelope.map(point => {
+        if (!point || typeof point !== 'object' || Array.isArray(point) || Object.keys(point).some(key => !['id','at','gainDb'].includes(key))) invalid('Invalid gainEnvelope');
+        const id=text(point,'id'), frame=time(state,point,'at'), db=point.gainDb;
+        if ([...id].length>128 || ids.has(id) || frames.has(frame) || !finite(db) || db < -60 || db > 12) invalid('Invalid gainEnvelope');
+        ids.add(id);frames.add(frame);
+        return {id,frame,gainDb:db};
+      }).sort((a,b)=>a.frame-b.frame);
+    }
+    if (gainDb === undefined && payload.muted === undefined && points === undefined) invalid('project.setMasterAudio needs gainDb or muted');
     if (gainDb !== undefined) state.timeline.masterBusDb = gainDb;
     if (payload.muted !== undefined) state.timeline.masterBusMuted = payload.muted;
+    if (points !== undefined) {
+      if (points.length) state.timeline.masterGainEnvelope=points;
+      else delete state.timeline.masterGainEnvelope;
+    }
   },
 
   /* 14.6.1 */

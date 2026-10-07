@@ -1,0 +1,3869 @@
+--- a/src/features/editor/components/audio-meter-panel.tsx
++++ b/src/features/editor/components/audio-meter-panel.tsx
+@@ -1,3 +1,4 @@
++import { masterGainAtFrame } from '@/shared/utils/master-audio'
+ import {
+   lazy,
+   memo,
+@@ -250,6 +251,7 @@
+   const displayedFrame = usePreviewBridgeStore((s) => (isPlaying ? null : s.displayedFrame))
+   const previewFrame = usePlaybackStore((s) => s.previewFrame)
+   const masterBusDb = usePlaybackStore((s) => s.masterBusDb)
++  const masterGainEnvelope = usePlaybackStore((s) => s.masterGainEnvelope)
+   const setMasterBusDb = usePlaybackStore((s) => s.setMasterBusDb)
+   const masterBusMuted = usePlaybackStore((s) => s.masterBusMuted)
+   const setMasterBusMuted = usePlaybackStore((s) => s.setMasterBusMuted)
+@@ -349,7 +351,7 @@
+   const effectiveMasterGain =
+     liveBusOverrideDb !== null
+       ? Math.pow(10, liveBusOverrideDb / 20)
+-      : Math.pow(10, masterBusDb / 20)
++      : masterGainAtFrame(masterGainEnvelope, effectiveFrame, masterBusDb)
+   const isAudioSkimMeterActive = audioSkimmingEnabled && audioSkimMeterLevel !== null && !isPlaying
+   const isMeterActive = isPlaying || isAudioSkimMeterActive
+   const playbackGain = isMeterActive && !masterBusMuted ? effectiveMasterGain : 0
+--- a/src/features/export/components/export-dialog.tsx
++++ b/src/features/export/components/export-dialog.tsx
+@@ -394,8 +394,7 @@
+     const reversedClipIds = new Set(
+       items
+         .filter(
+-          (item) =>
+-            (item.type === 'video' || item.type === 'audio') && item.isReversed === true,
++          (item) => (item.type === 'video' || item.type === 'audio') && item.isReversed === true,
+         )
+         .map((item) => item.id),
+     )
+@@ -479,11 +478,13 @@
+         busAudioEq: exportable.busAudioEq,
+         masterBusDb: exportable.masterBusDb,
+         masterBusMuted: exportable.masterBusMuted,
++        masterGainEnvelope: (exportable.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+       }),
+     [
+       exportable.busAudioEq,
+       exportable.masterBusDb,
+       exportable.masterBusMuted,
++      exportable.masterGainEnvelope,
+       fps,
+       hasInOutPoints,
+       inPoint,
+@@ -1580,8 +1581,7 @@
+                 </div>
+                 <div className="flex items-center justify-between text-sm gap-2">
+                   <span className="text-muted-foreground truncate">
+-                    {status === 'preparing' &&
+-                      (progressMessage ?? t('export.progress.preparing'))}
++                    {status === 'preparing' && (progressMessage ?? t('export.progress.preparing'))}
+                     {status === 'rendering' && t('export.progress.rendering')}
+                     {status === 'encoding' && t('export.progress.encoding')}
+                     {status === 'finalizing' && t('export.progress.finalizing')}
+--- a/src/features/export/hooks/use-client-render.ts
++++ b/src/features/export/hooks/use-client-render.ts
+@@ -146,6 +146,9 @@
+         const busAudioEq = usePlaybackStore.getState().busAudioEq
+         const masterBusDb = usePlaybackStore.getState().masterBusDb
+         const masterBusMuted = usePlaybackStore.getState().masterBusMuted
++        const masterGainEnvelope = usePlaybackStore
++          .getState()
++          .masterGainEnvelope.map((point) => ({ ...point }))
+         const backgroundColor = currentProject?.metadata?.backgroundColor
+         // Use PROJECT resolution for composition (transform calculations match preview)
+         const projectWidth = currentProject?.metadata?.width ?? DEFAULT_PROJECT_WIDTH
+@@ -173,6 +176,7 @@
+             busAudioEq,
+             masterBusDb,
+             masterBusMuted,
++            masterGainEnvelope,
+           },
+           signal,
+           handleProgress,
+@@ -232,6 +236,7 @@
+           busAudioEq,
+           masterBusDb,
+           masterBusMuted,
++          masterGainEnvelope,
+         )
+         composition.colorManagement = currentProject?.metadata?.colorManagement
+
+--- a/src/features/export/hooks/use-render-queue-runner.ts
++++ b/src/features/export/hooks/use-render-queue-runner.ts
+@@ -79,6 +79,7 @@
+         busAudioEq: snapshot.busAudioEq,
+         masterBusDb: snapshot.masterBusDb,
+         masterBusMuted: snapshot.masterBusMuted,
++        masterGainEnvelope: (snapshot.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+       },
+       controller.signal,
+       (progress) => useRenderQueueStore.getState().updateJobProgress(job.id, progress),
+@@ -113,6 +114,7 @@
+       snapshot.busAudioEq,
+       snapshot.masterBusDb,
+       snapshot.masterBusMuted,
++      snapshot.masterGainEnvelope,
+     )
+     composition.colorManagement = snapshot.colorManagement
+
+--- a/src/features/export/stores/render-queue-store.ts
++++ b/src/features/export/stores/render-queue-store.ts
+@@ -33,6 +33,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   /** Project managed colour captured with the job (FL-97). */
+   colorManagement?: ProjectColorManagement
+ }
+--- a/src/features/export/utils/build-render-job.test.ts
++++ b/src/features/export/utils/build-render-job.test.ts
+@@ -97,3 +97,21 @@
+   expect(canEncodeVideo).toHaveBeenCalled()
+   expect(newJobId).toHaveBeenCalledTimes(5)
+ })
++
++it('freezes the master envelope into a queued job before later editor changes', async () => {
++  const points = [
++    { id: 'start', frame: 0, gainDb: -20 },
++    { id: 'end', frame: 30, gainDb: 0 },
++  ]
++  const selected = { ...sequence, masterGainEnvelope: points }
++  const job = await buildRenderJob({
++    settings: { ...base, subtitleMode: 'off' },
++    sequence: selected,
++  })
++  points[0]!.gainDb = 12
++  points.push({ id: 'later', frame: 60, gainDb: -6 })
++  expect(job.snapshot.masterGainEnvelope).toEqual([
++    { id: 'start', frame: 0, gainDb: -20 },
++    { id: 'end', frame: 30, gainDb: 0 },
++  ])
++})
+--- a/src/features/export/utils/build-render-job.ts
++++ b/src/features/export/utils/build-render-job.ts
+@@ -71,6 +71,7 @@
+     busAudioEq: seq.busAudioEq,
+     masterBusDb: seq.masterBusDb,
+     masterBusMuted: seq.masterBusMuted,
++    masterGainEnvelope: (seq.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     colorManagement: currentProject?.metadata.colorManagement,
+   }
+
+@@ -172,6 +173,7 @@
+     busAudioEq: cap.snapshot.busAudioEq,
+     masterBusDb: cap.snapshot.masterBusDb,
+     masterBusMuted: cap.snapshot.masterBusMuted,
++    masterGainEnvelope: (cap.snapshot.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+   })
+   const { clientSettings, exportMode } = smartCopy.eligible
+     ? requested
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -58,8 +58,14 @@
+         return plane
+       }
+       const planes = this.track.src.includes('center-51')
+-        ? [new Float32Array(frameCount), new Float32Array(frameCount), makePlane(),
+-            new Float32Array(frameCount), new Float32Array(frameCount), new Float32Array(frameCount)]
++        ? [
++            new Float32Array(frameCount),
++            new Float32Array(frameCount),
++            makePlane(),
++            new Float32Array(frameCount),
++            new Float32Array(frameCount),
++            new Float32Array(frameCount),
++          ]
+         : [makePlane(), makePlane()]
+
+       yield {
+@@ -357,80 +363,86 @@
+     expect(segments[0]).toMatchObject({ itemId: 'audio-1', type: 'audio' })
+   })
+
+-  it.each(['linked', 'detached'] as const)('keeps %s precomp video audio suppressed in both mixers', async (mode) => {
+-    const subVideo = makeVideoItem({
+-      id: 'sub-video',
+-      linkedGroupId: mode === 'linked' ? 'group-1' : undefined,
+-      embeddedAudioMuted: mode === 'detached',
+-      trackId: 'sub-v1',
+-      mediaId: undefined,
+-    })
+-    const subAudio = makeAudioItem({
+-      id: 'sub-audio', linkedGroupId: 'group-1', trackId: 'sub-a1', mediaId: undefined,
+-    })
+-    const subComp = {
+-      id: 'sub-comp-1',
+-      name: 'Compound Clip',
+-      items: [subVideo, subAudio],
+-      tracks: [
+-        makeTrack({ id: 'sub-v1', order: 0, kind: 'video' }),
+-        makeTrack({ id: 'sub-a1', order: 1, kind: 'audio' }),
+-      ],
+-      transitions: [],
+-      keyframes: [],
+-      fps: 30,
+-      width: 1920,
+-      height: 1080,
+-      durationInFrames: 90,
+-    }
+-    useCompositionsStore.setState({
+-      compositions: [subComp],
+-      compositionById: { [subComp.id]: subComp },
+-      mediaDependencyIds: [],
+-      mediaDependencyVersion: 0,
+-    })
+-
+-    const compositionItem: CompositionItem = {
+-      id: 'comp-item-1',
+-      type: 'composition',
+-      compositionId: subComp.id,
+-      trackId: 'root-v1',
+-      from: 0,
+-      durationInFrames: 90,
+-      label: 'Compound Clip',
+-      compositionWidth: 1920,
+-      compositionHeight: 1080,
+-      transform: { x: 0, y: 0, rotation: 0, opacity: 1 },
+-    }
+-
+-    const composition: CompositionInputProps = {
+-      fps: 30,
+-      durationInFrames: 90,
+-      width: 1920,
+-      height: 1080,
+-      tracks: [makeTrack({ id: 'root-v1', order: 0, kind: 'video', items: [compositionItem] })],
+-      transitions: [],
+-      keyframes: [],
+-    }
+-
+-    const segments = extractAudioSegments(composition, composition.fps)
+-
+-    expect(segments).toHaveLength(1)
+-    expect(segments[0]).toMatchObject({ itemId: 'sub-audio', type: 'audio' })
+-
+-    const full = await processAudio(composition)
+-    expect(full).not.toBeNull()
+-    const windows = []
+-    for await (const window of processAudioWindows(composition)) windows.push(window)
+-    expect(windows).toHaveLength(1)
+-    for (const mixed of [full!, windows[0]!]) {
+-      expect(mixed.channels).toBe(2)
+-      for (const samples of mixed.samples) {
+-        // Only the detached/linked audio plays; the original video must not double it.
+-        expect(samples[48_000]).toBeCloseTo(0.1, 7)
++  it.each(['linked', 'detached'] as const)(
++    'keeps %s precomp video audio suppressed in both mixers',
++    async (mode) => {
++      const subVideo = makeVideoItem({
++        id: 'sub-video',
++        linkedGroupId: mode === 'linked' ? 'group-1' : undefined,
++        embeddedAudioMuted: mode === 'detached',
++        trackId: 'sub-v1',
++        mediaId: undefined,
++      })
++      const subAudio = makeAudioItem({
++        id: 'sub-audio',
++        linkedGroupId: 'group-1',
++        trackId: 'sub-a1',
++        mediaId: undefined,
++      })
++      const subComp = {
++        id: 'sub-comp-1',
++        name: 'Compound Clip',
++        items: [subVideo, subAudio],
++        tracks: [
++          makeTrack({ id: 'sub-v1', order: 0, kind: 'video' }),
++          makeTrack({ id: 'sub-a1', order: 1, kind: 'audio' }),
++        ],
++        transitions: [],
++        keyframes: [],
++        fps: 30,
++        width: 1920,
++        height: 1080,
++        durationInFrames: 90,
+       }
+-    }
+-  })
++      useCompositionsStore.setState({
++        compositions: [subComp],
++        compositionById: { [subComp.id]: subComp },
++        mediaDependencyIds: [],
++        mediaDependencyVersion: 0,
++      })
++
++      const compositionItem: CompositionItem = {
++        id: 'comp-item-1',
++        type: 'composition',
++        compositionId: subComp.id,
++        trackId: 'root-v1',
++        from: 0,
++        durationInFrames: 90,
++        label: 'Compound Clip',
++        compositionWidth: 1920,
++        compositionHeight: 1080,
++        transform: { x: 0, y: 0, rotation: 0, opacity: 1 },
++      }
++
++      const composition: CompositionInputProps = {
++        fps: 30,
++        durationInFrames: 90,
++        width: 1920,
++        height: 1080,
++        tracks: [makeTrack({ id: 'root-v1', order: 0, kind: 'video', items: [compositionItem] })],
++        transitions: [],
++        keyframes: [],
++      }
++
++      const segments = extractAudioSegments(composition, composition.fps)
++
++      expect(segments).toHaveLength(1)
++      expect(segments[0]).toMatchObject({ itemId: 'sub-audio', type: 'audio' })
++
++      const full = await processAudio(composition)
++      expect(full).not.toBeNull()
++      const windows = []
++      for await (const window of processAudioWindows(composition)) windows.push(window)
++      expect(windows).toHaveLength(1)
++      for (const mixed of [full!, windows[0]!]) {
++        expect(mixed.channels).toBe(2)
++        for (const samples of mixed.samples) {
++          // Only the detached/linked audio plays; the original video must not double it.
++          expect(samples[48_000]).toBeCloseTo(0.1, 7)
++        }
++      }
++    },
++  )
+
+   it('expands linked audio companions around a cut-centered transition', () => {
+     const composition = makeLinkedTransitionComposition({ includeVideoTransition: true })
+@@ -667,8 +679,14 @@
+         expect(full?.samples[0]?.[24_000]).toBeCloseTo(expected, 4)
+         expect(windows[0]?.samples[0]?.[24_000]).toBeCloseTo(expected, 4)
+         if (masterBusMuted) {
+-          expect(full?.samples.every((channel) => channel.every((sample) => sample === 0))).toBe(true)
+-          expect(windows.every((window) => window.samples.every((channel) => channel.every((sample) => sample === 0)))).toBe(true)
++          expect(full?.samples.every((channel) => channel.every((sample) => sample === 0))).toBe(
++            true,
++          )
++          expect(
++            windows.every((window) =>
++              window.samples.every((channel) => channel.every((sample) => sample === 0)),
++            ),
++          ).toBe(true)
+           expect(getAudioPacketPassthroughPlan(composition)).toBeNull()
+         }
+       }
+@@ -1221,7 +1239,13 @@
+             order: 0,
+             kind: 'audio',
+             items: [
+-              makeAudioItem({ id: 'sting', trackId: 'root-a1', from: 55, durationInFrames: 20, audioDucking: ducking }),
++              makeAudioItem({
++                id: 'sting',
++                trackId: 'root-a1',
++                from: 55,
++                durationInFrames: 20,
++                audioDucking: ducking,
++              }),
+             ],
+           }),
+         ],
+@@ -1235,7 +1259,13 @@
+       id: 'sub-equiv',
+       name: 'Equivalent',
+       items: [
+-        makeAudioItem({ id: 'sting', trackId: 'sub-a1', from: 15, durationInFrames: 20, audioDucking: ducking }),
++        makeAudioItem({
++          id: 'sting',
++          trackId: 'sub-a1',
++          from: 15,
++          durationInFrames: 20,
++          audioDucking: ducking,
++        }),
+       ],
+       tracks: [makeTrack({ id: 'sub-a1', order: 0, kind: 'audio' })],
+       transitions: [],
+@@ -1630,3 +1660,40 @@
+     expect(probe(2.7)).toBeCloseTo(0.1, 2) // after release: recovered
+   })
+ })
++
++it('applies the immutable root envelope through real full/window PCM and refuses encoded bypass at unity static gain', async () => {
++  const composition: CompositionInputProps = {
++    fps: 30,
++    durationInFrames: 90,
++    tracks: [
++      makeTrack({
++        id: 'track-a1',
++        order: 0,
++        kind: 'audio',
++        items: [makeAudioItem({ volume: 0, durationInFrames: 90 })],
++      }),
++    ],
++    masterBusDb: 0,
++    masterOriginFrame: 15,
++    masterGainEnvelope: [
++      { id: 'first', frame: 0, gainDb: -20 },
++      { id: 'last', frame: 90, gainDb: 0 },
++    ],
++  }
++  expect(getAudioPacketPassthroughPlan(composition)).toBeNull()
++  const full = await processAudio(composition)
++  expect(full).not.toBeNull()
++  const windows = []
++  for await (const window of processAudioWindows(composition)) windows.push(window)
++  let offset = 0
++  for (const window of windows) {
++    for (let i = 0; i < window.samples[0]!.length; i += 997) {
++      const frame = 15 + ((offset + i) * 30) / 48000
++      const expected = 0.1 * 10 ** ((-20 + (Math.min(90, frame) * 20) / 90) / 20)
++      expect(window.samples[0]![i]).toBeCloseTo(expected, 6)
++      expect(full!.samples[0]![offset + i]).toBeCloseTo(expected, 6)
++    }
++    offset += window.samples[0]!.length
++  }
++  expect(offset).toBe(full!.samples[0]!.length)
++})
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1,3 +1,4 @@
++import { applyMasterGain } from '@/shared/utils/master-audio'
+ /**
+  * Canvas Audio Processing System
+  *
+@@ -639,7 +640,12 @@
+     wrapperSourceEnd:
+       compositionItem.sourceEnd ??
+       sourceOffset +
+-        timelineToSourceFrames(compositionItem.durationInFrames, wrapperSpeed, fps, wrapperSourceFps),
++        timelineToSourceFrames(
++          compositionItem.durationInFrames,
++          wrapperSpeed,
++          fps,
++          wrapperSourceFps,
++        ),
+   }
+ }
+
+@@ -674,9 +680,11 @@
+   if (overlapEnd <= overlapStart) return null
+
+   const effectiveStart =
+-    compFrom + sourceToTimelineFrames(overlapStart - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
++    compFrom +
++    sourceToTimelineFrames(overlapStart - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
+   const effectiveEnd =
+-    compFrom + sourceToTimelineFrames(overlapEnd - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
++    compFrom +
++    sourceToTimelineFrames(overlapEnd - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
+   const effectiveDuration = Math.max(1, effectiveEnd - effectiveStart)
+
+   const baseSourceStart = subItem.sourceStart ?? subItem.trimStart ?? 0
+@@ -1544,7 +1552,8 @@
+       if (
+         subItem.type === 'composition' &&
+         getLinkedCompositionAudioCompanion(subComp.items, subItem)
+-      ) continue
++      )
++        continue
+       const wrapperSource = duckingSourceFromItem(
+         subItem as DuckSourceCandidate,
+         rootTrackId,
+@@ -1584,10 +1593,8 @@
+     .filter((track) => track.visible !== false && track.muted !== true)
+     .flatMap((track) =>
+       (track.items ?? []).flatMap((item) => {
+-        if (
+-          item.type === 'composition' &&
+-          getLinkedCompositionAudioCompanion(timelineItems, item)
+-        ) return []
++        if (item.type === 'composition' && getLinkedCompositionAudioCompanion(timelineItems, item))
++          return []
+         // The item's own `audioDucking` counts even when it is a composition
+         // wrapper — it is audible in its own right — so collect it either way
+         // and additionally descend when it wraps a pre-comp.
+@@ -2274,8 +2281,11 @@
+ ): AudioPacketPassthroughPlan | null {
+   const durationInFrames = composition.durationInFrames ?? 0
+   if (
+-    durationInFrames <= 0 || composition.fps <= 0 ||
+-    composition.masterBusMuted === true || (composition.masterBusDb ?? 0) !== 0
++    durationInFrames <= 0 ||
++    composition.fps <= 0 ||
++    (composition.masterGainEnvelope?.length ?? 0) > 0 ||
++    composition.masterBusMuted === true ||
++    (composition.masterBusDb ?? 0) !== 0
+   ) {
+     return null
+   }
+@@ -2650,16 +2660,6 @@
+   return actual
+ }
+
+-function applyAudioWindowMasterGain(mixed: Float32Array[], masterGain: number): void {
+-  for (const channel of mixed) {
+-    for (let i = 0; i < channel.length; i++) channel[i] = channel[i]! * masterGain
+-  }
+-}
+-
+-/**
+- * Mix long, non-stateful audio timelines in fixed windows. Every yielded chunk
+- * begins exactly where the previous one ended, including silent windows.
+- */
+ export async function* processAudioWindows(
+   composition: CompositionInputProps,
+   signal?: AbortSignal,
+@@ -2681,9 +2681,6 @@
+   const hasPan = segments.some((segment) => (segment.panStages?.length ?? 0) > 0)
+   const totalSamples = Math.ceil((durationInFrames / fps) * sampleRate)
+   const chunkSamples = STREAMING_AUDIO_CHUNK_SECONDS * sampleRate
+-  const masterGain = composition.masterBusMuted === true
+-    ? 0
+-    : dbToGain(composition.masterBusDb ?? 0)
+
+   const duckingSources = collectDuckingSources(composition, fps)
+
+@@ -2724,7 +2721,7 @@
+       }
+
+       softClipAudioMix(mixed)
+-      applyAudioWindowMasterGain(mixed, masterGain)
++      applyMasterGain(mixed, composition, sampleRate, chunkStart)
+
+       yield { samples: mixed, sampleRate, channels }
+     }
+@@ -2815,7 +2812,8 @@
+         segment.audioCodec,
+       )
+       sourceChannels = requireMatchingAudioPlaneCount(decoded.samples.length, sourceChannels)
+-      if (hasPan && sourceChannels > 2) throw new Error('Track pan requires a mono or stereo source')
++      if (hasPan && sourceChannels > 2)
++        throw new Error('Track pan requires a mono or stereo source')
+
+       // Process audio channels.
+       // Note: decoded audio is already trimmed to the range we requested.
+@@ -2843,7 +2841,11 @@
+         segment.audioEqStages,
+       )
+
+-      if (segment.panStages?.length && decoded.samples.length === 1 && processedChannels.length === 2) {
++      if (
++        segment.panStages?.length &&
++        decoded.samples.length === 1 &&
++        processedChannels.length === 2
++      ) {
+         // SoundTouch duplicates mono to stereo; pan the admitted mono signal.
+         processedChannels = [processedChannels[0]!]
+       }
+@@ -2976,14 +2978,7 @@
+   // (per-device) is intentionally NOT applied during export — it's a
+   // preview-only setting.
+   const masterBusDb = composition.masterBusDb
+-  if (composition.masterBusMuted === true || (typeof masterBusDb === 'number' && masterBusDb !== 0)) {
+-    const masterBusGain = composition.masterBusMuted === true ? 0 : dbToGain(masterBusDb ?? 0)
+-    for (const channel of mixedSamples) {
+-      for (let i = 0; i < channel.length; i++) {
+-        channel[i] = channel[i]! * masterBusGain
+-      }
+-    }
+-  }
++  applyMasterGain(mixedSamples, composition, config.sampleRate)
+
+   log.info('Audio processing complete', {
+     outputSamples: mixedSamples[0]?.length,
+--- a/src/features/export/utils/smart-copy.test.ts
++++ b/src/features/export/utils/smart-copy.test.ts
+@@ -101,6 +101,19 @@
+     expect(assessSmartCopyEligibility(context({ masterBusMuted: true })).eligible).toBe(false)
+   })
+
++  it('refuses original-byte copying for an active master envelope even when static gain is unity', async () => {
++    const active = context({
++      masterBusDb: 0,
++      masterGainEnvelope: [{ id: 'gain', frame: 0, gainDb: -6 }],
++    })
++    expect(assessSmartCopyEligibility(active).eligible).toBe(false)
++    getMediaFileMock.mockClear()
++    const result = await trySmartCopyExport(active, new AbortController().signal, vi.fn())
++    expect(result.assessment.eligible).toBe(false)
++    expect(result.result).toBeUndefined()
++    expect(getMediaFileMock).not.toHaveBeenCalled()
++  })
++
+   it('returns the original blob without invoking the encoder', async () => {
+     const original = new Blob(['original-media-bytes'], { type: source.mimeType })
+     getMediaFileMock.mockResolvedValueOnce(original)
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -42,6 +42,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   source?: MediaMetadata
+ }
+
+@@ -254,6 +255,7 @@
+     candidate.video.embeddedAudioMuted === true ||
+     itemProcessing ||
+     trackProcessing ||
++    (context.masterGainEnvelope?.length ?? 0) > 0 ||
+     context.masterBusMuted === true ||
+     (context.masterBusDb ?? 0) !== 0 ||
+     hasEqProcessing(context.busAudioEq)
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -51,6 +51,7 @@
+   busAudioEq?: AudioEqSettings,
+   masterBusDb?: number,
+   masterBusMuted = false,
++  masterGainEnvelope: import('@/shared/utils/master-audio').MasterGainPoint[] = [],
+ ): CompositionInputProps {
+   items = items.map((item) =>
+     item.type === 'video' ? resolveReverseConformedVideoItem(item, fps, { mode: 'export' }) : item,
+@@ -259,6 +260,8 @@
+     busAudioEq,
+     masterBusDb,
+     masterBusMuted,
++    masterGainEnvelope: masterGainEnvelope.map((point) => ({ ...point })),
++    masterOriginFrame: hasInOutRange ? inPoint! : 0,
+   }
+ }
+
+--- a/src/features/timeline/hooks/use-timeline-audio-skim-preview.ts
++++ b/src/features/timeline/hooks/use-timeline-audio-skim-preview.ts
+@@ -108,6 +108,13 @@
+       }
+
+       const playback = usePlaybackStore.getState()
++      if (playback.masterGainEnvelope.length) {
++        stopAudioSkim()
++        usePlaybackStore.setState({
++          masterPreviewError: 'Master automation audio skimming is unavailable.',
++        })
++        return
++      }
+       if (playback.previewFrame === null || playback.isPlaying) {
+         stopAudioSkim()
+         return
+@@ -147,13 +154,19 @@
+         stopAudioSkim()
+         return
+       }
+-      const masterGain = playback.masterBusMuted ? 0 : Math.pow(10, (playback.masterBusDb ?? 0) / 20)
++      const masterGain = playback.masterBusMuted
++        ? 0
++        : Math.pow(10, (playback.masterBusDb ?? 0) / 20)
+       const mixGain = source.gain * masterGain
+       const outputGain = playback.muted ? 0 : mixGain * playback.volume
+       if (outputGain <= 0.0001) {
+         stopAudioSkim(false)
+         // Keep the same pre-monitor fallback signal even when this device is silent.
+-        publishAudioSkimMeterLevel({ left: 0.28 * mixGain, right: 0.28 * mixGain, trackId: item.trackId })
++        publishAudioSkimMeterLevel({
++          left: 0.28 * mixGain,
++          right: 0.28 * mixGain,
++          trackId: item.trackId,
++        })
+         return
+       }
+
+@@ -231,21 +244,18 @@
+   )
+   skimPreviewFrameRef.current = skimPreviewFrame
+
+-  const scheduleAudioSkim = useCallback(
+-    (frame: number) => {
+-      pendingFrameRef.current = frame
+-      if (rafRef.current !== null) return
+-
+-      rafRef.current = requestAnimationFrame(() => {
+-        rafRef.current = null
+-        const nextFrame = pendingFrameRef.current
+-        pendingFrameRef.current = null
+-        if (nextFrame === null) return
+-        latestAudioSkimRunnerRef.current?.schedule(nextFrame)
+-      })
+-    },
+-    [],
+-  )
++  const scheduleAudioSkim = useCallback((frame: number) => {
++    pendingFrameRef.current = frame
++    if (rafRef.current !== null) return
++
++    rafRef.current = requestAnimationFrame(() => {
++      rafRef.current = null
++      const nextFrame = pendingFrameRef.current
++      pendingFrameRef.current = null
++      if (nextFrame === null) return
++      latestAudioSkimRunnerRef.current?.schedule(nextFrame)
++    })
++  }, [])
+
+   useEffect(() => {
+     if (audioSkimmingEnabled) return
+@@ -262,8 +272,12 @@
+         if (prev.previewFrame !== null) stopAudioSkim()
+         return
+       }
+-      const gainChanged = state.masterBusMuted !== prev.masterBusMuted ||
+-        state.masterBusDb !== prev.masterBusDb || state.muted !== prev.muted || state.volume !== prev.volume
++      const gainChanged =
++        state.masterGainEnvelope !== prev.masterGainEnvelope ||
++        state.masterBusMuted !== prev.masterBusMuted ||
++        state.masterBusDb !== prev.masterBusDb ||
++        state.muted !== prev.muted ||
++        state.volume !== prev.volume
+       if (gainChanged) stopAudioSkim(false)
+       if (!gainChanged && state.previewFrameEpoch === prev.previewFrameEpoch) return
+       scheduleAudioSkim(state.previewFrame)
+--- a/src/features/timeline/stores/actions/export-snapshot.ts
++++ b/src/features/timeline/stores/actions/export-snapshot.ts
+@@ -40,6 +40,7 @@
+   busAudioEq?: AudioEqSettings
+   masterBusDb: number
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   durationFrames: number
+   inPoint: number | null
+   outPoint: number | null
+@@ -141,6 +142,7 @@
+       busAudioEq,
+       masterBusDb: playback.masterBusDb,
+       masterBusMuted: playback.masterBusMuted,
++      masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+       durationFrames: furthestItemEnd(root.items),
+       ...range(nav.mainHolder),
+     }
+@@ -167,6 +169,7 @@
+     busAudioEq: isActiveTab ? playback.busAudioEq : comp.busAudioEq,
+     masterBusDb: playback.masterBusDb,
+     masterBusMuted: playback.masterBusMuted,
++    masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     durationFrames: comp.durationInFrames || furthestItemEnd(comp.items),
+     ...range(comp),
+   }
+--- a/src/features/timeline/stores/commands/snapshot.ts
++++ b/src/features/timeline/stores/commands/snapshot.ts
+@@ -105,14 +105,14 @@
+   ).then(
+     () => clearUnsavedMetadata(projectId),
+     (error) => {
+-    logger.error(`Failed to persist restored project metadata for ${snapshot.projectId}:`, error)
+-    // Frameleaf (FL-94): say so, and keep the timeline unsaved: the next save stores these settings
+-    // with it, so the stored rate and frames agree.
+-    holdUnsavedMetadata(projectId, metadata)
+-    useTimelineSettingsStore.getState().markDirty()
+-    toast.error(i18n.t('timeline.history.restoreNotSaved'), {
+-      description: error instanceof Error ? error.message : undefined,
+-    })
++      logger.error(`Failed to persist restored project metadata for ${snapshot.projectId}:`, error)
++      // Frameleaf (FL-94): say so, and keep the timeline unsaved: the next save stores these settings
++      // with it, so the stored rate and frames agree.
++      holdUnsavedMetadata(projectId, metadata)
++      useTimelineSettingsStore.getState().markDirty()
++      toast.error(i18n.t('timeline.history.restoreNotSaved'), {
++        description: error instanceof Error ? error.message : undefined,
++      })
+     },
+   )
+ }
+@@ -149,6 +149,7 @@
+     busAudioEq: playbackState.busAudioEq,
+     masterBusDb: playbackState.masterBusDb,
+     masterBusMuted: playbackState.masterBusMuted,
++    masterGainEnvelope: (playbackState.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     projectId: currentProject?.id ?? null,
+     projectMetadata: currentProject ? { ...currentProject.metadata } : null,
+   }
+@@ -195,10 +196,11 @@
+   // Restore playhead position
+   usePlaybackStore.getState().setCurrentFrame(snapshot.currentFrame)
+   usePlaybackStore.getState().setBusAudioEq(snapshot.busAudioEq)
+-  usePlaybackStore.getState().setMasterBusDb(snapshot.masterBusDb ?? 0)
+-  if (restoreMasterMute) {
+-    usePlaybackStore.getState().setMasterBusMuted(snapshot.masterBusMuted === true)
+-  }
++  usePlaybackStore.getState().setMasterAudio({
++    masterBusDb: snapshot.masterBusDb ?? 0,
++    masterGainEnvelope: snapshot.masterGainEnvelope ?? [],
++    ...(restoreMasterMute && { masterBusMuted: snapshot.masterBusMuted === true }),
++  })
+
+   // Restore current project metadata so canvas/project changes undo with the editor history.
+   restoreProjectMetadata(snapshot)
+@@ -226,6 +228,7 @@
+     a.currentFrame === b.currentFrame &&
+     JSON.stringify(a.busAudioEq ?? null) === JSON.stringify(b.busAudioEq ?? null) &&
+     a.masterBusDb === b.masterBusDb &&
++    JSON.stringify(a.masterGainEnvelope ?? []) === JSON.stringify(b.masterGainEnvelope ?? []) &&
+     (a.masterBusMuted === true) === (b.masterBusMuted === true) &&
+     a.projectId === b.projectId &&
+     projectMetadataEqual(a.projectMetadata, b.projectMetadata)
+--- a/src/features/timeline/stores/commands/types.ts
++++ b/src/features/timeline/stores/commands/types.ts
+@@ -29,6 +29,7 @@
+   /** Project-scoped master bus gain in dB (0 = unity). */
+   masterBusDb: number
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   projectId: string | null
+   projectMetadata: ProjectResolution | null
+ }
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -1,3 +1,4 @@
++import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
+ import type { LoadTimelineOptions } from '../types'
+ import {
+   cloneVectorKeyframe,
+@@ -38,10 +39,7 @@
+ import { useTimelineSettingsStore } from './timeline-settings-store'
+ import { ROOT_HISTORY_CONTEXT, useTimelineCommandStore } from './timeline-command-store'
+ import { useCompositionsStore, type SubComposition } from './compositions-store'
+-import {
+-  getActiveTabId,
+-  useCompositionNavigationStore,
+-} from './composition-navigation-store'
++import { getActiveTabId, useCompositionNavigationStore } from './composition-navigation-store'
+ import { useSequencesStore } from './sequences-store'
+ import {
+   beginTimelineWrite,
+@@ -744,6 +742,7 @@
+   busAudioEq?: AudioEqSettings
+   masterBusDb: number
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   markers: ProjectMarker[]
+   inPoint: number | null
+   outPoint: number | null
+@@ -808,11 +807,11 @@
+     compositions,
+     currentFrame: heldRoot ? heldRoot.currentFrame : playback.currentFrame,
+     zoomLevel: heldRoot?.zoomLevel ?? rootView?.zoomLevel ?? zoom.level,
+-    scrollPosition:
+-      heldRoot?.scrollPosition ?? rootView?.scrollPosition ?? settings.scrollPosition,
++    scrollPosition: heldRoot?.scrollPosition ?? rootView?.scrollPosition ?? settings.scrollPosition,
+     busAudioEq: heldRoot ? heldRoot.busAudioEq : playback.busAudioEq,
+     masterBusDb: playback.masterBusDb,
+     masterBusMuted: playback.masterBusMuted,
++    masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     markers: heldRoot ? heldRoot.markers : markers.markers,
+     inPoint: heldRoot ? heldRoot.inPoint : markers.inPoint,
+     outPoint: heldRoot ? heldRoot.outPoint : markers.outPoint,
+@@ -839,6 +838,9 @@
+     ...(snapshot.busAudioEq && { busAudioEq: snapshot.busAudioEq }),
+     masterBusDb: snapshot.masterBusDb,
+     masterBusMuted: snapshot.masterBusMuted,
++    ...((snapshot.masterGainEnvelope?.length ?? 0) > 0 && {
++      masterGainEnvelope: snapshot.masterGainEnvelope!.map((point) => ({ ...point })),
++    }),
+     currentFrame: snapshot.currentFrame,
+     zoomLevel: snapshot.zoomLevel,
+     scrollPosition: snapshot.scrollPosition,
+@@ -1127,6 +1129,7 @@
+  * migrating from storage; it then runs media validation on top.
+  */
+ export async function hydrateTimelineStoresFromProject(project: Project): Promise<void> {
++  validateMasterGainEnvelope(project.timeline?.masterGainEnvelope ?? [])
+   // Unwind the outgoing runtime context before replacing any live domain
+   // stores. If a Motion composition is active and root items are loaded first,
+   // resetToRoot() mistakes those freshly loaded root items for composition
+@@ -1137,9 +1140,12 @@
+   // that is what resolves each track's height. Heights are a local view
+   // preference and never come out of the project file.
+   loadTrackHeightOverrides(project.id)
+-  usePlaybackStore.getState().setMasterBusDb(project.timeline?.masterBusDb ?? 0)
++  usePlaybackStore.getState().setMasterAudio({
++    masterBusDb: project.timeline?.masterBusDb ?? 0,
++    masterBusMuted: project.timeline?.masterBusMuted === true,
++    masterGainEnvelope: project.timeline?.masterGainEnvelope ?? [],
++  })
+   usePlaybackStore.getState().setBusAudioEq(project.timeline?.busAudioEq)
+-  usePlaybackStore.getState().setMasterBusMuted(project.timeline?.masterBusMuted === true)
+
+   if (project.timeline && project.timeline.tracks?.length > 0) {
+     const t = project.timeline
+@@ -1273,10 +1279,7 @@
+   return JSON.stringify([projectId, options.allowProjectUpgrade === true])
+ }
+
+-export function loadTimeline(
+-  projectId: string,
+-  options: LoadTimelineOptions = {},
+-): Promise<void> {
++export function loadTimeline(projectId: string, options: LoadTimelineOptions = {}): Promise<void> {
+   const loadKey = getTimelineLoadKey(projectId, options)
+   const inFlightLoad = inFlightTimelineLoads.get(loadKey)
+   if (inFlightLoad) return inFlightLoad
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -235,6 +235,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   /** Project managed colour (FL-97); absent renders as an SDR project. */
+   colorManagement?: ProjectColorManagement
+   compositions?: SubComposition[]
+@@ -612,6 +613,7 @@
+     busAudioEq,
+     masterBusDb,
+     masterBusMuted,
++    masterGainEnvelope,
+     colorManagement,
+     compositions = [],
+     media,
+@@ -662,6 +664,7 @@
+     busAudioEq,
+     masterBusDb,
+     masterBusMuted,
++    masterGainEnvelope,
+   )
+   composition.colorManagement = colorManagement
+
+@@ -739,6 +742,7 @@
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
++    masterGainEnvelope: (timeline.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     colorManagement: meta?.colorManagement,
+     compositions: (timeline.compositions ?? []) as unknown as SubComposition[],
+     media,
+@@ -884,6 +888,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   colorManagement?: ProjectColorManagement
+   /** Non-fatal findings from project normalization (overlap repairs etc.). */
+   projectWarnings: ProjectWarning[]
+@@ -911,6 +916,7 @@
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
++    masterGainEnvelope: (timeline.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     colorManagement: meta?.colorManagement,
+   }
+ }
+@@ -938,6 +944,7 @@
+     view.busAudioEq,
+     view.masterBusDb,
+     view.masterBusMuted,
++    view.masterGainEnvelope,
+   )
+   composition.colorManagement = view.colorManagement
+   return composition
+@@ -1027,7 +1034,8 @@
+
+ async function renderFrameSignal(input: HeadlessSignalFrameInput) {
+   input.signal?.throwIfAborted()
+-  if (input.target !== 'pq' && input.target !== 'hlg' && input.target !== 'sdr-display') throw new Error('Unsupported signal target')
++  if (input.target !== 'pq' && input.target !== 'hlg' && input.target !== 'sdr-display')
++    throw new Error('Unsupported signal target')
+   const view = extractTimeline(input.project)
+   for (const id of Object.keys(input.hdrRasters ?? {})) {
+     validateHdrRaster(input.hdrRasters![id]!)
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.test.tsx
+@@ -1,5 +1,8 @@
++import { ClockProvider } from '@/runtime/composition-runtime/deps/player'
++import type { ReactNode } from 'react'
++import type { RenderOptions } from '@testing-library/react'
+ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+-import { act, render, waitFor } from '@testing-library/react'
++import { act, render as testingRender, waitFor } from '@testing-library/react'
+
+ const audioDecodeMocks = vi.hoisted(() => ({
+   getOrDecodeAudio: vi.fn(),
+@@ -603,3 +606,14 @@
+     ).toBeLessThan(8.51)
+   })
+ })
++
++function render(ui: ReactNode, options?: RenderOptions) {
++  return testingRender(ui, {
++    wrapper: ({ children }) => (
++      <ClockProvider fps={30} durationInFrames={300}>
++        {children}
++      </ClockProvider>
++    ),
++    ...options,
++  })
++}
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -1,3 +1,4 @@
++import { useClock } from '@/runtime/composition-runtime/deps/player'
+ import React, { useEffect, useRef, useState, useCallback } from 'react'
+ import { getAudioTargetTimeSeconds } from '../utils/video-timing'
+ import {
+@@ -122,6 +123,7 @@
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
++    const rootClock = useClock()
+     const {
+       frame,
+       fps,
+@@ -153,10 +155,7 @@
+       crossfadeFadeOut,
+       volumeMultiplier,
+     })
+-    const mediaPlaybackRate = getBrowserMediaPlaybackRate(
+-      playbackRate,
+-      transportPlaybackRate,
+-    )
++    const mediaPlaybackRate = getBrowserMediaPlaybackRate(playbackRate, transportPlaybackRate)
+     const isReverseShuttle = transportPlaybackRate < 0
+
+     const [audioSlice, setAudioSlice] = useState<PlaybackAudioSlice | null>(null)
+@@ -552,7 +551,7 @@
+       if (isPreviewScrubbing) return
+
+       // Keep the preview graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph()
++      const graph = createPreviewClipAudioGraph({ rootClock })
+       if (!graph) return
+       graphRef.current = graph
+
+@@ -584,7 +583,7 @@
+         graph.dispose()
+         graphRef.current = null
+       }
+-    }, [isPreviewScrubbing])
++    }, [isPreviewScrubbing, rootClock])
+
+     useEffect(() => {
+       const resume = () => {
+@@ -657,8 +656,10 @@
+       const graph = graphRef.current
+       if (!graph) return
+
+-      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
+-        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioSlice?.buffer.numberOfChannels)
++      const panAdmitted =
++        resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++          ? true
++          : rampPreviewClipPan(graph, resolvedAudioPanStages, audioSlice?.buffer.numberOfChannels)
+       if (!panAdmitted) graph.outputGainNode.gain.value = 0
+       const safeVolume = panAdmitted && Number.isFinite(audioVolume) ? Math.max(0, audioVolume) : 0
+       audioVolumeRef.current = safeVolume
+@@ -929,11 +930,16 @@
+
+           stopSource()
+           const startRequestId = ++startRequestIdRef.current
++          const transportGeneration = rootClock.getAudioTransportSnapshot().generation
+
+           const resumePromise = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve()
+           resumePromise
+             .then(() => {
+-              if (startRequestId !== startRequestIdRef.current) return
++              if (
++                startRequestId !== startRequestIdRef.current ||
++                rootClock.getAudioTransportSnapshot().generation !== transportGeneration
++              )
++                return
+
+               const liveGraph = graphRef.current
+               if (ctx.state !== 'running' || !liveGraph) return
+@@ -1008,6 +1014,7 @@
+         wasBackgroundedRef.current = false
+       }
+     }, [
++      rootClock,
+       audioSlice,
+       frame,
+       fps,
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -1,8 +1,5 @@
+ import { useCallback, useEffect, useMemo } from 'react'
+-import {
+-  useClockPlaybackRate,
+-  useSequenceContext,
+-} from '@/runtime/composition-runtime/deps/player'
++import { useClockPlaybackRate, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useVideoConfig, useIsPlaying } from '../../hooks/use-player-compat'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+ import { usePlaybackStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -86,8 +83,6 @@
+
+   const previewMasterVolume = usePlaybackStore((state) => state.volume)
+   const previewMasterMuted = usePlaybackStore((state) => state.muted)
+-  const masterBusDb = usePlaybackStore((state) => state.masterBusDb)
+-  const masterBusMuted = usePlaybackStore((state) => state.masterBusMuted)
+
+   const contextKeyframes = useItemKeyframesFromContext(itemId)
+   const storeKeyframes = useTimelineStore(
+@@ -134,7 +129,6 @@
+
+   const linearVolume = Math.pow(10, effectiveVolumeDb / 20)
+   const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier)
+-  const masterBusGain = masterBusMuted ? 0 : Math.pow(10, masterBusDb / 20)
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+
+   const mixerGain = useMixerLiveGainProduct([itemId, ...(liveGainItemIds ?? [])])
+@@ -166,12 +160,7 @@
+     playing,
+     transportPlaybackRate,
+     isPreviewScrubbing,
+-    resolvedVolume:
+-      itemVolume *
+-      masterBusGain *
+-      effectiveMonitorVolume *
+-      Math.max(0, volumeMultiplier) *
+-      mixerGain,
++    resolvedVolume: itemVolume * effectiveMonitorVolume * Math.max(0, volumeMultiplier) * mixerGain,
+     resolvedPitchShiftSemitones,
+     resolvedAudioEqStages,
+     resolvedAudioPanStages,
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
+@@ -1,4 +1,7 @@
+-import { act, render, waitFor } from '@testing-library/react'
++import { ClockProvider } from '@/runtime/composition-runtime/deps/player'
++import type { ReactNode } from 'react'
++import type { RenderOptions } from '@testing-library/react'
++import { act, render as testingRender, waitFor } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { DEFAULT_AUDIO_EQ_SETTINGS } from '@/shared/utils/audio-eq'
+
+@@ -239,17 +242,39 @@
+   it('decodes active pan at 1x and never falls back to an unknown or multichannel native source', async () => {
+     panStagesMocks.current = [-0.5]
+     let admit: (value: unknown) => void = () => {}
+-    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockReturnValue(new Promise((resolve) => { admit = resolve }))
+-    const view = render(<PitchCorrectedAudio src="blob:pan" mediaId="pan" itemId="pan" durationInFrames={120} />)
+-    await waitFor(() => expect(audioDecodeMocks.getOrDecodeAudioSliceForPlayback).toHaveBeenCalled())
++    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockReturnValue(
++      new Promise((resolve) => {
++        admit = resolve
++      }),
++    )
++    const view = render(
++      <PitchCorrectedAudio src="blob:pan" mediaId="pan" itemId="pan" durationInFrames={120} />,
++    )
++    await waitFor(() =>
++      expect(audioDecodeMocks.getOrDecodeAudioSliceForPlayback).toHaveBeenCalled(),
++    )
+     expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
+     const multichannel = { ...makeAudioBuffer(), numberOfChannels: 6 }
+-    await act(async () => { admit({ buffer: multichannel, startTime: 0, isComplete: true }); await Promise.resolve() })
++    await act(async () => {
++      admit({ buffer: multichannel, startTime: 0, isComplete: true })
++      await Promise.resolve()
++    })
+     await waitFor(() => expect(document.querySelector('[data-testid="pitch"]')).toBeNull())
+     expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
+     view.unmount()
+-    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockResolvedValue({ buffer: makeAudioBuffer(), startTime: 0, isComplete: true })
+-    render(<PitchCorrectedAudio src="blob:pan-stereo" mediaId="pan-stereo" itemId="pan-stereo" durationInFrames={120} />)
++    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockResolvedValue({
++      buffer: makeAudioBuffer(),
++      startTime: 0,
++      isComplete: true,
++    })
++    render(
++      <PitchCorrectedAudio
++        src="blob:pan-stereo"
++        mediaId="pan-stereo"
++        itemId="pan-stereo"
++        durationInFrames={120}
++      />,
++    )
+     await waitFor(() => expect(document.querySelector('[data-testid="pitch"]')).not.toBeNull())
+     expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
+   })
+@@ -423,10 +448,20 @@
+     await waitFor(() => {
+       expect(audioDecodeMocks.getOrDecodeAudioSliceForPlayback).toHaveBeenCalledTimes(1)
+     })
+-    const reverseOptions =
+-      audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mock.calls[0]?.[2]
++    const reverseOptions = audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mock.calls[0]?.[2]
+     expect(reverseOptions?.targetTimeSeconds).toBeCloseTo(10, 4)
+     expect(reverseOptions?.preRollSeconds).toBe(4)
+     expect(document.querySelector('[data-testid="pitch"]')).toBeInTheDocument()
+   })
+ })
++
++function render(ui: ReactNode, options?: RenderOptions) {
++  return testingRender(ui, {
++    wrapper: ({ children }) => (
++      <ClockProvider fps={30} durationInFrames={300}>
++        {children}
++      </ClockProvider>
++    ),
++    ...options,
++  })
++}
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -1,3 +1,4 @@
++import { useClock } from '@/runtime/composition-runtime/deps/player'
+ import React, { useCallback, useEffect, useRef, useState } from 'react'
+ import { createLogger } from '@/shared/logging/logger'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -109,15 +110,7 @@
+         Math.round((audioBuffer.duration - sourceEndSeconds) * effectiveSourceFps),
+       ),
+     }
+-  }, [
+-    audioBuffer,
+-    isComplete,
+-    isReversed,
+-    reverseSourceEnd,
+-    sourceFps,
+-    timelineFps,
+-    trimBefore,
+-  ])
++  }, [audioBuffer, isComplete, isReversed, reverseSourceEnd, sourceFps, timelineFps, trimBefore])
+   const fallbackBuffer = reversedPlayback?.buffer ?? audioBuffer
+
+   useEffect(() => {
+@@ -177,6 +170,7 @@
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
++    const rootClock = useClock()
+     const {
+       frame,
+       fps,
+@@ -227,7 +221,7 @@
+     useEffect(() => {
+       const audio = acquirePreviewAudioElement(src)
+       // Keep the media element and graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph()
++      const graph = createPreviewClipAudioGraph({ rootClock })
+       if (!graph) {
+         releasePreviewAudioElement(audio)
+         return
+@@ -262,7 +256,7 @@
+         }
+         releasePreviewAudioElement(audio)
+       }
+-    }, [src])
++    }, [src, rootClock])
+
+     useEffect(() => {
+       if (audioRef.current) {
+@@ -273,8 +267,10 @@
+     useEffect(() => {
+       const graph = graphRef.current
+       if (!graph) return
+-      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
+-        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioPanSourceChannels)
++      const panAdmitted =
++        resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++          ? true
++          : rampPreviewClipPan(graph, resolvedAudioPanStages, audioPanSourceChannels)
+       if (!panAdmitted) graph.outputGainNode.gain.value = 0
+       const clampedVolume = muted || !panAdmitted ? 0 : Math.max(0, finalVolume)
+       rampPreviewClipGain(graph, clampedVolume)
+@@ -535,7 +531,8 @@
+     frameRef.current = frame
+     const isReverseShuttle = transportPlaybackRate < 0
+     const audioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
+-    const nativeFallback = audioPanStages.length > 0 ? null : <NativePitchCorrectedAudio {...props} />
++    const nativeFallback =
++      audioPanStages.length > 0 ? null : <NativePitchCorrectedAudio {...props} />
+
+     useEffect(() => {
+       if (!mediaId || !src || isPreviewScrubbing) return
+@@ -706,7 +703,8 @@
+       return nativeFallback
+     }
+
+-    if (audioPanStages.length > 0 && ![1, 2].includes(decodedSource.buffer.numberOfChannels)) return null
++    if (audioPanStages.length > 0 && ![1, 2].includes(decodedSource.buffer.numberOfChannels))
++      return null
+     const playbackSourceStartOffsetSec = sourceStartOffsetSec + decodedSource.sourceStartOffsetSec
+     const decodedFallback = (
+       <DecodedPitchFallbackAudio
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
+@@ -1,4 +1,7 @@
+-import { render, screen, waitFor } from '@testing-library/react'
++import { ClockProvider } from '@/runtime/composition-runtime/deps/player'
++import type { ReactNode } from 'react'
++import type { RenderOptions } from '@testing-library/react'
++import { render as testingRender, screen, waitFor } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { DEFAULT_AUDIO_EQ_SETTINGS } from '@/shared/utils/audio-eq'
+ import { SoundTouchWorkletAudio } from './soundtouch-worklet-audio'
+@@ -36,7 +39,9 @@
+   })),
+   rampPreviewClipEq: vi.fn(),
+   rampPreviewClipGain: vi.fn(),
+-  rampPreviewClipPan: vi.fn((_graph: unknown, _stages: number[], channels: number) => channels === 1 || channels === 2),
++  rampPreviewClipPan: vi.fn(
++    (_graph: unknown, _stages: number[], channels: number) => channels === 1 || channels === 2,
++  ),
+ }))
+
+ const soundTouchWorkletMocks = vi.hoisted(() => ({
+@@ -121,7 +126,9 @@
+     soundTouchWorkletMocks.ensureSoundTouchPreviewWorkletLoaded.mockResolvedValue(true)
+     for (const channels of [1, 6]) {
+       const buffer = { ...makeAudioBuffer(), numberOfChannels: channels }
+-      const view = render(<SoundTouchWorkletAudio audioBuffer={buffer} itemId="pan" durationInFrames={120} />)
++      const view = render(
++        <SoundTouchWorkletAudio audioBuffer={buffer} itemId="pan" durationInFrames={120} />,
++      )
+       await waitFor(() => {
+         const graph = previewGraphMocks.createPreviewClipAudioGraph.mock.results.at(-1)!.value
+         expect(previewGraphMocks.rampPreviewClipPan).toHaveBeenCalledWith(graph, [-0.5], channels)
+@@ -286,3 +293,14 @@
+     })
+   })
+ })
++
++function render(ui: ReactNode, options?: RenderOptions) {
++  return testingRender(ui, {
++    wrapper: ({ children }) => (
++      <ClockProvider fps={30} durationInFrames={300}>
++        {children}
++      </ClockProvider>
++    ),
++    ...options,
++  })
++}
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -1,3 +1,4 @@
++import { useClock } from '@/runtime/composition-runtime/deps/player'
+ import React, { useEffect, useRef, useState } from 'react'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+ import { usePlaybackStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -68,6 +69,7 @@
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
++    const rootClock = useClock()
+     const {
+       frame,
+       fps,
+@@ -155,7 +157,7 @@
+
+     useEffect(() => {
+       // Keep the preview graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph()
++      const graph = createPreviewClipAudioGraph({ rootClock })
+       if (!graph) {
+         setFallbackRequested(true)
+         return
+@@ -211,8 +213,10 @@
+
+           // Reapply current gain so the rebuilt graph doesn't start silent
+           const clampedVolume = mutedRef.current ? 0 : Math.max(0, finalVolumeRef.current)
+-          const panAdmitted = panStagesRef.current.length === 0 && !graph.panNodes?.length
+-            ? true : rampPreviewClipPan(graph, panStagesRef.current, panSourceChannelsRef.current)
++          const panAdmitted =
++            panStagesRef.current.length === 0 && !graph.panNodes?.length
++              ? true
++              : rampPreviewClipPan(graph, panStagesRef.current, panSourceChannelsRef.current)
+           graph.outputGainNode.gain.value = panAdmitted ? clampedVolume : 0
+
+           setFallbackRequested(false)
+@@ -232,7 +236,7 @@
+         lastPostedPlayingRef.current = null
+         teardownNode()
+       }
+-    }, [])
++    }, [rootClock])
+
+     useEffect(() => {
+       const resume = () => {
+@@ -254,8 +258,10 @@
+     useEffect(() => {
+       const graph = graphRef.current
+       if (!graph) return
+-      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
+-        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioBuffer.numberOfChannels)
++      const panAdmitted =
++        resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++          ? true
++          : rampPreviewClipPan(graph, resolvedAudioPanStages, audioBuffer.numberOfChannels)
+       if (!panAdmitted) graph.outputGainNode.gain.value = 0
+       const clampedVolume = muted || !panAdmitted ? 0 : Math.max(0, finalVolume)
+       rampPreviewClipGain(graph, clampedVolume)
+--- a/src/runtime/composition-runtime/components/video-audio-context.ts
++++ b/src/runtime/composition-runtime/components/video-audio-context.ts
+@@ -1,3 +1,5 @@
++import type { Clock } from '@/runtime/composition-runtime/deps/player'
++import { getPreviewMasterInput, reportMasterPreviewUnavailable } from '../utils/preview-master-bus'
+ import { useCallback, useEffect, useMemo } from 'react'
+ import { interpolate, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -37,6 +39,7 @@
+   video: HTMLVideoElement,
+   audioVolume: number,
+   audioEqStages: ReadonlyArray<ResolvedAudioEqSettings>,
++  rootClock: Clock,
+ ): void {
+   // Pool creates elements muted. Keep element unmuted and control via volume/gain.
+   video.muted = false
+@@ -46,6 +49,10 @@
+   if (connectedVideoElements.has(video)) {
+     const graph = videoAudioGraphs.get(video)
+     const audioContext = videoAudioContexts.get(video)
++    if (graph && audioContext) {
++      graph.outputGainNode.disconnect()
++      graph.outputGainNode.connect(getPreviewMasterInput(rootClock, audioContext))
++    }
+     if (graph && audioContext?.state === 'running') {
+       rampPreviewClipEq(graph, audioEqStages)
+       rampPreviewClipGain(graph, safeVolume)
+@@ -63,9 +70,15 @@
+   // Always route preview video audio through the shared clip graph so future
+   // EQ/SFX can be inserted in one place for video and audio clips alike.
+   try {
+-    const graph = createPreviewClipAudioGraph({ eqStageCount: audioEqStages.length })
++    const graph = createPreviewClipAudioGraph({ eqStageCount: audioEqStages.length, rootClock })
+     if (!graph) {
+-      video.volume = Math.min(1, safeVolume)
++      reportMasterPreviewUnavailable()
++      const state = usePlaybackStore.getState()
++      video.volume = state.masterGainEnvelope.length
++        ? 0
++        : state.masterBusMuted
++          ? 0
++          : Math.min(1, safeVolume * 10 ** (state.masterBusDb / 20))
+       return
+     }
+
+@@ -84,7 +97,13 @@
+     rampPreviewClipGain(graph, safeVolume)
+   } catch {
+     // Fallback if Web Audio setup fails.
+-    video.volume = Math.min(1, safeVolume)
++    reportMasterPreviewUnavailable()
++    const state = usePlaybackStore.getState()
++    video.volume = state.masterGainEnvelope.length
++      ? 0
++      : state.masterBusMuted
++        ? 0
++        : Math.min(1, safeVolume * 10 ** (state.masterBusDb / 20))
+   }
+ }
+
+@@ -179,8 +198,6 @@
+   // Read master preview volume from playback store (only used during preview, not render)
+   const previewMasterVolume = usePlaybackStore((s) => s.volume)
+   const previewMasterMuted = usePlaybackStore((s) => s.muted)
+-  const masterBusDb = usePlaybackStore((s) => s.masterBusDb)
+-  const masterBusMuted = usePlaybackStore((s) => s.masterBusMuted)
+
+   const itemKeyframes = useRuntimeItemKeyframes(item.id)
+
+@@ -273,11 +290,10 @@
+   const itemVolume = Math.max(0, linearVolume * fadeMultiplier)
+
+   // Apply master bus gain (project) then monitor volume (per-device).
+-  const masterBusGain = masterBusMuted ? 0 : Math.pow(10, masterBusDb / 20)
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+
+   return {
+-    audioVolume: itemVolume * masterBusGain * effectiveMonitorVolume * mixerGain,
++    audioVolume: itemVolume * effectiveMonitorVolume * mixerGain,
+     resolvedAudioEqStages,
+   }
+ }
+--- a/src/runtime/composition-runtime/components/video-content.tsx
++++ b/src/runtime/composition-runtime/components/video-content.tsx
+@@ -395,7 +395,7 @@
+
+     elementRef.current = element
+     syncRegisteredVideoElement(itemIdRef.current, element)
+-    applyVideoElementAudioState(element, audioVolumeRef.current, audioEqStagesRef.current)
++    applyVideoElementAudioState(element, audioVolumeRef.current, audioEqStagesRef.current, clock)
+
+     if (initialRequiresVisualSeek) {
+       element.pause()
+@@ -627,6 +627,7 @@
+     shortId,
+     syncRegisteredVideoElement,
+     clearRegisteredVideoElement,
++    clock,
+     fitMode,
+     schedulePreWarm,
+   ])
+@@ -1078,8 +1079,8 @@
+   useEffect(() => {
+     const video = elementRef.current
+     if (!video) return
+-    applyVideoElementAudioState(video, audioVolume, audioEqStages)
+-  }, [audioEqStages, audioVolume])
++    applyVideoElementAudioState(video, audioVolume, audioEqStages, clock)
++  }, [audioEqStages, audioVolume, clock])
+
+   // Guard: itemId is required for rendering
+   if (!itemId) {
+--- a/src/runtime/composition-runtime/compositions/main-composition.tsx
++++ b/src/runtime/composition-runtime/compositions/main-composition.tsx
+@@ -1,3 +1,5 @@
++import { bindPreviewMasterBus, reportMasterPreviewUnavailable } from '../utils/preview-master-bus'
++import { usePlaybackStore, useProjectStore } from '@/runtime/composition-runtime/deps/stores'
+ import React, { useEffect, useMemo, useCallback } from 'react'
+ import {
+   AbsoluteFill,
+@@ -101,11 +103,10 @@
+   const keyframesCtx = React.useContext(KeyframesContext)
+   const previousMasksRef = React.useRef<MaskInfo[]>(EMPTY_MASK_INFOS)
+   const maskItems = useMemo(() => masks.map(({ mask }) => mask), [masks])
+-  const liveMaskDependencySignature =
+-    useLiveTransformDependencySignatureForItems(
+-      maskItems,
+-      keyframesCtx?.getItemKeyframes,
+-    )
++  const liveMaskDependencySignature = useLiveTransformDependencySignatureForItems(
++    maskItems,
++    keyframesCtx?.getItemKeyframes,
++  )
+
+   const activeMasks = useMemo<MaskInfo[]>(() => {
+     void liveMaskDependencySignature
+@@ -125,15 +126,7 @@
+     const stableMasks = reuseStableMaskInfos(previousMasksRef.current, nextMasks)
+     previousMasksRef.current = stableMasks
+     return stableMasks
+-  }, [
+-    masks,
+-    canvasWidth,
+-    canvasHeight,
+-    fps,
+-    frame,
+-    keyframesCtx,
+-    liveMaskDependencySignature,
+-  ])
++  }, [masks, canvasWidth, canvasHeight, fps, frame, keyframesCtx, liveMaskDependencySignature])
+
+   return <ActiveMasksContext.Provider value={activeMasks}>{children}</ActiveMasksContext.Provider>
+ }
+@@ -224,11 +217,16 @@
+   // When running, the Clock derives time from the hardware audio clock
+   // instead of performance.now(), eliminating audio-video drift.
+   const clock = useClock()
++  const masterRootProjectId = useProjectStore((state) => state.currentProject?.id ?? null)
++  const masterPreviewError = usePlaybackStore((state) => state.masterPreviewError)
+   useEffect(() => {
+     const ctx = getSharedPreviewAudioContext()
+-    clock.setAudioContext(ctx)
+-    return () => clock.setAudioContext(null)
+-  }, [clock])
++    if (!ctx) {
++      reportMasterPreviewUnavailable()
++      return
++    }
++    return bindPreviewMasterBus(clock, ctx)
++  }, [clock, masterRootProjectId])
+
+   const projectWidth = compositionWidth ?? renderWidth
+   const projectHeight = compositionHeight ?? renderHeight
+@@ -448,308 +446,319 @@
+   )
+
+   return (
+-    <LiveItemTransformProvider source={liveItemTransformSource}>
+-      <NestedMediaResolutionProvider value={useProxyMedia ? 'proxy' : 'source'}>
+-        <KeyframesProvider keyframes={keyframes} items={expressionItems} canvas={expressionCanvas}>
+-          <CompositionSpaceProvider
+-            projectWidth={projectWidth}
+-            projectHeight={projectHeight}
+-            renderWidth={renderWidth}
+-            renderHeight={renderHeight}
++    <>
++      {masterPreviewError && (
++        <div role="alert" style={{ position: 'absolute', zIndex: 9999 }}>
++          {masterPreviewError}
++        </div>
++      )}
++      <LiveItemTransformProvider key={masterRootProjectId} source={liveItemTransformSource}>
++        <NestedMediaResolutionProvider value={useProxyMedia ? 'proxy' : 'source'}>
++          <KeyframesProvider
++            keyframes={keyframes}
++            items={expressionItems}
++            canvas={expressionCanvas}
+           >
+-            <AbsoluteFill>
+-            {/* SVG MASK DEFINITIONS - kept for backward compat with feather/invert that need SVG mask */}
+-            {/* Shape mask animation is now handled per-item via ActiveMasksProvider + MaskedItem */}
+-
+-            {/* BACKGROUND LAYER */}
+-            <AbsoluteFill style={{ backgroundColor: effectiveBackgroundColor, zIndex: -1 }} />
+-
+-            {/* AUDIO LAYER - rendered outside visual layers to prevent re-renders from mask/visual changes */}
+-            {/* Video audio is decoupled from visual video elements for transition stability */}
+-            {/* Custom-decoded segments (AC-3/E-AC-3, Vorbis, PCM endian variants) use mediabunny instead of native <audio>. */}
+-            {previewTransitionAudioSegments.map((segment) => {
+-              const useCustomDecoder = shouldUseCustomDecoder(segment)
+-              const decodeMediaId = segment.mediaId ?? `legacy-src:${segment.src}`
+-              return (
+-                <Sequence
+-                  key={segment.key}
+-                  from={segment.from}
+-                  durationInFrames={segment.durationInFrames}
+-                  premountFor={Math.round(fps * TRANSITION_AUDIO_PREMOUNT_SECONDS)}
+-                >
+-                  {useCustomDecoder ? (
+-                    <CustomDecoderAudio
+-                      src={segment.src}
+-                      mediaId={decodeMediaId}
+-                      itemId={segment.itemId}
+-                      trimBefore={segment.trimBefore}
+-                      sourceFps={segment.sourceFps}
+-                      volume={segment.volumeDb}
+-                      playbackRate={segment.playbackRate}
+-                      isReversed={segment.isReversed}
+-                      reverseSourceEnd={segment.reverseSourceEnd}
+-                      audioPitchSemitones={segment.audioPitchSemitones}
+-                      audioPitchCents={segment.audioPitchCents}
+-                      muted={segment.muted}
+-                      durationInFrames={segment.durationInFrames}
+-                      audioFadeIn={segment.audioFadeIn}
+-                      audioFadeOut={segment.audioFadeOut}
+-                      audioFadeInCurve={segment.audioFadeInCurve}
+-                      audioFadeOutCurve={segment.audioFadeOutCurve}
+-                      audioFadeInCurveX={segment.audioFadeInCurveX}
+-                      audioFadeOutCurveX={segment.audioFadeOutCurveX}
+-                      audioEqStages={segment.audioEqStages}
+-                      clipFadeSpans={segment.clipFadeSpans}
+-                      contentStartOffsetFrames={segment.contentStartOffsetFrames}
+-                      contentEndOffsetFrames={segment.contentEndOffsetFrames}
+-                      fadeInDelayFrames={segment.fadeInDelayFrames}
+-                      fadeOutLeadFrames={segment.fadeOutLeadFrames}
+-                      crossfadeFadeIn={segment.crossfadeFadeIn}
+-                      crossfadeFadeOut={segment.crossfadeFadeOut}
+-                    />
+-                  ) : (
+-                    <PitchCorrectedAudio
+-                      src={segment.src}
+-                      mediaId={decodeMediaId}
+-                      itemId={segment.itemId}
+-                      trimBefore={segment.trimBefore}
+-                      sourceFps={segment.sourceFps}
+-                      volume={segment.volumeDb}
+-                      playbackRate={segment.playbackRate}
+-                      isReversed={segment.isReversed}
+-                      reverseSourceEnd={segment.reverseSourceEnd}
+-                      audioPitchSemitones={segment.audioPitchSemitones}
+-                      audioPitchCents={segment.audioPitchCents}
+-                      muted={segment.muted}
+-                      durationInFrames={segment.durationInFrames}
+-                      audioFadeIn={segment.audioFadeIn}
+-                      audioFadeOut={segment.audioFadeOut}
+-                      audioFadeInCurve={segment.audioFadeInCurve}
+-                      audioFadeOutCurve={segment.audioFadeOutCurve}
+-                      audioFadeInCurveX={segment.audioFadeInCurveX}
+-                      audioFadeOutCurveX={segment.audioFadeOutCurveX}
+-                      audioEqStages={segment.audioEqStages}
+-                      clipFadeSpans={segment.clipFadeSpans}
+-                      contentStartOffsetFrames={segment.contentStartOffsetFrames}
+-                      contentEndOffsetFrames={segment.contentEndOffsetFrames}
+-                      fadeInDelayFrames={segment.fadeInDelayFrames}
+-                      fadeOutLeadFrames={segment.fadeOutLeadFrames}
+-                      crossfadeFadeIn={segment.crossfadeFadeIn}
+-                      crossfadeFadeOut={segment.crossfadeFadeOut}
+-                    />
+-                  )}
+-                </Sequence>
+-              )
+-            })}
+-
+-            {/* Standalone audio items - merged across split boundaries for stable playback */}
+-            {previewAudioSegments.map((segment) => {
+-              const useCustomDecoder = shouldUseCustomDecoder(segment)
+-              const decodeMediaId = segment.mediaId ?? `legacy-src:${segment.src}`
+-              return (
+-                <Sequence
+-                  key={segment.key}
+-                  from={segment.from}
+-                  durationInFrames={segment.durationInFrames}
+-                  premountFor={Math.round(fps * STANDALONE_AUDIO_PREMOUNT_SECONDS)}
+-                >
+-                  {useCustomDecoder ? (
+-                    <CustomDecoderAudio
+-                      src={segment.src}
+-                      mediaId={decodeMediaId}
+-                      itemId={segment.itemId}
+-                      trimBefore={segment.trimBefore}
+-                      sourceFps={segment.sourceFps}
+-                      volume={segment.volumeDb}
+-                      playbackRate={segment.playbackRate}
+-                      isReversed={segment.isReversed}
+-                      reverseSourceEnd={segment.reverseSourceEnd}
+-                      audioPitchSemitones={segment.audioPitchSemitones}
+-                      audioPitchCents={segment.audioPitchCents}
+-                      muted={segment.muted}
+-                      durationInFrames={segment.durationInFrames}
+-                      audioFadeIn={segment.audioFadeIn}
+-                      audioFadeOut={segment.audioFadeOut}
+-                      audioFadeInCurve={segment.audioFadeInCurve}
+-                      audioFadeOutCurve={segment.audioFadeOutCurve}
+-                      audioFadeInCurveX={segment.audioFadeInCurveX}
+-                      audioFadeOutCurveX={segment.audioFadeOutCurveX}
+-                      audioEqStages={segment.audioEqStages}
+-                      clipFadeSpans={segment.clipFadeSpans}
+-                    />
+-                  ) : (
+-                    <PitchCorrectedAudio
+-                      src={segment.src}
+-                      mediaId={decodeMediaId}
+-                      itemId={segment.itemId}
+-                      trimBefore={segment.trimBefore}
+-                      sourceFps={segment.sourceFps}
+-                      volume={segment.volumeDb}
+-                      playbackRate={segment.playbackRate}
+-                      isReversed={segment.isReversed}
+-                      reverseSourceEnd={segment.reverseSourceEnd}
+-                      audioPitchSemitones={segment.audioPitchSemitones}
+-                      audioPitchCents={segment.audioPitchCents}
+-                      muted={segment.muted}
+-                      durationInFrames={segment.durationInFrames}
+-                      audioFadeIn={segment.audioFadeIn}
+-                      audioFadeOut={segment.audioFadeOut}
+-                      audioFadeInCurve={segment.audioFadeInCurve}
+-                      audioFadeOutCurve={segment.audioFadeOutCurve}
+-                      audioFadeInCurveX={segment.audioFadeInCurveX}
+-                      audioFadeOutCurveX={segment.audioFadeOutCurveX}
+-                      audioEqStages={segment.audioEqStages}
+-                      clipFadeSpans={segment.clipFadeSpans}
+-                    />
+-                  )}
+-                </Sequence>
+-              )
+-            })}
+-
+-            {managedCompoundAudioSegments.map((segment) => {
+-              const compoundItem = managedCompoundAudioItemsById.get(segment.itemId)
+-              if (!compoundItem) return null
+-
+-              const segmentItem = {
+-                ...compoundItem,
+-                from: segment.from,
+-                durationInFrames: segment.durationInFrames,
+-                sourceStart: segment.trimBefore,
+-                sourceEnd:
+-                  segment.trimBefore +
+-                  timelineToSourceFrames(
+-                    segment.durationInFrames,
+-                    segment.playbackRate ?? 1,
+-                    fps,
+-                    segment.sourceFps ?? fps,
+-                  ),
+-                speed: segment.playbackRate,
+-              }
+-
+-              return (
+-                <Sequence
+-                  key={segment.key}
+-                  from={segment.from}
+-                  durationInFrames={segment.durationInFrames}
+-                  premountFor={Math.round(fps * TRANSITION_AUDIO_PREMOUNT_SECONDS)}
+-                >
+-                  <CompositionContent
+-                    item={segmentItem}
+-                    parentMuted={segment.muted}
+-                    renderMode="audio-only"
+-                    audioGainMultiplier={Math.pow(10, segment.volumeDb / 20)}
+-                    audioEqStages={appendResolvedAudioEqSources(
+-                      undefined,
+-                      busAudioEq,
+-                      compoundItem.trackAudioEq,
+-                      getAudioEqSettings(compoundItem),
+-                    )}
+-                    audioPitchShiftSemitones={segment.audioPitchShiftSemitones}
+-                    crossfadeFadeInFrames={segment.crossfadeFadeIn}
+-                    crossfadeFadeOutFrames={segment.crossfadeFadeOut}
+-                  />
+-                </Sequence>
+-              )
+-            })}
+-
+-            {standaloneCompoundAudioItems.map((item) => (
+-              <Sequence
+-                key={`compound-audio-${item.id}`}
+-                from={item.from}
+-                durationInFrames={item.durationInFrames}
+-                premountFor={Math.round(fps * STANDALONE_AUDIO_PREMOUNT_SECONDS)}
+-              >
+-                <CompositionContent
+-                  item={item}
+-                  parentMuted={item.muted || !item.trackVisible}
+-                  renderMode="audio-only"
+-                  audioGainMultiplier={Math.pow(
+-                    10,
+-                    ((item.volume ?? 0) + (item.trackVolumeDb ?? 0)) / 20,
+-                  )}
+-                  audioEqStages={appendResolvedAudioEqSources(
+-                    undefined,
+-                    busAudioEq,
+-                    item.trackAudioEq,
+-                    getAudioEqSettings(item),
+-                  )}
+-                  audioPitchShiftSemitones={getAudioPitchShiftSemitones(item)}
+-                />
+-              </Sequence>
+-            ))}
+-
+-            {/* ALL VISUAL LAYERS - videos and non-media in SINGLE wrapper for proper z-index stacking */}
+-            {/* This ensures items from different tracks respect z-index across all types */}
+-            <ActiveMasksProvider
+-              masks={visibleShapeMasks}
+-              canvasWidth={canvasWidth}
+-              canvasHeight={canvasHeight}
++            <CompositionSpaceProvider
++              projectWidth={projectWidth}
++              projectHeight={projectHeight}
++              renderWidth={renderWidth}
++              renderHeight={renderHeight}
+             >
+               <AbsoluteFill>
+-                {/* VIDEO LAYER - all videos rendered via StableVideoSequence */}
+-                {/* ALL effects (CSS, glitch, halftone) applied per-item via ItemEffectWrapper */}
+-                <StableVideoSequence
+-                  items={videoItems}
+-                  transitionWindows={renderPlan.transitionWindows}
+-                  premountFor={Math.round(fps * VIDEO_CLIP_PREMOUNT_SECONDS)}
+-                  renderItem={renderVideoItem}
+-                />
+-
+-                {/* NON-MEDIA LAYERS - text, shapes, etc. with per-item effects via ItemEffectWrapper */}
+-                {/* No more above/below split - items never move between DOM parents */}
+-                {nonMediaByTrack
+-                  .filter((track) => track.items.length > 0)
+-                  .map((track) => {
+-                    const trackOrder = track.order ?? 0
+-                    return (
+-                      <AbsoluteFill
+-                        key={track.id}
+-                        style={{
+-                          // Non-media z-index: base + 100 (videos use base, transitions use base + 200)
+-                          zIndex: (maxOrder - trackOrder) * 1000 + 100,
+-                          visibility: track.trackVisible ? 'visible' : 'hidden',
+-                        }}
+-                      >
+-                        {track.items.map((item) => (
+-                          <Sequence
+-                            key={item.id}
+-                            from={item.from}
+-                            durationInFrames={item.durationInFrames}
++                {/* SVG MASK DEFINITIONS - kept for backward compat with feather/invert that need SVG mask */}
++                {/* Shape mask animation is now handled per-item via ActiveMasksProvider + MaskedItem */}
++
++                {/* BACKGROUND LAYER */}
++                <AbsoluteFill style={{ backgroundColor: effectiveBackgroundColor, zIndex: -1 }} />
++
++                {/* AUDIO LAYER - rendered outside visual layers to prevent re-renders from mask/visual changes */}
++                {/* Video audio is decoupled from visual video elements for transition stability */}
++                {/* Custom-decoded segments (AC-3/E-AC-3, Vorbis, PCM endian variants) use mediabunny instead of native <audio>. */}
++                {previewTransitionAudioSegments.map((segment) => {
++                  const useCustomDecoder = shouldUseCustomDecoder(segment)
++                  const decodeMediaId = segment.mediaId ?? `legacy-src:${segment.src}`
++                  return (
++                    <Sequence
++                      key={segment.key}
++                      from={segment.from}
++                      durationInFrames={segment.durationInFrames}
++                      premountFor={Math.round(fps * TRANSITION_AUDIO_PREMOUNT_SECONDS)}
++                    >
++                      {useCustomDecoder ? (
++                        <CustomDecoderAudio
++                          src={segment.src}
++                          mediaId={decodeMediaId}
++                          itemId={segment.itemId}
++                          trimBefore={segment.trimBefore}
++                          sourceFps={segment.sourceFps}
++                          volume={segment.volumeDb}
++                          playbackRate={segment.playbackRate}
++                          isReversed={segment.isReversed}
++                          reverseSourceEnd={segment.reverseSourceEnd}
++                          audioPitchSemitones={segment.audioPitchSemitones}
++                          audioPitchCents={segment.audioPitchCents}
++                          muted={segment.muted}
++                          durationInFrames={segment.durationInFrames}
++                          audioFadeIn={segment.audioFadeIn}
++                          audioFadeOut={segment.audioFadeOut}
++                          audioFadeInCurve={segment.audioFadeInCurve}
++                          audioFadeOutCurve={segment.audioFadeOutCurve}
++                          audioFadeInCurveX={segment.audioFadeInCurveX}
++                          audioFadeOutCurveX={segment.audioFadeOutCurveX}
++                          audioEqStages={segment.audioEqStages}
++                          clipFadeSpans={segment.clipFadeSpans}
++                          contentStartOffsetFrames={segment.contentStartOffsetFrames}
++                          contentEndOffsetFrames={segment.contentEndOffsetFrames}
++                          fadeInDelayFrames={segment.fadeInDelayFrames}
++                          fadeOutLeadFrames={segment.fadeOutLeadFrames}
++                          crossfadeFadeIn={segment.crossfadeFadeIn}
++                          crossfadeFadeOut={segment.crossfadeFadeOut}
++                        />
++                      ) : (
++                        <PitchCorrectedAudio
++                          src={segment.src}
++                          mediaId={decodeMediaId}
++                          itemId={segment.itemId}
++                          trimBefore={segment.trimBefore}
++                          sourceFps={segment.sourceFps}
++                          volume={segment.volumeDb}
++                          playbackRate={segment.playbackRate}
++                          isReversed={segment.isReversed}
++                          reverseSourceEnd={segment.reverseSourceEnd}
++                          audioPitchSemitones={segment.audioPitchSemitones}
++                          audioPitchCents={segment.audioPitchCents}
++                          muted={segment.muted}
++                          durationInFrames={segment.durationInFrames}
++                          audioFadeIn={segment.audioFadeIn}
++                          audioFadeOut={segment.audioFadeOut}
++                          audioFadeInCurve={segment.audioFadeInCurve}
++                          audioFadeOutCurve={segment.audioFadeOutCurve}
++                          audioFadeInCurveX={segment.audioFadeInCurveX}
++                          audioFadeOutCurveX={segment.audioFadeOutCurveX}
++                          audioEqStages={segment.audioEqStages}
++                          clipFadeSpans={segment.clipFadeSpans}
++                          contentStartOffsetFrames={segment.contentStartOffsetFrames}
++                          contentEndOffsetFrames={segment.contentEndOffsetFrames}
++                          fadeInDelayFrames={segment.fadeInDelayFrames}
++                          fadeOutLeadFrames={segment.fadeOutLeadFrames}
++                          crossfadeFadeIn={segment.crossfadeFadeIn}
++                          crossfadeFadeOut={segment.crossfadeFadeOut}
++                        />
++                      )}
++                    </Sequence>
++                  )
++                })}
++
++                {/* Standalone audio items - merged across split boundaries for stable playback */}
++                {previewAudioSegments.map((segment) => {
++                  const useCustomDecoder = shouldUseCustomDecoder(segment)
++                  const decodeMediaId = segment.mediaId ?? `legacy-src:${segment.src}`
++                  return (
++                    <Sequence
++                      key={segment.key}
++                      from={segment.from}
++                      durationInFrames={segment.durationInFrames}
++                      premountFor={Math.round(fps * STANDALONE_AUDIO_PREMOUNT_SECONDS)}
++                    >
++                      {useCustomDecoder ? (
++                        <CustomDecoderAudio
++                          src={segment.src}
++                          mediaId={decodeMediaId}
++                          itemId={segment.itemId}
++                          trimBefore={segment.trimBefore}
++                          sourceFps={segment.sourceFps}
++                          volume={segment.volumeDb}
++                          playbackRate={segment.playbackRate}
++                          isReversed={segment.isReversed}
++                          reverseSourceEnd={segment.reverseSourceEnd}
++                          audioPitchSemitones={segment.audioPitchSemitones}
++                          audioPitchCents={segment.audioPitchCents}
++                          muted={segment.muted}
++                          durationInFrames={segment.durationInFrames}
++                          audioFadeIn={segment.audioFadeIn}
++                          audioFadeOut={segment.audioFadeOut}
++                          audioFadeInCurve={segment.audioFadeInCurve}
++                          audioFadeOutCurve={segment.audioFadeOutCurve}
++                          audioFadeInCurveX={segment.audioFadeInCurveX}
++                          audioFadeOutCurveX={segment.audioFadeOutCurveX}
++                          audioEqStages={segment.audioEqStages}
++                          clipFadeSpans={segment.clipFadeSpans}
++                        />
++                      ) : (
++                        <PitchCorrectedAudio
++                          src={segment.src}
++                          mediaId={decodeMediaId}
++                          itemId={segment.itemId}
++                          trimBefore={segment.trimBefore}
++                          sourceFps={segment.sourceFps}
++                          volume={segment.volumeDb}
++                          playbackRate={segment.playbackRate}
++                          isReversed={segment.isReversed}
++                          reverseSourceEnd={segment.reverseSourceEnd}
++                          audioPitchSemitones={segment.audioPitchSemitones}
++                          audioPitchCents={segment.audioPitchCents}
++                          muted={segment.muted}
++                          durationInFrames={segment.durationInFrames}
++                          audioFadeIn={segment.audioFadeIn}
++                          audioFadeOut={segment.audioFadeOut}
++                          audioFadeInCurve={segment.audioFadeInCurve}
++                          audioFadeOutCurve={segment.audioFadeOutCurve}
++                          audioFadeInCurveX={segment.audioFadeInCurveX}
++                          audioFadeOutCurveX={segment.audioFadeOutCurveX}
++                          audioEqStages={segment.audioEqStages}
++                          clipFadeSpans={segment.clipFadeSpans}
++                        />
++                      )}
++                    </Sequence>
++                  )
++                })}
++
++                {managedCompoundAudioSegments.map((segment) => {
++                  const compoundItem = managedCompoundAudioItemsById.get(segment.itemId)
++                  if (!compoundItem) return null
++
++                  const segmentItem = {
++                    ...compoundItem,
++                    from: segment.from,
++                    durationInFrames: segment.durationInFrames,
++                    sourceStart: segment.trimBefore,
++                    sourceEnd:
++                      segment.trimBefore +
++                      timelineToSourceFrames(
++                        segment.durationInFrames,
++                        segment.playbackRate ?? 1,
++                        fps,
++                        segment.sourceFps ?? fps,
++                      ),
++                    speed: segment.playbackRate,
++                  }
++
++                  return (
++                    <Sequence
++                      key={segment.key}
++                      from={segment.from}
++                      durationInFrames={segment.durationInFrames}
++                      premountFor={Math.round(fps * TRANSITION_AUDIO_PREMOUNT_SECONDS)}
++                    >
++                      <CompositionContent
++                        item={segmentItem}
++                        parentMuted={segment.muted}
++                        renderMode="audio-only"
++                        audioGainMultiplier={Math.pow(10, segment.volumeDb / 20)}
++                        audioEqStages={appendResolvedAudioEqSources(
++                          undefined,
++                          busAudioEq,
++                          compoundItem.trackAudioEq,
++                          getAudioEqSettings(compoundItem),
++                        )}
++                        audioPitchShiftSemitones={segment.audioPitchShiftSemitones}
++                        crossfadeFadeInFrames={segment.crossfadeFadeIn}
++                        crossfadeFadeOutFrames={segment.crossfadeFadeOut}
++                      />
++                    </Sequence>
++                  )
++                })}
++
++                {standaloneCompoundAudioItems.map((item) => (
++                  <Sequence
++                    key={`compound-audio-${item.id}`}
++                    from={item.from}
++                    durationInFrames={item.durationInFrames}
++                    premountFor={Math.round(fps * STANDALONE_AUDIO_PREMOUNT_SECONDS)}
++                  >
++                    <CompositionContent
++                      item={item}
++                      parentMuted={item.muted || !item.trackVisible}
++                      renderMode="audio-only"
++                      audioGainMultiplier={Math.pow(
++                        10,
++                        ((item.volume ?? 0) + (item.trackVolumeDb ?? 0)) / 20,
++                      )}
++                      audioEqStages={appendResolvedAudioEqSources(
++                        undefined,
++                        busAudioEq,
++                        item.trackAudioEq,
++                        getAudioEqSettings(item),
++                      )}
++                      audioPitchShiftSemitones={getAudioPitchShiftSemitones(item)}
++                    />
++                  </Sequence>
++                ))}
++
++                {/* ALL VISUAL LAYERS - videos and non-media in SINGLE wrapper for proper z-index stacking */}
++                {/* This ensures items from different tracks respect z-index across all types */}
++                <ActiveMasksProvider
++                  masks={visibleShapeMasks}
++                  canvasWidth={canvasWidth}
++                  canvasHeight={canvasHeight}
++                >
++                  <AbsoluteFill>
++                    {/* VIDEO LAYER - all videos rendered via StableVideoSequence */}
++                    {/* ALL effects (CSS, glitch, halftone) applied per-item via ItemEffectWrapper */}
++                    <StableVideoSequence
++                      items={videoItems}
++                      transitionWindows={renderPlan.transitionWindows}
++                      premountFor={Math.round(fps * VIDEO_CLIP_PREMOUNT_SECONDS)}
++                      renderItem={renderVideoItem}
++                    />
++
++                    {/* NON-MEDIA LAYERS - text, shapes, etc. with per-item effects via ItemEffectWrapper */}
++                    {/* No more above/below split - items never move between DOM parents */}
++                    {nonMediaByTrack
++                      .filter((track) => track.items.length > 0)
++                      .map((track) => {
++                        const trackOrder = track.order ?? 0
++                        return (
++                          <AbsoluteFill
++                            key={track.id}
++                            style={{
++                              // Non-media z-index: base + 100 (videos use base, transitions use base + 200)
++                              zIndex: (maxOrder - trackOrder) * 1000 + 100,
++                              visibility: track.trackVisible ? 'visible' : 'hidden',
++                            }}
+                           >
+-                            <ItemEffectWrapper
+-                              itemTrackOrder={trackOrder}
+-                              adjustmentLayers={visibleAdjustmentLayers}
+-                              sequenceFrom={item.from}
+-                            >
+-                              <MaskedItem
+-                                item={item}
+-                                muted={
+-                                  track.muted ||
+-                                  !track.trackVisible ||
+-                                  (item.type === 'composition' &&
+-                                    hasLinkedAudioCompanion(audioItems, item))
+-                                }
+-                                visible={track.trackVisible}
+-                                itemTrackOrder={trackOrder}
+-                                compositionRenderMode={
+-                                  item.type === 'composition' &&
+-                                  hasLinkedAudioCompanion(audioItems, item)
+-                                    ? 'visual-only'
+-                                    : 'full'
+-                                }
+-                              />
+-                            </ItemEffectWrapper>
+-                          </Sequence>
+-                        ))}
+-                      </AbsoluteFill>
+-                    )
+-                  })}
++                            {track.items.map((item) => (
++                              <Sequence
++                                key={item.id}
++                                from={item.from}
++                                durationInFrames={item.durationInFrames}
++                              >
++                                <ItemEffectWrapper
++                                  itemTrackOrder={trackOrder}
++                                  adjustmentLayers={visibleAdjustmentLayers}
++                                  sequenceFrom={item.from}
++                                >
++                                  <MaskedItem
++                                    item={item}
++                                    muted={
++                                      track.muted ||
++                                      !track.trackVisible ||
++                                      (item.type === 'composition' &&
++                                        hasLinkedAudioCompanion(audioItems, item))
++                                    }
++                                    visible={track.trackVisible}
++                                    itemTrackOrder={trackOrder}
++                                    compositionRenderMode={
++                                      item.type === 'composition' &&
++                                      hasLinkedAudioCompanion(audioItems, item)
++                                        ? 'visual-only'
++                                        : 'full'
++                                    }
++                                  />
++                                </ItemEffectWrapper>
++                              </Sequence>
++                            ))}
++                          </AbsoluteFill>
++                        )
++                      })}
++                  </AbsoluteFill>
++                </ActiveMasksProvider>
+               </AbsoluteFill>
+-            </ActiveMasksProvider>
+-            </AbsoluteFill>
+-          </CompositionSpaceProvider>
+-        </KeyframesProvider>
+-      </NestedMediaResolutionProvider>
+-    </LiveItemTransformProvider>
++            </CompositionSpaceProvider>
++          </KeyframesProvider>
++        </NestedMediaResolutionProvider>
++      </LiveItemTransformProvider>
++    </>
+   )
+ }
+--- a/src/runtime/composition-runtime/deps/player-contract.ts
++++ b/src/runtime/composition-runtime/deps/player-contract.ts
+@@ -20,3 +20,8 @@
+ } from '@/runtime/player/clock/clock-hooks'
+ export { useVideoSourcePool } from '@/runtime/player/video/VideoSourcePoolContext'
+ export { isVideoPoolAbortError } from '@/runtime/player/video/VideoSourcePool'
++
++export { Clock } from '@/runtime/player/clock/Clock'
++export type { AudioTransportSnapshot } from '@/runtime/player/clock/Clock'
++
++export { ClockProvider } from '@/runtime/player/clock/ClockProvider'
+--- a/src/runtime/composition-runtime/deps/stores-contract.ts
++++ b/src/runtime/composition-runtime/deps/stores-contract.ts
+@@ -13,3 +13,5 @@
+ export { useTimelineStore } from '@/features/timeline/stores/timeline-store'
+ export { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
+ export { useDebugStore } from '@/features/editor/stores/debug-store'
++
++export { useProjectStore } from '@/features/projects/stores/project-store'
+--- a/src/runtime/composition-runtime/utils/preview-audio-graph.ts
++++ b/src/runtime/composition-runtime/utils/preview-audio-graph.ts
+@@ -1,3 +1,5 @@
++import type { Clock } from '@/runtime/composition-runtime/deps/player'
++import { getPreviewMasterInput, reportMasterPreviewUnavailable } from './preview-master-bus'
+ import {
+   AUDIO_EQ_MID_FREQUENCY_HZ,
+   AUDIO_EQ_MID_Q,
+@@ -491,9 +493,11 @@
+
+ export function createPreviewClipAudioGraph(options?: {
+   eqStageCount?: number
++  rootClock?: Clock
+ }): PreviewClipAudioGraph | null {
+   const context = getSharedPreviewAudioContext()
+   if (!context) {
++    reportMasterPreviewUnavailable()
+     return null
+   }
+
+@@ -523,7 +527,9 @@
+   }
+
+   reconnectPreviewClipAudioGraph(graph)
+-  outputGainNode.connect(context.destination)
++  outputGainNode.connect(
++    options?.rootClock ? getPreviewMasterInput(options.rootClock, context) : context.destination,
++  )
+   return graph
+ }
+
+@@ -595,9 +601,14 @@
+     })
+     reconnectPreviewClipAudioGraph(graph)
+   } else {
+-    stages.forEach((pan, index) => rampAudioParam(
+-      graph.panNodes[index]!.pan, pan, graph.context.currentTime, PREVIEW_AUDIO_GAIN_RAMP_SECONDS,
+-    ))
++    stages.forEach((pan, index) =>
++      rampAudioParam(
++        graph.panNodes[index]!.pan,
++        pan,
++        graph.context.currentTime,
++        PREVIEW_AUDIO_GAIN_RAMP_SECONDS,
++      ),
++    )
+   }
+   return true
+ }
+--- /dev/null
++++ b/src/runtime/composition-runtime/utils/preview-master-bus.test.ts
+@@ -0,0 +1,153 @@
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { Clock } from '@/runtime/composition-runtime/deps/player'
++import { usePlaybackStore } from '@/shared/state/playback'
++import type { MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++import { bindPreviewMasterBus, getPreviewMasterInput } from './preview-master-bus'
++
++afterEach(() => {
++  vi.unstubAllGlobals()
++  usePlaybackStore
++    .getState()
++    .setMasterAudio({ masterBusDb: 0, masterBusMuted: false, masterGainEnvelope: [] })
++})
++it('gates loading and every replacement on its exact ACK, and retires disconnected root owners', async () => {
++  vi.stubGlobal('requestAnimationFrame', () => 1)
++  vi.stubGlobal('cancelAnimationFrame', () => {})
++  let loaded!: () => void
++  const moduleReady = new Promise<void>((resolve) => {
++    loaded = resolve
++  })
++  const nodes: Node[] = [],
++    gains: ReturnType<typeof gain>[] = []
++  function gain() {
++    return {
++      gain: { value: 1, setValueAtTime: vi.fn() },
++      connect: vi.fn(),
++      disconnect: vi.fn(),
++      channelInterpretation: 'speakers',
++    }
++  }
++  class Node {
++    port = {
++      postMessage: vi.fn(),
++      onmessage: null as null | ((event: { data: unknown }) => void),
++      close: vi.fn(),
++    }
++    onprocessorerror: unknown
++    connect = vi.fn()
++    disconnect = vi.fn()
++    constructor(
++      _context: unknown,
++      _name: unknown,
++      readonly options: unknown,
++    ) {
++      nodes.push(this)
++    }
++  }
++  vi.stubGlobal('AudioWorkletNode', Node)
++  const context = {
++    currentTime: 0,
++    state: 'running',
++    audioWorklet: { addModule: () => moduleReady },
++    destination: {},
++    createGain: () => {
++      const node = gain()
++      gains.push(node)
++      return node
++    },
++    addEventListener() {},
++    removeEventListener() {},
++  } as unknown as AudioContext
++  const clock = new Clock({ fps: 30, durationInFrames: 100, loop: true })
++  const release = bindPreviewMasterBus(clock, context)
++  clock.play()
++  expect(nodes).toHaveLength(0)
++  expect(gains[1]!.gain.value).toBe(0)
++  loaded()
++  await vi.waitFor(() => expect(nodes).toHaveLength(1))
++  const node = nodes[0]!,
++    mute = gains[1]!.gain.setValueAtTime
++  const latest = () => node.port.postMessage.mock.lastCall![0] as MasterAudioEpoch
++  const acknowledge = (epoch: MasterAudioEpoch, accepted = true) =>
++    node.port.onmessage?.({
++      data: {
++        rootId: epoch.rootId,
++        contextId: epoch.contextId,
++        generation: epoch.generation,
++        accepted,
++      },
++    })
++  const before = latest()
++  clock.seekToFrame(20)
++  const next = latest()
++  expect(next.generation).toBeGreaterThan(before.generation)
++  expect(next.frame).toBe(20)
++  acknowledge(before)
++  expect(mute.mock.lastCall![0]).toBe(0)
++  acknowledge({ ...next, rootId: 'foreign' })
++  expect(mute.mock.lastCall![0]).toBe(0)
++  acknowledge(next)
++  expect(mute.mock.lastCall![0]).toBe(1)
++  usePlaybackStore
++    .getState()
++    .setMasterAudio({ masterGainEnvelope: [{ id: 'a', frame: 0, gainDb: -20 }] })
++  expect(mute.mock.lastCall![0]).toBe(0)
++  const curve = latest()
++  expect(curve.points).toEqual([{ id: 'a', frame: 0, gainDb: -20 }])
++  acknowledge(next)
++  expect(mute.mock.lastCall![0]).toBe(0)
++  acknowledge(curve)
++  expect(mute.mock.lastCall![0]).toBe(1)
++  Object.defineProperty(context, 'state', { value: 'suspended', writable: true })
++  clock.getAudioTransportSnapshot()
++  const closed = latest()
++  Object.defineProperty(context, 'state', { value: 'running', writable: true })
++  // Snapshot reading itself can discover a changed time source and synchronously publish
++  // a replacement. An ACK checked before that read must not open the newer epoch.
++  acknowledge(closed)
++  expect(mute.mock.lastCall![0]).toBe(0)
++  const resumed = latest()
++  expect(resumed.generation).toBeGreaterThan(closed.generation)
++  acknowledge(resumed)
++  expect(mute.mock.lastCall![0]).toBe(1)
++  const replacement = { ...context, currentTime: 5 } as AudioContext
++  getPreviewMasterInput(clock, replacement)
++  await vi.waitFor(() => expect(nodes).toHaveLength(2))
++  expect(clock.getAudioTransportSnapshot().context).toBe(replacement)
++  expect(node.port.close).toHaveBeenCalled()
++  const replacementNode = nodes[1]!
++  release()
++  expect(replacementNode.disconnect).toHaveBeenCalled()
++  expect(replacementNode.port.close).toHaveBeenCalled()
++  release()
++  expect(node.disconnect).toHaveBeenCalled()
++  expect(node.port.close).toHaveBeenCalled()
++  expect(node.port.onmessage).toBeNull()
++  expect(mute.mock.lastCall![0]).toBe(0)
++  clock.dispose()
++})
++it('fails visibly and stays closed if root worklet loading fails', async () => {
++  vi.stubGlobal('requestAnimationFrame', () => 1)
++  vi.stubGlobal('cancelAnimationFrame', () => {})
++  const mute = vi.fn()
++  const context = {
++    currentTime: 0,
++    state: 'running',
++    audioWorklet: { addModule: () => Promise.reject(new Error('private detail')) },
++    destination: {},
++    createGain: () => ({ gain: { value: 1, setValueAtTime: mute }, connect() {}, disconnect() {} }),
++    addEventListener() {},
++    removeEventListener() {},
++  } as unknown as AudioContext
++  const clock = new Clock({ fps: 30, durationInFrames: 100 })
++  const release = bindPreviewMasterBus(clock, context)
++  clock.play()
++  await vi.waitFor(() =>
++    expect(usePlaybackStore.getState().masterPreviewError).toBe(
++      'Master audio preview requires supported Web Audio processing.',
++    ),
++  )
++  expect(mute.mock.calls.every((call) => call[0] === 0)).toBe(true)
++  release()
++  clock.dispose()
++})
+--- /dev/null
++++ b/src/runtime/composition-runtime/utils/preview-master-bus.ts
+@@ -0,0 +1,200 @@
++import type { Clock } from '@/runtime/composition-runtime/deps/player'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { type MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++import moduleUrl from '../worklets/master-gain-processor.worklet.ts?worker&url'
++
++interface RootBus {
++  context: AudioContext
++  input: GainNode
++  mute: GainNode
++  release: () => void
++  active: boolean
++  owner: object | null
++  publish: () => void
++}
++const roots = new WeakMap<Clock, RootBus>()
++const modules = new WeakMap<AudioContext, Promise<void>>()
++function loadRootMasterProcessor(context: AudioContext): Promise<void> {
++  let loaded = modules.get(context)
++  if (!loaded) {
++    loaded = context.audioWorklet.addModule(moduleUrl)
++    modules.set(context, loaded)
++  }
++  return loaded
++}
++/** Explicit root ownership. Loading and unacknowledged epochs are always silent. */
++export function getPreviewMasterInput(clock: Clock, context: AudioContext): GainNode {
++  const old = roots.get(clock)
++  if (old && old.context === context) return old.input
++  const owner = old?.owner ?? null
++  const active = old?.active ?? false
++  old?.release()
++  const input = context.createGain()
++  input.channelInterpretation = 'discrete'
++  const mute = context.createGain()
++  mute.channelInterpretation = 'discrete'
++  mute.gain.value = 0
++  mute.connect(context.destination)
++  let disposed = false
++  let failed = false
++  let processor: AudioWorkletNode | null = null
++  let loaded = false
++  let generation = 0
++  let pending: MasterAudioEpoch | null = null
++  let pendingClockGeneration = -1
++  const fail = () => {
++    failed = true
++    mute.gain.setValueAtTime(0, context.currentTime)
++    usePlaybackStore.setState({
++      masterPreviewError: 'Master audio preview requires supported Web Audio processing.',
++    })
++  }
++  const publish = () => {
++    if (disposed || failed) return
++    // Gate the old epoch before posting a whole replacement. Only its exact ACK reopens it.
++    mute.gain.setValueAtTime(0, context.currentTime)
++    if (!loaded || !bus.active) return
++    const anchor = clock.getAudioTransportSnapshot()
++    if (anchor.context !== context || !anchor.contextId) return
++    if (!processor) {
++      processor = new AudioWorkletNode(context, 'frameleaf-root-master', {
++        numberOfInputs: 1,
++        numberOfOutputs: 1,
++        channelCountMode: 'max',
++        channelInterpretation: 'discrete',
++        processorOptions: { rootId: anchor.rootId, contextId: anchor.contextId },
++      })
++      processor.onprocessorerror = fail
++      processor.port.onmessage = (
++        event: MessageEvent<{
++          rootId: string
++          contextId: string
++          generation: number
++          accepted: boolean
++        }>,
++      ) => {
++        const ack = event.data
++        if (
++          disposed ||
++          failed ||
++          roots.get(clock) !== bus ||
++          !pending ||
++          ack.rootId !== pending.rootId ||
++          ack.contextId !== pending.contextId ||
++          ack.generation !== pending.generation
++        )
++          return
++        if (!ack.accepted) {
++          fail()
++          return
++        }
++        const acknowledged = pending
++        const clockGeneration = pendingClockGeneration
++        const current = clock.getAudioTransportSnapshot()
++        if (
++          pending !== acknowledged ||
++          current.generation !== clockGeneration ||
++          current.context !== context ||
++          current.rootId !== pending.rootId ||
++          current.contextId !== pending.contextId
++        )
++          return
++        mute.gain.setValueAtTime(
++          bus.active && pending.running && !pending.muted && context.state === 'running' ? 1 : 0,
++          context.currentTime,
++        )
++      }
++      input.connect(processor)
++      processor.connect(mute)
++    }
++    const state = usePlaybackStore.getState()
++    pendingClockGeneration = anchor.generation
++    pending = Object.freeze({
++      rootId: anchor.rootId,
++      contextId: anchor.contextId,
++      generation: ++generation,
++      contextTime: anchor.contextTime,
++      frame: anchor.frame,
++      num: anchor.num,
++      den: anchor.den,
++      rate: anchor.rate,
++      running: anchor.running,
++      loop: anchor.loop,
++      firstFrame: anchor.firstFrame,
++      lastFrame: anchor.lastFrame,
++      gainDb: state.masterBusDb,
++      muted: state.masterBusMuted,
++      points: Object.freeze(state.masterGainEnvelope.map((point) => Object.freeze({ ...point }))),
++    })
++    processor.port.postMessage(pending)
++  }
++  const unsubscribe = usePlaybackStore.subscribe((state, previous) => {
++    if (
++      state.masterBusDb !== previous.masterBusDb ||
++      state.masterBusMuted !== previous.masterBusMuted ||
++      state.masterGainEnvelope !== previous.masterGainEnvelope
++    )
++      publish()
++  })
++  const bus: RootBus = {
++    context,
++    input,
++    mute,
++    active,
++    owner,
++    publish,
++    release: () => {
++      disposed = true
++      pending = null
++      mute.gain.setValueAtTime(0, context.currentTime)
++      input.disconnect()
++      processor?.disconnect()
++      if (processor) {
++        processor.port.onmessage = null
++        processor.port.close()
++      }
++      mute.disconnect()
++      clock.removeEventListener('transportchange', publish)
++      unsubscribe()
++      if (roots.get(clock) === bus) roots.delete(clock)
++    },
++  }
++  clock.addEventListener('transportchange', publish)
++  roots.set(clock, bus)
++  if (bus.active) clock.setAudioContext(context)
++  void Promise.resolve()
++    .then(() => loadRootMasterProcessor(context))
++    .then(() => {
++      if (disposed || roots.get(clock) !== bus) return
++      const anchor = clock.getAudioTransportSnapshot()
++      if (anchor.context !== context || !anchor.contextId) return
++      loaded = true
++      publish()
++    })
++    .catch(() => {
++      if (!disposed) fail()
++    })
++  return input
++}
++export function bindPreviewMasterBus(clock: Clock, context: AudioContext): () => void {
++  getPreviewMasterInput(clock, context)
++  const bus = roots.get(clock)!
++  const owner = {}
++  bus.owner = owner
++  bus.active = true
++  clock.setAudioContext(context)
++  bus.publish()
++  return () => {
++    const current = roots.get(clock)
++    if (current?.owner === owner) {
++      current.release()
++      clock.setAudioContext(null)
++    }
++  }
++}
++export function reportMasterPreviewUnavailable(): void {
++  if (usePlaybackStore.getState().masterGainEnvelope.length)
++    usePlaybackStore.setState({
++      masterPreviewError: 'Master automation preview requires supported Web Audio playback.',
++    })
++}
+--- /dev/null
++++ b/src/runtime/composition-runtime/worklets/master-gain-processor.worklet.test.ts
+@@ -0,0 +1,63 @@
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import type { MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++
++afterEach(() => vi.unstubAllGlobals())
++it('runs the actual worklet on eight channels through repeated sample-clock loops and acknowledges whole epochs', async () => {
++  let Constructor: new (options: unknown) => {
++    port: { onmessage: (event: { data: MasterAudioEpoch }) => void }
++    process: (inputs: Float32Array[][], outputs: Float32Array[][]) => boolean
++  }
++  const acknowledgements: unknown[] = []
++  vi.stubGlobal(
++    'AudioWorkletProcessor',
++    class {
++      port = { onmessage: null, postMessage: (value: unknown) => acknowledgements.push(value) }
++    },
++  )
++  vi.stubGlobal('registerProcessor', (_name: string, ctor: typeof Constructor) => {
++    Constructor = ctor
++  })
++  vi.stubGlobal('sampleRate', 120)
++  vi.stubGlobal('currentFrame', 0)
++  await import('./master-gain-processor.worklet')
++  const processor = new Constructor!({ processorOptions: { rootId: 'root', contextId: 'context' } })
++  const epoch: MasterAudioEpoch = {
++    rootId: 'root',
++    contextId: 'context',
++    generation: 1,
++    contextTime: 0,
++    frame: 12.5,
++    num: 30,
++    den: 1,
++    rate: -2,
++    running: true,
++    loop: true,
++    firstFrame: 10,
++    lastFrame: 14,
++    gainDb: 12,
++    muted: false,
++    points: [
++      { id: 'a', frame: 10, gainDb: -20 },
++      { id: 'b', frame: 14, gainDb: 0 },
++    ],
++  }
++  const inputs = [Array.from({ length: 8 }, (_, c) => new Float32Array(128).fill((c + 1) / 8))]
++  const outputs = [inputs[0]!.map((p) => new Float32Array(p.length))]
++  processor.process(inputs, outputs)
++  expect(outputs[0]!.every((p) => p.every((v) => v === 0))).toBe(true)
++  processor.port.onmessage({ data: epoch })
++  expect(acknowledgements).toEqual([
++    { rootId: 'root', contextId: 'context', generation: 1, accepted: true },
++  ])
++  // No messages or RAF ticks after this admission: actual process() uses sample globals.
++  for (let block = 0; block < 8; block++) {
++    vi.stubGlobal('currentFrame', block * 128)
++    expect(processor.process(inputs, outputs)).toBe(true)
++    for (let i = 0; i < 128; i++) {
++      const x = 12.5 - ((block * 128 + i) * 60) / 120
++      const f = 10 + ((((x - 10) % 5) + 5) % 5)
++      const gain = 10 ** ((f >= 14 ? 0 : -20 + 5 * (f - 10)) / 20)
++      for (let c = 0; c < 8; c++) expect(outputs[0]![c]![i]).toBeCloseTo(((c + 1) * gain) / 8, 6)
++    }
++  }
++})
+--- /dev/null
++++ b/src/runtime/composition-runtime/worklets/master-gain-processor.worklet.ts
+@@ -0,0 +1,33 @@
++import { MasterGainProcessor, type MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++
++declare const currentFrame: number
++declare const sampleRate: number
++declare abstract class AudioWorkletProcessor {
++  readonly port: MessagePort
++  constructor(options?: unknown)
++}
++declare function registerProcessor(
++  name: string,
++  constructor: new (options: {
++    processorOptions: { rootId: string; contextId: string }
++  }) => AudioWorkletProcessor,
++): void
++
++class RootMasterProcessor extends AudioWorkletProcessor {
++  private readonly processor: MasterGainProcessor
++  constructor(options: { processorOptions: { rootId: string; contextId: string } }) {
++    super()
++    const { rootId, contextId } = options.processorOptions
++    this.processor = new MasterGainProcessor(rootId, contextId)
++    this.port.onmessage = (event: MessageEvent<MasterAudioEpoch>) => {
++      const epoch = event.data
++      const accepted = this.processor.replaceMasterEpoch(epoch)
++      this.port.postMessage({ rootId, contextId, generation: epoch.generation, accepted })
++    }
++  }
++  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
++    this.processor.process(inputs[0] ?? [], outputs[0] ?? [], currentFrame, sampleRate)
++    return true
++  }
++}
++registerProcessor('frameleaf-root-master', RootMasterProcessor)
+--- /dev/null
++++ b/src/runtime/player/clock/Clock.audio-transport.test.ts
+@@ -0,0 +1,132 @@
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { Clock } from './Clock'
++
++afterEach(() => {
++  vi.restoreAllMocks()
++  vi.unstubAllGlobals()
++})
++it('keeps fractional root audio time across rate, pause, context and same-frame seek generations', () => {
++  vi.stubGlobal('requestAnimationFrame', () => 1)
++  vi.stubGlobal('cancelAnimationFrame', () => {})
++  let t = 0
++  const context = {
++    state: 'running',
++    get currentTime() {
++      return t
++    },
++    addEventListener() {},
++    removeEventListener() {},
++  } as unknown as AudioContext
++  const clock = new Clock({ fps: 30, durationInFrames: 300 })
++  clock.setAudioContext(context)
++  clock.play()
++  t = 0.015
++  const first = clock.getAudioTransportSnapshot()
++  expect(first.frame).toBeCloseTo(0.45)
++  clock.playbackRate = 2
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(0.45)
++  t = 0.02
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(0.75)
++  clock.pause()
++  t = 0.1
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(0.75)
++  const before = clock.getAudioTransportSnapshot().generation
++  clock.seekToFrame(0)
++  expect(clock.getAudioTransportSnapshot().generation).toBeGreaterThan(before)
++  expect(clock.getAudioTransportSnapshot().frame).toBe(0)
++  clock.dispose()
++})
++
++it('keeps modulo overshoot through repeated loops without RAF and invalidates every range/cadence edge', () => {
++  vi.stubGlobal('requestAnimationFrame', () => 1)
++  vi.stubGlobal('cancelAnimationFrame', () => {})
++  let t = 0
++  const context = {
++    state: 'running',
++    get currentTime() {
++      return t
++    },
++    addEventListener() {},
++    removeEventListener() {},
++  } as unknown as AudioContext
++  const clock = new Clock({ fps: 30, durationInFrames: 200, initialFrame: 100, loop: true })
++  clock.setInPoint(100)
++  clock.setOutPoint(110)
++  clock.setAudioContext(context)
++  clock.play()
++  t = 1.175
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(102.25)
++  const old = clock.getAudioTransportSnapshot()
++  clock.playbackRate = -2
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(102.25)
++  t += 0.2
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(101.25)
++  clock.pause()
++  const held = clock.getAudioTransportSnapshot().frame
++  clock.play()
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(held)
++  for (const change of [
++    () => clock.setInPoint(99),
++    () => clock.setOutPoint(112),
++    () => clock.clearInOutPoints(),
++    () => {
++      clock.durationInFrames = 201
++    },
++    () => {
++      clock.fps = 29.97
++    },
++    () => {
++      clock.loop = false
++    },
++  ]) {
++    const generation = clock.getAudioTransportSnapshot().generation
++    change()
++    expect(clock.getAudioTransportSnapshot().generation).toBeGreaterThan(generation)
++  }
++  expect(clock.getAudioTransportSnapshot()).toMatchObject({
++    num: 30000,
++    den: 1001,
++    rootId: old.rootId,
++    contextId: old.contextId,
++  })
++  expect(Object.isFrozen(clock.getAudioTransportSnapshot())).toBe(true)
++  clock.dispose()
++})
++
++it('rebases fractional transport across the existing suspended-context performance fallback while the audio epoch is closed', () => {
++  vi.stubGlobal('requestAnimationFrame', () => 1)
++  vi.stubGlobal('cancelAnimationFrame', () => {})
++  let t = 0,
++    performanceTime = 0,
++    state = 'running',
++    onstate = () => {}
++  vi.spyOn(performance, 'now').mockImplementation(() => performanceTime)
++  const context = {
++    get currentTime() {
++      return t
++    },
++    get state() {
++      return state
++    },
++    addEventListener(_event: string, callback: () => void) {
++      onstate = callback
++    },
++    removeEventListener() {},
++  } as unknown as AudioContext
++  const clock = new Clock({ fps: 30, durationInFrames: 300 })
++  clock.setAudioContext(context)
++  clock.play()
++  t = 0.015
++  state = 'suspended'
++  onstate()
++  expect(clock.getAudioTransportSnapshot()).toMatchObject({ running: false })
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(0.45)
++  performanceTime = 5000
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(150.45)
++  state = 'running'
++  onstate()
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(150.45)
++  t = 0.02
++  expect(clock.getAudioTransportSnapshot().frame).toBeCloseTo(150.6)
++  clock.dispose()
++})
+--- a/src/runtime/player/clock/Clock.test.ts
++++ b/src/runtime/player/clock/Clock.test.ts
+@@ -126,6 +126,8 @@
+     let audioState: AudioContextState = 'suspended'
+     let audioTime = 40
+     const audioContext = {
++      addEventListener: () => {},
++      removeEventListener: () => {},
+       get state() {
+         return audioState
+       },
+@@ -159,6 +161,8 @@
+     let audioState: AudioContextState = 'running'
+     let audioTime = 25
+     const audioContext = {
++      addEventListener: () => {},
++      removeEventListener: () => {},
+       get state() {
+         return audioState
+       },
+--- a/src/runtime/player/clock/Clock.ts
++++ b/src/runtime/player/clock/Clock.ts
+@@ -1,3 +1,9 @@
++import { cadenceFromFps, masterFrameAtTime } from '@/shared/utils/master-audio-epoch'
++
++let nextRootId = 0
++let nextContextId = 0
++const contextIds = new WeakMap<AudioContext, string>()
++
+ import { createLogger } from '@/shared/logging/logger'
+
+ const logger = createLogger('Clock')
+@@ -35,6 +41,7 @@
+   | 'ratechange'
+   | 'ended'
+   | 'timeupdate'
++  | 'transportchange'
+
+ interface ClockEvent {
+   type: ClockEventType
+@@ -46,6 +53,24 @@
+
+ type ClockEventCallback = (event: ClockEvent) => void
+
++/** Continuous root time; independent of clip clocks and quantized presentation. */
++export interface AudioTransportSnapshot {
++  rootId: string
++  contextId: string | null
++  num: number
++  den: number
++  generation: number
++  context: AudioContext | null
++  contextTime: number
++  frame: number
++  fps: number
++  rate: number
++  running: boolean
++  firstFrame: number
++  lastFrame: number
++  loop: boolean
++}
++
+ export interface ClockConfig {
+   fps: number
+   durationInFrames: number
+@@ -59,6 +84,7 @@
+  */
+ export class Clock {
+   // Configuration
++  private readonly _rootId = `root-${++nextRootId}`
+   private _fps: number
+   private _durationInFrames: number
+   private _loop: boolean
+@@ -81,6 +107,69 @@
+   private _activeTimeSource: AudioContext | null | undefined
+   private _timeSourceOffsetMs = 0
+   private _lastNowMs: number | null = null
++  private _transportGeneration = 0
++  private _heldFrame = 0
++  private readonly _handleAudioState = (): void => {
++    // Capture the outgoing source at the state edge, not its previous RAF timestamp.
++    const raw = this._activeTimeSource
++      ? this._activeTimeSource.currentTime * 1000
++      : performance.now()
++    const oldNow = raw + this._timeSourceOffsetMs
++    const frame = this._continuousFrame(oldNow)
++    this._lastNowMs = Math.max(this._lastNowMs ?? oldNow, oldNow)
++    this._playbackStartTime = this._now()
++    this._playbackStartFrame = this._heldFrame = frame
++    this._transportChanged()
++  }
++
++  private _continuousFrame(now: number): number {
++    const cadence = cadenceFromFps(this._fps)
++    return masterFrameAtTime(
++      {
++        contextTime: this._playbackStartTime / 1000,
++        frame: this._isPlaying ? this._playbackStartFrame : this._heldFrame,
++        ...cadence,
++        rate: this._playbackRate,
++        running: this._isPlaying,
++        loop: this._loop,
++        firstFrame: this.actualFirstFrame,
++        lastFrame: this.actualLastFrame,
++      },
++      now / 1000,
++    )
++  }
++
++  private _captureTransportAnchor(): number {
++    const now = this._now()
++    const frame = this._continuousFrame(now)
++    this._playbackStartTime = now
++    this._playbackStartFrame = this._heldFrame = frame
++    return frame
++  }
++
++  private _transportChanged(): void {
++    this._transportGeneration++
++    this._emit('transportchange')
++  }
++
++  getAudioTransportSnapshot(): AudioTransportSnapshot {
++    const now = this._now()
++    return Object.freeze({
++      rootId: this._rootId,
++      contextId: this._audioContext ? contextIds.get(this._audioContext)! : null,
++      ...cadenceFromFps(this._fps),
++      generation: this._transportGeneration,
++      context: this._audioContext,
++      contextTime: this._audioContext?.currentTime ?? 0,
++      frame: this._continuousFrame(now),
++      fps: this._fps,
++      rate: this._playbackRate,
++      running: this._isPlaying && this._audioContext?.state === 'running',
++      firstFrame: this.actualFirstFrame,
++      lastFrame: this.actualLastFrame,
++      loop: this._loop,
++    })
++  }
+
+   // In/out points for range playback
+   private _inFrame: number | null = null
+@@ -105,9 +194,13 @@
+   }
+
+   constructor(config: ClockConfig) {
++    cadenceFromFps(config.fps)
+     this._fps = config.fps
++    if (!Number.isSafeInteger(config.durationInFrames) || config.durationInFrames <= 0)
++      throw new Error('Duration must be a positive integer')
+     this._durationInFrames = config.durationInFrames
+     this._currentFrame = config.initialFrame ?? 0
++    this._heldFrame = this._currentFrame
+     this._loop = config.loop ?? false
+     this._onEnded = config.onEnded
+
+@@ -120,6 +213,7 @@
+       'ratechange',
+       'ended',
+       'timeupdate',
++      'transportchange',
+     ]
+     eventTypes.forEach((type) => {
+       this._listeners.set(type, new Set())
+@@ -191,17 +285,24 @@
+   // ============================================
+
+   set fps(value: number) {
+-    if (value <= 0) {
+-      throw new Error('FPS must be positive')
+-    }
++    cadenceFromFps(value)
++    const now = this._now()
++    const frame = this._continuousFrame(now)
+     this._fps = value
++    this._playbackStartTime = now
++    this._playbackStartFrame = this._heldFrame = frame
++    this._transportChanged()
+   }
+
+   set durationInFrames(value: number) {
+-    if (value <= 0) {
+-      throw new Error('Duration must be positive')
+-    }
++    if (!Number.isSafeInteger(value) || value <= 0) {
++      throw new Error('Duration must be a positive integer')
++    }
++    this._captureTransportAnchor()
+     this._durationInFrames = value
++    if (this._outFrame !== null) this._outFrame = Math.min(this._outFrame, value - 1)
++    if (this._inFrame !== null) this._inFrame = Math.min(this._inFrame, value - 1)
++    this._transportChanged()
+     // Clamp current frame if it exceeds new duration
+     if (this._currentFrame >= value) {
+       this.seekToFrame(value - 1)
+@@ -209,7 +310,9 @@
+   }
+
+   set loop(value: boolean) {
++    this._captureTransportAnchor()
+     this._loop = value
++    this._transportChanged()
+   }
+
+   /**
+@@ -218,30 +321,30 @@
+    * hardware audio clock instead of performance.now().
+    */
+   setAudioContext(ctx: AudioContext | null): void {
++    if (ctx === this._audioContext) return
++    const frame = this._continuousFrame(this._now())
++    this._audioContext?.removeEventListener('statechange', this._handleAudioState)
+     this._audioContext = ctx
+-    // Re-anchor if playing so the new time source takes effect immediately
+-    if (this._isPlaying) {
+-      this._playbackStartTime = this._now()
+-      this._playbackStartFrame = this._currentFrame
+-    }
++    if (ctx && !contextIds.has(ctx)) contextIds.set(ctx, `context-${++nextContextId}`)
++    ctx?.addEventListener('statechange', this._handleAudioState)
++    this._playbackStartTime = this._now()
++    this._playbackStartFrame = frame
++    this._heldFrame = frame
++    this._transportChanged()
+   }
+
+   set playbackRate(value: number) {
+-    if (value === 0) {
+-      throw new Error('Playback rate cannot be zero')
+-    }
+-    const oldRate = this._playbackRate
++    if (!Number.isFinite(value) || value === 0)
++      throw new Error('Playback rate must be finite and nonzero')
++    if (value === this._playbackRate) return
++    const now = this._now()
++    const frame = this._continuousFrame(now)
+     this._playbackRate = value
+-
+-    // If playing, reset the playback start point to maintain continuity
+-    if (this._isPlaying) {
+-      this._playbackStartTime = this._now()
+-      this._playbackStartFrame = this._currentFrame
+-    }
+-
+-    if (oldRate !== value) {
+-      this._emit('ratechange')
+-    }
++    this._playbackStartTime = now
++    this._playbackStartFrame = frame
++    this._heldFrame = frame
++    this._transportChanged()
++    this._emit('ratechange')
+   }
+
+   // ============================================
+@@ -249,24 +352,34 @@
+   // ============================================
+
+   setInPoint(frame: number | null): void {
++    if (frame !== null && !Number.isFinite(frame)) throw new Error('Invalid range frame')
++    this._captureTransportAnchor()
+     if (frame !== null) {
+-      this._inFrame = Math.max(0, Math.min(frame, this._durationInFrames - 1))
++      this._inFrame = Math.max(0, Math.min(Math.round(frame), this._durationInFrames - 1))
+     } else {
+       this._inFrame = null
+     }
++    if (this.actualLastFrame < this.actualFirstFrame) this._outFrame = this.actualFirstFrame
++    this._transportChanged()
+   }
+
+   setOutPoint(frame: number | null): void {
++    if (frame !== null && !Number.isFinite(frame)) throw new Error('Invalid range frame')
++    this._captureTransportAnchor()
+     if (frame !== null) {
+-      this._outFrame = Math.max(0, Math.min(frame, this._durationInFrames - 1))
++      this._outFrame = Math.max(0, Math.min(Math.round(frame), this._durationInFrames - 1))
+     } else {
+       this._outFrame = null
+     }
++    if (this.actualFirstFrame > this.actualLastFrame) this._inFrame = this.actualLastFrame
++    this._transportChanged()
+   }
+
+   clearInOutPoints(): void {
++    this._captureTransportAnchor()
+     this._inFrame = null
+     this._outFrame = null
++    this._transportChanged()
+   }
+
+   // ============================================
+@@ -279,18 +392,16 @@
+     }
+
+     // Restart from the opposite boundary when replaying past the active edge.
+-    if (this._playbackRate >= 0 && this._currentFrame >= this.actualLastFrame) {
+-      this._currentFrame = this.actualFirstFrame
+-    } else if (
+-      this._playbackRate < 0 &&
+-      this._currentFrame <= this.actualFirstFrame
+-    ) {
+-      this._currentFrame = this.actualLastFrame
++    if (!this._loop && this._playbackRate >= 0 && this._heldFrame >= this.actualLastFrame) {
++      this._currentFrame = this._heldFrame = this.actualFirstFrame
++    } else if (!this._loop && this._playbackRate < 0 && this._heldFrame <= this.actualFirstFrame) {
++      this._currentFrame = this._heldFrame = this.actualLastFrame
+     }
+
+     this._isPlaying = true
+     this._playbackStartTime = this._now()
+-    this._playbackStartFrame = this._currentFrame
++    this._playbackStartFrame = this._heldFrame
++    this._transportChanged()
+
+     if (import.meta.env.DEV) {
+       void import('@/shared/logging/frame-jitter-monitor').then((m) => {
+@@ -309,7 +420,9 @@
+       return
+     }
+
++    this._heldFrame = this._continuousFrame(this._now())
+     this._isPlaying = false
++    this._transportChanged()
+     this._stopAnimationLoop()
+     this._emit('pause')
+   }
+@@ -330,6 +443,7 @@
+     const frameChanged = clampedFrame !== this._currentFrame
+
+     this._currentFrame = clampedFrame
++    this._heldFrame = clampedFrame
+
+     // Reset playback reference point if playing
+     if (this._isPlaying) {
+@@ -337,6 +451,7 @@
+       this._playbackStartFrame = clampedFrame
+     }
+
++    this._transportChanged()
+     if (frameChanged) {
+       this._emit('seek')
+       this._emit('framechange')
+@@ -468,6 +583,10 @@
+    * Dispose of the clock and clean up resources
+    */
+   dispose(): void {
++    this._captureTransportAnchor()
++    this._audioContext?.removeEventListener('statechange', this._handleAudioState)
++    this._isPlaying = false
++    this._transportChanged()
+     this._stopAnimationLoop()
+     this._listeners.forEach((listeners) => listeners.clear())
+     if (typeof document !== 'undefined') {
+@@ -493,7 +612,8 @@
+     const nextTimeSource = ctx?.state === 'running' ? ctx : null
+     const rawNow = nextTimeSource ? nextTimeSource.currentTime * 1000 : performance.now()
+
+-    if (nextTimeSource !== this._activeTimeSource) {
++    const sourceChanged = nextTimeSource !== this._activeTimeSource
++    if (sourceChanged) {
+       // AudioContext.currentTime and performance.now() have unrelated epochs.
+       // Resume/suspend can switch sources between two animation frames, so map
+       // the new source onto the existing monotonic timeline before using it.
+@@ -503,6 +623,7 @@
+
+     const normalizedNow = rawNow + this._timeSourceOffsetMs
+     this._lastNowMs = Math.max(this._lastNowMs ?? normalizedNow, normalizedNow)
++    if (sourceChanged) this._transportChanged()
+     return this._lastNowMs
+   }
+
+@@ -534,15 +655,11 @@
+   }
+
+   private _computeFrameAtTime(now: number): number {
+-    const elapsedMs = now - this._playbackStartTime
+-    const elapsedSeconds = elapsedMs / 1000
+-    const framesElapsed = elapsedSeconds * this._fps * this._playbackRate
+-
+-    if (this._playbackRate >= 0) {
+-      return Math.floor(this._playbackStartFrame + framesElapsed)
+-    }
+-
+-    return Math.ceil(this._playbackStartFrame + framesElapsed)
++    const frame = this._continuousFrame(now)
++    const quantized = this._playbackRate >= 0 ? Math.floor(frame) : Math.ceil(frame)
++    return this._loop
++      ? Math.max(this.actualFirstFrame, Math.min(quantized, this.actualLastFrame))
++      : quantized
+   }
+
+   private _advancePlaybackTo(now: number): boolean {
+@@ -552,21 +669,15 @@
+       this._playbackRate >= 0 ? newFrame > this.actualLastFrame : newFrame < this.actualFirstFrame
+
+     if (hasReachedEnd) {
+-      if (this._loop) {
+-        const targetFrame = this._playbackRate >= 0 ? this.actualFirstFrame : this.actualLastFrame
+-        this._currentFrame = targetFrame
+-        this._playbackStartTime = now
+-        this._playbackStartFrame = targetFrame
+-        this._emit('framechange')
+-      } else {
+-        this._currentFrame = this._playbackRate >= 0 ? this.actualLastFrame : this.actualFirstFrame
+-        this._isPlaying = false
+-        this._emit('framechange')
+-        this._emit('ended')
+-        this._onEnded?.()
+-        this._stopAnimationLoop()
+-        return true
+-      }
++      this._currentFrame = this._playbackRate >= 0 ? this.actualLastFrame : this.actualFirstFrame
++      this._heldFrame = this._currentFrame
++      this._isPlaying = false
++      this._transportChanged()
++      this._emit('framechange')
++      this._emit('ended')
++      this._onEnded?.()
++      this._stopAnimationLoop()
++      return true
+     } else if (newFrame !== this._currentFrame) {
+       this._currentFrame = newFrame
+       if (import.meta.env.DEV) {
+@@ -593,11 +704,6 @@
+     if (playbackEnded) {
+       return
+     }
+-
+-    // Re-anchor to "now" so the next visible RAF continues smoothly instead of
+-    // replaying the same background catch-up delta.
+-    this._playbackStartTime = now
+-    this._playbackStartFrame = this._currentFrame
+   }
+
+   private _startAnimationLoop(): void {
+--- a/src/shared/state/playback/store.ts
++++ b/src/shared/state/playback/store.ts
+@@ -1,3 +1,4 @@
++import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
+ import { create } from 'zustand'
+ import { persist } from 'zustand/middleware'
+ import type { PlaybackState, PlaybackActions, PreviewQuality } from './types'
+@@ -54,16 +55,11 @@
+   }
+ }
+
+-function enterShuttlePlayback(
+-  state: PlaybackState & PlaybackActions,
+-  direction: -1 | 1,
+-) {
++function enterShuttlePlayback(state: PlaybackState & PlaybackActions, direction: -1 | 1) {
+   const playbackState = enterPlayback(state)
+   return {
+     ...(playbackState === state ? {} : playbackState),
+-    playbackRate: state.isPlaying
+-      ? getNextShuttleRate(state.playbackRate, direction)
+-      : direction,
++    playbackRate: state.isPlaying ? getNextShuttleRate(state.playbackRate, direction) : direction,
+     transportMode: 'shuttle' as const,
+     playbackScrubResumeTransport: null,
+   }
+@@ -76,11 +72,7 @@
+ ) {
+   const nextFrame = normalizeFrame(frame)
+   const nextItemId = itemId ?? null
+-  if (
+-    state.currentFrame === nextFrame &&
+-    state.previewFrame === null &&
+-    nextItemId === null
+-  ) {
++  if (state.currentFrame === nextFrame && state.previewFrame === null && nextItemId === null) {
+     return state
+   }
+   if (
+@@ -116,6 +108,8 @@
+       muted: false,
+       masterBusDb: 0,
+       masterBusMuted: false,
++      masterGainEnvelope: [],
++      masterPreviewError: null,
+       busAudioEq: undefined,
+       zoom: -1, // -1 = auto-fit, positive values = specific zoom percentage
+       previewFrame: null,
+@@ -222,12 +216,29 @@
+         ),
+       shuttleForward: () => set((state) => enterShuttlePlayback(state, 1)),
+       shuttleReverse: () => set((state) => enterShuttlePlayback(state, -1)),
+-      setPlaybackRate: (rate) =>
+-        set({ playbackRate: rate, playbackScrubResumeTransport: null }),
++      setPlaybackRate: (rate) => set({ playbackRate: rate, playbackScrubResumeTransport: null }),
+       toggleLoop: () => set((state) => ({ loop: !state.loop })),
+       setVolume: (volume) => set({ volume }),
+       toggleMute: () => set((state) => ({ muted: !state.muted })),
+       setMuted: (muted) => set((state) => (state.muted === muted ? state : { muted })),
++      setMasterAudio: (state) => {
++        if (
++          state.masterBusDb !== undefined &&
++          (!Number.isFinite(state.masterBusDb) || state.masterBusDb < -60 || state.masterBusDb > 12)
++        )
++          throw new Error('Invalid master gain')
++        if (state.masterBusMuted !== undefined && typeof state.masterBusMuted !== 'boolean')
++          throw new Error('Invalid master mute')
++        const envelope =
++          state.masterGainEnvelope === undefined
++            ? undefined
++            : validateMasterGainEnvelope(state.masterGainEnvelope)
++        set({
++          ...state,
++          ...(envelope !== undefined && { masterGainEnvelope: envelope }),
++          masterPreviewError: null,
++        })
++      },
+       setMasterBusDb: (masterBusDb) =>
+         set({ masterBusDb: Math.max(-60, Math.min(12, masterBusDb)) }),
+       setMasterBusMuted: (masterBusMuted) => set({ masterBusMuted }),
+--- a/src/shared/state/playback/types.ts
++++ b/src/shared/state/playback/types.ts
+@@ -1,3 +1,4 @@
++import type { MasterGainPoint } from '@/shared/utils/master-audio'
+ import type { AudioEqSettings } from '@/types/audio'
+
+ export interface CaptureOptions {
+@@ -54,6 +55,8 @@
+   masterBusDb: number
+   /** Project mix mute, persisted with the timeline and applied during export. */
+   masterBusMuted: boolean
++  masterGainEnvelope: MasterGainPoint[]
++  masterPreviewError: string | null
+   busAudioEq?: AudioEqSettings
+   zoom: number
+   /** Frame to preview on hover (null when not hovering) */
+@@ -99,6 +102,11 @@
+   setVolume: (volume: number) => void
+   toggleMute: () => void
+   setMuted: (muted: boolean) => void
++  setMasterAudio: (state: {
++    masterBusDb?: number
++    masterBusMuted?: boolean
++    masterGainEnvelope?: MasterGainPoint[]
++  }) => void
+   setMasterBusDb: (db: number) => void
+   setMasterBusMuted: (muted: boolean) => void
+   setBusAudioEq: (eq: AudioEqSettings | undefined) => void
+--- /dev/null
++++ b/src/shared/utils/audio-clock-cadence.ts
+@@ -0,0 +1,9 @@
++/** Mirrors the editor's exact integer or broadcast cadence admission. */
++export function cadenceFromFps(fps: number): { num: number; den: number } {
++  if (Number.isSafeInteger(fps) && fps > 0) return { num: fps, den: 1 }
++  for (const num of [24000, 30000, 48000, 60000, 120000]) {
++    if (Math.abs(fps - num / 1001) < 1e-9 || Math.round((num / 1001) * 1000) / 1000 === fps)
++      return { num, den: 1001 }
++  }
++  throw new Error('Unsupported audio clock cadence')
++}
+--- /dev/null
++++ b/src/shared/utils/master-audio-epoch.test.ts
+@@ -0,0 +1,78 @@
++import { expect, it } from 'vite-plus/test'
++import { MasterGainProcessor, cadenceFromFps, type MasterAudioEpoch } from './master-audio-epoch'
++
++const epoch = (patch: Partial<MasterAudioEpoch> = {}): MasterAudioEpoch => ({
++  rootId: 'root',
++  contextId: 'context',
++  generation: 1,
++  contextTime: 0,
++  frame: 100.5,
++  num: 30,
++  den: 1,
++  rate: 1,
++  running: true,
++  loop: true,
++  firstFrame: 100,
++  lastFrame: 110,
++  gainDb: 12,
++  muted: false,
++  points: [
++    { id: 'a', frame: 100, gainDb: -20 },
++    { id: 'b', frame: 110, gainDb: 0 },
++  ],
++  ...patch,
++})
++function oracle(e: MasterAudioEpoch, t: number): number {
++  const raw = e.frame + ((t - e.contextTime) * e.rate * e.num) / e.den
++  const f = 100 + ((((raw - 100) % 11) + 11) % 11)
++  const db = f > 110 ? 0 : -20 + (f - 100) * 2
++  return 10 ** (db / 20)
++}
++it('uses exact broadcast cadence and refuses unsupported approximation', () => {
++  expect(cadenceFromFps(29.97)).toEqual({ num: 30000, den: 1001 })
++  expect(() => cadenceFromFps(29.5)).toThrow()
++})
++it.each([1, -2])(
++  'evaluates every channel over many loops with zero RAF/messages at rate %s',
++  (rate) => {
++    const processor = new MasterGainProcessor('root', 'context')
++    const e = epoch({ rate, num: 30000, den: 1001 })
++    expect(processor.replaceMasterEpoch(e)).toBe(true)
++    const sampleRate = 120
++    for (let block = 0; block < 12; block++) {
++      const input = Array.from({ length: 8 }, (_, c) => new Float32Array(128).fill((c + 1) / 8))
++      const output = input.map((plane) => new Float32Array(plane.length))
++      processor.process(input, output, block * 128, sampleRate)
++      for (let c = 0; c < 8; c++)
++        for (let i = 0; i < 128; i++)
++          expect(output[c]![i]).toBeCloseTo(
++            ((c + 1) / 8) * oracle(e, (block * 128 + i) / sampleRate),
++            6,
++          )
++    }
++  },
++)
++it('atomically replaces seek/rate epochs, rejects stale/foreign ownership, and fails closed on invalid new epochs', () => {
++  const p = new MasterGainProcessor('root', 'context')
++  const input = [new Float32Array(4).fill(1)],
++    output = [new Float32Array(4)]
++  p.process(input, output, 0, 120)
++  expect(Array.from(output[0]!)).toEqual([0, 0, 0, 0])
++  const second = epoch({ generation: 2, contextTime: 1, frame: 107.25, rate: -2 })
++  expect(p.replaceMasterEpoch(second)).toBe(true)
++  expect(p.replaceMasterEpoch(epoch())).toBe(false)
++  expect(p.replaceMasterEpoch(epoch({ rootId: 'foreign', generation: 99 }))).toBe(false)
++  expect(p.replaceMasterEpoch(epoch({ contextId: 'retired', generation: 99 }))).toBe(false)
++  p.process(input, output, 120, 120)
++  expect(output[0]![0]).toBeCloseTo(oracle(second, 1), 6)
++  expect(p.replaceMasterEpoch(epoch({ generation: 3, muted: true }))).toBe(true)
++  p.process(input, output, 120, 120)
++  expect(Array.from(output[0]!)).toEqual([0, 0, 0, 0])
++  expect(p.replaceMasterEpoch(epoch({ generation: 4, den: 0 }))).toBe(false)
++  expect(p.replaceMasterEpoch(epoch({ generation: 3 }))).toBe(false)
++  p.process(input, output, 120, 120)
++  expect(Array.from(output[0]!)).toEqual([0, 0, 0, 0])
++  expect(p.replaceMasterEpoch(epoch({ generation: 5, running: false }))).toBe(true)
++  p.process(input, output, 120, 120)
++  expect(Array.from(output[0]!)).toEqual([0, 0, 0, 0])
++})
+--- /dev/null
++++ b/src/shared/utils/master-audio-epoch.ts
+@@ -0,0 +1,148 @@
++import { masterGainAtFrame, validateMasterGainEnvelope, type MasterGainPoint } from './master-audio'
++
++export { cadenceFromFps } from './audio-clock-cadence'
++export interface MasterAudioEpoch {
++  rootId: string
++  contextId: string
++  generation: number
++  contextTime: number
++  frame: number
++  num: number
++  den: number
++  rate: number
++  running: boolean
++  loop: boolean
++  firstFrame: number
++  lastFrame: number
++  gainDb: number
++  muted: boolean
++  points: readonly MasterGainPoint[]
++}
++export function masterFrameAtTime(
++  epoch: Pick<
++    MasterAudioEpoch,
++    | 'contextTime'
++    | 'frame'
++    | 'num'
++    | 'den'
++    | 'rate'
++    | 'running'
++    | 'loop'
++    | 'firstFrame'
++    | 'lastFrame'
++  >,
++  time: number,
++): number {
++  const x =
++    epoch.frame +
++    (epoch.running ? ((time - epoch.contextTime) * epoch.rate * epoch.num) / epoch.den : 0)
++  const length = epoch.lastFrame - epoch.firstFrame + 1
++  return epoch.loop ? epoch.firstFrame + ((((x - epoch.firstFrame) % length) + length) % length) : x
++}
++export function masterFrameAtSample(
++  epoch: MasterAudioEpoch,
++  sample: number,
++  sampleRate: number,
++): number {
++  // Multiply the integer sample delta before dividing: exact loop boundaries must not
++  // fall on the previous side merely because t was rounded before conversion to frames.
++  const x =
++    epoch.frame +
++    (epoch.running
++      ? ((sample - epoch.contextTime * sampleRate) * epoch.rate * epoch.num) /
++        (epoch.den * sampleRate)
++      : 0)
++  const length = epoch.lastFrame - epoch.firstFrame + 1
++  return epoch.loop ? epoch.firstFrame + ((((x - epoch.firstFrame) % length) + length) % length) : x
++}
++export function validateMasterEpoch(value: MasterAudioEpoch): MasterAudioEpoch {
++  if (
++    !value ||
++    typeof value.rootId !== 'string' ||
++    !value.rootId ||
++    typeof value.contextId !== 'string' ||
++    !value.contextId ||
++    !Number.isSafeInteger(value.generation) ||
++    value.generation < 0 ||
++    !Number.isFinite(value.contextTime) ||
++    value.contextTime < 0 ||
++    !Number.isFinite(value.frame) ||
++    !Number.isSafeInteger(value.num) ||
++    value.num <= 0 ||
++    !Number.isSafeInteger(value.den) ||
++    value.den <= 0 ||
++    !Number.isFinite(value.rate) ||
++    value.rate === 0 ||
++    typeof value.running !== 'boolean' ||
++    typeof value.loop !== 'boolean' ||
++    !Number.isSafeInteger(value.firstFrame) ||
++    value.firstFrame < 0 ||
++    !Number.isSafeInteger(value.lastFrame) ||
++    value.lastFrame < value.firstFrame ||
++    !Number.isFinite(value.gainDb) ||
++    value.gainDb < -60 ||
++    value.gainDb > 12 ||
++    typeof value.muted !== 'boolean'
++  )
++    throw new Error('Invalid master audio epoch')
++  return Object.freeze({
++    ...value,
++    points: Object.freeze(
++      validateMasterGainEnvelope(value.points).map((point) => Object.freeze(point)),
++    ),
++  })
++}
++/** Pure processor core; the production worklet uses exactly this per-sample authority. */
++export class MasterGainProcessor {
++  private epoch: MasterAudioEpoch | null = null
++  private generation = -1
++  constructor(
++    private readonly rootId: string,
++    private readonly contextId: string,
++  ) {}
++  replaceMasterEpoch(value: MasterAudioEpoch): boolean {
++    if (
++      !value ||
++      value.rootId !== this.rootId ||
++      value.contextId !== this.contextId ||
++      value.generation <= this.generation
++    )
++      return false
++    if (!Number.isSafeInteger(value.generation) || value.generation < 0) {
++      this.epoch = null
++      return false
++    }
++    try {
++      const epoch = validateMasterEpoch(value)
++      this.epoch = epoch
++      this.generation = epoch.generation
++      return true
++    } catch {
++      this.epoch = null
++      this.generation = value.generation
++      return false
++    }
++  }
++  process(
++    input: Float32Array[],
++    output: Float32Array[],
++    firstSample: number,
++    sampleRate: number,
++  ): void {
++    const epoch = this.epoch
++    for (let i = 0; i < (output[0]?.length ?? 0); i++) {
++      const time = (firstSample + i) / sampleRate
++      const frame = epoch ? masterFrameAtSample(epoch, firstSample + i, sampleRate) : 0
++      const gain =
++        epoch &&
++        epoch.running &&
++        !epoch.muted &&
++        time >= epoch.contextTime &&
++        (epoch.loop || (frame >= epoch.firstFrame && frame < epoch.lastFrame + 1))
++          ? masterGainAtFrame(epoch.points, frame, epoch.gainDb)
++          : 0
++      for (let channel = 0; channel < output.length; channel++)
++        output[channel]![i] = (input[channel]?.[i] ?? 0) * gain
++    }
++  }
++}
+--- /dev/null
++++ b/src/shared/utils/master-audio.test.ts
+@@ -0,0 +1,68 @@
++import { expect, it } from 'vite-plus/test'
++import { masterGainAtFrame, applyMasterGain, scheduleMasterEnvelope } from './master-audio'
++
++const envelope = [
++  { id: 'a', frame: 0, gainDb: -20 },
++  { id: 'b', frame: 30, gainDb: 0 },
++]
++it('interpolates dB continuously and applies one root gain to every PCM channel and window origin', () => {
++  expect(masterGainAtFrame(envelope, 15, 12)).toBeCloseTo(Math.sqrt(0.1))
++  expect(masterGainAtFrame(envelope, -1, 12)).toBeCloseTo(0.1)
++  expect(masterGainAtFrame(envelope, 100, 12)).toBe(1)
++  const planes = Array.from({ length: 8 }, (_, channel) =>
++    new Float32Array(11).fill((channel + 1) / 100),
++  )
++  applyMasterGain(
++    planes,
++    { masterGainEnvelope: envelope, masterBusDb: 12, fps: 30, masterOriginFrame: 15 },
++    48000,
++    7,
++  )
++  for (let c = 0; c < 8; c++)
++    for (let i = 0; i < 11; i++) {
++      const db = -20 + ((15 + ((7 + i) * 30) / 48000) * 20) / 30
++      expect(planes[c]![i]).toBeCloseTo(((c + 1) / 100) * 10 ** (db / 20), 7)
++    }
++})
++it('schedules exact linear dB as positive exponential amplitude in signed root transport order', () => {
++  const events: unknown[][] = []
++  const param = {
++    cancelScheduledValues: (t: number) => events.push(['cancel', t]),
++    setValueAtTime: (v: number, t: number) => events.push(['set', v, t]),
++    exponentialRampToValueAtTime: (v: number, t: number) => events.push(['exp', v, t]),
++  } as unknown as AudioParam
++  scheduleMasterEnvelope(param, envelope, 0, {
++    contextTime: 5,
++    frame: 15,
++    fps: 30,
++    rate: -2,
++    running: true,
++    firstFrame: 0,
++    lastFrame: 30,
++  })
++  expect(events).toEqual([
++    ['cancel', 5],
++    ['set', Math.sqrt(0.1), 5],
++    ['exp', 0.1, 5.25],
++  ])
++})
++it('does not leave loop automation held at the outgoing endpoint before the next RAF', () => {
++  const events: unknown[][] = []
++  const param = {
++    cancelScheduledValues: (t: number) => events.push(['cancel', t]),
++    setValueAtTime: (v: number, t: number) => events.push(['set', v, t]),
++    exponentialRampToValueAtTime: (v: number, t: number) => events.push(['exp', v, t]),
++  } as unknown as AudioParam
++  scheduleMasterEnvelope(param, envelope, 0, {
++    contextTime: 0,
++    frame: 0,
++    fps: 30,
++    rate: 1,
++    running: true,
++    firstFrame: 0,
++    lastFrame: 29,
++    loop: true,
++  })
++  // Root loops at sample time 1s even if the browser has not delivered the next presentation RAF.
++  expect(events).toContainEqual(['set', 0.1, 1])
++})
+--- /dev/null
++++ b/src/shared/utils/master-audio.ts
+@@ -0,0 +1,141 @@
++import { cadenceFromFps } from './audio-clock-cadence'
++
++/** Project-global linear dB points, evaluated in each root's own frame domain. */
++export interface MasterGainPoint {
++  id: string
++  frame: number
++  gainDb: number
++}
++export interface MasterAudioState {
++  masterBusDb?: number
++  masterBusMuted?: boolean
++  masterGainEnvelope?: readonly MasterGainPoint[]
++  masterOriginFrame?: number
++  fps: number
++}
++
++export function validateMasterGainEnvelope(value: unknown): MasterGainPoint[] {
++  if (!Array.isArray(value) || value.length > 4096) throw new Error('Invalid master gain envelope')
++  const ids = new Set<string>()
++  const frames = new Set<number>()
++  const points = value.map((point: unknown) => {
++    if (!point || typeof point !== 'object' || Array.isArray(point))
++      throw new Error('Invalid master gain point')
++    const p = point as Record<string, unknown>
++    if (
++      Object.keys(p).some((key) => !['id', 'frame', 'gainDb'].includes(key)) ||
++      typeof p.id !== 'string' ||
++      !p.id ||
++      [...p.id].length > 128 ||
++      ids.has(p.id) ||
++      typeof p.frame !== 'number' ||
++      !Number.isSafeInteger(p.frame) ||
++      p.frame < 0 ||
++      frames.has(p.frame) ||
++      typeof p.gainDb !== 'number' ||
++      !Number.isFinite(p.gainDb) ||
++      p.gainDb < -60 ||
++      p.gainDb > 12
++    ) {
++      throw new Error('Invalid master gain point')
++    }
++    ids.add(p.id)
++    frames.add(p.frame)
++    return { id: p.id, frame: p.frame, gainDb: p.gainDb }
++  })
++  return points.sort((a, b) => a.frame - b.frame)
++}
++
++export function masterGainAtFrame(
++  points: readonly MasterGainPoint[] = [],
++  frame: number,
++  fallbackDb = 0,
++): number {
++  if (!points.length) return 10 ** (fallbackDb / 20)
++  if (frame <= points[0]!.frame) return 10 ** (points[0]!.gainDb / 20)
++  const last = points[points.length - 1]!
++  if (frame >= last.frame) return 10 ** (last.gainDb / 20)
++  // Worklet samples cannot scan up to 4096 points each; locate the enclosing segment.
++  let lo = 1,
++    hi = points.length - 1
++  while (lo < hi) {
++    const mid = Math.floor((lo + hi) / 2)
++    if (points[mid]!.frame <= frame) lo = mid + 1
++    else hi = mid
++  }
++  const right = points[lo]!,
++    left = points[lo - 1]!
++  const db =
++    left.gainDb + ((right.gainDb - left.gainDb) * (frame - left.frame)) / (right.frame - left.frame)
++  return 10 ** (db / 20)
++}
++
++export function applyMasterGain(
++  planes: Float32Array[],
++  state: MasterAudioState,
++  sampleRate: number,
++  sampleStart = 0,
++): void {
++  const origin = state.masterOriginFrame ?? 0
++  const { num, den } = cadenceFromFps(state.fps)
++  for (let i = 0; i < (planes[0]?.length ?? 0); i++) {
++    const gain = state.masterBusMuted
++      ? 0
++      : masterGainAtFrame(
++          state.masterGainEnvelope,
++          origin + ((sampleStart + i) * num) / (den * sampleRate),
++          state.masterBusDb,
++        )
++    for (const plane of planes) plane[i] = plane[i]! * gain
++  }
++}
++
++export interface MasterAudioTransport {
++  contextTime: number
++  frame: number
++  fps: number
++  rate: number
++  running: boolean
++  firstFrame: number
++  lastFrame: number
++  loop?: boolean
++}
++
++/** Finite native schedule (not repeated-loop authority; root worklet owns preview gain). */
++export function scheduleMasterEnvelope(
++  param: AudioParam,
++  points: readonly MasterGainPoint[],
++  fallbackDb: number,
++  anchor: MasterAudioTransport,
++): void {
++  const { contextTime: now, frame, fps, rate } = anchor
++  param.cancelScheduledValues(now)
++  param.setValueAtTime(masterGainAtFrame(points, frame, fallbackDb), now)
++  if (!anchor.running || !points.length) return
++  const boundary = rate > 0 ? anchor.lastFrame + 1 : anchor.firstFrame
++  const targets = points.filter((p) =>
++    rate > 0 ? p.frame > frame && p.frame <= boundary : p.frame < frame && p.frame >= boundary,
++  )
++  if (rate < 0) targets.reverse()
++  for (const point of targets) {
++    param.exponentialRampToValueAtTime(
++      10 ** (point.gainDb / 20),
++      now + (point.frame - frame) / (fps * rate),
++    )
++  }
++  const tail = targets.at(-1)?.frame ?? frame
++  if (boundary !== tail && (boundary - frame) / rate > 0) {
++    param.exponentialRampToValueAtTime(
++      masterGainAtFrame(points, boundary, fallbackDb),
++      now + (boundary - frame) / (fps * rate),
++    )
++  }
++  if (anchor.loop) {
++    const boundaryTime = now + (boundary - frame) / (fps * rate)
++    if (boundaryTime > now)
++      param.setValueAtTime(
++        masterGainAtFrame(points, rate > 0 ? anchor.firstFrame : anchor.lastFrame, fallbackDb),
++        boundaryTime,
++      )
++  }
++}
+--- a/src/types/export.ts
++++ b/src/types/export.ts
+@@ -74,6 +74,8 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterOriginFrame?: number
+   /** Project managed colour (FL-97); absent renders as an SDR project. */
+   colorManagement?: ProjectColorManagement
+ }
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -59,6 +59,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   tracks: Array<{
+     id: string
+     name: string

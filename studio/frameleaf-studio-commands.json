@@ -1130,7 +1130,8 @@
       "payload": {
         "ducking": "boolean?",
         "gainDb": "number?",
-        "muted": "boolean?"
+        "muted": "boolean?",
+        "gainEnvelope": "Array<{id:string,at:Rational,gainDb:number}>?"
       },
       "scope": "project",
       "undoable": true

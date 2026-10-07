@@ -1,3 +1,4 @@
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
@@ -1165,4 +1166,49 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       reason: 'invalid',
     })
   })
+})
+
+it('adopts a bounded sorted master envelope atomically and preserves/clears it without rewriting clip keyframes', async () => {
+  const before=project({masterBusDb:-3,masterGainEnvelope:[{id:'old',frame:0,gainDb:-6}]})
+  const next=await applied(before,[envelope('project.setMasterAudio',{gainDb:0,muted:false,gainEnvelope:[{id:'end',at:seconds(1),gainDb:0},{id:'start',at:seconds(0),gainDb:-20}]})])
+  expect(next.project.timeline?.masterGainEnvelope).toEqual([{id:'start',frame:0,gainDb:-20},{id:'end',frame:30,gainDb:0}])
+  const preserve=await applied(next.project,[envelope('project.setMasterAudio',{muted:true})])
+  expect(preserve.project.timeline?.masterGainEnvelope).toEqual(next.project.timeline?.masterGainEnvelope)
+  const rejected=await applyCanonicalCommands(next.project,[envelope('project.setMasterAudio',{gainDb:12,gainEnvelope:[{id:'x',at:seconds(0),gainDb:0},{id:'y',at:seconds(0),gainDb:-3}]})],media)
+  expect(rejected.status).toBe('rejected')
+  expect(next.project.timeline?.masterBusDb).toBe(0)
+  const clear=await applied(next.project,[envelope('project.setMasterAudio',{gainEnvelope:[]})])
+  expect(clear.project.timeline?.masterGainEnvelope).toBeUndefined()
+})
+
+
+it('records one combined master action, restores undo/redo, and rolls back rejected batches without publication', async () => {
+  useTimelineCommandStore.getState().clearHistory()
+  const before = project({ masterBusDb: -3, masterBusMuted: false, masterGainEnvelope: [{ id: 'old', frame: 0, gainDb: -6 }] })
+  const result = await applied(before, [envelope('project.setMasterAudio', { gainDb: 2, muted: true, gainEnvelope: [{ id: 'new', at: seconds(1), gainDb: -12 }] })])
+  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
+  useTimelineCommandStore.getState().undo()
+  expect(usePlaybackStore.getState()).toMatchObject({ masterBusDb: -3, masterBusMuted: false, masterGainEnvelope: [{ id: 'old', frame: 0, gainDb: -6 }] })
+  useTimelineCommandStore.getState().redo()
+  expect(usePlaybackStore.getState()).toMatchObject({ masterBusDb: 2, masterBusMuted: true, masterGainEnvelope: [{ id: 'new', frame: 30, gainDb: -12 }] })
+  const history = useTimelineCommandStore.getState().undoStack
+  const rejected = await applyCanonicalCommands(result.project, [envelope('project.setMasterAudio', { gainDb: 12, gainEnvelope: [] }), envelope('project.setMasterAudio', { gainEnvelope: [{ id: 'x', at: seconds(0), gainDb: 0 }, { id: 'y', at: seconds(0), gainDb: -6 }] })], media)
+  expect(rejected).toMatchObject({ status: 'rejected', index: 1, reason: 'invalid' })
+  expect(usePlaybackStore.getState()).toMatchObject({ masterBusDb: 2, masterBusMuted: true, masterGainEnvelope: [{ id: 'new', frame: 30, gainDb: -12 }] })
+  expect(useTimelineCommandStore.getState().undoStack).toEqual(history)
+  const malformed = structuredClone(result.project)
+  malformed.timeline!.masterGainEnvelope![0]!.gainDb = Number.NaN
+  expect(await applyCanonicalCommands(malformed, [], media)).toMatchObject({ status: 'rejected', reason: 'invalid' })
+  expect(usePlaybackStore.getState().masterGainEnvelope).toEqual([{ id: 'new', frame: 30, gainDb: -12 }])
+})
+
+it('refuses a keep-time retime that collapses envelope points without changing the graph or master state', async () => {
+  const before = project({ masterBusDb: -3, masterGainEnvelope: [{ id: 'a', frame: 1, gainDb: -20 }, { id: 'b', frame: 2, gainDb: 0 }] })
+  before.metadata.fps = 240
+  before.metadata.frameRate = { num: 240, den: 1 }
+  const original = structuredClone(before)
+  const rejected = await applyCanonicalCommands(before, [envelope('sequence.setSettings', { sequenceId: 'main', fps: { num: 24, den: 1 }, timing: 'keep-time' })], media)
+  expect(rejected).toMatchObject({ status: 'rejected', reason: 'invalid', detail: 'Master envelope cannot be retimed exactly' })
+  expect(before).toEqual(original)
+  expect(usePlaybackStore.getState()).toMatchObject({ masterBusDb: -3, masterGainEnvelope: [{ id: 'a', frame: 1, gainDb: -20 }, { id: 'b', frame: 2, gainDb: 0 }] })
 })
