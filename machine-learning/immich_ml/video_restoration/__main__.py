@@ -10,12 +10,23 @@ hashes to its pinned sha256. It never qualifies a model; that still needs a qual
 
 import json
 import logging
+import socket
 import sys
 
 import uvicorn
+from fastapi import FastAPI
 
 from .app import WorkerSettings, create_app_from_env
 from .models import Manifest, RestorationFailure, fetch_weights
+
+
+class RestorationServer(uvicorn.Server):
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        # Uvicorn waits for active requests BEFORE sending lifespan.shutdown.
+        # Stop the model first so a blocked inference cannot hold SIGTERM shutdown.
+        assert isinstance(self.config.app, FastAPI)
+        await self.config.app.state.shutdown_restoration()
+        await super().shutdown(sockets)
 
 
 def fetch(model_ids: list[str]) -> int:
@@ -36,7 +47,7 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "fetch-weights":
         sys.exit(fetch(sys.argv[2:]))
     app, settings = create_app_from_env()
-    uvicorn.run(app, host=settings.host, port=settings.port, workers=1)
+    RestorationServer(uvicorn.Config(app, host=settings.host, port=settings.port, workers=1)).run()
 
 
 if __name__ == "__main__":

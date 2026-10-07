@@ -17,7 +17,7 @@ restoration workload.
 | Mode     | Family                                                           | How it runs                                                                                                        |
 | -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Faithful | [RealBasicVSR](https://github.com/ckkelvinchan/RealBasicVSR)     | Upstream `inference_realbasicvsr.py` on a folder of frames at native x4, then a Lanczos resize to the requested size |
-| Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream `projects/inference_seedvr2_*.py` on a near-lossless clip at the requested size; its encoded output is decoded |
+| Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream SeedVR2 on the validated video segment; output is checked as a stream and encoded directly |
 | Smooth motion | [RIFE](https://github.com/hzwer/Practical-RIFE) (4.25)      | A frame-folder run at 2x, 4x or 8x (`--exp 1..3`) at the source size; the frames are encoded at that many times the source rate, so the clip keeps its length and audio |
 
 The mode names express intention, not a fidelity guarantee.
@@ -160,7 +160,7 @@ failure the body is `{ "code", "message", "modelId" }` with a code from `invalid
 The worker only reads the upload and writes the restored file as a new file in a private
 working directory that is deleted after the response. It keeps the upload twice while a
 request runs (the web server's spooled copy and its own working copy), so the working
-directory needs room for two copies of the largest clip plus its frames.
+directory needs room for two copies of the largest clip plus its frames (Faithful/Smooth motion) or bounded video intermediates (Creative).
 
 ## Server integration
 
@@ -194,3 +194,63 @@ upload, so a remote worker never receives more of the original than the job need
 | `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
 | `FRAMELEAF_RESTORATION_REFRESH_S`      | `300`                                    | How often the capability report is rebuilt; 0 for never  |
 | `FRAMELEAF_ML_AUTH_TOKEN`              | unset                                    | Bearer token, as for the predict container               |
+
+
+## Warm model runtimes and Creative video intermediates
+
+The supplied RealBasicVSR and SeedVR2 manifest entries use `runtime.protocol: "warm-v1"`.
+The HTTP worker keeps **one** isolated model process resident, reusing it for subsequent
+chunks. It is killed after 120 idle seconds or 64 requests by default (`idleSeconds` and
+`maxRequests`), when switching model/configuration, on inference or validation failure,
+and on request disconnect or worker shutdown. A timeout kills the whole process group, including torchrun
+children. The next admitted request starts fresh; a failed chunk is never silently replayed.
+The exclusive request lock and per-request checkout, checkpoint and qualification checks
+still apply. The resident identity includes the complete manifest entry, resolved weight
+root and runtime environment. The preview fingerprint also covers runtime configuration,
+limits and native scale; changing those requires a new preview.
+
+`runtime.argv` starts the warm process. It may contain static placeholders such as
+`{weight:generator}` and `{max_seq_len}`, but not input/output paths, seed or target geometry.
+Before inference, a startup handshake identifies the owned worker process; torchrun puts it
+in a separate session, so cleanup signals both groups. Each request then sends its values
+over a private JSON-lines pipe. The bundled
+`immich_ml/video_restoration/runtime_worker.py` runs with the runtime's own Python and
+imports the pinned checkout. RealBasicVSR reuses `init_model(config, checkpoint)` while
+calling upstream `main()` per request. SeedVR2 calls `configure_runner(1)` once, then
+`generation_loop(runner, video_path=..., output_dir=..., seed=..., res_h=..., res_w=..., sp_size=1)`
+per request. The SeedVR2 example uses a standalone single-process torchrun group. These
+entry points and signatures must match the exact revision being qualified; a missing or
+incompatible API fails closed. Custom legacy commands can retain `protocol: "process"`
+(the default), which runs one process per request. Neither path imports model dependencies
+into the HTTP worker or passes its bearer token to the model runtime.
+
+The HTTP handler watches for disconnect while inference runs, terminates the owned model
+groups, and waits for its request thread to finish cleanup before releasing admission. This
+also applies to legacy process commands. Run the worker through
+`python -m immich_ml.video_restoration`: its Uvicorn server stops active models **before**
+waiting for HTTP requests during SIGTERM shutdown; the later lifespan shutdown also closes
+idle models. Media preprocessing and final encoding retain their existing bounded timeouts.
+
+For Creative videos, the already-cut server upload is linked into the private runtime input
+directory without re-encoding. A request with explicit segment bounds is cut to exact frames
+with lossless H.264 4:4:4 first; keyframe stream-copy is intentionally avoided. Source and
+model video frames are decoded to a bounded PPM stream for frame counts, dimensions and
+blank/NaN checks, retaining only one luminance statistic per source frame. The final encode
+reads the validated model video directly at the original exact frame rate, uses its actual
+color matrix/range, and carries source audio through the same copy/AAC rules. Still images
+keep the existing frame path. No PNG compression tradeoff or uncompressed scratch images
+are introduced.
+
+Run the CPU contract tests (ffmpeg cases require ffmpeg/ffprobe on PATH):
+
+```sh
+python -m pytest --noconftest test_video_restoration.py test_video_restoration_runtime.py test_video_restoration_cancellation.py -q
+```
+
+These fake runtimes prove constructor reuse, isolation, restart, live HTTP disconnect cleanup
+and SIGTERM shutdown with blocked warm/legacy models (including models ignoring SIGTERM); small
+ffmpeg fixtures prove the direct segment/validation/audio path. They are **not GPU
+qualification**. Before enabling an entry, repeat cold-versus-warm output comparisons,
+deterministic repeats across different seeds and preceding requests, peak/resident VRAM,
+OOM/timeout recovery, color/timing/audio, and chunk-seam evidence using real checkpoints
+and the exact worker image. No throughput or quality improvement is claimed from fake runs.

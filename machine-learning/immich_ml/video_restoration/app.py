@@ -16,6 +16,7 @@ Bearer authentication uses the same ``FRAMELEAF_ML_AUTH_TOKEN`` variable (or its
 ``IMMICH_ML_AUTH_TOKEN``) as the predict container so a LAN destination's stored token works unchanged.
 """
 
+import asyncio
 import base64
 import logging
 import os
@@ -24,8 +25,9 @@ import shutil
 import tempfile
 import threading
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -39,6 +41,7 @@ from starlette.types import ASGIApp
 from ..env_aliases import read_env
 from .models import RestorationFailure, RestorationRegistry, adapter_for
 from .pipeline import AdapterFactory, restore
+from .runtime_pool import RuntimePool
 from .schemas import (
     RESTORATION_PROTOCOL,
     RESULT_HEADER,
@@ -149,6 +152,13 @@ def create_app(
 ) -> FastAPI:
     busy = threading.Lock()
     stop = threading.Event()
+    runtimes = RuntimePool()
+    if adapter_factory is adapter_for:
+        adapter_factory = partial(adapter_for, runner=runtimes)
+
+    async def shutdown_restoration() -> None:
+        stop.set()
+        await asyncio.to_thread(runtimes.cancel)
 
     def refresh_in_background() -> None:
         # Verify at startup, then keep the advertised workloads current: a model whose weights,
@@ -169,9 +179,11 @@ def create_app(
         try:
             yield
         finally:
-            stop.set()
+            await shutdown_restoration()
 
     app = FastAPI(lifespan=lifespan)
+    # The CLI server calls this before Uvicorn waits for active HTTP requests.
+    app.state.shutdown_restoration = shutdown_restoration
     app.add_middleware(BearerAuthMiddleware, expected_token=auth_token)
 
     @app.get("/")
@@ -207,7 +219,9 @@ def create_app(
         return JSONResponse(report.model_dump(mode="json"))
 
     @app.post("/restoration/restore")
-    def restore_endpoint(request: Annotated[str, Form()], media: Annotated[UploadFile, File()]) -> Response:
+    async def restore_endpoint(
+        http_request: Request, request: Annotated[str, Form()], media: Annotated[UploadFile, File()]
+    ) -> Response:
         try:
             parsed = RestorationRequest.model_validate_json(request)
         except ValidationError as error:
@@ -215,28 +229,71 @@ def create_app(
                 RestorationFailure(RestorationErrorCode.INVALID_REQUEST, f"invalid restoration request: {error}")
             )
 
-        if not busy.acquire(blocking=False):
+        if stop.is_set() or not busy.acquire(blocking=False):
             return error_response(
                 RestorationFailure(RestorationErrorCode.BUSY, "another restoration is running on this worker")
             )
 
-        work_dir = Path(tempfile.mkdtemp(prefix="restoration-", dir=work_root))
-        media_path = work_dir / "upload"
+        work_dir: Path | None = None
+        inference: asyncio.Task[tuple[RestorationResult, Path]] | None = None
+        disconnected: asyncio.Task[None] | None = None
+
+        async def watch_disconnect() -> None:
+            # Multipart parsing has consumed the upload before this handler runs.
+            while (await http_request.receive())["type"] != "http.disconnect":
+                pass
+
+        async def cancel_inference() -> None:
+            await asyncio.to_thread(runtimes.cancel)
+            if inference is not None:
+                with suppress(Exception):
+                    await asyncio.shield(inference)
+
         try:
-            with media_path.open("wb") as handle:
-                shutil.copyfileobj(media.file, handle, UPLOAD_CHUNK_BYTES)
-            result, output_path = restore(registry, parsed, media_path, work_dir, adapter_factory=adapter_factory)
+            runtimes.begin_request()
+            work_dir = Path(tempfile.mkdtemp(prefix="restoration-", dir=work_root))
+            media_path = work_dir / "upload"
+
+            def perform() -> tuple[RestorationResult, Path]:
+                assert work_dir is not None
+                with media_path.open("wb") as handle:
+                    shutil.copyfileobj(media.file, handle, UPLOAD_CHUNK_BYTES)
+                return restore(registry, parsed, media_path, work_dir, adapter_factory=adapter_factory)
+
+            inference = asyncio.create_task(asyncio.to_thread(perform))
+            disconnected = asyncio.create_task(watch_disconnect())
+            done, _ = await asyncio.wait((inference, disconnected), return_when=asyncio.FIRST_COMPLETED)
+            if disconnected in done:
+                await cancel_inference()
+                remove_work_dir(work_dir)
+                return Response(status_code=499)
+            result, output_path = inference.result()
+        except asyncio.CancelledError:
+            # Cancelling an asyncio waiter does not stop its native/thread work.
+            # Shield cleanup and keep admission until that work and its child have closed.
+            await asyncio.shield(cancel_inference())
+            if work_dir is not None:
+                remove_work_dir(work_dir)
+            raise
         except RestorationFailure as failure:
-            remove_work_dir(work_dir)
+            await asyncio.to_thread(runtimes.close)
+            if work_dir is not None:
+                remove_work_dir(work_dir)
             log.warning("Restoration %s refused or failed: %s (%s)", parsed.requestId, failure.code, failure.message)
             return error_response(failure)
         except Exception:
-            remove_work_dir(work_dir)
+            await cancel_inference()
+            if work_dir is not None:
+                remove_work_dir(work_dir)
             log.exception("Restoration %s failed unexpectedly", parsed.requestId)
             return error_response(
                 RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, "the restoration failed unexpectedly")
             )
         finally:
+            if disconnected is not None:
+                disconnected.cancel()
+                with suppress(asyncio.CancelledError):
+                    await disconnected
             busy.release()
 
         # The upload and intermediate frames are no longer needed; the whole working
