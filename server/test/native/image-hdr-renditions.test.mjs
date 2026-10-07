@@ -8,6 +8,7 @@ import test from 'node:test';
 import { normalizeDevelopCleanup } from '../../dist/utils/develop-cleanup.js';
 import { defaultDevelopRecipe, normalizeDevelopMasks } from '../../dist/utils/develop-recipe.js';
 import { SharpProcessPool } from '../../dist/queue/sharp-pool.js';
+import { SharpResourceLimitError } from '../../dist/queue/sharp-protocol.js';
 
 const codec = createRequire(import.meta.url)(
   process.env.FRAMELEAF_HDR_BINDING ?? '/usr/local/lib/frameleaf/image-hdr.node',
@@ -207,7 +208,7 @@ test('one isolated Develop call publishes newly paired HDR and SDR without modif
             fills: {},
           },
         ]),
-        /combined surface budget/,
+        (error) => error instanceof SharpResourceLimitError,
       );
       await assert.rejects(stat(join(folder, 'limited.jpg')), { code: 'ENOENT' });
     } finally {

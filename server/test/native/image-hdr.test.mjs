@@ -30,6 +30,17 @@ test('explicit larger surface budgets work without weakening pixel or encoded-in
   }
 });
 
+test('narrow HEIF images reserve padded decoder surfaces in both orientations', () => {
+  for (const [w, h] of [[16, 1024], [1024, 16]]) {
+    const data = new Float32Array(w * h * 4).fill(1);
+    const image = codec.encodeHeic(Buffer.from(data.buffer), w, h, 2, ...limits);
+    // Two MiB covers the unpadded estimate but not the actual padded surfaces.
+    assert.throws(() => codec.decode(image, limits[0], 2 * 1024 ** 2), { code: 'RESOURCE_LIMIT' });
+    const decoded = codec.decode(image, limits[0], 8 * 1024 ** 2);
+    assert.deepEqual([decoded.width, decoded.height], [w, h]);
+  }
+});
+
 test('HEIC export is ten-bit PQ, retains HDR headroom and rejects invalid input', () => {
   const encoded = codec.encodeHeic(bytes(), width, height, 2, ...limits);
   const metadata = codec.inspect(encoded, ...limits);
