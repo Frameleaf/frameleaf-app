@@ -434,7 +434,7 @@ jobs:
 
           echo "::error::Immich server did not become ready within 120 seconds"
           docker compose ps
-          docker compose logs --no-color --tail 200 immich-server
+          docker compose logs --no-color --tail 200 frameleaf-server
           exit 1
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Prepare bounded fatal-signal evidence
@@ -444,7 +444,7 @@ jobs:
           {
             date --utc --iso-8601=seconds
             cat /proc/uptime
-            if container_id="$(docker compose ps --quiet immich-server)" && [ -n "$container_id" ]; then
+            if container_id="$(docker compose ps --quiet frameleaf-server)" && [ -n "$container_id" ]; then
               docker top "$container_id" -eo pid,comm || echo 'Server process names unavailable.'
             else
               echo 'Server container lookup unavailable.'
@@ -582,7 +582,7 @@ jobs:
           {
             date --utc --iso-8601=seconds
             git rev-parse HEAD
-            docker image inspect immich-server:latest frameleaf-postgres:e2e --format '{{.Id}}' || true
+            docker image inspect frameleaf-server:latest frameleaf-postgres:e2e --format '{{.Id}}' || true
             if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
               while IFS= read -r container_id; do
                 [ -n "$container_id" ] || continue

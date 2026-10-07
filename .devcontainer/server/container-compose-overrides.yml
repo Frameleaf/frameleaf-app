@@ -1,7 +1,7 @@
 services:
   immich-app-base:
     image: busybox
-  immich-server:
+  frameleaf-server:
     extends:
       service: immich-app-base
     profiles: !reset []

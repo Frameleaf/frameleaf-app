@@ -21,7 +21,7 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 
 ## How to run a command
 
-From your Compose directory, run `docker compose exec immich-server frameleaf-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `frameleaf-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename. The old command names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases of `frameleaf-admin`, `frameleaf` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release.
+From your Compose directory, run `docker compose exec frameleaf-server frameleaf-admin <command>`. For an interactive shell, use `docker compose exec frameleaf-server bash`, then run `frameleaf-admin <command>`. The Compose service is `frameleaf-server`; the displayed container name is `frameleaf_server`. The old command names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases of `frameleaf-admin`, `frameleaf` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release.
 
 ## Examples
 

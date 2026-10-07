@@ -386,7 +386,7 @@ test('import verification uses the fenced dump receipt instead of earlier discov
   target.Mounts = [{ Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql', RW: true }];
   for (const [c, service] of [
     [target, 'database'],
-    [server, 'immich-server'],
+    [server, 'frameleaf-server'],
   ] as const)
     c.Config.Labels = { 'app.frameleaf.manager': installation.id, 'com.docker.compose.service': service };
   const docker = {

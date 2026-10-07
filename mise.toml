@@ -75,7 +75,7 @@ depends_post = "//:dev-down"
 run = { task = "//:dev", args = ["--build", "-V"] }
 
 [tasks.dev-scale]
-run = { task = "//:dev", args = ["--build", "-V", "--scale immich-server=3"] }
+run = { task = "//:dev", args = ["--build", "-V", "--scale frameleaf-server=3"] }
 
 [tasks.dev-down]
 dir = "docker"
@@ -93,7 +93,7 @@ depends_post = "//:prod-down"
 run = { task = "//:prod", args = [
   "--build",
   "-V",
-  "--scale immich-server=3",
+  "--scale frameleaf-server=3",
   "--scale immich-microservices",
 ] }
 

@@ -7,7 +7,7 @@ import { join } from 'node:path';
  * text of every web component and the Frameleaf Cloud documentation — never say "fork", "DTO" or
  * "worker-admission proof", never name Immich as the product (naming it as the project Frameleaf is
  * built on, `<upstream>Immich</upstream>`, is the attribution) and never name the previous
- * GPU-provider integration. Identifiers such as `@frameleaf/ui`, `immich-server` or `IMMICH_*` are not
+ * GPU-provider integration. Identifiers such as `@frameleaf/ui`, `frameleaf-server` or `IMMICH_*` are not
  * copy, so the check is case-sensitive and runs on text rather than on code.
  */
 
@@ -103,7 +103,7 @@ describe('customer-facing copy (FL-168 naming rule)', () => {
     for (const text of ['Built on Immich', 'this fork', 'the DTO', 'a worker-admission proof', 'RunPod GPUs']) {
       expect(BANNED.test(text), text).toBe(true);
     }
-    for (const text of ['@frameleaf/ui', 'immich-server', 'IMMICH_HOST', 'Frameleaf Cloud', 'forklift']) {
+    for (const text of ['@frameleaf/ui', 'frameleaf-server', 'IMMICH_HOST', 'Frameleaf Cloud', 'forklift']) {
       expect(BANNED.test(text), text).toBe(false);
     }
   });

@@ -16,7 +16,7 @@ services:
       timeout: 5s
       retries: 10
 
-  immich-server:
+  frameleaf-server:
     environment:
       FRAMELEAF_MACHINE_LEARNING_URL: http://immich-machine-learning-fixture:3003
     depends_on:

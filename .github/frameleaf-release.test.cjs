@@ -623,7 +623,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const databaseImage = `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@${digest(2)}`;
     const composeFixture = [
       "services:",
-      "  immich-server:",
+      "  frameleaf-server:",
       "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       "    volumes: ['${UPLOAD_LOCATION}:/data']",
       "  immich-machine-learning:",
@@ -1221,7 +1221,7 @@ async function dependencyRoot(databaseImage) {
     const text = name.startsWith("docker-compose")
       ? [
           "services:",
-          "  immich-server:",
+          "  frameleaf-server:",
           "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
           "  database:",
           `    image: ${databaseImage}`,
@@ -1336,7 +1336,7 @@ test("promotion rejects stale pins, upstream images and unpinned third-party ima
       [
         "ghcr.io",
         "immich-app",
-        "immich-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+        "immich-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       ].join("/"),
       /must not pull upstream images/,
     ],

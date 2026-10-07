@@ -86,8 +86,8 @@ test('split mounts, named volumes and custom read-only external libraries keep t
   );
 });
 test('Unraid removal is exact, preserves other containers and delay values', () => {
-  const input = 'immich-server 20\nimmich-server-test 3\npostgres\n';
-  assert.equal(removeAutostart(input, ['immich-server']), 'immich-server-test 3\npostgres\n');
+  const input = 'frameleaf-server 20\nframeleaf-server-test 3\npostgres\n';
+  assert.equal(removeAutostart(input, ['frameleaf-server']), 'frameleaf-server-test 3\npostgres\n');
 });
 test('withdrawn and malformed staged releases are refused without an override', () => {
   assert.equal(offered('', 'seed', 'frameleaf-v3.2.0-1'), true);

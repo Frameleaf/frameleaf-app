@@ -12,10 +12,10 @@ services:
       service: immich-init
     container_name: immich-e2e-init
 
-  immich-server:
+  frameleaf-server:
     extends:
       file: ../docker/docker-compose.dev.yml
-      service: immich-server
+      service: frameleaf-server
     container_name: immich-e2e-server
     ports: !reset []
     env_file: !reset []
@@ -47,7 +47,7 @@ services:
     ports: !override
       - 2285:3000
     environment:
-      FRAMELEAF_SERVER_URL: http://immich-server:2285/
+      FRAMELEAF_SERVER_URL: http://frameleaf-server:2285/
     depends_on:
       immich-init:
         condition: service_healthy

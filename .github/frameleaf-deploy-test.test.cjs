@@ -273,11 +273,11 @@ function fakeServer({
   };
 }
 const execFake = (service, command) => {
-  if (service === "immich-server" && command.includes("setup-code"))
+  if (service === "frameleaf-server" && command.includes("setup-code"))
     return "ABCD-2345\n";
-  if (service === "immich-server" && /proc\/net/.test(command.join(" ")))
+  if (service === "frameleaf-server" && /proc\/net/.test(command.join(" ")))
     return "  sl\n";
-  if (service === "immich-server")
+  if (service === "frameleaf-server")
     return "1700000000000-Init.js\n1700000000000-Init.js.map\n0000000000204-FrameleafUserLicenses.js\n";
   return "1700000000000-Init\n0000000000204-FrameleafUserLicenses\n";
 };
@@ -423,7 +423,7 @@ test("the stack is ready only when all three services are healthy, and a stopped
   const row = (Service, Health, State = "running") =>
     JSON.stringify({ Service, State, Health });
   const all = (health) =>
-    ["immich-server", "immich-machine-learning", "database"]
+    ["frameleaf-server", "immich-machine-learning", "database"]
       .map((s) => row(s, health))
       .join("\n");
   assert.deepEqual(serviceStates(`[${row("database", "healthy")}]`), [
@@ -435,7 +435,7 @@ test("the stack is ready only when all three services are healthy, and a stopped
   });
   assert.equal(states.length, 3);
   await assert.rejects(
-    waitHealthy(() => row("immich-server", "", "restarting"), 60_000, {
+    waitHealthy(() => row("frameleaf-server", "", "restarting"), 60_000, {
       wait: async () => {},
     }),
     /A service stopped/,

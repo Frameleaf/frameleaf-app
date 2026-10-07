@@ -25,7 +25,7 @@ describe('websocket origin allow-list (FL-161)', () => {
   });
 
   it('accepts the host a reverse proxy forwarded', () => {
-    const proxied = requestHosts({ host: 'immich-server:2283', 'x-forwarded-host': 'Photos.Home.Lan' });
+    const proxied = requestHosts({ host: 'frameleaf-server:2283', 'x-forwarded-host': 'Photos.Home.Lan' });
     expect(websocketOriginAllowed('https://photos.home.lan', { hosts: proxied, origins: [] })).toBe(true);
   });
 

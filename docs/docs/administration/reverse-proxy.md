@@ -106,7 +106,7 @@ The second part is in the `docker-compose.yml` file Frameleaf runs from. Add the
 
 ```yaml
 services:
-  immich-server:
+  frameleaf-server:
     [...]
     labels:
       traefik.enable: true
@@ -117,4 +117,4 @@ services:
 ```
 
 Keep in mind, that Traefik needs to communicate with the network Frameleaf runs in, usually done
-by adding the Traefik network to the `immich-server`.
+by adding the Traefik network to the `frameleaf-server`.

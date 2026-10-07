@@ -46,7 +46,7 @@ for (const restoredAgain of [false, true]) {
         const installation = store.get<Installation>('installation')!;
         inventory.push({ Id: randomUUID(), State: { Running: true }, Config: { Labels: {
           'app.frameleaf.manager': installation.id,
-          'com.docker.compose.service': services ? 'database' : 'immich-server',
+          'com.docker.compose.service': services ? 'database' : 'frameleaf-server',
         } }, Mounts: [{ Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql', RW: true }] } as Container);
       },
       sql: async () => '0',
@@ -55,7 +55,7 @@ for (const restoredAgain of [false, true]) {
       restoreCommand: async (directory: string, project: string, operationId: string) => {
         events.push('reconstruct');
         const compose = JSON.parse(await readFile(join(directory, 'compose.json'), 'utf8'));
-        const environment = compose.services['immich-server'].environment;
+        const environment = compose.services['frameleaf-server'].environment;
         assert.equal(environment.FRAMELEAF_MANAGER_IMPORT_INSTALLATION, original);
         assert.equal(environment.FRAMELEAF_MANAGER_ORIGIN, 'restored_library');
         assert.equal(environment.FRAMELEAF_MANAGER_ML_ENABLED, undefined);
@@ -90,7 +90,7 @@ for (const restoredAgain of [false, true]) {
       await mkdir(prior.mounts[0].source);
       await mkdir(release.directory);
       await writeFile(join(release.directory, 'docker-compose.yml'), JSON.stringify({ services: {
-        database: {}, 'immich-server': {}, 'immich-machine-learning': {},
+        database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {},
       } }));
       const review = await operations.reviewRestore('a'.repeat(64), root);
       const { operation } = store.start('restore', randomUUID(), { reviewId: review.id });
@@ -129,19 +129,19 @@ test('offline reconstruction uses the real command environment and refuses a run
   const command = calls.find(args => args[0] === 'compose')!;
   assert.ok(command.includes(`FRAMELEAF_MANAGER_RESTORE_OPERATION_ID=${operation}`));
   assert.ok(command.includes(`app.frameleaf.manager.restore=${operation}`));
-  assert.deepEqual(command.slice(-4), ['immich-server', 'dist/main.js', 'frameleaf-admin', 'restore-state']);
+  assert.deepEqual(command.slice(-4), ['frameleaf-server', 'dist/main.js', 'frameleaf-admin', 'restore-state']);
   assert.ok(command.includes('--no-deps')); assert.ok(command.includes('never'));
   containers.push({ Id: 'b'.repeat(64), Name: `/${name}`, State: { Running: false }, Config: { Labels: {} } } as Container);
   await assert.rejects(docker.restoreCommand('/private/fixture', project, operation), /restore_container_identity_changed/);
   assert.equal(calls.some(args => args[0] === 'rm'), false);
   containers[1].Config.Labels = {
     'app.frameleaf.manager.restore': operation, 'app.frameleaf.manager': 'aaaabbbbcccc',
-    'com.docker.compose.service': 'immich-server',
+    'com.docker.compose.service': 'frameleaf-server',
   };
   await docker.restoreCommand('/private/fixture', project, operation);
   assert.deepEqual(calls.find(args => args[0] === 'rm'), ['rm', 'b'.repeat(64)]);
   containers = [{ Id: 'c'.repeat(64), State: { Running: true }, Config: { Labels: {
-    'app.frameleaf.manager': 'aaaabbbbcccc', 'com.docker.compose.service': 'immich-server',
+    'app.frameleaf.manager': 'aaaabbbbcccc', 'com.docker.compose.service': 'frameleaf-server',
   } } } as Container];
   await assert.rejects(docker.restoreCommand('/private/fixture', project, operation), /restore_workers_must_be_stopped/);
 });

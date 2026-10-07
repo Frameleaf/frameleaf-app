@@ -4,7 +4,7 @@
 
 ### Architecture
 
-The `immich-server` container contains multiple workers:
+The `frameleaf-server` container contains multiple workers:
 
 - `api`: responds to API requests for data and files for the web and mobile app.
 - `microservices`: handles most other work, such as thumbnail generation and video encoding, in the form of _jobs_. Simply put, a job is a request to process data in the background.
@@ -45,10 +45,10 @@ If you prefer to throttle or distribute the workers, you can do this using the [
 
 For example, for a simple setup with one container for the Web/API and one for all other microservices, you can do the following:
 
-Copy the entire `immich-server` block as a new service and make the following changes to the **copy**:
+Copy the entire `frameleaf-server` block as a new service and make the following changes to the **copy**:
 
 ```diff
-- immich-server:
+- frameleaf-server:
 -   container_name: frameleaf_server
 ...
 -   ports:
@@ -57,11 +57,11 @@ Copy the entire `immich-server` block as a new service and make the following ch
 +   container_name: frameleaf_microservices
 ```
 
-Once you have two copies of the `immich-server` service, make the following changes to each one. This will allow one container to only serve the web UI and API, and the other one to handle all other tasks.
+Once you have two copies of the `frameleaf-server` service, make the following changes to each one. This will allow one container to only serve the web UI and API, and the other one to handle all other tasks.
 
 ```diff
 services:
-  immich-server:
+  frameleaf-server:
     ...
 +   environment:
 +     FRAMELEAF_WORKERS_INCLUDE: 'api'

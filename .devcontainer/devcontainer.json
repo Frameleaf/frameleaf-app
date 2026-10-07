@@ -1,9 +1,9 @@
 {
   "name": "Immich - Backend, Frontend and ML",
-  "service": "immich-server",
+  "service": "frameleaf-server",
   "runServices": [
     "immich-init",
-    "immich-server",
+    "frameleaf-server",
     "database",
     "immich-machine-learning"
   ],

@@ -59,7 +59,7 @@ export class ChangeMediaLocationCommand extends CommandRunner {
 
   (please remember to update applicable volume mounts e.g
     services:
-      immich-server:
+      frameleaf-server:
         ...
         volumes:
           - \${UPLOAD_LOCATION}:/data

@@ -7,8 +7,9 @@ Frameleaf releases use the canonical PostgreSQL 19 database with pgvector 0.8.7 
 1. Read the Frameleaf release notes and supported architecture requirements.
 2. Create a [database and media backup](../administration/backup-and-restore.md), including connector encryption keys and deployment configuration. Check a recovery copy before discarding your previous recovery point.
 3. Stop uploads and other writers for changes that require a maintenance window. Preserve shared mounts and use the same database URL for every process.
-4. Download the matching Frameleaf release bundle and review configuration changes. Keep your own secrets and storage paths; do not overwrite them with examples.
-5. Pull the digest-pinned images and start the installation using that release's Compose bundle. Confirm database health, migration completion, API access and representative media behavior.
+4. Download the matching Frameleaf release bundle into a separate folder and review configuration changes. Keep your own secrets and storage paths; do not overwrite them with examples.
+5. If the new bundle changes the application service name to `frameleaf-server`, run `docker compose down` with your **current Compose file before replacing it**. Do not use `--volumes` or `-v`. This removes the old service container while retaining persistent volumes and host folders. Preserve the project name, `.env`, database and media paths; update custom overrides, proxy targets and scripts to use `frameleaf-server`.
+6. Replace the Compose files, run `docker compose config`, pull the digest-pinned images and start the installation using that release's bundle. Confirm database health, migration completion, API access and representative media behavior. A service-name change does not bypass database upgrade requirements.
 
 Automatic schema migration uses `public.frameleaf_migrations`. Do not rename or remove its rows to force an upgrade. If migration fails, keep the logs and backup, stop writers and diagnose the failure before trying another version.
 

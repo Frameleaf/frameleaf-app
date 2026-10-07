@@ -230,7 +230,7 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 A new server has no administrator. Until it has one, it shows a **setup code** (eight letters and digits, shown as `XXXX-XXXX`) on its console and in its log every time it starts, with a QR code of the same value for the Frameleaf app to scan. The code is the proof that you control the server. Whoever reaches the server first can't claim it without the code, from the app or from the web page.
 
 - **Where to find it:**
-  - With Docker Compose: `docker compose logs immich-server` (or `docker logs frameleaf_server`), or print it again with `docker compose exec immich-server frameleaf-admin setup-code`.
+  - With Docker Compose: `docker compose logs frameleaf-server` (or `docker logs frameleaf_server`), or print it again with `docker compose exec frameleaf-server frameleaf-admin setup-code`.
   - On Unraid, TrueNAS or Synology: the container's log.
 - **When it changes:** a new code is made every time the server starts. After five wrong tries a new code is shown and the old one stops working.
 - **Pinning the code:** for automated installs and tests, set `FRAMELEAF_SETUP_CODE`. A pinned code is not replaced after wrong tries; it locks until the next start instead, so anyone on the network can lock it. Don't pin it on a server people use.

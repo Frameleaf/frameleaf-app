@@ -569,7 +569,7 @@ export class Operations {
     };
     await atomicJson(join(this.directory(), 'import.json'), config);
     const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
-    const app = compose.services['immich-server'];
+    const app = compose.services['frameleaf-server'];
     app.environment = {
       DB_URL: url(destinationIp, 'frameleaf', 'frameleaf', this.store.get<string>('database-password')!, 5432),
       FRAMELEAF_IMPORT_SOURCE_URL: url(
@@ -618,7 +618,7 @@ export class Operations {
     const server = (await this.docker.inventory()).find(
       (c) =>
         c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
-        c.Config.Labels?.['com.docker.compose.service'] === 'immich-server',
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
     );
     if (!server?.State.Running) throw new Refusal('application_unavailable');
     const script = `const fs=require('node:fs');fetch('http://127.0.0.1:2283/api/server/library-setup/manager',{method:process.argv[1],headers:{'x-frameleaf-manager':fs.readFileSync('/run/frameleaf/manager-token','utf8').trim()}}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write(JSON.stringify(v))).catch(()=>process.exit(1));`;
@@ -783,7 +783,7 @@ export class Operations {
     });
     await this.step(operation, 'stop-application', async () => {
       await this.docker.compose(this.directory(), review.current.project, 'stop', [
-        'immich-server',
+        'frameleaf-server',
         ...(review.current.ml ? ['immich-machine-learning'] : []),
       ]);
       return true;

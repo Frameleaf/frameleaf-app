@@ -2,7 +2,7 @@
 # FL-294: IMMICH_FORK_IMAGE, IMMICH_UID, IMMICH_GID and IMMICH_SOURCE_ROOT still work in place of the
 # FRAMELEAF_* names.
 services:
-  immich-server:
+  frameleaf-server:
     image: ${FRAMELEAF_IMAGE:-${IMMICH_FORK_IMAGE:?Set FRAMELEAF_IMAGE to the tested Frameleaf image tag or digest}}
     user: '${FRAMELEAF_UID:-${IMMICH_UID:-1000}}:${FRAMELEAF_GID:-${IMMICH_GID:-1000}}'
     environment:

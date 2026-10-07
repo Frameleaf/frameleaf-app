@@ -25,11 +25,11 @@ In our `.env` file, we will define the paths we want to use. Note that you don't
 ...
 ```
 
-After defining the locations of these files, we will edit the `docker-compose.yml` file accordingly and add the new variables to the `immich-server` container. These paths are where the mount attaches inside of the container, so don't change those.
+After defining the locations of these files, we will edit the `docker-compose.yml` file accordingly and add the new variables to the `frameleaf-server` container. These paths are where the mount attaches inside of the container, so don't change those.
 
 ```diff title="docker-compose.yml"
 services:
-  immich-server:
+  frameleaf-server:
       volumes:
       - ${UPLOAD_LOCATION}:/data
 +     - ${THUMB_LOCATION}:/data/thumbs

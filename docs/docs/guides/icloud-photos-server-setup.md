@@ -74,7 +74,7 @@ Identity adoption before a cloud download is separately disabled by default. Kee
 From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:
 
 ```sh
-docker compose exec immich-server node --input-type=module -e '
+docker compose exec frameleaf-server node --input-type=module -e '
 import https from "node:https";
 import fs from "node:fs";
 https.get(new URL("/health", process.env.FRAMELEAF_ICLOUD_BRIDGE_URL), {
@@ -108,7 +108,7 @@ The server environment variable `FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS` controls
 
 ```yaml
 services:
-  immich-server:
+  frameleaf-server:
     environment:
       FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
 ```

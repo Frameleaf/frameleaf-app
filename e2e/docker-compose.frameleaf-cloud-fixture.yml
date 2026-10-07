@@ -34,7 +34,7 @@ services:
       timeout: 5s
       retries: 10
 
-  immich-server:
+  frameleaf-server:
     environment:
       FRAMELEAF_CLOUD_URL: http://frameleaf-cloud-fixture:3010
     depends_on:
