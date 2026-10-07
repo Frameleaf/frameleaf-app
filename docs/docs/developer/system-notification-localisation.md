@@ -50,6 +50,7 @@ future option from FC-111.
 | Origin rendering before encryption                               | `PushService.handleDeliver` resolves current preferences; `buildPushPayload` renders then bounds text; `plan` seals the existing payload.                                                                                                                                                                                   |
 | Origin rendering before in-app persistence                       | NotificationService job-failure, item-sharing, cluster-request, shared-space mention/reply and shared-album invite/update producers render before `notificationRepository.create`.                                                                                                                                          |
 | Registered push producers                                        | Shared activity/access notices, device reconciliation and stale backup, memories, partner/role changes, Studio export completion/failure, and Cloud Backup activation attach typed origin-only descriptors.                                                                                                                 |
+| Registered administrator producers                               | Cloud check-in failures, license grace/expiry and Buddy maintenance alerts attach typed descriptors. `notifyAdmins` reads each recipient's current account locale after the existing dedupe check and persists only rendered text plus the existing dedupe key.                                                             |
 | Typed arguments and safe fallback                                | `notification-locale.ts` has versioned origin-only descriptors, runtime argument validation and placeholder validation; it never searches supplied English to infer a template.                                                                                                                                             |
 | Producer / reusable native contract vectors                      | `server/test/fixtures/system-notification-locale.json` and `notification-locale.spec.ts`: known/new/unknown versions, unknown keys, legacy English, unsupported/stale locales, invalid arguments, verbatim names and existing encrypted v1 fields. Native consumer adoption/tests are excluded from this non-mobile packet. |
 | Web parity                                                       | NotificationPanel spec renders every shared vector through NotificationItem, retaining text and escaping user markup. No client translation logic is introduced.                                                                                                                                                            |
@@ -58,17 +59,20 @@ future option from FC-111.
 | Critical translations                                            | **Pending FC-109 locale/tone decisions and FC-110 named native-speaker/source-version signoff.** Production catalogs currently contain English only; test pseudo-locales are fixtures and are never shipped as enabled languages.                                                                                           |
 | Independent privacy/contract review and hosted exact-head checks | Required on the final integrated PR #140 head; a local fixture pass is not this acceptance.                                                                                                                                                                                                                                 |
 
-The catalog currently registers 36 template forms: job failure; item share singular/plural; cluster
+The catalog currently registers 44 template forms: job failure; item share singular/plural; cluster
 request; space mention/reply; in-app album invitation/update; channel-specific push album
 invitation/update/reply; album access removal with/without a known album name; reconciliation and
 memories singular/plural; partner library added/removed; album editor/owner/viewer role changes; Studio export
 ready/failed with/without a label; stale backup singular/plural; seven Cloud Backup activation
-stage/state messages; and an in-app album invitation without a known sender. The anonymous form
+stage/state messages; an in-app album invitation without a known sender; repeated Cloud check-in
+failure; license grace/expiry; and Buddy stale completed/first backup, storage low, pairing ended and
+access blocked. The anonymous form
 does not invent a sender or render `undefined` as a person's name. English fixtures cover the
 registered forms' existing text alongside synthetic locale fixtures.
 
-Other current notices remain explicit legacy English: administrator/Cloud/license/Buddy notices,
-the Cloud-ML migration notice, administrator grants and edge notices. Custom notices,
+Other current notices remain explicit legacy English: Cloud link/relink/revoke, hostname, clone,
+key recovery and backup-plan notices; Buddy execution errors; the Cloud-ML migration notice,
+administrator grants and edge notices. Custom notices,
 SMTP templates/subjects, captions and messages retain their existing delivery behavior. Completing
 translated coverage for these system producers requires explicit reviewed template registrations
 and approved locale catalogs; this bounded producer/contract packet does not claim that coverage.

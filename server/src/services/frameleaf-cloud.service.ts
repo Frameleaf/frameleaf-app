@@ -11,6 +11,7 @@ import type {
   FrameleafInstanceIdentity,
   FrameleafLicenseStore,
 } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -1693,6 +1694,7 @@ export class FrameleafCloudService extends BaseService {
         level: NotificationLevel.Warning,
         title: 'This server cannot reach Frameleaf Cloud',
         description: `The last ${failures} check-ins failed (${message}). Cloud features may pause; local features keep working.`,
+        systemTemplate: { version: 1, key: 'cloud-heartbeat-failed', args: { count: failures, error: message } },
         dedupeKey: 'frameleaf-cloud:heartbeat-failing',
         dedupeDays: 1,
       });
@@ -2323,6 +2325,7 @@ export class FrameleafCloudService extends BaseService {
     description: string;
     dedupeKey: string;
     dedupeDays?: number;
+    systemTemplate?: SystemNotificationTemplate;
   }) {
     this.eventRepository.emit('AdminNotify', { type: NotificationType.SystemMessage, ...notice }).catch((error) => {
       this.logger.warn(`Could not notify administrators: ${error}`);

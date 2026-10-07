@@ -415,8 +415,9 @@ export class NotificationService extends BaseService {
         userId: admin.id,
         type: notice.type,
         level: notice.level,
-        title: notice.title,
-        description: notice.description,
+        ...(notice.systemTemplate
+          ? await this.localText(admin.id, notice.systemTemplate, { title: notice.title, body: notice.description })
+          : { title: notice.title, description: notice.description }),
         data: notice.dedupeKey ? { dedupeKey: notice.dedupeKey } : null,
       });
       this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));

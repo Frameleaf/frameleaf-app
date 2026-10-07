@@ -5,6 +5,7 @@ import { Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobSource, UploadFile } from 'src/types.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { Asset } from 'src/database.js';
 import { EventConfig } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
@@ -169,6 +170,7 @@ export type AdminNotice = {
   level: NotificationLevel;
   title: string;
   description: string;
+  systemTemplate?: SystemNotificationTemplate;
   /** Notices with the same key are sent once per window; omit to always send. */
   dedupeKey?: string;
   dedupeDays?: number;

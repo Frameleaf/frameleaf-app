@@ -588,8 +588,9 @@ describe(FrameleafLicenseService.name, () => {
     it('keeps entitlements in grace while refresh fails, then tells administrators once', async () => {
       link();
       serveToken();
+      const expiresAt = now() + 2;
       await sut.installCertificate(authStub.admin, {
-        certificate: certificate({ lic_exp: now() + 2, exp: now() + 2, grace_days: 7 }),
+        certificate: certificate({ lic_exp: expiresAt, exp: expiresAt, grace_days: 7 }),
       });
       cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 503, body: { code: 'down', message: 'down' } }));
       await new Promise((resolve) => setTimeout(resolve, 2100));
@@ -602,11 +603,31 @@ describe(FrameleafLicenseService.name, () => {
       });
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'AdminNotify',
-        expect.objectContaining({ level: NotificationLevel.Warning, dedupeKey: expect.stringContaining('grace') }),
+        expect.objectContaining({
+          level: NotificationLevel.Warning,
+          dedupeKey: expect.stringContaining('grace'),
+          systemTemplate: {
+            version: 1,
+            key: 'license-grace',
+            args: { until: new Date((expiresAt + 7 * 86_400) * 1000).toISOString().slice(0, 10) },
+          },
+        }),
       );
       mocks.event.emit.mockClear();
       await sut.handleRefresh({ force: true });
       expect(mocks.event.emit).not.toHaveBeenCalled();
+
+      await sut['noticeStateChange'](Date.now() + 8 * 86_400_000);
+      await sut['noticeStateChange'](Date.now() + 8 * 86_400_000);
+      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({
+          level: NotificationLevel.Error,
+          dedupeKey: expect.stringContaining('expired'),
+          systemTemplate: { version: 1, key: 'license-expired', args: {} },
+        }),
+      );
     }, 10_000);
   });
 
