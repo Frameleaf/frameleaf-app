@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TextItem, TimelineItem } from '@/types/timeline'
+import { getAudioEqSettings, resolveAudioEqSettings } from '@/shared/utils/audio-eq'
+import { getAudioPitchShiftSemitones, resolvePreviewAudioPitchShiftSemitones } from '@/shared/utils/audio-pitch'
+import { extractAudioSegments } from '@/features/export/utils/canvas-audio'
 import { useEditorStore } from '@/shared/state/editor'
 import { usePlaybackStore } from '@/shared/state/playback'
 import {
@@ -163,13 +166,48 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     locked.timeline!.tracks.find((track) => track.id === audio.trackId)!.locked = true
     await expect(applyCanonicalCommands(locked, [envelope('clip.setAudio', { clipId: audio.id, volume: 0 })], media))
       .resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
-    for (const fields of [{ muted: false }, { pitchSemitones: 0 }, { pitchCents: 0 }, { eq: null }]) {
+    for (const fields of [{ muted: false }]) {
       await expect(applyCanonicalCommands(before.project, [
         envelope('clip.setAudio', { clipId: audio.id, volume: -12 }),
         envelope('clip.setAudio', { clipId: audio.id, fadeIn: seconds(1), ...fields }),
       ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
     }
     expect(before.project).toEqual(keyed.project)
+  })
+
+  it('routes canonical clip pitch and EQ into the existing preview and export stages and clears them on reopen', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const audio = itemsOf(start.project).find((item) => item.type === 'audio')!
+    Object.assign(audio, { src: 'blob:clip-audio', audioFadeIn: 0.01, audioFadeOut: 1.5, audioFadeInCurve: -0.25 })
+    const keyed = await applied(start.project, [envelope('keyframe.add', { clipId: audio.id, property: 'volume', at: seconds(1), value: { value: -3 } })])
+    const before = await applied(keyed.project, [])
+    const eq = { enabled: true, lowType: 'peaking', lowGainDb: 4, lowFrequencyHz: 250, lowQ: 1.5, band6Enabled: true, band6Type: 'low-pass', band6FrequencyHz: 9000 } as const
+    const changed = await applied(before.project, [envelope('clip.setAudio', { clipId: audio.id, pitchSemitones: -3, pitchCents: 25, eq })])
+    const edited = itemsOf(changed.project).find((item) => item.id === audio.id)!
+    expect(edited).toMatchObject({ audioPitchSemitones: -3, audioPitchCents: 25, audioEqLowGainDb: 4, audioFadeIn: 0.01, audioFadeOut: 1.5, audioFadeInCurve: -0.25 })
+    expect(itemsOf(changed.project).filter((item) => item.id !== audio.id)).toEqual(itemsOf(before.project).filter((item) => item.id !== audio.id))
+    expect({ ...changed.project.timeline, items: [] }).toEqual({ ...before.project.timeline, items: [] })
+    expect(resolvePreviewAudioPitchShiftSemitones({ base: edited })).toBe(-2.75)
+    expect(resolveAudioEqSettings(getAudioEqSettings(edited))).toEqual(resolveAudioEqSettings(eq))
+    // Export resolves ephemeral source URLs after loading the saved graph.
+    const composition = { ...changed.project.timeline, fps: 30, tracks: changed.project.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(changed.project).filter((item) => item.trackId === track.id).map((item) => ({ ...item, src: 'blob:resolved-export-source' })) })) }
+    const segment = extractAudioSegments(composition as never, 30).find((item) => item.itemId === audio.id)!
+    expect(segment).toMatchObject({ pitchShiftSemitones: -2.75, fadeInFrames: 0.3, fadeOutFrames: 45 })
+    expect(segment.audioEqStages.at(-1)).toEqual(resolveAudioEqSettings(eq))
+    expect((await applied(JSON.parse(JSON.stringify(changed.project)), [])).digest).toBe(changed.digest)
+    const cleared = await applied(changed.project, [envelope('clip.setAudio', { clipId: audio.id, pitchSemitones: 0, pitchCents: 0, eq: null })])
+    const reset = itemsOf(cleared.project).find((item) => item.id === audio.id)!
+    expect(getAudioPitchShiftSemitones(reset)).toBe(0)
+    expect(Object.values(getAudioEqSettings(reset)).every((value) => value === undefined)).toBe(true)
+    expect((await applied(JSON.parse(JSON.stringify(cleared.project)), [])).digest).toBe(cleared.digest)
+    for (const fields of [{ pitchSemitones: 13 }, { pitchSemitones: 1.5 }, { pitchCents: -101 }, { pitchCents: NaN }, { eq: [] }, { eq: { lowGainDb: 21 } }, { eq: { lowQ: 0 } }, { eq: { enabled: 'yes' } }, { eq: { lowType: 'high-pass' } }, { eq: { bogus: 1 } }]) {
+      await expect(applyCanonicalCommands(before.project, [envelope('clip.setAudio', { clipId: audio.id, ...fields })], media))
+        .resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+    await expect(applyCanonicalCommands(before.project, [
+      envelope('clip.setAudio', { clipId: audio.id, pitchCents: 50, eq }),
+      envelope('clip.setAudio', { clipId: audio.id, muted: true }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
   })
 
   it('sets editable captions at exact NTSC times without shifting overlapping cues', async () => {

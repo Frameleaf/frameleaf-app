@@ -318,7 +318,7 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                                                                           |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain/fade fields of `clip.setAudio` (13.9); its mute, pitch and EQ fields are refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch and EQ fields of `clip.setAudio` (13.9); its mute field is refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
@@ -346,7 +346,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.push`                        | Engine          | 12.5.1  |                                                                                                                        |
 | `clip.reorder`                     | Engine          | 12.5.2  |                                                                                                                        |
 | `clip.roll`                        | Engine          | 12.4.2  |                                                                                                                        |
-| `clip.setAudio`                    | Engine          | 13.9    | Gain and fades only; mute, pitch and EQ are refused as `not-implemented`.                                              |
+| `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch and EQ; clip mute is refused as `not-implemented`.                                              |
 | `clip.setBlendMode`                | Not implemented | 13.8.4  | Do not record it. Edit `blendMode` as 13.8.4 says; set opacity with `clip.setTransform` (12.6.3).                      |
 | `clip.setCrop`                     | Not implemented | 8.2     | Do not record it. Do not change `crop` or `cornerPin`.                                                                 |
 | `clip.setGrade`                    | Not implemented | 8.2     | Do not record it. Do not change a clip's colour grade.                                                                 |
@@ -1454,7 +1454,7 @@ Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the
 
 ## 13. Part 3: effects, transitions, keyframes and animation
 
-This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), the clip gain/fade command of FL-103 (13.9), the graph fields they write, and the rule for the fields that no engine command writes at this revision (13.8).
+This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), the clip audio command of FL-103 (13.9), the graph fields they write, and the rule for the fields that no engine command writes at this revision (13.8).
 
 | Commands                                                                                  | Section |
 | ----------------------------------------------------------------------------------------- | ------- |
@@ -2045,14 +2045,33 @@ It must not change `alignment`, `type`, the clip ids or `trackId`. **Implementat
 
 ### 13.9 `clip.setAudio`
 
-This command edits the named audio or video clip through the same `updateItem` action as the editor's audio controls. It writes only the supplied fields:
+This command edits the named audio or video clip through the same `updateItem` action as the editor's audio controls. It writes supplied gain, fade and pitch fields, and replaces the EQ stage when `eq` is supplied:
 
 - `volume`: a finite number in −60..12 dB, stored as the clip's static `volume`.
 - `fadeIn` and `fadeOut`: exact rational durations in 0..5 seconds, the range of the editor's sliders. Store `num / den` as `audioFadeIn` and `audioFadeOut`, respectively. These are seconds, including durations shorter than one video frame; do not round them to frames. A zero duration resets the fade. Fades may overlap or exceed a short clip, as the editor permits.
 
-Require at least one of these fields. Reject an unknown field, malformed or out-of-range value, missing clip or other clip type as `invalid`. A clip on a locked track is refused as `failed`. After validating the supported fields, supplying `muted`, `pitchSemitones`, `pitchCents` or `eq` refuses the whole batch as `not-implemented`, even alongside a supported field. These fields have no canonical audio semantics at this revision.
+- `pitchSemitones`: an integer in −12..12, stored as `audioPitchSemitones`.
+- `pitchCents`: an integer in −100..100, stored as `audioPitchCents`. Effective pitch is semitones + cents / 100. Zero resets either field; changing one preserves the other. Playback and export use the existing pitch paths, with their existing channel/latency admission limits.
+- `eq`: an object with the settings below, replacing the clip's known EQ fields as an editor EQ preset does. Omitted settings take their defaults. An empty object resets the stage to flat defaults. `null` clears all known `audioEq*` fields. Omitted `eq` preserves the current stage.
 
-Leave omitted fields, volume keyframes, fade curves, pitch/EQ, source windows, channels, linked companions, tracks and the master/monitor controls unchanged. The command addresses one clip; it does not expand linked selection. Existing volume keyframes continue to override static gain during playback. Save, reopen, undo and redo use the usual graph and host history rules (sections 7 and 9).
+EQ setting names are stored with `audioEq` prefixed and the first letter capitalized. `enabled` is a boolean; omission clears `audioEqEnabled` so the engine's enabled-by-default behavior applies. Other `*Enabled` settings are booleans. All numeric settings must be finite. Gain (`outputGainDb`, every band's `*GainDb`, and legacy `midGainDb`) is in −20..20 dB, Q in 0.3..10.3, and cut slope is 6, 12, 18 or 24 dB/octave. Unknown settings, wrong types, out-of-range values and contradictory cut aliases are invalid, rather than silently clamped.
+
+| Band prefix | Default enabled/type | Frequency domain and default (Hz) | Default Q |
+| --- | --- | --- | --- |
+| `band1` | false / high-pass | 20..399; 30 | 1.1 |
+| `low` | true / low-shelf | 20..22000; 120 | 2.3 |
+| `lowMid` | true / peaking | 20..22000; 400 | 1.1 |
+| `highMid` | true / peaking | 20..22000; 1600 | 1.1 |
+| `high` | true / high-shelf | 20..22000; 2800 | 2.3 |
+| `band6` | false / low-pass | 1400..22000; 22000 | 1.1 |
+
+Each band has `Enabled`, `Type`, `FrequencyHz`, `GainDb` (default 0) and `Q`. Band 1 and band 6 also have `SlopeDbPerOct` (default 12). Types for band 1 are low-shelf, peaking, high-shelf and high-pass; for band 6, low-pass, low-shelf, peaking and high-shelf; for the inner bands, low-shelf, peaking, high-shelf and notch. `outputGainDb` and legacy `midGainDb` default to 0.
+
+The legacy `lowCut` and `highCut` prefixes each have `Enabled`, `FrequencyHz` and `SlopeDbPerOct`, with the corresponding outer band's defaults and domains. When no field of an outer band is supplied, its enabled/frequency/slope come from the legacy cut and its type is high-pass (band 1) or low-pass (band 6). When any outer-band field is supplied, that band's settings take precedence. The stored cut enabled value is outer-band enabled AND its type is the cut type; its frequency and slope mirror the outer band. Every explicitly supplied alias must equal that resolved value. The engine's existing resolver and preset mapper supply the defaults and stored fields; these rules do not add DSP.
+
+Require at least one of these fields. Reject an unknown field, malformed or out-of-range value, missing clip or other clip type as `invalid`. A clip on a locked track is refused as `failed`. After validating the supported fields, supplying `muted` refuses the whole batch as `not-implemented`, even alongside a supported field. Clips have no persisted mute control in the current audio path; a video's embedded-audio suppression flag has linked-media ownership semantics and must not be reused as clip mute.
+
+Leave omitted gain/fade/pitch fields, volume keyframes, fade curves, source windows, channels, linked companions, tracks and the master/monitor controls unchanged. EQ replacement changes only known clip EQ fields; unknown extension fields survive. The command addresses one clip; it does not expand linked selection. Existing volume keyframes continue to override static gain during playback. Save, reopen, undo and redo use the usual graph and host history rules (sections 7 and 9).
 
 ## 14. Part 4: compositions, groups, titles and settings
 
