@@ -1266,6 +1266,40 @@ const commands = {
     }
   },
 
+  'lottie.update'(state, payload) {
+    const id = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === id);
+    if (!clip) invalid(`clipId: clip "${id}" does not exist`);
+    if (clip.type !== 'lottie') invalid('lottie.update requires a Lottie clip');
+    refuseLocked(state, [clip.id], 'lottie.update');
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'colors', 'text', 'slots'].includes(key)) invalid('lottie.update: unknown field');
+    }
+    const next = { ...clip };
+    let supplied = false;
+    for (const [field, saved] of [['colors', 'colorOverrides'], ['text', 'textOverrides'], ['slots', 'slotOverrides']]) {
+      if (!Object.hasOwn(payload, field)) continue;
+      supplied = true;
+      const map = payload[field];
+      if (!map || typeof map !== 'object' || Array.isArray(map) ||
+        (Object.getPrototypeOf(map) !== Object.prototype && Object.getPrototypeOf(map) !== null)) invalid(`lottie.update: ${field} must be a map`);
+      const entries = Object.entries(map);
+      for (const [key, value] of entries) {
+        if (key.length === 0) invalid(`lottie.update: ${field} keys must be nonempty`);
+        if (field === 'colors' && (typeof value !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(value))) invalid('lottie.update: colors must be #rrggbb strings');
+        if (field === 'text' && typeof value !== 'string') invalid('lottie.update: text values must be strings');
+        if (field === 'slots') {
+          const values = Array.isArray(value) ? [value[0], value[1]] : [value];
+          if ((Array.isArray(value) && value.length !== 2) || values.some((entry) => typeof entry !== 'number' || !Number.isFinite(entry))) invalid('lottie.update: slots must be finite numbers or [x, y] pairs');
+        }
+      }
+      if (!entries.length) delete next[saved];
+      else next[saved] = structuredClone(map);
+    }
+    if (!supplied) invalid('lottie.update needs colors, text or slots');
+    replace(state, next);
+  },
+
   /* 12.6.3 */
   'clip.setTransform'(state, payload) {
     const clip = namedClip(state, payload);
