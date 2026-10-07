@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -265,18 +266,26 @@ test('installed decoder availability is distinct from output codec availability'
   assert.equal(caps.libultrahdr, '2.0.2');
   assert.equal(typeof caps.heicDecoder, 'boolean');
   assert.equal(typeof caps.avifDecoder, 'boolean');
+  assert.equal(caps.appleGainMapDecoder, caps.heicDecoder);
 });
 
-test('Apple auxiliary metadata identifies HDR headroom while blocking unqualified reconstruction', () => {
+test('Apple auxiliary reconstruction retains HDR headroom and the authored SDR baseline', () => {
   const input = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
   const info = codec.inspect(input, ...limits);
   assert.equal(info.gainMap, 'apple-legacy');
   assert.equal(info.dynamicRange, 'hdr');
   assert.equal(info.contentHeadroom, 8);
-  assert.equal(info.reconstructionAvailable, false);
-  assert.equal(info.fallbackReason, 'apple-gain-map-interpretation-unqualified');
-  assert.throws(() => codec.decode(input, ...limits), { code: 'APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED' });
-  assert.throws(() => codec.decodePaired(input, ...limits), { code: 'ADAPTIVE_IMAGE_UNAVAILABLE' });
+  assert.equal(info.reconstructionAvailable, true);
+  assert.equal(info.renderingPolicy, 'apple-legacy-imageio-2.2-reference-203-v1');
+  const pair = codec.decodePaired(input, ...limits);
+  const values = new Float32Array(pair.data.buffer, pair.data.byteOffset, pair.data.length / 4);
+  assert.ok(values[(16 * pair.width + 56) * 4] > 1);
+  for (let i = 3; i < values.length; i += 4) assert.equal(values[i], 1);
+  const roundTrip = codec.decodePaired(
+    codec.encodePaired(pair.data, pair.width, pair.height, pair.gamut, ...limits, pair.sdr, pair.sdrGamut),
+    ...limits,
+  );
+  for (let i = 0; i < pair.sdr.length; i++) assert.ok(Math.abs(pair.sdr[i] - roundTrip.sdr[i]) <= 2);
   assert.throws(() => codec.inspect(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
 });
 
@@ -305,7 +314,7 @@ test('Apple gain-map metadata rejects unknown versions, namespace spoofing and i
           : 'invalid-gain-map',
       );
     }
-    assert.throws(() => codec.decode(bytes, ...limits), { code: 'APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED' });
+    assert.throws(() => codec.decode(bytes, ...limits), { code });
   }
   const xmpStart = original.indexOf('<x:xmpmeta'),
     xmpEnd = original.indexOf('</x:xmpmeta>') + '</x:xmpmeta>'.length;
@@ -363,7 +372,7 @@ test('Apple MakerNotes normalize signed rationals, inline floats and either byte
           }
         }
         const info = codec.inspect(bytes, ...limits);
-        assert.equal(info.reconstructionAvailable, false);
+        assert.equal(info.reconstructionAvailable, true);
         assert.ok(Math.abs(info.contentHeadroom - 2 ** Math.max(stops, 0)) < 0.00001);
       }
   }
@@ -390,8 +399,124 @@ test('Apple XMP accepts namespaced attributes and rejects duplicates or excessiv
     bytes.fill(32, begin, end);
     bytes.write(xmp, begin);
     const info = codec.inspect(bytes, ...limits);
-    assert.equal(info.reconstructionAvailable, false);
-    assert.equal(info.fallbackReason, valid ? 'apple-gain-map-interpretation-unqualified' : 'invalid-gain-map');
+    assert.equal(info.reconstructionAvailable, valid);
+    if (!valid) assert.equal(info.fallbackReason, 'invalid-gain-map');
     if (valid) assert.equal(info.contentHeadroom, 8);
   }
+});
+
+for (const [fixture, maximum] of [
+  ['ramp', 0.015],
+  ['colors', 0.05],
+]) {
+  test(`Apple ${fixture} reconstruction matches independent ImageIO linear RGB across all 256 codes`, () => {
+    const input = readFileSync(new URL(`./fixtures/apple-gain-map-${fixture}.heic`, import.meta.url));
+    const reference = JSON.parse(
+      readFileSync(new URL(`./fixtures/apple-gain-map-${fixture}-reference.json`, import.meta.url), 'utf8'),
+    );
+    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
+    assert.equal(codec.inspect(input, ...limits).reconstructionAvailable, true);
+    const image = codec.decodePaired(input, ...limits);
+    const values = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+    assert.deepEqual([image.width, image.height], [reference.width, reference.height]);
+    let max = 0,
+      squared = 0,
+      count = 0;
+    for (let row = 0; row < reference.rgb.length; row++)
+      for (let i = 0; i < reference.rgb[row].length; i++)
+        for (let c = 0; c < 3; c++) {
+          const at = (reference.sampleY[row] * image.width + i * reference.sampleStep + reference.sampleOffset) * 4 + c;
+          const error = values[at] - reference.rgb[row][i][c];
+          max = Math.max(max, Math.abs(error));
+          squared += error ** 2;
+          count++;
+        }
+    assert.ok(max < maximum, `Apple reference max RGB error ${max}`);
+    assert.ok(Math.sqrt(squared / count) < maximum / 2, `Apple reference RMS error ${Math.sqrt(squared / count)}`);
+  });
+}
+
+test('Apple primary container rotations and mirrors keep the gain map and SDR baseline aligned', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const base = codec.decodePaired(original, ...limits);
+  const baseData = new Float32Array(base.data.buffer, base.data.byteOffset, base.data.length / 4);
+  for (const [property, values] of [
+    ['irot', [0, 1, 2, 3]],
+    ['imir', [0, 1]],
+  ]) {
+    for (const value of values) {
+      const bytes = Buffer.from(original),
+        propertyOffset = bytes.indexOf('irot');
+      bytes.write(property, propertyOffset);
+      bytes[propertyOffset + 4] = value;
+      const image = codec.decodePaired(bytes, ...limits);
+      const swapped = property === 'irot' && value % 2 === 1;
+      assert.deepEqual([image.width, image.height], swapped ? [32, 64] : [64, 32]);
+      const data = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+      for (let y = 0; y < image.height; y++)
+        for (let x = 0; x < image.width; x++) {
+          const [sx, sy] =
+            property === 'imir'
+              ? value === 1
+                ? [63 - x, y]
+                : [x, 31 - y]
+              : [
+                  [x, y],
+                  [63 - y, x],
+                  [63 - x, 31 - y],
+                  [y, 31 - x],
+                ][value];
+          const offset = (y * image.width + x) * 4,
+            source = (sy * 64 + sx) * 4;
+          for (let c = 0; c < 4; c++) {
+            assert.ok(Math.abs(data[offset + c] - baseData[source + c]) < 0.00001);
+            assert.equal(image.sdr[offset + c], base.sdr[source + c]);
+          }
+        }
+    }
+  }
+});
+
+test('unimplemented Apple metadata overrides and invalid profiles block reconstruction explicitly', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const begin = original.indexOf('<x:xmpmeta'),
+    end = original.indexOf('</x:xmpmeta>') + '</x:xmpmeta>'.length;
+  const bytes = Buffer.from(original);
+  const xmp = '<x xmlns:a="http://ns.apple.com/HDRGainMap/1.0/" a:HDRGainMapVersion="65536" a:HDRGainMapHeadroom="2"/>';
+  bytes.fill(32, begin, end);
+  bytes.write(xmp, begin);
+  assert.equal(codec.inspect(bytes, ...limits).fallbackReason, 'apple-gain-map-interpretation-unqualified');
+  assert.throws(() => codec.decode(bytes, ...limits), { code: 'APPLE_GAIN_MAP_VERSION_UNSUPPORTED' });
+  const profile = Buffer.from(original);
+  const icc = profile.indexOf('acsp');
+  assert.ok(icc >= 0);
+  profile.fill(0, icc, icc + 4);
+  assert.equal(codec.inspect(profile, ...limits).fallbackReason, 'hdr-profile-unsupported');
+  assert.throws(() => codec.decode(profile, ...limits), { code: 'HDR_PROFILE_UNSUPPORTED' });
+});
+
+// Give the auxiliary its own property rather than the primary's shared rotation.
+test('independent Apple auxiliary geometry cannot be advertised as aligned HDR', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const ipma = original.indexOf('ipma'),
+    insertion = ipma - 4;
+  const rotation = Buffer.from([0, 0, 0, 9, 105, 114, 111, 116, 1]);
+  const bytes = Buffer.concat([original.subarray(0, insertion), rotation, original.subarray(insertion)]);
+  for (const type of ['meta', 'iprp', 'ipco']) {
+    const offset = bytes.indexOf(type) - 4;
+    bytes.writeUInt32BE(bytes.readUInt32BE(offset) + rotation.length, offset);
+  }
+  const iloc = bytes.indexOf('iloc');
+  assert.equal(bytes[iloc + 8], 0x44);
+  assert.equal(bytes[iloc + 9], 0);
+  const count = bytes.readUInt16BE(iloc + 10);
+  for (let i = 0; i < count; i++) {
+    const item = iloc + 12 + i * 14;
+    assert.equal(bytes.readUInt16BE(item + 4), 1);
+    bytes.writeUInt32BE(bytes.readUInt32BE(item + 6) + rotation.length, item + 6);
+  }
+  assert.equal(bytes[ipma + rotation.length + 28], 0x84);
+  bytes[ipma + rotation.length + 28] = 0x8b;
+  assert.equal(codec.inspect(bytes, ...limits).reconstructionAvailable, false);
+  assert.throws(() => codec.decode(bytes, ...limits), { code: 'APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED' });
 });

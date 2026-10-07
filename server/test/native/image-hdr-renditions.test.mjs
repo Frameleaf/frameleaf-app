@@ -323,11 +323,11 @@ for (const fixture of ['pq-rotated.avif', 'apple-gain-map-p3.heic']) {
     try {
       const bytes = await readFile(new URL(`./fixtures/${fixture}`, import.meta.url));
       if (fixture.endsWith('.avif')) bytes.write('tmap', 16, 'ascii');
+      else bytes.write('65537', bytes.indexOf('65536'));
       const encoding = await pool.run('inspectImageEncoding', [bytes]);
       assert.equal(encoding.dynamicRange, 'hdr');
       assert.equal(encoding.reconstructionAvailable, false);
       if (fixture.endsWith('.heic')) {
-        assert.equal(encoding.contentHeadroom, 8);
         assert.equal(encoding.fallbackReason, 'apple-gain-map-interpretation-unqualified');
       }
       const source = join(folder, fixture);
@@ -348,3 +348,47 @@ for (const fixture of ['pq-rotated.avif', 'apple-gain-map-p3.heic']) {
     }
   });
 }
+
+test('Apple HEIC traverses HDR renditions, Develop and exports while retaining its source and SDR appearance', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-apple-hdr-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  try {
+    const original = await readFile(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+    const source = join(folder, 'source.heic');
+    await writeFile(source, original);
+    const baseline = codec.decodePaired(original, ...limits);
+    const master = join(folder, 'master.jpg'),
+      edited = join(folder, 'edited.jpg');
+    await pool.run('generateHdrRenditions', [source, [{ path: master }]]);
+    const pair = codec.decodePaired(await readFile(master), ...limits);
+    for (let i = 0; i < pair.sdr.length; i++) assert.ok(Math.abs(pair.sdr[i] - baseline.sdr[i]) <= 2);
+    await pool.run('generateHdrRenditions', [
+      source,
+      [{ path: edited }],
+      {
+        recipe: { ...defaultDevelopRecipe(), exposure: 1, rotation: 90 },
+        seed: 1,
+        masks: {},
+        fills: {},
+      },
+    ]);
+    const hdr = codec.decode(await readFile(edited), ...limits);
+    assert.deepEqual([hdr.width, hdr.height], [32, 64]);
+    const values = new Float32Array(hdr.data.buffer, hdr.data.byteOffset, hdr.data.length / 4);
+    assert.ok(Math.max(...values) > 1.8, 'Develop must retain edited values above reference white');
+    const checksum = createHash('sha256').update(original).digest();
+    for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
+      const path = join(folder, `${format}.out`);
+      await pool.run('exportPhotoStill', [source, path, format, checksum]);
+      const encoded = await readFile(path),
+        info = codec.inspect(encoded, ...limits);
+      assert.equal(info.dynamicRange, format === 'sdr-jpeg' ? 'sdr' : 'hdr');
+      assert.equal(encoded.includes(Buffer.from('Apple iOS')), false);
+      if (format !== 'sdr-jpeg') assert.equal(codec.decode(encoded, ...limits).height, 32);
+    }
+    assert.deepEqual(await readFile(source), original);
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});

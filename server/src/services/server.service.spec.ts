@@ -484,6 +484,22 @@ describe(ServerService.name, () => {
         imageCapabilities: { renderer: null, decode: [], export: [] },
       });
     });
+    it.each([true, false])(
+      'offers experimental Apple reconstruction only with HEVC support (%s)',
+      async (heicDecoder) => {
+        mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+          libheif: '1.23.3',
+          libultrahdr: '2.0.2',
+          heicDecoder,
+          avifDecoder: false,
+          appleGainMapDecoder: true,
+        });
+        const { imageCapabilities } = await sut.getFeatures();
+        expect(imageCapabilities?.qualified).toBe(false);
+        expect(imageCapabilities?.decode.includes('apple-gain-map-heic')).toBe(heicDecoder);
+        expect(imageCapabilities?.unavailable.includes('apple-gain-map-heic')).toBe(!heicDecoder);
+      },
+    );
     it('offers HDR HEIC only after the admitted codec verifies ten-bit PQ output', async () => {
       mocks.media.getHdrCodecCapabilities.mockResolvedValue({
         libheif: '1.23.3',

@@ -4,6 +4,8 @@
 #include <libheif/heif_items.h>
 #include <ultrahdr_api.h>
 #include <expat.h>
+#include <lcms2.h>
+#include <libheif/heif_properties.h>
 #include <optional>
 #include <type_traits>
 #include <algorithm>
@@ -296,14 +298,17 @@ double appleHeadroom(const Input& input, const heif_image_handle* primary) {
   return headroom;
 }
 struct AppleXmp {
-  XML_Parser parser; int depth = 0, capture = 0, count = 0; bool invalid = false; std::string value;
+  XML_Parser parser; int depth = 0, capture = 0, count = 0; bool invalid = false; std::string value; bool unsupported = false;
   void stop() { invalid = true; XML_StopParser(parser, XML_FALSE); }
   static bool version(const XML_Char* name) { return std::strcmp(name, "http://ns.apple.com/HDRGainMap/1.0/|HDRGainMapVersion") == 0; }
   static void start(void* user, const XML_Char* name, const XML_Char** attributes) {
     auto& x = *static_cast<AppleXmp*>(user);
     if (++x.depth > 32 || x.capture) { x.stop(); return; }
+    if (std::strncmp(name, "http://ns.apple.com/HDRGainMap/1.0/|", sizeof("http://ns.apple.com/HDRGainMap/1.0/|") - 1) == 0 && !version(name)) x.unsupported = true;
     if (version(name)) { if (++x.count != 1) { x.stop(); return; } x.capture = x.depth; }
-    for (size_t i = 0; attributes[i]; i += 2) if (version(attributes[i])) {
+    for (size_t i = 0; attributes[i]; i += 2) {
+      if (std::strncmp(attributes[i], "http://ns.apple.com/HDRGainMap/1.0/|", sizeof("http://ns.apple.com/HDRGainMap/1.0/|") - 1) == 0 && !version(attributes[i])) x.unsupported = true;
+      if (!version(attributes[i])) continue;
       if (++x.count != 1 || std::strlen(attributes[i + 1]) > 32) { x.stop(); return; }
       x.value = attributes[i + 1];
     }
@@ -332,6 +337,7 @@ void validateAppleVersion(const Input& input, const heif_image_handle* auxiliary
     const auto status = XML_Parse(parser.get(), reinterpret_cast<const char*>(data.data()), int(data.size()), XML_TRUE);
     if (XML_GetErrorCode(parser.get()) == XML_ERROR_NO_MEMORY) throw std::runtime_error("RESOURCE_LIMIT");
     if (status == XML_STATUS_ERROR || x.invalid) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+    if (x.unsupported) throw std::runtime_error("APPLE_GAIN_MAP_VERSION_UNSUPPORTED");
     if (x.count) {
       const auto begin = x.value.find_first_not_of(" \t\r\n"), end = x.value.find_last_not_of(" \t\r\n");
       if (begin == std::string::npos || x.value.substr(begin, end - begin + 1) != "65536" || ++found != 1)
@@ -357,7 +363,216 @@ Handle appleAuxiliary(const heif_image_handle* primary) {
   }
   return found;
 }
-napi_value decodeHeif(napi_env env, Input& input) {
+using ColorProfile = std::unique_ptr<void, decltype(&cmsCloseProfile)>;
+ColorProfile rgbProfile(int primaries, int transfer) {
+  cmsCIExyY white{0.3127, 0.3290, 1};
+  cmsCIExyYTRIPLE colors = primaries == 9 ? cmsCIExyYTRIPLE{{0.708,0.292,1},{0.170,0.797,1},{0.131,0.046,1}}
+    : primaries == 12 ? cmsCIExyYTRIPLE{{0.680,0.320,1},{0.265,0.690,1},{0.150,0.060,1}}
+    : cmsCIExyYTRIPLE{{0.640,0.330,1},{0.300,0.600,1},{0.150,0.060,1}};
+  const double parameters[] = {transfer == 1 ? 1 / 0.45 : 2.4, transfer == 1 ? 1 / 1.099 : 1 / 1.055,
+    transfer == 1 ? 0.099 / 1.099 : 0.055 / 1.055, transfer == 1 ? 1 / 4.5 : 1 / 12.92, transfer == 1 ? 0.081 : 0.04045};
+  std::unique_ptr<cmsToneCurve, decltype(&cmsFreeToneCurve)> curve(transfer == 0 ? cmsBuildGamma(nullptr, 1)
+    : cmsBuildParametricToneCurve(nullptr, 4, parameters), cmsFreeToneCurve);
+  if (!curve) throw std::runtime_error("RESOURCE_LIMIT");
+  cmsToneCurve* curves[] = {curve.get(), curve.get(), curve.get()};
+  ColorProfile profile(cmsCreateRGBProfile(&white, &colors, curves), cmsCloseProfile);
+  if (!profile) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
+  return profile;
+}
+ColorProfile appleColorProfile(const Input& input, const heif_image_handle* primary) {
+  const size_t size = heif_image_handle_get_raw_color_profile_size(primary);
+  if (size) {
+    if (size > 1048576 || size > input.size) throw std::runtime_error("RESOURCE_LIMIT");
+    std::vector<uint8_t> icc(size); check(heif_image_handle_get_raw_color_profile(primary, icc.data()));
+    ColorProfile profile(cmsOpenProfileFromMem(icc.data(), cmsUInt32Number(size)), cmsCloseProfile);
+    if (!profile || cmsGetColorSpace(profile.get()) != cmsSigRgbData || !cmsIsMatrixShaper(profile.get())) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
+    return profile;
+  }
+  heif_color_profile_nclx* raw = nullptr; check(heif_image_handle_get_nclx_color_profile(primary, &raw));
+  Profile profile(raw, heif_nclx_color_profile_free);
+  if ((raw->color_primaries != 1 && raw->color_primaries != 9 && raw->color_primaries != 12)
+      || (raw->transfer_characteristics != 1 && raw->transfer_characteristics != 13))
+    throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
+  return rgbProfile(raw->color_primaries, raw->transfer_characteristics);
+}
+
+void validateAppleLayout(const Input& input, const heif_context* ctx, const heif_image_handle* primary, const heif_image_handle* auxiliary) {
+  // Apple may associate the same primary transform properties with the auxiliary.
+  // Independently authored map geometry is not part of this rendering policy.
+  const auto primaryId = heif_image_handle_get_item_id(primary), mapId = heif_image_handle_get_item_id(auxiliary);
+  const int mapCount = heif_item_get_transformation_properties(ctx, mapId, nullptr, 0);
+  const int primaryCount = heif_item_get_transformation_properties(ctx, primaryId, nullptr, 0);
+  if (mapCount < 0 || primaryCount < 0 || mapCount > 16 || primaryCount > 16)
+    throw std::runtime_error("RESOURCE_LIMIT");
+  if (mapCount) {
+    std::vector<heif_property_id> mapProperties(mapCount), primaryProperties(primaryCount);
+    if (heif_item_get_transformation_properties(ctx, mapId, mapProperties.data(), mapCount) != mapCount
+        || heif_item_get_transformation_properties(ctx, primaryId, primaryProperties.data(), primaryCount) != primaryCount
+        || mapCount != primaryCount) throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+    for (int i = 0; i < mapCount; ++i) {
+      const auto type = heif_item_get_property_type(ctx, mapId, mapProperties[i]);
+      if (type != heif_item_get_property_type(ctx, primaryId, primaryProperties[i]))
+        throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+      if (type == heif_item_property_type_transform_rotation) {
+        if (heif_item_get_property_transform_rotation_ccw(ctx, mapId, mapProperties[i])
+            != heif_item_get_property_transform_rotation_ccw(ctx, primaryId, primaryProperties[i]))
+          throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+      } else if (type == heif_item_property_type_transform_mirror) {
+        if (heif_item_get_property_transform_mirror(ctx, mapId, mapProperties[i])
+            != heif_item_get_property_transform_mirror(ctx, primaryId, primaryProperties[i]))
+          throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+      } else throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+    }
+  }
+  const int width = heif_image_handle_get_ispe_width(primary), height = heif_image_handle_get_ispe_height(primary);
+  const int mapWidth = heif_image_handle_get_ispe_width(auxiliary), mapHeight = heif_image_handle_get_ispe_height(auxiliary);
+  input.dimensions(width, height, double(mapWidth) * mapHeight);
+  if (double(input.size) * 2 + double(width) * height * 64 + double(mapWidth) * mapHeight * 16 > input.maxBytes)
+    throw std::runtime_error("RESOURCE_LIMIT");
+  heif_colorspace colorspace; heif_chroma chroma;
+  check(heif_image_handle_get_preferred_decoding_colorspace(auxiliary, &colorspace, &chroma));
+  if (colorspace != heif_colorspace_monochrome || chroma != heif_chroma_monochrome)
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  if (heif_image_handle_get_luma_bits_per_pixel(primary) != 8 || heif_image_handle_is_premultiplied_alpha(primary)
+      || heif_image_handle_get_luma_bits_per_pixel(auxiliary) != 8
+      || mapWidth != (width + 3) / 4 || mapHeight != (height + 3) / 4)
+    throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+}
+struct AppleTransform { heif_item_property_type type; int width, height, value = 0, left = 0, top = 0; };
+std::vector<AppleTransform> appleTransforms(const heif_context* ctx, heif_item_id id, int& width, int& height) {
+  const int count = heif_item_get_transformation_properties(ctx, id, nullptr, 0);
+  if (count < 0 || count > 16) throw std::runtime_error("RESOURCE_LIMIT");
+  std::vector<heif_property_id> ids(count); std::vector<AppleTransform> result;
+  if (heif_item_get_transformation_properties(ctx, id, ids.data(), count) != count)
+    throw std::runtime_error("CORRUPT_IMAGE");
+  for (auto property : ids) {
+    AppleTransform transform{heif_item_get_property_type(ctx, id, property), width, height};
+    if (transform.type == heif_item_property_type_transform_rotation) {
+      transform.value = heif_item_get_property_transform_rotation_ccw(ctx, id, property);
+      if (transform.value < 0) throw std::runtime_error("CORRUPT_IMAGE");
+      if (transform.value == 90 || transform.value == 270) std::swap(width, height);
+    } else if (transform.type == heif_item_property_type_transform_mirror) {
+      transform.value = heif_item_get_property_transform_mirror(ctx, id, property);
+      if (transform.value < 0) throw std::runtime_error("CORRUPT_IMAGE");
+    } else if (transform.type == heif_item_property_type_transform_crop) {
+      int right, bottom;
+      heif_item_get_property_transform_crop_borders(ctx, id, property, width, height, &transform.left, &transform.top, &right, &bottom);
+      if (transform.left < 0 || transform.top < 0 || right < 0 || bottom < 0
+          || transform.left >= width - right || transform.top >= height - bottom)
+        throw std::runtime_error("CORRUPT_IMAGE");
+      width -= transform.left + right; height -= transform.top + bottom;
+    } else throw std::runtime_error("APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED");
+    result.push_back(transform);
+  }
+  return result;
+}
+void inverseAppleGeometry(const std::vector<AppleTransform>& transforms, int& x, int& y) {
+  for (auto i = transforms.rbegin(); i != transforms.rend(); ++i) {
+    if (i->type == heif_item_property_type_transform_crop) { x += i->left; y += i->top; }
+    else if (i->type == heif_item_property_type_transform_mirror) {
+      if (i->value == heif_transform_mirror_direction_horizontal) x = i->width - 1 - x;
+      else y = i->height - 1 - y;
+    } else {
+      const int oldX = x;
+      switch (i->value) {
+        case 0: break;
+        case 90: x = i->width - 1 - y; y = oldX; break;
+        case 180: x = i->width - 1 - x; y = i->height - 1 - y; break;
+        case 270: x = y; y = i->height - 1 - oldX; break;
+        default: throw std::runtime_error("CORRUPT_IMAGE");
+      }
+    }
+  }
+}
+napi_value decodeApple(napi_env env, Input& input, heif_context* ctx, heif_image_handle* primary,
+                       heif_image_handle* auxiliary, bool paired) {
+  validateAppleVersion(input, auxiliary); const double headroom = appleHeadroom(input, primary);
+  const int rawWidth = heif_image_handle_get_ispe_width(primary), rawHeight = heif_image_handle_get_ispe_height(primary);
+  const int mapWidth = heif_image_handle_get_ispe_width(auxiliary), mapHeight = heif_image_handle_get_ispe_height(auxiliary);
+  validateAppleLayout(input, ctx, primary, auxiliary);
+  auto profile = appleColorProfile(input, primary); auto linearProfile = rgbProfile(9, 0);
+  using ColorTransform = std::unique_ptr<void, decltype(&cmsDeleteTransform)>;
+  ColorTransform linear(cmsCreateTransform(profile.get(), TYPE_RGBA_8, linearProfile.get(), TYPE_RGBA_FLT,
+    INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA | cmsFLAGS_NOOPTIMIZE), cmsDeleteTransform);
+  if (!linear) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
+  std::unique_ptr<heif_decoding_options, decltype(&heif_decoding_options_free)> options(heif_decoding_options_alloc(), heif_decoding_options_free);
+  if (!options) throw std::runtime_error("RESOURCE_LIMIT");
+  options->ignore_transformations = true; options->convert_hdr_to_8bit = false; options->strict_decoding = true;
+  heif_color_profile_nclx* nclxRaw = nullptr;
+  Profile nclx(nullptr, heif_nclx_color_profile_free);
+  if (heif_image_handle_get_nclx_color_profile(primary, &nclxRaw).code == heif_error_Ok) {
+    nclx.reset(nclxRaw); options->output_image_nclx_profile = nclxRaw;
+  }
+  heif_image* baseRaw = nullptr; check(heif_decode_image(primary, &baseRaw, heif_colorspace_RGB, heif_chroma_interleaved_RGBA, options.get()));
+  std::unique_ptr<heif_image, decltype(&heif_image_release)> base(baseRaw, heif_image_release);
+  if (heif_image_get_width(baseRaw, heif_channel_interleaved) != rawWidth
+      || heif_image_get_height(baseRaw, heif_channel_interleaved) != rawHeight
+      || heif_image_get_bits_per_pixel_range(baseRaw, heif_channel_interleaved) != 8)
+    throw std::runtime_error("HDR_RECONSTRUCTION_UNAVAILABLE");
+  // libheif inherits primary transforms onto auxiliary handles; apply the shared geometry once below.
+  options->ignore_transformations = true; options->output_image_nclx_profile = nullptr;
+  heif_image* mapRaw = nullptr;
+  check(heif_decode_image(auxiliary, &mapRaw, heif_colorspace_monochrome, heif_chroma_monochrome, options.get()));
+  std::unique_ptr<heif_image, decltype(&heif_image_release)> map(mapRaw, heif_image_release);
+  int baseStride = 0, mapStride = 0;
+  const auto* baseBytes = heif_image_get_plane_readonly(baseRaw, heif_channel_interleaved, &baseStride);
+  const auto* mapBytes = heif_image_get_plane_readonly(mapRaw, heif_channel_Y, &mapStride);
+  if (!baseBytes || !mapBytes || baseStride < rawWidth * 4 || mapStride < mapWidth
+      || heif_image_get_width(mapRaw, heif_channel_Y) != mapWidth || heif_image_get_height(mapRaw, heif_channel_Y) != mapHeight
+      || heif_image_get_bits_per_pixel_range(mapRaw, heif_channel_Y) != 8)
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  std::vector<float> baseLinear(size_t(rawWidth) * rawHeight * 4);
+  for (int y = 0; y < rawHeight; ++y)
+    cmsDoTransform(linear.get(), baseBytes + size_t(y) * baseStride, baseLinear.data() + size_t(y) * rawWidth * 4, cmsUInt32Number(rawWidth));
+  std::vector<uint8_t> baseline;
+  if (paired) {
+    auto sdrProfile = rgbProfile(9, 13);
+    ColorTransform sdr(cmsCreateTransform(linearProfile.get(), TYPE_RGBA_FLT, sdrProfile.get(), TYPE_RGBA_8,
+      INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA | cmsFLAGS_NOOPTIMIZE), cmsDeleteTransform);
+    if (!sdr) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
+    baseline.resize(size_t(rawWidth) * rawHeight * 4);
+    cmsDoTransform(sdr.get(), baseLinear.data(), baseline.data(), cmsUInt32Number(rawWidth) * rawHeight);
+  }
+  std::vector<float> mapCodes(size_t(mapWidth) * mapHeight);
+  for (int y = 0; y < mapHeight; ++y) for (int x = 0; x < mapWidth; ++x) {
+    const double code = mapBytes[size_t(y) * mapStride + x] / 255.0;
+    mapCodes[size_t(y) * mapWidth + x] = float(code);
+  }
+  int width = rawWidth, height = rawHeight;
+  const auto transforms = appleTransforms(ctx, heif_image_handle_get_item_id(primary), width, height);
+  input.dimensions(width, height, double(mapWidth) * mapHeight);
+  napi_value data; void* output;
+  check(napi_create_buffer(env, size_t(width) * height * 16, &output, &data));
+  napi_value sdrData; void* sdrOutput = nullptr;
+  if (paired) check(napi_create_buffer(env, size_t(width) * height * 4, &sdrOutput, &sdrData));
+  auto* target = static_cast<float*>(output);
+  for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+    int sx = x, sy = y; inverseAppleGeometry(transforms, sx, sy);
+    if (sx < 0 || sy < 0 || sx >= rawWidth || sy >= rawHeight) throw std::runtime_error("CORRUPT_IMAGE");
+    const double mx = std::clamp((sx + 0.5) * mapWidth / rawWidth - 0.5, 0.0, double(mapWidth - 1));
+    const double my = std::clamp((sy + 0.5) * mapHeight / rawHeight - 0.5, 0.0, double(mapHeight - 1));
+    const int x0 = int(mx), y0 = int(my), x1 = std::min(x0 + 1, mapWidth - 1), y1 = std::min(y0 + 1, mapHeight - 1);
+    const double top = mapCodes[size_t(y0) * mapWidth + x0] * (1 - (mx - x0)) + mapCodes[size_t(y0) * mapWidth + x1] * (mx - x0);
+    const double bottom = mapCodes[size_t(y1) * mapWidth + x0] * (1 - (mx - x0)) + mapCodes[size_t(y1) * mapWidth + x1] * (mx - x0);
+    // Version 65536 matches ImageIO's 2.2 curve, applied after resampling encoded map values.
+    const double gain = 1 + (headroom - 1) * std::pow(top * (1 - (my - y0)) + bottom * (my - y0), 2.2);
+    const size_t sourceOffset = (size_t(sy) * rawWidth + sx) * 4, offset = (size_t(y) * width + x) * 4;
+    for (int c = 0; c < 4; ++c) {
+      const float value = float(baseLinear[sourceOffset + c] * (c == 3 ? 1 : gain));
+      if (!std::isfinite(value)) throw std::runtime_error("INVALID_LINEAR_PIXELS");
+      target[offset + c] = value;
+    }
+    if (paired) std::memcpy(static_cast<uint8_t*>(sdrOutput) + offset, baseline.data() + sourceOffset, 4);
+  }
+  auto result = object(env); check(napi_set_named_property(env, result, "data", data));
+  field(env, result, "width", double(width)); field(env, result, "height", double(height));
+  field(env, result, "gamut", 2.0); field(env, result, "referenceWhite", 203.0);
+  field(env, result, "renderingPolicy", "apple-legacy-imageio-2.2-reference-203-v1");
+  if (paired) { check(napi_set_named_property(env, result, "sdr", sdrData)); field(env, result, "sdrGamut", 2.0); }
+  return result;
+}
+
+napi_value decodeHeif(napi_env env, Input& input, bool paired = false) {
   Context ctx(heif_context_alloc(), heif_context_free);
   if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
   check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
@@ -365,7 +580,8 @@ napi_value decodeHeif(napi_env env, Input& input) {
   heif_image_handle* raw = nullptr; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
   Handle primary(raw, heif_image_handle_release);
   auto auxiliary = appleAuxiliary(raw);
-  if (auxiliary) throw std::runtime_error("APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED");
+  if (auxiliary) return decodeApple(env, input, ctx.get(), raw, auxiliary.get(), paired);
+  if (paired) throw std::runtime_error("ADAPTIVE_IMAGE_UNAVAILABLE");
   input.dimensions(heif_image_handle_get_width(raw), heif_image_handle_get_height(raw));
   heif_color_profile_nclx* profileRaw = nullptr;
   check(heif_image_handle_get_nclx_color_profile(raw, &profileRaw));
@@ -529,15 +745,18 @@ napi_value inspect(napi_env env, napi_callback_info info) {
         try {
           validateAppleVersion(input, auxiliary.get());
           field(env, result, "contentHeadroom", appleHeadroom(input, raw));
-          // The documented reconstruction disagrees with ImageIO midtones. Do not advertise it.
-          field(env, result, "reconstructionAvailable", false);
-          field(env, result, "fallbackReason", "apple-gain-map-interpretation-unqualified");
+          validateAppleLayout(input, ctx.get(), raw, auxiliary.get());
+          auto color = appleColorProfile(input, raw);
+          field(env, result, "reconstructionAvailable", true);
+          field(env, result, "renderingPolicy", "apple-legacy-imageio-2.2-reference-203-v1");
         } catch (const std::bad_alloc&) { throw;
         } catch (const std::exception& error) {
           if (std::strcmp(error.what(), "RESOURCE_LIMIT") == 0) throw;
           field(env, result, "reconstructionAvailable", false);
-          field(env, result, "fallbackReason", std::strcmp(error.what(), "APPLE_GAIN_MAP_VERSION_UNSUPPORTED") == 0
-            ? "apple-gain-map-interpretation-unqualified" : "invalid-gain-map");
+          field(env, result, "fallbackReason", (std::strcmp(error.what(), "APPLE_GAIN_MAP_VERSION_UNSUPPORTED") == 0
+            || std::strcmp(error.what(), "APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED") == 0)
+            ? "apple-gain-map-interpretation-unqualified" : std::strcmp(error.what(), "HDR_PROFILE_UNSUPPORTED") == 0
+            ? "hdr-profile-unsupported" : "invalid-gain-map");
         }
       }
       return result;
@@ -590,7 +809,7 @@ napi_value decode(napi_env env, napi_callback_info info) {
 napi_value decodePaired(napi_env env, napi_callback_info info) {
   return invoke(env, info, 3, [&](napi_value* args) {
     Input input(env, args);
-    if (!is_uhdr_image(input.data, int(input.size))) throw std::runtime_error("ADAPTIVE_IMAGE_UNAVAILABLE");
+    if (!is_uhdr_image(input.data, int(input.size))) return decodeHeif(env, input, true);
     // The previous decoder is destroyed before this one starts. Include retained float RGB in its budget.
     auto result = decodeLinear(env, input);
     auto dec = decoder(input, false, true);
@@ -772,6 +991,7 @@ napi_value capabilities(napi_env env, napi_callback_info info) {
   field(env, result, "libheif", heif_get_version());
   field(env, result, "libultrahdr", UHDR_LIB_VERSION_STR);
   field(env, result, "heicDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
+  field(env, result, "appleGainMapDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "avifDecoder", heif_have_decoder_for_format(heif_compression_AV1) != 0);
   return result;
   });
