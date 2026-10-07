@@ -4,6 +4,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
+  ImageCapabilitiesDto,
   ServerAboutResponseDto,
   ServerApkLinksDto,
   ServerAppReleasesResponseDto,
@@ -169,6 +170,7 @@ export class ServerService extends BaseService {
 
     return {
       ...cloud,
+      imageCapabilities: await this.imageCapabilities(),
       smartSearch: isSmartSearchEnabled(machineLearning),
       // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
       askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
@@ -193,6 +195,36 @@ export class ServerService extends BaseService {
       physicalDeduplication: true,
       realtimeTranscoding: ffmpeg.realtime.enabled,
     };
+  }
+
+  private async imageCapabilities(): Promise<ImageCapabilitiesDto> {
+    const result: ImageCapabilitiesDto = {
+      experimentalEnabled: process.env.FRAMELEAF_HDR_IMAGES === 'experimental',
+      // Remains false until the pinned codec build, consented camera corpus and real HDR displays pass.
+      qualified: false,
+      renderer: null,
+      codecs: {},
+      decode: [],
+      render: [],
+      export: [],
+      unavailable: ['apple-gain-map-heic', 'iso-adaptive-heif', 'hdr-heic'],
+    };
+    try {
+      const codec = await this.mediaRepository.getHdrCodecCapabilities();
+      if (!codec) return result;
+      result.renderer = 'frameleaf-develop-hdr/1';
+      result.codecs = { libheif: codec.libheif, libultrahdr: codec.libultrahdr };
+      result.decode = [
+        'gain-map-jpeg',
+        ...(codec.heicDecoder ? ['sdr-heic', 'pq-heic', 'hlg-heic'] : []),
+        ...(codec.avifDecoder ? ['sdr-avif', 'pq-avif', 'hlg-avif'] : []),
+      ];
+      result.render = ['linear-hdr-develop'];
+      result.export = ['sdr-jpeg', 'hdr-jpeg'];
+    } catch {
+      this.logger.warn('HDR codec capability probe unavailable');
+    }
+    return result;
   }
 
   /**

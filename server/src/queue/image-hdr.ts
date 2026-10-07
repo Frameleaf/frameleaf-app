@@ -9,7 +9,14 @@ import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 
 export type LinearHdrImage = { data: Buffer; width: number; height: number; gamut: 0 | 1 | 2; referenceWhite: 203 };
 export type PairedHdrImage = LinearHdrImage & { sdr: Buffer; sdrGamut: 0 | 1 | 2 };
+export type HdrCodecCapabilities = {
+  libheif: string;
+  libultrahdr: string;
+  heicDecoder: boolean;
+  avifDecoder: boolean;
+};
 type NativeCodec = {
+  capabilities(): HdrCodecCapabilities;
   inspect(input: Buffer, maxPixels: number, maxBytes: number): ImageEncodingInfo;
   decode(input: Buffer, maxPixels: number, maxBytes: number): LinearHdrImage;
   decodePaired(input: Buffer, maxPixels: number, maxBytes: number): PairedHdrImage;

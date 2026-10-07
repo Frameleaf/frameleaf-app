@@ -193,3 +193,12 @@ test('one isolated Develop call publishes newly paired HDR and SDR without modif
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+test('capability probing stays inside the admitted image worker', async () => {
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  try {
+    assert.deepEqual(await pool.run('getHdrCodecCapabilities', []), codec.capabilities());
+  } finally {
+    await pool.close();
+  }
+});

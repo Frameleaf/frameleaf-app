@@ -1,6 +1,7 @@
 import type { SharpOperations } from 'src/queue/sharp-operations.js';
 
 export const SHARP_OPERATIONS = [
+  'getHdrCodecCapabilities',
   'inspectImageEncoding',
   'decodeHdrImage',
   'encodeHdrImage',

@@ -73373,6 +73373,69 @@
         },
         "type": "object"
       },
+      "ImageCapabilitiesDto": {
+        "properties": {
+          "codecs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Versions reported by the installed isolated codec",
+            "type": "object"
+          },
+          "decode": {
+            "description": "Available source decoders; availability alone does not establish qualification",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "experimentalEnabled": {
+            "description": "Whether the administrator enabled experimental HDR processing and delivery",
+            "type": "boolean"
+          },
+          "export": {
+            "description": "Available encoded still output formats, independently of input formats",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "qualified": {
+            "description": "Whether the exact build passed the real-media and physical-display acceptance gates",
+            "type": "boolean"
+          },
+          "render": {
+            "description": "Available still-image render operations",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "renderer": {
+            "description": "HDR renderer identity, or null when the isolated codec is unavailable",
+            "nullable": true,
+            "type": "string"
+          },
+          "unavailable": {
+            "description": "Known unsupported capabilities; never infer support from the container extension",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "codecs",
+          "decode",
+          "experimentalEnabled",
+          "export",
+          "qualified",
+          "render",
+          "renderer",
+          "unavailable"
+        ],
+        "type": "object"
+      },
       "ImageDescriptionEnrichmentResponseDto": {
         "properties": {
           "appliedDescription": {
@@ -105843,6 +105906,9 @@
           "frameleafCloud": {
             "description": "Whether this server is linked to Frameleaf Cloud (FL-156)",
             "type": "boolean"
+          },
+          "imageCapabilities": {
+            "$ref": "#/components/schemas/ImageCapabilitiesDto"
           },
           "imageDescription": {
             "description": "Whether image description and tag generation is enabled",

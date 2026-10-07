@@ -214,3 +214,11 @@ test('paired decoding retains the independently signaled SDR gamut and aligned o
       }
   }
 });
+
+test('installed decoder availability is distinct from output codec availability', () => {
+  const caps = codec.capabilities();
+  assert.match(caps.libheif, /^\d+\.\d+\.\d+/);
+  assert.equal(caps.libultrahdr, '2.0.2');
+  assert.equal(typeof caps.heicDecoder, 'boolean');
+  assert.equal(typeof caps.avifDecoder, 'boolean');
+});

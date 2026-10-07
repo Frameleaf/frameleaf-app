@@ -98,6 +98,40 @@ describe(MediaRepository.name, () => {
     sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
   });
 
+  describe('HDR capability discovery', () => {
+    it('shares an in-flight probe, bounds admission and caches a temporary failure', async () => {
+      let signal: AbortSignal | undefined;
+      const run = vi.spyOn(sharpProcessPool, 'run').mockImplementation((_operation, _args, abort) => {
+        signal = abort;
+        return new Promise((_resolve, reject) =>
+          abort?.addEventListener('abort', () => reject(abort.reason), { once: true }),
+        );
+      });
+      try {
+        const first = sut.getHdrCodecCapabilities();
+        expect(sut.getHdrCodecCapabilities()).toBe(first);
+        await expect(first).resolves.toBeNull();
+        expect(signal?.aborted).toBe(true);
+        await expect(sut.getHdrCodecCapabilities()).resolves.toBeNull();
+        expect(run).toHaveBeenCalledTimes(1);
+      } finally {
+        run.mockRestore();
+      }
+    });
+
+    it('reuses a successful installed-codec result across feature requests', async () => {
+      const codecs = { libheif: '1.23.3', libultrahdr: '2.0.2', heicDecoder: true, avifDecoder: false };
+      const run = vi.spyOn(sharpProcessPool, 'run').mockResolvedValue(codecs);
+      try {
+        await expect(sut.getHdrCodecCapabilities()).resolves.toEqual(codecs);
+        await expect(sut.getHdrCodecCapabilities()).resolves.toEqual(codecs);
+        expect(run).toHaveBeenCalledTimes(1);
+      } finally {
+        run.mockRestore();
+      }
+    });
+  });
+
   describe('applyEdits (single actions)', () => {
     it('should apply crop edit correctly', async () => {
       const result = new SharpOperations().applyEdits(

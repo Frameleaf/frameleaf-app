@@ -207,8 +207,31 @@ const ServerConfigSchema = z
   })
   .meta({ id: 'ServerConfigDto' });
 
+const ImageCapabilitiesSchema = z
+  .object({
+    experimentalEnabled: z
+      .boolean()
+      .describe('Whether the administrator enabled experimental HDR processing and delivery'),
+    qualified: z
+      .boolean()
+      .describe('Whether the exact build passed the real-media and physical-display acceptance gates'),
+    renderer: z.string().nullable().describe('HDR renderer identity, or null when the isolated codec is unavailable'),
+    codecs: z.record(z.string(), z.string()).describe('Versions reported by the installed isolated codec'),
+    decode: z
+      .array(z.string())
+      .describe('Available source decoders; availability alone does not establish qualification'),
+    render: z.array(z.string()).describe('Available still-image render operations'),
+    export: z.array(z.string()).describe('Available encoded still output formats, independently of input formats'),
+    unavailable: z
+      .array(z.string())
+      .describe('Known unsupported capabilities; never infer support from the container extension'),
+  })
+  .meta({ id: 'ImageCapabilitiesDto' });
+export type ImageCapabilitiesDto = z.infer<typeof ImageCapabilitiesSchema>;
+
 const ServerFeaturesSchema = z
   .object({
+    imageCapabilities: ImageCapabilitiesSchema.optional(),
     smartSearch: z.boolean().describe('Whether smart search is enabled'),
     askSearch: z
       .boolean()
