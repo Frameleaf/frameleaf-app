@@ -335,6 +335,7 @@ export class StudioExportService {
       format: dto.format,
       color: dto.color,
       resolution: dto.resolution,
+      quality: dto.quality ?? 'high',
       audio: dto.audio ?? 'preserve',
     };
     const smoothMotion = await this.requireSmoothMotion(dto.smoothMotion);

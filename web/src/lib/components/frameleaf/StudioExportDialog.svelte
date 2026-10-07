@@ -4,6 +4,7 @@
     format: StudioExportFormat;
     color: StudioExportColor;
     resolution: StudioExportResolution;
+    quality: StudioExportQuality;
     destination: MediaOperationDestination;
     /**
      * FL-162 Smooth motion of the exported video, as its own job once it is in the library. The export
@@ -35,6 +36,7 @@
     StudioExportColor,
     StudioExportFormat,
     StudioExportResolution,
+    StudioExportQuality,
     getMlCapabilities,
     type MlCapabilityDestinationDto,
   } from '@frameleaf/sdk';
@@ -90,10 +92,17 @@
     { value: MediaOperationDestination.Local, label: 'frameleaf_activity_destination_local' },
     { value: MediaOperationDestination.Lan, label: 'frameleaf_activity_destination_lan' },
   ];
+  const qualities: { value: StudioExportQuality; label: Translations }[] = [
+    { value: StudioExportQuality.Low, label: 'frameleaf_studio_export_quality_low' },
+    { value: StudioExportQuality.Medium, label: 'frameleaf_studio_export_quality_medium' },
+    { value: StudioExportQuality.High, label: 'frameleaf_studio_export_quality_high' },
+    { value: StudioExportQuality.Ultra, label: 'frameleaf_studio_export_quality_ultra' },
+  ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
   let color = $state(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);
+  let quality = $state(StudioExportQuality.High);
   let destination = $state(MediaOperationDestination.Local);
   const fieldId = $props.id();
 
@@ -160,6 +169,7 @@
     format = StudioExportFormat.Mp4HevcMain10;
     color = StudioExportColor.Preserve;
     resolution = StudioExportResolution.$2160P;
+    quality = StudioExportQuality.High;
     destination = MediaOperationDestination.Local;
     smoothFactor = null;
   });
@@ -183,6 +193,7 @@
         format,
         color,
         resolution,
+        quality,
         destination,
         ...(smoothFactor !== null &&
           smoothDestination && { smoothMotion: { factor: smoothFactor, destinationId: smoothDestination.id } }),
@@ -230,6 +241,14 @@
         <span>{$t('frameleaf_studio_export_destination')}</span>
         <select id="{fieldId}-destination" bind:value={destination}>
           {#each destinations as item (item.value)}
+            <option value={item.value}>{$t(item.label)}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="field" for="{fieldId}-quality">
+        <span>{$t('frameleaf_studio_export_quality')}</span>
+        <select id="{fieldId}-quality" bind:value={quality}>
+          {#each qualities as item (item.value)}
             <option value={item.value}>{$t(item.label)}</option>
           {/each}
         </select>

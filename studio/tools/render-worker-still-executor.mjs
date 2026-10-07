@@ -20,8 +20,12 @@ const only = (object, keys) =>
 
 /** An explicit first recipe, not general Studio/FL-107 capability admission. */
 export function stillRecipe(claim) {
+  const { quality = 'high', ...settings } = claim.settings ?? {};
+  // Same four bitrate presets as the pinned engine's headless render core.
+  const bitrates = { low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 };
+  assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
   assert.deepEqual(
-    claim.settings,
+    settings,
     { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
     'UNSUPPORTED_EXPORT_SETTINGS',
   );
@@ -89,10 +93,10 @@ export function stillRecipe(claim) {
       codec: 'avc',
       container: 'mp4',
       audioCodec: 'aac',
-      quality: 'high',
+      quality,
       resolution: { width: 1280, height: 720 },
       fps: 24,
-      videoBitrate: 10_000_000,
+      videoBitrate: bitrates[quality],
       audioBitrate: 192_000,
     },
   };
@@ -304,6 +308,8 @@ export async function renderStillImage(context, consume) {
     assert.equal(result.ok, true, 'RENDER_REFUSED');
     assert.equal(result.warnings.length, 0, 'RENDER_WARNING_REFUSED');
     assert.equal(result.effectiveSettings.codec, 'avc', 'CODEC_FALLBACK_REFUSED');
+    assert.equal(result.effectiveSettings.quality, recipe.settings.quality, 'QUALITY_CHANGED');
+    assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
     const file = await stat(result.outputPath);
     assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
     const probe = probeStillOutput(result.outputPath, recipe.frames);
