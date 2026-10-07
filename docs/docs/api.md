@@ -1,5 +1,7 @@
 # API
 
+[Complete server API reference](api-reference/index.md): every endpoint, request and response model, authentication and permissions, mobile sync/push/upload workflows, and worker protocols. [Frameleaf Cloud API reference](https://heroit.atlassian.net/wiki/spaces/FC/pages/69927801) covers the separate account and control plane service. The [server Confluence mirror](https://heroit.atlassian.net/wiki/spaces/FR/pages/69959777) contains the same server reference.
+
 Frameleaf uses the [OpenAPI](https://swagger.io/specification/) standard to generate API documentation.
 
 ## Generator

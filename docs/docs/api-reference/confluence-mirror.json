@@ -1,0 +1,983 @@
+{
+  "sourceRevision": "d78bb71b1bd4a5aed4735dddea02c8aa271cdcd9",
+  "rootUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959777",
+  "readbackComparison": "Exact code blocks; Markdown page URL slugs, table padding and escaped punctuation normalized.",
+  "pages": [
+    {
+      "path": "docs/docs/api-reference/auth-mobile.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927887",
+      "id": "69927887",
+      "version": 3,
+      "sha256": "147eebad064daf02c813e62b2bcea031b7b54309f044962361b5993fde454110",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-activities.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927019",
+      "id": "69927019",
+      "version": 2,
+      "sha256": "a5923ecb86b9b0d2c1bfbcf422b9d33f789787c6d3f20ee96895b26c47fabe91",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-album-sources.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959797",
+      "id": "69959797",
+      "version": 2,
+      "sha256": "d1721d7cdf4a176573e4fbb217133b2b510609e7e4bec5b5b079964694e4d403",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-albums-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418435",
+      "id": "70418435",
+      "version": 2,
+      "sha256": "9aadf77b5d9f29f468ceae7e5d15d5eb8cef1d1566f7d3af64d97d74bb324f05",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-albums-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418500",
+      "id": "70418500",
+      "version": 2,
+      "sha256": "20d7d67ac3ea1b830ef6ec1b8742ec68520759b9e44532b3e27e9c98570f0bd4",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-analytics.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418541",
+      "id": "70418541",
+      "version": 2,
+      "sha256": "614411f522759992e3e64e0646248c3bc8b28b605fa27a898fd37fcc42325e1c",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-api-keys.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927051",
+      "id": "69927051",
+      "version": 2,
+      "sha256": "e95e985a993f4cd62d2cd8a555c6a4d6b5fd37cc6cbb37820af39f3b2ff0ca58",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-asset-files.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927088",
+      "id": "69927088",
+      "version": 2,
+      "sha256": "1c3cbd4d8a3d858fe4526c7a4287a5f21d21f1b72d9b256a64edf5cd7d1db250",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-assets-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254635",
+      "id": "70254635",
+      "version": 2,
+      "sha256": "694495e0c2dd36c2535a2f382f743c14133d4a9639af20dfdea6e7a397ae140e",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-assets-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959832",
+      "id": "69959832",
+      "version": 2,
+      "sha256": "4023d0975fb864f3de9131f6db445d1fb5abcc70d2341a7a316ed9e9d5bebe5c",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-assets-3.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418568",
+      "id": "70418568",
+      "version": 2,
+      "sha256": "65ffab5448249f68186573881892f5832ac0c3c02c18fea4d74dc4b22617b647",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-assets-4.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959895",
+      "id": "69959895",
+      "version": 2,
+      "sha256": "7e87f08d1a323bbd76c536a81602b26ac6281e2206a98fea4d868425b259a6db",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-assets-5.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418633",
+      "id": "70418633",
+      "version": 2,
+      "sha256": "621e1899a4a9c480e320b2eee1b6d09da0a7ed6d40d5740a85ae181a5ad12ad4",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-authentication-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927119",
+      "id": "69927119",
+      "version": 2,
+      "sha256": "b869431324f892c337cdc29e774af331c217963bbcda08aeecf229ffb8e8b0cb",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-authentication-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959962",
+      "id": "69959962",
+      "version": 2,
+      "sha256": "84eb686a4172e420ef8927ad0830451b61b69147b993678782d1da23441612a0",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-authentication-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418668",
+      "id": "70418668",
+      "version": 2,
+      "sha256": "4e6554e3c4e6f1f7b57ad06acdc772a42f099c244af23927a532aa31672cbb3f",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-cluster-groups.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418693",
+      "id": "70418693",
+      "version": 2,
+      "sha256": "165595c7f54abc6836143198faf733a8239f526c81b5996420d9e4b83c6ec477",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-config-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418732",
+      "id": "70418732",
+      "version": 2,
+      "sha256": "be6a9f74870ad84545042cab2ac796cb3ea1ba2ad7af346e7fae8af7f1f1a81b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-config-public.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927190",
+      "id": "69927190",
+      "version": 2,
+      "sha256": "62813bdee2ba89974325f36d8c03aea29917ca9c31147a1abba87ed3d10ddb45",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-config-user.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254704",
+      "id": "70254704",
+      "version": 2,
+      "sha256": "74ebb46907c5f289b4b8b70d68e93104562d5fe5bf3dffb1d7197d1d0be63418",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-database-backups-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959991",
+      "id": "69959991",
+      "version": 2,
+      "sha256": "1b0940cb6627faf08ff12eee3b15f142cc40e3f9ee9ca59680aecb580b9912dd",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-documents.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927217",
+      "id": "69927217",
+      "version": 2,
+      "sha256": "380c4a01e9412c702074b539a2a3e88b59a27305391bf0e9197e35042b736192",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-download.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418773",
+      "id": "70418773",
+      "version": 2,
+      "sha256": "5ce7f322297797ef5b59e066895070f6486fc2d823b288ab7c6490dce1b47e55",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-duplicates.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254731",
+      "id": "70254731",
+      "version": 2,
+      "sha256": "fbdeb04fb17c1925278d4a47f02ead4a71c4929c74952b97bce7e90c5d5f54d6",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-enrichment.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418800",
+      "id": "70418800",
+      "version": 2,
+      "sha256": "ce818c28f70d2db7dc6c1c0d92d61e102621ffb5dc6cbfc173ba019794230d01",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-faces.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254766",
+      "id": "70254766",
+      "version": 2,
+      "sha256": "b67e9db6b4a893298daf8c8a2f66e11ffa543b36600439c1bf06144bd4f05b5d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-file-trash-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960028",
+      "id": "69960028",
+      "version": 2,
+      "sha256": "8d0685ae1ba51ec7d096aaf4c8cea91ab845401540364292dda935679a9ec342",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960057",
+      "id": "69960057",
+      "version": 2,
+      "sha256": "104e507cfe72ecfd88cbbf12cb7c3900615bea91848f87078e9c5e8bfafada75",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-backup-admin-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418847",
+      "id": "70418847",
+      "version": 2,
+      "sha256": "b9b876dcd024707359ed796d1e3ef57dd9089c3e9bc242406482a945902370f2",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-backup-admin-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254801",
+      "id": "70254801",
+      "version": 2,
+      "sha256": "2e01a70caf8e86a6991a0352b9d4ae7aee6bf6d9b085d99a81180e9836f1678d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-backup-admin-3.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927252",
+      "id": "69927252",
+      "version": 2,
+      "sha256": "778c7ec014314d1eb52fe5372388e2a30239faaf2473ad740b411f747cc21c03",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-jobs.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418920",
+      "id": "70418920",
+      "version": 2,
+      "sha256": "e4569a8e7a48b53602fc249dcfd8381a9ed878235e10ec79b5ed48ffbba530db",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-cloud-processing-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927281",
+      "id": "69927281",
+      "version": 2,
+      "sha256": "abeba984983b910fbc0511e73b990a8b7bca7bcf249c4dd0208eb57b4b7095e1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-frameleaf-licence.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418949",
+      "id": "70418949",
+      "version": 2,
+      "sha256": "da18534835c0b0a8c9d960e35b5a91f57c0af9e6ada814f6c7cd0716060d7cb8",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-icloud-sync.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70418988",
+      "id": "70418988",
+      "version": 2,
+      "sha256": "d8fa884c33d861f70370f5cda1a302dbc64ffcec2b3a934f1f57525de6e84cd8",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-item-shares.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419043",
+      "id": "70419043",
+      "version": 2,
+      "sha256": "97db99c034900ce196bd43041cbe1092870c16edd8f94673d2b7d9b32f0f861b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-jobs.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927336",
+      "id": "69927336",
+      "version": 2,
+      "sha256": "a340b5ea2e444cd709a889098f236d073e448b3fe78a37bc756f6ed4253e515c",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-libraries.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419074",
+      "id": "70419074",
+      "version": 2,
+      "sha256": "50800380979c66abd1d5780cdebf1b61796e90e7f06d49dbfce80a8493851098",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-live-photo.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254866",
+      "id": "70254866",
+      "version": 2,
+      "sha256": "e022bff3b7c7935689a1f027b639a567067b99536fe4fda7574331e9bbbec07e",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-maintenance-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960118",
+      "id": "69960118",
+      "version": 2,
+      "sha256": "e6bad5d1259eb2cddc12ece33259aa37953573e9cc4f06de5112e47bcea58879",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-map.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254893",
+      "id": "70254893",
+      "version": 2,
+      "sha256": "8ae63f525ee56696f9d44df3b3c325d43cd5a187c2e9a13b37c0e30177a53674",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-media-health.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254922",
+      "id": "70254922",
+      "version": 2,
+      "sha256": "7361eb399beb06567916efaf844dafaad6a2b2fdf892fecb20090cd5a54795d7",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-media-operations.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70254969",
+      "id": "70254969",
+      "version": 2,
+      "sha256": "f3e8ca9427805355c657b441038a7f441e4d6cf48cb29844fa382252bab03d4d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-memories.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960173",
+      "id": "69960173",
+      "version": 2,
+      "sha256": "124445843fd4d47cced31cbe4243b9acbd4e1b65109cd7c473064ced159ba572",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-ml-destinations.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927371",
+      "id": "69927371",
+      "version": 2,
+      "sha256": "cd1a47385de537a1a6c1cbd2e2e760aa84012ff283c0fd0441a1df1db69b6f15",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-notifications-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255014",
+      "id": "70255014",
+      "version": 2,
+      "sha256": "8d9d13c28291dc77822d8dd85bcc558a532d5213ce781c5be262076b62e7610d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-notifications.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960232",
+      "id": "69960232",
+      "version": 2,
+      "sha256": "d92588a63b23b25c0ffa583cec3ad7df2e46b07e6e44f95e369cee83083d3889",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-partners.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927422",
+      "id": "69927422",
+      "version": 2,
+      "sha256": "fbfa51d7472a3df462deb9c7c40c8326bfd5bb1352ae59e53471a1fdbe24b76a",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-people.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927459",
+      "id": "69927459",
+      "version": 2,
+      "sha256": "3f3a022f35d979b17effcc66a97c32eaa3fdd941c5a61f11d1b010e301e85cc2",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-pets.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960267",
+      "id": "69960267",
+      "version": 2,
+      "sha256": "685551a33327a0fa0a77573710c6c36b6993fae17eca3d74da06c3a569941fda",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-plugins.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960322",
+      "id": "69960322",
+      "version": 2,
+      "sha256": "cb9139d8fe94d6e50e560ed63c72f2a3a7051b3dff8d047ed65d8af26935d42f",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-preservation.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255043",
+      "id": "70255043",
+      "version": 2,
+      "sha256": "43a051416885b3bde6fb0168156d2fa2d649d51adadef69b9ecd0aa85e8a28a4",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-push.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419121",
+      "id": "70419121",
+      "version": 2,
+      "sha256": "da3506c0ced4e8fe7aa5b9e23fa5e565434bc88d3824521f43ce5d1f97e6a3d0",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-queues.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960353",
+      "id": "69960353",
+      "version": 2,
+      "sha256": "0269b00e218d39fddb43ff048509fd1bb0f3d3835eaf6fb9cd09327f4f47865b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-render-workers-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960390",
+      "id": "69960390",
+      "version": 2,
+      "sha256": "fede18c6014051d7370435f2de79216539edb29e29f34a30eaf4f32b9156c026",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-render-workers-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419160",
+      "id": "70419160",
+      "version": 2,
+      "sha256": "c746bae5aaef8585132eaf2edeb44394a18c2a1a2ebae26972f2ecdfc7d50108",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-search-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960457",
+      "id": "69960457",
+      "version": 2,
+      "sha256": "88bcf547c46732e9ab13d66bbd49296cdd8d49272b2f1964b38bac579c389d57",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-search-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255102",
+      "id": "70255102",
+      "version": 2,
+      "sha256": "b6466dd7bb954bde8aee83b9d6c8c3fcc39f36bc8aa78a2928ea1407736073e1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-server.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419193",
+      "id": "70419193",
+      "version": 2,
+      "sha256": "f967f76d484dbcabd399ddc60d542dd86349af0d285c4fc021747b5c5441ac84",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-sessions.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960506",
+      "id": "69960506",
+      "version": 2,
+      "sha256": "0603b404163b84b4c3f7f789fb37f8e6b1e6ed7d80dfa401e4fd697fa93db39a",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-shared-links.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960541",
+      "id": "69960541",
+      "version": 2,
+      "sha256": "5d4f2eae878540b5fba2f0e4ab542636f8071c4ae755ec2a76b83fb797739268",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-shared-spaces-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960582",
+      "id": "69960582",
+      "version": 2,
+      "sha256": "a365315b66aa5e7f608d4541c8a59e2c432a588aed62d8cded151f9260045aad",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-shared-spaces-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255129",
+      "id": "70255129",
+      "version": 2,
+      "sha256": "79aa77a2cd4cc8ddda78acd3c1044fc3ffbb3865f94ffc5b1ae9275fd126cd64",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-stacks.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960645",
+      "id": "69960645",
+      "version": 2,
+      "sha256": "c9af5db01e097a07dfba93c4c8e264f0802f92339753cbded3a5df7a399927ff",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-studio-previews.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960682",
+      "id": "69960682",
+      "version": 2,
+      "sha256": "cf0e9c37449019cf24f1a5be13c2d8c538bb977221362537f91f67417914410c",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-studio-projects-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927516",
+      "id": "69927516",
+      "version": 2,
+      "sha256": "65bf6aa7e39c677166dca40727fab0223568aa74712746d0195938f7a3b44605",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-studio-projects-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255158",
+      "id": "70255158",
+      "version": 2,
+      "sha256": "7b01fc524bb55df072d4cc816012529e92318cd0169633a20e6cfbbc4bc3c4eb",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-studio-projects-3.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255235",
+      "id": "70255235",
+      "version": 2,
+      "sha256": "4471b8bca215b8cee5dc21d4aa6fc514512fb8f04eefc0cb141818b3795ea3f2",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-studio-projects-4.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960723",
+      "id": "69960723",
+      "version": 2,
+      "sha256": "b54b0df3704e667653f882c78b42c798ed20ade58f7c398dad1383c74841d5af",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-sync.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255298",
+      "id": "70255298",
+      "version": 2,
+      "sha256": "4dad71c15895cea90115524c8516731780baaa2dc59c4eafc71b0482b40c3a55",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-system-config.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960760",
+      "id": "69960760",
+      "version": 2,
+      "sha256": "7c8efc5a9da81ab4c819479354a36a17d5250044e17fe2d2b890cca5ab349221",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-system-metadata.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960803",
+      "id": "69960803",
+      "version": 2,
+      "sha256": "d39ee9babff189e473e727ee9afb9a56805b1592f32be21ff0ec2c81b312395d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-tags.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255331",
+      "id": "70255331",
+      "version": 2,
+      "sha256": "a1fe2a8c84d4fc9bd4cab791242c75926e78343db6013712b95df256c56bb8f8",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-timeline.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419262",
+      "id": "70419262",
+      "version": 2,
+      "sha256": "741d537f76d3b2d61c7a419f1c2551d9cb1ec3b54a082a9c5f1b1046b99607b1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-trash.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960844",
+      "id": "69960844",
+      "version": 2,
+      "sha256": "0427da0bca44eda6cfc81b739550191097f116e4a2ceebf9abd6eaaf88174025",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-users-1.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255374",
+      "id": "70255374",
+      "version": 2,
+      "sha256": "8f3d5e8cd71b0d6eee263bc7ffa09c384b0552da735ee1b2ff5fd2e0e9344afc",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-users-2.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419293",
+      "id": "70419293",
+      "version": 2,
+      "sha256": "97b0a94094099335874891fa6d3c6325d6cb6d504f046f5ce0a267493b1280bf",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-users-admin.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960883",
+      "id": "69960883",
+      "version": 2,
+      "sha256": "d8a11aa12c6319983ab089aef02e5520d330b621423f50f533eee574bf858b18",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-views.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255445",
+      "id": "70255445",
+      "version": 2,
+      "sha256": "fb8d67a5c65d71a1aa502b68b8d9f68d1f0efdd9b90a2bfc91ce3d09edaebb9d",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/endpoints-workflows.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927599",
+      "id": "69927599",
+      "version": 2,
+      "sha256": "757d729ea80fe6ee0de0727999b96a89625157c079e43c039ce371261ec2eedf",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/http-aliases.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255476",
+      "id": "70255476",
+      "version": 2,
+      "sha256": "776862091d14ae9a2c398ee9b9cb1eea0455b4ecceca38c552c058ccf7d0b4e3",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/index.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69959777",
+      "id": "69959777",
+      "version": 3,
+      "sha256": "b1798d44a3fc81bbf049825a3ee04b9adca73bb4c7dd28301b24f8ff8d106bad",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-01.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419318",
+      "id": "70419318",
+      "version": 2,
+      "sha256": "850f0899b274d4f4ec4bed49ebc15d0f451e0b35c4134fb32d53d198d681af8f",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-02.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960936",
+      "id": "69960936",
+      "version": 2,
+      "sha256": "c9fadab7c440a83220ce5cc3d2ce09c20a79202985a5fa5bb7069b69180a687a",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-03.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960959",
+      "id": "69960959",
+      "version": 2,
+      "sha256": "91116cf23661bd38c3b0d6f4d9fc946b0911d92ecb0fc172b66d111f7e1cf3bc",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-04.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69960982",
+      "id": "69960982",
+      "version": 2,
+      "sha256": "83fa18499ea8f6f883f9e08a8466f47458e4312f9dce6c834b412a3d4a7b7a3f",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-05.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255545",
+      "id": "70255545",
+      "version": 2,
+      "sha256": "afeb8127b412d4d5d673c06c11e558bf10f7e7907e2922a2f69fde560c5c30f1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-06.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961005",
+      "id": "69961005",
+      "version": 2,
+      "sha256": "4bb555384e1e3e920b11b9a6787dc29be705de914779c018d12a0debef22f18b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-07.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255568",
+      "id": "70255568",
+      "version": 2,
+      "sha256": "d830bca5be3dde85f5fd60e79eb62526c23b17a98f894afab8ce3e9c3d2e2bb9",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-08.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419341",
+      "id": "70419341",
+      "version": 2,
+      "sha256": "a5068506fd8937de88f4f87e55b999567fb439424bba1ead261b662c7a1cb9c9",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-09.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255591",
+      "id": "70255591",
+      "version": 2,
+      "sha256": "e890a5ffcee8b56d8302d972ffd535f26bc6cf061eb2bb77df22529d20a02119",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-10.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927640",
+      "id": "69927640",
+      "version": 2,
+      "sha256": "6d05cde3d28445e512f224542c38b02ec3c1124bb189e22964cdb29375816bcd",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-11.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927663",
+      "id": "69927663",
+      "version": 2,
+      "sha256": "d1d6402b7a89ac62f0a004eeadb2f5b4d568a7c986b155db36a6eb984ebfcd5b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-12.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419364",
+      "id": "70419364",
+      "version": 2,
+      "sha256": "3550d229db1fd447488c61840a7eb60ab9a51c6305888e2ea251ad55deb284df",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-13.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961028",
+      "id": "69961028",
+      "version": 2,
+      "sha256": "a43f40f7f1b1b1780d5b89315faba997950f14f02cdb19944e929ed88c9747fb",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-14.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255614",
+      "id": "70255614",
+      "version": 2,
+      "sha256": "617084bd008a78f45deb3a2a7b6690520a3986f85b64aee9e53ac5354b50541c",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-15.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961051",
+      "id": "69961051",
+      "version": 2,
+      "sha256": "745978836a778a81f9b1b2dfc6d2a47af23685d0ef7d5d8cddca70f532b115a9",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-16.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927686",
+      "id": "69927686",
+      "version": 2,
+      "sha256": "cd0774df00c78851cf827b5c3f0f836c5460e8c92828127e5a9ca2ffe6dc1ed8",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-17.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419387",
+      "id": "70419387",
+      "version": 2,
+      "sha256": "4452887d61263f7047590deb5550cb5c2b8179bfa83cb68ce29073b04925bac1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-18.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255637",
+      "id": "70255637",
+      "version": 2,
+      "sha256": "6fd8346c9629df8e39b650c136a0f81c9612b53bf3e0dd2bf9dba3cc62092456",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-19.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927709",
+      "id": "69927709",
+      "version": 2,
+      "sha256": "2b879bc8ffefb9c3790d7257cd036c1696257b11e06cadbe1a074e483d963517",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-20.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961074",
+      "id": "69961074",
+      "version": 2,
+      "sha256": "04fc4319125e1546b4f107b1d0ae6f70c0a1fd1caef3c1fff3129e375d9bc01b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-21.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927732",
+      "id": "69927732",
+      "version": 2,
+      "sha256": "ddf51e08fb01e5e1f960be159235769a7c97323b8cd8bc70397deba6775708b7",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-22.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255660",
+      "id": "70255660",
+      "version": 2,
+      "sha256": "34eb0baa89cbf9adb3c710deb0f45a7ca0794fe62c326d3f175debc434701710",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-23.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927755",
+      "id": "69927755",
+      "version": 2,
+      "sha256": "333aeddff48c8673c8468cf4bbd216fc31883f998f0d7a30744c768991409439",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-24.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927778",
+      "id": "69927778",
+      "version": 2,
+      "sha256": "5521601ad41a8919e1c11be8f1af037008bb6a4316c78a01b464e54e4b192166",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-25.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255683",
+      "id": "70255683",
+      "version": 2,
+      "sha256": "d0a5b37dcda01b9034646132557a07b0f718372051d049820fba0641076952f7",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-26.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419410",
+      "id": "70419410",
+      "version": 2,
+      "sha256": "65cd98f6cdd2ce01196dabf843e4205c101f7287b2d5cb4eb1f65655d662a36b",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-27.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961097",
+      "id": "69961097",
+      "version": 2,
+      "sha256": "7e723b0b41591c915be8308237f59811a92bbf14ccb8403ad0be634e9fcfefb1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-28.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255706",
+      "id": "70255706",
+      "version": 2,
+      "sha256": "61146aa00f364f6bc488fd54669a1a5dc52a0ff6a164d4d2e56e63e191cf690a",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-29.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255729",
+      "id": "70255729",
+      "version": 2,
+      "sha256": "d14c856253aa4d51f54b3cccdec7d9e463b79089e09f1c059cca85ae7800df91",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-30.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255752",
+      "id": "70255752",
+      "version": 2,
+      "sha256": "c7fbea32873213afce2356b711e3280cc915c5d52bdeaa1c2697711ac0682aac",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-31.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927821",
+      "id": "69927821",
+      "version": 2,
+      "sha256": "d294bc63eca7ca0cf9a240d35c63c0656fe5f2492baf9c84982488b095157902",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-32.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255775",
+      "id": "70255775",
+      "version": 2,
+      "sha256": "4e0ca1cc2f8e317f0bd3f8dd7a8887b25cc279def790a767baf93e85162e8d00",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-33.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961120",
+      "id": "69961120",
+      "version": 2,
+      "sha256": "06c59d5a0e8bffc6ec0d9737e893c58c2fe0bbe69b1a7a1ff010efc2f560a713",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-34.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255798",
+      "id": "70255798",
+      "version": 2,
+      "sha256": "2a269e2c88bc0201082b7332fe06687841eb919ca66dc0ac676fab6a3116fc40",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-35.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255821",
+      "id": "70255821",
+      "version": 2,
+      "sha256": "7412dc01b8f4b16e9f361a9dce939c550d8aefc89c3562c525426bf546afc490",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-36.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70255844",
+      "id": "70255844",
+      "version": 2,
+      "sha256": "ff61af96aebcfd4aea6848b987e8c2a904f4dc43d7f88cccec86a480d06c2d86",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-37.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69927844",
+      "id": "69927844",
+      "version": 2,
+      "sha256": "52af8fe3ff5584f51631b6da92c4e76380d6013ca53983df0bed14e6cfce81ec",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/models-38.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/70419433",
+      "id": "70419433",
+      "version": 2,
+      "sha256": "c05cb76d8a48fa480e33895a308eff2f82f5ff1d5e0a7e6f3836e90226954e8e",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/protocols.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69961143",
+      "id": "69961143",
+      "version": 2,
+      "sha256": "b3c89a0f8a74a4ec1619960995e34b942021985161af9a90ba561c59bfe105c1",
+      "verified": true
+    },
+    {
+      "path": "docs/docs/api-reference/worker-wire-models.md",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/69962087",
+      "id": "69962087",
+      "version": 4,
+      "sha256": "0541412abf9a4b394df8b0b39cfaec2a9f84f7953ecaf817f4eb5ce5969f7033",
+      "verified": true
+    }
+  ]
+}
