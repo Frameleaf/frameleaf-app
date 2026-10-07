@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import type { QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
 import {
@@ -14,6 +15,7 @@ import {
   MlWorkload,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -2641,6 +2643,61 @@ describe(ImageEnrichmentService.name, () => {
           modelName: 'Qwen3.5-9B',
           error: 'Frameleaf Cloud could not describe this photo (input-too-large)',
         });
+      });
+
+      const stage = async (source: Parameters<ImageEnrichmentService['publishCloudDescription']>[2]) => {
+        const context: QueueExecution = {
+          claim: {} as QueueExecution['claim'],
+          signal: new AbortController().signal,
+          progress: () => {},
+          progressUnits: 0,
+          buffering: true,
+          followups: [],
+          adoptions: [],
+        };
+        await queueExecution.run(context, () => sut.publishCloudDescription(assetId, item, source));
+        return () =>
+          queueExecution.run(context, async () => {
+            for (const adopt of context.adoptions) await adopt({} as never);
+          });
+      };
+
+      it('defers failed cloud metadata until parent adoption', async () => {
+        configure(false);
+        const onPublished = vi.fn();
+        const adopt = await stage({
+          destinationId: cloud.id,
+          modelName: 'Qwen3.5-9B',
+          failure: 'input-too-large',
+          onPublished,
+        });
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(onPublished).not.toHaveBeenCalled();
+        await adopt();
+        expect(writtenDescription()).toMatchObject({ status: 'failed', error: 'input-too-large' });
+        expect(onPublished).toHaveBeenCalledWith(expect.objectContaining({ status: JobStatus.Failed }));
+      });
+
+      it('reports the adoption refusal when a prepared cloud photo becomes ineligible', async () => {
+        configure(false);
+        const onPublished = vi.fn();
+        const adopt = await stage({ destinationId: cloud.id, modelName: 'Qwen3.5-9B', onPublished });
+        mocks.assetJob.getForImageEnrichment.mockResolvedValue(undefined);
+        await adopt();
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(onPublished).toHaveBeenCalledWith({ status: JobStatus.Skipped, reasonKey: 'not-eligible' });
+      });
+
+      it('rechecks the source under the metadata lock before adopting cloud descriptions', async () => {
+        configure(false);
+        const fingerprint = vi.spyOn(sut as any, 'getSourceFingerprint').mockResolvedValue('before');
+        const onPublished = vi.fn();
+        const adopt = await stage({ destinationId: cloud.id, modelName: 'Qwen3.5-9B', onPublished });
+        fingerprint.mockResolvedValue('after');
+        await adopt();
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(onPublished).toHaveBeenCalledWith({ status: JobStatus.Skipped, reasonKey: 'source-changed' });
+        fingerprint.mockRestore();
       });
 
       it('writes nothing for a photo that is gone', async () => {
