@@ -35,6 +35,8 @@
     type BuddyStatusDto,
     type BuddyKitDto,
     type BuddySettingsDto,
+    EnvironmentKeys,
+    Version,
   } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
 
@@ -63,6 +65,7 @@
   let windowStart = $state('00:00');
   let windowEnd = $state('00:00');
   let configurationFiles = $state('');
+  let environmentKeys = $state<EnvironmentKeys[]>([]);
   let includeDerived = $state(false);
   let buddyAccount = $state('');
   let invitation = $state('');
@@ -106,6 +109,7 @@
       windowStart = s.windowStart ?? '00:00';
       windowEnd = s.windowEnd ?? '00:00';
       configurationFiles = (s.configurationFiles ?? []).join('\n');
+      environmentKeys = [...(s.bootConfiguration?.environmentKeys ?? [])];
       includeDerived = s.includeDerived ?? false;
     }
   };
@@ -156,6 +160,7 @@
         includeDerived,
         pausedSending: status?.settings?.pausedSending ?? false,
         pausedReceiving: status?.settings?.pausedReceiving ?? false,
+        ...(environmentKeys.length && { bootConfiguration: { version: Version.$1, environmentKeys } }),
       };
       status = await configureBuddyBackup({ buddySettingsDto });
       settingsOpen = false;
@@ -678,9 +683,16 @@
     <label
       >{$t('frameleaf_buddy_deployment_configuration_files_one_absolute_path_per_line')}<textarea
         rows="3"
-        bind:value={configurationFiles}></textarea></label
+        bind:value={configurationFiles}
+      ></textarea></label
     >
     <p>{$t('frameleaf_buddy_all_users_media_metadata_the_database_frameleaf_settings_preferences_and_locally_c')}</p>
+    <label
+      >{$t('frameleaf_buddy_deployment_settings_and_secrets')}<select multiple size="6" bind:value={environmentKeys}>
+        {#each Object.values(EnvironmentKeys) as key (key)}<option value={key}>{key}</option>{/each}
+      </select></label
+    >
+    <p>{$t('frameleaf_buddy_deployment_settings_help')}</p>
     <label class="check"
       ><input type="checkbox" bind:checked={includeDerived} />{$t(
         'frameleaf_buddy_also_include_thumbnails_and_transcoded_copies',
