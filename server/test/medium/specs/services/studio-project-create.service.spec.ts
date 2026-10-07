@@ -72,8 +72,9 @@ describe('Studio project creation persistence (FL-341)', () => {
 
   it('retains creation identity after metadata changes and notifies only for the committed initial revision', async () => {
     const s = await setup();
+    let observed: { revisionExists: boolean; leaseClientId: string | null | undefined } | undefined;
     const listener = vi.fn(async ({ projectId, revision }: { projectId: string; revision: number }) => {
-      return {
+      observed = {
         revisionExists: Boolean(await s.repository.getRevision(projectId, revision)),
         leaseClientId: (await s.repository.getById(projectId))?.leaseClientId,
       };
@@ -88,7 +89,7 @@ describe('Studio project creation persistence (FL-341)', () => {
     expect(retried.id).toBe(first.id);
     expect(retried.name).toBe('Renamed');
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(await listener.mock.results[0].value).toEqual({ revisionExists: true, leaseClientId: 'tab-a' });
+    expect(observed).toEqual({ revisionExists: true, leaseClientId: 'tab-a' });
     expect(await s.rows()).toHaveLength(1);
   });
 
@@ -163,6 +164,64 @@ describe('Studio project creation persistence (FL-341)', () => {
     expect((await s.sut.create(s.auth, keyless)).id).not.toBe((await s.sut.create(s.auth, keyless)).id);
   });
 
+  it('leaves duplicate and imported revisions unleased until the first editor acquires them', async () => {
+    const s = await setup();
+    const source = await s.sut.create(s.auth, s.dto);
+    const head = (await s.repository.getRevision(source.id, 1))!;
+    const copy = await s.sut.duplicate(s.auth, source.id, { name: 'Copy' });
+    const operationId = newUuid();
+    const seed = {
+      ownerId: s.auth.user.id,
+      name: 'Imported',
+      importedFromDigest: 'a'.repeat(64),
+      importOperationId: operationId,
+      revision: {
+        authorId: s.auth.user.id,
+        envelope: head.envelope,
+        digest: head.digest,
+        graphBytes: head.graphBytes,
+        summary: { counts: { 'project.importBundle': 1 }, total: 1 },
+        requestKey: `bundle-import:${operationId}`,
+      },
+    };
+    const imported = await s.repository.createWithRevision(seed);
+    const retried = await s.repository.createWithRevision(seed);
+    expect(imported.created).toBe(true);
+    expect(retried).toMatchObject({ created: false, project: { id: imported.project.id } });
+    expect(await s.rows()).toHaveLength(3);
+    expect((await s.repository.getById(copy.id))?.duplicatedFromId).toBe(source.id);
+    expect(await s.repository.getById(imported.project.id)).toMatchObject({
+      importedFromDigest: seed.importedFromDigest,
+      importOperationId: operationId,
+    });
+
+    for (const id of [copy.id, imported.project.id]) {
+      expect(await s.repository.getById(id)).toMatchObject({
+        currentRevision: 1,
+        leaseHolderId: null,
+        leaseClientId: null,
+        leaseExpiresAt: null,
+        lastOpenedAt: null,
+      });
+      expect(await s.repository.getRevision(id, 1)).toMatchObject({
+        revision: 1,
+        authorId: s.auth.user.id,
+        envelope: s.dto.envelope,
+        digest: head.digest,
+        graphBytes: head.graphBytes,
+      });
+      expect((await s.repository.listRevisions(id, { take: 10, skip: 0 })).total).toBe(1);
+      expect(
+        await s.repository.acquireLease(id, {
+          userId: s.auth.user.id,
+          clientId: 'first-editor',
+          leaseMs: 90_000,
+          takeover: false,
+        }),
+      ).toMatchObject({ leaseHolderId: s.auth.user.id, leaseClientId: 'first-editor' });
+    }
+  });
+
   it('allows envelope-free creation, replay and a later leased first save', async () => {
     const s = await setup();
     const empty = { ...s.dto, envelope: undefined };
@@ -178,10 +237,19 @@ describe('Studio project creation persistence (FL-341)', () => {
     const s = await setup();
     const first = await s.sut.create(s.auth, s.dto);
     await s.sut.acquireLease(s.auth, first.id, { clientId: 'tab-b', takeover: true });
+    await s.sut.save(s.auth, first.id, {
+      ...s.dto,
+      clientId: 'tab-b',
+      requestKey: 'other-editor',
+      expectedRevision: 1,
+      envelope: { ...s.dto.envelope, graph: { tracks: [], editedBy: 'tab-b' } },
+    });
     const before = await s.repository.getById(first.id);
     const retry = await s.sut.create(s.auth, s.dto);
     expect(retry.id).toBe(first.id);
     expect(retry.lease).toMatchObject({ heldByYou: false, heldByAnother: true });
+    expect(retry.revision).toBe(2);
+    expect(retry.envelope?.graph).toEqual({ tracks: [], editedBy: 'tab-b' });
     expect(await s.repository.getById(first.id)).toEqual(before);
     await expect(
       s.sut.create(factory.auth({ user: s.auth.user, sharedLink: { id: newUuid() } }), s.dto),
