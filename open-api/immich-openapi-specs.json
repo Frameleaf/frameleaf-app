@@ -109998,7 +109998,7 @@
             "type": "string"
           },
           "requestKey": {
-            "description": "Idempotency key for the initial save",
+            "description": "Owner-scoped idempotency key for project creation; reuse requires the same payload",
             "pattern": "^[\\w.:-]{1,128}$",
             "type": "string"
           },

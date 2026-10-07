@@ -13052,7 +13052,7 @@ export type StudioProjectCreateDto = {
     /** An initial document, saved as revision 1 */
     envelope?: StudioProjectEnvelopeDto;
     name: string;
-    /** Idempotency key for the initial save */
+    /** Owner-scoped idempotency key for project creation; reuse requires the same payload */
     requestKey?: string;
     /** Share the project with a shared space for review */
     spaceId?: string | null;
