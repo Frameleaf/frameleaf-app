@@ -76,6 +76,12 @@ This loads the real manifest-verified models, additionally refuses socket connec
 nonempty shape-aligned `sensor-active` PNGs, checks annotated IoU >=0.75 and each cold/warm proposal's
 120-second server deadline, and records mask PNGs, model revisions, timings and peak RSS. Run on both
 CPU architectures; optional CUDA uses the existing `DEVICE=cuda` build and `--device cuda` qualification.
+After CUDA qualification, set `MACHINE_LEARNING_SEMANTIC_MASK_DEVICE=auto` on that local ML worker
+and restart it. Application requests leave device selection to the worker: `auto` uses CUDA when
+Torch reports it available and falls back to CPU otherwise. The default remains `cpu`; `cuda`
+requires CUDA and fails visibly when it is unavailable. The explicit `--device cuda` qualification
+therefore cannot silently pass on CPU. Model loading or inference failures (including GPU memory
+exhaustion) remain errors, rather than being retried on another destination. No models are downloaded.
 The gate fails visibly for absent/tampered models, unsupported imports/ABI, no proposals, poor fixture
 IoU, timeout or egress attempts. A passed fixture cannot establish general subject/sky/thin-edge quality;
 representative photographer, native transform/refinement, failure/retry and resource qualification

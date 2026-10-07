@@ -34,6 +34,70 @@ beforeAll(async () => {
 });
 
 describe(MlDestinationRepository.name, () => {
+  it('writes a probe once under concurrent admissions and refuses older observations', async () => {
+    const { sut } = setup();
+    const created = await sut.create({
+      kind: MlDestinationKind.Lan,
+      name: `probe ${randomUUID()}`,
+      url: `http://${randomUUID()}.lan:3003`,
+      authToken: null,
+      enabled: true,
+      workloads: [MlWorkload.Clip],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
+    });
+    const observation = {
+      health: MlDestinationHealth.Healthy,
+      summary: 'fresh',
+      workloads: [MlWorkload.Clip],
+      probedAt: new Date('2026-10-07T00:00:00Z'),
+    };
+    const tuple = async () =>
+      (
+        await sql<{
+          version: string;
+        }>`SELECT ctid::text AS version FROM ml_destination WHERE id = ${created.id}::uuid`.execute(defaultDatabase)
+      ).rows[0]!.version;
+    await sut.recordProbe(created.id, observation);
+    const first = await tuple();
+    await Promise.all(Array.from({ length: 8 }, () => sut.recordProbe(created.id, observation)));
+    await sut.recordProbe(created.id, {
+      ...observation,
+      health: MlDestinationHealth.Unhealthy,
+      probedAt: new Date(observation.probedAt.getTime() - 1),
+    });
+    expect(await tuple()).toBe(first);
+    expect((await sut.getById(created.id))?.lastProbeHealth).toBe(MlDestinationHealth.Healthy);
+
+    const diagnostics = {
+      hardware: { preferredAcceleration: 'cuda', providers: ['CUDAExecutionProvider'], cudaDeviceCount: 1, gpus: [] },
+      latencyMs: 22,
+    };
+    await sut.recordProbe(created.id, { ...observation, ...diagnostics });
+    const enriched = await tuple();
+    expect(enriched).not.toBe(first);
+    expect(await sut.getById(created.id)).toMatchObject({
+      lastProbeHardware: diagnostics.hardware,
+      lastProbeLatencyMs: 22,
+    });
+    await Promise.all(Array.from({ length: 8 }, () => sut.recordProbe(created.id, { ...observation, ...diagnostics })));
+    await sut.recordProbe(created.id, {
+      ...observation,
+      hardware: null,
+      probedAt: new Date(observation.probedAt.getTime() - 1),
+    });
+    expect(await tuple()).toBe(enriched);
+
+    await sut.recordProbe(created.id, {
+      ...observation,
+      health: MlDestinationHealth.Unhealthy,
+      probedAt: new Date(observation.probedAt.getTime() + 1),
+    });
+    expect(await tuple()).not.toBe(enriched);
+    expect((await sut.getById(created.id))?.lastProbeHealth).toBe(MlDestinationHealth.Unhealthy);
+  });
+
   it('stores workloads and probe results as JSON arrays and objects, not as JSON text', async () => {
     const { sut } = setup();
     const created = await sut.create({

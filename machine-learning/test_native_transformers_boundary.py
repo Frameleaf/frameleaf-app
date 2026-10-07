@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import threading
 import unittest
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -108,6 +109,45 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "CUDA was requested but is unavailable"):
             self.semantic_load(SimpleNamespace(cache_dir=Path("/cache"), device_name="cuda"))
         self.vendor.Florence2Processor.from_pretrained.assert_not_called()
+
+    def test_automatic_semantic_device_uses_cuda_when_available(self) -> None:
+        self.torch.cuda.is_available = lambda: True
+        model = SimpleNamespace(cache_dir=Path("/cache"), device_name="auto")
+        self.semantic_load(model)
+        self.assertEqual(model.device_name, "cuda")
+        self.vendor.Florence2ForConditionalGeneration.from_pretrained.return_value.to.assert_called_once_with("cuda")
+        self.vendor.Sam2Model.from_pretrained.return_value.to.assert_called_once_with("cuda")
+
+    def test_automatic_semantic_device_falls_back_to_cpu_without_cuda(self) -> None:
+        model = SimpleNamespace(cache_dir=Path("/cache"), device_name="auto")
+        self.semantic_load(model)
+        self.assertEqual(model.device_name, "cpu")
+        self.vendor.Florence2ForConditionalGeneration.from_pretrained.return_value.to.assert_called_once_with("cpu")
+        self.vendor.Sam2Model.from_pretrained.return_value.to.assert_called_once_with("cpu")
+
+    def test_semantic_constructor_uses_worker_setting_unless_explicitly_overridden(self) -> None:
+        source_path = Path(__file__).parent / "immich_ml/models/semantic_mask.py"
+        source = ast.parse(source_path.read_text())
+        owner = next(node for node in source.body if isinstance(node, ast.ClassDef))
+        settings = SimpleNamespace(semantic_mask_device="cpu")
+        namespace: dict[str, Any] = {
+            "InferenceModel": type("Base", (), {"__init__": lambda *args, **kwargs: None}),
+            "ModelType": SimpleNamespace(VISUAL="visual"),
+            "ModelTask": SimpleNamespace(SEMANTIC_MASK="semantic-mask"),
+            "MODEL_NAME": "frameleaf-florence2-sam2.1",
+            "ModelUnavailableError": RuntimeError,
+            "threading": threading,
+            "settings": settings,
+        }
+        exec(compile(ast.Module(body=[source.body[0], owner], type_ignores=[]), str(source_path), "exec"), namespace)
+        model = namespace["SemanticMaskModel"]
+        for device in ["cpu", "auto", "cuda"]:
+            with self.subTest(device=device):
+                settings.semantic_mask_device = device
+                self.assertEqual(model(namespace["MODEL_NAME"]).device_name, device)
+                self.assertEqual(model(namespace["MODEL_NAME"], device="cpu").device_name, "cpu")
+        with self.assertRaisesRegex(ValueError, "cpu, cuda or auto"):
+            model(namespace["MODEL_NAME"], device="unknown")
 
     def test_description_factory_preserves_both_model_paths_and_local_flags(self) -> None:
         load = loader_method("image_description.py", "_load_cuda", {"cast": cast, "Callable": Callable, "Any": Any})

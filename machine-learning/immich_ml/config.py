@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 from socket import socket
+from typing import Literal
 from urllib.parse import urlsplit
 
 from gunicorn.arbiter import Arbiter
@@ -105,6 +106,8 @@ class Settings(BaseSettings):
     preload: PreloadModelData | None = None
     max_batch_size: MaxBatchSize | None = None
     image_description: ImageDescriptionRuntimeSettings = ImageDescriptionRuntimeSettings()
+    # Opt in after qualifying the local CUDA runtime; auto retains a CPU-only host fallback.
+    semantic_mask_device: Literal["cpu", "cuda", "auto"] = "cpu"
     openvino_precision: ModelPrecision = ModelPrecision.FP32
     rocm_precision: ModelPrecision = ModelPrecision.FP32
 
