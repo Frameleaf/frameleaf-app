@@ -8,9 +8,8 @@ from
   "asset"
 where
   "id" = $1
-delete from "asset_edit"
-where
-  "assetId" = $1
+  and "deletedAt" is null
+for update
 rollback
 
 -- AssetEditRepository.getAll
