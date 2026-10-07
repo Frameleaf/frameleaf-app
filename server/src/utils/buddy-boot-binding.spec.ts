@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import { buddyBackupCommand } from 'src/utils/buddy-backup-offline.js';
 import { BuddyRecoveryFiles, readBuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { finalizeBuddyBootBinding, loadBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 import { type BuddyBootConfiguration, stageBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
@@ -302,6 +303,135 @@ if (parentPort) {
     await prepare('replace');
     await loadBuddyBootBinding();
     expect(process.env.FRAMELEAF_PORT).toBeUndefined();
+  });
+
+  it('prepares owner requests, retains fenced readiness and revokes without racing or trusting foreign authority', async () => {
+    configuration.entries.push(
+      { key: 'FRAMELEAF_WORKERS_INCLUDE', state: 'value', value: 'api' },
+      { key: 'FRAMELEAF_WORKERS_EXCLUDE', state: 'value', value: 'edge' },
+      { key: 'FRAMELEAF_MEDIA_LOCATION', state: 'value', value: join(root, 'media') },
+    );
+    const keys = [
+      'FRAMELEAF_PORT',
+      'FRAMELEAF_WORKERS_INCLUDE',
+      'FRAMELEAF_WORKERS_EXCLUDE',
+      'FRAMELEAF_MEDIA_LOCATION',
+    ];
+    await prepare('replace', keys, 'server');
+    const metadata = await lstat(join(root, 'media'), { bigint: true });
+    const profile = join(root, 'mount-profile.json');
+    await writeFile(
+      profile,
+      JSON.stringify({
+        roots: [{ path: join(root, 'media'), device: String(metadata.dev), inode: String(metadata.ino) }],
+      }),
+      { mode: 0o600 },
+    );
+    bindingPath = join(identity, 'owner-request.json');
+    vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', bindingPath);
+    const command = [
+      'binding-prepare',
+      '--binding',
+      bindingPath,
+      '--recovery',
+      directory,
+      '--keys',
+      keys.join(','),
+      '--worker-service',
+      'supervisor',
+      '--mount-profile',
+      profile,
+    ];
+    const before = JSON.stringify(process.env);
+    await buddyBackupCommand(command);
+    const request = await readFile(bindingPath);
+    expect(JSON.parse(request.toString())).toMatchObject({
+      state: 'request',
+      replacementIdentity: binding.replacementIdentity,
+      recoveryId,
+      snapshotId,
+      preparedDigest: digest(await readFile(join(directory, 'prepared.json'))),
+    });
+    await expect(buddyBackupCommand(command)).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    expect(await readFile(bindingPath)).toEqual(request);
+    await expect(loadBuddyBootBinding()).rejects.toThrow();
+    await marker();
+    await files.state('files-ready');
+    await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+    expect(await readFile(bindingPath)).toEqual(request);
+    await files.state('complete');
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let calls = 0;
+    const finalizing = finalizeBuddyBootBinding(root, recoveryId, async () => {
+      if (++calls !== 2) return;
+      entered.resolve();
+      await resume.promise;
+    });
+    await entered.promise; // The actual finalizer holds the shared local exclusion.
+    try {
+      await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+      await expect(loadBuddyBootBinding()).rejects.toThrow();
+      expect(await readFile(bindingPath)).toEqual(request);
+    } finally {
+      resume.resolve();
+    }
+    await finalizing;
+    expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('ready');
+    expect(JSON.stringify(process.env)).toBe(before);
+    await rm(join(identity, 'buddy', 'recovery-active.json'));
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391');
+    expect(process.env.DB_PASSWORD_FILE).toBe(join(root, 'replacement-database-secret-source'));
+    const keyPath = join(identity, 'instance-key.pem');
+    const originalKey = await readFile(keyPath);
+    const foreign = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' });
+    await writeFile(keyPath, foreign, { mode: 0o600 });
+    const ready = await readFile(bindingPath);
+    await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+    expect(await readFile(bindingPath)).toEqual(ready);
+    await writeFile(keyPath, originalKey, { mode: 0o600 });
+    for (const key of ['DB_PASSWORD', 'DB_PASSWORD_FILE', 'FRAMELEAF_EDGE_SECRET', 'FRAMELEAF_LINK_TOKEN']) {
+      await expect(
+        buddyBackupCommand([
+          'binding-prepare',
+          '--binding',
+          join(identity, 'forbidden.json'),
+          '--recovery',
+          directory,
+          '--keys',
+          key,
+        ]),
+      ).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    }
+    const lockPath = join(identity, '.buddy-boot-control.lock');
+    await writeFile(lockPath, 'owner inspection required', { mode: 0o600 });
+    await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+    expect(await readFile(lockPath, 'utf8')).toBe('owner inspection required');
+    expect(await readFile(bindingPath)).toEqual(ready);
+    await rm(lockPath);
+    // Revocation must remain possible even after recovery evidence is no longer available.
+    await rm(join(directory, 'boot-configuration.json'));
+    await buddyBackupCommand(['binding-revoke', '--binding', bindingPath]);
+    const revoked = await readFile(bindingPath);
+    expect(JSON.parse(revoked.toString())).toMatchObject({
+      state: 'revoked',
+      recoveryId,
+      replacementIdentity: binding.replacementIdentity,
+    });
+    await buddyBackupCommand(['binding-revoke', '--binding', bindingPath]);
+    expect(await readFile(bindingPath)).toEqual(revoked);
+    await expect(loadBuddyBootBinding()).rejects.toThrow();
+    await marker();
+    await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+    await expect(buddyBackupCommand(command)).rejects.toThrow();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391'); // Revocation does not roll back a running process.
+    for (const action of ['recover', 'export']) {
+      await expect(buddyBackupCommand([action])).rejects.toThrow('Usage: frameleaf-admin buddy-backup recover|export');
+    }
+    await expect(
+      buddyBackupCommand(['binding-revoke', '--binding', bindingPath, '--keys', 'FRAMELEAF_PORT']),
+    ).rejects.toThrow('Invalid replacement-local Buddy boot authority');
   });
 
   describe('Original mount service adapter', () => {

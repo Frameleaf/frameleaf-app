@@ -87,6 +87,7 @@ import {
 } from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
+import { installTimelineTouchEditing } from './timeline-touch'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
 import { timelineEditContent } from './shims/timeline-persistence'
 
@@ -302,6 +303,7 @@ async function seedProject(state: Session, mount: EditorMount): Promise<void> {
 }
 
 function EditorApp({ state, projectId }: { state: Session; projectId: string }) {
+  useEffect(installTimelineTouchEditing, [])
   const [router] = useState(() => {
     const history = createMemoryHistory({ initialEntries: [`/editor/${projectId}`] })
     // Anything but this project's editor route belongs to the host: projects list, landing page,
@@ -414,17 +416,17 @@ function notifySuperseded(state: Session) {
  */
 function watchLocalImportsFor(state: Session) {
   const watch = watchLocalImports({
-      workspace: state.workspace,
-      media: state.media,
-      upload: (upload) => call('uploadProjectImport', upload),
-      refused: (fileName, reason) => {
-        if (state.disposed) return
-        const template = state.context.strings?.importNotKept
-        const message = template
-          ? template.replace('{file}', fileName).replace('{reason}', reason)
-          : `${fileName}: ${reason}`
-        post({ type: 'notify', message, tone: 'error' })
-      },
+    workspace: state.workspace,
+    media: state.media,
+    upload: (upload) => call('uploadProjectImport', upload),
+    refused: (fileName, reason) => {
+      if (state.disposed) return
+      const template = state.context.strings?.importNotKept
+      const message = template
+        ? template.replace('{file}', fileName).replace('{reason}', reason)
+        : `${fileName}: ${reason}`
+      post({ type: 'notify', message, tone: 'error' })
+    },
   })
   state.localImports = watch
   state.unsubscribe.push(() => watch.stop())
@@ -769,7 +771,10 @@ async function update(context: StudioHostContext): Promise<void> {
   await state.media.seedImports(context.projectImports ?? [])
   // A project saved for the first time (or a host that can keep files again) takes what was
   // imported before it could.
-  if (context.project.id !== previous.project.id || context.project.hasLease !== previous.project.hasLease) {
+  if (
+    context.project.id !== previous.project.id ||
+    context.project.hasLease !== previous.project.hasLease
+  ) {
     void state.localImports?.retry()
   }
   if (

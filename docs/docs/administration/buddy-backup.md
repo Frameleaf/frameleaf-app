@@ -108,14 +108,51 @@ same completed publication journal and live recovery fence as other service gran
 Directory receipts are replacement-local authority, not proof of media integrity;
 the existing fenced recovery verifies restored file hashes before completion.
 
+Owners can prepare a replacement-local request before application startup with
+the existing offline administrator command:
+
+```sh
+frameleaf-admin buddy-backup binding-prepare --binding /replacement-identity/boot-grant.json --recovery /buddy/recovery/RECOVERY_UUID --keys FRAMELEAF_PORT
+frameleaf-admin buddy-backup binding-revoke --binding /replacement-identity/boot-grant.json
+```
+
+Use canonical absolute paths. The binding must be a new filename directly inside
+the replacement identity directory configured for this process. Prepared recovery
+and staged boot configuration must already exist in private owned directories.
+The command derives the replacement identity, snapshot/vault identifiers, scope,
+mode and artifact digests locally; it creates only a **request**, never readiness.
+The existing maintenance publication and live recovery fence finalize readiness.
+Configure `FRAMELEAF_BUDDY_BOOT_BINDING_FILE` to that binding for subsequent starts.
+
+Select only admitted canonical key names, separated by commas. Add
+`--worker-service supervisor` when selecting both worker inputs. For the original
+mount grant, select `FRAMELEAF_MEDIA_LOCATION` and add
+`--mount-profile /private/original-mount-profile.json`. This private owned 0600
+JSON file contains the explicit `roots` profile described above; the command does
+not invent mount receipts or mount storage. Dependency credentials and security,
+identity, linking and feature inputs remain refused.
+
+Prepare never overwrites an existing grant or revoked record. Revoke retains an
+identity-bound **revoked** record that blocks later startup and finalization; it
+does not change values already applied to a running process. Restart is required
+for subsequent admission checks. New approval requires a fresh binding filename
+and an explicit change to the binding pointer. Neither command modifies the pointer.
+
+All grant operations use the same nonblocking private identity-directory lock.
+A busy operation refuses without reporting revocation success. A crashed holder's
+`.buddy-boot-control.lock` is never stolen or expired automatically: stop all
+processes using that identity and inspect the lock locally before owner removal.
+Keep the binding pointer configured while revoked; unsetting it disables binding
+admission. Commands do not initialize application workers, Cloud or the database.
+
 All other declared canonical values
 remain privately recoverable but require further replacement-local activation
 adapters. Identity/link/entitlement, security and feature enabling inputs, historical
 configuration paths and database credentials are not activated by this
 registry. Existing database credential-file sources remain unchanged; a matching
 local service adapter must establish and verify credential changes before those
-inputs can become effective. The owner-facing binding controls, deployment
-adapters, actual dependency connectivity, complete database replacement/restart and
+inputs can become effective. Further deployment adapters, actual dependency
+connectivity, complete database replacement/restart and
 real two-network acceptance remain required. This source bridge does not establish
 full replacement readiness or enable Buddy Backup by default.
 
