@@ -62,8 +62,8 @@
     "gpu-contrast": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR uses (linear RGB - 0.5) * amount + 0.5 around a fixed 0.5 reference-white pivot (101.5 cd/m² at 203 cd/m²), dimensionless gain bounded to [0, 3], signed binary16 RGB limits and unchanged straight alpha. SDR retains its pinned encoded 0.5 pivot and [0, 1] RGB clamp."
     },
     "gpu-crt": {
       "sdrParity": true,

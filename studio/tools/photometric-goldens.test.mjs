@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { photometricCases, photometricExpected, photometricInput, photometricSdrExpected, linearBrightnessCases, validatePhotometricResults } from './photometric-goldens.mjs';
+import { photometricCases, photometricExpected, photometricInput, photometricSdrExpected, linearColorCases, validatePhotometricResults } from './photometric-goldens.mjs';
 
 // Synthetic checker fixtures only. Hosted browser execution supplies actual
 // production GPU pixels; these CPU fixtures cannot establish GPU qualification.
@@ -48,9 +48,9 @@ test('current SDR measurements use pinned clamps and gamma; the historical signe
   assert.throws(() => validatePhotometricResults(wrong, 'srgb-display-bt709'), /channel/);
 });
 
-test('linear HDR admits exactly brightness lift/lower and rejects clipping, identity and changed alpha', () => {
-  const samples = () => linearBrightnessCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
-  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 2, channels: 256 });
+test('linear HDR admits exactly brightness/contrast lift/lower and rejects clipping, identity and changed alpha', () => {
+  const samples = () => linearColorCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
+  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 4, channels: 512 });
   assert.throws(() => validatePhotometricResults(fixture(), 'linear-display-bt709-v1'), /complete, ordered, unique/);
   for (const mutate of [
     entry => { entry.pixels = [...photometricInput]; },
@@ -59,5 +59,17 @@ test('linear HDR admits exactly brightness lift/lower and rejects clipping, iden
   ]) {
     const results = samples(); mutate(results[0]);
     assert.throws(() => validatePhotometricResults(results, 'linear-display-bt709-v1'), /channel/);
+  }
+});
+
+test('linear contrast has a fixed half-reference-white pivot, dimensionless gain and signed RGB', () => {
+  const samples = () => linearColorCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
+  for (const mutate of [
+    entry => { entry.pixels = photometricInput.map((v,i) => i%4 === 3 ? v : (v-.18)*entry.params.amount+.18); },
+    entry => { entry.pixels = [...photometricInput]; },
+    entry => { entry.pixels = entry.pixels.map((v,i) => i%4 === 3 ? v : Math.max(0,Math.min(1,v))); },
+  ]) {
+    const results=samples();mutate(results.find(entry=>entry.id==='gpu-contrast'));
+    assert.throws(()=>validatePhotometricResults(results,'linear-display-bt709-v1'),/contrast-expand: channel/);
   }
 });
