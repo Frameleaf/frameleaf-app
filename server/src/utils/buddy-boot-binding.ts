@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-imports -- Pre-application startup must use only pure relative imports. */
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open } from 'node:fs/promises';
+import { lstat, open, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import z from 'zod';
 import { parseHelpLinks } from './app-releases.ts';
@@ -47,7 +47,7 @@ const mountSchema = z.strictObject({
 const bindingSchema = z
   .strictObject({
     version: z.literal(1),
-    state: z.enum(['request', 'ready']),
+    state: z.enum(['request', 'ready', 'revoked']),
     recoveryId: z.string().regex(BUDDY_UUID),
     snapshotId: z.string().regex(BUDDY_UUID),
     vaultId: z.string().regex(BUDDY_UUID),
@@ -264,39 +264,154 @@ const bootEnvironmentOverlay = (
   return prospective;
 };
 
+/** All boot-grant readers and writers share one replacement-local, nonblocking lock. */
+const withBootBindingLock = async <T>(path: string, action: () => Promise<T>): Promise<T> => {
+  // The private key reader validates canonical nonsymlink ancestry, directory ownership and mode.
+  await replacementBootIdentity(path, process.env);
+  const lockPath = join(dirname(path), '.buddy-boot-control.lock');
+  const lock = await open(
+    lockPath,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
+  );
+  const held = await lock.stat({ bigint: true }).catch(async () => {
+    await lock.close();
+    throw refusal(); // Leave an unverified lock for explicit owner inspection.
+  });
+  const release = async () => {
+    const current = await lstat(lockPath, { bigint: true });
+    if (current.dev !== held.dev || current.ino !== held.ino || !current.isFile()) throw refusal();
+    await rm(lockPath);
+  };
+  try {
+    if (!held.isFile() || held.uid !== BigInt(process.getuid?.() ?? -1) || (held.mode & 0o777n) !== 0o600n)
+      throw refusal();
+    return await action();
+  } finally {
+    try {
+      await release();
+    } finally {
+      await lock.close();
+    }
+  }
+};
+
+/** Create only a request; completed publication under a live maintenance fence owns readiness. */
+export const prepareBuddyBootBinding = async (
+  path: string,
+  recoveryDirectory: string,
+  environmentKeys: string[],
+  workerService?: string,
+  mountProfile?: string,
+) => {
+  try {
+    await withBootBindingLock(path, async () => {
+      const prepared = await readPrivateBootFile(join(recoveryDirectory, 'prepared.json'), 1024 ** 3);
+      const artifact = await readPrivateBootFile(join(recoveryDirectory, 'boot-configuration.json'));
+      const plan = JSON.parse(prepared.toString());
+      const local = await replacementBootIdentity(path, process.env);
+      const binding = bindingSchema.parse({
+        version: 1,
+        state: 'request',
+        recoveryId: basename(recoveryDirectory),
+        snapshotId: plan.manifest.snapshotId,
+        vaultId: plan.manifest.vaultId,
+        replacementIdentity: local.identity,
+        scope: plan.scope,
+        mode: plan.mode,
+        environmentKeys,
+        workerService,
+        ...(mountProfile && { mountService: JSON.parse((await readPrivateBootFile(mountProfile)).toString()) }),
+        recoveryDirectory,
+        preparedDigest: hash(prepared),
+        artifactDigest: hash(artifact),
+      });
+      const encoded = Buffer.from(JSON.stringify(binding));
+      await readBootBinding(path, encoded);
+      if (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
+      const validate = async () => {
+        const current = await replacementBootIdentity(path, process.env);
+        if (
+          current.identity !== binding.replacementIdentity ||
+          (current.marker && current.marker.action?.buddyRecoveryId !== binding.recoveryId)
+        )
+          throw refusal();
+        const { configuration, storageRoot } = await bindingEvidence(binding, false);
+        await validateMountProfile(
+          binding,
+          path,
+          bootEnvironmentOverlay(binding, configuration, process.env),
+          storageRoot,
+        );
+      };
+      await validate();
+      await writeBuddyFile(path, encoded, true, validate);
+    });
+  } catch {
+    throw refusal();
+  }
+};
+
+/** Retain a durable denial; never unlink authority or change the already-running environment. */
+export const revokeBuddyBootBinding = async (path: string) => {
+  try {
+    await withBootBindingLock(path, async () => {
+      const original = await readPrivateBootFile(path);
+      const binding = await readBootBinding(path, original);
+      const validate = async () => {
+        const local = await replacementBootIdentity(path, process.env);
+        if (
+          local.identity !== binding.replacementIdentity ||
+          (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId) ||
+          !(await readPrivateBootFile(path)).equals(original)
+        )
+          throw refusal();
+      };
+      await validate();
+      if (binding.state === 'revoked') return;
+      await writeBuddyFile(path, JSON.stringify({ ...binding, state: 'revoked' }), false, validate);
+    });
+  } catch {
+    throw refusal();
+  }
+};
+
 export const loadBuddyBootBinding = async () => {
   const path = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
   if (path === undefined) return;
   try {
-    const original = await readPrivateBootFile(path);
-    const binding = await readBootBinding(path, original);
-    const local = await replacementBootIdentity(path, process.env);
-    if (
-      local.identity !== binding.replacementIdentity ||
-      (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
-    )
-      throw refusal();
-    const { configuration, storageRoot } = await bindingEvidence(binding, binding.state === 'ready');
-    if (local.marker) return; // Resume maintenance on replacement inputs, never historical inputs.
-    if (binding.state !== 'ready') throw refusal();
-    const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
-    await validateMountProfile(binding, path, prospective, storageRoot);
-    const current = await replacementBootIdentity(path, process.env);
-    if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original))
-      throw refusal();
-    if (current.marker) {
-      if (current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
-      return;
-    }
-    // All IO and validation have finished. Apply only selected canonical/alias names.
-    // Actual database *_FILE sources remain untouched without a matching service adapter.
-    for (const key of binding.environmentKeys) {
-      const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
-      for (const name of [key, ...aliases]) {
-        if (prospective[name] === undefined) delete process.env[name];
-        else process.env[name] = prospective[name];
+    await withBootBindingLock(path, async () => {
+      const original = await readPrivateBootFile(path);
+      const binding = await readBootBinding(path, original);
+      if (binding.state === 'revoked') throw refusal();
+      const local = await replacementBootIdentity(path, process.env);
+      if (
+        local.identity !== binding.replacementIdentity ||
+        (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
+      )
+        throw refusal();
+      const { configuration, storageRoot } = await bindingEvidence(binding, binding.state === 'ready');
+      if (local.marker) return; // Resume maintenance on replacement inputs, never historical inputs.
+      if (binding.state !== 'ready') throw refusal();
+      const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
+      await validateMountProfile(binding, path, prospective, storageRoot);
+      const current = await replacementBootIdentity(path, process.env);
+      if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original))
+        throw refusal();
+      if (current.marker) {
+        if (current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
+        return;
       }
-    }
+      // All IO and validation have finished. Apply only selected canonical/alias names.
+      // Actual database *_FILE sources remain untouched without a matching service adapter.
+      for (const key of binding.environmentKeys) {
+        const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
+        for (const name of [key, ...aliases]) {
+          if (prospective[name] === undefined) delete process.env[name];
+          else process.env[name] = prospective[name];
+        }
+      }
+    });
   } catch {
     throw refusal();
   }
@@ -308,26 +423,30 @@ export const finalizeBuddyBootBinding = async (root: string, id: string, assert:
   if (path === undefined) return;
   try {
     await assert();
-    const original = await readPrivateBootFile(path);
-    const binding = await readBootBinding(path, original);
-    if (binding.recoveryId !== id || binding.recoveryDirectory !== join(root, 'recovery', id)) throw refusal();
-    const local = await replacementBootIdentity(path, process.env);
-    if (local.identity !== binding.replacementIdentity || local.marker?.action?.buddyRecoveryId !== id) throw refusal();
-    const { configuration, storageRoot } = await bindingEvidence(binding, true);
-    const prospective =
-      binding.workerService || binding.mountService
-        ? bootEnvironmentOverlay(binding, configuration, process.env)
-        : process.env;
-    await assert();
-    if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
-    await validateMountProfile(binding, path, prospective, storageRoot, true);
-    if (binding.state === 'ready') return; // Complete retry verifies the same grant idempotently.
-    await writeBuddyFile(path, JSON.stringify({ ...binding, state: 'ready' }), false, async () => {
+    await withBootBindingLock(path, async () => {
+      const original = await readPrivateBootFile(path);
+      const binding = await readBootBinding(path, original);
+      if (binding.state === 'revoked') throw refusal();
+      if (binding.recoveryId !== id || binding.recoveryDirectory !== join(root, 'recovery', id)) throw refusal();
+      const local = await replacementBootIdentity(path, process.env);
+      if (local.identity !== binding.replacementIdentity || local.marker?.action?.buddyRecoveryId !== id)
+        throw refusal();
+      const { configuration, storageRoot } = await bindingEvidence(binding, true);
+      const prospective =
+        binding.workerService || binding.mountService
+          ? bootEnvironmentOverlay(binding, configuration, process.env)
+          : process.env;
       await assert();
       if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
       await validateMountProfile(binding, path, prospective, storageRoot, true);
+      if (binding.state === 'ready') return; // Complete retry verifies the same grant idempotently.
+      await writeBuddyFile(path, JSON.stringify({ ...binding, state: 'ready' }), false, async () => {
+        await assert();
+        if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
+        await validateMountProfile(binding, path, prospective, storageRoot, true);
+      });
+      await assert();
     });
-    await assert();
   } catch {
     throw refusal();
   }
