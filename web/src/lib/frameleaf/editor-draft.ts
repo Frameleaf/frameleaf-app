@@ -236,28 +236,32 @@ export function openingRecipe(
   const recipe = normalizeRecipe(current?.recipe);
   const wire = toServerRecipe(recipe);
   const policy = wire.hdr && typeof wire.hdr === 'object' ? (wire.hdr as Record<string, unknown>) : {};
+  const previous =
+    recipe.version === 4
+      ? { renderer: 'frameleaf-develop-hdr/2', version: 2, toneMapper: 'libultrahdr/2.0.2-frameleaf.2' }
+      : { renderer: 'frameleaf-develop-hdr/1', version: 1, toneMapper: 'libultrahdr/2.0.2' };
   const legacyPolicy =
-    (wire.renderer === undefined || wire.renderer === 'frameleaf-develop-hdr/1') &&
-    (policy.version === undefined || policy.version === 1) &&
+    (wire.renderer === undefined || wire.renderer === previous.renderer) &&
+    (policy.version === undefined || policy.version === previous.version) &&
     (policy.intent === undefined || policy.intent === 'preserve') &&
     (policy.referenceWhite === undefined || policy.referenceWhite === 203) &&
-    (policy.sdrToneMapper === undefined || policy.sdrToneMapper === 'libultrahdr/2.0.2');
+    (policy.sdrToneMapper === undefined || policy.sdrToneMapper === previous.toneMapper);
   if (
     hdrSource &&
-    (recipe.version === 1 || recipe.version === 3) &&
+    [1, 3, 4].includes(recipe.version) &&
     legacyPolicy &&
     (wire.hdr === undefined || (wire.hdr !== null && typeof wire.hdr === 'object' && !Array.isArray(wire.hdr)))
   ) {
     return normalizeRecipe({
       ...wire,
-      version: 4,
-      renderer: 'frameleaf-develop-hdr/2',
+      version: 5,
+      renderer: 'frameleaf-develop-hdr/3',
       hdr: {
         ...policy,
-        version: 2,
+        version: 3,
         intent: 'preserve',
         referenceWhite: 203,
-        sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.2',
+        sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.3',
       },
     });
   }

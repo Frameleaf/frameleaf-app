@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const HDR_RENDITION_RENDERER_VERSION = 'frameleaf-hdr-rendition/2';
+export const HDR_RENDITION_RENDERER_VERSION = 'frameleaf-hdr-rendition/3';
 
 export const imageRenditionIdentity = (input: {
   sourceChecksum: Buffer;
