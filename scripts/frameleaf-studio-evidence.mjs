@@ -1,56 +1,15 @@
 #!/usr/bin/env node
-/**
- * FL-112 (STU-405): turn the Studio browser-matrix scripts' raw `*_REPORT` dumps into
- * `studio/conformance.json` axis updates, honestly - never claiming a passing axis unless the
- * evidence actually covers every fixture case `studio/tools/conformance.mjs`'s `fixtureIds()`
- * requires for it. A row whose evidence covers only some of the required cases is marked
- * `blocked` with the exact missing cases named, not silently left `not-tested` and not marked
- * `passed` on partial evidence - conformance.mjs itself would refuse a `passed` row whose
- * `fixtureIds` don't exactly match what the row's fixture requires (see `exact()` in that file),
- * so this script cannot produce a false "passed" even by mistake.
- *
- * Two ways to run it:
- *
- *   node scripts/frameleaf-studio-evidence.mjs --family blend --report <path> [--write]
- *
- * The CI path (frameleaf-studio-engine.yml): checks a family's `chromium`-axis coverage from
- * that engine job's own software-WebGPU run. It only ever touches `row.axes.chromium` - every
- * other axis, on every row, is left byte-for-byte untouched, whatever it currently says.
- *
- *   node scripts/frameleaf-studio-evidence.mjs --family blend --axis safari \
- *     --meta <path-to-run-meta.json> [--write]
- *
- * The one deliberate exception to "only CI evidence counts" (owner decision, 2026-09-29): Safari
- * evidence comes from a real Mac running real Safari, produced locally by library-qa, because no
- * CI runner can do that (Playwright's WebKit is explicitly not accepted as Safari evidence, and a
- * macOS CI runner was declined). `--axis safari` only ever touches `row.axes.safari`; every other
- * axis is untouched the same way the CI path leaves `safari` untouched.
- * `node studio/tools/conformance.mjs` re-validates every axis, including `safari`, on every run -
- * this script never needs its own separate "is the existing safari entry still valid" check.
- *
- * `--meta` supplies what only the person running it can attest to (browser/OS version, the actual
- * command, hardware, reviewer): schema `{ version, hardware, tool, commit, command, controlPaths,
- * parameterDomain, tolerances, reviewer, artifacts, startedAt, finishedAt }`, where `artifacts` is a list of real file
- * paths (this script hashes them itself) - typically the raw `*_REPORT` dump(s) the coverage claim
- * is based on. Times must come from the measured run, never the generator's clock. The command
- * axis also requires `operation`; preview/export/timingColor require `frameTimeIdentity`,
- * `inputProfiles`, `outputProfiles`, `alpha`, `audio` and `temporalRecovery`.
- * `engineRevision`, `sourceSha256` and `patches` come from the repo's own
- * `studio/conformance.json` / `studio/engine-build.json`, never from `--meta`, so they can't drift
- * from what's actually checked out.
- *
- * Per-family case coverage is a manually reviewed constant (FAMILY_CASE_COVERAGE below), not
- * something inferred from a report's shape - a script can plausibly demonstrate a case without a
- * field visibly named after it, and the honest answer to "does this evidence exercise case X"
- * needs a human (ideally the script's own owner) to say so. Update the constant, with a comment
- * citing the review, when evidence for a family/axis pair gains or is confirmed to already have
- * coverage.
- */
+/** Observed per-feature/per-case browser evidence only. SDR measurements cannot
+ * cover HDR extremes, and a successful typed-refusal regression cannot qualify
+ * a rendered fixture. Command and other independent axes retain their own rules. */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import assert from "node:assert/strict";
+import { validateDomainReport, observedFixtureIds } from "../studio/tools/lib/working-domain-report.mjs";
+import { parseJsonRejectingDuplicateKeys } from "./frameleaf-studio-contracts.mjs";
 import { fixtureIds } from "../studio/tools/conformance.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -60,53 +19,6 @@ const MANIFEST_PATH = "studio/freecut-feature-manifest.json";
 const BUILD_PATH = "studio/engine-build.json";
 const COMMAND_CATALOGUE_PATH = "studio/frameleaf-studio-commands.json";
 const DEFAULT_AXIS = "chromium";
-
-/**
- * Cases each family's evidence is confirmed (by direct code review, or the evidence owner) to
- * exercise, per axis, out of the five `fixtureIds()` requires for an effect/transition/blend row
- * (normal, invalid, animated, extreme, composed). Only axes with a real coverage claim appear
- * here; an axis/family pair absent from this map has no evidence at all yet.
- *
- * chromium:
- * - effect (effects-matrix.browser.mjs): all five. normal (SDR rows), extreme (HDR row and
- *   declared-extended-range assertion), animated (keyframe resolver test), composed
- *   (effect+Brightness stack-order test), and invalid (FL-99, studio-color): non-finite, below-
- *   and above-range numbers, unknown select options, non-boolean flags and undeclared keys each
- *   draw exactly as their declared meaning (engine patch 0039), and an unknown effect id passes
- *   the input through. EFFECTS_MATRIX_REPORT carries them as effects[].invalid.
- * - transition (transition-matrix.browser.mjs): all five. normal and extreme come from the
- *   per-transition pipeline results (SDR/HDR route boundaries and parity, per the file's header
- *   comment). animated, composed and invalid come from the per-transition production-renderer
- *   cases (FL-99): progress follows the timeline (a 19-frame window draws at every second frame
- *   what the 10-frame window draws at every frame) and a participant's opacity keyframed through
- *   the keyframe resolver draws as its static values; a screen blend stacked over the transition;
- *   and each invalid input draws exactly as its declared meaning (engine patch 0048): a duration
- *   or alignment that is not a finite number as its default, a declared parameter that is not a
- *   finite number as its default and one outside its range as the bound, an undeclared property
- *   ignored unless it is a finite number, an unknown direction as from-left, an unknown timing as
- *   linear and an unknown transition id as a hard cut, the same on the preview surface as in
- *   export. TRANSITION_MATRIX_REPORT carries them as `report.cases` [{ id, case, ... }].
- * - blend (blend-matrix.browser.mjs): all five. normal and extreme come from the per-mode
- *   pipeline results (pinned SDR formula on both routes; extended-range base, branch points and
- *   translucent alpha). animated, composed and invalid come from the per-mode production-renderer
- *   cases (FL-99, studio-color): opacity keyframed 0 -> 1 through the keyframe resolver; a screen
- *   blend stacked over the mode; opacity -0.5/1.5/NaN drawn as the clamped 0/1/0 plus an unknown
- *   mode id drawn as normal. BLEND_MATRIX_REPORT carries them as `report.cases`
- *   [{ mode, case, ... }].
- */
-export const FAMILY_CASE_COVERAGE = {
-  chromium: {
-    blend: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
-    effect: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
-    transition: new Set([
-      "normal",
-      "extreme",
-      "animated",
-      "composed",
-      "invalid",
-    ]),
-  },
-};
 
 /** The case name is the fixture id's final path segment: `<row>/<action>/<case>`. */
 const caseOf = (fixtureId) => fixtureId.split("/").at(-1);
@@ -165,6 +77,7 @@ export async function buildPassedEntry({
   manifest,
   meta,
   artifactPath,
+  report,
 }) {
   const axisFields =
     axis === "command"
@@ -217,6 +130,15 @@ export async function buildPassedEntry({
       return { path: relativePath, sha256: sha256(bytes) };
     }),
   );
+  let observationReport;
+  if (["chromium", "firefox", "safari"].includes(axis) && /^(effect|blend|transition)\./.test(row.id)) {
+    validateDomainReport(report, { build, engineRevision, axis });
+    for (const binding of [report.source.runner, ...report.source.bindings]) assert.equal(sha256(await readFile(path.join(ROOT, binding.path))), binding.sha256, `observation report binding changed: ${binding.path}`);
+    assert.deepEqual(observedFixtureIds(report, row.id).sort(), fixtureIds(fixture, axis).sort(), "all observed render fixtures required");
+    assert.equal(meta.commit, report.source.commit, "meta commit differs from tested report");
+    observationReport = artifacts.find((reference) => reference.sha256 === sha256(JSON.stringify(report)));
+    assert(observationReport, "meta.artifacts must retain the exact observation report");
+  }
   const sourcePaths =
     manifest.familySourceInventory[feature.category] ??
     feature.source.map((source) => source.path);
@@ -248,6 +170,7 @@ export async function buildPassedEntry({
       reviewer: meta.reviewer,
     },
     artifacts,
+    ...(observationReport ? { observationReport } : {}),
   };
   const bytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
   await writeFile(path.join(ROOT, artifactPath), bytes);
@@ -281,6 +204,19 @@ export async function applyFamilyCoverage(
   coveredCases,
   { meta, artifactDir } = {},
 ) {
+  const browserAxis = ["chromium", "firefox", "safari"].includes(axis);
+  if (browserAxis) {
+    validateDomainReport(coveredCases, { build, engineRevision: overlay.engineRevision, axis });
+    assert(coveredCases.observations.every(entry => entry.fixtureId.startsWith(`${family}.`)), "report cannot cover another operator family");
+    assert.equal(sha256(await readFile(path.join(ROOT, coveredCases.source.runner.path))), coveredCases.source.runner.sha256,
+      "observation report runner source changed");
+    for (const binding of coveredCases.source.bindings) assert.equal(sha256(await readFile(path.join(ROOT, binding.path))), binding.sha256,
+      `observation report binding changed: ${binding.path}`);
+    for (const entry of coveredCases.observations) {
+      const fixture = catalog.rows.find((value) => entry.fixtureId.startsWith(`${value.id}/`));
+      assert(fixture && fixtureIds(fixture, axis).includes(entry.fixtureId), `unknown observed fixture: ${entry.fixtureId}`);
+    }
+  }
   const catalogById = new Map(catalog.rows.map((row) => [row.id, row]));
   const featureById = new Map(
     manifest.features.map((feature) => [feature.id, feature]),
@@ -304,7 +240,10 @@ export async function applyFamilyCoverage(
     if (!fixture) {
       throw new Error(`${row.id}: no matching row in ${CATALOG_PATH}`);
     }
-    const missing = missingCases(fixture, axis, coveredCases);
+    const observed = browserAxis ? observedFixtureIds(coveredCases, row.id) : null;
+    const missing = browserAxis
+      ? fixtureIds(fixture, axis).filter((id) => !observed.includes(id)).map(caseOf).sort()
+      : missingCases(fixture, axis, coveredCases);
     const current = row.axes[axis];
     // A ruled waiver (conformance.mjs COMMAND_AXIS_WAIVERS) is not evidence to overwrite.
     if (current.status === "not-applicable") {
@@ -341,11 +280,18 @@ export async function applyFamilyCoverage(
         manifest,
         meta,
         artifactPath: path.posix.join(artifactDir, `${row.id}.${axis}.json`),
+        report: browserAxis ? coveredCases : undefined,
       });
       summary.passed++;
       continue;
     }
-    const entry = blockedAxisEntry(axis, missing);
+    const entry = blockedAxisEntry(axis, [...new Set(missing)]);
+    if (browserAxis && missing.includes("extreme")) {
+      const refused = coveredCases.observations.some((value) => value.fixtureId.startsWith(`${row.id}/`) && value.observed === "refused");
+      entry.reason += refused
+        ? " Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+        : " No observed linear HDR extreme render; SDR measurements cannot cover HDR extremes.";
+    }
     if (current.status === entry.status && current.reason === entry.reason) {
       continue;
     }
@@ -432,7 +378,7 @@ export function commandMatrixCoverage(
  * `manifestIds`/`cases` (see `commandMatrixCoverage`) - the same honesty rule as everywhere else
  * in this file (never trust a claim the report itself doesn't establish), applied here because a
  * single static Set can't represent "this row's evidence differs from that row's evidence" the
- * way `FAMILY_CASE_COVERAGE` can for a uniformly-measured family like blend or effect.
+ * browser reports likewise measure cases separately for each operator.
  */
 /**
  * Unions per-row coverage across several independently-produced reports for the SAME axis - e.g.
@@ -603,9 +549,9 @@ function parseArguments(argv) {
         "   or: --command-matrix-report <path> [--command-matrix-report <path> ...] [--axis <axis>] [--meta <path>] [--write]",
     );
   options.axis ??= DEFAULT_AXIS;
-  if (!FAMILY_CASE_COVERAGE[options.axis]?.[options.family]) {
+  if (!["effect", "blend", "transition"].includes(options.family) || !["chromium", "firefox", "safari"].includes(options.axis) || !options.report) {
     throw new Error(
-      `No reviewed case coverage recorded for family "${options.family}" on axis "${options.axis}"`,
+      `A domain-validated --report is required for operator family "${options.family}" on browser axis "${options.axis}"`,
     );
   }
   return options;
@@ -643,12 +589,7 @@ async function main() {
       },
     );
   } else {
-    // The report itself isn't consumed beyond confirming it exists and parses when no --meta is
-    // given: without --meta a fully-covered row is only counted, never written (see
-    // applyFamilyCoverage), so there is nothing yet to build a `passed` artifact from.
-    if (options.report) {
-      JSON.parse(await readFile(options.report, "utf8"));
-    }
+    const report = parseJsonRejectingDuplicateKeys(await readFile(options.report, "utf8"), options.report);
     summary = await applyFamilyCoverage(
       overlay,
       catalog,
@@ -656,7 +597,7 @@ async function main() {
       build,
       options.family,
       options.axis,
-      FAMILY_CASE_COVERAGE[options.axis][options.family],
+      report,
       { meta, artifactDir: "studio/rights-evidence/conformance" },
     );
   }

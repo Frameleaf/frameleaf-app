@@ -5,6 +5,7 @@
 // clip's PQ/HLG signal survives the whole float route to delivery, highlights
 // included. Without the intermediate the SDR route cannot carry them.
 import assert from 'node:assert/strict';
+import { testedSource } from './lib/working-domain-report.mjs';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 import { validateMaskedRasterDiagnostic } from './hdr-source-validation.mjs';
 
+const source = await testedSource(new URL(import.meta.url));
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
@@ -88,6 +90,19 @@ window.__vite_plugin_react_preamble_installed__ = true
     if (!device) throw new Error('WebGPU unavailable; HDR source regression cannot run');
     const c = SIZE / 2;
     const out = {};
+    const historicalHdrRefusals = [];
+    const expectHdrOperatorRefusal = async (composition, options, frame, scenario) => {
+      const canvas = new OffscreenCanvas(composition.width, composition.height);
+      const renderer = await createCompositionRenderer(composition, canvas, canvas.getContext('2d'), { mode: 'export', ...options });
+      try {
+        await renderer.preload?.();
+        await renderer.renderFrameSignal(frame, 'pq');
+        throw new Error(`${scenario}: historical HDR operator unexpectedly rendered`);
+      } catch (error) {
+        if (!(error instanceof color.HdrRenderUnavailableError)) throw error;
+        historicalHdrRefusals.push({ scenario, errorType: error.name, reason: error.message, emitted: 0 });
+      } finally { renderer.dispose(); }
+    };
     for (const transfer of ['pq', 'hlg']) {
       const url = `/hdr-fixture/${transfer}.mp4`;
       // 1. Upload of the decoded planes equals the CPU reference.
@@ -161,10 +176,10 @@ window.__vite_plugin_react_preamble_installed__ = true
 
     // 3. Both real decoded transfers coexist with SDR graphics in one frame.
     // Read references from the decoded planes, not the lossy encoder's input.
-    // Exposure operates on working RGB, then straight-alpha source-over blends
+    // Effect-free straight-alpha source-over blends decoded linear display RGB
     // with SDR reference-white graphics, before either explicit output policy.
     const width = SIZE * 3;
-    const background = [0.2, 0.2, 0.2];
+    const background = [0.2, 0.2, 0.2].map(color.srgbDecodeExtended);
     const sources = [
       { transfer: 'pq', x: -SIZE, opacity: 0.5, exposure: 1 },
       { transfer: 'hlg', x: 0, opacity: 0.75, exposure: -0.5 },
@@ -181,7 +196,7 @@ window.__vite_plugin_react_preamble_installed__ = true
           effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure',
             params: { exposure, offset: 0, gamma: 1 } } }] }],
     }));
-    const sdrRgb = [0.25, 0.5, 0.75];
+    const sdrRgb = [0.25, 0.5, 0.75].map(color.srgbDecodeExtended);
     const sdrOpacity = 0.5;
     mixedTracks.push({ id: 'mixed-track-2', name: 'SDR graphic', height: 60, locked: false,
       visible: true, muted: false, solo: false, order: 2,
@@ -197,23 +212,26 @@ window.__vite_plugin_react_preamble_installed__ = true
     let mixedRenderer;
     const mixed = [];
     try {
-      mixedRenderer = await createCompositionRenderer({ fps: FPS, width, height: SIZE,
-        durationInFrames: 30, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-        tracks: mixedTracks }, mixedCanvas, mixedCanvas.getContext('2d'), { mode: 'export' });
+      const historicalMixed = { fps: FPS, width, height: SIZE, durationInFrames: 30,
+        backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' }, tracks: mixedTracks };
+      await expectHdrOperatorRefusal(historicalMixed, {}, 15, 'mixed decoded PQ/HLG with exposure');
+      const admittedTracks = mixedTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) }));
+      mixedRenderer = await createCompositionRenderer({ ...historicalMixed, tracks: admittedTracks },
+        mixedCanvas, mixedCanvas.getContext('2d'), { mode: 'export' });
       await mixedRenderer.preload?.();
       for (const segment of [0, 1, 2]) {
         const working = sources.map(({ transfer, opacity, exposure }) =>
           out[transfer].uploads[segment].want.map((v, channel) =>
-            v * 2 ** exposure * opacity + background[channel] * (1 - opacity)));
+            v * opacity + background[channel] * (1 - opacity)));
         working.push(sdrRgb.map((v, channel) => v * sdrOpacity + background[channel] * (1 - sdrOpacity)));
         // Counterfactual: clipping a decoded source before its effect/alpha
         // cannot produce the expected highlight/wide-gamut output.
         const clipped = sources.map(({ transfer, opacity, exposure }) =>
           out[transfer].uploads[segment].want.map((v, channel) =>
-            Math.max(0, Math.min(1, v)) * 2 ** exposure * opacity + background[channel] * (1 - opacity)));
+            Math.max(0, Math.min(1, v)) * opacity + background[channel] * (1 - opacity)));
         const nonnegative = sources.map(({ transfer, opacity, exposure }) =>
           out[transfer].uploads[segment].want.map((v, channel) =>
-            Math.max(0, v) * 2 ** exposure * opacity + background[channel] * (1 - opacity)));
+            Math.max(0, v) * opacity + background[channel] * (1 - opacity)));
         for (const target of ['pq', 'hlg']) {
           const frame = await mixedRenderer.renderFrameSignal(segment * 10 + 5, target);
           mixed.push({ segment, target, width: frame.width, height: frame.height, working,
@@ -277,6 +295,14 @@ window.__vite_plugin_react_preamble_installed__ = true
             { x: SIZE / 4, y: 0, width: SIZE / 2, height: SIZE, rotation: 0, opacity: 1 });
           const outer = storeComposition(outerId, [nestedTrack(innerInstance.trackId, 0, [innerInstance])]);
           useCompositionsStore.getState().setCompositions([inner, outer]);
+          const historicalInstance = nestedItem(`historical-instance-${transfer}`, outerId,
+            { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 });
+          await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
+            backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+            tracks: [nestedTrack(historicalInstance.trackId, 0, [historicalInstance])] }, {}, 15, `nested exposure ${transfer}`);
+          const admittedInner = storeComposition(innerId, [nestedTrack('nested-sdr', 0, [graphic]),
+            nestedTrack('nested-mask', 1, [mask]), nestedTrack('nested-video', 2, [{ ...clip, effects: [] }])]);
+          useCompositionsStore.getState().setCompositions([admittedInner, outer]);
           for (const shift of [0, 0.25, 0.5, 0.75, 1]) {
             const outerInstance = nestedItem(`outer-instance-${transfer}`, outerId,
               { x: shift, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 });
@@ -289,12 +315,12 @@ window.__vite_plugin_react_preamble_installed__ = true
               canvas, canvas.getContext('2d'), { mode: 'export' });
               await renderer.preload?.();
               for (const segment of [0, 1, 2]) {
-                const hdrRgb = out[transfer].uploads[segment].want.map((value) => value * 2);
+                const hdrRgb = out[transfer].uploads[segment].want;
                 const coverage = 1 - shift;
                 const over = (rgb, alpha) => rgb.map((value, channel) =>
                   value * alpha + background[channel] * (1 - alpha));
-                // These oracles are source-over algebra on independent decoded
-                // values, not a reference render or an observed output baseline.
+                // Source-over algebra on decoded helper values checks CPU/GPU parity.
+                // The separate linear-hdr-subtree runner supplies physical equations.
                 const points = [
                   { name: 'outside-viewport', x: 24, y: 16, rgb: background },
                   { name: 'hdr-fractional-edge', x: 32, y: 16, rgb: over(hdrRgb, 0.5 * coverage) },
@@ -391,12 +417,16 @@ window.__vite_plugin_react_preamble_installed__ = true
               effects: [{ id: `variant-exposure-${transfer}-${variant.name}`, enabled: true,
                 effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 1, offset: 0, gamma: 1 } } }] };
             const id = `variant-comp-${transfer}-${variant.name}`;
-            useCompositionsStore.getState().setCompositions([storeComposition(id, [
-              ...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
-              nestedTrack('variant-video', variant.masks.length, [clip]),
-            ])]);
+            const variantTracks = [...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
+              nestedTrack('variant-video', variant.masks.length, [clip])];
+            useCompositionsStore.getState().setCompositions([storeComposition(id, variantTracks)]);
             const instance = nestedItem(`variant-instance-${transfer}-${variant.name}`, id,
               { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.75 });
+            await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
+              backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+              tracks: [nestedTrack(instance.trackId, 0, [instance])] }, {}, 15, `mask exposure ${transfer}/${variant.name}`);
+            useCompositionsStore.getState().setCompositions([storeComposition(id,
+              variantTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) })))]);
             const canvas = new OffscreenCanvas(SIZE, SIZE);
             let renderer;
             try {
@@ -405,7 +435,7 @@ window.__vite_plugin_react_preamble_installed__ = true
                 tracks: [nestedTrack(instance.trackId, 0, [instance])] }, canvas, canvas.getContext('2d'), { mode: 'export' });
               await renderer.preload?.();
               for (const segment of [0, 1, 2]) {
-                const source = out[transfer].uploads[segment].want.map((value) => value * 2);
+                const source = out[transfer].uploads[segment].want;
                 const over = (rgb, matte) => rgb.map((value, channel) =>
                   value * matte * 0.75 + background[channel] * (1 - matte * 0.75));
                 for (const target of ['pq', 'hlg']) {
@@ -447,7 +477,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     const poolUsage = () => Object.fromEntries(Object.entries(pools).map(([kind, entries]) =>
       [kind, [...entries].reduce((sum, pool) => sum + pool.getStats().inUse, 0)]));
 
-    // 5. The supported masked raster transition stays in float; section 6
+    // 5. Admitted masked raster cuts stay in float; the old transition graph refuses. Section 6
     // explicitly disables its GPU capability to test the Canvas refusal.
     // This source regression does not qualify other GPU backends or hardware.
     const rasterCodes = [0.7, 0.45, 0.25].map((value) => Math.round(value * 65535));
@@ -473,19 +503,21 @@ window.__vite_plugin_react_preamble_installed__ = true
     const rightInput = { ...rasterInput,
       rgb: new Uint16Array(Array.from({ length: SIZE * SIZE }, () => rightCodes).flat()) };
     const rightWorking = color.signalToWorking(rightCodes.map((value) => value / 65535), 'pq');
-    // Frame 39 reaches the end of this 20-frame window; Cross Dissolve uses
-    // cosine weights even when timeline timing is linear. Independent CPU oracle.
-    const atProgress = (progress) => {
-      const weight = 0.5 - 0.5 * Math.cos(progress * Math.PI);
-      return rasterWorking.map((value, channel) => value * (1 - weight) + rightWorking[channel] * weight);
-    };
+    const rasterTransition = [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+      trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right', durationInFrames: 20, alignment: 0.5 }];
     const rasterOutputs = [];
-    const rasterTransitionCases = [];
-    let maskedRasterTransition;
+    const rasterCutCases = [];
+    let maskedRasterCuts;
     let maskUploadFailure;
     let maskUploadPreview;
     let maskContextFailure;
     let rasterForcedRefusal;
+    await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 60,
+      backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+      tracks: [nestedTrack('raster-mask', 0, [rasterMask]), nestedTrack('raster-clips', 1,
+        [rasterClip('raster-left', 0), { ...rasterClip('raster-right', 30), mediaId: 'masked-raster-right' }])],
+      transitions: rasterTransition }, { hdrRasters: { 'masked-raster': rasterInput, 'masked-raster-right': rightInput } },
+      30, 'masked HDR raster transition');
     try {
       for (const [variant, invert, opacity] of [['opaque', false, 1], ['inverted-partial', true, 0.65]]) {
         const canvas = new OffscreenCanvas(SIZE, SIZE);
@@ -495,14 +527,12 @@ window.__vite_plugin_react_preamble_installed__ = true
             transform: { ...rasterMask.transform, opacity } }]),
             nestedTrack('raster-clips', 1, [rasterClip('raster-left', 0),
               { ...rasterClip('raster-right', 30), mediaId: 'masked-raster-right' }])],
-          transitions: [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
-            trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right',
-            durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'),
+          transitions: [] }, canvas, canvas.getContext('2d'),
         { mode: 'export', hdrRasters: { 'masked-raster': rasterInput, 'masked-raster-right': rightInput } });
         try {
           await renderer.preload?.();
           for (const frameNumber of [25, 30, 35]) {
-            const source = atProgress((frameNumber - 20) / 19);
+            const source = frameNumber < 30 ? rasterWorking : rightWorking;
             for (const target of ['pq', 'hlg']) {
               const before = poolUsage();
               const frame = await renderer.renderFrameSignal(frameNumber, target);
@@ -518,7 +548,7 @@ window.__vite_plugin_react_preamble_installed__ = true
                   nonnegative: color.workingToSignal(over(source.map((value) => Math.max(0, value))), target) };
               });
               const output = { target, width: frame.width, height: frame.height, points };
-              rasterTransitionCases.push({ variant, frameNumber, source, before, after: poolUsage(), ...output });
+              rasterCutCases.push({ variant, frameNumber, source, before, after: poolUsage(), ...output });
               if (variant === 'opaque' && frameNumber === 30) rasterOutputs.push(output);
             }
           }
@@ -661,33 +691,31 @@ window.__vite_plugin_react_preamble_installed__ = true
               OffscreenCanvas.prototype.getContext = getContext;
               CanvasPool.prototype.acquire = acquireBeforeContextFailure;
             }
-            TransitionPipeline.prototype.has = () => false;
+            const { MediaRenderPipeline } = await import('/src/infrastructure/gpu-media/media-render-pipeline.ts');
+            const renderMedia = MediaRenderPipeline.prototype.renderTextureToTexture;
+            MediaRenderPipeline.prototype.renderTextureToTexture = () => false;
             const beforeRefusal = poolUsage();
             try {
               await renderer.renderFrameSignal(30, 'pq');
               throw new Error('Forced raster Canvas fallback emitted a signal');
             } catch (error) {
-              if (!/^HDR raster cannot (?:fall back to|be drawn through) a canvas$/.test(error.message)) throw error;
-              rasterForcedRefusal = { before: beforeRefusal, after: poolUsage(), emitted: 0, reason: error.message };
-            } finally { TransitionPipeline.prototype.has = hasRasterTransition; }
+              if (error.name !== 'Error' || error.message !== 'HDR raster cannot fall back to a canvas') throw error;
+              rasterForcedRefusal = { before: beforeRefusal, after: poolUsage(), emitted: 0, name: error.name, reason: error.message, qualification: 'known forced raster transport decline; ordinary Error, not typed operator coverage' };
+            } finally { MediaRenderPipeline.prototype.renderTextureToTexture = renderMedia; }
           }
         } finally { renderer.dispose(); }
       }
-      maskedRasterTransition = { coverage: 'source-regression-only', status: 'preserved',
-        working: atProgress(10 / 19), outputs: rasterOutputs };
-    } catch (error) {
-      if (!(error instanceof Error) || !/^HDR raster (cannot (?:fall back to|be drawn through) a canvas|could not be rendered on the float route)$/.test(error.message)) throw error;
-      maskedRasterTransition = { coverage: 'source-regression-only', status: 'refused', reason: error.message,
-        outputs: rasterOutputs };
+      maskedRasterCuts = { coverage: 'source-regression-only', status: 'preserved',
+        operation: 'hard-cuts', working: rightWorking, outputs: rasterOutputs };
     } finally {
       TransitionPipeline.prototype.renderTexturesToTexture = renderTextureTransition;
       TransitionPipeline.prototype.has = hasRasterTransition;
     }
-    maskedRasterTransition.gpuTextureTransitions = rasterGpuCalls;
+    maskedRasterCuts.gpuTextureTransitions = rasterGpuCalls;
     // 6. Force GPU transition capability unavailable. Registered HDR videos must refuse that path
     // before a signal is emitted, rather than importing their SDR playback.
     const poolRefusals = [];
-    const refuseWithReleasedPools = async (renderer, frame, target, scenario) => {
+    const refuseWithReleasedPools = async (renderer, frame, target, scenario, expectedReason = 'Transitions are not migrated to linear HDR working colour') => {
       const before = poolUsage();
       let emitted = 0;
       try {
@@ -695,7 +723,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         emitted++;
         throw new Error('HDR Canvas fallback emitted a signal');
       } catch (error) {
-        if (!(error instanceof Error) || error.message !== 'HDR video cannot be drawn through a canvas') throw error;
+        if (!(error instanceof color.HdrRenderUnavailableError) || error.message !== expectedReason) throw error;
         const after = poolUsage();
         if (before.canvas !== after.canvas || before.texture !== after.texture) {
           throw new Error(`${scenario}: refusal retained pooled resources: ${JSON.stringify({ before, after })}`);
@@ -768,7 +796,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               await renderer.preload?.();
               for (let attempt = 0; attempt < 3; attempt++) {
                 await refuseWithReleasedPools(renderer, (scenario === 'item' ? 0 : 30) + attempt,
-                  'pq', `pending-${scenario}-${mode}`);
+                  'pq', `pending-${scenario}-${mode}`, scenario === 'item' ? 'HDR video cannot be drawn through a canvas' : 'Transitions are not migrated to linear HDR working colour');
               }
             } finally { renderer.dispose(); }
           }
@@ -881,8 +909,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       registerHdrSourceUrl(hdrItem.mediaId, null);
       transitionPool.dispose(); bitmap.close();
     }
-    // 8. Both joined layers preserve HDR refusal even when the first task
-    // and the opposite transition participant reject with ordinary Errors.
+    // 8. The historical mixed-failure graph still refuses before output. The
+    // linear HDR item guard now wins before its legacy transition path runs.
     const mixedFailures = [];
     const priorityMedia = 'priority-hdr-video';
     registerHdrSourceUrl(priorityMedia, '/hdr-fixture/pq.mp4');
@@ -919,7 +947,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       TransitionPipeline.prototype.has = hasTransition;
     }
     device.destroy();
-    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition, rasterTransitionCases, maskUploadFailure, maskUploadPreview, maskContextFailure, rasterForcedRefusal, canvasRefusals, poolRefusals,
+    return { workingDomain: color.HDR_WORKING_DOMAIN, alpha: 'straight', referenceWhiteNits: 203, expectation: 'production helper parity only; independent physical oracle is linear-hdr-subtree', historicalHdrRefusals, ...out, mixed, nestedAlpha, maskVariants, maskedRasterCuts, rasterCutCases, maskUploadFailure, maskUploadPreview, maskContextFailure, rasterForcedRefusal, canvasRefusals, poolRefusals,
       delayedTransition, canvasStateReuse, mixedFailures };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
@@ -947,8 +975,8 @@ window.__vite_plugin_react_preamble_installed__ = true
     reusedRasterChannels: result.canvasStateReuse.comparedChannels }));
 
   assert.deepEqual(result.mixedFailures, ['right', 'left'].map((hdrSide) => ({ hdrSide,
-    name: 'HdrVideoUnavailableError', reason: 'HDR video cannot be drawn through a canvas' })),
-    'HDR refusal must survive ordinary sibling and opposite-participant errors');
+    name: 'HdrRenderUnavailableError', reason: 'Item could not be rendered on the linear HDR route' })),
+    'historical mixed-failure transition graph is typed-refused before any signal');
 
   let compared = 0;
   for (const transfer of ['pq', 'hlg']) {
@@ -1053,25 +1081,28 @@ window.__vite_plugin_react_preamble_installed__ = true
       want.some((value, channel) => Math.abs(value - nonnegative[channel]) > 0.001))),
     `${variant}: golden must independently distinguish negative-RGB clipping`);
   }
-  assert.equal(result.maskedRasterTransition.status, 'preserved', 'supported masked HDR raster transition must stay in float');
+  assert.equal(result.maskedRasterCuts.status, 'preserved', 'admitted masked HDR raster cuts must stay in float');
+  assert.equal(result.maskedRasterCuts.operation, 'hard-cuts');
+  assert.equal(result.historicalHdrRefusals.length, 14);
+  assert(result.historicalHdrRefusals.every(entry => entry.errorType === 'HdrRenderUnavailableError' && entry.emitted === 0));
   assert.equal(result.maskUploadFailure.name, 'HdrRenderUnavailableError');
-  assert.ok(result.maskedRasterTransition.gpuTextureTransitions >= 17, 'all supported outputs, preview attempts and failed masks must traverse the real GPU transition');
+  assert.equal(result.maskedRasterCuts.gpuTextureTransitions, 0, 'admitted HDR cuts must not invoke an unmigrated transition');
   assert.equal(result.rasterForcedRefusal?.emitted, 0);
   assert.deepEqual(result.rasterForcedRefusal.after, result.rasterForcedRefusal.before);
-  assert.equal(result.rasterTransitionCases.length, 12);
-  for (const { variant, frameNumber, target, points, before, after } of result.rasterTransitionCases) {
+  assert.equal(result.rasterCutCases.length, 12);
+  for (const { variant, frameNumber, target, points, before, after } of result.rasterCutCases) {
     assert.deepEqual(after, before, `${variant}: successful output retained pooled resources`);
     for (const { got, want } of points) {
       want.forEach((value, channel) => {
         compared++;
         assert.ok(Math.abs(got[channel] - value) <= 0.004,
-          `masked transition ${variant} frame ${frameNumber} ${target} channel ${channel}: ${got[channel]} vs ${value}`);
+          `masked cut ${variant} frame ${frameNumber} ${target} channel ${channel}: ${got[channel]} vs ${value}`);
       });
       assert.equal(got[3], 1);
     }
   }
   for (const variant of ['opaque', 'inverted-partial']) {
-    const entries = result.rasterTransitionCases.filter((entry) => entry.variant === variant);
+    const entries = result.rasterCutCases.filter((entry) => entry.variant === variant);
     for (const counterfactual of ['clipped', 'nonnegative']) {
       assert.ok(entries.some(({ points }) => points.some((point) =>
         point.want.some((value, channel) => Math.abs(value - point[counterfactual][channel]) > 0.001))),
@@ -1092,13 +1123,16 @@ window.__vite_plugin_react_preamble_installed__ = true
   console.log(JSON.stringify({ check: 'Masked HDR upload refusal through production pump, stage and Player',
     refusedFrames: [30, 31], player: 'hidden through seek', managedRecoveryFrame: 32, retainedAllocations: 0 }));
   assert.deepEqual(result.maskUploadFailure.after, result.maskUploadFailure.before, 'failed mask upload must release its texture and every rendered layer');
-  compared += validateMaskedRasterDiagnostic(result.maskedRasterTransition, SIZE).compared;
+  compared += validateMaskedRasterDiagnostic(result.maskedRasterCuts, SIZE).compared;
   console.log(`HDR source, mixed composition, nested alpha and supported mask variant goldens match (${compared} values, PQ and HLG)`);
-  console.log(JSON.stringify({ check: 'masked HDR raster transition diagnostic',
-    coverage: result.maskedRasterTransition.coverage, status: result.maskedRasterTransition.status,
-    emittedSignalCount: result.maskedRasterTransition.outputs.length,
-    reason: result.maskedRasterTransition.reason,
-    unavailableCoverage: result.maskedRasterTransition.unavailableCoverage }));
+  assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+  Object.assign(result, { source, result: 'passed' });
+  if (process.env.HDR_SOURCE_REPORT) await writeFile(process.env.HDR_SOURCE_REPORT, JSON.stringify(result));
+  console.log(JSON.stringify({ check: 'admitted masked HDR raster cut diagnostic',
+    coverage: result.maskedRasterCuts.coverage, status: result.maskedRasterCuts.status,
+    emittedSignalCount: result.maskedRasterCuts.outputs.length,
+    reason: result.maskedRasterCuts.reason,
+    unavailableCoverage: result.maskedRasterCuts.unavailableCoverage }));
 } finally {
   await browser.close();
 }

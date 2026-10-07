@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { photometricCases, photometricExpected, photometricInput, validatePhotometricResults } from './photometric-goldens.mjs';
+import { photometricCases, photometricExpected, photometricInput, photometricSdrExpected, validatePhotometricResults } from './photometric-goldens.mjs';
 
 // Synthetic checker fixtures only. Hosted browser execution supplies actual
 // production GPU pixels; these CPU fixtures cannot establish GPU qualification.
@@ -36,4 +36,14 @@ test('case omission, duplication, parameter change, partial pixels and GPU refus
   assert.throws(() => validatePhotometricResults(partial), /incomplete GPU pixels/);
   const refused = fixture(); refused[7].error = 'unavailable';
   assert.throws(() => validatePhotometricResults(refused), /GPU render failed/);
+});
+
+
+test('current SDR measurements use pinned clamps and gamma; the historical signed oracle cannot qualify linear HDR', () => {
+  const sdr = photometricCases.map(entry => ({ ...entry, pixels: photometricSdrExpected(entry) }));
+  assert.deepEqual(validatePhotometricResults(sdr, 'srgb-display-bt709'), { cases: 8, channels: 1024 });
+  assert.throws(() => validatePhotometricResults(sdr, 'linear-display-bt709-v1'), /unqualified photometric/);
+  assert.throws(() => validatePhotometricResults(sdr), /channel/);
+  const wrong = structuredClone(sdr); wrong[4].pixels = photometricExpected(wrong[4]);
+  assert.throws(() => validatePhotometricResults(wrong, 'srgb-display-bt709'), /channel/);
 });

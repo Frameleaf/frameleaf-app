@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { validateDomainReport, observedFixtureIds } from './lib/working-domain-report.mjs';
 import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-contracts.mjs';
 
 export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'graph', 'preview', 'export', 'timingColor', 'authorizationFailure', 'test'];
@@ -171,6 +172,15 @@ export async function validateConformance(data, root, { release = false } = {}) 
       for (const reference of run.artifacts) {
         assert.notEqual(reference.path, result.run.path, `${label}: run cannot attest itself`);
         await artifact(root, reference);
+      }
+      if (['chromium', 'firefox', 'safari'].includes(axis) && /^(effect|blend|transition)\./.test(row.id)) {
+        assert(run.observationReport && run.artifacts.some((value) => value.path === run.observationReport.path && value.sha256 === run.observationReport.sha256), `${label}: retained observation report required`);
+        const report = parseJsonRejectingDuplicateKeys((await artifact(root, run.observationReport)).toString(), run.observationReport.path);
+        validateDomainReport(report, { build, engineRevision: manifest.engineRevision, axis });
+        assert.equal(report.source.commit, run.commit, `${label}: report tested commit`);
+        assert.equal(digest(await readFile(path.join(root, report.source.runner.path))), report.source.runner.sha256, `${label}: report runner source changed`);
+        for (const binding of report.source.bindings) assert.equal(digest(await readFile(path.join(root, binding.path))), binding.sha256, `${label}: report binding changed: ${binding.path}`);
+        exact(observedFixtureIds(report, row.id), fixtureIds(fixture, axis), `${label}: observed render fixture coverage`);
       }
       if (!notApplicable) summary.passedAxes++;
     }
