@@ -684,6 +684,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     saving = (async () => {
       try {
         let result: { revision: number; lease: StudioProjectLeaseDto | null };
+        let createdDetail: StudioProjectDetailDto | null = null;
         if (projectId) {
           const saved = await api.save(projectId, {
             clientId,
@@ -721,6 +722,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
               requestKey: current.requestKey ?? undefined,
             }),
           };
+          const initialRevision = creating.request.envelope ? 1 : 0;
           const created = await api.create(creating.request);
           if (gen !== generation) {
             return;
@@ -732,7 +734,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
             access: 'owner',
             resources: created.resources,
           });
-          result = { revision: created.revision, lease: created.lease };
+          createdDetail = created;
+          // Replay returns the current head, but this request only acknowledged the initial document.
+          result = { revision: initialRevision, lease: created.lease };
         }
 
         if (result.lease) {
@@ -760,6 +764,24 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           error: null,
           status: shelved ? 'review' : draft ? 'dirty' : 'saved',
         });
+        if (createdDetail && createdDetail.revision !== result.revision && !shelved) {
+          if (draft) {
+            emit({
+              status: 'conflict',
+              conflict: {
+                reason: 'stale-revision',
+                currentRevision: createdDetail.revision,
+                lease: createdDetail.lease,
+              },
+            });
+            if (state.project.hasLease) {
+              scheduleRenewal(gen);
+            }
+            return;
+          }
+          // No unsaved descendants remain: replace the editor's graph with the actual head.
+          applyDetail(createdDetail, gen, createdDetail.lease.heldByYou, true);
+        }
         if (result.lease && !result.lease.heldByYou && !shelved) {
           loseLease({ reason: 'lease-lost', currentRevision: result.revision, lease: result.lease });
           return;

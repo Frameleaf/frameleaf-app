@@ -1161,6 +1161,70 @@ describe('studio project session', () => {
       },
     );
 
+    it.each(['reacquire', 'takeOver'] as const)(
+      'keeps descendant drafts based on the initial creation when replay finds a newer head: %s',
+      async (recover) => {
+        const current = detail({
+          id: 'p-new',
+          revision: 2,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+          lease: lease({ heldByYou: false, heldByAnother: true }),
+        });
+        api.create.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(current);
+        api.get.mockResolvedValue(current);
+        const session = create(null);
+        await session.open();
+        session.stageEditor({ first: true }, ['editor.save'], 0, 0);
+        await session.flush();
+        session.stageEditor({ latest: true }, ['editor.save'], 0, 0);
+        await session.flush();
+        expect(last()).toMatchObject({
+          status: 'conflict',
+          hasDraft: true,
+          project: { id: 'p-new', revision: 1, graph: { latest: true }, hasLease: false },
+          conflict: { reason: 'stale-revision', currentRevision: 2 },
+        });
+        // The editor still reports its old base; only its own accepted create may advance it to 1.
+        session.stageEditor({ final: true }, ['editor.save'], 0, 0);
+        expect(await session[recover]()).toBe(true);
+        expect(last()).toMatchObject({
+          status: 'conflict',
+          project: { revision: 1, graph: { final: true }, hasLease: true },
+          conflict: { reason: 'stale-revision', currentRevision: 2 },
+        });
+        await session.flush();
+        expect(api.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it('replaces the editor graph with the current replay head when no newer draft remains', async () => {
+      const current = detail({
+        id: 'p-new',
+        revision: 2,
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+        lease: lease({ heldByYou: false, heldByAnother: true }),
+      });
+      api.create.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(current);
+      api.get.mockResolvedValue(current);
+      const session = create(null);
+      await session.open();
+      session.stageEditor({ first: true }, ['editor.save'], 0, 0);
+      await session.flush();
+      await session.flush();
+      expect(last()).toMatchObject({
+        status: 'lease-lost',
+        hasDraft: false,
+        project: { id: 'p-new', revision: 2, graph: { theirs: true }, graphVersion: 1 },
+      });
+      expect(session.stageEditor({ stale: true }, ['editor.save'], 0, 0)).toBe('superseded');
+      expect(await session.reacquire()).toBe(true);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        project: { revision: 2, graph: { theirs: true }, graphVersion: 1 },
+      });
+      expect(api.save).not.toHaveBeenCalled();
+    });
+
     it('creates the project on the first save and switches to its id', async () => {
       api.create.mockResolvedValue(detail({ id: 'p-new', name: 'Untitled project', revision: 1 }));
       const session = create(null);
