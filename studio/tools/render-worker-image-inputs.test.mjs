@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { createClaimImageInputs } from './render-worker-image-inputs.mjs';
+import { createClaimImageInputs, validateClaimResourceClosure } from './render-worker-image-inputs.mjs';
 
 // An input specimen, never an asserted render output. The test uses the prepared engine's real
 // collectMediaIds and media server, including its Range handling; no renderer is mocked.
@@ -17,6 +17,8 @@ const prepared = () => ({
   revisionId: 'immutable-revision-7',
   snapshot: {
     studio: {
+      resources: [{ key: `library-asset:${mediaId}`, kind: 'library-asset', id: mediaId,
+        graphPath: '/timeline/items/0', grant: 'render', checksum: createHash('sha256').update(png).digest('hex') }],
       stored: true,
       revision: 7,
       graph: {
@@ -55,6 +57,7 @@ const prepared = () => ({
         resourceId: mediaId,
         kind: 'library-asset',
         bytes: Buffer.from(png),
+        declaredChecksum: createHash('sha256').update(png).digest('hex'),
         sha256: createHash('sha256').update(png).digest('hex'),
       },
     ],
@@ -76,6 +79,10 @@ test('real Freecut input contract preserves graph and serves only bound bytes wh
       revisionId: claim.revisionId,
     });
     assert.equal(adapted.input.media[0].mediaId, mediaId);
+    assert.equal(adapted.input.media[0].metadata.width, 1);
+    assert.equal(adapted.input.media[0].metadata.height, 1);
+    assert.equal(adapted.input.media[0].metadata.fileSize, png.length);
+    assert.equal(adapted.input.media[0].metadata.mimeType, 'image/png');
     assert.equal(adapted.input.strict, true);
     assert.ok(!url.includes(mediaId) && !url.includes(claim.claimToken));
     assert.equal(new URL(url).hostname, '127.0.0.1');
@@ -113,7 +120,7 @@ test('cannot rebind verified bytes or substitute another resource identity', asy
   substituted.inputs.get(`library-asset:${mediaId}`).resourceId = 'another-asset';
   await assert.rejects(
     createClaimImageInputs(substituted, () => true),
-    /AUTHORIZED_IMAGE_INPUT_REQUIRED/,
+    /RESOURCE_IDENTITY_CHANGED/,
   );
 });
 
@@ -150,7 +157,7 @@ test('nested non-byte resources are rejected even when every byte grant is a val
     claim.snapshot.studio.graph.timeline.items[0].effects = [{ params: { nested } }];
     await assert.rejects(
       createClaimImageInputs(claim, () => true),
-      /UNSUPPORTED_GRAPH_RESOURCE/,
+      /RESOURCE_CLOSURE_CHANGED/,
     );
   }
 });
@@ -449,3 +456,67 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-
       }
     },
   );
+
+
+test('resolved closure binds every graph reference and readable grant, including graph-only resources', () => {
+  const c = prepared();
+  const checksum = createHash('sha256').update(png).digest('hex');
+  c.inputs.get(`library-asset:${mediaId}`).declaredChecksum = checksum;
+  c.snapshot.studio.resources = [{ key: `library-asset:${mediaId}`, kind: 'library-asset', id: mediaId,
+    graphPath: '/timeline/items/0', grant: 'render', checksum }];
+  const refs = [{ kind: 'library-asset', id: mediaId, graphPath: '/timeline/items/0' }];
+  assert.doesNotThrow(() => validateClaimResourceClosure(c, { references: refs, violations: [] }));
+  const original = structuredClone(c.snapshot);
+  for (const alter of [
+    (x) => { delete x.snapshot.studio.resources; },
+    (x) => { x.snapshot.studio.resources[0].id = 'other'; },
+    (x) => { x.snapshot.studio.resources[0].checksum = 'other'; },
+    (x) => { x.snapshot.studio.resources[0].grant = 'none'; },
+    (x) => { x.snapshot.studio.resources.push(x.snapshot.studio.resources[0]); },
+    (x) => { x.inputs.set('unused', x.inputs.values().next().value); },
+    (x) => { x.inputs.values().next().value.bytes[0] ^= 1; },
+  ]) {
+    const bad = structuredClone(c);
+    // structuredClone converts Node Buffers to Uint8Array; retain an owned Buffer for the reader contract.
+    for (const input of bad.inputs.values()) input.bytes = Buffer.from(input.bytes);
+    alter(bad);
+    assert.throws(() => validateClaimResourceClosure(bad, { references: refs, violations: [] }));
+  }
+  assert.deepEqual(c.snapshot, original);
+  c.snapshot.studio.resources.push({ key: 'preset:look:alpine', kind: 'preset', family: 'look', id: 'alpine',
+    graphPath: '/timeline/items/0/effects/0', checksum: null, grant: 'none' });
+  refs.push({ kind: 'preset', family: 'look', id: 'alpine', graphPath: '/timeline/items/0/effects/0' });
+  assert.doesNotThrow(() => validateClaimResourceClosure(c, { references: refs, violations: [] }));
+  assert.throws(() => validateClaimResourceClosure(c, { references: refs, violations: [{ reason: 'external-locator' }] }));
+});
+
+
+test('full multiasset raster graph remains immutable through real metadata and private URL binding', async () => {
+  const c = prepared();
+  const secondId = '22222222-2222-4222-8222-222222222222';
+  const second = await sharp({ create: { width: 2, height: 3, channels: 4, background: '#ff0000' } }).png().toBuffer();
+  const checksum = createHash('sha256').update(second).digest('hex');
+  c.inputs.set(`library-asset:${secondId}`, { resourceId: secondId, kind: 'library-asset', bytes: second,
+    declaredChecksum: checksum, sha256: checksum });
+  c.snapshot.studio.resources.push({ key: `library-asset:${secondId}`, id: secondId, kind: 'library-asset',
+    graphPath: '/timeline/items/1', grant: 'render', checksum });
+  const graph = c.snapshot.studio.graph;
+  graph.duration = 2;
+  graph.timeline.items.push({ ...graph.timeline.items[0], id: 'clip-b', mediaId: secondId, from: 24 });
+  graph.timeline.items[0].effects = [{ id: 'fx', enabled: true, effect: {
+    type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0.15 } } }];
+  graph.timeline.transitions = [{ id: 'dissolve', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+    trackId: 'v1', leftClipId: 'clip', rightClipId: 'clip-b', durationInFrames: 12 }];
+  graph.timeline.keyframes = [{ itemId: 'clip', properties: [{ property: 'opacity', keyframes: [
+    { id: 'k0', frame: 0, value: 0, easing: 'linear' }, { id: 'k1', frame: 12, value: 1, easing: 'linear' } ] }] }];
+  const original = structuredClone(graph);
+  const adapter = await createClaimImageInputs(c, () => true);
+  try {
+    assert.deepEqual(adapter.input.project, original);
+    assert.equal(adapter.input.media.length, 2);
+    assert.equal(adapter.input.media[1].metadata.width, 2);
+    assert.equal(adapter.input.media[1].metadata.height, 3);
+    assert.deepEqual(Buffer.from(await (await fetch(adapter.input.media[1].url)).arrayBuffer()), second);
+    assert.deepEqual(graph, original);
+  } finally { await adapter.dispose(); }
+});

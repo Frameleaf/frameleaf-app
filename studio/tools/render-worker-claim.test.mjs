@@ -27,7 +27,7 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
         response.statusCode = 400; response.end('{}'); return;
       }
       response.end(JSON.stringify({ operationId, claimToken, kind: 'studio_export', projectId: randomUUID(),
-        revisionId: 'immutable-revision-7', snapshot: { studio: { stored: true, revision: 7, graph: {
+        revisionId: 'immutable-revision-7', snapshot: { studio: { resources: [{ key: 'library-asset:fixture', kind: 'library-asset', id: 'fixture', graphPath: '/timeline/items/0', grant: 'render', checksum: checksum ?? createHash('sha1').update(bytes).digest('base64') }], stored: true, revision: 7, graph: {
           metadata: { width: 32, height: 32, fps: 24 },
           timeline: { tracks: [], items: [{ type: 'image', mediaId: 'fixture' }] },
         } } },

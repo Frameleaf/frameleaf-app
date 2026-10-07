@@ -16,7 +16,7 @@ const digest = (value) => createHash('sha256').update(value).digest('hex');
 const only = (object, keys) =>
   assert.ok(object && Object.keys(object).every((key) => keys.includes(key)), 'UNSUPPORTED_RECIPE_FIELD');
 
-/** An explicit first recipe, not general Studio/FL-107 capability admission. */
+/** Immutable visual timeline planning; runtime resource/build/strict-render admission is separate. */
 export function stillRecipe(claim) {
   const { quality = 'high', range, subtitleMode, ...settings } = claim.settings ?? {};
   const ceiling = (value, cap) => {
@@ -89,56 +89,50 @@ export function stillRecipe(claim) {
     'UNSUPPORTED_EXPORT_SETTINGS',
   );
   assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
-  only(graph, ['id', 'name', 'description', 'createdAt', 'updatedAt', 'duration', 'metadata', 'timeline']);
-  only(graph.metadata, ['width', 'height', 'fps']);
-  assert.deepEqual(graph.metadata, { width: 1280, height: 720, fps: 24 }, 'UNSUPPORTED_CANVAS');
-  only(graph.timeline, ['tracks', 'items', 'transitions', 'keyframes']);
-  assert.equal(graph.timeline.tracks.length, 1, 'SINGLE_TRACK_REQUIRED');
-  const track = graph.timeline.tracks[0];
-  only(track, ['id', 'name', 'kind', 'height', 'locked', 'visible', 'muted', 'solo', 'order']);
-  assert.ok(track.kind === 'video' && track.visible !== false && !track.muted && !track.solo, 'UNSUPPORTED_TRACK');
-  assert.equal(graph.timeline.items.length, 1, 'SINGLE_STILL_REQUIRED');
-  const item = graph.timeline.items[0];
-  only(item, ['id', 'type', 'mediaId', 'trackId', 'from', 'durationInFrames']);
-  assert.ok(
-    item.type === 'image' &&
-      item.trackId === track.id &&
-      item.from === 0 &&
-      typeof item.mediaId === 'string' &&
-      Number.isSafeInteger(item.durationInFrames) &&
-      item.durationInFrames >= 1 &&
-      item.durationInFrames <= 240,
-    'UNSUPPORTED_STILL',
-  );
-  assert.equal(graph.duration, item.durationInFrames / 24, 'INCONSISTENT_DURATION');
-  assert.equal(graph.timeline.transitions?.length ?? 0, 0, 'TRANSITIONS_UNSUPPORTED');
-  assert.equal(graph.timeline.keyframes?.length ?? 0, 0, 'ANIMATION_UNSUPPORTED');
+  assert.ok(graph?.metadata && Array.isArray(graph.timeline?.tracks) && Array.isArray(graph.timeline?.items), 'PROJECT_REQUIRED');
+  // The immutable graph is passed intact to the real migration/composition/strict renderer below.
+  // Bounds and output timing come from the same server contract helpers, never CLI seconds.
+  const require = createRequire(import.meta.url);
+  const { projectCadenceOf, timelineFrameTicks } = require('../../server/dist/utils/studio-timing.js');
+  const { tryParseRational, formatRational } = require('../../server/dist/utils/rational-time.js');
+  const { resolveStudioExportRange } = require('../../server/dist/utils/studio-export-contract.js');
+  const cadence = tryParseRational(claim.snapshot.timing?.cadence);
+  const timeBase = tryParseRational(claim.snapshot.timing?.timeBase);
+  assert.ok(cadence && cadence.num > 0 && timeBase && timeBase.num > 0, 'INVALID_TIMELINE_TIMING');
+  assert.deepEqual(cadence, projectCadenceOf(graph.metadata), 'PROJECT_CADENCE_CHANGED');
+  for (const dimension of ['width', 'height'])
+    assert.ok(Number.isSafeInteger(graph.metadata[dimension]) && graph.metadata[dimension] > 0 && graph.metadata[dimension] <= 16384, 'INVALID_CANVAS');
+  let end = 0;
+  assert.ok(graph.timeline.tracks.every(({ id }) => typeof id === 'string' && id.length > 0), 'INVALID_TRACK');
+  const tracks = new Set(graph.timeline.tracks.map(({ id }) => id));
+  assert.equal(tracks.size, graph.timeline.tracks.length, 'DUPLICATE_TRACK');
+  const items = new Set();
+  for (const item of graph.timeline.items) {
+    assert.ok(typeof item.id === 'string' && !items.has(item.id) && tracks.has(item.trackId), 'INVALID_TIMELINE_ITEM');
+    items.add(item.id);
+    assert.ok(Number.isSafeInteger(item.from) && item.from >= 0 && Number.isSafeInteger(item.durationInFrames) && item.durationInFrames > 0 && Number.isSafeInteger(item.from + item.durationInFrames), 'INVALID_FRAME_BOUNDS');
+    end = Math.max(end, item.from + item.durationInFrames);
+  }
+  assert.ok(end > 0, 'EMPTY_TIMELINE');
+  assert.equal(graph.duration, end * cadence.den / cadence.num, 'INCONSISTENT_DURATION');
+  if (range !== undefined) only(range, ['inPoint', 'outPoint']);
+  const declaredRange = range === undefined ? null : resolveStudioExportRange(graph, range);
+  const frames = declaredRange ? declaredRange.outPoint - declaredRange.inPoint : end;
+  const endTicks = timelineFrameTicks(frames, cadence, timeBase);
+  assert.ok(Number.isSafeInteger(endTicks) && endTicks > 0, 'INVALID_TIMELINE_TIMING');
   assert.equal(claim.snapshot.contract?.video?.minBitDepth, 8, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.video.transfer, null, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.audio, null, 'AUDIO_UNSUPPORTED');
-  assert.equal(claim.snapshot.timing?.cadence, '24/1', 'UNSUPPORTED_CADENCE');
-  assert.equal(claim.snapshot.timing.timeBase, '1/24', 'UNSUPPORTED_TIMEBASE');
-  assert.equal(claim.snapshot.timing.sources?.length ?? 0, 0, 'SOURCE_TIMING_UNSUPPORTED');
-  if (range !== undefined) {
-    only(range, ['inPoint', 'outPoint']);
-    assert.ok(
-      Number.isSafeInteger(range.inPoint) &&
-        Number.isSafeInteger(range.outPoint) &&
-        range.inPoint >= 0 &&
-        range.outPoint > range.inPoint &&
-        range.outPoint <= item.durationInFrames,
-      'UNSUPPORTED_EXPORT_RANGE',
-    );
-  }
-  assert.deepEqual(
-    claim.snapshot.contract.range ?? null,
-    range ? { ...range, cadence: '24/1' } : null,
-    'RANGE_CONTRACT_CHANGED',
-  );
+  assert.equal(claim.snapshot.timing.sources?.length ?? 0, 0, 'SOURCE_TIMING_ADAPTER_UNAVAILABLE');
+  assert.deepEqual(claim.snapshot.contract.range ?? null, declaredRange, 'RANGE_CONTRACT_CHANGED');
   assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
   return {
-    frames: range ? range.outPoint - range.inPoint : item.durationInFrames,
+    frames,
+    cadence: formatRational(cadence),
+    timebase: formatRational(timeBase),
+    endTicks: String(endTicks),
     range: range ?? null,
+    frameBounds: declaredRange ? { inPoint: declaredRange.inPoint, outPoint: declaredRange.outPoint } : { inPoint: 0, outPoint: end },
     maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
     maxMs: ceiling(claim.limits?.maxWallClockMs, 60_000),
     settings: {
@@ -149,18 +143,19 @@ export function stillRecipe(claim) {
       quality,
       ...(subtitleMode !== undefined && { subtitleMode }),
       resolution: { width: 1280, height: 720 },
-      fps: 24,
+      fps: cadence.num / cadence.den,
       videoBitrate: bitrates[quality],
       audioBitrate: 192_000,
     },
   };
 }
 
-export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
+export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
+  const { frames, cadence = '24/1' } = typeof plan === 'number' ? { frames: plan } : plan;
   const result = JSON.parse(
-    execFileSync(ffprobe, ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file], {
+    execFileSync(ffprobe, ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-show_packets', '-of', 'json', file], {
       timeout: 10_000,
-      maxBuffer: 1024 * 1024,
+      maxBuffer: 4 * 1024 * 1024,
     }).toString(),
   );
   assert.equal(result.streams.length, 1, 'UNEXPECTED_AUDIO_OR_STREAM');
@@ -171,7 +166,7 @@ export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
       video.width === 1280 &&
       video.height === 720 &&
       video.pix_fmt === 'yuv420p' &&
-      video.avg_frame_rate === '24/1' &&
+      video.avg_frame_rate === cadence &&
       Number(video.nb_read_frames) === frames,
     'ENCODED_RECIPE_MISMATCH',
   );
@@ -182,10 +177,21 @@ export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
       video.color_range === 'tv',
     'UNQUALIFIED_OUTPUT_COLOR',
   );
-  assert.ok(
-    video.time_base === '1/24' && video.start_pts === 0 && video.duration_ts === frames,
-    'OUTPUT_TIMING_MISMATCH',
-  );
+  const require = createRequire(import.meta.url);
+  const { tryParseRational } = require('../../server/dist/utils/rational-time.js');
+  const { timelineFrameTicks } = require('../../server/dist/utils/studio-timing.js');
+  const timeBase = tryParseRational(video.time_base);
+  const rate = tryParseRational(cadence);
+  assert.ok(timeBase && rate && video.start_pts === 0 && video.duration_ts === timelineFrameTicks(frames, rate, timeBase), 'OUTPUT_TIMING_MISMATCH');
+  const packets = result.packets;
+  const frameTicks = timelineFrameTicks(1, rate, timeBase);
+  assert.ok(Array.isArray(packets) && packets.length === frames && Number.isSafeInteger(frameTicks) && frameTicks > 0, 'OUTPUT_PACKET_TIMING_MISMATCH');
+  const presentation = packets.map((packet) => {
+    assert.equal(packet.stream_index, video.index, 'UNEXPECTED_PACKET_STREAM');
+    assert.ok(Number.isSafeInteger(packet.pts) && Number.isSafeInteger(packet.duration) && packet.duration === frameTicks, 'OUTPUT_PACKET_TIMING_MISMATCH');
+    return packet.pts;
+  }).sort((left, right) => left - right);
+  assert.ok(presentation.every((pts, index) => pts === timelineFrameTicks(index, rate, timeBase)), 'OUTPUT_PACKET_TIMING_MISMATCH');
   assert.ok(result.format.format_name.split(',').includes('mp4'), 'CONTAINER_MISMATCH');
   return result;
 }
@@ -213,28 +219,34 @@ export async function renderStillImage(context, consume) {
   assert.equal(digest(JSON.stringify(files)), report.artifactSha256, 'BUILT_ARTIFACT_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
   assert.deepEqual(engineInputs.input.project, claim.snapshot.studio.graph, 'IMMUTABLE_GRAPH_CHANGED');
-  if (!recipe.photo) assert.equal(context.prepared?.inputs.size, 1, 'SINGLE_VERIFIED_INPUT_REQUIRED');
+  assert.deepEqual(engineInputs.binding, {
+    operationId: claim.operationId, claimToken: claim.claimToken, revisionId: claim.revisionId,
+  }, 'INPUT_CLAIM_BINDING_CHANGED');
+  if (!recipe.photo) {
+    assert.ok(context.prepared?.inputs instanceof Map, 'VERIFIED_INPUTS_REQUIRED');
+    assert.equal(context.prepared.inputs.size, engineInputs.input.media.length, 'VERIFIED_INPUT_CLOSURE_CHANGED');
+  }
   const sharp = require('sharp');
   for (const input of recipe.photo ? [] : context.prepared.inputs.values()) {
     assertLive();
+    assert.equal(digest(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
     const metadata = await sharp(input.bytes).metadata();
     assert.ok(
       metadata.format === 'png' &&
         metadata.depth === 'uchar' &&
         metadata.space === 'srgb' &&
-        !metadata.hasAlpha &&
         !metadata.icc &&
         !metadata.exif &&
         !metadata.xmp,
       'UNQUALIFIED_IMAGE_COLOR',
     );
-    // Only explicit ordinary 8-bit RGB PNG. Do not infer SDR from absent HDR metadata.
+    // Only explicit ordinary 8-bit RGB/RGBA PNG. Do not infer SDR from absent HDR metadata.
     for (let offset = 8; offset < input.bytes.length;) {
       const length = input.bytes.readUInt32BE(offset);
       const kind = input.bytes.toString('ascii', offset + 4, offset + 8);
       assert.ok(['IHDR', 'IDAT', 'IEND', 'pHYs', 'sRGB', 'gAMA'].includes(kind), 'UNQUALIFIED_PNG_CHUNK');
       if (kind === 'IHDR')
-        assert.ok(input.bytes[offset + 16] === 8 && input.bytes[offset + 17] === 2, 'UNQUALIFIED_PNG_DEPTH');
+        assert.ok(input.bytes[offset + 16] === 8 && [2, 6].includes(input.bytes[offset + 17]), 'UNQUALIFIED_PNG_DEPTH');
       if (kind === 'gAMA') assert.equal(input.bytes.readUInt32BE(offset + 8), 45455, 'UNQUALIFIED_PNG_GAMMA');
       offset += length + 12;
     }
@@ -475,9 +487,10 @@ export async function renderStillImage(context, consume) {
           project: engineInputs.input.project,
           media: harness.media,
           settings: recipe.settings,
-          hasRange: recipe.range !== null,
-          inPoint: recipe.range?.inPoint ?? null,
-          outPoint: recipe.range?.outPoint ?? null,
+          // Explicit integer frame bounds also prevent the engine's one-second empty-tail floor.
+          hasRange: true,
+          inPoint: recipe.frameBounds.inPoint,
+          outPoint: recipe.frameBounds.outPoint,
           missing: [],
           outPath: path.join(folder, 'output.mp4'),
           strict: true,
@@ -498,7 +511,7 @@ export async function renderStillImage(context, consume) {
     }
     const file = await stat(result.outputPath);
     assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
-    const probe = recipe.photo ? result.encoding : probeStillOutput(result.outputPath, recipe.frames);
+    const probe = recipe.photo ? result.encoding : probeStillOutput(result.outputPath, recipe);
     const bytes = await readFile(result.outputPath);
     const checksum = digest(bytes);
     bytes.fill(0);
@@ -554,7 +567,7 @@ export async function executeStillClaim(context) {
     const binding = { claimToken: claim.claimToken };
     const configDigest = digest(
       JSON.stringify({
-        recipe: recipe.photo?.renderer ?? 'single-still-sdr-v1',
+        recipe: recipe.photo?.renderer ?? 'immutable-visual-timeline-v1',
         settings: recipe.settings,
         ...(recipe.photo && { image: recipe.photo }),
         ...(recipe.range && { range: recipe.range }),
