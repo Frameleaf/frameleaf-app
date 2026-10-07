@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { defaults } from 'src/dtos/config.dto.js';
+import { Colorspace } from 'src/enum.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MediaService } from 'src/services/media.service.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { getMocks, newTestService } from 'test/utils.js';
@@ -53,16 +55,37 @@ describe.runIf(process.env.FRAMELEAF_RAW_NATIVE === '1')('real RAW sensor viewin
             .exif({ orientation, colorspace: 'sRGB' })
             .build(),
         );
-      const baseline = await sut['extractOriginalImage'](source(normal, '1'), image);
-      const result = await sut['extractOriginalImage'](source(rotated, '6'), image);
+      const outputs = (prefix: string) => ({
+        thumbnail: { path: join(directory, `${prefix}-thumbnail.${image.thumbnail.format}`), options: image.thumbnail },
+        preview: { path: join(directory, `${prefix}-preview.${image.preview.format}`), options: image.preview },
+        fullsize: { path: join(directory, `${prefix}-fullsize.${image.fullsize.format}`), options: image.fullsize },
+      });
+      const baselineOutputs = outputs('normal');
+      const rotatedOutputs = outputs('rotated');
+      const baseline = await sut['extractOriginalImage'](source(normal, '1'), image, false, baselineOutputs);
+      const result = await sut['extractOriginalImage'](source(rotated, '6'), image, false, rotatedOutputs);
       expect(extract).not.toHaveBeenCalled();
       expect(result.convertFullsize).toBe(true);
       expect(result.info.width).toBe(baseline.info.height);
       expect(result.info.height).toBe(baseline.info.width);
       // Non-square genuine pixels expose both a missing rotation and an accidental second rotation.
       expect(baseline.info.width).not.toBe(baseline.info.height);
-      const expected = await sharp(baseline.data, { raw: baseline.info }).rotate(90).raw().toBuffer();
-      expect(result.data.equals(expected)).toBe(true);
+      // The batch retains raw pixels in its child. Build the independent once-rotated oracle
+      // from the normal sensor render, then compare the actual files and thumbhash it produced.
+      const decode = { colorspace: Colorspace.Srgb, processInvalidImages: false };
+      const normalPixels = await media.decodeImage(await renderRawWithLibRaw(normal), decode);
+      const expected = await sharp(normalPixels.data, { raw: normalPixels.info })
+        .rotate(90)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const expectedOptions = { ...decode, raw: expected.info };
+      expect(result.thumbhash).toEqual(await media.generateThumbhash(expected.data, expectedOptions));
+      for (const [name, output] of Object.entries(rotatedOutputs)) {
+        const expectedPath = join(directory, `expected-${name}.${output.options.format}`);
+        await media.generateThumbnail(expected.data, { ...output.options, ...expectedOptions }, expectedPath);
+        expect(await readFile(output.path)).toEqual(await readFile(expectedPath));
+      }
+      expect(result).not.toHaveProperty('data');
       expect(await Promise.all([checksum(normal), checksum(rotated)])).toEqual(beforeCopies);
       expect(await checksum(fixture)).toBe(beforeFixture);
     } finally {
