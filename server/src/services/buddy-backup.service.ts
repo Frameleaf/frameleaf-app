@@ -13,6 +13,7 @@ import type {
   BuddySettingsDto,
   BuddyStatusDto,
 } from 'src/dtos/buddy-backup.dto.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import type z from 'zod';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -901,12 +902,18 @@ export class BuddyBackupService {
       return vault.usage();
     });
     const fs = await statfs(state.settings.directory);
-    const alert = async (key: string, title: string, description: string) =>
+    const alert = async (
+      key: string,
+      title: string,
+      description: string,
+      systemTemplate?: SystemNotificationTemplate,
+    ) =>
       this.events.emit('AdminNotify', {
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Warning,
         title,
         description,
+        systemTemplate,
         dedupeKey: `buddy:${key}`,
         dedupeDays: 1,
       });
@@ -918,24 +925,30 @@ export class BuddyBackupService {
         state.lastCompleteAt
           ? 'Your last complete restore point is more than three days old. Check the sending status.'
           : 'Buddy Backup has not completed its first restore point after three days. Check the sending status.',
+        { version: 1, key: state.lastCompleteAt ? 'buddy-backup-stale' : 'buddy-backup-first-stale', args: {} },
       );
     if (usage.committedBytes + usage.reservedBytes > hosted.quotaBytes * 0.9 || fs.bavail / fs.blocks < 0.15)
       await alert(
         'capacity',
         'Buddy storage is running low',
         'Increase the hosting capacity or free space on the volume. Retained backups will not be deleted to make room.',
+        { version: 1, key: 'buddy-storage-low', args: {} },
       );
     if (state.pairing.state === 'ended')
       await alert(
         'ended',
         'Your Buddy pairing has ended',
         `Recover your backup before ${state.pairing.readUntil}. New backups have stopped.`,
+        state.pairing.readUntil
+          ? { version: 1, key: 'buddy-pairing-ended', args: { readUntil: state.pairing.readUntil } }
+          : undefined,
       );
     else if (state.pairing.state === 'blocked')
       await alert(
         'blocked',
         'Buddy access was blocked',
         'The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery.',
+        { version: 1, key: 'buddy-access-blocked', args: {} },
       );
     await this.peer.cloud(BuddyAction, 'status', {
       version: 1,

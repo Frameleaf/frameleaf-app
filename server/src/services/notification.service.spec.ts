@@ -1,3 +1,4 @@
+import type { AdminNotice } from 'src/repositories/event.repository.js';
 import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
@@ -162,6 +163,7 @@ describe(NotificationService.name, () => {
         expect.objectContaining({ userId: first.id, data: { dedupeKey: notice.dedupeKey } }),
       );
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', second.id, expect.anything());
+      expect(mocks.user.getMetadata).not.toHaveBeenCalled();
     });
 
     it('skips an administrator who already got the same notice within the window', async () => {
@@ -177,6 +179,73 @@ describe(NotificationService.name, () => {
       const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
       expect(Date.now() - since.getTime()).toBeGreaterThan(23 * 60 * 60 * 1000);
       expect(Date.now() - since.getTime()).toBeLessThan(25 * 60 * 60 * 1000);
+    });
+
+    it('renders current account locales per administrator after dedupe without persisting descriptors (FL-329)', async () => {
+      const [first, second, skipped] = Array.from({ length: 3 }, () => UserFactory.create({ isAdmin: true }));
+      const error = 'unavailable <b>now</b> $& {count}';
+      const registered: AdminNotice = {
+        ...notice,
+        description: `The last 3 check-ins failed (${error}). Cloud features may pause; local features keep working.`,
+        systemTemplate: { version: 1, key: 'cloud-heartbeat-failed', args: { count: 3, error } },
+      };
+      mocks.user.getAdmins.mockResolvedValue([first, second, skipped] as never);
+      mocks.notification.findRecentByDedupeKey.mockImplementation((userId) =>
+        Promise.resolve(userId === skipped.id ? { id: 'n1' } : null),
+      );
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+      mocks.user.getMetadata.mockImplementation((userId) =>
+        Promise.resolve([
+          {
+            key: UserMetadataKey.Preferences,
+            value: {
+              notifications: {
+                locale: userId === first.id ? 'en-XA' : 'fr-CA',
+                devices: [{ sessionId: newUuid(), locale: 'fr-CA' }],
+              },
+            },
+          },
+        ]),
+      );
+      NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+      try {
+        await expect(sut.notifyAdmins(registered)).resolves.toBe(2);
+        expect(mocks.notification.create.mock.calls.map(([item]) => item)).toEqual([
+          {
+            userId: first.id,
+            type: registered.type,
+            level: registered.level,
+            title: `[Fixture ${registered.title}]`,
+            description: `[Fixture ${registered.description}]`,
+            data: { dedupeKey: registered.dedupeKey },
+          },
+          {
+            userId: second.id,
+            type: registered.type,
+            level: registered.level,
+            title: registered.title,
+            description: registered.description,
+            data: { dedupeKey: registered.dedupeKey },
+          },
+        ]);
+        expect(mocks.user.getMetadata.mock.calls).toEqual([[first.id], [second.id]]);
+        expect(mocks.websocket.clientSend).toHaveBeenCalledTimes(2);
+
+        mocks.user.getAdmins.mockResolvedValue([first] as never);
+        mocks.user.getMetadata.mockRejectedValue(new Error('locale lookup unavailable'));
+        await sut.notifyAdmins(registered);
+        expect(mocks.notification.create).toHaveBeenLastCalledWith(
+          expect.objectContaining({ title: registered.title, description: registered.description }),
+        );
+        mocks.notification.create.mockRejectedValue(new Error('storage unavailable'));
+        await expect(sut.onAdminNotify(registered)).resolves.toBeUndefined();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+          `Unable to notify administrators (${registered.title}): Error: storage unavailable`,
+        );
+        expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(error);
+      } finally {
+        delete NOTIFICATION_CATALOGS['en-XA'];
+      }
     });
 
     it('caps the window at 30 days and always sends a notice without a key', async () => {

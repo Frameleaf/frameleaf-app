@@ -3,7 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
-import { DatabaseLock, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  DatabaseLock,
+  MediaOperationKind,
+  MediaOperationStatus,
+  NotificationLevel,
+  NotificationType,
+} from 'src/enum.js';
 import { BuddyBackupRepository, type BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -311,6 +317,7 @@ const createRunFixture = async (directory: string) => {
   vi.stubGlobal('fetch', fetch);
   return {
     service,
+    events,
     worker,
     repository,
     capture,
@@ -346,6 +353,48 @@ describe('Buddy production run controls and checkpoints', () => {
     vi.useRealTimers();
     await rm(directory, { recursive: true, force: true });
   });
+
+  it.each([
+    ['2026-09-25T00:00:00.000Z', 'ended', '2026-11-07T12:30:00.000Z', 'buddy-backup-stale', 'buddy-pairing-ended'],
+    [null, 'blocked', null, 'buddy-backup-first-stale', 'buddy-access-blocked'],
+  ] as const)(
+    'registers the %s / %s maintenance notices (FL-329)',
+    async (lastCompleteAt, state, readUntil, stale, access) => {
+      const { service, events, repository } = fixture;
+      const current = await repository.update((current) => ({
+        ...current,
+        lastCompleteAt,
+        protectionStartedAt: '2026-09-25T00:00:00.000Z',
+        pairing: { ...current.pairing!, state, readUntil },
+      }));
+      await mkdir(current.settings!.directory, { recursive: true });
+      vi.mocked(service.peer.pairing).mockResolvedValue(current.pairing);
+      vi.mocked(service.peer.cloud).mockResolvedValue({ version: 1, reports: [] });
+      vi.spyOn(BuddyVault.prototype, 'prune').mockResolvedValue({ committedBytes: 0, reservedBytes: 0 });
+      vi.spyOn(BuddyVault.prototype, 'usage').mockResolvedValue({ committedBytes: 99 * 1024 ** 3, reservedBytes: 0 });
+
+      await service['housekeeping']();
+      const notices = events.emit.mock.calls.filter(([event]) => event === 'AdminNotify').map(([, notice]) => notice);
+      expect(notices).toEqual([
+        expect.objectContaining({ dedupeKey: 'buddy:stale', systemTemplate: { version: 1, key: stale, args: {} } }),
+        expect.objectContaining({
+          dedupeKey: 'buddy:capacity',
+          systemTemplate: { version: 1, key: 'buddy-storage-low', args: {} },
+        }),
+        expect.objectContaining({
+          dedupeKey: `buddy:${state}`,
+          systemTemplate: { version: 1, key: access, args: readUntil ? { readUntil } : {} },
+        }),
+      ]);
+      for (const notice of notices) {
+        expect(notice).toMatchObject({
+          type: NotificationType.SystemMessage,
+          level: NotificationLevel.Warning,
+          dedupeDays: 1,
+        });
+      }
+    },
+  );
 
   it.each(['timeout', 'reset', 'http-503'] as const)(
     'charges %s to the automatic retry budget and preserves its capture',

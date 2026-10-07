@@ -517,6 +517,9 @@ export class FrameleafLicenseService extends BaseService {
         level: NotificationLevel.Warning,
         title: 'Your Frameleaf Cloud renewal did not go through',
         description: `Remote access and cloud backup keep working until ${graceUntil?.toISOString().slice(0, 10)}. Update your payment method in your Frameleaf account to avoid a pause. Local features are not affected.`,
+        systemTemplate: graceUntil
+          ? { version: 1, key: 'license-grace', args: { until: graceUntil.toISOString().slice(0, 10) } }
+          : undefined,
         dedupeKey: `frameleaf-license:grace:${lead.claims.jti ?? lead.kid}`,
         dedupeDays: 30,
       });
@@ -527,6 +530,7 @@ export class FrameleafLicenseService extends BaseService {
         title: 'Your Frameleaf Cloud plan has ended',
         description:
           'Remote access and cloud backup are paused. Everything else on this server, including every photo, keeps working.',
+        systemTemplate: { version: 1, key: 'license-expired', args: {} },
         dedupeKey: `frameleaf-license:expired:${lead.claims.jti ?? lead.kid}`,
         dedupeDays: 30,
       });

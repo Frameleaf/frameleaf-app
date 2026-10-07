@@ -42,6 +42,14 @@ const argumentsOf = {
   'activation-first-backup-running': activationArguments,
   'activation-first-backup-scheduled': activationArguments,
   'album-invite-anonymous': z.object({ albumName: name }).strict(),
+  'cloud-heartbeat-failed': z.object({ count, error: name }).strict(),
+  'license-grace': z.object({ until: z.iso.date() }).strict(),
+  'license-expired': z.object({}).strict(),
+  'buddy-backup-stale': z.object({}).strict(),
+  'buddy-backup-first-stale': z.object({}).strict(),
+  'buddy-storage-low': z.object({}).strict(),
+  'buddy-pairing-ended': z.object({ readUntil: z.iso.datetime() }).strict(),
+  'buddy-access-blocked': z.object({}).strict(),
 } as const;
 
 type TemplateKey = keyof typeof argumentsOf;
@@ -115,6 +123,38 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       'album-invite-anonymous': {
         title: 'Shared Album Invitation',
         body: 'An album ({albumName}) was shared with you',
+      },
+      'cloud-heartbeat-failed': {
+        title: 'This server cannot reach Frameleaf Cloud',
+        body: 'The last {count} check-ins failed ({error}). Cloud features may pause; local features keep working.',
+      },
+      'license-grace': {
+        title: 'Your Frameleaf Cloud renewal did not go through',
+        body: 'Remote access and cloud backup keep working until {until}. Update your payment method in your Frameleaf account to avoid a pause. Local features are not affected.',
+      },
+      'license-expired': {
+        title: 'Your Frameleaf Cloud plan has ended',
+        body: 'Remote access and cloud backup are paused. Everything else on this server, including every photo, keeps working.',
+      },
+      'buddy-backup-stale': {
+        title: 'Buddy Backup is out of date',
+        body: 'Your last complete restore point is more than three days old. Check the sending status.',
+      },
+      'buddy-backup-first-stale': {
+        title: 'Buddy Backup is out of date',
+        body: 'Buddy Backup has not completed its first restore point after three days. Check the sending status.',
+      },
+      'buddy-storage-low': {
+        title: 'Buddy storage is running low',
+        body: 'Increase the hosting capacity or free space on the volume. Retained backups will not be deleted to make room.',
+      },
+      'buddy-pairing-ended': {
+        title: 'Your Buddy pairing has ended',
+        body: 'Recover your backup before {readUntil}. New backups have stopped.',
+      },
+      'buddy-access-blocked': {
+        title: 'Buddy access was blocked',
+        body: 'The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery.',
       },
     },
   },

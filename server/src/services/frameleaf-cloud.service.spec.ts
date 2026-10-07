@@ -1926,7 +1926,11 @@ describe(FrameleafCloudService.name, () => {
       expect(storedLink()?.heartbeat?.failures).toBe(3);
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'AdminNotify',
-        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:heartbeat-failing', level: NotificationLevel.Warning }),
+        expect.objectContaining({
+          dedupeKey: 'frameleaf-cloud:heartbeat-failing',
+          level: NotificationLevel.Warning,
+          systemTemplate: { version: 1, key: 'cloud-heartbeat-failed', args: { count: 3, error: 'down' } },
+        }),
       );
 
       cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { cloneSuspected: true } }));
