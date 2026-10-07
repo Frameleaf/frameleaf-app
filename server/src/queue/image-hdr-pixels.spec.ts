@@ -18,7 +18,7 @@ describe('HDR area resize', () => {
     const result = resizeHdrImage(image(), 1, 1024 ** 3);
     expect([result.width, result.height, result.gamut]).toEqual([1, 1, 1]);
     expect([...new Float32Array(result.data.buffer, result.data.byteOffset, 4)]).toEqual([8, 10, 14, 1]);
-    expect('sdr' in result && [...result.sdr]).toEqual([60, 60, 60, 255]);
+    expect('sdr' in result && Buffer.isBuffer(result.sdr) && [...result.sdr]).toEqual([60, 60, 60, 255]);
     expect('sdrGamut' in result && result.sdrGamut).toBe(0);
   });
   it('preserves alpha using premultiplied linear samples', () => {
