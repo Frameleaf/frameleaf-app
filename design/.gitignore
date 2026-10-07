@@ -1,0 +1,14 @@
+# Prototypes and visual previews stay local by default.
+/*
+!/.gitignore
+!/AGENTS.md
+!/README.md
+!/frameleaf/
+/frameleaf/*
+
+# Production artwork and its source/provenance records remain versioned.
+!/frameleaf/brand-kit/
+!/frameleaf/derivatives/
+!/frameleaf/mark.png
+!/frameleaf/source-manifest.json
+!/frameleaf/tokens.json

@@ -4,17 +4,19 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 cp "$repo/.gitignore" "$scratch/.gitignore"
+mkdir "$scratch/design"
+cp "$repo/design/.gitignore" "$scratch/design/.gitignore"
 cp "$repo/.github/check-repository-hygiene.sh" "$scratch/check.sh"
 cd "$scratch"
 git init -q
 git config user.name 'Hygiene test'
 git config user.email 'hygiene-test@example.invalid'
 printf '%s\n' '# Product documentation' > README.md
-git add .gitignore check.sh README.md
+git add .gitignore design/.gitignore check.sh README.md
 git commit -qm baseline
 base=$(git rev-parse HEAD)
 bash check.sh
-for path in .agents/skills/test/SKILL.md .superpowers/task-report.md docs/superpowers/specs/test.md reports/private.md docs/docs/developer/frameleaf-plan/backlog.json studio/channel-preservation-test-packet.md CLAUDE.md; do
+for path in .agents/skills/test/SKILL.md .superpowers/task-report.md docs/superpowers/specs/test.md reports/private.md docs/docs/developer/frameleaf-plan/backlog.json studio/channel-preservation-test-packet.md CLAUDE.md design/frameleaf-manager/app.js design/frameleaf/template/src/App.jsx design/private-preview/index.html; do
   mkdir -p "$(dirname "$path")"
   printf '%s\n' private > "$path"
   git check-ignore -q "$path"
@@ -39,7 +41,7 @@ fi
 git reset -q --soft "$base"
 git commit --allow-empty -qm 'clean candidate'
 HYGIENE_BASE_SHA="$base" bash check.sh
-for path in README.md AGENTS.md design/AGENTS.md docs/docs/guides/setup.md docs/docs/administration/upstream-handoff.md server/test/fixtures/SOURCE.md studio/rights-evidence/license.txt; do
+for path in README.md AGENTS.md design/.gitignore design/AGENTS.md design/README.md design/frameleaf/brand-kit/frameleaf-symbol.svg design/frameleaf/derivatives/frameleaf-logo-light.svg docs/docs/guides/setup.md docs/docs/administration/upstream-handoff.md server/test/fixtures/SOURCE.md studio/rights-evidence/license.txt; do
   if git check-ignore -q --no-index "$path"; then
     printf '%s\n' "FAILED: ignored reviewed source $path"
     exit 1

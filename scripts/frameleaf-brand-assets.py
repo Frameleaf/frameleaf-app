@@ -36,10 +36,7 @@ SUPPLIED_SOURCES = {
 
 REFERENCE_SPECS = (
     ("design/frameleaf/tokens.json", "approved-token-reference"),
-    ("design/frameleaf/template/README.md", "approved-prototype-usage-contract"),
-    ("design/frameleaf/references/README.md", "approved-visual-reference-contract"),
     ("design/frameleaf/mark.png", "historical-raster-reference-not-authority"),
-    ("design/frameleaf/template/public/media/brand.png", "historical-raster-reference-not-authority"),
 )
 
 COMPATIBILITY_SENTINELS = (
@@ -371,13 +368,11 @@ def build_inventory(root):
         "sourceManifest": source_manifest,
         "digests": {"suppliedSourceLedgerSha256": supplied_ledger,
             "approvedReferenceLedgerSha256": reference_ledger},
-        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 3,
-            "historicalRasterReferences": 2, "generatedDerivatives": 0},
+        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 1,
+            "historicalRasterReferences": 1, "generatedDerivatives": 0},
         "suppliedSources": originals,
         "approvedReferences": references,
-        "expectedDuplicateContent": [{"sha256": references[-1]["sha256"],
-            "paths": [references[-2]["path"], references[-1]["path"]],
-            "reason": "The portable template retained the historical generated prototype raster byte-for-byte."}],
+        "expectedDuplicateContent": [],
         "compatibilitySentinels": sentinels,
         "policies": {"globalImmichStringReplacementProhibited": True, "suppliedSourceMutationProhibited": True,
             "unknownBrandKitMembersProhibited": True, "derivativesRequireSeparateIdentityAndProvenance": True},
@@ -404,7 +399,7 @@ def main(argv=None):
         if args.print_inventory:
             print(json.dumps(inventory, indent=2, sort_keys=True) + "\n", end="")
         elif args.check:
-            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 5 references, 0 derivatives.")
+            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 2 references, 0 derivatives.")
     except (KeyError, OSError, ET.ParseError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"Frameleaf brand contract failed: {error}", file=sys.stderr)
         return 1
