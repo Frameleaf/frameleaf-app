@@ -64,7 +64,50 @@
      getDevice: vi.fn(() => params.device),
      applyEffectsToTexture: vi.fn().mockReturnValue(true),
    }
-@@ -1495,6 +1496,7 @@
+@@ -755,6 +756,42 @@
+   beforeEach(() => {
+     testSpies.loggerDebugSpy.mockClear()
+     localStorage.removeItem('freecut.debugGpuTransitions')
++  })
++
++  it('keeps masked effects and corner pins on the established fallback route', async () => {
++    const { outputTexture, gpuTexturePool, canvasPool } = createTransitionTextureHarness()
++    const pipelines = createGpuTransitionPipelineMocks()
++    const rctx = createItemRenderContext({
++      canvasPool: canvasPool as unknown as ItemRenderContext['canvasPool'],
++      gpuPipeline: {
++        applyEffectsToTexture: vi.fn(),
++      } as unknown as ItemRenderContext['gpuPipeline'],
++      gpuMediaPipeline:
++        pipelines.gpuMediaPipeline as unknown as ItemRenderContext['gpuMediaPipeline'],
++      gpuTransitionPipeline:
++        pipelines.gpuTransitionPipeline as unknown as ItemRenderContext['gpuTransitionPipeline'],
++    })
++    const mask = { inverted: false, feather: 0, opacity: 1, maskType: 'alpha' as const }
++    const effect: ItemEffect = {
++      id: 'masked-grade',
++      enabled: true,
++      effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 1 } },
++    }
++    for (const changes of [
++      { effects: [effect] },
++      { cornerPin: { topLeft: [1, 1], topRight: [0, 0], bottomRight: [0, 0], bottomLeft: [0, 0] } },
++    ]) {
++      const transition = createActiveTransition()
++      Object.assign(transition.leftClip, changes)
++      expect(
++        await renderTransitionToGpuTexture(outputTexture, transition, 55, rctx, 1, gpuTexturePool, [
++          mask,
++        ]),
++      ).toBe(false)
++    }
++    expect(gpuTexturePool.acquire).not.toHaveBeenCalled()
++    expect(canvasPool.acquire).not.toHaveBeenCalled()
++    expect(pipelines.gpuTransitionPipeline.renderTexturesToTexture).not.toHaveBeenCalled()
+   })
+
+   it('routes eligible image participants through GPU media textures without canvas rendering', async () => {
+@@ -1495,6 +1532,7 @@
        queue: { copyExternalImageToTexture: vi.fn() },
      }
      const gpuPipeline = {
@@ -72,7 +115,7 @@
        getDevice: vi.fn(() => device),
        applyEffectsToTexture: vi.fn().mockReturnValue(true),
      }
-@@ -1853,6 +1855,7 @@
+@@ -1853,6 +1891,7 @@
        release: vi.fn(),
      }
      const gpuPipeline = {
@@ -80,7 +123,7 @@
        getDevice: vi.fn(() => device),
        applyEffectsToTexture: vi.fn().mockReturnValue(true),
        applyTextureEffectsToTexture: vi.fn().mockReturnValue(true),
-@@ -2225,6 +2228,7 @@
+@@ -2225,6 +2264,7 @@
      }
      const canvasPool = { acquire: vi.fn(), release: vi.fn() }
      const gpuPipeline = {
@@ -88,7 +131,7 @@
        getDevice: vi.fn(() => device),
        applyEffectsToTexture: vi.fn().mockReturnValue(true),
        applyTextureEffectsToTexture: vi.fn().mockReturnValue(true),
-@@ -2423,6 +2427,7 @@
+@@ -2423,6 +2463,7 @@
        release: vi.fn(),
      }
      const gpuPipeline = {
@@ -602,6 +645,49 @@
      } finally {
        rctx.isRenderingTransition = prevTransitionFlag
      }
+@@ -269,6 +272,17 @@
+     rctx,
+   )
+
++  // ponytail: post-transition masks cover effect-free, unwarped participants;
++  // effects need their pre-effect matte and corner pins need a warped matte.
++  if (
++    trackMasks.length > 0 &&
++    [leftParticipant, rightParticipant].some(
++      (participant) => participant.effects.length > 0 || hasCornerPin(participant.item.cornerPin),
++    )
++  ) {
++    return null
++  }
++
+   const poolTextures: GPUTexture[] = []
+   const poolCanvases: OffscreenCanvas[] = []
+   const prevTransitionFlag = rctx.isRenderingTransition
+@@ -469,6 +483,7 @@
+   rctx: ItemRenderContext,
+   trackOrder: number,
+   gpuTexturePool?: Pick<GpuTexturePool, 'acquire' | 'release'>,
++  trackMasks: EffectSourceMask[] = [],
+ ): Promise<boolean> {
+   const renderer = transitionRegistry.getRenderer(activeTransition.transition.presentation)
+   const gpuTransitionId = renderer?.gpuTransitionId
+@@ -482,6 +497,7 @@
+       rctx,
+       trackOrder,
+       gpuTexturePool,
++      trackMasks,
+     )
+     if (textureParticipants) {
+       try {
+@@ -506,6 +522,8 @@
+     }
+   }
+
++  if (trackMasks.length > 0) return false
++
+   const participants = await renderTransitionParticipants(activeTransition, frame, rctx, trackOrder)
+   try {
+     return pipeline.renderToTexture(
 --- a/src/features/export/utils/canvas-item-renderer/types.ts
 +++ b/src/features/export/utils/canvas-item-renderer/types.ts
 @@ -6,6 +6,7 @@
@@ -766,7 +852,7 @@
  import { HdrRasterSources, type HdrRasterInput } from './hdr-raster-sources'
  import { ScrubbingCache } from '@/features/export/deps/preview'
  import {
-@@ -2502,252 +2502,265 @@
+@@ -2502,252 +2502,261 @@
 
        // === PERFORMANCE: Use pooled canvas instead of creating new one each frame ===
        const { canvas: contentCanvas, ctx: contentCtx } = canvasPool.acquire()
@@ -926,12 +1012,7 @@
 +              const transitionMasks = activeMasks.filter((mask) =>
 +                doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
 +              )
-+              if (
-+                useGpuCompositor &&
-+                gpu.texturePool &&
-+                transitionMasks.length === 0 &&
-+                itemRenderContext.gpuTransitionPipeline
-+              ) {
++              if (useGpuCompositor && gpu.texturePool && itemRenderContext.gpuTransitionPipeline) {
 +                const transitionTexture = gpu.texturePool.acquire(
                    canvasSettings.width,
                    canvasSettings.height,
@@ -953,6 +1034,7 @@
                      gpu.texturePool,
 -                    floatTexture,
 -                    poolCanvases,
++                    transitionMasks,
                    )
 -                ) {
 -                  return { gpuTexture: floatTexture, poolCanvases }
@@ -1260,6 +1342,97 @@
        }
      },
 
+--- a/src/features/export/utils/frame-compositing.ts
++++ b/src/features/export/utils/frame-compositing.ts
+@@ -11,6 +11,7 @@
+ import type { CanvasSettings, ItemRenderContext } from './canvas-item-renderer'
+ import type { GpuPipelineManager } from './gpu-pipeline-manager'
+ import type { RenderedTaskResult } from './frame-mask-helpers'
++import { HdrRenderUnavailableError } from './hdr-video-sources'
+
+ function getLog() {
+   return createLogger('ClientRenderEngine')
+@@ -146,19 +147,31 @@
+         const applicableMasks = activeMasks.filter((mask) =>
+           doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
+         )
+-        const shouldUseSeparateMask = task.type === 'item' && !taskHasCornerPin
++        const shouldUseSeparateMask =
++          !taskHasCornerPin && (task.type === 'item' || Boolean(results[i]?.gpuTexture))
+         let result: RenderedTaskResult | null = shouldUseSeparateMask
+           ? (results[i] ?? null)
+           : applyTrackScopedMasks(results[i] ?? null, task.trackOrder, taskHasCornerPin)
+         if (!result) continue
+
+-        let maskInfo =
+-          shouldUseSeparateMask && applicableMasks.length > 0
+-            ? renderMasksToGpuTexture(applicableMasks)
+-            : null
++        let maskInfo: ReturnType<FrameCompositingDeps['renderMasksToGpuTexture']>
++        try {
++          maskInfo =
++            shouldUseSeparateMask && applicableMasks.length > 0
++              ? renderMasksToGpuTexture(applicableMasks)
++              : null
++        } catch (error) {
++          if (floatOutput) {
++            throw new HdrRenderUnavailableError('Float layer mask could not be rendered')
++          }
++          throw error
++        }
+         if (maskInfo) layerMaskTextures.push(maskInfo.texture)
+         let fallbackMasks = shouldUseSeparateMask ? applicableMasks : []
+         if (shouldUseSeparateMask && applicableMasks.length > 0 && !maskInfo) {
++          if (result.gpuTexture) {
++            throw new HdrRenderUnavailableError('Float layer mask could not be rendered')
++          }
+           const maskedResult = applyTrackScopedMasks(result, task.trackOrder, false)
+           if (!maskedResult) continue
+           result = maskedResult
+@@ -320,7 +333,12 @@
+       // Always return pooled resources, including when upload, compositing, or
+       // fallback rendering throws. Otherwise the pool permanently treats them
+       // as in-use and allocates replacements on every later frame.
+-      for (const texture of new Set(layerTextures)) gpu.texturePool!.release(texture)
++      for (const texture of new Set([
++        ...layerTextures,
++        ...results.flatMap((result) => (result?.gpuTexture ? [result.gpuTexture] : [])),
++      ])) {
++        gpu.texturePool!.release(texture)
++      }
+       for (const texture of new Set(layerMaskTextures)) gpu.texturePool!.release(texture)
+     }
+   } else {
+--- a/src/features/export/utils/frame-mask-helpers.ts
++++ b/src/features/export/utils/frame-mask-helpers.ts
+@@ -39,14 +39,19 @@
+   applyMasks(maskedCtx, maskSource, masks, maskSettings)
+
+   const texture = gpu.texturePool.acquire(canvasSettings.width, canvasSettings.height)
+-  gpu
+-    .effects!.getDevice()
+-    .queue.copyExternalImageToTexture(
+-      { source: maskedCanvas, flipY: false },
+-      { texture },
+-      { width: canvasSettings.width, height: canvasSettings.height },
+-    )
+-  return { texture, view: texture.createView() }
++  try {
++    gpu
++      .effects!.getDevice()
++      .queue.copyExternalImageToTexture(
++        { source: maskedCanvas, flipY: false },
++        { texture },
++        { width: canvasSettings.width, height: canvasSettings.height },
++      )
++    return { texture, view: texture.createView() }
++  } catch (error) {
++    gpu.texturePool.release(texture)
++    throw error
++  }
+ }
+
+ /**
 --- a/src/features/export/utils/frame-render-tasks.ts
 +++ b/src/features/export/utils/frame-render-tasks.ts
 @@ -228,50 +228,57 @@

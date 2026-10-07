@@ -436,11 +436,20 @@ window.__vite_plugin_react_preamble_installed__ = true
       useCompositionsStore.getState().setCompositions(previousCompositions);
     }
 
-    // 5. Diagnostic only: current prepared source is unavailable, so the
-    // supported-float versus forced-Canvas capability cannot be bound here.
-    // Successful output still has mandatory independent numerical goldens.
-    // A documented refusal records missing coverage; it never qualifies this
-    // path or weakens any mandatory nested/video preservation assertion above.
+    const { CanvasPool } = await import('/src/features/export/utils/canvas-pool.ts');
+    const { GpuTexturePool } = await import('/src/infrastructure/gpu-compositor/gpu-texture-pool.ts');
+    const { useMediaLibraryStore } = await import('/src/features/media-library/stores/media-library-store.ts');
+    const pools = { canvas: new Set(), texture: new Set() };
+    const acquireCanvas = CanvasPool.prototype.acquire;
+    const acquireTexture = GpuTexturePool.prototype.acquire;
+    CanvasPool.prototype.acquire = function (...args) { pools.canvas.add(this); return acquireCanvas.apply(this, args); };
+    GpuTexturePool.prototype.acquire = function (...args) { pools.texture.add(this); return acquireTexture.apply(this, args); };
+    const poolUsage = () => Object.fromEntries(Object.entries(pools).map(([kind, entries]) =>
+      [kind, [...entries].reduce((sum, pool) => sum + pool.getStats().inUse, 0)]));
+
+    // 5. The supported masked raster transition stays in float; section 6
+    // explicitly disables its GPU capability to test the Canvas refusal.
+    // This source regression does not qualify other GPU backends or hardware.
     const rasterCodes = [0.7, 0.45, 0.25].map((value) => Math.round(value * 65535));
     const rasterInput = { width: SIZE, height: SIZE, transfer: 'pq',
       rgb: new Uint16Array(Array.from({ length: SIZE * SIZE }, () => rasterCodes).flat()) };
@@ -452,50 +461,231 @@ window.__vite_plugin_react_preamble_installed__ = true
       from: 0, durationInFrames: 60, shapeType: 'rectangle', fillColor: '#ffffff',
       strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
       transform: { x: 0, y: -SIZE / 4, width: SIZE + 16, height: SIZE / 2, rotation: 0, opacity: 1 } };
-    let rasterRenderer;
-    let maskedRasterTransition;
+    const { TransitionPipeline } = await import('/src/infrastructure/gpu-transitions/transition-pipeline.ts');
+    const renderTextureTransition = TransitionPipeline.prototype.renderTexturesToTexture;
+    const hasRasterTransition = TransitionPipeline.prototype.has;
+    let rasterGpuCalls = 0;
+    TransitionPipeline.prototype.renderTexturesToTexture = function (...args) {
+      rasterGpuCalls++;
+      return renderTextureTransition.apply(this, args);
+    };
+    const rightCodes = [0.65, 0.45, 0.25].map((value) => Math.round(value * 65535));
+    const rightInput = { ...rasterInput,
+      rgb: new Uint16Array(Array.from({ length: SIZE * SIZE }, () => rightCodes).flat()) };
+    const rightWorking = color.signalToWorking(rightCodes.map((value) => value / 65535), 'pq');
+    // Frame 39 reaches the end of this 20-frame window; Cross Dissolve uses
+    // cosine weights even when timeline timing is linear. Independent CPU oracle.
+    const atProgress = (progress) => {
+      const weight = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+      return rasterWorking.map((value, channel) => value * (1 - weight) + rightWorking[channel] * weight);
+    };
     const rasterOutputs = [];
+    const rasterTransitionCases = [];
+    let maskedRasterTransition;
+    let maskUploadFailure;
+    let maskUploadPreview;
+    let maskContextFailure;
+    let rasterForcedRefusal;
     try {
-      const canvas = new OffscreenCanvas(SIZE, SIZE);
-      rasterRenderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
-        durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-        tracks: [nestedTrack('raster-mask', 0, [rasterMask]),
-          nestedTrack('raster-clips', 1, [rasterClip('raster-left', 0), rasterClip('raster-right', 30)])],
-        transitions: [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
-          trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right',
-          durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'),
-      { mode: 'export', hdrRasters: { 'masked-raster': rasterInput } });
-      await rasterRenderer.preload?.();
-      for (const target of ['pq', 'hlg']) {
-        const frame = await rasterRenderer.renderFrameSignal(30, target);
-        rasterOutputs.push({ target, width: frame.width, height: frame.height,
-          points: [rasterWorking, background].map((rgb, index) => ({
-            got: Array.from(frame.rgba.slice(((index ? 48 : 16) * frame.width + 48) * 4,
-              ((index ? 48 : 16) * frame.width + 48) * 4 + 4)),
-            want: color.workingToSignal(rgb, target) })) });
+      for (const [variant, invert, opacity] of [['opaque', false, 1], ['inverted-partial', true, 0.65]]) {
+        const canvas = new OffscreenCanvas(SIZE, SIZE);
+        const renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+          durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+          tracks: [nestedTrack('raster-mask', 0, [{ ...rasterMask, maskInvert: invert,
+            transform: { ...rasterMask.transform, opacity } }]),
+            nestedTrack('raster-clips', 1, [rasterClip('raster-left', 0),
+              { ...rasterClip('raster-right', 30), mediaId: 'masked-raster-right' }])],
+          transitions: [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+            trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right',
+            durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'),
+        { mode: 'export', hdrRasters: { 'masked-raster': rasterInput, 'masked-raster-right': rightInput } });
+        try {
+          await renderer.preload?.();
+          for (const frameNumber of [25, 30, 35]) {
+            const source = atProgress((frameNumber - 20) / 19);
+            for (const target of ['pq', 'hlg']) {
+              const before = poolUsage();
+              const frame = await renderer.renderFrameSignal(frameNumber, target);
+              const points = [16, 48].map((y) => {
+                const matte = (invert ? y > 32 : y < 32) ? Math.round(opacity * 255) / 255 : 0;
+                const over = (rgb) => rgb.map((value, channel) =>
+                  value * matte + background[channel] * (1 - matte));
+                const working = over(source);
+                return { got: Array.from(frame.rgba.slice((y * frame.width + 48) * 4,
+                    (y * frame.width + 48) * 4 + 4)), working,
+                  want: color.workingToSignal(working, target),
+                  clipped: color.workingToSignal(over(source.map((value) => Math.max(0, Math.min(1, value)))), target),
+                  nonnegative: color.workingToSignal(over(source.map((value) => Math.max(0, value))), target) };
+              });
+              const output = { target, width: frame.width, height: frame.height, points };
+              rasterTransitionCases.push({ variant, frameNumber, source, before, after: poolUsage(), ...output });
+              if (variant === 'opaque' && frameNumber === 30) rasterOutputs.push(output);
+            }
+          }
+          if (variant === 'opaque') {
+            const before = poolUsage();
+            const copyExternal = device.queue.copyExternalImageToTexture;
+            device.queue.copyExternalImageToTexture = () => { throw new Error('forced mask upload failure'); };
+            try {
+              await renderer.renderFrameSignal(30, 'pq');
+              throw new Error('Failed mask upload emitted a signal');
+            } catch (error) {
+              if (!['forced mask upload failure', 'Float layer mask could not be rendered'].includes(error.message)) throw error;
+              maskUploadFailure = { before, after: poolUsage(), emitted: 0, name: error.name, reason: error.message };
+            } finally { device.queue.copyExternalImageToTexture = copyExternal; }
+            // Mount the real pump, stage and Player. The renderer's upload
+            // exception must hide the decoded SDR surface until managed recovery.
+            // Reuse Vite's versioned dependency URLs so hooks and createRoot
+            // share the same React dispatcher as the production components.
+            const entry = await fetch('/src/main.tsx').then((response) => response.text());
+            const reactUrl = entry.match(/from "([^"]+\/react\.js\?[^"]*)"/)[1];
+            const clientUrl = entry.match(/from "([^"]+\/react-dom_client\.js\?[^"]*)"/)[1];
+            const reactModule = await import(reactUrl);
+            const React = reactModule.default ?? reactModule;
+            const clientModule = await import(clientUrl);
+            const { createRoot } = clientModule.default ?? clientModule;
+            const { PreviewStage } = await import('/src/features/preview/components/preview-stage.tsx');
+            const { usePreviewRuntimeRefs } = await import('/src/features/preview/hooks/use-preview-runtime-refs.ts');
+            const { usePreviewOverlayController } = await import('/src/features/preview/hooks/use-preview-overlay-controller.ts');
+            const { usePreviewRenderPump } = await import('/src/features/preview/hooks/use-preview-render-pump-controller.ts');
+            const { usePlaybackStore } = await import('/src/shared/state/playback/index.ts');
+            const { usePreviewBridgeStore } = await import('/src/shared/state/preview-bridge/index.ts');
+            const { resetPlaybackPreviewState } = await import('/src/shared/state/playback-preview-test-helpers.ts');
+            const host = document.createElement('div');
+            document.body.append(host);
+            const root = createRoot(host);
+            const noop = () => {}, no = () => false, nothing = () => null;
+            const calls = [], failures = [];
+            const managedRenderer = { ...renderer, renderFrame: async (frame) => {
+              calls.push(frame);
+              try { await renderer.renderFrame(frame); }
+              catch (error) { failures.push({ frame, name: error.name, reason: error.message }); throw error; }
+            } };
+            const props = { fps: FPS, width: SIZE, height: SIZE, durationInFrames: 60,
+              backgroundColor: '#000000', transitions: [], keyframes: [], tracks: [nestedTrack('player-sdr', 0,
+                [{ id: 'decoded-sdr', type: 'video', trackId: 'player-sdr', src: '/hdr-fixture/pq.mp4',
+                  from: 20, durationInFrames: 30, sourceStart: 0, sourceEnd: 30, sourceFps: FPS,
+                  sourceDuration: 30, speed: 1, transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 } }])] };
+            function Harness() {
+              const refs = usePreviewRuntimeRefs();
+              const overlay = usePreviewOverlayController({ bypassPreviewSeekRef: refs.bypassPreviewSeekRef,
+                setDisplayedFrame: usePreviewBridgeStore.getState().setDisplayedFrame });
+              const params = React.useMemo(() => ({ ...refs.renderPumpRefs, fps: FPS,
+                forceFastScrubOverlay: true, useProxy: false, combinedTracks: [],
+                fastScrubBoundaryFrames: [], fastScrubBoundarySources: [], playbackTransitionOverlayWindows: [],
+                playbackTransitionLookaheadFrames: 0, playbackTransitionCooldownFrames: 0,
+                playbackTransitionPrerenderRunwayFrames: 0, previewPerfRef: { current: {} },
+                ensureFastScrubRenderer: async () => { refs.scrubOffscreenCanvasRef.current = canvas; return managedRenderer; },
+                ensureBgTransitionRenderer: async () => null, disposeFastScrubRenderer: noop,
+                shouldPreferPlayerForPreview: no, shouldPreserveHighFidelityBackwardPreview: no,
+                getTransitionWindowByStartFrame: nothing, getTransitionWindowForFrame: nothing,
+                getPlayingAnyTransitionPrewarmStartFrame: nothing, getPausedTransitionPrewarmStartFrame: nothing,
+                getPinnedTransitionElementForItem: nothing, pinTransitionPlaybackSession: nothing,
+                clearTransitionPlaybackSession: noop, cacheTransitionSessionFrame: noop,
+                preparePlaybackTransitionFrame: async () => false, pushTransitionTrace: noop,
+                isPausedTransitionOverlayActive: no, trackPlayerSeek: noop,
+                setDisplayedFrame: usePreviewBridgeStore.getState().setDisplayedFrame,
+                hideFastScrubOverlay: overlay.hideFastScrubOverlay, hidePlaybackTransitionOverlay: overlay.hidePlaybackTransitionOverlay,
+                showFastScrubOverlayForFrame: overlay.showFastScrubOverlayForFrame,
+                showPlaybackTransitionOverlayForFrame: overlay.showPlaybackTransitionOverlayForFrame,
+                showFastScrubOverlayRef: overlay.showFastScrubOverlayRef }), [refs.renderPumpRefs]);
+              const unavailable = usePreviewRenderPump(params);
+              return React.createElement(PreviewStage, { backgroundRef: { current: null }, playerRef: refs.playerRef,
+                scrubCanvasRef: refs.scrubCanvasRef, gpuEffectsCanvasRef: refs.gpuEffectsCanvasRef,
+                needsOverflow: false, playerSize: { width: SIZE, height: SIZE }, playerRenderSize: { width: SIZE, height: SIZE },
+                overlayRenderSize: { width: SIZE, height: SIZE }, totalFrames: 60, fps: FPS, initialFrame: 30,
+                isResolving: false, isRenderedOverlayVisible: overlay.isRenderedOverlayVisible,
+                hdrPreviewUnavailable: unavailable, colorGradeComparisonMode: 'split', inputProps: props,
+                onBackgroundClick: noop, onFrameChange: noop, onPlayStateChange: noop, setPlayerContainerRefCallback: noop });
+            }
+            const waitUntil = async (ready) => {
+              const deadline = performance.now() + 10000;
+              while (!ready()) {
+                if (performance.now() > deadline) throw new Error('Mask preview regression timed out');
+                await new Promise(requestAnimationFrame);
+              }
+              await new Promise(requestAnimationFrame);
+              await new Promise(requestAnimationFrame);
+            };
+            const state = () => {
+              const player = host.querySelector('[data-player-container] [data-player-container]');
+              if (!player) throw new Error('Production Player surface missing');
+              return { playerVisibility: getComputedStyle(player).visibility,
+                unavailable: Boolean(host.querySelector('[role="alert"]')),
+                displayedFrame: usePreviewBridgeStore.getState().displayedFrame };
+            };
+            const beforePreview = poolUsage();
+            resetPlaybackPreviewState(30);
+            device.queue.copyExternalImageToTexture = () => { throw new Error('forced mask upload failure'); };
+            try {
+              root.render(React.createElement(Harness));
+              await waitUntil(() => failures.length > 0);
+              const first = state();
+              maskUploadPreview = { first, calls, failures, before: beforePreview };
+              if (failures[0].name === 'HdrRenderUnavailableError') {
+                const firstFailures = failures.length;
+                usePlaybackStore.getState().setPreviewFrame(31);
+                await waitUntil(() => failures.length > firstFailures && failures.some((error) => error.frame === 31));
+                maskUploadPreview.seek = state();
+                maskUploadPreview.afterRefusals = poolUsage();
+                device.queue.copyExternalImageToTexture = copyExternal;
+                usePlaybackStore.getState().setPreviewFrame(32);
+                await waitUntil(() => usePreviewBridgeStore.getState().displayedFrame === 32);
+                maskUploadPreview.recovery = state();
+              }
+            } finally {
+              device.queue.copyExternalImageToTexture = copyExternal;
+              root.unmount(); host.remove(); resetPlaybackPreviewState();
+            }
+            const getContext = OffscreenCanvas.prototype.getContext;
+            const acquireBeforeContextFailure = CanvasPool.prototype.acquire;
+            const beforeContextFailure = poolUsage();
+            let maskContextArmed = false;
+            CanvasPool.prototype.acquire = function (...args) {
+              const entry = acquireBeforeContextFailure.apply(this, args);
+              maskContextArmed = true;
+              return entry;
+            };
+            // The content surface remains available; only the following colorless
+            // matte lacks a context. HDR participants have no Canvas ingress.
+            OffscreenCanvas.prototype.getContext = function (type, ...args) {
+              return type === '2d' && maskContextArmed ? null : getContext.call(this, type, ...args);
+            };
+            try {
+              await renderer.renderFrameSignal(30, 'pq');
+              throw new Error('Missing mask context emitted a signal');
+            } catch (error) {
+              if (error.name !== 'HdrRenderUnavailableError' || error.message !== 'Float layer mask could not be rendered') throw error;
+              maskContextFailure = { before: beforeContextFailure, after: poolUsage(), emitted: 0, reason: error.message };
+            } finally {
+              OffscreenCanvas.prototype.getContext = getContext;
+              CanvasPool.prototype.acquire = acquireBeforeContextFailure;
+            }
+            TransitionPipeline.prototype.has = () => false;
+            const beforeRefusal = poolUsage();
+            try {
+              await renderer.renderFrameSignal(30, 'pq');
+              throw new Error('Forced raster Canvas fallback emitted a signal');
+            } catch (error) {
+              if (!/^HDR raster cannot (?:fall back to|be drawn through) a canvas$/.test(error.message)) throw error;
+              rasterForcedRefusal = { before: beforeRefusal, after: poolUsage(), emitted: 0, reason: error.message };
+            } finally { TransitionPipeline.prototype.has = hasRasterTransition; }
+          }
+        } finally { renderer.dispose(); }
       }
-      maskedRasterTransition = { coverage: 'diagnostic-unqualified', status: 'preserved',
-        working: rasterWorking, outputs: rasterOutputs };
+      maskedRasterTransition = { coverage: 'source-regression-only', status: 'preserved',
+        working: atProgress(10 / 19), outputs: rasterOutputs };
     } catch (error) {
       if (!(error instanceof Error) || !/^HDR raster (cannot (?:fall back to|be drawn through) a canvas|could not be rendered on the float route)$/.test(error.message)) throw error;
-      maskedRasterTransition = { coverage: 'diagnostic-unqualified', status: 'refused', reason: error.message,
-        outputs: rasterOutputs, unavailableCoverage: 'No authoritative supported-float/forced-Canvas discriminator; refusal is not qualification.' };
+      maskedRasterTransition = { coverage: 'source-regression-only', status: 'refused', reason: error.message,
+        outputs: rasterOutputs };
     } finally {
-      rasterRenderer?.dispose();
+      TransitionPipeline.prototype.renderTexturesToTexture = renderTextureTransition;
+      TransitionPipeline.prototype.has = hasRasterTransition;
     }
-    // 6. Root masked transitions explicitly take the Canvas2D fallback in
-    // client-render-engine. Real registered HDR videos must refuse that path
+    maskedRasterTransition.gpuTextureTransitions = rasterGpuCalls;
+    // 6. Force GPU transition capability unavailable. Registered HDR videos must refuse that path
     // before a signal is emitted, rather than importing their SDR playback.
-    const { CanvasPool } = await import('/src/features/export/utils/canvas-pool.ts');
-    const { GpuTexturePool } = await import('/src/infrastructure/gpu-compositor/gpu-texture-pool.ts');
-    const { useMediaLibraryStore } = await import('/src/features/media-library/stores/media-library-store.ts');
-    const pools = { canvas: new Set(), texture: new Set() };
-    const acquireCanvas = CanvasPool.prototype.acquire;
-    const acquireTexture = GpuTexturePool.prototype.acquire;
-    CanvasPool.prototype.acquire = function (...args) { pools.canvas.add(this); return acquireCanvas.apply(this, args); };
-    GpuTexturePool.prototype.acquire = function (...args) { pools.texture.add(this); return acquireTexture.apply(this, args); };
-    const poolUsage = () => Object.fromEntries(Object.entries(pools).map(([kind, entries]) =>
-      [kind, [...entries].reduce((sum, pool) => sum + pool.getStats().inUse, 0)]));
     const poolRefusals = [];
     const refuseWithReleasedPools = async (renderer, frame, target, scenario) => {
       const before = poolUsage();
@@ -515,6 +705,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       }
     };
     const canvasRefusals = [];
+    const hasTransition = TransitionPipeline.prototype.has;
+    TransitionPipeline.prototype.has = () => false;
     try {
       for (const transfer of ['pq', 'hlg']) {
         const mediaId = `canvas-refusal-${transfer}`;
@@ -585,6 +777,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     } finally {
       CanvasPool.prototype.acquire = acquireCanvas;
       GpuTexturePool.prototype.acquire = acquireTexture;
+      TransitionPipeline.prototype.has = hasTransition;
     }
     // 7. An inner transition must join its delayed SDR decoder before it
     // rejects for HDR or restores/releases the participant state.
@@ -693,6 +886,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     const mixedFailures = [];
     const priorityMedia = 'priority-hdr-video';
     registerHdrSourceUrl(priorityMedia, '/hdr-fixture/pq.mp4');
+    TransitionPipeline.prototype.has = () => false;
     try {
       for (const hdrSide of ['right', 'left']) {
         const video = (id, from) => ({ id, type: 'video', mediaId: priorityMedia, trackId: 'priority-track',
@@ -720,9 +914,12 @@ window.__vite_plugin_react_preamble_installed__ = true
           mixedFailures.push({ hdrSide, name: error.name, reason: error.message });
         } finally { renderer.dispose(); }
       }
-    } finally { registerHdrSourceUrl(priorityMedia, null); }
+    } finally {
+      registerHdrSourceUrl(priorityMedia, null);
+      TransitionPipeline.prototype.has = hasTransition;
+    }
     device.destroy();
-    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition, canvasRefusals, poolRefusals,
+    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition, rasterTransitionCases, maskUploadFailure, maskUploadPreview, maskContextFailure, rasterForcedRefusal, canvasRefusals, poolRefusals,
       delayedTransition, canvasStateReuse, mixedFailures };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
@@ -856,6 +1053,45 @@ window.__vite_plugin_react_preamble_installed__ = true
       want.some((value, channel) => Math.abs(value - nonnegative[channel]) > 0.001))),
     `${variant}: golden must independently distinguish negative-RGB clipping`);
   }
+  assert.equal(result.maskedRasterTransition.status, 'preserved', 'supported masked HDR raster transition must stay in float');
+  assert.equal(result.maskUploadFailure.name, 'HdrRenderUnavailableError');
+  assert.ok(result.maskedRasterTransition.gpuTextureTransitions >= 17, 'all supported outputs, preview attempts and failed masks must traverse the real GPU transition');
+  assert.equal(result.rasterForcedRefusal?.emitted, 0);
+  assert.deepEqual(result.rasterForcedRefusal.after, result.rasterForcedRefusal.before);
+  assert.equal(result.rasterTransitionCases.length, 12);
+  for (const { variant, frameNumber, target, points, before, after } of result.rasterTransitionCases) {
+    assert.deepEqual(after, before, `${variant}: successful output retained pooled resources`);
+    for (const { got, want } of points) {
+      want.forEach((value, channel) => {
+        compared++;
+        assert.ok(Math.abs(got[channel] - value) <= 0.004,
+          `masked transition ${variant} frame ${frameNumber} ${target} channel ${channel}: ${got[channel]} vs ${value}`);
+      });
+      assert.equal(got[3], 1);
+    }
+  }
+  for (const variant of ['opaque', 'inverted-partial']) {
+    const entries = result.rasterTransitionCases.filter((entry) => entry.variant === variant);
+    for (const counterfactual of ['clipped', 'nonnegative']) {
+      assert.ok(entries.some(({ points }) => points.some((point) =>
+        point.want.some((value, channel) => Math.abs(value - point[counterfactual][channel]) > 0.001))),
+      `${variant}: golden must distinguish ${counterfactual} working RGB`);
+    }
+  }
+  assert.equal(result.maskContextFailure?.emitted, 0);
+  assert.deepEqual(result.maskContextFailure.after, result.maskContextFailure.before);
+  assert.equal(result.maskUploadFailure?.emitted, 0);
+  for (const phase of ['first', 'seek']) {
+    assert.deepEqual(result.maskUploadPreview[phase], { playerVisibility: 'hidden', unavailable: true, displayedFrame: null });
+  }
+  assert.deepEqual(result.maskUploadPreview.afterRefusals, result.maskUploadPreview.before);
+  assert.deepEqual(result.maskUploadPreview.recovery, { playerVisibility: 'visible', unavailable: false, displayedFrame: 32 });
+  assert.ok(result.maskUploadPreview.failures.length >= 2);
+  assert.ok(result.maskUploadPreview.failures.every((error) => error.name === 'HdrRenderUnavailableError'));
+  assert.ok(result.maskUploadPreview.failures.some((error) => error.frame === 31));
+  console.log(JSON.stringify({ check: 'Masked HDR upload refusal through production pump, stage and Player',
+    refusedFrames: [30, 31], player: 'hidden through seek', managedRecoveryFrame: 32, retainedAllocations: 0 }));
+  assert.deepEqual(result.maskUploadFailure.after, result.maskUploadFailure.before, 'failed mask upload must release its texture and every rendered layer');
   compared += validateMaskedRasterDiagnostic(result.maskedRasterTransition, SIZE).compared;
   console.log(`HDR source, mixed composition, nested alpha and supported mask variant goldens match (${compared} values, PQ and HLG)`);
   console.log(JSON.stringify({ check: 'masked HDR raster transition diagnostic',
