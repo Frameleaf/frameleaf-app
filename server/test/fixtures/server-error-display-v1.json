@@ -1,0 +1,435 @@
+{
+  "contract": "frameleaf-server-error-display",
+  "version": 1,
+  "sourceBase": "d78bb71b1bd4a5aed4735dddea02c8aa271cdcd9",
+  "consumerTargets": ["Frameleaf iOS", "Frameleaf Android"],
+  "consumerAdoption": "Excluded from this server-only packet; these are normative input/output vectors, not native test results.",
+  "producer": [
+    {
+      "name": "known-setup",
+      "input": {
+        "status": 401,
+        "response": {
+          "message": "Wrong setup code",
+          "code": "setup_code_invalid",
+          "attemptsLeft": 2,
+          "error": "Unauthorized",
+          "statusCode": 401
+        }
+      },
+      "expected": {
+        "message": "Wrong setup code",
+        "code": "setup_code_invalid",
+        "attemptsLeft": 2,
+        "displayError": {
+          "version": 1,
+          "code": "http_unauthorized",
+          "args": {
+            "attemptsLeft": 2
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "Authentication is required for this request."
+          }
+        }
+      }
+    },
+    {
+      "name": "known-rate-limit",
+      "input": {
+        "status": 429,
+        "response": {
+          "message": "Too many requests. Try again later.",
+          "code": "rate_limited",
+          "retryAfter": 30
+        }
+      },
+      "expected": {
+        "message": "Too many requests. Try again later.",
+        "code": "rate_limited",
+        "retryAfter": 30,
+        "displayError": {
+          "version": 1,
+          "code": "http_rate_limited",
+          "args": {
+            "retryAfter": 30
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "Too many requests. Try again later."
+          }
+        }
+      }
+    },
+    {
+      "name": "known-paused",
+      "input": {
+        "status": 503,
+        "response": {
+          "message": "Staff status message",
+          "code": "service-paused",
+          "retryAfterSeconds": 60,
+          "retryable": true,
+          "refusal": "cloud-unavailable"
+        }
+      },
+      "expected": {
+        "message": "Staff status message",
+        "code": "service-paused",
+        "retryAfterSeconds": 60,
+        "retryable": true,
+        "refusal": "cloud-unavailable",
+        "displayError": {
+          "version": 1,
+          "code": "http_unavailable",
+          "args": {
+            "retryAfterSeconds": 60
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "This service is unavailable."
+          }
+        }
+      }
+    },
+    {
+      "name": "new-general-refusal",
+      "input": {
+        "status": 403,
+        "response": {
+          "message": "Legacy refusal wording"
+        }
+      },
+      "expected": {
+        "message": "Legacy refusal wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_forbidden",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request is not permitted."
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown-domain-code",
+      "input": {
+        "status": 409,
+        "response": {
+          "message": "Do not translate English to discover a code",
+          "code": "future_refusal",
+          "retryable": false,
+          "refusal": "model-mismatch",
+          "data": {
+            "account": "fixture-user-content"
+          },
+          "args": {
+            "secret": "not-a-display-argument"
+          },
+          "displayError": {
+            "version": 99
+          }
+        }
+      },
+      "expected": {
+        "message": "Do not translate English to discover a code",
+        "code": "future_refusal",
+        "retryable": false,
+        "refusal": "model-mismatch",
+        "data": {
+          "account": "fixture-user-content"
+        },
+        "args": {
+          "secret": "not-a-display-argument"
+        },
+        "displayError": {
+          "version": 1,
+          "code": "http_conflict",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request conflicts with the current state."
+          }
+        }
+      }
+    },
+    {
+      "name": "legacy-string",
+      "input": {
+        "status": 400,
+        "response": "Legacy request wording"
+      },
+      "expected": {
+        "message": "Legacy request wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_bad_request",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request could not be accepted."
+          }
+        }
+      }
+    },
+    {
+      "name": "unlisted-status",
+      "input": {
+        "status": 418,
+        "response": {
+          "message": "Legacy status wording"
+        }
+      },
+      "expected": {
+        "message": "Legacy status wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_error",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request could not be completed."
+          }
+        }
+      }
+    }
+  ],
+  "consumer": [
+    {
+      "name": "known-setup",
+      "status": 401,
+      "body": {
+        "message": "Wrong setup code",
+        "code": "setup_code_invalid",
+        "attemptsLeft": 2,
+        "displayError": {
+          "version": 1,
+          "code": "http_unauthorized",
+          "args": {
+            "attemptsLeft": 2
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "Authentication is required for this request."
+          }
+        }
+      },
+      "knownDomainCodes": ["setup_code_invalid"],
+      "expected": {
+        "lookupCode": "setup_code_invalid",
+        "args": {
+          "attemptsLeft": 2
+        },
+        "englishFallback": "Authentication is required for this request.",
+        "status": 401
+      }
+    },
+    {
+      "name": "known-rate-limit",
+      "status": 429,
+      "body": {
+        "message": "Too many requests. Try again later.",
+        "code": "rate_limited",
+        "retryAfter": 30,
+        "displayError": {
+          "version": 1,
+          "code": "http_rate_limited",
+          "args": {
+            "retryAfter": 30
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "Too many requests. Try again later."
+          }
+        }
+      },
+      "knownDomainCodes": ["rate_limited"],
+      "expected": {
+        "lookupCode": "rate_limited",
+        "args": {
+          "retryAfter": 30
+        },
+        "englishFallback": "Too many requests. Try again later.",
+        "status": 429
+      }
+    },
+    {
+      "name": "known-paused",
+      "status": 503,
+      "body": {
+        "message": "Staff status message",
+        "code": "service-paused",
+        "retryAfterSeconds": 60,
+        "retryable": true,
+        "refusal": "cloud-unavailable",
+        "displayError": {
+          "version": 1,
+          "code": "http_unavailable",
+          "args": {
+            "retryAfterSeconds": 60
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "This service is unavailable."
+          }
+        }
+      },
+      "knownDomainCodes": ["service-paused"],
+      "expected": {
+        "lookupCode": "service-paused",
+        "args": {
+          "retryAfterSeconds": 60
+        },
+        "englishFallback": "This service is unavailable.",
+        "status": 503,
+        "retryable": true,
+        "refusal": "cloud-unavailable"
+      }
+    },
+    {
+      "name": "new-general-refusal",
+      "status": 403,
+      "body": {
+        "message": "Legacy refusal wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_forbidden",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request is not permitted."
+          }
+        }
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "http_forbidden",
+        "args": {},
+        "englishFallback": "This request is not permitted.",
+        "status": 403
+      }
+    },
+    {
+      "name": "unknown-domain-code",
+      "status": 409,
+      "body": {
+        "message": "Do not translate English to discover a code",
+        "code": "future_refusal",
+        "retryable": false,
+        "refusal": "model-mismatch",
+        "data": {
+          "account": "fixture-user-content"
+        },
+        "args": {
+          "secret": "not-a-display-argument"
+        },
+        "displayError": {
+          "version": 1,
+          "code": "http_conflict",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request conflicts with the current state."
+          }
+        }
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "http_conflict",
+        "args": {},
+        "englishFallback": "This request conflicts with the current state.",
+        "status": 409,
+        "retryable": false,
+        "refusal": "model-mismatch"
+      }
+    },
+    {
+      "name": "legacy-string",
+      "status": 400,
+      "body": {
+        "message": "Legacy request wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_bad_request",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request could not be accepted."
+          }
+        }
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "http_bad_request",
+        "args": {},
+        "englishFallback": "This request could not be accepted.",
+        "status": 400
+      }
+    },
+    {
+      "name": "unlisted-status",
+      "status": 418,
+      "body": {
+        "message": "Legacy status wording",
+        "displayError": {
+          "version": 1,
+          "code": "http_error",
+          "args": {},
+          "fallback": {
+            "locale": "en",
+            "message": "This request could not be completed."
+          }
+        }
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "http_error",
+        "args": {},
+        "englishFallback": "This request could not be completed.",
+        "status": 418
+      }
+    },
+    {
+      "name": "consumer-newer-version",
+      "status": 403,
+      "body": {
+        "code": "future_refusal",
+        "message": "Private legacy wording",
+        "displayError": {
+          "version": 2,
+          "code": "future_contract",
+          "args": {
+            "token": "private"
+          },
+          "fallback": {
+            "locale": "en",
+            "message": "Unverified text"
+          }
+        }
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "generic",
+        "args": {},
+        "englishFallback": "This request could not be completed.",
+        "status": 403
+      }
+    },
+    {
+      "name": "consumer-legacy-without-descriptor",
+      "status": 401,
+      "body": {
+        "message": "Unverified legacy wording"
+      },
+      "knownDomainCodes": [],
+      "expected": {
+        "lookupCode": "generic",
+        "args": {},
+        "englishFallback": "This request could not be completed.",
+        "status": 401
+      }
+    }
+  ]
+}
