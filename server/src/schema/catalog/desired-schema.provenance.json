@@ -107,7 +107,7 @@
     "src/schema/tables/tag-asset.table.ts": "8f967bcd5cbc11e31723a6359673f2f4ecde238d52120ee03b141774f70e3cd1",
     "src/schema/tables/tag-audit.table.ts": "ad97793550ea7d622187cabd48ce6ccf05d006a310ad673844494e84870cba21",
     "src/schema/tables/tag-closure.table.ts": "f2fe0a8a19f1ae05ba56307076ac56115b0483244871db94b1fbfee55dc2a276",
-    "src/schema/tables/tag-sync-state.table.ts": "72bcd471a0640f809bd868a5589798a2b65b63741b8727805868fb1e80ea747a",
+    "src/schema/tables/tag-sync-state.table.ts": "61b6ca72e27b7691357e864e2cf35eb873c716d4190a663102065c23c98172a7",
     "src/schema/tables/tag.table.ts": "a834166a29db7e74c55268a35966e75d65d95d7ff8d01ecfbd3b6d54eedacc2a",
     "src/schema/tables/takeout.table.ts": "38264d3578d0d1e264802648508659fa7f1bac0238acde542b1c10dbe6de8519",
     "src/schema/tables/user-audit.table.ts": "e77746133031ba867764186197785e51b89b684845aae299c5fb4c7c63d30c35",
