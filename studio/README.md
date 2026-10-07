@@ -474,6 +474,9 @@ keyframes use the existing mask edit commands and undo history. Native buttons i
 a point on the selected segment or delete selected points, respecting open endpoints,
 minimum path sizes and inherited track locks. Paths with geometry keyframes retain
 their point count; point and handle nudges remain available on unlocked tracks.
+Corner-pin numeric fields name each corner and axis, preserve the displayed offsets
+when editing resized or cropped targets, and respect inherited track locks for edits
+and reset through the existing item history commands.
 
 ## Web integration boundary
 
