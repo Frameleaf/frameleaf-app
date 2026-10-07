@@ -1,5 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import type { DB } from 'src/schema/index.js';
+import type { CloudJobView } from 'src/utils/frameleaf-cloud.js';
 import {
   AssetType,
   JobName,
@@ -13,7 +15,6 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { QUEUE_TIMING, type QueueExecution } from 'src/queue/types.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
@@ -22,7 +23,6 @@ import {
   emptyCloudDescriptionResult,
   parseCloudDescriptionSnapshot,
 } from 'src/utils/cloud-description-batch.js';
-import type { CloudJobView } from 'src/utils/frameleaf-cloud.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
@@ -107,7 +107,7 @@ describe('cloud description adoption and remote release', () => {
     );
     vi.spyOn(sut as any, 'downloadResults').mockResolvedValue(documents);
     vi.spyOn(ImageEnrichmentService.prototype, 'publishCloudDescription').mockImplementation(
-      async (assetId, _item, source) => {
+      (assetId, _item, source) => {
         deferJobAdoption(async (tx) => {
           const row = await tx
             .updateTable('asset_exif')
@@ -120,7 +120,7 @@ describe('cloud description adoption and remote release', () => {
             row ? { status: JobStatus.Success } : { status: JobStatus.Skipped, reasonKey: 'not-eligible' },
           );
         });
-        return { status: JobStatus.Success };
+        return Promise.resolve({ status: JobStatus.Success });
       },
     );
     mocks.mlDestination.applySettlements.mockResolvedValue(1);
