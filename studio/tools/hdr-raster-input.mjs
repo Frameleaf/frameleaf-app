@@ -34,7 +34,7 @@ export async function decodeHdrRaster(bytes, sharp, signal) {
       );
       header = { width: data.readUInt32BE(0), height: data.readUInt32BE(4) };
       assert.ok(
-        header.width > 0 && header.height > 0 && header.width * header.height <= 16_777_216,
+        header.width > 0 && header.height > 0 && header.width * header.height <= 48_000_000,
         'RASTER_PIXEL_LIMIT',
       );
     }
@@ -57,7 +57,7 @@ export async function decodeHdrRaster(bytes, sharp, signal) {
     offset += size + 12;
   }
   assert.ok(ended && profile, 'INVALID_HDR_PNG');
-  const decoder = sharp(bytes, { limitInputPixels: 16_777_216, failOn: 'warning' }).timeout({
+  const decoder = sharp(bytes, { limitInputPixels: 48_000_000, failOn: 'warning' }).timeout({
     seconds: 5,
   });
   try {

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -72,7 +72,7 @@ export function stillRecipe(claim) {
       timebase: claim.snapshot.timing.timeBase,
       endTicks: String(endTicks),
       maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
-      maxMs: ceiling(claim.limits?.maxWallClockMs, 60_000),
+      maxMs: ceiling(claim.limits?.maxWallClockMs, 180_000),
       settings: { quality, resolution: { width: photo.width, height: photo.height } },
     };
   }
@@ -294,7 +294,11 @@ export async function renderStillImage(context, consume) {
         assertLive();
         let total = 0;
         for (const name of await readdir(folder)) {
-          const entry = await stat(path.join(folder, name));
+          const entry = await stat(path.join(folder, name)).catch((error) => {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+          });
+          if (!entry) continue;
           assert.ok(entry.isFile(), 'UNEXPECTED_DOWNLOAD_ENTRY');
           total += entry.size;
         }
@@ -329,7 +333,7 @@ export async function renderStillImage(context, consume) {
     let result;
     if (recipe.photo) {
       const { SharpProcessPool } = await import(new URL('../../server/dist/queue/sharp-pool.js', import.meta.url));
-      pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 16_777_216 });
+      pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 48_000_000, maxBytes: 6 * 1024 ** 3 });
       const download = page.waitForEvent('download', { timeout: recipe.maxMs });
       // Attach a handler while evaluation runs so a failed render cannot leave an unhandled timeout.
       download.catch(() => {});
@@ -387,7 +391,9 @@ export async function renderStillImage(context, consume) {
       );
       const downloaded = await download;
       const rawPath = path.join(folder, 'signal.bin');
-      await downloaded.saveAs(rawPath);
+      const downloadedPath = await downloaded.path();
+      assert.ok(downloadedPath && path.dirname(downloadedPath) === folder, 'UNEXPECTED_DOWNLOAD_PATH');
+      await rename(downloadedPath, rawPath);
       assertLive();
       const pixels = recipe.photo.width * recipe.photo.height;
       const rawStat = await stat(rawPath);

@@ -30,7 +30,7 @@ async function validateStillImage(bytes, sharp) {
   assert.ok(format, 'UNSUPPORTED_IMAGE_CONTENT');
   // The isolated pinned libheif decoder validates the primary image. Studio's Sharp may
   // lack HEVC; it must not select an auxiliary image or flatten HDR before that validation.
-  if (format === 'heif') return format;
+  if (format === 'heif') return { format };
   // libvips can expose only the first APNG frame. Refuse animation instead of silently flattening it.
   let hdrPng = false;
   if (format === 'png') {
@@ -44,7 +44,7 @@ async function validateStillImage(bytes, sharp) {
       offset += length + 12;
     }
   }
-  const decoder = sharp(bytes, { limitInputPixels: 16_777_216, failOn: 'warning', animated: true }).timeout({
+  const decoder = sharp(bytes, { limitInputPixels: 48_000_000, failOn: 'warning', animated: true }).timeout({
     seconds: 5,
   });
   try {
@@ -52,14 +52,14 @@ async function validateStillImage(bytes, sharp) {
     assert.equal(metadata.format, format, 'IMAGE_FORMAT_MISMATCH');
     assert.equal(metadata.pages ?? 1, 1, 'ANIMATED_IMAGE_UNSUPPORTED');
     assert.ok(
-      metadata.width > 0 && metadata.height > 0 && metadata.width * metadata.height <= 16_777_216,
+      metadata.width > 0 && metadata.height > 0 && metadata.width * metadata.height <= 48_000_000,
       'IMAGE_PIXEL_LIMIT',
     );
     // Metadata/signatures alone do not prove a complete image. Decode all pixels, then discard
     // the validation buffer; the original verified source bytes are what the renderer receives.
     const decoded = await decoder.raw().toBuffer();
     decoded.fill(0);
-    return hdrPng ? 'hdr-png' : format;
+    return { format: hdrPng ? 'hdr-png' : format, width: metadata.width, height: metadata.height };
   } finally {
     decoder.destroy();
   }
@@ -165,24 +165,34 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     for (const source of sources) source.bytes = Buffer.from(source.bytes);
     for (const source of sources) {
       assert.ok(isLeaseActive(), 'LEASE_LOST');
-      source.format = await validateStillImage(source.bytes, sharp);
+      const validated = await validateStillImage(source.bytes, sharp);
+      source.format = validated.format;
+      let sourcePixels = validated.width * validated.height;
+      if (Number.isSafeInteger(sourcePixels)) {
+        retainedPixels += sourcePixels;
+        assert.ok(retainedPixels <= 64_000_000, 'IMAGE_RASTER_RESOURCE_LIMIT');
+      }
       if (source.format === 'hdr-png') {
         assert.ok(process.env.FRAMELEAF_HDR_IMAGES === 'experimental', 'HDR_IMAGE_PROCESSING_DISABLED');
         const decoded = await decodeHdrRaster(source.bytes, sharp, abort.signal);
-        retainedPixels += decoded.width * decoded.height;
-        if (retainedPixels > 16_777_216) {
-          decoded.rgb.fill(0);
-          throw new Error('HDR_RASTER_RESOURCE_LIMIT');
-        }
         hdrRasters[source.id] = decoded;
         source.format = 'png';
       }
       if (source.format === 'jpeg' || source.format === 'heif') {
         if (!pool) {
           const { SharpProcessPool } = await import(new URL('../../server/dist/queue/sharp-pool.js', import.meta.url));
-          pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 16_777_216 });
+          pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 48_000_000, maxBytes: 6 * 1024 ** 3 });
         }
         const encoding = await pool.run('inspectImageEncoding', [source.bytes], abort.signal);
+        if (source.format === 'heif') {
+          sourcePixels = encoding.width * encoding.height;
+          assert.ok(
+            Number.isSafeInteger(sourcePixels) && sourcePixels > 0 && sourcePixels <= 48_000_000,
+            'IMAGE_PIXEL_LIMIT',
+          );
+          retainedPixels += sourcePixels;
+          assert.ok(retainedPixels <= 64_000_000, 'IMAGE_RASTER_RESOURCE_LIMIT');
+        }
         if (encoding.dynamicRange === 'hdr') {
           assert.ok(process.env.FRAMELEAF_HDR_IMAGES === 'experimental', 'HDR_IMAGE_PROCESSING_DISABLED');
           assert.ok(encoding.reconstructionAvailable, 'HDR_RECONSTRUCTION_UNAVAILABLE');
@@ -191,13 +201,12 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
               Number.isSafeInteger(encoding.height) &&
               encoding.width > 0 &&
               encoding.height > 0 &&
-              retainedPixels + encoding.width * encoding.height <= 16_777_216,
+              retainedPixels <= 64_000_000,
             'HDR_RASTER_RESOURCE_LIMIT',
           );
           const decoded = await pool.run('decodeHdrImage', [source.bytes], abort.signal);
           try {
-            retainedPixels += decoded.width * decoded.height;
-            assert.ok(retainedPixels <= 16_777_216, 'HDR_RASTER_RESOURCE_LIMIT');
+            assert.equal(decoded.width * decoded.height, sourcePixels, 'HDR_RASTER_DIMENSIONS_CHANGED');
             hdrRasters[source.id] = {
               width: decoded.width,
               height: decoded.height,

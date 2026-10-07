@@ -196,6 +196,9 @@ test('still image recipes preserve explicit document intent and one frame withou
       assert.equal(recipe.photo.format, format);
       assert.equal(recipe.photo.outputIntent, 'hdr');
       assert.equal(recipe.settings.resolution.width, 1280);
+      assert.equal(recipe.maxMs, 30000);
+      input.limits.maxWallClockMs = '999999';
+      assert.equal(stillRecipe(input).maxMs, 180000);
       input.settings.resolution = '720p';
       assert.throws(() => stillRecipe(input), /UNSUPPORTED_STILL_EXPORT_SETTINGS/);
     } finally {

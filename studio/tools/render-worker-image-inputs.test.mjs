@@ -291,24 +291,46 @@ for (const format of ['jpeg', 'heic'])
     },
   );
 
-for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document'])
+for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-hdr-jpeg'])
   test(
     `Studio ${format} round trip uses the real float renderer and isolated codec`,
-    { skip: process.env.FRAMELEAF_STUDIO_HDR_GPU_TEST !== '1' || !process.env.FRAMELEAF_HDR_BINDING },
+    {
+      skip:
+        process.env.FRAMELEAF_STUDIO_HDR_GPU_TEST !== '1' ||
+        !process.env.FRAMELEAF_HDR_BINDING ||
+        (format === '48mp-hdr-jpeg' && process.env.FRAMELEAF_STUDIO_HDR_LARGE_TEST !== '1'),
+      timeout: 180_000,
+    },
     async () => {
-      const outputFormat = format === 'sdr-document' ? 'sdr-jpeg' : format;
+      const large = format === '48mp-hdr-jpeg';
+      const outputFormat = large ? 'hdr-jpeg' : format === 'sdr-document' ? 'sdr-jpeg' : format;
+      const width = large ? 8000 : 32,
+        height = large ? 6000 : 32;
+      const sourceWidth = large ? width : 64,
+        sourceHeight = large ? height : 32;
+      const budget = large ? 6 * 1024 ** 3 : 1024 ** 3;
+      const maxPixels = large ? 48_000_000 : 16_777_216;
       const { renderStillImage } = await import('./render-worker-still-executor.mjs');
       const { readFile } = await import('node:fs/promises');
       const codec = createRequire(import.meta.url)(process.env.FRAMELEAF_HDR_BINDING);
-      const pixels = new Float32Array(64 * 32 * 4);
-      for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+      const pixels = new Float32Array(sourceWidth * sourceHeight * 4);
+      for (let i = 0; i < pixels.length; i += 4) pixels.set([large && i >= pixels.length / 2 ? 12 : 8, 4, 2, 1], i);
       const source =
         format === 'sdr-document'
           ? await sharp({ create: { width: 64, height: 32, channels: 3, background: '#6080c0' } })
               .png()
               .toBuffer()
-          : codec.encode(Buffer.from(pixels.buffer), 64, 32, 2, 16_777_216, 1024 ** 3);
+          : codec.encode(
+              Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+              sourceWidth,
+              sourceHeight,
+              2,
+              maxPixels,
+              budget,
+            );
       const claim = prepared();
+      claim.snapshot.studio.graph.metadata.width = width;
+      claim.snapshot.studio.graph.metadata.height = height;
       claim.snapshot.studio.graph.metadata.colorManagement = {
         workingRange: format === 'sdr-document' ? 'sdr' : 'hdr',
       };
@@ -316,8 +338,8 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document'])
         image: {
           version: 1,
           format: outputFormat,
-          width: 32,
-          height: 32,
+          width,
+          height,
           frame: 0,
           dynamicRange: outputFormat === 'sdr-jpeg' ? 'sdr' : 'hdr',
           outputIntent: format === 'sdr-document' ? 'sdr' : 'hdr',
@@ -340,6 +362,11 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document'])
       const started = performance.now();
       try {
         adapted = await createClaimImageInputs(claim, () => live);
+        if (large) {
+          const raster = adapted.input.hdrRasters[mediaId];
+          const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
+          assert.ok(raster.rgba[offset] > 6 && raster.rgba[offset + 2] > 1, 'HDR_INPUT_HEADROOM_LOST');
+        }
         await renderStillImage(
           {
             claim,
@@ -354,27 +381,42 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document'])
             const bytes = await readFile(outputPath);
             assert.equal(createHash('sha256').update(bytes).digest('hex'), checksum);
             assert.equal(String(bytes.length), sizeInBytes);
-            const encoding = codec.inspect(bytes, 16_777_216, 1024 ** 3);
+            const encoding = codec.inspect(bytes, maxPixels, budget);
             assert.equal(encoding.dynamicRange, outputFormat === 'sdr-jpeg' ? 'sdr' : 'hdr');
             if (outputFormat === 'sdr-jpeg') {
               const metadata = await sharp(bytes).metadata();
-              assert.deepEqual([metadata.width, metadata.height], [32, 32]);
+              assert.deepEqual([metadata.width, metadata.height], [width, height]);
               assert.ok(!metadata.exif && !metadata.xmp);
               if (format === 'sdr-document') {
                 const rgb = await sharp(bytes).raw().removeAlpha().toBuffer();
-                const offset = (16 * 32 + 16) * 3;
+                const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 3;
                 for (let channel = 0; channel < 3; channel++)
                   assert.ok(Math.abs(rgb[offset + channel] - [96, 128, 192][channel]) <= 4, 'SDR_APPEARANCE_CHANGED');
                 rgb.fill(0);
               }
             } else {
-              const decoded = codec.decode(bytes, 16_777_216, 1024 ** 3);
+              const decoded = codec.decode(bytes, maxPixels, budget);
               const rgb = new Float32Array(
                 decoded.data.buffer.slice(decoded.data.byteOffset, decoded.data.byteOffset + decoded.data.length),
               );
-              const offset = (16 * 32 + 16) * 4;
-              assert.ok(Math.max(...rgb.slice(offset, offset + 3)) > 6, 'HDR_HEADROOM_LOST');
-              assert.ok(Math.min(...rgb.slice(offset, offset + 3)) > 1, 'HDR_HEADROOM_LOST');
+              const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
+              assert.ok(
+                Math.max(...rgb.slice(offset, offset + 3)) > 6,
+                `HDR_HEADROOM_LOST: ${Array.from(rgb.slice(offset, offset + 4))}`,
+              );
+              assert.ok(
+                Math.min(...rgb.slice(offset, offset + 3)) > 1,
+                `HDR_HEADROOM_LOST: ${Array.from(rgb.slice(offset, offset + 3))}`,
+              );
+              if (large) {
+                for (const [row, red] of [
+                  [0, 8],
+                  [height - 1, 12],
+                ]) {
+                  const offset = (row * width + Math.floor(width / 2)) * 4;
+                  assert.ok(Math.abs(rgb[offset] - red) < 1, 'HDR_READBACK_ROWS_CHANGED');
+                }
+              }
               rgb.fill(0);
               decoded.data.fill(0);
             }
@@ -382,6 +424,20 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document'])
           },
         );
         assert.deepEqual(input.bytes, source);
+        if (large) {
+          const secondId = '00000000-0000-4000-8000-000000000002';
+          claim.snapshot.studio.graph.timeline.items.push({
+            ...claim.snapshot.studio.graph.timeline.items[0],
+            id: 'clip2',
+            mediaId: secondId,
+          });
+          claim.inputs.set(`library-asset:${secondId}`, { ...input, resourceId: secondId });
+          await assert.rejects(
+            createClaimImageInputs(claim, () => live),
+            /IMAGE_RASTER_RESOURCE_LIMIT/,
+          );
+          assert.deepEqual(input.bytes, source);
+        }
       } finally {
         live = false;
         for (const callback of release) await callback();

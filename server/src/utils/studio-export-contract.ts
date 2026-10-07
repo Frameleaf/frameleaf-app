@@ -94,7 +94,7 @@ export const StudioExportImageContractSchema = z
   .strict()
   .refine(
     (image) =>
-      image.width * image.height <= 16_777_216 &&
+      image.width * image.height <= 48_000_000 &&
       image.dynamicRange === (image.format === 'sdr-jpeg' ? 'sdr' : 'hdr') &&
       (image.dynamicRange === 'sdr' || image.outputIntent === 'hdr'),
     'Invalid still output contract',
