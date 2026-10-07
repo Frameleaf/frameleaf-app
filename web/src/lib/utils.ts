@@ -211,6 +211,7 @@ type AssetUrlOptions = {
   edited?: boolean;
   size?: AssetMediaSize;
   dynamicRange?: 'auto' | 'sdr' | 'hdr';
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
 };
 
 export const getAssetUrl = ({
@@ -268,12 +269,13 @@ export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean)
 };
 
 export const getAssetMediaUrl = (options: AssetUrlOptions) => {
-  const { id, size, cacheKey: c, edited = true, dynamicRange } = options;
+  const { id, size, cacheKey: c, edited = true, dynamicRange, format } = options;
   const isOriginal = size === AssetMediaSize.Original;
   const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
   return createUrl(path, {
     ...authManager.params,
     size: isOriginal ? undefined : size,
+    format: isOriginal ? format : undefined,
     c,
     edited,
     dynamicRange:

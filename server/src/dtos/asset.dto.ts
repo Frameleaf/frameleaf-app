@@ -278,6 +278,12 @@ const AssetCopySchema = z
 const AssetDownloadOriginalSchema = z
   .object({
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    format: z
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])
+      .optional()
+      .describe(
+        'Explicit still export from an unedited photo; omission returns the untouched original or selected edit',
+      ),
   })
   .meta({ id: 'AssetDownloadOriginalDto' });
 

@@ -144,7 +144,7 @@ export class AssetMediaController {
   @OriginalTransfer()
   @Endpoint({
     summary: 'Download original asset',
-    description: 'Downloads the original file of the specified asset.',
+    description: 'Downloads the original file, selected edit, or an explicitly requested still-image export.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   async downloadAsset(
@@ -154,7 +154,16 @@ export class AssetMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto), this.logger);
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      const file = await this.service.downloadOriginal(auth, id, dto, controller.signal);
+      await sendFile(res, next, () => file, this.logger);
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 
   @Get(':id/thumbnail')

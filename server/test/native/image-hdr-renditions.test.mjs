@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
@@ -264,6 +265,78 @@ test('existing worker generates validated PQ HEIC without rewriting the source o
       pool.run('generateHdrRenditions', [source, [{ path: output, format: 'heic', dynamicRange: 'sdr' }]]),
       /INVALID_HDR_OUTPUT_FORMAT/,
     );
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('unedited still exports bind decoded bytes to the original checksum and regenerate HDR metadata', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-original-still-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  const pixels = new Float32Array(16 * 16 * 4);
+  for (let index = 0; index < pixels.length; index += 4) pixels.set([4, 2, 1, 1], index);
+  const original = codec.encode(Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), 16, 16, 1, ...limits);
+  const source = join(folder, 'original.jpg');
+  await writeFile(source, original);
+  try {
+    for (const [format, extension] of [
+      ['sdr-jpeg', 'jpg'],
+      ['hdr-jpeg', 'jpg'],
+      ['hdr-heic', 'heic'],
+    ]) {
+      const output = join(folder, `${format}.${extension}`);
+      const checksum = createHash(format === 'sdr-jpeg' ? 'sha1' : 'sha256')
+        .update(original)
+        .digest();
+      await pool.run('exportPhotoStill', [source, output, format, checksum]);
+      const result = await readFile(output);
+      const metadata = codec.inspect(result, ...limits);
+      assert.equal(metadata.dynamicRange, format === 'sdr-jpeg' ? 'sdr' : 'hdr');
+      if (format === 'hdr-heic') {
+        assert.equal(metadata.bitDepth, 10);
+        assert.equal(metadata.transfer, 16);
+      }
+      if (format !== 'sdr-jpeg') {
+        const decoded = codec.decode(result, ...limits);
+        const rgba = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
+        assert.ok(Math.max(...rgba.subarray(0, 3)) > 1, 'export retains headroom');
+      }
+    }
+    const refused = join(folder, 'changed.jpg');
+    await assert.rejects(
+      pool.run('exportPhotoStill', [source, refused, 'sdr-jpeg', Buffer.alloc(32)]),
+      /IMAGE_SOURCE_CHANGED/,
+    );
+    await assert.rejects(stat(refused), { code: 'ENOENT' });
+    assert.deepEqual(await readFile(source), original);
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('still export refuses unreconstructible HDR without publishing an SDR conversion', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-unsupported-hdr-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  try {
+    const bytes = await readFile(new URL('./fixtures/pq-rotated.avif', import.meta.url));
+    bytes.write('tmap', 16, 'ascii');
+    const encoding = codec.inspect(bytes, ...limits);
+    assert.equal(encoding.dynamicRange, 'hdr');
+    assert.equal(encoding.reconstructionAvailable, false);
+    const source = join(folder, 'source.avif');
+    await writeFile(source, bytes);
+    const checksum = createHash('sha256').update(bytes).digest();
+    for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
+      const output = join(folder, `${format}.out`);
+      await assert.rejects(
+        pool.run('exportPhotoStill', [source, output, format, checksum]),
+        /HDR_RECONSTRUCTION_UNAVAILABLE/,
+      );
+      await assert.rejects(stat(output), { code: 'ENOENT' });
+    }
+    assert.deepEqual(await readFile(source), bytes);
   } finally {
     await pool.close();
     await rm(folder, { recursive: true, force: true });

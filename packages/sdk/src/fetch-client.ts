@@ -18818,8 +18818,9 @@ export function getAssetOcr({ id }: {
 /**
  * Download original asset
  */
-export function downloadAsset({ edited, id, key, slug }: {
+export function downloadAsset({ edited, format, id, key, slug }: {
     edited?: boolean;
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic";
     id: string;
     key?: string;
     slug?: string;
@@ -18829,6 +18830,7 @@ export function downloadAsset({ edited, id, key, slug }: {
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/original${QS.query(QS.explode({
         edited,
+        format,
         key,
         slug
     }))}`, {

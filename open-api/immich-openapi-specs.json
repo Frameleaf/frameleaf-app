@@ -14079,7 +14079,7 @@
     },
     "/assets/{id}/original": {
       "get": {
-        "description": "Downloads the original file of the specified asset.",
+        "description": "Downloads the original file, selected edit, or an explicitly requested still-image export.",
         "operationId": "downloadAsset",
         "parameters": [
           {
@@ -14089,6 +14089,20 @@
             "description": "Return edited asset if available",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Explicit still export from an unedited photo; omission returns the untouched original or selected edit",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sdr-jpeg",
+                "hdr-jpeg",
+                "hdr-heic"
+              ]
             }
           },
           {

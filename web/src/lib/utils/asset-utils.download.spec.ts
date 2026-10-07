@@ -1,4 +1,9 @@
-import { downloadArchive as requestArchive, downloadAsset as requestAsset, getDownloadInfo } from '@frameleaf/sdk';
+import {
+  AssetMediaSize,
+  downloadArchive as requestArchive,
+  downloadAsset as requestAsset,
+  getDownloadInfo,
+} from '@frameleaf/sdk';
 import { downloadManager, EmptyDownloadError, bufferLimit } from '$lib/managers/download-manager.svelte';
 import * as utils from '$lib/utils';
 import { downloadArchive, downloadAssetFile } from './asset-utils';
@@ -408,6 +413,23 @@ describe('downloadAssetFile', () => {
     );
     expect(rows()[0][1]).toMatchObject({ name: 'IMG_1.jpg', count: 1, status: 'ready', buffered: true });
   });
+
+  it.each(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'] as const)(
+    'fetches an explicit %s still without trusting the original size',
+    async (format) => {
+      vi.mocked(requestAsset).mockResolvedValue(new Blob(['converted']));
+      downloadAssetFile({ id: 'asset-1', filename: 'IMG_still.jpg', edited: false, size: bufferLimit() + 1, format });
+      await flush();
+      expect(requestAsset).toHaveBeenCalledWith(
+        { id: 'asset-1', edited: false, format },
+        expect.objectContaining({ signal: expect.any(AbortSignal), fetch: expect.any(Function) }),
+      );
+      expect(rows()[0][1]).toMatchObject({ status: 'ready', buffered: true });
+      expect(utils.getAssetMediaUrl({ id: 'asset-1', size: AssetMediaSize.Original, edited: false, format })).toContain(
+        `format=${format}`,
+      );
+    },
+  );
 
   it('streams a large original on Save instead of fetching it', async () => {
     const key = downloadAssetFile({ id: 'asset-1', filename: 'movie.mov', edited: false, size: bufferLimit() + 1 });

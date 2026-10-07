@@ -6,6 +6,7 @@ export const SHARP_OPERATIONS = [
   'decodeHdrImage',
   'encodeHdrImage',
   'generateHdrRenditions',
+  'exportPhotoStill',
   'decodeImage',
   'generateImageThumbnails',
   'generateThumbnail',
