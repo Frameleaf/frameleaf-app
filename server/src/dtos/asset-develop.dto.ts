@@ -3,6 +3,32 @@ import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
 import { ApiCustomExtension } from 'src/enum.js';
 
+import {
+  ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_MAX_CLEANUP,
+  ASSET_DEVELOP_MAX_MASKS,
+  ASSET_DEVELOP_MAX_RECIPE_POINTS,
+  ASSET_DEVELOP_MAX_STROKES,
+  ASSET_DEVELOP_MAX_STROKE_POINTS,
+  ASSET_DEVELOP_RECIPE_VERSION,
+  AssetDevelopCleanupMethod,
+  AssetDevelopMaskKind,
+  AssetDevelopPreset,
+} from 'src/queue/develop-values.js';
+
+export {
+  ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_MAX_CLEANUP,
+  ASSET_DEVELOP_MAX_MASKS,
+  ASSET_DEVELOP_MAX_RECIPE_POINTS,
+  ASSET_DEVELOP_MAX_STROKES,
+  ASSET_DEVELOP_MAX_STROKE_POINTS,
+  ASSET_DEVELOP_RECIPE_VERSION,
+  AssetDevelopCleanupMethod,
+  AssetDevelopMaskKind,
+  AssetDevelopPreset,
+} from 'src/queue/develop-values.js';
+
 /**
  * The still-image edit recipe (FL-113). A recipe is the complete, versioned description of a
  * quick edit: develop sliders, the chosen look and its strength, and the geometry (crop,
@@ -12,19 +38,6 @@ import { ApiCustomExtension } from 'src/enum.js';
  * Ranges follow the design prototype's `develop.mjs` so the client and the renderer agree on
  * the meaning of every value. `version` is the contract version of the recipe shape itself.
  */
-export const ASSET_DEVELOP_RECIPE_VERSION = 1;
-
-export enum AssetDevelopPreset {
-  Original = 'Original',
-  Vivid = 'Vivid',
-  Natural = 'Natural',
-  Warm = 'Warm',
-  Cool = 'Cool',
-  Mono = 'Mono',
-  Silvertone = 'Silvertone',
-  Noir = 'Noir',
-  Fade = 'Fade',
-}
 
 export const AssetDevelopPresetSchema = z
   .enum(AssetDevelopPreset)
@@ -87,42 +100,10 @@ export const AssetDevelopCropSchema = z
   // the envelope's own (loose) crop is published as AssetDevelopCrop
   .meta({ id: 'KnownAssetDevelopCrop' });
 
-export enum AssetDevelopMaskKind {
-  /** An ellipse: full effect inside, fading out across the feathered edge. */
-  Radial = 'radial',
-  /** A graduated filter: full effect at the start line, none at the end line. */
-  Linear = 'linear',
-  /** FL-233: painted strokes in original-image coordinates (`strokes`). */
-  Brush = 'brush',
-  /** FL-233: the main subject, from a stored mask bitmap (`artifact`). */
-  Subject = 'subject',
-  /** FL-233: the sky, from a stored mask bitmap (`artifact`). */
-  Sky = 'sky',
-  /** FL-233: everything behind the subject, from a stored mask bitmap (`artifact`). */
-  Background = 'background',
-}
-
-/** FL-233: mask kinds drawn from a stored bitmap the client computed (or a detector descriptor). */
-export const ASSET_DEVELOP_BITMAP_MASK_KINDS: readonly AssetDevelopMaskKind[] = [
-  AssetDevelopMaskKind.Subject,
-  AssetDevelopMaskKind.Sky,
-  AssetDevelopMaskKind.Background,
-];
-
 export const AssetDevelopMaskKindSchema = z
   .enum(AssetDevelopMaskKind)
   .describe('Shape of a selective adjustment mask')
   .meta({ id: 'AssetDevelopMaskKind' });
-
-/** The most selective adjustments one recipe may carry (FL-64). */
-export const ASSET_DEVELOP_MAX_MASKS = 8;
-/** FL-233: the most strokes one brush mask or Clean Up operation may carry, and points per stroke. */
-export const ASSET_DEVELOP_MAX_STROKES = 64;
-export const ASSET_DEVELOP_MAX_STROKE_POINTS = 512;
-/** FL-233: the most Clean Up operations one recipe may carry. */
-export const ASSET_DEVELOP_MAX_CLEANUP = 32;
-/** FL-233: the most stroke points one recipe may carry in all (brush masks and Clean Up together). */
-export const ASSET_DEVELOP_MAX_RECIPE_POINTS = 4096;
 
 /** FL-233: how many stroke points a recipe's masks and Clean Up carry together. */
 export const recipeStrokePoints = (value: { masks?: unknown; cleanup?: unknown }) => {
@@ -179,17 +160,6 @@ export const AssetDevelopRegionSchema = z
     error: 'A region must stay inside the image',
   })
   .meta({ id: 'AssetDevelopRegion' });
-
-export enum AssetDevelopCleanupMethod {
-  /** Copy from `source`, blended to the colour around the area. */
-  Heal = 'heal',
-  /** Copy from `source` unchanged. */
-  Clone = 'clone',
-  /** Replace with a generated fill (`fill`, a stored artifact). */
-  Remove = 'remove',
-  /** Mosaic of `blockSize` blocks. */
-  Pixelate = 'pixelate',
-}
 
 export const AssetDevelopCleanupMethodSchema = z
   .enum(AssetDevelopCleanupMethod)

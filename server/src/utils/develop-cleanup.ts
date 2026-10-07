@@ -1,10 +1,12 @@
+/* Relative imports are required by the standalone image worker. */
+/* eslint-disable no-restricted-imports */
 import {
   ASSET_DEVELOP_MAX_CLEANUP,
   ASSET_DEVELOP_MAX_STROKES,
   ASSET_DEVELOP_MAX_STROKE_POINTS,
-  type AssetDevelopCleanup,
   AssetDevelopCleanupMethod,
-} from 'src/dtos/asset-develop.dto.js';
+} from '../queue/develop-values.js';
+import type { AssetDevelopCleanup } from 'src/dtos/asset-develop.dto.js';
 
 /**
  * FL-233 (NAPI-009): the parts of renderer v3 (`frameleaf-develop/3`) that work in original-image
