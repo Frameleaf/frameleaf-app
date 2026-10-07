@@ -750,3 +750,45 @@ test(
     assert.ok(Math.sqrt(squared / count) < 0.02, `ISO quarter-map reference RMS ${Math.sqrt(squared / count)}`);
   },
 );
+
+test(
+  'ISO 12-bit primary preserves low bits against independent HEVC and gain-map reconstruction',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  () => {
+    const input = readFileSync(new URL('fixtures/iso-12bit/source.heic', import.meta.url));
+    const reference = JSON.parse(readFileSync(new URL('fixtures/iso-12bit/reference.json', import.meta.url)));
+    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
+    const info = codec.inspect(input, ...limits);
+    assert.equal(info.bitDepth, 12);
+    assert.equal(info.reconstructionAvailable, true);
+    const image = codec.decode(input, ...limits);
+    assert.deepEqual([image.width, image.height, image.gamut], [reference.width, reference.height, 2]);
+    const pixels = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+    let maximum = 0,
+      squared = 0,
+      count = 0;
+    for (let row = 0; row < reference.rgb.length; row++)
+      for (let x = 0; x < reference.rgb[row].length; x++)
+        for (let c = 0; c < 3; c++) {
+          const at = (reference.sampleY[row] * image.width + x * reference.sampleStep + reference.sampleOffset) * 4 + c;
+          const error = pixels[at] - reference.rgb[row][x][c];
+          maximum = Math.max(maximum, Math.abs(error));
+          squared += error * error;
+          count++;
+        }
+    // Half-float encoded RGB, analytic transfer and half-float linear output each contribute rounding.
+    assert.ok(maximum < 0.007, `ISO 12-bit reference maximum ${maximum}`);
+    assert.ok(Math.sqrt(squared / count) < 0.002, `ISO 12-bit reference RMS ${Math.sqrt(squared / count)}`);
+    for (const x of [128, 256, 384]) {
+      const lowBits = [4, 5, 6, 7].map((y) => pixels[(y * image.width + x) * 4]);
+      assert.ok(
+        lowBits.every((value, index) => index === 0 || value > lowBits[index - 1]),
+        'low two bits must remain distinct',
+      );
+    }
+    for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
+      assert.throws(() => operation(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+  },
+);
