@@ -1,9 +1,0 @@
-#!/bin/sh
-case "$1" in
-  start|stop) exit 0 ;; # Container Manager's docker-project resource owns lifecycle.
-  status)
-    command -v docker >/dev/null 2>&1 || exit 1
-    docker compose -f "$SYNOPKG_PKGDEST/project/compose.yaml" ps --status running --services 2>/dev/null | grep -qx server
-    ;;
-  *) exit 1 ;;
-esac
