@@ -843,9 +843,11 @@ napi_value decodePaired(napi_env env, napi_callback_info info) {
     if (!hasGainMap(input)) return decodeHeif(env, input, true);
     // The previous decoder is destroyed before this one starts. Include retained float RGB in its budget.
     auto result = decodeLinear(env, input);
+    napi_value retained; void* retainedPixels; size_t retainedSize;
+    check(napi_get_named_property(env, result, "data", &retained));
+    check(napi_get_buffer_info(env, retained, &retainedPixels, &retainedSize));
+    input.maxBytes -= double(retainedSize);
     auto dec = decoder(input, false, true);
-    input.dimensions(uhdr_dec_get_image_width(dec.get()), uhdr_dec_get_image_height(dec.get()),
-      uhdr_dec_get_gainmap_width(dec.get()), uhdr_dec_get_gainmap_height(dec.get()), 80);
     check(uhdr_decode(dec.get()));
     const auto* image = uhdr_get_decoded_image(dec.get());
     // The pinned decoder copies the JPEG base with an unspecified transfer tag; this output mode is sRGB.
@@ -1024,7 +1026,7 @@ napi_value capabilities(napi_env env, napi_callback_info info) {
   field(env, result, "appleGainMapDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "avifDecoder", heif_have_decoder_for_format(heif_compression_AV1) != 0);
 #ifdef UHDR_FRAMELEAF_RESOURCE_LIMITS_API
-  field(env, result, "renderer", "frameleaf-develop-hdr/2");
+  field(env, result, "renderer", "frameleaf-develop-hdr/3");
   field(env, result, "isoGainMapDecoder", uhdr_is_heif_supported() != 0);
 #else
   field(env, result, "renderer", "frameleaf-develop-hdr/1");

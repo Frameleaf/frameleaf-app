@@ -52,7 +52,7 @@ index 0fdaa7c..daaa0c3 100644
        snprintf(status.detail, sizeof status.detail, "%s", _heif_res.message); \
        goto CleanUp;                                                     \
 diff --git a/lib/include/ultrahdr/heifultrahdr.h b/lib/include/ultrahdr/heifultrahdr.h
-index 73b1a93..2742fec 100644
+index 73b1a93..3dd3035 100644
 --- a/lib/include/ultrahdr/heifultrahdr.h
 +++ b/lib/include/ultrahdr/heifultrahdr.h
 @@ -26,12 +26,16 @@
@@ -73,18 +73,19 @@ index 73b1a93..2742fec 100644
        status.has_detail = 1;                                            \
        snprintf(status.detail, sizeof status.detail, "%s", _heif_res.message); \
        goto CleanUp;                                                     \
-@@ -39,6 +43,10 @@
+@@ -39,6 +43,11 @@
    }
  
  namespace ultrahdr {
 +heif_error setHeifResourceLimits(heif_context*, uint64_t, uint64_t);
 +bool getHeifBaseIccGamut(heif_image_handle*, uhdr_color_gamut_t&);
 +uhdr_error_info_t getHeifGainmapTransforms(heif_context*, heif_image_handle*, heif_image_handle*,
-+    int&, int&, std::vector<std::unique_ptr<uhdr_effect_desc_t>>&);
++    int&, int&, std::vector<std::unique_ptr<uhdr_effect_desc_t>>&, uhdr_gainmap_sampling_t&,
++    std::vector<std::unique_ptr<uhdr_effect_desc_t>>&);
  
  class HeifUltraHdr : public UltraHdr {
   public:
-@@ -135,7 +143,8 @@ class HeifUltraHdr : public UltraHdr {
+@@ -135,7 +144,8 @@ class HeifUltraHdr : public UltraHdr {
                                  uhdr_color_transfer_t output_ct = UHDR_CT_LINEAR,
                                  uhdr_img_fmt_t output_format = UHDR_IMG_FMT_64bppRGBAHalfFloat,
                                  uhdr_raw_image_t* gainmap_img = nullptr,
@@ -95,10 +96,20 @@ index 73b1a93..2742fec 100644
   private:
    /*!\brief Encode API.
 diff --git a/lib/include/ultrahdr/ultrahdrcommon.h b/lib/include/ultrahdr/ultrahdrcommon.h
-index 729c024..f4ae03f 100644
+index 729c024..df0497b 100644
 --- a/lib/include/ultrahdr/ultrahdrcommon.h
 +++ b/lib/include/ultrahdr/ultrahdrcommon.h
-@@ -391,6 +391,8 @@ struct uhdr_encoder_private : uhdr_codec_private {
+@@ -157,6 +157,9 @@
+ static const uhdr_error_info_t g_no_error = {UHDR_CODEC_OK, 0, ""};
+ 
+ namespace ultrahdr {
++// Pixel-center coordinates into a retained HEIF gain map after primary geometry.
++struct uhdr_gainmap_sampling_t { float left = 0, top = 0, scale_x = 1, scale_y = 1; };
++
+ 
+ // ===============================================================================================
+ // Globals
+@@ -391,6 +394,8 @@ struct uhdr_encoder_private : uhdr_codec_private {
  };
  
  struct uhdr_decoder_private : uhdr_codec_private {
@@ -107,6 +118,15 @@ index 729c024..f4ae03f 100644
    // config data
    std::unique_ptr<ultrahdr::uhdr_compressed_image_ext_t> m_uhdr_compressed_img;
    uhdr_img_fmt_t m_output_fmt;
+@@ -531,7 +536,7 @@ class UltraHdr {
+   uhdr_error_info_t applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_image_t* gainmap_img,
+                                  uhdr_gainmap_metadata_ext_t* gainmap_metadata,
+                                  uhdr_color_transfer_t output_ct, uhdr_img_fmt_t output_format,
+-                                 float max_display_boost, uhdr_raw_image_t* dest);
++                                 float max_display_boost, uhdr_raw_image_t* dest, const uhdr_gainmap_sampling_t* sampling = nullptr);
+ 
+   /*!\brief This method is used to convert a raw image from one gamut space to another gamut space
+    * in-place.
 diff --git a/lib/src/dsp/arm/gainmapmath_neon.cpp b/lib/src/dsp/arm/gainmapmath_neon.cpp
 index 68a8494..a800ddf 100644
 --- a/lib/src/dsp/arm/gainmapmath_neon.cpp
@@ -122,7 +142,7 @@ index 68a8494..a800ddf 100644
      std::unique_ptr<uhdr_raw_image_ext_t> dst = nullptr;
      const uint16_t* coeffs_ptr = nullptr;
 diff --git a/lib/src/heifultrahdr.cpp b/lib/src/heifultrahdr.cpp
-index b6480c6..d6275cd 100644
+index b6480c6..cc3e9ba 100644
 --- a/lib/src/heifultrahdr.cpp
 +++ b/lib/src/heifultrahdr.cpp
 @@ -18,10 +18,14 @@
@@ -140,7 +160,7 @@ index b6480c6..d6275cd 100644
  
  #define UHDR_CG_BT_601 static_cast<uhdr_color_gamut_t>(3)
  
-@@ -553,12 +557,138 @@ CleanUp:
+@@ -553,12 +557,168 @@ CleanUp:
    return status;
  }
  
@@ -209,7 +229,8 @@ index b6480c6..d6275cd 100644
 +
 +uhdr_error_info_t getHeifGainmapTransforms(
 +    heif_context* ctx, heif_image_handle* base, heif_image_handle* map,
-+    int& width, int& height, std::vector<std::unique_ptr<uhdr_effect_desc_t>>& effects) {
++    int& width, int& height, std::vector<std::unique_ptr<uhdr_effect_desc_t>>& effects,
++    uhdr_gainmap_sampling_t& sampling, std::vector<std::unique_ptr<uhdr_effect_desc_t>>& primary) {
 +  uhdr_error_info_t invalid = g_no_error;
 +  invalid.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
 +  invalid.has_detail = 1;
@@ -259,14 +280,43 @@ index b6480c6..d6275cd 100644
 +    return true;
 +  };
 +  width = heif_image_handle_get_ispe_width(map); height = heif_image_handle_get_ispe_height(map);
-+  int map_w = width, map_h = height;
++  int base_w = heif_image_handle_get_ispe_width(base), base_h = heif_image_handle_get_ispe_height(base);
++  int final_w = base_w, final_h = base_h, own_w = base_w, own_h = base_h;
 +  std::vector<std::unique_ptr<uhdr_effect_desc_t>> own;
-+  if (!read(base, width, height, effects) || !read(map, map_w, map_h, own)) return invalid;
++  if (!read(base, final_w, final_h, primary) || !read(map, own_w, own_h, own)) return invalid;
 +  if (!own.empty()) {
-+    if (own.size() != effects.size()) return invalid;
++    if (own.size() != primary.size()) return invalid;
 +    for (size_t i = 0; i < own.size(); ++i)
-+      if (own[i]->to_string() != effects[i]->to_string()) return invalid;
++      if (own[i]->to_string() != primary[i]->to_string()) return invalid;
 +  }
++  double left = 0, top = 0, window_w = width, window_h = height;
++  for (auto& effect : primary) {
++    if (auto* crop = dynamic_cast<uhdr_crop_effect_t*>(effect.get())) {
++      left += double(crop->m_left) * window_w / base_w;
++      top += double(crop->m_top) * window_h / base_h;
++      window_w *= double(crop->m_right - crop->m_left) / base_w;
++      window_h *= double(crop->m_bottom - crop->m_top) / base_h;
++      base_w = crop->m_right - crop->m_left;
++      base_h = crop->m_bottom - crop->m_top;
++    } else {
++      if (auto* rotate = dynamic_cast<uhdr_rotate_effect_t*>(effect.get())) {
++        for (int turn = 0; turn < rotate->m_degree / 90; ++turn) {
++          const double next_left = height - top - window_h;
++          top = left; left = next_left;
++          std::swap(window_w, window_h); std::swap(width, height); std::swap(base_w, base_h);
++        }
++      } else if (auto* mirror = dynamic_cast<uhdr_mirror_effect_t*>(effect.get())) {
++        if (mirror->m_direction == UHDR_MIRROR_HORIZONTAL) left = width - left - window_w;
++        else top = height - top - window_h;
++      } else return invalid;
++      if (auto* rotate = dynamic_cast<uhdr_rotate_effect_t*>(effect.get()))
++        effects.emplace_back(std::make_unique<uhdr_rotate_effect_t>(rotate->m_degree));
++      else if (auto* mirror = dynamic_cast<uhdr_mirror_effect_t*>(effect.get()))
++        effects.emplace_back(std::make_unique<uhdr_mirror_effect_t>(mirror->m_direction));
++    }
++  }
++  if (base_w != final_w || base_h != final_h || base_w <= 0 || base_h <= 0) return invalid;
++  sampling = {float(left), float(top), float(window_w / base_w), float(window_h / base_h)};
 +  return g_no_error;
 +}
 +
@@ -280,7 +330,15 @@ index b6480c6..d6275cd 100644
    uhdr_error_info_t status = g_no_error;
    struct heif_image_handle* base_handle = nullptr;
    struct heif_image* sdr_image = nullptr;
-@@ -590,6 +720,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -572,6 +732,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+   uhdr_img_fmt_t fmt;
+   int sdr_width = 0, sdr_height = 0;
+   int gainmap_width = 0, gainmap_height = 0;
++  uhdr_gainmap_sampling_t sampling;
+   std::unique_ptr<uhdr_raw_image_ext_t> sdr_intent, gainmap;
+   heif_context* ctx = nullptr;
+   heif_error nclx_err;
+@@ -590,22 +751,24 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
      snprintf(status.detail, sizeof status.detail, "failed to allocate heif context");
      return status;
    }
@@ -288,7 +346,9 @@ index b6480c6..d6275cd 100644
    HEIF_ERR_CHECK(heif_context_read_from_memory_without_copy(
        ctx, static_cast<const uint8_t*>(uhdr_compressed_img->data), uhdr_compressed_img->data_sz,
        nullptr))
-@@ -598,7 +729,7 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+   HEIF_ERR_CHECK(heif_context_get_primary_image_handle(ctx, &base_handle))
+   decoding_options = heif_decoding_options_alloc();
++  decoding_options->ignore_transformations = true;
    out_colorspace = heif_colorspace_RGB;
    out_chroma = heif_chroma_interleaved_RGBA;
    HEIF_ERR_CHECK(
@@ -297,7 +357,16 @@ index b6480c6..d6275cd 100644
    nclx_err = heif_image_handle_get_nclx_color_profile(base_handle, &nclx);
    if (nclx_err.code != heif_error_Ok) {
      nclx_err = heif_image_get_nclx_color_profile(sdr_image, &nclx);
-@@ -615,19 +746,68 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+   }
+   HEIF_ERR_CHECK(map_heif_chroma_vars_to_fmt(out_colorspace, out_chroma, fmt))
+-  sdr_width = heif_image_handle_get_width(base_handle);
+-  sdr_height = heif_image_handle_get_height(base_handle);
++  sdr_width = heif_image_handle_get_ispe_width(base_handle);
++  sdr_height = heif_image_handle_get_ispe_height(base_handle);
+   sdr_cg = (nclx_err.code == heif_error_Ok && nclx != nullptr)
+                ? map_primaries_inverse(nclx->color_primaries)
+                : UHDR_CG_BT_709;
+@@ -615,19 +778,98 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
    sdr_range = (nclx_err.code == heif_error_Ok && nclx != nullptr)
                    ? (nclx->full_range_flag ? UHDR_CR_FULL_RANGE : UHDR_CR_LIMITED_RANGE)
                    : UHDR_CR_FULL_RANGE;
@@ -318,6 +387,7 @@ index b6480c6..d6275cd 100644
 -  HEIF_ERR_CHECK(copy_img_plane(sdr_image, heif_channel_interleaved,
 -                                sdr_intent->planes[UHDR_PLANE_PACKED], sdr_width, sdr_height,
 -                                sdr_intent->stride[UHDR_PLANE_PACKED] * 4, 4))
+-  if (gainmap_metadata != nullptr || output_ct != UHDR_CT_SRGB) {
 +  {
 +    const heif_channel channels[] = {heif_channel_R, heif_channel_G, heif_channel_B};
 +    int strides[3], depths[3]; const uint8_t* planes[3];
@@ -337,6 +407,8 @@ index b6480c6..d6275cd 100644
 +    // Only an explicitly requested SDR output is quantized to 8 bits.
 +    fmt = max_depth == 8 || output_ct == UHDR_CT_SRGB ? UHDR_IMG_FMT_32bppRGBA8888
 +        : max_depth <= 10 ? UHDR_IMG_FMT_32bppRGBA1010102 : UHDR_IMG_FMT_64bppRGBAHalfFloat;
++    if (output_ct != UHDR_CT_SRGB && heif_image_handle_has_alpha_channel(base_handle))
++      fmt = UHDR_IMG_FMT_64bppRGBAHalfFloat;
 +    sdr_intent = std::make_unique<uhdr_raw_image_ext_t>(
 +        fmt, sdr_cg, sdr_ct, sdr_range, sdr_width, sdr_height, 64);
 +    for (int y = 0; y < sdr_height; ++y) for (int x = 0; x < sdr_width; ++x) {
@@ -364,7 +436,35 @@ index b6480c6..d6275cd 100644
 +      }
 +    }
 +  }
-   if (gainmap_metadata != nullptr || output_ct != UHDR_CT_SRGB) {
++  if (heif_image_handle_has_alpha_channel(base_handle)) {
++    int stride;
++    const auto* alpha_plane = heif_image_get_plane_readonly(sdr_image, heif_channel_Alpha, &stride);
++    const int bits = heif_image_get_bits_per_pixel_range(sdr_image, heif_channel_Alpha);
++    if (!alpha_plane || bits < 1 || bits > 16) {
++      status.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
++      status.has_detail = 1;
++      snprintf(status.detail, sizeof status.detail, "Unsupported HEIF alpha plane");
++      goto CleanUp;
++    }
++    for (unsigned y = 0; y < sdr_intent->h; ++y) {
++      for (unsigned x = 0; x < sdr_intent->w; ++x) {
++        uint16_t value = alpha_plane[y * stride + x];
++        if (bits > 8) memcpy(&value, alpha_plane + y * stride + x * 2, sizeof(value));
++        const float alpha = float(value) / ((1U << bits) - 1);
++        const size_t pixel = y * sdr_intent->stride[UHDR_PLANE_PACKED] + x;
++        if (sdr_intent->fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat) {
++          static_cast<uint16_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = floatToHalf(alpha);
++        } else if (sdr_intent->fmt == UHDR_IMG_FMT_32bppRGBA1010102) {
++          auto& rgba = static_cast<uint32_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[pixel];
++          rgba = (rgba & 0x3fffffffU) | (uint32_t(alpha * 3 + 0.5f) << 30);
++        } else if (sdr_intent->fmt == UHDR_IMG_FMT_32bppRGBA8888) {
++          static_cast<uint8_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = uint8_t(alpha * 255 + 0.5f);
++        }
++      }
++    }
++  }
++
++  { // The SDR baseline needs the same primary geometry and validated map association.
      HEIF_ERR_CHECK(heif_image_handle_get_gain_map_image_handle(base_handle, &gainmap_handle))
      status = heif_get_gainmap_metadata(base_handle, &metadata);
 -    if (status.error_code != UHDR_CODEC_OK) return status;
@@ -372,7 +472,7 @@ index b6480c6..d6275cd 100644
      if (gainmap_metadata != nullptr) {
        std::copy(metadata.min_content_boost, metadata.min_content_boost + 3,
                  gainmap_metadata->min_content_boost);
-@@ -646,27 +826,25 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -646,27 +888,25 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
        out_colorspace = heif_colorspace_RGB;
        out_chroma = heif_chroma_interleaved_RGBA;
      }
@@ -407,15 +507,27 @@ index b6480c6..d6275cd 100644
      gm_cg = (nclx_err.code == heif_error_Ok && nclx != nullptr)
                  ? map_matrix_inverse(nclx->matrix_coefficients)
                  : UHDR_CG_BT_709;
-@@ -691,6 +869,24 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -691,6 +931,36 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
                                      gainmap->planes[UHDR_PLANE_PACKED], gainmap_width,
                                      gainmap_height, gainmap->stride[UHDR_PLANE_PACKED] * 4, 4))
      }
 +    {
 +      int width, height;
-+      std::vector<std::unique_ptr<uhdr_effect_desc_t>> effects;
-+      status = getHeifGainmapTransforms(ctx, base_handle, gainmap_handle, width, height, effects);
++      std::vector<std::unique_ptr<uhdr_effect_desc_t>> effects, primary;
++      status = getHeifGainmapTransforms(ctx, base_handle, gainmap_handle, width, height, effects, sampling, primary);
 +      if (status.error_code != UHDR_CODEC_OK) goto CleanUp;
++      for (auto& effect : primary) {
++        std::unique_ptr<uhdr_raw_image_ext_t> transformed;
++        if (auto* rotate = dynamic_cast<uhdr_rotate_effect_t*>(effect.get()))
++          transformed = apply_rotate(rotate, sdr_intent.get());
++        else if (auto* mirror = dynamic_cast<uhdr_mirror_effect_t*>(effect.get()))
++          transformed = apply_mirror(mirror, sdr_intent.get());
++        else if (auto* crop = dynamic_cast<uhdr_crop_effect_t*>(effect.get()))
++          transformed = apply_crop(crop, sdr_intent.get(), crop->m_left, crop->m_top,
++              crop->m_right - crop->m_left, crop->m_bottom - crop->m_top);
++        if (!transformed) { status.error_code = UHDR_CODEC_MEM_ERROR; goto CleanUp; }
++        sdr_intent = std::move(transformed);
++      }
 +      for (auto& effect : effects) {
 +        std::unique_ptr<uhdr_raw_image_ext_t> transformed;
 +        if (auto* rotate = dynamic_cast<uhdr_rotate_effect_t*>(effect.get()))
@@ -432,44 +544,47 @@ index b6480c6..d6275cd 100644
      if (gainmap_img != nullptr) {
        status = copy_raw_image(gainmap.get(), gainmap_img);
        if (status.error_code != UHDR_CODEC_OK) goto CleanUp;
-@@ -715,6 +911,33 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+@@ -711,10 +981,26 @@ uhdr_error_info_t HeifUltraHdr::decodeHeicUltraHdr(uhdr_compressed_image_t* uhdr
+ 
+   if (output_ct != UHDR_CT_SRGB) {
+     status = applyGainMap(sdr_intent.get(), gainmap.get(), &metadata, output_ct, output_format,
+-                          max_display_boost, dest);
++                          max_display_boost, dest, &sampling);
    } else {
      status = copy_raw_image(sdr_intent.get(), dest);
    }
 +  if (status.error_code == UHDR_CODEC_OK && heif_image_handle_has_alpha_channel(base_handle)) {
-+    int stride;
-+    const auto* alpha_plane = heif_image_get_plane_readonly(sdr_image, heif_channel_Alpha, &stride);
-+    const int bits = heif_image_get_bits_per_pixel_range(sdr_image, heif_channel_Alpha);
-+    if (!alpha_plane || bits < 1 || bits > 16) {
-+      status.error_code = UHDR_CODEC_UNSUPPORTED_FEATURE;
-+      status.has_detail = 1;
-+      snprintf(status.detail, sizeof status.detail, "Unsupported HEIF alpha plane");
-+      goto CleanUp;
-+    }
-+    for (unsigned y = 0; y < dest->h; ++y) {
-+      for (unsigned x = 0; x < dest->w; ++x) {
-+        uint16_t value = alpha_plane[y * stride + x];
-+        if (bits > 8) memcpy(&value, alpha_plane + y * stride + x * 2, sizeof(value));
-+        const float alpha = float(value) / ((1U << bits) - 1);
-+        const size_t pixel = y * dest->stride[UHDR_PLANE_PACKED] + x;
-+        if (dest->fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat) {
-+          static_cast<uint16_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = floatToHalf(alpha);
-+        } else if (dest->fmt == UHDR_IMG_FMT_32bppRGBA1010102) {
-+          auto& rgba = static_cast<uint32_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel];
-+          rgba = (rgba & 0x3fffffffU) | (uint32_t(alpha * 3 + 0.5f) << 30);
-+        } else if (dest->fmt == UHDR_IMG_FMT_32bppRGBA8888) {
-+          static_cast<uint8_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = uint8_t(alpha * 255 + 0.5f);
-+        }
-+      }
++    for (unsigned y = 0; y < dest->h; ++y) for (unsigned x = 0; x < dest->w; ++x) {
++      const size_t source = y * sdr_intent->stride[UHDR_PLANE_PACKED] + x;
++      const float alpha = sdr_intent->fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat
++          ? halfToFloat(static_cast<uint16_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[source * 4 + 3])
++          : static_cast<uint8_t*>(sdr_intent->planes[UHDR_PLANE_PACKED])[source * 4 + 3] / 255.0f;
++      const size_t pixel = y * dest->stride[UHDR_PLANE_PACKED] + x;
++      if (dest->fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat)
++        static_cast<uint16_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = floatToHalf(alpha);
++      else if (dest->fmt == UHDR_IMG_FMT_32bppRGBA1010102) {
++        auto& rgba = static_cast<uint32_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel];
++        rgba = (rgba & 0x3fffffffU) | (uint32_t(alpha * 3 + 0.5f) << 30);
++      } else if (dest->fmt == UHDR_IMG_FMT_32bppRGBA8888)
++        static_cast<uint8_t*>(dest->planes[UHDR_PLANE_PACKED])[pixel * 4 + 3] = uint8_t(alpha * 255 + 0.5f);
 +    }
 +  }
  
  CleanUp:
    if (decoding_options) heif_decoding_options_free(decoding_options);
 diff --git a/lib/src/jpegr.cpp b/lib/src/jpegr.cpp
-index aeae7bd..3415fa4 100644
+index aeae7bd..b5d9312 100644
 --- a/lib/src/jpegr.cpp
 +++ b/lib/src/jpegr.cpp
+@@ -1534,7 +1534,7 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+                                       uhdr_gainmap_metadata_ext_t* gainmap_metadata,
+                                       uhdr_color_transfer_t output_ct,
+                                       [[maybe_unused]] uhdr_img_fmt_t output_format,
+-                                      float max_display_boost, uhdr_raw_image_t* dest) {
++                                      float max_display_boost, uhdr_raw_image_t* dest, const uhdr_gainmap_sampling_t* sampling) {
+   if (dest == nullptr || dest->planes[UHDR_PLANE_PACKED] == nullptr) {
+     uhdr_error_info_t status;
+     status.error_code = UHDR_CODEC_INVALID_PARAM;
 @@ -1587,15 +1587,13 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
        sdr_intent->fmt != UHDR_IMG_FMT_16bppYCbCr422 &&
        sdr_intent->fmt != UHDR_IMG_FMT_12bppYCbCr420 &&
@@ -490,7 +605,25 @@ index aeae7bd..3415fa4 100644
               sdr_intent->fmt);
      return status;
    }
-@@ -1724,7 +1722,9 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+@@ -1655,7 +1653,7 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+     float delta_aspect_ratio = fabs(primary_aspect_ratio - gainmap_aspect_ratio);
+     // Allow 1% delta
+     const float delta_tolerance = 0.01f;
+-    if (delta_aspect_ratio / primary_aspect_ratio > delta_tolerance) {
++    if (!sampling && delta_aspect_ratio / primary_aspect_ratio > delta_tolerance) {
+       resized_gainmap = resize_image(gainmap_img, sdr_intent->w, sdr_intent->h);
+       if (resized_gainmap == nullptr) {
+         uhdr_error_info_t status;
+@@ -1706,7 +1704,7 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
+ #if !USE_APPLY_GAIN_LUT
+                                        gainmap_weight,
+ #endif
+-                                       map_scale_factor, get_pixel_fn]() -> void {
++                                       map_scale_factor, get_pixel_fn, sampling]() -> void {
+     unsigned int width = sdr_intent->w;
+     unsigned int rowStart, rowEnd;
+     const bool isSdrIntentRgb = isPixelFormatRgb(sdr_intent->fmt);
+@@ -1724,13 +1722,43 @@ uhdr_error_info_t UltraHdr::applyGainMap(uhdr_raw_image_t* sdr_intent, uhdr_raw_
            }
            // We are assuming the SDR base image is always sRGB transfer.
  #if USE_SRGB_INVOETF_LUT
@@ -501,8 +634,43 @@ index aeae7bd..3415fa4 100644
  #else
            Color rgb_sdr = srgbInvOetf(rgb_gamma_sdr);
  #endif
+           rgb_sdr = sdrGamutConversionFn(rgb_sdr);
+           Color rgb_hdr;
+-          if (gainmap_img->fmt == UHDR_IMG_FMT_8bppYCbCr400) {
++          if (sampling) {
++            // HEIF auxiliary pixels share normalized image coordinates with the primary.
++            const float gx = std::clamp(sampling->left + (float(x) + 0.5f) * sampling->scale_x - 0.5f,
++                                       0.0f, float(gainmap_img->w - 1));
++            const float gy = std::clamp(sampling->top + (float(y) + 0.5f) * sampling->scale_y - 0.5f,
++                                       0.0f, float(gainmap_img->h - 1));
++            const size_t x0 = size_t(gx), y0 = size_t(gy);
++            const size_t x1 = std::min(x0 + 1, size_t(gainmap_img->w - 1));
++            const size_t y1 = std::min(y0 + 1, size_t(gainmap_img->h - 1));
++            const float dx = gx - x0, dy = gy - y0;
++            float channels_gain[3] = {};
++            const bool mono = gainmap_img->fmt == UHDR_IMG_FMT_8bppYCbCr400;
++            const size_t channels = mono ? 1 : gainmap_img->fmt == UHDR_IMG_FMT_32bppRGBA8888 ? 4 : 3;
++            const auto* samples = static_cast<const uint8_t*>(gainmap_img->planes[UHDR_PLANE_PACKED]);
++            for (int c = 0; c < 3; ++c) {
++              const size_t channel = mono ? 0 : c;
++              const auto at = [&](size_t px, size_t py) {
++                return float(samples[(py * gainmap_img->stride[UHDR_PLANE_PACKED] + px) * channels + channel]) / 255;
++              };
++              channels_gain[c] = (at(x0, y0) * (1 - dx) + at(x1, y0) * dx) * (1 - dy)
++                      + (at(x0, y1) * (1 - dx) + at(x1, y1) * dx) * dy;
++            }
++            Color gain = {{{channels_gain[0], channels_gain[1], channels_gain[2]}}};
++#if USE_APPLY_GAIN_LUT
++            rgb_hdr = applyGainLUT(rgb_sdr, gain, gainLUT, gainmap_metadata);
++#else
++            rgb_hdr = applyGain(rgb_sdr, gain, gainmap_metadata, gainmap_weight);
++#endif
++          } else if (gainmap_img->fmt == UHDR_IMG_FMT_8bppYCbCr400) {
+             float gain;
+ 
+             if (map_scale_factor != floorf(map_scale_factor)) {
 diff --git a/lib/src/ultrahdr_api.cpp b/lib/src/ultrahdr_api.cpp
-index 2fd0062..058e24b 100644
+index 2fd0062..ecb1447 100644
 --- a/lib/src/ultrahdr_api.cpp
 +++ b/lib/src/ultrahdr_api.cpp
 @@ -1529,6 +1529,28 @@ void uhdr_release_decoder(uhdr_codec_private_t* dec) {
@@ -556,7 +724,7 @@ index 2fd0062..058e24b 100644
          if (err.code == heif_error_Ok) {
            struct heif_image_handle* base_handle = nullptr;
            err = heif_context_get_primary_image_handle(ctx, &base_handle);
-@@ -1710,18 +1741,36 @@ uhdr_error_info_t uhdr_dec_probe(uhdr_codec_private_t* dec) {
+@@ -1710,18 +1741,46 @@ uhdr_error_info_t uhdr_dec_probe(uhdr_codec_private_t* dec) {
              struct heif_image_handle* gainmap_handle = nullptr;
              err = heif_image_handle_get_gain_map_image_handle(base_handle, &gainmap_handle);
              if (err.code == heif_error_Ok && gainmap_handle != nullptr) {
@@ -564,9 +732,10 @@ index 2fd0062..058e24b 100644
 -              handle->m_gainmap_ht = heif_image_handle_get_height(gainmap_handle);
 -              handle->m_gainmap_num_comp = 1;
 +              int aligned_width = 0, aligned_height = 0;
-+              std::vector<std::unique_ptr<ultrahdr::uhdr_effect_desc_t>> effects;
++              std::vector<std::unique_ptr<ultrahdr::uhdr_effect_desc_t>> effects, primary;
++              ultrahdr::uhdr_gainmap_sampling_t sampling;
 +              auto geometry = ultrahdr::getHeifGainmapTransforms(ctx, base_handle, gainmap_handle,
-+                  aligned_width, aligned_height, effects);
++                  aligned_width, aligned_height, effects, sampling, primary);
 +              handle->m_gainmap_wd = aligned_width;
 +              handle->m_gainmap_ht = aligned_height;
 +              heif_colorspace colorspace;
@@ -595,12 +764,21 @@ index 2fd0062..058e24b 100644
 +                    const double base_pixels = double(handle->m_img_wd) * handle->m_img_ht;
 +                    const double map_pixels = double(handle->m_gainmap_wd) * handle->m_gainmap_ht;
 +                    status = g_no_error;
-+                    if (base_pixels > handle->m_max_pixels || map_pixels > handle->m_max_pixels)
++                    const int raw_w = heif_image_handle_get_ispe_width(base_handle);
++                    const int raw_h = heif_image_handle_get_ispe_height(base_handle);
++                    const auto surface = [](int w, int h) {
++                      return std::max(std::ceil(double(w) / 64) * 64 * h,
++                                      std::ceil(double(h) / 64) * 64 * w);
++                    };
++                    if (raw_w <= 0 || raw_h <= 0 || double(raw_w) * raw_h > handle->m_max_pixels
++                        || base_pixels > handle->m_max_pixels || map_pixels > handle->m_max_pixels
++                        || std::max(surface(raw_w, raw_h), surface(handle->m_img_wd, handle->m_img_ht)) * 64
++                             + surface(handle->m_gainmap_wd, handle->m_gainmap_ht) * 16 > handle->m_max_bytes)
 +                      status.error_code = UHDR_CODEC_MEM_ERROR;
                    std::copy(metadata.max_content_boost, metadata.max_content_boost + 3,
                              handle->m_metadata.max_content_boost);
                    std::copy(metadata.min_content_boost, metadata.min_content_boost + 3,
-@@ -1732,6 +1781,7 @@ uhdr_error_info_t uhdr_dec_probe(uhdr_codec_private_t* dec) {
+@@ -1732,6 +1791,7 @@ uhdr_error_info_t uhdr_dec_probe(uhdr_codec_private_t* dec) {
                    handle->m_metadata.hdr_capacity_min = metadata.hdr_capacity_min;
                    handle->m_metadata.hdr_capacity_max = metadata.hdr_capacity_max;
                    handle->m_metadata.use_base_cg = metadata.use_base_cg;
@@ -608,7 +786,7 @@ index 2fd0062..058e24b 100644
                  }
                }
                heif_image_handle_release(gainmap_handle);
-@@ -1935,6 +1985,19 @@ uhdr_error_info_t uhdr_decode(uhdr_codec_private_t* dec) {
+@@ -1935,6 +1995,19 @@ uhdr_error_info_t uhdr_decode(uhdr_codec_private_t* dec) {
  
    handle->m_sailed = true;
  
@@ -628,7 +806,7 @@ index 2fd0062..058e24b 100644
    if ((handle->m_output_fmt == UHDR_IMG_FMT_32bppRGBA1010102 &&
         (handle->m_output_ct != UHDR_CT_HLG && handle->m_output_ct != UHDR_CT_PQ)) ||
        (handle->m_output_fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat &&
-@@ -1965,7 +2028,7 @@ uhdr_error_info_t uhdr_decode(uhdr_codec_private_t* dec) {
+@@ -1965,7 +2038,7 @@ uhdr_error_info_t uhdr_decode(uhdr_codec_private_t* dec) {
      status = heifApp.decodeHeicUltraHdr(
          handle->m_uhdr_compressed_img.get(), handle->m_decoded_img_buffer.get(),
          handle->m_output_max_disp_boost, handle->m_output_ct, handle->m_output_fmt,

@@ -593,7 +593,7 @@ test(
     skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
   },
   () => {
-    assert.equal(codec.capabilities().renderer, 'frameleaf-develop-hdr/2');
+    assert.equal(codec.capabilities().renderer, 'frameleaf-develop-hdr/3');
     assert.equal(codec.capabilities().isoGainMapDecoder, true);
     const pixels = new Float32Array(64 * 64 * 4);
     for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
@@ -653,5 +653,100 @@ test(
     assert.ok(pixels.some((value) => value > 7.9));
     for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
       assert.throws(() => operation(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+  },
+);
+
+test(
+  'ISO reduced maps preserve fractional geometry and account for retained HDR pixels',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  () => {
+    const input = readFileSync(new URL('./fixtures/iso-quarter/source.heic', import.meta.url));
+    const source = codec.decodePaired(input, ...limits),
+      cases = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/geometry.json', import.meta.url))),
+      checksums = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/checksums.json', import.meta.url)));
+    assert.equal(createHash('sha256').update(input).digest('hex'), checksums['source.heic']);
+    const pixels = (image) => new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+    for (let i = 0; i < cases.length; ++i) {
+      let width = source.width,
+        height = source.height;
+      let indices = Array.from({ length: width * height }, (_, x) => x);
+      for (const [op, ...args] of cases[i]) {
+        if (op === 'crop') {
+          const [left, top, w, h] = args;
+          indices = Array.from(
+            { length: w * h },
+            (_, j) => indices[(Math.floor(j / w) + top) * width + (j % w) + left],
+          );
+          width = w;
+          height = h;
+        } else if (op === 'rotate') {
+          for (let turns = 0; turns < args[0] / 90; ++turns) {
+            const oldWidth = width,
+              oldHeight = height,
+              original = indices;
+            width = oldHeight;
+            height = oldWidth;
+            indices = Array.from(
+              { length: width * height },
+              (_, j) => original[(j % width) * oldWidth + oldWidth - 1 - Math.floor(j / width)],
+            );
+          }
+        } else {
+          const original = indices;
+          indices = Array.from(
+            { length: width * height },
+            (_, j) =>
+              original[
+                args[0] === 'horizontal'
+                  ? Math.floor(j / width) * width + width - 1 - (j % width)
+                  : (height - 1 - Math.floor(j / width)) * width + (j % width)
+              ],
+          );
+        }
+      }
+      const encoded = readFileSync(new URL(`./fixtures/iso-quarter/geometry-${i}.heic`, import.meta.url));
+      assert.equal(createHash('sha256').update(encoded).digest('hex'), checksums[`geometry-${i}.heic`]);
+      const decoded = codec.decodePaired(encoded, ...limits),
+        actual = pixels(decoded),
+        expected = pixels(source);
+      assert.deepEqual([decoded.width, decoded.height], [width, height]);
+      for (let j = 0; j < indices.length; ++j)
+        for (let ch = 0; ch < 4; ++ch) {
+          assert.equal(actual[j * 4 + ch], expected[indices[j] * 4 + ch], `HDR case ${i} pixel ${j} channel ${ch}`);
+          assert.equal(
+            decoded.sdr[j * 4 + ch],
+            source.sdr[indices[j] * 4 + ch],
+            `SDR case ${i} pixel ${j} channel ${ch}`,
+          );
+        }
+      for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
+        assert.throws(() => operation(encoded, width * height, limits[1]), { code: 'RESOURCE_LIMIT' });
+    }
+
+    const cropped = readFileSync(new URL('./fixtures/iso-quarter/geometry-0.heic', import.meta.url));
+    const admitted = 65536 * 64 + 16384 * 16 + cropped.length * 2 + 512 * 16 * 16;
+    assert.doesNotThrow(() => codec.decode(cropped, limits[0], admitted - 1));
+    assert.throws(() => codec.decodePaired(cropped, limits[0], admitted - 1), { code: 'RESOURCE_LIMIT' });
+    assert.doesNotThrow(() => codec.decodePaired(cropped, limits[0], admitted + 1));
+    const reference = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/reference.json', import.meta.url)));
+    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
+    const values = pixels(source);
+    let maximum = 0,
+      squared = 0,
+      count = 0;
+    for (let row = 0; row < reference.rgb.length; ++row)
+      for (let x = 0; x < reference.rgb[row].length; ++x)
+        for (let ch = 0; ch < 3; ++ch) {
+          const at =
+            (reference.sampleY[row] * source.width + x * reference.sampleStep + reference.sampleOffset) * 4 + ch;
+          const error = values[at] - reference.rgb[row][x][ch];
+          maximum = Math.max(maximum, Math.abs(error));
+          squared += error * error;
+          ++count;
+        }
+    assert.ok(maximum < 0.1, `ISO quarter-map reference maximum ${maximum}`);
+    assert.ok(Math.sqrt(squared / count) < 0.02, `ISO quarter-map reference RMS ${Math.sqrt(squared / count)}`);
   },
 );

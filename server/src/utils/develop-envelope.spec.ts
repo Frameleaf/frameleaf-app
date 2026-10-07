@@ -225,3 +225,16 @@ it('pins version 4 to the corrected codec policy and preserves the version 3 ide
   expect(() => renderHdrDevelopProjection({ version: 3, renderer: 'frameleaf-develop-hdr/2' })).toThrow();
   expect(() => preserveDevelopEnvelope(developEnvelope({ version: 4 }), developEnvelope({ version: 3 }))).toThrow();
 });
+
+it('pins reduced-map geometry to version 5 without relabeling historical revisions', () => {
+  expect(renderHdrDevelopProjection({ version: 5, exposure: 1 })).toMatchObject({
+    version: 5,
+    renderer: 'frameleaf-develop-hdr/3',
+    hdr: { version: 3, sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.3' },
+  });
+  for (const version of [3, 4]) {
+    expect(renderHdrDevelopProjection({ version }).renderer).toBe(`frameleaf-develop-hdr/${version - 2}`);
+    expect(() => renderHdrDevelopProjection({ version, renderer: 'frameleaf-develop-hdr/3' })).toThrow();
+  }
+  expect(() => renderHdrDevelopProjection({ version: 5, hdr: { version: 2 } })).toThrow();
+});

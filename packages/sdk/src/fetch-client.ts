@@ -14739,6 +14739,66 @@ export type HdrAssetDevelopRecipeV4 = {
     /** White point */
     whites?: number;
 };
+export type HdrAssetDevelopRecipeV5 = {
+    /** Black point */
+    blacks?: number;
+    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    brilliance?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    cleanup?: AssetDevelopCleanup[];
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: KnownAssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    hdr?: {
+        intent?: Intent;
+        referenceWhite?: ReferenceWhite;
+        sdrToneMapper?: SdrToneMapper3;
+        version?: Version7;
+    };
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    renderer?: Renderer4;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    version: Version8;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
 export type KnownAssetDevelopRecipe = {
     /** Black point */
     blacks?: number;
@@ -14785,7 +14845,7 @@ export type KnownAssetDevelopRecipe = {
     /** Magenta (positive) or green (negative) tint */
     tint?: number;
     /** Recipe contract version */
-    version: Version7;
+    version: Version9;
     /** Saturation weighted towards muted colours */
     vibrance?: number;
     /** Darkened (positive) or lightened (negative) edges */
@@ -31068,7 +31128,19 @@ export enum Renderer3 {
 export enum Version6 {
     $4 = 4
 }
+export enum SdrToneMapper3 {
+    Libultrahdr202Frameleaf3 = "libultrahdr/2.0.2-frameleaf.3"
+}
 export enum Version7 {
+    $3 = 3
+}
+export enum Renderer4 {
+    FrameleafDevelopHdr3 = "frameleaf-develop-hdr/3"
+}
+export enum Version8 {
+    $5 = 5
+}
+export enum Version9 {
     $1 = 1
 }
 export enum Status12 {

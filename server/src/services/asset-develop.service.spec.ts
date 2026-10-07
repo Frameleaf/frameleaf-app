@@ -895,14 +895,14 @@ describe(AssetDevelopService.name, () => {
     );
   });
 
-  describe.each([3, 4])('HDR version %s', (version) => {
+  describe.each([3, 4, 5])('HDR version %s', (version) => {
     beforeEach(() =>
       mocks.media.getHdrCodecCapabilities.mockResolvedValue({
         libheif: '1.23.3',
         libultrahdr: '2.0.2',
         heicDecoder: true,
         avifDecoder: true,
-        renderer: version === 3 ? 'frameleaf-develop-hdr/1' : 'frameleaf-develop-hdr/2',
+        renderer: `frameleaf-develop-hdr/${version - 2}`,
       }),
     );
     const recipe = { version, exposure: 1 };
@@ -985,7 +985,7 @@ describe(AssetDevelopService.name, () => {
         expect(mocks.storage.rename).toHaveBeenCalledTimes(4);
         expect(developRepository.beginAttempt).toHaveBeenCalledWith(
           revision.id,
-          version === 3 ? 'frameleaf-develop-hdr/1' : 'frameleaf-develop-hdr/2',
+          `frameleaf-develop-hdr/${version - 2}`,
           DEVELOP_RENDER_LEASE_MS / 1000,
         );
         expect(developRepository.update).toHaveBeenCalledWith(
