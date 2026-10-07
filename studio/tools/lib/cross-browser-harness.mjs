@@ -78,8 +78,9 @@ export function createHarness({ upstream, overrides = [], inspectConnect = false
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const hmr = isUpstreamRequest(url) && req.method === 'GET' &&
+        url.pathname === upstreamUrl.pathname &&
         req.headers.upgrade?.toLowerCase() === 'websocket' && upgradeProtocol === 'vite-hmr';
-      observations.push({method: req.method, url: url.href, kind: hmr ? 'blocked' : 'error', upgradeProtocol});
+      observations.push({method: req.method, url: url.href, kind: hmr ? 'upgrade-refused' : 'error', upgradeProtocol});
     } catch (error) {
       observations.push({method: req.method, url: req.url, kind: 'error', error: error.code});
     }
