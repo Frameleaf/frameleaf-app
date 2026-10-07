@@ -110946,8 +110946,50 @@
         },
         "type": "object"
       },
+      "StudioRenderCandidateDto": {
+        "properties": {
+          "dolbyVision": {
+            "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "hdr10": {
+            "type": "boolean"
+          },
+          "maxBitDepth": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "outputFormats": {
+            "description": "Output formats whose exact writer and container this session verified",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFormat"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dolbyVision",
+          "gpuMemoryBytes",
+          "hdr10",
+          "maxBitDepth",
+          "outputFormats"
+        ],
+        "type": "object"
+      },
       "StudioRenderEvidenceDto": {
         "properties": {
+          "candidates": {
+            "description": "Per-session StudioExport proof; aggregate fields must not authorize an export",
+            "items": {
+              "$ref": "#/components/schemas/StudioRenderCandidateDto"
+            },
+            "type": "array"
+          },
           "codecs": {
             "description": "Encoders and decoders qualified sessions verified",
             "items": {
