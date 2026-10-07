@@ -11,7 +11,7 @@ import {
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
-import type { QueueExecution } from 'src/queue/types.js';
+import { QUEUE_TIMING, type QueueExecution } from 'src/queue/types.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
@@ -124,7 +124,16 @@ describe('cloud description adoption and remote release', () => {
     const worker = randomUUID();
     await store.initialize([queue], worker);
     const stage = async () => {
-      await store.enqueue([{ queue, name: JobName.CloudMlDescriptionBatch, data: {} }]);
+      await store.enqueue([
+        {
+          queue,
+          name: JobName.CloudMlDescriptionBatch,
+          data: {},
+          safeToRetry: false,
+          sensitive: false,
+          deadlineMs: QUEUE_TIMING.opaqueDeadline,
+        },
+      ]);
       const [claim] = await store.claim(queue, worker);
       const abort = new AbortController();
       const context: QueueExecution = {
@@ -247,6 +256,39 @@ describe('cloud description adoption and remote release', () => {
       expect(test.mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps completed batches visible to cleanup after a post-commit release failure', async () => {
+    const test = await prepare();
+    const staged = await test.stage();
+    expect(await staged.commit()).toBe(true);
+    test.mocks.frameleafCloudMl.deleteJob.mockRejectedValueOnce(new Error('offline'));
+    for (const observer of staged.context.afterCommit ?? []) await observer();
+    expect(await test.row()).toMatchObject({ status: MediaOperationStatus.Completed, remoteReleasedAt: null });
+    const operations = new MediaOperationRepository(db);
+    const other = await operations.create({
+      ownerId: test.operation.ownerId,
+      kind: MediaOperationKind.StudioExport,
+      destination: MediaOperationDestination.FrameleafCloud,
+      label: 'other remote output',
+      snapshot: {},
+      remoteJobId: randomUUID(),
+    });
+    await db
+      .updateTable('media_operation')
+      .set({ status: MediaOperationStatus.Completed })
+      .where('id', '=', other.id)
+      .execute();
+    const pending = await operations.getUnreleasedRemoteOperations(1000);
+    expect(pending.some(({ id }) => id === test.operation.id)).toBe(true);
+    expect(pending.some(({ id }) => id === other.id)).toBe(false);
+    await test.sut['release']({} as never, test.operation.id, test.remoteJobId, false);
+    expect((await test.row()).remoteReleasedAt).not.toBeNull();
+    expect((await operations.getUnreleasedRemoteOperations(1000)).some(({ id }) => id === test.operation.id)).toBe(
+      false,
+    );
+    expect(await test.descriptions()).toEqual(['Paid cloud description', 'Paid cloud description']);
+    expect(test.mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+  });
 
   it('commits a truthful rejected-item outcome alongside another adopted photo', async () => {
     const test = await prepare();
