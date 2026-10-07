@@ -2,7 +2,7 @@ import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
 // Standalone Node child has no application alias loader.
 // eslint-disable-next-line no-restricted-imports
-import { type LinearHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
+import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
 // eslint-disable-next-line no-restricted-imports
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 
@@ -47,14 +47,29 @@ export class SharpOperations {
     return imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
   }
 
-  async decodeHdrImage(input: string | Buffer) {
+  async decodeHdrImage(input: string | Buffer, preserveSdrBaseline = false) {
     const bytes = await imageHdrInput(input, this.maxBytes);
-    return imageHdrOperation((codec) => codec.decode(bytes, this.maxPixels, this.maxBytes));
+    return imageHdrOperation((codec) =>
+      preserveSdrBaseline
+        ? codec.decodePaired(bytes, this.maxPixels, this.maxBytes)
+        : codec.decode(bytes, this.maxPixels, this.maxBytes),
+    );
   }
 
-  encodeHdrImage(image: LinearHdrImage) {
+  encodeHdrImage(image: LinearHdrImage | PairedHdrImage) {
     return imageHdrOperation((codec) =>
-      codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
+      'sdr' in image
+        ? codec.encodePaired(
+            image.data,
+            image.width,
+            image.height,
+            image.gamut,
+            this.maxPixels,
+            this.maxBytes,
+            image.sdr,
+            image.sdrGamut,
+          )
+        : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
     );
   }
 

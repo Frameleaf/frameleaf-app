@@ -110,15 +110,16 @@ int jpegOrientation(const Input& input) {
   return orientation ? orientation : 1;
 }
 
-Decoder decoder(Input& input, bool linear = false) {
+Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
   Decoder dec(uhdr_create_decoder(), uhdr_release_decoder);
   if (!dec) throw std::runtime_error("RESOURCE_LIMIT");
   uhdr_compressed_image_t image{input.data, input.size, input.size,
     UHDR_CG_UNSPECIFIED, UHDR_CT_UNSPECIFIED, UHDR_CR_UNSPECIFIED};
   check(uhdr_dec_set_image(dec.get(), &image));
-  if (linear) {
-    check(uhdr_dec_set_out_img_format(dec.get(), UHDR_IMG_FMT_64bppRGBAHalfFloat));
-    check(uhdr_dec_set_out_color_transfer(dec.get(), UHDR_CT_LINEAR));
+  if (linear || sdr) {
+    check(uhdr_dec_set_out_img_format(dec.get(), sdr ? UHDR_IMG_FMT_32bppRGBA8888 : UHDR_IMG_FMT_64bppRGBAHalfFloat));
+    check(uhdr_dec_set_out_color_transfer(dec.get(), sdr ? UHDR_CT_SRGB : UHDR_CT_LINEAR));
+    if (sdr) check(uhdr_dec_set_out_max_display_boost(dec.get(), 1));
     const int orientation = jpegOrientation(input);
     if (orientation == 2 || orientation == 4 || orientation == 5 || orientation == 7)
       check(uhdr_add_effect_mirror(dec.get(), UHDR_MIRROR_HORIZONTAL));
@@ -398,9 +399,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
   });
 }
 
-napi_value decode(napi_env env, napi_callback_info info) {
-  return invoke(env, info, 3, [&](napi_value* args) {
-    Input input(env, args);
+napi_value decodeLinear(napi_env env, Input& input) {
     const auto type = heif_check_filetype(static_cast<uint8_t*>(input.data), int(input.size));
     if (!is_uhdr_image(input.data, int(input.size))
         && (type == heif_filetype_yes_supported || type == heif_filetype_yes_unsupported))
@@ -423,11 +422,42 @@ napi_value decode(napi_env env, napi_callback_info info) {
     field(env, result, "width", double(image->w)); field(env, result, "height", double(image->h));
     field(env, result, "gamut", double(image->cg)); field(env, result, "referenceWhite", 203.0);
     return result;
+}
+napi_value decode(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 3, [&](napi_value* args) {
+    Input input(env, args); return decodeLinear(env, input);
+  });
+}
+napi_value decodePaired(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 3, [&](napi_value* args) {
+    Input input(env, args);
+    if (!is_uhdr_image(input.data, int(input.size))) throw std::runtime_error("ADAPTIVE_IMAGE_UNAVAILABLE");
+    // The previous decoder is destroyed before this one starts. Include retained float RGB in its budget.
+    auto result = decodeLinear(env, input);
+    auto dec = decoder(input, false, true);
+    if (input.size + double(uhdr_dec_get_image_width(dec.get())) * uhdr_dec_get_image_height(dec.get()) * 80
+        + double(uhdr_dec_get_gainmap_width(dec.get())) * uhdr_dec_get_gainmap_height(dec.get()) * 16 > input.maxBytes)
+      throw std::runtime_error("RESOURCE_LIMIT");
+    check(uhdr_decode(dec.get()));
+    const auto* image = uhdr_get_decoded_image(dec.get());
+    // The pinned decoder copies the JPEG base with an unspecified transfer tag; this output mode is sRGB.
+    if (!image || image->fmt != UHDR_IMG_FMT_32bppRGBA8888
+        || (image->ct != UHDR_CT_SRGB && image->ct != UHDR_CT_UNSPECIFIED)
+        || image->cg < UHDR_CG_BT_709 || image->cg > UHDR_CG_BT_2100)
+      throw std::runtime_error("SDR_BASELINE_UNAVAILABLE");
+    napi_value sdr; void* pixels;
+    check(napi_create_buffer(env, size_t(image->w) * image->h * 4, &pixels, &sdr));
+    const auto* source = static_cast<const uint8_t*>(image->planes[0]);
+    for (unsigned y = 0; y < image->h; ++y)
+      std::memcpy(static_cast<uint8_t*>(pixels) + size_t(y) * image->w * 4,
+        source + size_t(y) * image->stride[0] * 4, size_t(image->w) * 4);
+    check(napi_set_named_property(env, result, "sdr", sdr));
+    field(env, result, "sdrGamut", double(image->cg));
+    return result;
   });
 }
 
-napi_value encode(napi_env env, napi_callback_info info) {
-  return invoke(env, info, 6, [&](napi_value* args) {
+napi_value encodeLinear(napi_env env, napi_value* args, bool paired) {
     // RGBA Float32 linear pixels, source gamut, relative to 203 cd/m². Alpha cannot be discarded silently.
     bool buffer; check(napi_is_buffer(env, args[0], &buffer)); if (!buffer) throw std::runtime_error("INVALID_ARGUMENT");
     void* bytes; size_t size; check(napi_get_buffer_info(env, args[0], &bytes, &size));
@@ -438,7 +468,7 @@ napi_value encode(napi_env env, napi_callback_info info) {
         || reinterpret_cast<uintptr_t>(bytes) % alignof(float) != 0
         || wd < 1 || hd < 1 || wd != std::floor(wd) || hd != std::floor(hd) || wd * hd > maxPixels
         || maxPixels > 200000000 || maxBytes > 1073741824 || maxBytes <= 0
-        || wd * hd * 64 > maxBytes || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
+        || wd * hd * (paired ? 68 : 64) > maxBytes || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
       throw std::runtime_error("RESOURCE_LIMIT");
     const auto w = unsigned(wd), h = unsigned(hd);
     std::vector<uint16_t> pixels(size / 4);
@@ -454,6 +484,19 @@ napi_value encode(napi_env env, napi_callback_info info) {
     uhdr_raw_image_t image{UHDR_IMG_FMT_64bppRGBAHalfFloat, uhdr_color_gamut_t(int(gd)), UHDR_CT_LINEAR,
       UHDR_CR_FULL_RANGE, w, h, {pixels.data(), nullptr, nullptr}, {w, 0, 0}};
     check(uhdr_enc_set_raw_image(enc.get(), &image, UHDR_HDR_IMG));
+    if (paired) {
+      check(napi_is_buffer(env, args[6], &buffer));
+      if (!buffer) throw std::runtime_error("INVALID_SDR_BASELINE");
+      void* sdr; size_t sdrSize; check(napi_get_buffer_info(env, args[6], &sdr, &sdrSize));
+      const double sdrGamut = number(env, args[7]);
+      if (sdrSize != wd * hd * 4 || !std::isfinite(sdrGamut) || sdrGamut < 0 || sdrGamut > 2
+          || sdrGamut != std::floor(sdrGamut)) throw std::runtime_error("INVALID_SDR_BASELINE");
+      for (size_t i = 3; i < sdrSize; i += 4)
+        if (static_cast<const uint8_t*>(sdr)[i] != 255) throw std::runtime_error("HDR_JPEG_ALPHA_UNSUPPORTED");
+      uhdr_raw_image_t base{UHDR_IMG_FMT_32bppRGBA8888, uhdr_color_gamut_t(int(sdrGamut)), UHDR_CT_SRGB,
+        UHDR_CR_FULL_RANGE, w, h, {sdr, nullptr, nullptr}, {w, 0, 0}};
+      check(uhdr_enc_set_raw_image(enc.get(), &base, UHDR_SDR_IMG));
+    }
     check(uhdr_enc_set_quality(enc.get(), 95, UHDR_BASE_IMG));
     check(uhdr_enc_set_quality(enc.get(), 95, UHDR_GAIN_MAP_IMG));
     check(uhdr_enc_set_using_multi_channel_gainmap(enc.get(), 1));
@@ -463,15 +506,22 @@ napi_value encode(napi_env env, napi_callback_info info) {
     if (!output || output->data_sz > maxBytes) throw std::runtime_error("RESOURCE_LIMIT");
     napi_value result; check(napi_create_buffer_copy(env, output->data_sz, output->data, nullptr, &result));
     return result;
-  });
+}
+napi_value encode(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 6, [&](napi_value* args) { return encodeLinear(env, args, false); });
+}
+napi_value encodePaired(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 8, [&](napi_value* args) { return encodeLinear(env, args, true); });
 }
 napi_value init(napi_env env, napi_value exports) {
   const napi_property_descriptor functions[] = {
     {"inspect", nullptr, inspect, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"decode", nullptr, decode, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"encode", nullptr, encode, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"decodePaired", nullptr, decodePaired, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"encodePaired", nullptr, encodePaired, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
-  check(napi_define_properties(env, exports, 3, functions)); return exports;
+  check(napi_define_properties(env, exports, sizeof(functions) / sizeof(functions[0]), functions)); return exports;
 }
 } // namespace
 NAPI_MODULE(NODE_GYP_MODULE_NAME, init)

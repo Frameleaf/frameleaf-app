@@ -8,9 +8,21 @@ export type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 
 export type LinearHdrImage = { data: Buffer; width: number; height: number; gamut: 0 | 1 | 2; referenceWhite: 203 };
+export type PairedHdrImage = LinearHdrImage & { sdr: Buffer; sdrGamut: 0 | 1 | 2 };
 type NativeCodec = {
   inspect(input: Buffer, maxPixels: number, maxBytes: number): ImageEncodingInfo;
   decode(input: Buffer, maxPixels: number, maxBytes: number): LinearHdrImage;
+  decodePaired(input: Buffer, maxPixels: number, maxBytes: number): PairedHdrImage;
+  encodePaired(
+    input: Buffer,
+    width: number,
+    height: number,
+    gamut: 0 | 1 | 2,
+    maxPixels: number,
+    maxBytes: number,
+    sdr: Buffer,
+    sdrGamut: 0 | 1 | 2,
+  ): Buffer;
   encode(input: Buffer, width: number, height: number, gamut: 0 | 1 | 2, maxPixels: number, maxBytes: number): Buffer;
 };
 let codec: NativeCodec | undefined;
