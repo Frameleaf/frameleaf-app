@@ -177,7 +177,7 @@ describe('QuickEditor', () => {
         {
           id: photo.id,
           assetDevelopPreviewDto: {
-            recipe: expect.objectContaining({ version: 3, hdr: expect.objectContaining({ intent: 'preserve' }) }),
+            recipe: expect.objectContaining({ version: 4, hdr: expect.objectContaining({ intent: 'preserve' }) }),
             size: 1280,
             dynamicRange: 'auto',
           },

@@ -503,7 +503,7 @@ export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refin
 ).meta({ id: 'KnownAssetDevelopRecipe' });
 
 /** HDR revisions use a separate identity; historical v1 and darktable v2 are unchanged. */
-export const HdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
+const LegacyHdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
   version: z.literal(3).meta({ type: 'integer', format: 'int32' }),
   renderer: z.literal('frameleaf-develop-hdr/1').default('frameleaf-develop-hdr/1'),
   hdr: z
@@ -516,10 +516,27 @@ export const HdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend(
     .prefault({}),
 })
   .strict()
+  .meta({ id: 'HdrAssetDevelopRecipe' });
+const CurrentHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+  version: z.literal(4).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/2').default('frameleaf-develop-hdr/2'),
+  hdr: z
+    .strictObject({
+      version: z.literal(2).meta({ type: 'integer', format: 'int32' }).default(2),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2-frameleaf.2').default('libultrahdr/2.0.2-frameleaf.2'),
+    })
+    .prefault({}),
+})
   .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
     error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
   })
-  .meta({ id: 'HdrAssetDevelopRecipe' });
+  .meta({ id: 'HdrAssetDevelopRecipeV4' });
+export const HdrAssetDevelopRecipeSchema = z.union([
+  LegacyHdrAssetDevelopRecipeSchema.refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS),
+  CurrentHdrAssetDevelopRecipeSchema,
+]);
 export type HdrAssetDevelopRecipe = z.infer<typeof HdrAssetDevelopRecipeSchema>;
 
 /** Stored/wire envelope. Opaque JSON is retained; it is never a render instruction. */
@@ -779,7 +796,9 @@ export class AssetDevelopRecipeDto extends createZodDto(AssetDevelopRecipeSchema
  * native apps (routes take and return the opaque envelope, `AssetDevelopRecipeDto`).
  */
 @ExtraModel()
-export class HdrAssetDevelopRecipeDto extends createZodDto(HdrAssetDevelopRecipeSchema) {}
+export class HdrAssetDevelopRecipeDto extends createZodDto(LegacyHdrAssetDevelopRecipeSchema) {}
+@ExtraModel()
+export class HdrAssetDevelopRecipeV4Dto extends createZodDto(CurrentHdrAssetDevelopRecipeSchema) {}
 @ExtraModel()
 export class KnownAssetDevelopRecipeDto extends createZodDto(KnownAssetDevelopRecipeSchema) {}
 export class AssetDevelopSaveDto extends createZodDto(AssetDevelopSaveSchema) {}

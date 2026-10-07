@@ -331,7 +331,7 @@
       presetFor(recipe.preset).id === AssetDevelopPreset.Original &&
       recipe.masks.every((mask) => !maskIsActive(mask)),
   );
-  const hdrEditing = $derived(recipe.version === 3);
+  const hdrEditing = $derived(recipe.version === 3 || recipe.version === 4);
   const currentToneKey = $derived(toneKey(toServerRecipe(recipe)) + (hdrEditing ? $imageViewingPreference : ''));
   const previewMatches = $derived((!hdrEditing && identityTone) || serverPreview?.key === currentToneKey);
 
@@ -850,7 +850,12 @@
   };
   const loadRevision = (revision: AssetDevelopRevisionResponseDto | null) => {
     sourceRevisionId = revision?.id;
-    change(revision ? normalizeRecipe(revision.recipe) : { ...initialRecipe(), opaqueRecipe: undefined });
+    change(
+      openingRecipe(
+        revision ? { currentRevisionId: revision.id, revisions: [revision] } : null,
+        asset.imageEncoding?.dynamicRange === 'hdr' && !isRawName(asset.originalFileName),
+      ),
+    );
     if (tool === 'versions') {
       tool = 'adjust';
     }

@@ -153,15 +153,23 @@ and delivery require the separately qualified renderer/rendition capability.
 
 ## HDR-preserving Develop revisions (experimental)
 
-Recipe version 3 names renderer `frameleaf-develop-hdr/1` and policy
+New edits use recipe version 4, renderer `frameleaf-develop-hdr/2`, and policy
+`hdr: {version: 2, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2-frameleaf.2"}`.
+This policy includes ISO HEIF reconstruction and the corrected wide-gamut encoder.
+The installed renderer is reported by `imageCapabilities.renderer`. Rendering a
+revision with another renderer fails with `develop_renderer_unsupported`; published
+files remain available and unchanged. Editing a historical HDR recipe creates a
+new v4 revision, preserving unknown fields rather than mutating historical rows.
+
+Historical recipe version 3 names renderer `frameleaf-develop-hdr/1` and policy
 `hdr: {version: 1, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2"}`.
 Omitted policy fields receive those defaults. Historical v1 and native RAW v2
 revisions keep their renderer identity. Clients must preserve unknown envelope
-fields and must not rewrite a v3 recipe as v1. Unsupported fields fail rendering.
+fields and must not rewrite v3 or v4 recipes as v1. Unsupported fields fail rendering.
 
 Preview requests and revision-file requests accept `dynamicRange=auto|sdr|hdr`.
 Omission retains SDR-compatible output; explicit HDR fails when unavailable.
-Version 3 renders HDR master/preview and SDR master/preview together using the
+Versions 3 and 4 render HDR master/preview and SDR master/preview together using the
 isolated worker. The server validates the set before publication. Regeneration
 keeps the last accepted set available during failure or cancellation.
 
@@ -216,12 +224,15 @@ existing isolated image worker. `codecs` records the installed library versions.
 until real-media and physical-display acceptance pass. An absent field means an
 older server with unknown capabilities. A missing codec reports empty lists,
 without preventing ordinary server feature discovery. Apple gain-map HEIC and ISO
-adaptive HEIF remain explicitly unavailable in this build. HDR HEIC export is
+adaptive HEIF decoding are reported separately when installed. ISO support currently
+requires an SDR base with 8-bit RGB, supported sRGB transfer/profile, and aligned
+integral geometry; unsupported reconstruction is refused explicitly. It does not
+claim adaptive HEIF encoding. HDR HEIC export is
 offered only after the installed encoder passes the worker's ten-bit PQ probe.
 
 ### HDR preview histogram
 
-Recipe v3 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
+Recipe v3/v4 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
 for cross-origin clients. The image and histogram come from the same admitted
 worker render. The histogram uses linear pixels before output tone mapping, so
 choosing SDR display does not remove highlight evidence. No source metadata is

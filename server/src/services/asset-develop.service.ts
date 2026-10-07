@@ -89,6 +89,7 @@ import {
   developEnvelope,
   hasPublishedDevelopRendition,
   renderDevelopProjection,
+  renderHdrDevelopProjection,
 } from 'src/utils/develop-envelope.js';
 import {
   DEVELOP_RENDERER_VERSION,
@@ -218,6 +219,8 @@ export class AssetDevelopService {
     const recipe = developEnvelope(dto.recipe);
     if (recipe.version === 2 && recipe.sensorCanvas)
       throw new BadRequestException('The mask drawing canvas is for previews only');
+    if (dto.render && (recipe.version === 3 || recipe.version === 4))
+      await this.requireHdrRenderer(renderHdrDevelopProjection(recipe));
     if (dto.render && !dto.sourceRevisionId) {
       assertRenderableDevelopRecipe(recipe);
       await this.requireArtifacts(asset, recipe);
@@ -312,8 +315,8 @@ export class AssetDevelopService {
     }
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
-    if (recipe.version === 3) return this.renderHdrPreview(source, recipe, dto, signal);
-    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3');
+    if (recipe.version === 3 || recipe.version === 4) return this.renderHdrPreview(source, recipe, dto, signal);
+    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3 or 4');
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
@@ -369,7 +372,10 @@ export class AssetDevelopService {
     if (!filePath || !hasPublishedDevelopRendition(revision)) {
       throw new NotFoundException('This version has not been rendered yet');
     }
-    if (format === 'hdr-heic' || (format === 'sdr-jpeg' && revision.recipeVersion !== 3)) {
+    if (
+      format === 'hdr-heic' ||
+      (format === 'sdr-jpeg' && revision.recipeVersion !== 3 && revision.recipeVersion !== 4)
+    ) {
       const heic = format === 'hdr-heic';
       if (!heic && revision.kind === AssetDevelopRevisionKind.External) {
         const encoding = await this.mediaRepository.inspectImageEncoding(filePath);
@@ -502,7 +508,9 @@ export class AssetDevelopService {
         ? DARKTABLE_RENDERER_VERSION
         : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 3
           ? 'frameleaf-develop-hdr/1'
-          : DEVELOP_RENDERER_VERSION,
+          : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 4
+            ? 'frameleaf-develop-hdr/2'
+            : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
@@ -528,7 +536,8 @@ export class AssetDevelopService {
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
       if (run && !(await run.validate())) {
-        if (revision.recipeVersion === 3) await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
+        if (revision.recipeVersion === 3 || revision.recipeVersion === 4)
+          await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
         return JobStatus.Skipped;
       }
       // Rendering a version makes it the working version; Revert walks back through history.
@@ -537,7 +546,7 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         await this.assetDevelopRepository.update(revision.id, publication);
         await this.assetDevelopRepository.setCurrent(revision.assetId, id);
-        if (revision.recipeVersion === 3) {
+        if (revision.recipeVersion === 3 || revision.recipeVersion === 4) {
           const accepted = new Set([
             publication.masterPath,
             publication.previewPath,
@@ -555,7 +564,7 @@ export class AssetDevelopService {
       await this.discard(
         external
           ? [tmp.preview]
-          : revision.recipeVersion === 3
+          : revision.recipeVersion === 3 || revision.recipeVersion === 4
             ? [...Object.values(tmp), ...Object.values(outputs)]
             : [tmp.master, tmp.preview],
       );
@@ -991,7 +1000,7 @@ export class AssetDevelopService {
    */
   private async requireArtifacts(asset: { id: string; ownerId: string }, recipe: unknown) {
     const parsed = assertRenderableDevelopRecipe(recipe);
-    if (parsed.version === 3) this.requireHdrRenderer();
+    if (parsed.version === 3 || parsed.version === 4) await this.requireHdrRenderer(parsed);
     const needed =
       parsed.version === 2
         ? {
@@ -1133,7 +1142,7 @@ export class AssetDevelopService {
     image: SystemConfig['image'],
   ) {
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id);
-    const hdr = revision.recipeVersion === 3;
+    const hdr = revision.recipeVersion === 3 || revision.recipeVersion === 4;
     const renditionId = hdr ? `${revision.id}_${randomUUID()}` : revision.id;
     return {
       hdrMaster: attemptOutputPath(path.join(base, `${source.id}_develop_${renditionId}_master_hdr.jpg`)),
@@ -1255,11 +1264,17 @@ export class AssetDevelopService {
     }
   }
 
-  private requireHdrRenderer() {
+  private async requireHdrRenderer(recipe: HdrAssetDevelopRecipe) {
     if (process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
       throw new BadRequestException({
         message: 'HDR-preserving editing is not enabled on this server',
         code: 'develop_hdr_render_unavailable',
+      });
+    const codec = await this.mediaRepository.getHdrCodecCapabilities();
+    if (!codec || (codec.renderer ?? 'frameleaf-develop-hdr/1') !== recipe.renderer)
+      throw new BadRequestException({
+        message: 'This revision requires its original HDR renderer; create a new version to use the installed renderer',
+        code: 'develop_renderer_unsupported',
       });
   }
 
@@ -1271,7 +1286,7 @@ export class AssetDevelopService {
     seed = 1,
     signal?: AbortSignal,
   ) {
-    this.requireHdrRenderer();
+    await this.requireHdrRenderer(recipe);
     if (mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('HDR quick edits require a reconstructed still; RAW uses native development');
     const needed = developRenderArtifacts(recipe);
@@ -1294,7 +1309,7 @@ export class AssetDevelopService {
     dto: AssetDevelopPreviewDto,
     signal?: AbortSignal,
   ) {
-    this.requireHdrRenderer();
+    await this.requireHdrRenderer(recipe);
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
     const output = path.join(folder, 'preview.jpg');
     try {
@@ -1333,7 +1348,8 @@ export class AssetDevelopService {
     image: SystemConfig['image'],
   ) {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
-    if (recipe.version !== 3) throw new BadRequestException('HDR revisions require recipe version 3');
+    if (recipe.version !== 3 && recipe.version !== 4)
+      throw new BadRequestException('HDR revisions require recipe version 3 or 4');
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
     const result = await this.hdrRender(
       source,
@@ -1404,7 +1420,7 @@ export class AssetDevelopService {
     image: SystemConfig['image'],
   ) {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
-    if (recipe.version === 3)
+    if (recipe.version === 3 || recipe.version === 4)
       return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
     const decoded = native ?? (await this.decodeSource(source, image));
@@ -1617,7 +1633,7 @@ export class AssetDevelopService {
             ? 'sdr'
             : 'unknown',
       hdrRenderStatus:
-        revision.recipeVersion === 3
+        revision.recipeVersion === 3 || revision.recipeVersion === 4
           ? hasPublishedDevelopRendition(revision) && revision.hdrMasterPath
             ? 'rendered'
             : process.env.FRAMELEAF_HDR_IMAGES === 'experimental'

@@ -213,3 +213,15 @@ it('prevents older clients from replacing fields through a different recipe vers
     'same contract version',
   );
 });
+
+it('pins version 4 to the corrected codec policy and preserves the version 3 identity', () => {
+  expect(renderHdrDevelopProjection({ version: 4, exposure: 1 })).toMatchObject({
+    version: 4,
+    renderer: 'frameleaf-develop-hdr/2',
+    exposure: 1,
+    hdr: { version: 2, sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.2' },
+  });
+  expect(() => renderHdrDevelopProjection({ version: 4, renderer: 'frameleaf-develop-hdr/1' })).toThrow();
+  expect(() => renderHdrDevelopProjection({ version: 3, renderer: 'frameleaf-develop-hdr/2' })).toThrow();
+  expect(() => preserveDevelopEnvelope(developEnvelope({ version: 4 }), developEnvelope({ version: 3 }))).toThrow();
+});

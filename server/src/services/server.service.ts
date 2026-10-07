@@ -212,7 +212,7 @@ export class ServerService extends BaseService {
     try {
       const codec = await this.mediaRepository.getHdrCodecCapabilities();
       if (!codec) return result;
-      result.renderer = 'frameleaf-develop-hdr/1';
+      result.renderer = codec.renderer ?? 'frameleaf-develop-hdr/1';
       result.codecs = { libheif: codec.libheif, libultrahdr: codec.libultrahdr };
       result.decode = [
         'gain-map-jpeg',
@@ -222,6 +222,10 @@ export class ServerService extends BaseService {
       if (codec.heicDecoder && codec.appleGainMapDecoder) {
         result.decode.push('apple-gain-map-heic');
         result.unavailable = result.unavailable.filter((format) => format !== 'apple-gain-map-heic');
+      }
+      if (codec.isoGainMapDecoder && (codec.heicDecoder || codec.avifDecoder)) {
+        result.decode.push('iso-adaptive-heif');
+        result.unavailable = result.unavailable.filter((format) => format !== 'iso-adaptive-heif');
       }
       result.render = ['linear-hdr-develop'];
       result.export = ['sdr-jpeg', 'hdr-jpeg'];

@@ -223,16 +223,42 @@ it("saves a preset's Brilliance with the photo, one undo step back from it (FL-3
 it('upgrades a new HDR edit while retaining historical and native recipe identities', () => {
   const hdr = toServerRecipe(openingRecipe(null, true));
   expect(hdr).toMatchObject({
-    version: 3,
-    renderer: 'frameleaf-develop-hdr/1',
+    version: 4,
+    renderer: 'frameleaf-develop-hdr/2',
     hdr: { intent: 'preserve', referenceWhite: 203 },
   });
   const native = revision({ recipe: { version: 2, native: { renderer: 'darktable/5.6.1' } } });
   expect(toServerRecipe(openingRecipe({ currentRevisionId: native.id, revisions: [native] }, true)).version).toBe(2);
   const previous = revision({ recipe: { version: 1, contrast: 30 } });
   expect(toServerRecipe(openingRecipe({ currentRevisionId: previous.id, revisions: [previous] }, true))).toMatchObject({
-    version: 3,
+    version: 4,
     contrast: 30,
   });
   expect(previous.recipe.version).toBe(1);
+});
+
+it('upgrades a historical HDR draft without changing its source or dropping opaque fields', () => {
+  const old = revision({
+    recipe: {
+      version: 3,
+      renderer: 'frameleaf-develop-hdr/1',
+      contrast: 30,
+      future: { preserved: true },
+      hdr: { version: 1, extra: 'retained' },
+    },
+  });
+  const draft = toServerRecipe(openingRecipe({ currentRevisionId: old.id, revisions: [old] }, true));
+  expect(draft).toMatchObject({
+    version: 4,
+    renderer: 'frameleaf-develop-hdr/2',
+    contrast: 30,
+    future: { preserved: true },
+    hdr: { version: 2, extra: 'retained' },
+  });
+  expect(old.recipe).toMatchObject({ version: 3, hdr: { version: 1 } });
+  const unknown = revision({ recipe: { version: 3, renderer: 'future-renderer' } });
+  expect(toServerRecipe(openingRecipe({ currentRevisionId: unknown.id, revisions: [unknown] }, true))).toMatchObject({
+    version: 3,
+    renderer: 'future-renderer',
+  });
 });

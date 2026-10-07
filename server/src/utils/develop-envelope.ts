@@ -13,7 +13,7 @@ import {
 /** Route only explicitly supported native recipes; opaque future/imported recipes remain saveable. */
 export function assertRenderableDevelopRecipe(value: unknown) {
   const envelope = developEnvelope(value);
-  if (envelope.version === 3) return renderHdrDevelopProjection(envelope);
+  if (envelope.version === 3 || envelope.version === 4) return renderHdrDevelopProjection(envelope);
   if (envelope.version !== 2) {
     return renderDevelopProjection(envelope);
   }
@@ -58,7 +58,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
   if (Array.isArray(incoming.masks) && Array.isArray(source.masks)) {
     const sourceMasks = source.masks as Record<string, unknown>[];
     const incomingMasks = incoming.masks as Record<string, unknown>[];
-    if (source.version === 1 || source.version === 3) {
+    if ([1, 3, 4].includes(source.version)) {
       for (const masks of [sourceMasks, incomingMasks]) {
         const ids = masks.map((mask) => (mask && typeof mask.id === 'string' ? mask.id.trim() : undefined));
         if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
@@ -82,7 +82,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
       );
       return merge(old, mask);
     });
-    if (source.version === 1 || source.version === 3) {
+    if ([1, 3, 4].includes(source.version)) {
       const ids = new Set(incomingMasks.map((mask) => (mask.id as string).trim()));
       for (const mask of sourceMasks) {
         if (
@@ -135,8 +135,8 @@ export function renderHdrDevelopProjection(value: unknown) {
       code: 'develop_renderer_unsupported',
     });
   const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = envelope;
-  const adjustments = renderDevelopProjection({ ...fields, version: 1 });
-  return { ...adjustments, version: 3 as const, renderer: parsed.data.renderer, hdr: parsed.data.hdr };
+  renderDevelopProjection({ ...fields, version: 1 });
+  return parsed.data;
 }
 
 /** A failed or cancelled HDR regeneration retains the previously accepted four-file set. */

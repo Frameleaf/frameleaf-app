@@ -895,8 +895,39 @@ describe(AssetDevelopService.name, () => {
     );
   });
 
-  describe('HDR version 3', () => {
-    const recipe = { version: 3, exposure: 1 };
+  describe.each([3, 4])('HDR version %s', (version) => {
+    beforeEach(() =>
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+        libheif: '1.23.3',
+        libultrahdr: '2.0.2',
+        heicDecoder: true,
+        avifDecoder: true,
+        renderer: version === 3 ? 'frameleaf-develop-hdr/1' : 'frameleaf-develop-hdr/2',
+      }),
+    );
+    const recipe = { version, exposure: 1 };
+    it('rejects an unavailable historical renderer before saving or publishing', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+          libheif: '1.23.3',
+          libultrahdr: '2.0.2',
+          heicDecoder: true,
+          avifDecoder: true,
+          renderer: version === 3 ? 'frameleaf-develop-hdr/2' : 'frameleaf-develop-hdr/1',
+        });
+        await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).rejects.toMatchObject({
+          response: { code: 'develop_renderer_unsupported' },
+        });
+        await expect(sut.preview(authStub.user1, asset.id, { recipe, size: 256 })).rejects.toMatchObject({
+          response: { code: 'develop_renderer_unsupported' },
+        });
+        expect(developRepository.create).not.toHaveBeenCalled();
+        expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
     it('refuses rendering while disabled before creating history or media', async () => {
       vi.stubEnv('FRAMELEAF_HDR_IMAGES', '');
       try {
@@ -918,7 +949,7 @@ describe(AssetDevelopService.name, () => {
         const revision = revisionStub({
           assetId: asset.id,
           recipe,
-          recipeVersion: 3,
+          recipeVersion: version,
           status: AssetDevelopRevisionStatus.Queued,
         });
         developRepository.get.mockResolvedValue({
@@ -954,7 +985,7 @@ describe(AssetDevelopService.name, () => {
         expect(mocks.storage.rename).toHaveBeenCalledTimes(4);
         expect(developRepository.beginAttempt).toHaveBeenCalledWith(
           revision.id,
-          'frameleaf-develop-hdr/1',
+          version === 3 ? 'frameleaf-develop-hdr/1' : 'frameleaf-develop-hdr/2',
           DEVELOP_RENDER_LEASE_MS / 1000,
         );
         expect(developRepository.update).toHaveBeenCalledWith(
@@ -983,7 +1014,7 @@ describe(AssetDevelopService.name, () => {
         const revision = revisionStub({
           assetId: asset.id,
           recipe,
-          recipeVersion: 3,
+          recipeVersion: version,
           status: AssetDevelopRevisionStatus.Queued,
           masterPath: '/prior-sdr.jpg',
           previewPath: '/prior-preview.jpg',
@@ -1015,7 +1046,7 @@ describe(AssetDevelopService.name, () => {
         const revision = revisionStub({
           assetId: asset.id,
           recipe,
-          recipeVersion: 3,
+          recipeVersion: version,
           status: AssetDevelopRevisionStatus.Queued,
         });
         developRepository.get.mockResolvedValue(revision);

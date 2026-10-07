@@ -15,6 +15,8 @@ export type HdrCodecCapabilities = {
   heicDecoder: boolean;
   avifDecoder: boolean;
   appleGainMapDecoder?: boolean;
+  isoGainMapDecoder?: boolean;
+  renderer?: string;
   heicPqEncoder?: boolean;
 };
 type NativeCodec = {

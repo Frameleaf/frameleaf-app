@@ -585,3 +585,35 @@ test(
     assert.equal(codec.inspect(input, ...limits).reconstructionAvailable, true);
   },
 );
+
+// The corrected encoder is tied to renderer 2; historical builds retain their own identity.
+test(
+  'the versioned codec preserves colored HDR across sRGB, P3 and BT.2020 inputs',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  () => {
+    assert.equal(codec.capabilities().renderer, 'frameleaf-develop-hdr/2');
+    assert.equal(codec.capabilities().isoGainMapDecoder, true);
+    const pixels = new Float32Array(64 * 64 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    // D65 RGB/XYZ conversions, expressed in the tone mapper's Display P3 output gamut.
+    const expected = [
+      [7.28985, 4.13278, 2.24729, 1],
+      [8, 4, 2, 1],
+      [9.49711, 3.759788, 1.977738, 1],
+    ];
+    for (const gamut of [0, 1, 2]) {
+      const encoded = codec.encode(Buffer.from(pixels.buffer), 64, 64, gamut, ...limits);
+      const decoded = codec.decode(encoded, ...limits);
+      assert.equal(decoded.gamut, 1);
+      const values = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
+      const center = (32 * 64 + 32) * 4;
+      for (let channel = 0; channel < 4; channel++)
+        assert.ok(
+          Math.abs(values[center + channel] - expected[gamut][channel]) < 0.15,
+          `gamut ${gamut} channel ${channel} differs from its Display P3 reference`,
+        );
+    }
+  },
+);
