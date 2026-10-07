@@ -1,8 +1,13 @@
+import { open, rm } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
 // Standalone Node child has no application alias loader.
 // eslint-disable-next-line no-restricted-imports
+import { resizeHdrImage } from './image-hdr-pixels.js';
+// eslint-disable-next-line no-restricted-imports
 import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
+
 // eslint-disable-next-line no-restricted-imports
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 
@@ -71,6 +76,72 @@ export class SharpOperations {
           )
         : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
     );
+  }
+
+  async generateHdrRenditions(input: string | Buffer, outputs: { path: string; size?: number }[]) {
+    if (
+      outputs.length === 0 ||
+      outputs.length > 2 ||
+      new Set(outputs.map(({ path }) => resolve(path))).size !== outputs.length
+    ) {
+      throw new Error('INVALID_HDR_OUTPUTS');
+    }
+    for (const { path, size } of outputs) {
+      if (typeof input === 'string' && resolve(path) === resolve(input))
+        throw new Error('Cannot overwrite original media');
+      if (size !== undefined && (!Number.isSafeInteger(size) || size < 1)) throw new Error('INVALID_HDR_OUTPUT_SIZE');
+    }
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    const encoding = imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
+    if (encoding.dynamicRange !== 'hdr' || !encoding.reconstructionAvailable)
+      throw new Error('HDR_RECONSTRUCTION_UNAVAILABLE');
+    const authored = encoding.container === 'jpeg' && encoding.gainMap !== 'none';
+    const source = imageHdrOperation<LinearHdrImage | PairedHdrImage>((codec) =>
+      authored
+        ? codec.decodePaired(bytes, this.maxPixels, this.maxBytes)
+        : codec.decode(bytes, this.maxPixels, this.maxBytes),
+    );
+    this.progress();
+    const written: string[] = [];
+    const results = [];
+    try {
+      for (const { path, size } of outputs) {
+        const scale = Math.min(
+          1,
+          (size ?? Math.max(source.width, source.height)) / Math.max(source.width, source.height),
+        );
+        const width = Math.max(1, Math.round(source.width * scale)),
+          height = Math.max(1, Math.round(source.height * scale));
+        const retained = bytes.length + source.data.length + ('sdr' in source ? source.sdr.length : 0);
+        if (retained + width * height * ('sdr' in source ? 68 : 64) > this.maxBytes) {
+          throw new SharpResourceLimitError('HDR rendition exceeds the combined surface budget');
+        }
+        const image = resizeHdrImage(source, size ?? Math.max(source.width, source.height), this.maxBytes);
+        const encoded = this.encodeHdrImage(image);
+        const metadata = imageHdrOperation((codec) => codec.inspect(encoded, this.maxPixels, this.maxBytes));
+        if (
+          !metadata.reconstructionAvailable ||
+          metadata.dynamicRange !== 'hdr' ||
+          metadata.width !== image.width ||
+          metadata.height !== image.height
+        )
+          throw new Error('INVALID_HDR_RENDITION');
+        // Attempt paths belong to the existing lease. Never replace a previously published output.
+        const file = await open(path, 'wx');
+        written.push(path);
+        try {
+          await file.writeFile(encoded);
+        } finally {
+          await file.close();
+        }
+        results.push({ path, width: image.width, height: image.height, encoding: metadata });
+        this.progress();
+      }
+      return results;
+    } catch (error) {
+      await Promise.allSettled(written.map((path) => rm(path, { force: true })));
+      throw error;
+    }
   }
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
