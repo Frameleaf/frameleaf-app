@@ -154,8 +154,6 @@ export class SyncRepository {
   memoryToAsset: MemoryToAssetSync;
   partner: PartnerSync;
   partnerAsset: PartnerAssetsSync;
-  partnerAssetExif: PartnerAssetExifsSync;
-  partnerStack: PartnerStackSync;
   person: PersonSync;
   personGroup: PersonGroupSync;
   stack: StackSync;
@@ -204,8 +202,6 @@ export class SyncRepository {
     this.memoryToAsset = new MemoryToAssetSync(this.db);
     this.partner = new PartnerSync(this.db);
     this.partnerAsset = new PartnerAssetsSync(this.db);
-    this.partnerAssetExif = new PartnerAssetExifsSync(this.db);
-    this.partnerStack = new PartnerStackSync(this.db);
     this.person = new PersonSync(this.db);
     this.personGroup = new PersonGroupSync(this.db);
     this.stack = new StackSync(this.db);
@@ -1000,36 +996,6 @@ class PartnerAssetsSync extends BaseSync {
       .stream();
   }
 }
-class PartnerAssetExifsSync extends BaseSync {
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, partnerId: string) {
-    return this.backfillQuery('asset_exif', options)
-      .select(columns.syncAssetExif)
-      .select('asset_exif.updateId')
-      .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-      .select(syncPartnerLocked())
-      .where('asset.ownerId', '=', partnerId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
-  }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getUpserts(options: SyncQueryOptions) {
-    return (
-      this.upsertQuery('asset_exif', options)
-        .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-        .select(columns.syncAssetExif)
-        .select('asset_exif.updateId')
-        // the service needs the owner to apply per-partner location hiding; it is stripped before sending
-        .select('asset.ownerId')
-        .select(syncPartnerLocked())
-        .where('asset.ownerId', 'in', (eb) =>
-          eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-        )
-        .$call((qb) => withHiddenContentFilter(qb, options))
-        .stream()
-    );
-  }
-}
 class StackSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -1048,39 +1014,6 @@ class StackSync extends BaseSync {
       .select(columns.syncStack)
       .select('stack.updateId')
       .where('stack.ownerId', '=', options.userId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
-  }
-}
-class PartnerStackSync extends BaseSync {
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getDeletes(options: SyncQueryOptions) {
-    return this.auditQuery('stack_audit', options)
-      .select(['id', 'stackId'])
-      .where('userId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
-      .stream();
-  }
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, partnerId: string) {
-    return this.backfillQuery('stack', options)
-      .innerJoin('asset', 'asset.id', 'stack.primaryAssetId')
-      .select(columns.syncStack)
-      .select('stack.updateId')
-      .where('stack.ownerId', '=', partnerId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
-  }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getUpserts(options: SyncQueryOptions) {
-    return this.upsertQuery('stack', options)
-      .innerJoin('asset', 'asset.id', 'stack.primaryAssetId')
-      .select(columns.syncStack)
-      .select('stack.updateId')
-      .where('stack.ownerId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
