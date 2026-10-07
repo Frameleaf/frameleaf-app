@@ -206,7 +206,7 @@ function verifyNasManifest(nas, release) {
   );
 }
 
-module.exports = { verifyBundle, verifyNasManifest };
+module.exports = { verifyBundle, verifyNasManifest, verifyAttestedPredicate };
 if (require.main === module)
   verifyBundle(process.argv[2], process.argv[3])
     .then((manifest) => console.log(`Verified ${manifest.tag} release assets`))
