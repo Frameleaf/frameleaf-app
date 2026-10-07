@@ -1523,7 +1523,7 @@ export class MediaOperationRepository {
     return !!result;
   }
   /**
-   * Cancelled or failed jobs on a remote destination whose cleanup has not been confirmed.
+   * Cancelled or failed remote jobs, and completed description batches, awaiting confirmed cleanup.
    *
    * These survive owner dismissal on purpose: a cloud job nobody is watching still costs money
    * and still holds data, so the record is kept until the remote says it is gone.
@@ -1541,6 +1541,10 @@ export class MediaOperationRepository {
           eb.or([
             eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
             eb('status', '=', MediaOperationStatus.Failed),
+            eb.and([
+              eb('status', '=', MediaOperationStatus.Completed),
+              eb('kind', '=', MediaOperationKind.CloudDescriptionBatch),
+            ]),
           ]),
         )
         .orderBy('createdAt', 'asc')
