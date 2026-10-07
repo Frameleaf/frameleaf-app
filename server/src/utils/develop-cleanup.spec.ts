@@ -347,3 +347,48 @@ it('allows native semantic paint/erase refinement while retaining untouched bitm
   expect(originalMaskWeight(mask, 32, 24, { width: 64, height: 48 }, artifacts)).toBe(0);
   expect(originalMaskWeight(mask, 2, 2, { width: 64, height: 48 }, artifacts)).toBe(1);
 });
+
+it('clones fractional HDR light without integer quantization and rejects an unbudgeted float surface', () => {
+  const data = new Float32Array([2.125, 2.125, 2.125, 1, 8.25, 8.25, 8.25, 1]);
+  const operations = normalizeDevelopCleanup([
+    { id: 'hdr', method: 'clone', region: { x: 0, y: 0, w: 0.5, h: 1 }, source: { dx: 0.5, dy: 0 } },
+  ]);
+  expect(() => applyDevelopCleanup(data, { width: 2, height: 1, channels: 4 }, operations, new Map(), 32)).toThrow(
+    'budget',
+  );
+  applyDevelopCleanup(data, { width: 2, height: 1, channels: 4 }, operations, new Map(), 1024);
+  expect([...data]).toEqual([8.25, 8.25, 8.25, 1, 8.25, 8.25, 8.25, 1]);
+});
+
+it('places a premultiplied linear SDR fill at reference-white intensity in HDR', () => {
+  const data = new Float32Array([8, 8, 8, 1]);
+  const fillId = 'b'.repeat(64);
+  const fills = new Map([
+    [fillId, { data: new Float32Array([0.5, 0.5, 0.5, 1]), width: 1, height: 1, channels: 4 as const }],
+  ]);
+  const operations = normalizeDevelopCleanup([
+    { id: 'fill', method: 'remove', region: { x: 0, y: 0, w: 1, h: 1 }, fill: fillId },
+  ]);
+  applyDevelopCleanup(data, { width: 1, height: 1, channels: 4 }, operations, fills, 1024);
+  expect([...data]).toEqual([0.5, 0.5, 0.5, 1]);
+});
+
+it('pixelates HDR using visible linear light and retains alpha', () => {
+  const data = new Float32Array(10 * 10 * 4);
+  for (let i = 0; i < data.length; i += 4) data.set([4.125, 4.125, 4.125, 1], i);
+  data.set([32, 32, 32, 0], 0);
+  const operations = normalizeDevelopCleanup([
+    { id: 'hdr-pixelate', method: 'pixelate', region: { x: 0, y: 0, w: 1, h: 1 }, blockSize: 0.2 },
+  ]);
+  applyDevelopCleanup(data, { width: 10, height: 10, channels: 4 }, operations, new Map(), 16_384);
+  expect([...data.slice(0, 8)]).toEqual([4.125, 4.125, 4.125, 0, 4.125, 4.125, 4.125, 1]);
+});
+
+it('heals floating HDR using the surrounding tone without clipping headroom', () => {
+  const data = new Float32Array([8.125, 8.125, 8.125, 0.75, 16.25, 16.25, 16.25, 1]);
+  const operations = normalizeDevelopCleanup([
+    { id: 'hdr-heal', method: 'heal', region: { x: 0, y: 0, w: 0.5, h: 1 }, source: { dx: 0.5, dy: 0 } },
+  ]);
+  applyDevelopCleanup(data, { width: 2, height: 1, channels: 4 }, operations, new Map(), 1024);
+  expect([...data]).toEqual([8.125, 8.125, 8.125, 0.75, 16.25, 16.25, 16.25, 1]);
+});

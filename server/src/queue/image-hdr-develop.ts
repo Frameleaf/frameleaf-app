@@ -3,7 +3,7 @@
 import { ASSET_DEVELOP_BITMAP_MASK_KINDS, AssetDevelopMaskKind } from './develop-values.js';
 import type { LinearHdrImage } from './image-hdr.js';
 import { SharpResourceLimitError } from './sharp-protocol.js';
-import { type DevelopBitmap, orientedToOriginal } from '../utils/develop-cleanup.js';
+import { type DevelopBitmap, type DevelopLinearFill, orientedToOriginal } from '../utils/develop-cleanup.js';
 import {
   type DevelopGeometryPlan,
   createNoise,
@@ -15,6 +15,45 @@ import {
   straightenScale,
 } from '../utils/develop-recipe.js';
 import type { AssetDevelopMask, KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
+
+/** Verified fill artifacts are sRGB. Convert before compositing, then premultiply for filtered sampling. */
+export function linearizeDevelopFill(fill: DevelopBitmap, gamut: 0 | 1 | 2, maxBytes: number): DevelopLinearFill {
+  const count = fill.width * fill.height;
+  if (fill.channels !== 4 || !Number.isSafeInteger(count) || count < 1 || fill.data.length !== count * 4) {
+    throw new TypeError('HDR cleanup requires a normalized RGBA fill');
+  }
+  if (!Number.isSafeInteger(maxBytes) || count * 16 + fill.data.byteLength > maxBytes) {
+    throw new SharpResourceLimitError('HDR fill exceeds the float surface budget');
+  }
+  // D65 sRGB -> source primaries, composed from CSS Color 4 RGB/XYZ matrices.
+  // https://www.w3.org/TR/css-color-4/#color-conversion-code
+  const matrix =
+    gamut === 1
+      ? [
+          0.822461968714362, 0.177538031285638, 0, 0.0331941988509617, 0.966805801149038, 0, 0.01708263072112,
+          0.0723974406639637, 0.910519928614916,
+        ]
+      : gamut === 2
+        ? [
+            0.627403895934699, 0.329283038377884, 0.0433130656874173, 0.0690972893582321, 0.919540395075459,
+            0.0113623155663089, 0.0163914388751503, 0.0880133078772258, 0.895595253247624,
+          ]
+        : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const linear = (value: number) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  const data = new Float32Array(count * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = linear(fill.data[i] / 255);
+    const g = linear(fill.data[i + 1] / 255);
+    const b = linear(fill.data[i + 2] / 255);
+    const alpha = fill.data[i + 3] / 255;
+    for (let c = 0; c < 3; c++) {
+      const offset = c * 3;
+      data[i + c] = (r * matrix[offset] + g * matrix[offset + 1] + b * matrix[offset + 2]) * alpha;
+    }
+    data[i + 3] = alpha;
+  }
+  return { data, width: fill.width, height: fill.height, channels: 4 };
+}
 
 /** One inverse transform in linear light, without integer surfaces or SDR clipping. */
 export function transformHdrGeometry(

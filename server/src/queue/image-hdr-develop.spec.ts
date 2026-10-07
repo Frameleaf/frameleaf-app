@@ -1,4 +1,9 @@
-import { applyHdrDevelopMasks, applyHdrDevelopTone, transformHdrGeometry } from 'src/queue/image-hdr-develop.js';
+import {
+  applyHdrDevelopMasks,
+  applyHdrDevelopTone,
+  linearizeDevelopFill,
+  transformHdrGeometry,
+} from 'src/queue/image-hdr-develop.js';
 import { defaultDevelopRecipe, normalizeDevelopMasks, planDevelopGeometry } from 'src/utils/develop-recipe.js';
 
 it('turns, mirrors and crops floating HDR without clipping or changing source pixels', () => {
@@ -152,4 +157,20 @@ it('maps a selective adjustment to the same source after cropping', () => {
   applyHdrDevelopMasks(image, masks, plan, 1024);
   expect([...new Float32Array(image.data.buffer, image.data.byteOffset, 8)]).toEqual([12, 12, 12, 1, 8, 8, 8, 1]);
   expect([...pixels]).toEqual([2, 2, 2, 1, 4, 4, 4, 1, 6, 6, 6, 1, 8, 8, 8, 1]);
+});
+
+it('converts normalized sRGB fill pixels to linear source-gamut light at reference white', () => {
+  const fill = {
+    data: new Uint8Array([255, 255, 255, 255, 255, 0, 0, 128]),
+    width: 2,
+    height: 1,
+    channels: 4 as const,
+  };
+  expect(() => linearizeDevelopFill(fill, 1, 32)).toThrow('budget');
+  const result = linearizeDevelopFill(fill, 1, 1024);
+  expect([...result.data.slice(0, 4)]).toEqual([1, 1, 1, 1]);
+  expect(result.data[4]).toBeCloseTo((0.8224619687 * 128) / 255, 6);
+  expect(result.data[5]).toBeCloseTo((0.03319419885 * 128) / 255, 6);
+  expect(result.data[6]).toBeCloseTo((0.01708263072 * 128) / 255, 6);
+  expect(result.data[7]).toBeCloseTo(128 / 255, 6);
 });
