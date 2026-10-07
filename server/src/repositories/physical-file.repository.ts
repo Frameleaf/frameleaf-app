@@ -2,6 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { lstat } from 'node:fs/promises';
 import { join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -115,6 +116,8 @@ export const countPathReferences = async (
     UNION ALL SELECT 1 FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
     UNION ALL SELECT 1 FROM public.asset_develop_artifact artifact WHERE artifact.path = ${path}
     UNION ALL SELECT 1 FROM public.physical_file_trash trashed WHERE trashed.path = ${path}
+    UNION ALL SELECT 1 FROM public.move_history move
+    WHERE move."pathType" = 'file_trash' AND ${path} IN (move."oldPath", move."newPath")
     UNION ALL SELECT 1 FROM public.preservation_package package
     WHERE package.path = ${path} AND package."removedAt" IS NULL
     UNION ALL SELECT 1 FROM public.asset_restoration restoration
@@ -140,10 +143,91 @@ export type TrashedOriginal = {
   assetId: string | null;
   originalFileName: string;
 };
+/** ENOENT alone proves absence; an unreadable mount must retain the recovery intent. */
+const trashPathExists = async (path: string): Promise<boolean> => {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+    throw error;
+  }
+};
+
+/** Compensates interrupted trash moves. Conflicting or missing copies stay recorded for review. */
+export const recoverFileTrashMoves = async (
+  db: Kysely<DB>,
+  move: PhysicalFileTrashMove,
+  sourcePath?: string,
+): Promise<number> => {
+  const { rows: pending } = await sql<{ id: string; oldPath: string; newPath: string }>`
+    SELECT id, "oldPath", "newPath" FROM public.move_history
+    WHERE "pathType" = 'file_trash' ${sourcePath ? sql`AND "oldPath" = ${sourcePath}` : sql``}
+    ORDER BY id`.execute(db);
+  let deferred = 0;
+  for (const intent of pending) {
+    const recovered = await db.transaction().execute(async (trx) => {
+      for (const path of [intent.oldPath, intent.newPath].toSorted()) await lockFilePath(trx, path);
+      const { rows } = await sql`SELECT id FROM public.move_history
+        WHERE id = ${intent.id}::uuid AND "pathType" = 'file_trash'
+          AND "oldPath" = ${intent.oldPath} AND "newPath" = ${intent.newPath} FOR UPDATE`.execute(trx);
+      if (rows.length === 0) return true;
+      // Discount only this exact journal. Every other owner and intent continues protecting the target.
+      const registered = await trx
+        .selectFrom('physical_file')
+        .select('id')
+        .where('path', '=', intent.newPath)
+        .executeTakeFirst();
+      if (registered || (await countPathReferences(trx, intent.newPath)) > 1) return false;
+      const [sourceExists, targetExists] = await Promise.all([
+        trashPathExists(intent.oldPath),
+        trashPathExists(intent.newPath),
+      ]);
+      if (sourceExists === targetExists) return false;
+      if (targetExists) await move(intent.newPath, intent.oldPath);
+      await sql`DELETE FROM public.move_history WHERE id = ${intent.id}::uuid`.execute(trx);
+      return true;
+    });
+    if (!recovered) deferred++;
+  }
+  return deferred;
+};
+
+/** The independent intent is committed before acquiring a transaction's pool connection. */
+export const withFileTrashMove = async <T>(
+  db: Kysely<DB>,
+  path: string,
+  originalFileName: string,
+  move: PhysicalFileTrashMove,
+  callback: (trx: Transaction<DB>, id: string) => Promise<T>,
+): Promise<T> => {
+  if (await recoverFileTrashMoves(db, move, path)) {
+    throw new ConflictException('An interrupted file trash move needs recovery');
+  }
+  const id = randomUUID();
+  const target = StorageCore.getFileTrashPath(id, originalFileName);
+  await sql`INSERT INTO public.move_history (id, "entityId", "pathType", "oldPath", "newPath")
+    VALUES (${id}::uuid, ${id}::uuid, 'file_trash', ${path}, ${target})`.execute(db);
+  try {
+    return await db.transaction().execute(async (trx) => {
+      for (const lockedPath of [path, target].toSorted()) await lockFilePath(trx, lockedPath);
+      const { rows } = await sql`SELECT id FROM public.move_history
+        WHERE id = ${id}::uuid AND "pathType" = 'file_trash'
+          AND "oldPath" = ${path} AND "newPath" = ${target} FOR UPDATE`.execute(trx);
+      if (rows.length === 0) throw new ConflictException('File trash reservation changed; retry');
+      const result = await callback(trx, id);
+      // This includes returns without a move, and happens after every SQL operation in the caller.
+      await sql`DELETE FROM public.move_history WHERE id = ${id}::uuid`.execute(trx);
+      return result;
+    });
+  } catch (error) {
+    await recoverFileTrashMoves(db, move, path).catch(() => void 0);
+    throw error;
+  }
+};
+
 /**
- * Moves an unreferenced original to `<media>/file-trash/<physicalFileId or entry id>/<name>` and records
- * it, inside the caller's transaction, which holds the path's lock and has counted no reference. A
- * source already gone is not an error: there is nothing to keep (returns false).
+ * Records an original moved under withFileTrashMove; its intent survives any enclosing rollback.
  */
 export const trashUnreferencedOriginal = async (
   trx: Transaction<DB>,
@@ -157,19 +241,22 @@ export const trashUnreferencedOriginal = async (
     lastAssetId: string | null;
     originalFileName: string;
   },
-): Promise<
-  | false
-  | {
-      id: string;
-      path: string;
-    }
-> => {
-  const id = randomUUID();
-  const target = StorageCore.getFileTrashPath(entry.physicalFileId ?? id, entry.originalFileName);
+  id: string,
+): Promise<false | { id: string; path: string }> => {
+  const target = StorageCore.getFileTrashPath(id, entry.originalFileName);
+  const { rows: pending } = await sql`SELECT id FROM public.move_history
+    WHERE "pathType" = 'file_trash' AND id <> ${id}::uuid AND ${path} IN ("oldPath", "newPath")`.execute(trx);
+  if (pending.length > 0 || (await trashPathExists(target))) {
+    throw new ConflictException('An interrupted file trash move needs recovery');
+  }
   try {
     await move(path, target);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+    if (
+      (error as NodeJS.ErrnoException)?.code === 'ENOENT' &&
+      !(await trashPathExists(target)) &&
+      !(await trashPathExists(path))
+    ) {
       return false;
     }
     throw error;
@@ -1058,7 +1145,12 @@ export class PhysicalFileRepository {
     references: number;
     trashed?: boolean;
   }> {
-    return this.withPathLock(path, async (trx) => {
+    const shouldTrash =
+      options.trash &&
+      (options.trash.original ||
+        (await this.db.selectFrom('physical_file').select('type').where('path', '=', path).executeTakeFirst())?.type ===
+          PhysicalFileType.Original);
+    const execute = async (trx: Transaction<DB>, trashId?: string) => {
       if (options.removedAssetId) {
         const kept = await trx
           .selectFrom('asset')
@@ -1120,7 +1212,9 @@ export class PhysicalFileRepository {
       // Only this exact orphan row may be released. Other imports, generated outputs, live
       // assets and Buddy capture pins remain references, even when owned by the same person.
       const references =
-        (await this.countPathReferencesIn(trx, path, physicalFile?.id)) - (imported || exported ? 1 : 0);
+        (await this.countPathReferencesIn(trx, path, physicalFile?.id)) -
+        (imported || exported ? 1 : 0) -
+        (trashId ? 1 : 0);
       if (references > 0) {
         await sql`UPDATE public.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
           trx,
@@ -1130,16 +1224,25 @@ export class PhysicalFileRepository {
       // universal storage: an original is never unlinked by a job. Its last copy goes to the file trash,
       // which only an administrator empties (spec §3.5); generated files are deleted as before.
       const original = options.trash?.original;
+      if (options.trash && !trashId && (physicalFile?.type === PhysicalFileType.Original || original)) {
+        throw new ConflictException('Original registration changed; retry file trash');
+      }
       const trashed =
         options.trash && !imported && !exported && (physicalFile?.type === PhysicalFileType.Original || original)
-          ? await trashUnreferencedOriginal(trx, path, options.trash.move, {
-              physicalFileId: physicalFile?.id ?? null,
-              checksum: physicalFile?.checksum ?? original!.checksum,
-              sizeInBytes: physicalFile ? Number(physicalFile.sizeInBytes) : original!.sizeInBytes,
-              lastOwnerId: original?.ownerId ?? null,
-              lastAssetId: original?.assetId ?? options.removedAssetId ?? null,
-              originalFileName: original?.originalFileName ?? parse(path).base,
-            })
+          ? await trashUnreferencedOriginal(
+              trx,
+              path,
+              options.trash.move,
+              {
+                physicalFileId: physicalFile?.id ?? null,
+                checksum: physicalFile?.checksum ?? original!.checksum,
+                sizeInBytes: physicalFile ? Number(physicalFile.sizeInBytes) : original!.sizeInBytes,
+                lastOwnerId: original?.ownerId ?? null,
+                lastAssetId: original?.assetId ?? options.removedAssetId ?? null,
+                originalFileName: original?.originalFileName ?? parse(path).base,
+              },
+              trashId!,
+            )
           : undefined;
       if (!trashed) {
         await unlink();
@@ -1164,7 +1267,16 @@ export class PhysicalFileRepository {
         await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();
       }
       return trashed ? { deleted: true, references: 0, trashed: true } : { deleted: true, references: 0 };
-    });
+    };
+    return shouldTrash
+      ? withFileTrashMove(
+          this.db,
+          path,
+          options.trash!.original?.originalFileName ?? parse(path).base,
+          options.trash!.move,
+          execute,
+        )
+      : this.withPathLock(path, execute);
   }
   getMigrationCandidates(masterUserId: string) {
     return this.db
