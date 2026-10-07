@@ -4,7 +4,8 @@ import CoreImage
 import CoreGraphics
 import CryptoKit
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
-let space = CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020)!
+let p3 = CommandLine.arguments.contains("--display-p3")
+let space = CGColorSpace(name: p3 ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.extendedLinearITUR_2020)!
 let context = CIContext(options: [.workingColorSpace: space, .outputColorSpace: space])
 let image = CIImage(contentsOf: url, options: [.expandToHDR: true])!
 let width = Int(image.extent.width), height = Int(image.extent.height)
@@ -22,7 +23,8 @@ let samples = rows.map { y in
 let reference: [String: Any] = [
     "sourceSha256": SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined(),
     "platform": ProcessInfo.processInfo.operatingSystemVersionString,
-    "decoder": "CIImage expandToHDR, RGBAf extendedLinearITUR_2020",
+    "decoder": "CIImage expandToHDR, RGBAf",
+    "colorSpace": p3 ? "extended-linear-display-p3" : "extended-linear-bt2020",
     "width": width, "height": height, "sampleY": rows, "sampleStep": 4, "sampleOffset": 2, "rgb": samples
 ]
 try JSONSerialization.data(withJSONObject: reference, options: [.prettyPrinted, .sortedKeys])
