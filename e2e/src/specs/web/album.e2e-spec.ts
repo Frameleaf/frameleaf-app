@@ -69,9 +69,7 @@ test.describe('Album', () => {
     const photo = await utils.createAsset(admin.accessToken);
     const video = await utils.createAsset(admin.accessToken, {
       assetData: {
-        bytes: readFileSync(
-          new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
-        ),
+        bytes: readFileSync(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
         filename: 'kayak-demo.mp4',
       },
     });
@@ -175,16 +173,14 @@ test.describe('Album', () => {
     await utils.setAuthCookies(context, owner.accessToken);
     const photo = await utils.createAsset(owner.accessToken, {
       assetData: {
-        bytes: readFileSync(new URL('../../../../design/frameleaf/template/public/media/hiking.png', import.meta.url)),
+        bytes: readFileSync(new URL('../../fixtures/frameleaf-media/hiking.png', import.meta.url)),
         filename: 'alpha.png',
       },
     });
     const otherPhoto = await utils.createAsset(owner.accessToken, { assetData: { filename: 'zulu.png' } });
     const video = await utils.createAsset(owner.accessToken, {
       assetData: {
-        bytes: readFileSync(
-          new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
-        ),
+        bytes: readFileSync(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
         filename: 'journey.mp4',
       },
     });
