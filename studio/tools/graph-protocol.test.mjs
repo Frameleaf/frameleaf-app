@@ -930,6 +930,6 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 50, host: 2, 'bundle-import': 1, 'not-implemented': 20 });
+  assert.deepEqual(counts, { engine: 51, host: 2, 'bundle-import': 1, 'not-implemented': 19 });
   assert.equal(mutating.length, 73);
 });
