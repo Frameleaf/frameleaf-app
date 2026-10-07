@@ -2385,9 +2385,12 @@ const handlers: Record<string, Handler> = {
       updates.volume = gain
     }
     if (payload.eq !== undefined) updates.audioEq = canonicalAudioEq(payload.eq)
-    if (payload.pan !== undefined)
-      throw new CommandRejection('not-implemented', 'track.setAudio.pan is not implemented')
-    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb or eq')
+    const pan = optionalNumber(payload, 'pan')
+    if (pan !== undefined) {
+      if (pan < -1 || pan > 1) invalid('pan must be in -1..1')
+      updates.pan = pan
+    }
+    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb, pan or eq')
     if (track.locked) failed('track.setAudio: the track is locked')
     setTracks(tracks().map((candidate) => candidate.id === track.id ? { ...candidate, ...updates } : candidate))
   },

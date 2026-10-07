@@ -368,7 +368,7 @@ const ENGINE_CASES: Record<
   'track.remove': (f) => ({ payload: { trackId: f.spare } }),
   'track.reorder': () => ({ payload: { trackId: 'a1', index: 0 } }),
   'track.set': () => ({ payload: { trackId: 'a1', patch: { muted: true } } }),
-  'track.setAudio': () => ({ payload: { trackId: 'a1', gainDb: -6, eq: { lowGainDb: 4 } } }),
+  'track.setAudio': () => ({ payload: { trackId: 'a1', gainDb: -6, pan: -0.5, eq: { lowGainDb: 4 } } }),
 }
 
 /** Every worker present: the capability gate is not what this matrix measures. */

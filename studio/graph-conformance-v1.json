@@ -8954,6 +8954,265 @@
         }
       },
       "digest": "a71616759f733deab83dfbda96fb202f1c0a0ef4898621ddda03c2831afd2ffc"
+    },
+    "track-pan": {
+      "seed": "empty-30",
+      "media": "standard",
+      "setup": [
+        {
+          "id": "clip.add",
+          "payload": {
+            "assetId": "0198a1c2-0000-7000-8000-000000000001",
+            "trackId": "v1",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "duration": {
+              "num": 4,
+              "den": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "base:linked-pair:add",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "pitchSemitones": 2,
+            "pitchCents": 25,
+            "eq": {
+              "enabled": true,
+              "outputGainDb": -2,
+              "lowType": "peaking",
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5,
+              "band6Enabled": true,
+              "band6FrequencyHz": 9000
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "audio-fields:base-eq",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -6,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:base",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": -0.5
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:base",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": -6,
+              "audioEq": {
+                "outputGainDb": 0,
+                "band1Enabled": false,
+                "band1Type": "high-pass",
+                "band1FrequencyHz": 30,
+                "band1GainDb": 0,
+                "band1Q": 1.1,
+                "band1SlopeDbPerOct": 12,
+                "lowCutEnabled": false,
+                "lowCutFrequencyHz": 30,
+                "lowCutSlopeDbPerOct": 12,
+                "lowEnabled": true,
+                "lowType": "low-shelf",
+                "lowGainDb": 4,
+                "lowFrequencyHz": 250,
+                "lowQ": 1.5,
+                "lowMidEnabled": true,
+                "lowMidType": "peaking",
+                "lowMidGainDb": 0,
+                "lowMidFrequencyHz": 400,
+                "lowMidQ": 1.1,
+                "midGainDb": 0,
+                "highMidEnabled": true,
+                "highMidType": "peaking",
+                "highMidGainDb": 0,
+                "highMidFrequencyHz": 1600,
+                "highMidQ": 1.1,
+                "highEnabled": true,
+                "highType": "high-shelf",
+                "highGainDb": 0,
+                "highFrequencyHz": 2800,
+                "highQ": 2.3,
+                "band6Enabled": false,
+                "band6Type": "low-pass",
+                "band6FrequencyHz": 22000,
+                "band6GainDb": 0,
+                "band6Q": 1.1,
+                "band6SlopeDbPerOct": 12,
+                "highCutEnabled": false,
+                "highCutFrequencyHz": 22000,
+                "highCutSlopeDbPerOct": 12
+              },
+              "items": [],
+              "pan": -0.5
+            }
+          ],
+          "items": [
+            {
+              "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+              "trackId": "v1",
+              "from": 0,
+              "durationInFrames": 120,
+              "label": "surf.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+              "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+              "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+              "sourceStart": 0,
+              "sourceEnd": 120,
+              "sourceDuration": 240,
+              "sourceFps": 30,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "video",
+              "src": "",
+              "sourceWidth": 1920,
+              "sourceHeight": 1080,
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 1920,
+                "height": 1080,
+                "rotation": 0
+              }
+            },
+            {
+              "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+              "trackId": "a1",
+              "from": 0,
+              "durationInFrames": 120,
+              "label": "surf.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+              "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+              "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+              "sourceStart": 0,
+              "sourceEnd": 120,
+              "sourceDuration": 240,
+              "sourceFps": 30,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "audio",
+              "src": "",
+              "audioPitchSemitones": 2,
+              "audioPitchCents": 25,
+              "audioEqOutputGainDb": -2,
+              "audioEqBand1Enabled": false,
+              "audioEqBand1Type": "high-pass",
+              "audioEqBand1FrequencyHz": 30,
+              "audioEqBand1GainDb": 0,
+              "audioEqBand1Q": 1.1,
+              "audioEqBand1SlopeDbPerOct": 12,
+              "audioEqLowCutEnabled": false,
+              "audioEqLowCutFrequencyHz": 30,
+              "audioEqLowCutSlopeDbPerOct": 12,
+              "audioEqLowEnabled": true,
+              "audioEqLowType": "peaking",
+              "audioEqLowGainDb": 4,
+              "audioEqLowFrequencyHz": 250,
+              "audioEqLowQ": 1.5,
+              "audioEqLowMidEnabled": true,
+              "audioEqLowMidType": "peaking",
+              "audioEqLowMidGainDb": 0,
+              "audioEqLowMidFrequencyHz": 400,
+              "audioEqLowMidQ": 1.1,
+              "audioEqMidGainDb": 0,
+              "audioEqHighMidEnabled": true,
+              "audioEqHighMidType": "peaking",
+              "audioEqHighMidGainDb": 0,
+              "audioEqHighMidFrequencyHz": 1600,
+              "audioEqHighMidQ": 1.1,
+              "audioEqHighEnabled": true,
+              "audioEqHighType": "high-shelf",
+              "audioEqHighGainDb": 0,
+              "audioEqHighFrequencyHz": 2800,
+              "audioEqHighQ": 2.3,
+              "audioEqBand6Enabled": true,
+              "audioEqBand6Type": "low-pass",
+              "audioEqBand6FrequencyHz": 9000,
+              "audioEqBand6GainDb": 0,
+              "audioEqBand6Q": 1.1,
+              "audioEqBand6SlopeDbPerOct": 12,
+              "audioEqHighCutEnabled": true,
+              "audioEqHighCutFrequencyHz": 9000,
+              "audioEqHighCutSlopeDbPerOct": 12,
+              "audioEqEnabled": true
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106"
     }
   },
   "vectors": {
@@ -148758,7 +149017,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "track.setAudio needs gainDb or eq"
+        "detail": "track.setAudio needs gainDb, pan or eq"
       }
     },
     {
@@ -148949,12 +149208,12 @@
       }
     },
     {
-      "id": "track.setAudio/pan-refusal",
+      "id": "track.setAudio/pan-zero",
       "story": "FL-308",
       "covers": [
         "track.setAudio"
       ],
-      "summary": "pan refusal",
+      "summary": "Zero persists a neutral pan stage without changing gain, EQ or clip ownership.",
       "base": "clip-audio-eq",
       "envelopes": [
         {
@@ -148969,14 +149228,163 @@
         }
       ],
       "admission": {
-        "status": "rejected",
-        "reason": "not-implemented"
+        "status": "applied"
       },
       "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "track.setAudio.pan is not implemented"
+        "status": "applied",
+        "digest": "346f19b4b148f16c5af97c04d68415fc7124590f466a1f16b026ed7f4b3364b3",
+        "envelopeDigest": "2147abd7524d7a65c71107d5c899f5d24d4c3755bc8a168cd90bd9515a9da131",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "pan": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
       }
     },
     {
@@ -148985,7 +149393,7 @@
       "covers": [
         "track.setAudio"
       ],
-      "summary": "pan atomic refusal",
+      "summary": "An invalid pan refuses the entire gain/EQ batch atomically.",
       "base": "clip-audio-eq",
       "envelopes": [
         {
@@ -149013,7 +149421,7 @@
               "lowFrequencyHz": 250,
               "lowQ": 1.5
             },
-            "pan": 0
+            "pan": 2
           },
           "revision": 1,
           "idempotencyKey": "track-audio:pan-atomic-refusal",
@@ -149022,13 +149430,14 @@
       ],
       "admission": {
         "status": "rejected",
-        "reason": "not-implemented"
+        "reason": "invalid",
+        "index": 1
       },
       "expect": {
         "status": "rejected",
         "index": 1,
-        "reason": "not-implemented",
-        "detail": "track.setAudio.pan is not implemented"
+        "reason": "invalid",
+        "detail": "pan must be in -1..1"
       }
     },
     {
@@ -151097,6 +151506,1640 @@
         "reason": "invalid",
         "detail": "patch.muted must be a boolean"
       }
+    },
+    {
+      "id": "track.setAudio/pan-left",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan left",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": -1
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-left",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "67b6cbcef43bb5a06bfb98f25dc21073d609d0459f7d75fe2d545fbc649f544b",
+        "envelopeDigest": "9b993c7c8a185164af3660782fd4e8a9e78aa50f4318df5fbea0c7129e9ba383",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "pan": -1
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/pan-right",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan right",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 1
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-right",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "95734e6d8800f40c0ad521ed2d6a18a2e2606091ccd638a7a5826ef9139b96c8",
+        "envelopeDigest": "5ebc0dcf1cf050f7cd6c59299b581ccafaa957930a9beee1ae771cbd3297baf5",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "pan": 1
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/pan-middle",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan middle",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 0.5
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-middle",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "20ff5cc18467c1726a6ece78e7b101341cc90334ee0f7cf52fe1d7944040bdb3",
+        "envelopeDigest": "ee6947a65443bfdffd91fe094f8c7d7dfdcb4573d93134b1941570eb0bd08358",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "pan": 0.5
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/pan-preserves-gain-eq",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan preserves gain eq",
+      "base": "track-pan",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 1
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-preserves-gain-eq",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "638d085c7d970f0de66d6e1309b93e2225870129702dfb824c57b910574257f4",
+        "envelopeDigest": "4838e539a9235bf5345f794a694ea0082cadab6dd7f484174942219fdea56ebf",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "pan": 1
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/gain-preserves-pan",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain preserves pan",
+      "base": "track-pan",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -3
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:gain-preserves-pan",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "5585314f0137f1a7441fb4903c2d21fd610e9e7bd1cb66553e2b3a4af082d077",
+        "envelopeDigest": "496d5757ba61472a799903d6778a75d1a2fd9dd00104254d1f1d52ff52b3ef4a",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -3,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "pan": -0.5
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-preserves-pan",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq preserves pan",
+      "base": "track-pan",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": null
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:eq-preserves-pan",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "41018e95f7f951f6ba6e3bfbe479f258eb83b7cb78e9f63baad2158bf338cdc5",
+        "envelopeDigest": "2fcf3174d16519e5889486f9b276634c6559ed5bc4c365f1e7b3634c2484b16f",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "items": [],
+                "pan": -0.5
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/pan-reset",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan reset",
+      "base": "track-pan",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 0
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-reset",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "7391238a104da89bc6ec9b71fe494aeaa0a83316bf6f5538969d9f8e354c96f3",
+        "envelopeDigest": "2498a608d72b1d58d8fe21bd40e8b5eba0b39a53e3dfd748c8de5a19f3294f21",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "pan": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/pan-below",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan below",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": -1.1
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-below",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be in -1..1"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-above",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan above",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 1.1
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-above",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be in -1..1"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-string",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan string",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": "0"
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-string",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be a number"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-null",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan null",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": null
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-null",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be a number"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-boolean",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan boolean",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": false
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-boolean",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be a number"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-array",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan array",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": []
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-array",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "pan must be a number"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-locked",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan locked",
+      "base": "seed:clip-audio-locked",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 0.5
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-locked",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "track.setAudio: the track is locked"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-missing",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan missing",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "absent",
+            "pan": 0.5
+          },
+          "revision": 1,
+          "idempotencyKey": "track-pan:pan-missing",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "trackId: track \"absent\" does not exist"
+      }
     }
   ],
   "history": [
@@ -151668,7 +153711,7 @@
     {
       "id": "history/undo-redo-track-audio",
       "story": "FL-308",
-      "summary": "Track gain/EQ edit, refusal, clear, undo and redo preserve clip audio and ownership. Refused pan creates no history entry.",
+      "summary": "Track gain/EQ/pan edit, invalid-pan refusal, neutral reset, undo and redo preserve clip audio and ownership.",
       "base": "clip-audio-eq",
       "steps": [
         {
@@ -151681,7 +153724,8 @@
                 "lowGainDb": 4,
                 "lowFrequencyHz": 250,
                 "lowQ": 1.5
-              }
+              },
+              "pan": -0.5
             },
             "revision": 1,
             "idempotencyKey": "track-audio:history-edit",
@@ -151694,7 +153738,7 @@
             "payload": {
               "trackId": "a1",
               "gainDb": -3,
-              "pan": 0
+              "pan": 2
             },
             "revision": 1,
             "idempotencyKey": "track-audio:history-refuse",
@@ -151707,7 +153751,8 @@
             "payload": {
               "trackId": "a1",
               "gainDb": 0,
-              "eq": null
+              "eq": null,
+              "pan": 0
             },
             "revision": 1,
             "idempotencyKey": "track-audio:history-clear",
@@ -151730,7 +153775,7 @@
       "expect": [
         {
           "outcome": "accepted",
-          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106",
           "sameAs": 1,
           "depth": {
             "undo": 1,
@@ -151739,8 +153784,8 @@
         },
         {
           "outcome": "rejected",
-          "reason": "not-implemented",
-          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "reason": "invalid",
+          "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106",
           "sameAs": 1,
           "depth": {
             "undo": 1,
@@ -151749,8 +153794,8 @@
         },
         {
           "outcome": "accepted",
-          "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
-          "sameAs": 0,
+          "digest": "346f19b4b148f16c5af97c04d68415fc7124590f466a1f16b026ed7f4b3364b3",
+          "sameAs": 3,
           "depth": {
             "undo": 2,
             "redo": 0
@@ -151758,7 +153803,7 @@
         },
         {
           "outcome": "accepted",
-          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106",
           "sameAs": 1,
           "depth": {
             "undo": 1,
@@ -151776,7 +153821,7 @@
         },
         {
           "outcome": "accepted",
-          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106",
           "sameAs": 1,
           "depth": {
             "undo": 1,
@@ -151785,8 +153830,8 @@
         },
         {
           "outcome": "accepted",
-          "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
-          "sameAs": 0,
+          "digest": "346f19b4b148f16c5af97c04d68415fc7124590f466a1f16b026ed7f4b3364b3",
+          "sameAs": 3,
           "depth": {
             "undo": 2,
             "redo": 0

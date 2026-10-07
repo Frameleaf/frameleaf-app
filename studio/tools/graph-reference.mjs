@@ -1327,8 +1327,12 @@ const commands = {
       updates.volume = payload.gainDb;
     }
     if (payload.eq !== undefined) updates.audioEq = audioEqSettings(payload.eq);
-    if (payload.pan !== undefined) throw new Refusal('not-implemented', 'track.setAudio.pan is not implemented');
-    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb or eq');
+    if (payload.pan !== undefined) {
+      if (!finite(payload.pan)) invalid('pan must be a number');
+      if (payload.pan < -1 || payload.pan > 1) invalid('pan must be in -1..1');
+      updates.pan = payload.pan;
+    }
+    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb, pan or eq');
     if (track.locked) failed('track.setAudio: the track is locked');
     state.tracks = state.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, ...updates } : candidate);
   },

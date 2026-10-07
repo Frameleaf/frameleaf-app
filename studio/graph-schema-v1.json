@@ -89,6 +89,7 @@
         "muted": { "type": "boolean" },
         "solo": { "type": "boolean" },
         "volume": { "type": "number", "minimum": -60, "maximum": 12 },
+        "pan": { "type": "number", "minimum": -1, "maximum": 1 },
         "audioEq": { "type": "object" },
         "color": { "type": "string" },
         "order": { "type": "number" },
@@ -511,6 +512,7 @@
         "muted": { "type": "boolean" },
         "solo": { "type": "boolean" },
         "volume": { "type": "number" },
+        "pan": { "type": "number", "minimum": -1, "maximum": 1 },
         "order": { "type": "number" },
         "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
       },
