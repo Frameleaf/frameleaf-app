@@ -13,6 +13,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     }),
     decodeHdrImage: vitest.fn(),
     encodeHdrImage: vitest.fn(),
+    exportPhotoStill: vitest.fn(),
     generateHdrRenditions: vitest.fn(),
     onModuleDestroy: vitest.fn().mockResolvedValue(undefined),
     generateThumbnail: vitest.fn().mockImplementation(() => Promise.resolve()),

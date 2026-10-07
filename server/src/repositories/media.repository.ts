@@ -127,6 +127,16 @@ export class MediaRepository {
     return sharpProcessPool.run('inspectImageEncoding', [input]);
   }
 
+  exportPhotoStill(
+    input: string,
+    output: string,
+    format: SharpArguments<'exportPhotoStill'>[2],
+    checksum: Buffer,
+    signal?: AbortSignal,
+  ) {
+    return sharpProcessPool.run('exportPhotoStill', [input, output, format, checksum], signal);
+  }
+
   decodeHdrImage(input: string | Buffer, preserveSdrBaseline = false) {
     return sharpProcessPool.run('decodeHdrImage', [input, preserveSdrBaseline]);
   }

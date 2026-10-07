@@ -1,10 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
@@ -29,6 +33,7 @@ import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
+  AssetType,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
@@ -37,6 +42,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
@@ -333,7 +339,13 @@ export class AssetMediaService extends BaseService {
     }
   }
 
-  async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
+  async downloadOriginal(
+    auth: AuthDto,
+    id: string,
+    dto: AssetDownloadOriginalDto,
+    signal?: AbortSignal,
+  ): Promise<ImmichFileResponse> {
+    signal?.throwIfAborted();
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
     if (auth.sharedLink) {
@@ -345,12 +357,72 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    const path = editedPath ?? originalPath!;
+    const filePath = editedPath ?? originalPath!;
+    if (dto.format) {
+      const source = await this.assetRepository.getById(id);
+      if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
+        throw new BadRequestException('Still exports require an unedited photo; export a saved edit from its version');
+      const policy = getOriginalLocationPolicies({ auth, assets: [source], purpose: 'download' });
+      if (policy(source) !== OriginalLocationPolicy.Serve)
+        throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+      if (dto.format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
+        throw new NotFoundException('HDR export is unavailable');
+      if (dto.format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
+        throw new BadRequestException({
+          code: 'hdr_heic_export_unavailable',
+          message: 'HDR HEIC export is unavailable',
+        });
+      const checksum = Buffer.from(source.checksum);
+      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      const heic = dto.format === 'hdr-heic';
+      const output = path.join(folder, heic ? 'still_hdr.heic' : 'still.jpg');
+      const release = () =>
+        void rm(folder, { recursive: true, force: true }).catch(() => {
+          this.logger.warn('Unable to remove a temporary still export');
+        });
+      try {
+        await this.mediaRepository.exportPhotoStill(filePath, output, dto.format, checksum, signal);
+        signal?.throwIfAborted();
+        await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+        const current = await this.assetRepository.getById(id);
+        if (
+          !current ||
+          current.deletedAt ||
+          current.ownerId !== source.ownerId ||
+          current.originalPath !== filePath ||
+          !current.checksum.equals(checksum)
+        )
+          throw new ConflictException('This photo changed during export; try again');
+        return new ImmichFileResponse({
+          path: output,
+          release,
+          contentType: heic ? 'image/heic' : 'image/jpeg',
+          fileName: `${getFileNameWithoutExtension(originalFileName)}_still_${dto.format}.${heic ? 'heic' : 'jpg'}`,
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      } catch (error) {
+        // Pool cancellation joins the child before its private files are removed.
+        await rm(folder, { recursive: true, force: true });
+        if (error instanceof Error && error.message.includes('IMAGE_SOURCE_CHANGED'))
+          throw new ConflictException('This photo changed during export; try again');
+        if (error instanceof SharpResourceLimitError)
+          throw new BadRequestException({
+            code: 'photo_export_resource_limit',
+            message: 'This photo exceeds the export processing limit',
+          });
+        if (error instanceof Error && error.message.includes('HDR_RECONSTRUCTION_UNAVAILABLE'))
+          throw new BadRequestException({
+            code: 'hdr_reconstruction_unavailable',
+            message: 'HDR reconstruction is unavailable for this photo; choose SDR JPEG',
+          });
+        throw error;
+      }
+    }
 
     return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'download', {
-      path,
-      fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
-      contentType: mimeTypes.lookup(path),
+      path: filePath,
+      fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
+      contentType: mimeTypes.lookup(filePath),
       cacheControl: CacheControl.PrivateWithCache,
     });
   }

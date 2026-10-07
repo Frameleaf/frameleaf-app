@@ -255,21 +255,23 @@ export const downloadAssetFile = ({
   filename,
   edited,
   size,
+  format,
 }: {
   id: string;
   filename: string;
   edited: boolean;
   size?: number;
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
 }) =>
   downloadManager.start(
-    { name: filename, assetIds: [id], count: 1, total: size ?? 0, group: downloadGroup() },
+    { name: filename, assetIds: [id], count: 1, total: format ? 0 : (size ?? 0), group: downloadGroup() },
     withDownloadErrors((context) =>
       holdOrStream(context, {
         // An edited file is not the size recorded for the original, so its headers decide.
-        size: edited || !size ? undefined : size,
+        size: edited || format || !size ? undefined : size,
         fetcher: async (input, init) => {
           const response = await fetch(input, init);
-          if (edited && response.ok) {
+          if ((edited || format) && response.ok) {
             const extension = (
               {
                 'image/jpeg': 'jpeg',
@@ -286,9 +288,13 @@ export const downloadAssetFile = ({
           }
           return response;
         },
-        request: (fetch) => requestAsset({ ...authManager.params, id, edited }, { signal: context.signal, fetch }),
+        request: (fetch) =>
+          requestAsset(
+            { ...authManager.params, id, edited, ...(format && { format }) },
+            { signal: context.signal, fetch },
+          ),
         stream: new StreamedDownload((name) =>
-          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), name),
+          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }), name),
         ),
       }),
     ),

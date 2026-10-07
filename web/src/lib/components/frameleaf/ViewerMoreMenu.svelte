@@ -50,6 +50,7 @@
   import { getAssetActions } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getSharedLink } from '$lib/utils';
+  import { downloadAssetFile } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
@@ -185,6 +186,34 @@
     slideshowPlaying: $slideshowState === SlideshowState.PlaySlideshow,
   });
 
+  const stillExportFormats = $derived(
+    isImageAsset(asset) &&
+      !asset.duration &&
+      !asset.isEdited &&
+      !isLocked &&
+      !asset.isTrashed &&
+      authManager.authenticated &&
+      !sharedLink
+      ? ([
+          'sdr-jpeg',
+          ...(asset.imageEncoding?.reconstructionAvailable &&
+          asset.imageEncoding.dynamicRange === 'hdr' &&
+          featureFlagsManager.value.imageCapabilities?.experimentalEnabled
+            ? featureFlagsManager.value.imageCapabilities.export.filter(
+                (format) => format === 'hdr-jpeg' || format === 'hdr-heic',
+              )
+            : []),
+        ] as ('sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic')[])
+      : [],
+  );
+  const exportStill = (format: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic') =>
+    downloadAssetFile({
+      id: asset.id,
+      edited: false,
+      format,
+      filename: `${asset.originalFileName.replace(/\.[^.]+$/, '')}_still_${format}.${format === 'hdr-heic' ? 'heic' : 'jpg'}`,
+    });
+
   const groups: ViewerMenuGroup[] = $derived(viewerMenuGroups(context));
 
   const has = (group: ViewerMenuGroup, id: ViewerActionId) => group.items.includes(id);
@@ -238,6 +267,19 @@
 
   {#if has(group, 'download')}
     <MenuOption icon={Actions.Download.icon} text={label('download')} onClick={() => run(Actions.Download)} />
+    {#each stillExportFormats as format (format)}
+      <MenuOption
+        icon={Actions.Download.icon}
+        text={$t(
+          format === 'sdr-jpeg'
+            ? 'frameleaf_editor_export_sdr_jpeg'
+            : format === 'hdr-jpeg'
+              ? 'frameleaf_editor_export_hdr_jpeg'
+              : 'frameleaf_editor_export_hdr_heic',
+        )}
+        onClick={() => exportStill(format)}
+      />
+    {/each}
   {/if}
   {#if has(group, 'download-original')}
     <MenuOption

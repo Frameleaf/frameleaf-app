@@ -198,6 +198,17 @@ and original Live Photo downloads continue through their existing routes. Client
 must retain unsaved edits when an export is refused, and must not advertise HDR
 HEIC until the server's separate export capability includes it.
 
+`GET /assets/:id/original?format=sdr-jpeg|hdr-jpeg|hdr-heic` converts an unedited
+photo to a separate still, without creating a Develop revision. Omission keeps
+original download behavior. Conversion uses the same isolated worker, binds the
+captured bytes to the stored checksum, and revalidates download permission and
+source identity before delivery. Original byte length is not the export length;
+clients must use response headers. Temporary outputs use private, uncached
+responses and are removed after delivery or joined cancellation. Explicit HDR
+requests fail when reconstruction or the required encoder is unavailable; they
+never flatten to SDR. Motion files and substituted saved edits are refused.
+Live Photo still conversion retains its original motion link and files.
+
 `GET /server/features` also exposes optional `imageCapabilities`. Its `decode`,
 `render`, and `export` lists are independent and come from a probe inside the
 existing isolated image worker. `codecs` records the installed library versions.

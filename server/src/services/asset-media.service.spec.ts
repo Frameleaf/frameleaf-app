@@ -1,10 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
@@ -13,6 +16,7 @@ import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/a
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
@@ -808,6 +812,127 @@ describe(AssetMediaService.name, () => {
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+    });
+  });
+
+  describe('explicit original still exports', () => {
+    afterEach(() => vitest.unstubAllEnvs());
+    const source = () => {
+      const asset = { ...AssetFactory.create(), livePhotoVideoId: '22222222-2222-4222-8222-222222222222' };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      return asset;
+    };
+    it.each(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'] as const)(
+      'exports %s as a private still and retains motion',
+      async (format) => {
+        vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+          libheif: 'qualified-build',
+          libultrahdr: 'qualified-build',
+          heicDecoder: true,
+          avifDecoder: true,
+          heicPqEncoder: true,
+        });
+        const asset = source();
+        const result = await sut.downloadOriginal(AuthFactory.create(), asset.id, { format });
+        try {
+          expect(result.contentType).toBe(format === 'hdr-heic' ? 'image/heic' : 'image/jpeg');
+          expect(result.cacheControl).toBe(CacheControl.PrivateWithoutCache);
+          expect(result.fileName).toContain('_still_');
+          expect(mocks.media.exportPhotoStill).toHaveBeenCalledWith(
+            asset.originalPath,
+            result.path,
+            format,
+            asset.checksum,
+            undefined,
+          );
+          expect(asset.livePhotoVideoId).toBe('22222222-2222-4222-8222-222222222222');
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+          expect(mocks.asset.update).not.toHaveBeenCalled();
+        } finally {
+          result.release?.();
+        }
+        await vitest.waitFor(async () => expect(stat(dirname(result.path))).rejects.toMatchObject({ code: 'ENOENT' }));
+      },
+    );
+    it('refuses changed source identity after rendering and removes unpublished output', async () => {
+      const asset = source();
+      mocks.asset.getById
+        .mockResolvedValueOnce(getForAsset(asset))
+        .mockResolvedValueOnce(getForAsset({ ...asset, checksum: Buffer.alloc(32) }));
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      const output = mocks.media.exportPhotoStill.mock.calls[0][1];
+      await expect(stat(dirname(output))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it('joins cancellation and removes private files without returning an export', async () => {
+      const asset = source();
+      const abort = new AbortController();
+      mocks.media.exportPhotoStill.mockImplementation(() => {
+        abort.abort();
+        return Promise.resolve();
+      });
+      await expect(
+        sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' }, abort.signal),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it('revalidates download access after rendering', async () => {
+      const asset = source();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set([asset.id])).mockResolvedValue(new Set());
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it.each([
+      [new Error('HDR_RECONSTRUCTION_UNAVAILABLE'), 'hdr_reconstruction_unavailable'],
+      [new SharpResourceLimitError('surfaces'), 'photo_export_resource_limit'],
+    ])('reports a classified export refusal and removes private output', async (error, code) => {
+      const asset = source();
+      mocks.media.exportPhotoStill.mockRejectedValue(error);
+      try {
+        await sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' });
+        expect.unreachable('Export must be refused');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({ code });
+      }
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it('keeps metadata-hidden shared-link download restrictions before conversion', async () => {
+      const asset = source();
+      const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      await expect(sut.downloadOriginal(auth, asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.media.exportPhotoStill).not.toHaveBeenCalled();
+    });
+    it('refuses motion, substituted edits, and explicit HDR while processing is disabled', async () => {
+      const asset = source();
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset({ ...asset, type: AssetType.Video }));
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      mocks.asset.getForOriginal.mockResolvedValueOnce({ ...asset, editedPath: '/private/edited.jpg' });
+      await expect(
+        sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg', edited: true }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'hdr-jpeg' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.media.exportPhotoStill).not.toHaveBeenCalled();
     });
   });
 

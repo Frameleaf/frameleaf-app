@@ -1,5 +1,6 @@
 /* Relative imports keep the isolated worker free of application alias loaders. */
 /* eslint-disable no-restricted-imports */
+import { createHash } from 'node:crypto';
 import { open, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import sharp, { type Sharp } from 'sharp';
@@ -102,6 +103,54 @@ export class SharpOperations {
   async inspectImageEncoding(input: string | Buffer) {
     const bytes = await imageHdrInput(input, this.maxBytes);
     return imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
+  }
+
+  /** A checksum-bound still conversion within the existing isolated image worker. */
+  async exportPhotoStill(
+    input: string,
+    output: string,
+    format: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic',
+    checksum: Buffer,
+  ): Promise<void> {
+    if (
+      !['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(format) ||
+      !Buffer.isBuffer(checksum) ||
+      ![20, 32].includes(checksum.length) ||
+      resolve(input) === resolve(output)
+    )
+      throw new Error('INVALID_PHOTO_EXPORT');
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    try {
+      const digest = createHash(checksum.length === 32 ? 'sha256' : 'sha1')
+        .update(bytes)
+        .digest();
+      if (!digest.equals(checksum)) throw new Error('IMAGE_SOURCE_CHANGED');
+      const encoding = await this.inspectImageEncoding(bytes);
+      if (encoding.dynamicRange === 'hdr' && !encoding.reconstructionAvailable)
+        throw new Error('HDR_RECONSTRUCTION_UNAVAILABLE');
+      const metadata = await sharp(bytes, {
+        limitInputPixels: this.maxPixels,
+        failOn: 'error',
+        animated: true,
+      }).metadata();
+      if ((metadata.pages ?? 1) !== 1) throw new Error('ANIMATED_IMAGE_UNSUPPORTED');
+      if (!metadata.width || !metadata.height || metadata.width * metadata.height * 64 + bytes.length > this.maxBytes)
+        throw new SharpResourceLimitError('still export exceeds the combined surface budget');
+      this.progress();
+      if (format !== 'sdr-jpeg' || (encoding.dynamicRange === 'hdr' && encoding.reconstructionAvailable)) {
+        await this.generateHdrRenditions(bytes, [
+          {
+            path: output,
+            dynamicRange: format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+            format: format === 'hdr-heic' ? 'heic' : 'jpeg',
+          },
+        ]);
+      } else {
+        await this.writeStrippedStill(bytes, output, 'jpeg', 'srgb');
+      }
+    } finally {
+      bytes.fill(0);
+    }
   }
 
   async decodeHdrImage(input: string | Buffer, preserveSdrBaseline = false) {
@@ -391,7 +440,7 @@ export class SharpOperations {
    * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
    */
   async writeStrippedStill(
-    input: string,
+    input: string | Buffer,
     output: string,
     format: 'jpeg' | 'png',
     colorspace: 'preserve' | 'srgb' = 'preserve',
