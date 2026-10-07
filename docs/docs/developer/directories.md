@@ -17,5 +17,5 @@ The [Frameleaf GitHub Repository](https://github.com/Frameleaf/frameleaf-app) is
 | `design/`           | Screenshots and logos for the README                       |
 | `docs/`             | Source code for the documentation website                  |
 | `machine-learning/` | Source code for the `immich-machine-learning` docker image |
-| `server/`           | Source code for the `frameleaf-server` docker image           |
+| `server/`           | Source code for the `frameleaf-server` docker image        |
 | `web/`              | Source code for the `web`                                  |
