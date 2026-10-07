@@ -587,6 +587,63 @@ describe(MediaRepository.name, () => {
    * read back with ffprobe and as raw bytes. Skipped only where no ffmpeg is installed; CI installs
    * the pinned jellyfin-ffmpeg through mise.
    */
+  it.skipIf(!hasFfmpeg)('reads mastering from the later default video stream (FL-107)', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'studio-mastering-'));
+    const file = join(folder, 'hdr.mp4');
+    try {
+      execFileSync(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=white:size=32x16:rate=24',
+          '-map',
+          '0:v',
+          '-map',
+          '0:v',
+          '-frames:v',
+          '1',
+          '-c:v',
+          'libx265',
+          '-pix_fmt',
+          'yuv420p10le',
+          '-color_trc',
+          'smpte2084',
+          '-x265-params:v:0',
+          'master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,50)',
+          '-x265-params:v:1',
+          'master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(40000000,50)',
+          '-disposition:v:0',
+          '0',
+          '-disposition:v:1',
+          'default',
+          file,
+        ],
+        { timeout: 30_000, stdio: 'ignore' },
+      );
+      const output = await sut.probe(file);
+      expect(output.videoStreams.map(({ index }) => index)).toEqual([1, 0]);
+      expect(
+        (await sut.probeHdrMastering(file, 0)).find((entry) => entry.side_data_type === 'Mastering display metadata'),
+      ).toMatchObject({ max_luminance: '10000000/10000' });
+      expect(
+        (await sut.probeHdrMastering(file, output.videoStreams[0].index)).find(
+          (entry) => entry.side_data_type === 'Mastering display metadata',
+        ),
+      ).toMatchObject({
+        max_luminance: '40000000/10000',
+        min_luminance: '50/10000',
+        red_x: '35400/50000',
+        white_point_y: '16450/50000',
+      });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   describe.skipIf(!hasFfmpeg)('video clips for another machine (FL-162)', () => {
     const secrets = [
       '+51.5007-000.1246/',

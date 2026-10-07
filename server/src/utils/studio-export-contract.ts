@@ -15,6 +15,7 @@
  *
  * Publication probes the worker's file and refuses it when it does not honour the contract.
  */
+import z from 'zod';
 import type { StudioSourceMediaFacts } from 'src/repositories/studio-export.repository.js';
 import type { AudioStreamInfo, VideoStreamInfo } from 'src/types.js';
 import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
@@ -32,6 +33,7 @@ import {
   fromInteger,
   invert,
   multiply,
+  rational,
   tryParseRational,
 } from 'src/utils/rational-time.js';
 import {
@@ -51,6 +53,19 @@ import {
 export const STUDIO_EXPORT_AUDIO = ['preserve', 'stereo'] as const;
 export type StudioExportAudio = (typeof STUDIO_EXPORT_AUDIO)[number];
 
+/** Explicit export authority, never a source's content-light values or a preview assumption. */
+export const StudioExportMasteringSchema = z
+  .object({
+    primaries: z.literal('bt2020').describe('Declared BT.2020 mastering display primaries and D65 white point'),
+    maxNits: z.number().positive().max(10_000).multipleOf(0.0001).meta({ format: 'double' }),
+    minNits: z.number().nonnegative().max(10_000).multipleOf(0.0001).meta({ format: 'double' }),
+  })
+  .strict()
+  .refine((value) => value.maxNits > value.minNits, 'Mastering maximum must exceed its minimum')
+  .meta({ id: 'StudioExportMastering' });
+export type StudioExportMastering = z.infer<typeof StudioExportMasteringSchema>;
+export class StudioExportMasteringError extends Error {}
+
 export type StudioExportTiming = {
   /** The project cadence the graph declares, `num/den`. */
   cadence: string;
@@ -61,7 +76,12 @@ export type StudioExportTiming = {
 };
 
 export type StudioExportContract = {
-  video: { minBitDepth: 8 | 10; transfer: 'smpte2084' | 'arib-std-b67' | null };
+  video: {
+    minBitDepth: 8 | 10;
+    transfer: 'smpte2084' | 'arib-std-b67' | null;
+    /** Absent only on HLG/SDR or contracts written before explicit PQ mastering existed. */
+    mastering?: StudioExportMastering;
+  };
   audio: {
     policy: StudioExportAudio;
     channels: number | null;
@@ -283,7 +303,7 @@ const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
  *   unless a stereo downmix was chosen. With no audible source nothing is promised.
  */
 export const buildStudioExportContract = (
-  settings: { format: string; color: string; audio?: StudioExportAudio },
+  settings: { format: string; color: string; audio?: StudioExportAudio; mastering?: StudioExportMastering },
   graph: unknown,
   sources: readonly StudioSourceMediaFacts[],
 ): StudioExportContract => {
@@ -295,6 +315,13 @@ export const buildStudioExportContract = (
     settings.color === 'preserve' && videoTransfers.size === 1 ? ([...videoTransfers][0] ?? null) : null;
   const transfer = hdrRequested ? 'smpte2084' : preservedTransfer;
   const minBitDepth = TEN_BIT_FORMATS.has(settings.format) || transfer ? 10 : 8;
+  const mastering = StudioExportMasteringSchema.safeParse(settings.mastering);
+  if (transfer === 'smpte2084' && !mastering.success) {
+    throw new StudioExportMasteringError('PQ export requires an explicit valid BT.2020 mastering display profile');
+  }
+  if (transfer !== 'smpte2084' && settings.mastering !== undefined) {
+    throw new StudioExportMasteringError('A mastering display profile applies only to a PQ export');
+  }
 
   const audible = audibleMediaIds(graph);
   const audio = sources.filter((facts) => facts.audio && audible.has(facts.assetId)).map((facts) => facts.audio!);
@@ -315,13 +342,22 @@ export const buildStudioExportContract = (
         : { policy, channels: widest.channels, channelLayout: widest.channelLayout, sampleRate };
   }
 
-  return { video: { minBitDepth, transfer }, audio: expectation };
+  return {
+    video: { minBitDepth, transfer, ...(mastering.success && { mastering: mastering.data }) },
+    audio: expectation,
+  };
 };
 
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
   const record = asRecord(value);
   const video = asRecord(record.video);
   if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {
+    return null;
+  }
+  if (
+    video.mastering !== undefined &&
+    (video.transfer !== 'smpte2084' || !StudioExportMasteringSchema.safeParse(video.mastering).success)
+  ) {
     return null;
   }
   return value as StudioExportContract;
@@ -333,7 +369,7 @@ export const parseStudioExportContract = (value: unknown): StudioExportContract 
  */
 export const findStudioExportOutputMismatch = (
   contract: StudioExportContract,
-  probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[] },
+  probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[]; mastering?: Record<string, unknown>[] },
   format: string,
 ): string | null => {
   const [video] = probe.videoStreams;
@@ -363,6 +399,29 @@ export const findStudioExportOutputMismatch = (
     }
     if (video.colorMatrix !== ColorMatrix.Bt2020Nc) {
       return 'The result is not tagged with the BT.2020 non-constant-luminance matrix this HDR export promises';
+    }
+    if (contract.video.mastering) {
+      const data = probe.mastering?.find((entry) => entry.side_data_type === 'Mastering display metadata');
+      const expected: Record<string, Rational> = {
+        red_x: { num: 35_400, den: 50_000 },
+        red_y: { num: 14_600, den: 50_000 },
+        green_x: { num: 8500, den: 50_000 },
+        green_y: { num: 39_850, den: 50_000 },
+        blue_x: { num: 6550, den: 50_000 },
+        blue_y: { num: 2300, den: 50_000 },
+        white_point_x: { num: 15_635, den: 50_000 },
+        white_point_y: { num: 16_450, den: 50_000 },
+        max_luminance: { num: Math.round(contract.video.mastering.maxNits * 10_000), den: 10_000 },
+        min_luminance: { num: Math.round(contract.video.mastering.minNits * 10_000), den: 10_000 },
+      };
+      if (
+        !Object.entries(expected).every(([key, want]) => {
+          const actual = tryParseRational(String(data?.[key]));
+          return actual && equals(actual, rational(want.num, want.den));
+        })
+      ) {
+        return 'The result does not carry the mastering display profile this PQ export declared';
+      }
     }
   }
   const [audio] = probe.audioStreams;

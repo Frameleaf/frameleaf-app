@@ -81,6 +81,46 @@ describe('resolveStudioExportTiming (FL-93)', () => {
 });
 
 describe('buildStudioExportContract (FL-102)', () => {
+  it('requires and copies an explicit PQ mastering profile rather than source or preview defaults (FL-107)', () => {
+    const settings = { format: 'mp4-hevc-main10', color: 'hdr10' };
+    const project = { ...graph([]), colorManagement: { masteringPeakNits: 4000 } };
+    expect(() => buildStudioExportContract(settings, project, [])).toThrow(/mastering/i);
+    const mastering = { primaries: 'bt2020' as const, maxNits: 1000, minNits: 0.005 };
+    const contract = buildStudioExportContract({ ...settings, mastering }, project, []);
+    expect(contract.video).toEqual({ minBitDepth: 10, transfer: 'smpte2084', mastering });
+    const pq = facts('a', {
+      video: { timeBase: 90_000, pixelFormat: 'yuv420p10le', colorTransfer: ColorTransfer.Smpte2084 },
+    });
+    expect(() => buildStudioExportContract({ ...settings, color: 'preserve' }, graph([]), [pq])).toThrow(/mastering/i);
+    expect(
+      buildStudioExportContract({ ...settings, color: 'preserve', mastering }, graph([]), [pq]).video.mastering,
+    ).toEqual(mastering);
+    mastering.maxNits = 4000;
+    expect(contract.video.mastering?.maxNits).toBe(1000);
+    for (const invalid of [
+      null,
+      { ...mastering, minNits: 5000 },
+      { ...mastering, maxNits: NaN },
+      { ...mastering, minNits: 0.00001 },
+      { ...mastering, maxNits: 10_001 },
+      { ...mastering, primaries: 'unknown' },
+      { ...mastering, maxCll: 900 },
+    ]) {
+      expect(() => buildStudioExportContract({ ...settings, mastering: invalid } as never, project, [])).toThrow(
+        /mastering/i,
+      );
+    }
+    expect(() =>
+      buildStudioExportContract({ format: 'mp4-h264', color: 'preserve', mastering }, graph([]), []),
+    ).toThrow(/mastering/i);
+    expect(
+      parseStudioExportContract({
+        video: { ...contract.video, mastering: { ...mastering, minNits: -1 } },
+        audio: null,
+      }),
+    ).toBeNull();
+  });
+
   it('keeps an HDR transfer every source shares when preserving, and asks nothing of SDR H.264', () => {
     const hlg = facts('a', { video: { timeBase: 90_000, pixelFormat: 'yuv420p10le', colorTransfer: 18 } });
     expect(
@@ -253,4 +293,52 @@ describe('sameTimeBase', () => {
     expect(sameTimeBase('1/30000', '1001/30000')).toBe(false);
     expect(sameTimeBase('x', '1/1')).toBe(false);
   });
+});
+
+it('holds independently probed ST 2086 values to the declared profile, including each chromaticity (FL-107)', () => {
+  const contract = {
+    video: {
+      minBitDepth: 10 as const,
+      transfer: 'smpte2084' as const,
+      mastering: { primaries: 'bt2020' as const, maxNits: 1000, minNits: 0.005 },
+    },
+    audio: null,
+  };
+  const data = {
+    side_data_type: 'Mastering display metadata',
+    red_x: '35400/50000',
+    red_y: '14600/50000',
+    green_x: '8500/50000',
+    green_y: '39850/50000',
+    blue_x: '6550/50000',
+    blue_y: '2300/50000',
+    white_point_x: '15635/50000',
+    white_point_y: '16450/50000',
+    max_luminance: '10000000/10000',
+    min_luminance: '50/10000',
+  };
+  const probe = {
+    videoStreams: [
+      {
+        codecName: 'hevc',
+        pixelFormat: 'yuv420p10le',
+        colorTransfer: ColorTransfer.Smpte2084,
+        colorPrimaries: ColorPrimaries.Bt2020,
+        colorMatrix: ColorMatrix.Bt2020Nc,
+        duration: 5,
+        frameRate: 25,
+      } as never,
+    ],
+    audioStreams: [],
+    mastering: [data],
+  };
+  expect(findStudioExportOutputMismatch(contract, probe, 'mp4-hevc-main10')).toBeNull();
+  for (const key of Object.keys(data)) {
+    expect(
+      findStudioExportOutputMismatch(contract, { ...probe, mastering: [{ ...data, [key]: '0/1' }] }, 'mp4-hevc-main10'),
+    ).toMatch(/mastering display/);
+  }
+  expect(findStudioExportOutputMismatch(contract, { ...probe, mastering: [] }, 'mp4-hevc-main10')).toMatch(
+    /mastering display/,
+  );
 });

@@ -704,6 +704,43 @@ describe(RenderWorkerService.name, () => {
         expect(studioResources.issueReadGrants).not.toHaveBeenCalled();
       });
 
+      it('hands out immutable mastering and changes the artifact binding when that profile changes (FL-107)', async () => {
+        installSessions({
+          worker: workerA,
+          session: { ...sessionA, colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } },
+        });
+        vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['hevc_nvenc'], formats: ['mp4'] });
+        const digests: string[] = [];
+        for (const maxNits of [1000, 4000]) {
+          const mastering = { primaries: 'bt2020', maxNits, minNits: 0.005 };
+          const queued = studioOperationStub({
+            settings: { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '1080p', mastering },
+            snapshot: {
+              ...studioOp.snapshot,
+              contract: { video: { minBitDepth: 10, transfer: 'smpte2084', mastering }, audio: null },
+            },
+          });
+          vi.mocked(workers.peekQueued)
+            .mockReset()
+            .mockResolvedValueOnce([queued] as never)
+            .mockResolvedValue([]);
+          vi.mocked(workers.claimQueued).mockResolvedValue({
+            operation: {
+              ...queued,
+              status: MediaOperationStatus.Preparing,
+              claimToken: 'claim-1',
+              claimedBy: workerA.id,
+              attempt: 1,
+            },
+            claimToken: 'claim-1',
+          } as never);
+          const claim = await sut.claim(SESSION_A, {} as never);
+          expect(claim!.snapshot).toMatchObject({ contract: { video: { mastering } } });
+          digests.push(claim!.artifactInputDigest!);
+        }
+        expect(digests[0]).not.toBe(digests[1]);
+      });
+
       it('treats a resolver precondition failure (cloud without consent) as an incomplete manifest', async () => {
         studioResources.resolveProjectResources.mockRejectedValue(
           new Error('A cloud destination requires explicit consent'),
@@ -2071,6 +2108,30 @@ describe(RenderWorkerService.name, () => {
       const manifest = studioManifestStub();
       manifest.entries[0].checksum = 'replacement-source';
       studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+      await expect(
+        sut.readArtifact(SESSION_A, validating.id, 0, 'claim-1', { chunkKey: 'whole' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', artifactSequence: 0, resultAssetId: null }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
+    });
+
+    it('refuses an artifact that was never bound to the declared mastering profile (FL-107)', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...validating,
+        snapshot: {
+          ...validating.snapshot,
+          contract: {
+            video: {
+              minBitDepth: 10,
+              transfer: 'smpte2084',
+              mastering: { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 },
+            },
+            audio: null,
+          },
+        },
+      } as never);
       await expect(
         sut.readArtifact(SESSION_A, validating.id, 0, 'claim-1', { chunkKey: 'whole' }),
       ).rejects.toBeInstanceOf(BadRequestException);

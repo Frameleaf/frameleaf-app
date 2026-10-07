@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
 import { MediaOperationDestinationSchema, StudioExportScopeSchema, StudioExportVersionStateSchema } from 'src/enum.js';
-import { STUDIO_EXPORT_AUDIO } from 'src/utils/studio-export-contract.js';
+import { STUDIO_EXPORT_AUDIO, StudioExportMasteringSchema } from 'src/utils/studio-export-contract.js';
 import {
   STUDIO_EXPORT_COLORS,
   STUDIO_EXPORT_FORMATS,
@@ -66,6 +66,9 @@ const StudioExportCreateSchema = z
     audio: StudioExportAudioSchema.optional().describe(
       'Defaults to `preserve`; a stereo downmix happens only when asked for',
     ),
+    mastering: StudioExportMasteringSchema.optional().describe(
+      'Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults',
+    ),
     requestKey: IdentifierSchema.optional().describe(
       'Idempotency key; a repeated submit answers with the first export',
     ),
@@ -95,6 +98,9 @@ const StudioExportSettingsSchema = z
     resolution: StudioExportResolutionSchema,
     quality: StudioExportQualitySchema.optional().describe('Absent on exports made before quality was a choice'),
     audio: StudioExportAudioSchema.optional().describe('Absent on exports made before audio was a choice'),
+    mastering: StudioExportMasteringSchema.optional().describe(
+      'Declared PQ mastering display, fixed when this export was submitted',
+    ),
   })
   .meta({ id: 'StudioExportSettingsDto' });
 

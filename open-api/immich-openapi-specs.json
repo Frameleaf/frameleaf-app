@@ -109223,6 +109223,10 @@
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
+          "mastering": {
+            "$ref": "#/components/schemas/StudioExportMastering",
+            "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
+          },
           "quality": {
             "$ref": "#/components/schemas/StudioExportQuality",
             "description": "Defaults to `high`"
@@ -109294,6 +109298,39 @@
         ],
         "type": "object"
       },
+      "StudioExportMastering": {
+        "additionalProperties": false,
+        "properties": {
+          "maxNits": {
+            "exclusiveMinimum": true,
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "multipleOf": 0.0001,
+            "type": "number"
+          },
+          "minNits": {
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "multipleOf": 0.0001,
+            "type": "number"
+          },
+          "primaries": {
+            "description": "Declared BT.2020 mastering display primaries and D65 white point",
+            "enum": [
+              "bt2020"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxNits",
+          "minNits",
+          "primaries"
+        ],
+        "type": "object"
+      },
       "StudioExportQuality": {
         "description": "Encoder quality preset",
         "enum": [
@@ -109341,6 +109378,10 @@
           },
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "mastering": {
+            "$ref": "#/components/schemas/StudioExportMastering",
+            "description": "Declared PQ mastering display, fixed when this export was submitted"
           },
           "quality": {
             "$ref": "#/components/schemas/StudioExportQuality",
@@ -117817,37 +117858,6 @@
       },
       "UserPreferencesResponseDto": {
         "properties": {
-          "notifications": {
-            "type": "object",
-            "properties": {
-              "locale": {
-                "type": "string",
-                "maxLength": 64
-              },
-              "devices": {
-                "maxItems": 100,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "sessionId": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "locale": {
-                      "type": "string",
-                      "maxLength": 64
-                    }
-                  },
-                  "required": [
-                    "sessionId",
-                    "locale"
-                  ]
-                }
-              }
-            }
-          },
           "albums": {
             "$ref": "#/components/schemas/AlbumsResponse"
           },
@@ -117869,6 +117879,37 @@
           },
           "memories": {
             "$ref": "#/components/schemas/MemoriesResponse"
+          },
+          "notifications": {
+            "properties": {
+              "devices": {
+                "items": {
+                  "properties": {
+                    "locale": {
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "locale"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "locale": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "type": "object"
           },
           "people": {
             "$ref": "#/components/schemas/PeopleResponse"
@@ -117930,38 +117971,6 @@
       },
       "UserPreferencesUpdateDto": {
         "properties": {
-          "notifications": {
-            "type": "object",
-            "properties": {
-              "locale": {
-                "type": "string",
-                "maxLength": 64
-              },
-              "devices": {
-                "maxItems": 100,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "sessionId": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "locale": {
-                      "type": "string",
-                      "maxLength": 64
-                    }
-                  },
-                  "required": [
-                    "sessionId",
-                    "locale"
-                  ]
-                }
-              }
-            },
-            "description": "Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision."
-          },
           "albums": {
             "$ref": "#/components/schemas/AlbumsUpdate"
           },
@@ -117986,6 +117995,38 @@
           },
           "memories": {
             "$ref": "#/components/schemas/MemoriesUpdate"
+          },
+          "notifications": {
+            "description": "Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision.",
+            "properties": {
+              "devices": {
+                "items": {
+                  "properties": {
+                    "locale": {
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "locale"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "locale": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "type": "object"
           },
           "people": {
             "$ref": "#/components/schemas/PeopleUpdate"

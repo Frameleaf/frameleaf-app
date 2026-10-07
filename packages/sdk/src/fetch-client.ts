@@ -2860,13 +2860,6 @@ export type TagsResponse = {
     sidebarWeb: boolean;
 };
 export type UserPreferencesResponseDto = {
-    notifications?: {
-        locale?: string;
-        devices?: {
-            sessionId: string;
-            locale: string;
-        }[];
-    };
     albums: AlbumsResponse;
     cast: CastResponse;
     download: DownloadResponse;
@@ -2875,6 +2868,13 @@ export type UserPreferencesResponseDto = {
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
+    notifications?: {
+        devices?: {
+            locale: string;
+            sessionId: string;
+        }[];
+        locale?: string;
+    };
     people: PeopleResponse;
     privacy: PrivacyResponse;
     purchase: PurchaseResponse;
@@ -2975,14 +2975,6 @@ export type TagsUpdate = {
     sidebarWeb?: boolean;
 };
 export type UserPreferencesUpdateDto = {
-    /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
-    notifications?: {
-        locale?: string;
-        devices?: {
-            sessionId: string;
-            locale: string;
-        }[];
-    };
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
@@ -2992,6 +2984,14 @@ export type UserPreferencesUpdateDto = {
     expectedRevision?: string;
     folders?: FoldersUpdate;
     memories?: MemoriesUpdate;
+    /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
+    notifications?: {
+        devices?: {
+            locale: string;
+            sessionId: string;
+        }[];
+        locale?: string;
+    };
     people?: PeopleUpdate;
     privacy?: PrivacyUpdate;
     purchase?: PurchaseUpdate;
@@ -12876,11 +12876,19 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioExportMastering = {
+    maxNits: number;
+    minNits: number;
+    /** Declared BT.2020 mastering display primaries and D65 white point */
+    primaries: Primaries;
+};
 export type StudioExportSettingsDto = {
     /** Absent on exports made before audio was a choice */
     audio?: StudioExportAudio;
     color: StudioExportColor;
     format: StudioExportFormat;
+    /** Declared PQ mastering display, fixed when this export was submitted */
+    mastering?: StudioExportMastering;
     /** Absent on exports made before quality was a choice */
     quality?: StudioExportQuality;
     resolution: StudioExportResolution;
@@ -13229,6 +13237,8 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
+    /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
+    mastering?: StudioExportMastering;
     /** Defaults to `high` */
     quality?: StudioExportQuality;
     /** Idempotency key; a repeated submit answers with the first export */
@@ -30270,6 +30280,9 @@ export enum StudioExportColor {
     Preserve = "preserve",
     Hdr10 = "hdr10",
     DolbyVision = "dolby-vision"
+}
+export enum Primaries {
+    Bt2020 = "bt2020"
 }
 export enum StudioExportQuality {
     Low = "low",

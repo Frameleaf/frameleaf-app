@@ -65,7 +65,6 @@ the other resource adapters; real render execution and output/checkpoint limits;
 measurements, admission, real-server hosted claim/render evidence and FL-144 editor/lost-ack
 browser acceptance remain open. No capability flags are set by this slice.
 
-
 ## Whole-export artifact transport (FL-107 prerequisite)
 
 The server owns staging. A worker does not mount a writable server directory or send a filesystem
@@ -73,7 +72,8 @@ path for a Studio export. This protocol does not add an executor or admit unsupp
 The existing input preparation command continues to report `worker_executor_unavailable`.
 
 An export claim includes `artifactInputDigest`: a server SHA-256 binding of its immutable revision
-and currently authorized resource identities/checksums. Plan exactly one checkpoint, sequence `0`,
+and currently authorized resource identities/checksums, plus an explicit PQ mastering profile when
+present. Changing that profile invalidates completed artifact recovery. Plan exactly one checkpoint, sequence `0`,
 using that digest as `inputDigest`, plus the existing chunk key, effect/config/history digests,
 seed, declared timebase and whole-export tick range. Reuse still requires the entire existing
 checkpoint plan to match. A completed artifact is also opened as a regular file and rehashed;
@@ -110,3 +110,24 @@ their established output protocol. No engine patch or capability flag is changed
 This is transport/recovery infrastructure. Edited float PQ/HLG rendering, native Main10 encoding,
 independently measured output PTS, multichannel order/layout, complete HDR metadata, real executor
 restart, reference-monitor and deployment/hardware qualification still need genuine evidence.
+
+## Explicit PQ mastering display
+
+PQ exports (`color: "hdr10"`, or `color: "preserve"` with PQ sources) require `mastering` on
+`POST /studio/projects/{id}/exports`: `{ "primaries": "bt2020", "maxNits": 1000, "minNits": 0.005 }` is an
+example, not a default. Select the actual mastering display range. The API accepts BT.2020
+primaries with D65 white, a positive maximum no greater than 10,000 nits, and a nonnegative
+minimum below that maximum, both at ST 2086's 0.0001-nit precision. Unknown fields are refused;
+source MaxCLL/MaxFALL and preview defaults are not mastering authority. SDR and HLG exports do
+not accept this PQ profile.
+
+The server copies the profile into the saved settings and immutable export contract handed to
+the worker. Its artifact input digest includes the profile. Publication independently probes the
+first decoded picture of the same selected video stream whose codec, depth and HDR tags were
+validated, and verifies all eight chromaticity coordinates and both luminance values before moving
+the output into the library. Missing, unreadable or different mastering metadata refuses publication. Contracts saved before explicit mastering retain their existing
+checks; new PQ submission without a valid profile returns `studio_export_mastering_unknown`.
+
+This binds declared mastering authority and encoded output. The production HDR renderer,
+profile input in the editor, measured edited MaxCLL/MaxFALL and device qualification still need
+implementation or evidence; this protocol does not enable HDR capabilities.
