@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { stat, writeFile } from 'node:fs/promises';
 import type { Mock } from 'vitest';
 import {
   AssetDevelopArtifactKind,
@@ -8,7 +9,7 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
-import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
+import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus, Permission } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { QueueExecution } from 'src/queue/types.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
@@ -611,6 +612,149 @@ describe(AssetDevelopService.name, () => {
       const file = await sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master);
       expect(file.path).toBe('/data/thumbs/o/as/se/asset_develop_rev_master.jpeg');
       expect(file.contentType).toBe('image/jpeg');
+    });
+  });
+
+  describe('explicit still exports', () => {
+    const published = () =>
+      revisionStub({
+        assetId: asset.id,
+        recipeVersion: 3,
+        status: AssetDevelopRevisionStatus.Rendered,
+        masterPath: '/data/sdr.jpeg',
+        hdrMasterPath: '/data/hdr.jpg',
+        renditionChecksum: renditionSha,
+        hdrRenditionChecksum: originalSha,
+      });
+    it('refuses an edit-only API key before exporting any bytes', async () => {
+      const auth = { ...authStub.user1, apiKey: { id: 'edit-only', permissions: [Permission.AssetEditGet] } };
+      await expect(
+        sut.getFile(auth, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'sdr-jpeg'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(developRepository.get).not.toHaveBeenCalled();
+    });
+    it.each([renditionSha, null])(
+      'converts historical SDR and releases its copy with checksum %s',
+      async (checksum) => {
+        developRepository.get.mockResolvedValue(
+          revisionStub({
+            assetId: asset.id,
+            status: AssetDevelopRevisionStatus.Rendered,
+            masterPath: '/data/old.webp',
+            renditionChecksum: checksum,
+          }),
+        );
+        mocks.media.writeStrippedStill.mockImplementation(async (_input, output) => {
+          await writeFile(output, 'jpeg');
+        });
+        const signal = new AbortController().signal;
+        const file = await sut.getFile(
+          authStub.user1,
+          asset.id,
+          'rev',
+          AssetDevelopFileKind.Master,
+          'sdr',
+          'sdr-jpeg',
+          signal,
+        );
+        expect(mocks.media.writeStrippedStill).toHaveBeenCalledWith(
+          '/data/old.webp',
+          file.path,
+          'jpeg',
+          'srgb',
+          signal,
+        );
+        expect((await stat(file.path)).size).toBe(4);
+        file.release?.();
+        await vi.waitFor(async () => {
+          await expect(stat(file.path)).rejects.toMatchObject({ code: 'ENOENT' });
+        });
+      },
+    );
+    it.each(['failure', 'cancel', 'stale', 'revoked'] as const)('removes partial output on %s', async (reason) => {
+      const version = revisionStub({
+        assetId: asset.id,
+        status: AssetDevelopRevisionStatus.Rendered,
+        masterPath: '/data/old.webp',
+        renditionChecksum: renditionSha,
+      });
+      developRepository.get.mockResolvedValue(version);
+      const controller = new AbortController();
+      let outputPath = '';
+      mocks.media.writeStrippedStill.mockImplementation(async (_input, output) => {
+        outputPath = output;
+        await writeFile(output, 'partial');
+        switch (reason) {
+          case 'failure': {
+            throw new Error('disk full');
+          }
+          case 'cancel': {
+            controller.abort();
+            break;
+          }
+          case 'stale': {
+            developRepository.get.mockResolvedValue({ ...version, renditionChecksum: originalSha });
+            break;
+          }
+          case 'revoked': {
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+            break;
+          }
+        }
+      });
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'sdr-jpeg', controller.signal),
+      ).rejects.toThrow();
+      expect(outputPath).not.toBe('');
+      await expect(stat(outputPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it('returns the published HDR JPEG without another encode and labels it as a still', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      developRepository.get.mockResolvedValue(published());
+      const file = await sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'hdr-jpeg');
+      expect(file).toMatchObject({ path: '/data/hdr.jpg', contentType: 'image/jpeg' });
+      expect(file.fileName).toContain('_still_hdr.jpg');
+      expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
+      vi.unstubAllEnvs();
+    });
+    it('exports the paired tone-mapped SDR master without re-encoding it', async () => {
+      developRepository.get.mockResolvedValue(published());
+      const file = await sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'hdr', 'sdr-jpeg');
+      expect(file).toMatchObject({ path: '/data/sdr.jpeg', contentType: 'image/jpeg' });
+      expect(file.fileName).toContain('_still_sdr.jpg');
+      expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
+    });
+    it('refuses unavailable HDR HEIC rather than exporting JPEG or SDR', async () => {
+      developRepository.get.mockResolvedValue(published());
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'hdr-heic'),
+      ).rejects.toThrow('HDR HEIC export is unavailable');
+    });
+    it('requires a master and refuses disabled HDR output', async () => {
+      developRepository.get.mockResolvedValue(published());
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Preview, 'sdr', 'sdr-jpeg'),
+      ).rejects.toThrow('Still exports require the full-resolution master');
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'hdr-jpeg'),
+      ).rejects.toThrow('HDR rendition is unavailable');
+      vi.unstubAllEnvs();
+    });
+    it('refuses exporting an external HDR master as SDR without a qualified tone map', async () => {
+      developRepository.get.mockResolvedValue(
+        revisionStub({
+          assetId: asset.id,
+          kind: AssetDevelopRevisionKind.External,
+          status: AssetDevelopRevisionStatus.Rendered,
+          masterPath: '/external.heic',
+        }),
+      );
+      mocks.media.inspectImageEncoding.mockResolvedValue({ dynamicRange: 'hdr' } as never);
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'sdr-jpeg'),
+      ).rejects.toThrow('This version has no verified SDR master');
+      expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -64,7 +70,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { requireAccess } from 'src/utils/access.js';
+import { isGranted, requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   DARKTABLE_RENDERER_VERSION,
@@ -331,8 +337,24 @@ export class AssetDevelopService {
     revisionId: string,
     kind: AssetDevelopFileKind,
     dynamicRange: 'auto' | 'sdr' | 'hdr' = 'sdr',
+    format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic',
+    signal?: AbortSignal,
   ): Promise<ImmichFileResponse> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
+    if (format) {
+      if (auth.apiKey && !isGranted({ requested: [Permission.AssetDownload], current: auth.apiKey.permissions }))
+        throw new ForbiddenException('This API key cannot download still exports');
+      await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
+      if (kind !== AssetDevelopFileKind.Master)
+        throw new BadRequestException('Still exports require the full-resolution master');
+      if (format === 'hdr-heic')
+        throw new BadRequestException({
+          code: 'hdr_heic_export_unavailable',
+          message: 'HDR HEIC export is unavailable',
+        });
+      dynamicRange = format === 'hdr-jpeg' ? 'hdr' : 'sdr';
+    }
     const revision = await this.requireRevision(assetId, revisionId);
     const hdrEnabled = process.env.FRAMELEAF_HDR_IMAGES === 'experimental';
     const hdrPath = kind === AssetDevelopFileKind.Master ? revision.hdrMasterPath : revision.hdrPreviewPath;
@@ -347,10 +369,53 @@ export class AssetDevelopService {
     if (!filePath || !hasPublishedDevelopRendition(revision)) {
       throw new NotFoundException('This version has not been rendered yet');
     }
+    if (format === 'sdr-jpeg' && revision.recipeVersion !== 3) {
+      if (revision.kind === AssetDevelopRevisionKind.External) {
+        const encoding = await this.mediaRepository.inspectImageEncoding(filePath);
+        if (encoding.dynamicRange !== 'sdr') throw new BadRequestException('This version has no verified SDR master');
+      }
+      // Historical renders retain their pixels and renderer identity. Only the explicit export
+      // copy is converted to sRGB JPEG; HDR revisions already publish their paired SDR JPEG.
+      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      const output = path.join(folder, 'still_sdr.jpg');
+      const release = () =>
+        void rm(folder, { recursive: true, force: true }).catch(() => {
+          this.logger.warn('Unable to remove a temporary still export');
+        });
+      try {
+        await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
+        signal?.throwIfAborted();
+        await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
+        const current = await this.requireRevision(assetId, revisionId);
+        const sameChecksum = revision.renditionChecksum
+          ? current.renditionChecksum?.equals(revision.renditionChecksum)
+          : current.renditionChecksum === null;
+        if (
+          !hasPublishedDevelopRendition(current) ||
+          current.masterPath !== filePath ||
+          current.updatedAt.getTime() !== revision.updatedAt.getTime() ||
+          !sameChecksum
+        )
+          throw new ConflictException('This version changed during export; try again');
+        return new ImmichFileResponse({
+          path: output,
+          contentType: 'image/jpeg',
+          release,
+          fileName: `${assetId}_${revisionId}_still_sdr.jpg`,
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      } catch (error) {
+        // Await actual worker cancellation before removing its private output directory.
+        await rm(folder, { recursive: true, force: true });
+        throw error;
+      }
+    }
+    signal?.throwIfAborted();
     return new ImmichFileResponse({
       path: filePath,
       contentType: mimeTypes.lookup(filePath),
-      cacheControl: CacheControl.PrivateWithCache,
+      ...(format && { fileName: `${assetId}_${revisionId}_still_${dynamicRange}.jpg` }),
+      cacheControl: format ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,
     });
   }
 

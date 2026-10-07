@@ -671,6 +671,12 @@ const AssetDevelopFileQuerySchema = z
   .object({
     kind: AssetDevelopFileKindSchema.default(AssetDevelopFileKind.Preview),
     dynamicRange: z.enum(['auto', 'sdr', 'hdr']).optional(),
+    format: z
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])
+      .optional()
+      .describe(
+        'Explicit full-resolution still export. Overrides dynamicRange and requires download permission. Original downloads use the existing original endpoint; motion is never included in a still export.',
+      ),
   })
   .meta({ id: 'AssetDevelopFileQueryDto' });
 

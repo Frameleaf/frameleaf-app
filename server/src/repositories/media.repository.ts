@@ -295,8 +295,14 @@ export class MediaRepository {
     return sharpProcessPool.run('writeCloudUpload', [input, output]);
   }
 
-  async writeStrippedStill(input: string, output: string, format: 'jpeg' | 'png'): Promise<void> {
-    return sharpProcessPool.run('writeStrippedStill', [input, output, format]);
+  async writeStrippedStill(
+    input: string,
+    output: string,
+    format: 'jpeg' | 'png',
+    colorspace: 'preserve' | 'srgb' = 'preserve',
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return sharpProcessPool.run('writeStrippedStill', [input, output, format, colorspace], signal);
   }
 
   async composeImageGrid(

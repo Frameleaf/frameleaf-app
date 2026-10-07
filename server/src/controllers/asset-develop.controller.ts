@@ -204,10 +204,20 @@ export class AssetDevelopController {
   async viewAssetDevelopFile(
     @Auth() auth: AuthDto,
     @Param() { id, revisionId }: AssetDevelopRevisionParamDto,
-    @Query() { kind, dynamicRange }: AssetDevelopFileQueryDto,
+    @Query() { kind, dynamicRange, format }: AssetDevelopFileQueryDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.getFile(auth, id, revisionId, kind, dynamicRange), this.logger);
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      // Resolve admission/format errors before sendFile's filesystem-only 404 handling.
+      const file = await this.service.getFile(auth, id, revisionId, kind, dynamicRange, format, controller.signal);
+      await sendFile(res, next, () => file, this.logger);
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 }

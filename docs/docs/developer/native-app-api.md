@@ -171,6 +171,27 @@ do not prove the current display can show HDR. The experimental gate is not
 camera-media or physical-display qualification. Still-only Live Photo saves
 retain original motion and pairing.
 
+### Explicit still exports
+
+`GET /assets/:id/develop/revisions/:revisionId/file?kind=master&format=sdr-jpeg|hdr-jpeg|hdr-heic`
+exports a saved version. `format` overrides the viewing `dynamicRange`; omission
+keeps the existing rendition request. Explicit exports require both owner edit
+access and download permission, including API-key download scope. They retain
+relay transfer limits, locked/hidden filtering, and session authorization.
+
+HDR JPEG serves the published gain-map master without another encode. SDR JPEG
+serves the paired, tone-mapped master of an HDR revision. Historical SDR versions
+get a temporary sRGB JPEG copy through the existing isolated worker, with capture
+metadata stripped; this does not change their recipe, renderer, or stored pixels.
+An external version without verified SDR pixels is refused. Unsupported HDR HEIC
+returns `hdr_heic_export_unavailable`; it never substitutes JPEG or SDR.
+
+Export filenames identify these as still images. An edited Live Photo still does
+not include motion or claim to be an edited Live Photo pair. Authorized original
+and original Live Photo downloads continue through their existing routes. Clients
+must retain unsaved edits when an export is refused, and must not advertise HDR
+HEIC until the server's separate export capability includes it.
+
 `GET /server/features` also exposes optional `imageCapabilities`. Its `decode`,
 `render`, and `export` lists are independent and come from a probe inside the
 existing isolated image worker. `codecs` records the installed library versions.

@@ -359,8 +359,15 @@ export class SharpOperations {
    * original ICC colour profile kept, and no EXIF, XMP, IPTC or GPS at all. A JPEG stays a JPEG at
    * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
    */
-  async writeStrippedStill(input: string, output: string, format: 'jpeg' | 'png'): Promise<void> {
-    const image = sharp(input, { failOn: 'error', limitInputPixels: this.maxPixels }).rotate().keepIccProfile();
+  async writeStrippedStill(
+    input: string,
+    output: string,
+    format: 'jpeg' | 'png',
+    colorspace: 'preserve' | 'srgb' = 'preserve',
+  ): Promise<void> {
+    if (colorspace !== 'preserve' && colorspace !== 'srgb') throw new Error('INVALID_STILL_COLORSPACE');
+    const decoded = sharp(input, { failOn: 'error', limitInputPixels: this.maxPixels }).rotate();
+    const image = colorspace === 'srgb' ? decoded.withIccProfile('srgb') : decoded.keepIccProfile();
     const encoded = format === 'jpeg' ? image.jpeg({ quality: 98, chromaSubsampling: '4:4:4' }) : image.png();
     await encoded.toFile(output);
   }

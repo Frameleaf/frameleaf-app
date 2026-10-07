@@ -29,9 +29,10 @@ export const developFileUrl = (
   revisionId: string,
   kind: AssetDevelopFileKind = AssetDevelopFileKind.Preview,
   cacheKey?: string | null,
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic',
 ) => {
   const search = new URLSearchParams();
-  for (const [key, value] of Object.entries({ ...authManager.params, kind, c: cacheKey ?? undefined })) {
+  for (const [key, value] of Object.entries({ ...authManager.params, kind, format, c: cacheKey ?? undefined })) {
     if (value !== undefined && value !== null) {
       search.set(key, value);
     }

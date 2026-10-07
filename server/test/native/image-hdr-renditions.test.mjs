@@ -13,6 +13,37 @@ const codec = createRequire(import.meta.url)(
 );
 const limits = [200_000_000, 1024 ** 3];
 
+test('explicit SDR still export embeds sRGB, strips capture metadata and orients exactly once', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-photo-export-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  const sharp = createRequire(import.meta.url)('sharp');
+  try {
+    const source = join(folder, 'source.jpg'),
+      output = join(folder, 'still.jpg');
+    const original = await sharp({ create: { width: 16, height: 8, channels: 3, background: '#808080' } })
+      .withIccProfile('p3')
+      .withMetadata({ orientation: 6 })
+      .withExif({ IFD0: { Artist: 'private capture identity' } })
+      .jpeg()
+      .toBuffer();
+    await writeFile(source, original);
+    await pool.run('writeStrippedStill', [source, output, 'jpeg', 'srgb']);
+    const result = await readFile(output),
+      metadata = await sharp(result).metadata();
+    assert.equal(metadata.width, 8);
+    assert.equal(metadata.height, 16);
+    assert.ok(metadata.icc);
+    assert.equal(metadata.exif, undefined);
+    assert.equal(metadata.xmp, undefined);
+    assert.equal(metadata.orientation, undefined);
+    assert.equal(codec.inspect(result, ...limits).dynamicRange, 'sdr');
+    assert.deepEqual(await readFile(source), original);
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
 test('worker renditions retain authored SDR, HDR headroom, and the immutable source', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-'));
   const pool = new SharpProcessPool({ workers: 1, pending: 0 });

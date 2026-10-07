@@ -4819,6 +4819,8 @@
   "frameleaf_editor_download_master": "Download edited master",
   "frameleaf_editor_edited": "Edited",
   "frameleaf_editor_edits_discarded": "Edits discarded",
+  "frameleaf_editor_export_hdr_jpeg": "Download HDR JPEG still",
+  "frameleaf_editor_export_sdr_jpeg": "Download SDR JPEG still",
   "frameleaf_editor_group_color": "Color",
   "frameleaf_editor_group_detail": "Detail",
   "frameleaf_editor_group_effects": "Effects",
