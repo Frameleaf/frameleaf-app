@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { StudioExportSettingsDto } from 'src/dtos/studio-export.dto.js';
 import {
   MediaOperationDestinationSchema,
   MlAdmissionRefusalSchema,
@@ -280,6 +281,18 @@ const MlWorkloadCapabilitySchema = z
   })
   .meta({ id: 'MlWorkloadCapabilityDto' });
 
+const StudioRenderCandidateSchema = z
+  .object({
+    gpuMemoryBytes: z.number().meta({ format: 'double' }).nullable(),
+    outputFormats: z
+      .array(StudioExportSettingsDto.schema.shape.format)
+      .describe('Output formats whose exact writer and container this session verified'),
+    maxBitDepth: z.int(),
+    hdr10: z.boolean(),
+    dolbyVision: z.boolean(),
+  })
+  .meta({ id: 'StudioRenderCandidateDto' });
+
 const StudioRenderEvidenceSchema = z
   .object({
     destination: MediaOperationDestinationSchema,
@@ -293,6 +306,10 @@ const StudioRenderEvidenceSchema = z
     hdr10: z.boolean().describe('A qualified session verified HDR10 output'),
     dolbyVision: z.boolean().describe('A qualified session verified Dolby Vision output'),
     sessions: z.int().describe('Qualified live render sessions for this destination'),
+    candidates: z
+      .array(StudioRenderCandidateSchema)
+      .optional()
+      .describe('Per-session StudioExport proof; aggregate fields must not authorize an export'),
   })
   .meta({ id: 'StudioRenderEvidenceDto' });
 

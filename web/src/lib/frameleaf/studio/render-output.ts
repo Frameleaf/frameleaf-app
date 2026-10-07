@@ -9,7 +9,12 @@
  * disabled, each with the reason the server would give, before anything is submitted. It never
  * enables a choice the evidence does not support; the server still decides at submission.
  */
-import { StudioExportColor, StudioExportFormat, StudioExportResolution } from '@frameleaf/sdk';
+import {
+  StudioExportColor,
+  StudioExportFormat,
+  StudioExportResolution,
+  type StudioRenderCandidateDto,
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { StudioRenderEvidence } from './host-contract';
 
@@ -32,14 +37,6 @@ const MEMORY_BY_RESOLUTION: Readonly<Record<StudioExportResolution, number>> = {
   [StudioExportResolution.$2160P]: 8 * 1024 ** 3,
 };
 
-/** The encoder each format needs (mirrors `FORMAT_ENCODERS`). */
-const FORMAT_ENCODERS: Readonly<Record<StudioExportFormat, RegExp>> = {
-  [StudioExportFormat.Mp4HevcMain10]: /hevc|h\.?265|x265/i,
-  [StudioExportFormat.Mp4H264]: /h\.?264|avc|x264/i,
-  [StudioExportFormat.WebmAv1]: /av1|svt|aom|rav1e/i,
-  [StudioExportFormat.Prores422Hq]: /prores/i,
-};
-
 /** The bit depth each format writes (mirrors `FORMAT_BIT_DEPTH`). */
 const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.Mp4HevcMain10]: 10,
@@ -48,7 +45,7 @@ const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.Prores422Hq]: 10,
 };
 
-const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderEvidence) => {
+const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderCandidateDto) => {
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
   if (evidence.maxBitDepth < depth) {
     return false;
@@ -68,17 +65,25 @@ export const evaluateStudioRender = (
   destination: string,
   settings: StudioRenderSettings,
 ): StudioRenderVerdict => {
-  const row = evidence.find((entry) => entry.destination === destination);
-  if (!row || row.sessions <= 0) {
+  const candidates = evidence
+    .filter((entry) => entry.destination === destination && entry.sessions > 0)
+    .flatMap((entry) => entry.candidates ?? []);
+  if (candidates.length === 0) {
     return { supported: false, refusal: 'no-qualified-worker' };
   }
-  if (row.gpuMemoryBytes === null || row.gpuMemoryBytes < MEMORY_BY_RESOLUTION[settings.resolution]) {
+  const withMemory = candidates.filter(
+    (candidate) =>
+      candidate.gpuMemoryBytes !== null && candidate.gpuMemoryBytes >= MEMORY_BY_RESOLUTION[settings.resolution],
+  );
+  if (withMemory.length === 0) {
     return { supported: false, refusal: 'insufficient-memory' };
   }
-  if (row.codecs.every((codec) => !FORMAT_ENCODERS[settings.format].test(codec))) {
+  // The API derives this list with requiredOutput/provesOutput, including exact writer/container proof.
+  const withOutput = withMemory.filter((candidate) => candidate.outputFormats.includes(settings.format));
+  if (withOutput.length === 0) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
-  if (!colorSupported(settings, row)) {
+  if (withOutput.every((candidate) => !colorSupported(settings, candidate))) {
     return { supported: false, refusal: 'incompatible-color' };
   }
   return { supported: true };

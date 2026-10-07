@@ -44,12 +44,27 @@ export const toStudioRenderEvidence = (studio: Pick<StudioCapabilitiesDto, 'rend
     (row) =>
       !!row &&
       typeof row.destination === 'string' &&
-      typeof row.sessions === 'number' &&
-      (row.gpuMemoryBytes === null || typeof row.gpuMemoryBytes === 'number') &&
+      Number.isSafeInteger(row.sessions) &&
+      row.sessions > 0 &&
+      (row.gpuMemoryBytes === null || Number.isFinite(row.gpuMemoryBytes)) &&
       Array.isArray(row.codecs) &&
+      row.codecs.every((codec) => typeof codec === 'string') &&
       typeof row.maxBitDepth === 'number' &&
       typeof row.hdr10 === 'boolean' &&
-      typeof row.dolbyVision === 'boolean',
+      typeof row.dolbyVision === 'boolean' &&
+      Array.isArray(row.candidates) &&
+      row.candidates.every(
+        (candidate) =>
+          !!candidate &&
+          (candidate.gpuMemoryBytes === null ||
+            (Number.isFinite(candidate.gpuMemoryBytes) && candidate.gpuMemoryBytes >= 0)) &&
+          Array.isArray(candidate.outputFormats) &&
+          candidate.outputFormats.every((format) => typeof format === 'string') &&
+          Number.isSafeInteger(candidate.maxBitDepth) &&
+          candidate.maxBitDepth >= 8 &&
+          typeof candidate.hdr10 === 'boolean' &&
+          typeof candidate.dolbyVision === 'boolean',
+      ),
   );
 
 /** Capabilities and render evidence from one request; a failure reports neither. */
