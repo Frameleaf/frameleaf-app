@@ -23,10 +23,15 @@ test('model download transport refuses uploads before forwarding and preserves b
   await writeResourcePolicy(root, engine);
   const forwarded = [];
   const original = globalThis.fetch;
+  const NativeRequest = globalThis.Request;
+  // Vitest's jsdom compatibility Request extends Node's native Request. The
+  // native brand-checking url getter is inherited rather than an own property.
+  globalThis.Request = class Request extends NativeRequest {};
   const installed = Symbol.for('frameleaf.resource-admission.fetch-pinned');
   const previous = globalThis[installed];
   t.after(() => {
     globalThis.fetch = original;
+    globalThis.Request = NativeRequest;
     if (previous === undefined) delete globalThis[installed]; else globalThis[installed] = previous;
   });
   assert.equal(previous, undefined, 'Run the transport check in its own Node test process');
