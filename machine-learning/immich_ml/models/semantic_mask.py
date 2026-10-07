@@ -13,6 +13,7 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from PIL import Image
 
+from immich_ml.config import settings
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.semantic_mask_manifest import bounded_boxes, verify_snapshot
 from immich_ml.schemas import ModelIdentity, ModelTask, ModelType
@@ -30,9 +31,9 @@ class SemanticMaskModel(InferenceModel):
     def __init__(self, model_name: str, **kwargs: Any) -> None:
         if model_name != MODEL_NAME:
             raise ModelUnavailableError("Only the pinned semantic-mask model is supported")
-        self.device_name = kwargs.get("device") or "cpu"
-        if self.device_name not in {"cpu", "cuda"}:
-            raise ValueError("Semantic masks require cpu or cuda")
+        self.device_name = kwargs.get("device") or settings.semantic_mask_device
+        if self.device_name not in {"cpu", "cuda", "auto"}:
+            raise ValueError("Semantic masks require cpu, cuda or auto")
         self._inference_lock = threading.Lock()
         super().__init__(model_name, **kwargs)
 
@@ -64,6 +65,8 @@ class SemanticMaskModel(InferenceModel):
                     "Pinned semantic model snapshots are absent or unverified; preload them locally"
                 ) from error
             paths.append(path)
+        if self.device_name == "auto":
+            self.device_name = "cuda" if torch.cuda.is_available() else "cpu"
         if self.device_name == "cuda" and not torch.cuda.is_available():
             raise ModelUnavailableError("CUDA was requested but is unavailable")
         self.florence_processor = Florence2Processor.from_pretrained(

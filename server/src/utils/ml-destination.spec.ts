@@ -428,6 +428,27 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it.each([0, 1000])('does not persist a local observation already recorded or superseded (%i ms)', async (age) => {
+    const d = deps({
+      destination: {
+        ...mlDestinationStub.local,
+        lastProbeAt: new Date(mlProbeStub.healthy.probedAt.getTime() + age),
+      },
+    });
+    await selectMlDestination(d, { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id });
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledTimes(1);
+    expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
+  });
+
+  it('persists a fresh observation and retries persistence after a database failure', async () => {
+    const d = deps({ destination: { ...mlDestinationStub.local, lastProbeAt: null } });
+    vi.mocked(d.mlDestinationRepository.recordProbe).mockRejectedValueOnce(new Error('database unavailable'));
+    const request = { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id };
+    await expect(selectMlDestination(d, request)).rejects.toThrow('database unavailable');
+    await expect(selectMlDestination(d, request)).resolves.toMatchObject({ kind: MlDestinationKind.Local });
+    expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledTimes(2);
+  });
+
   it('does not reuse a cached Cloud consent version for current admission (FL-201)', async () => {
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     vi.mocked(d.machineLearningRepository.probe).mockImplementation((_endpoint, options) =>
@@ -607,10 +628,7 @@ describe('selectMlDestination', () => {
       endpoint,
     });
     expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(endpoint, { maxAgeMs: expect.any(Number) });
-    expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledWith(
-      'ml-destination-local',
-      expect.objectContaining({ health: MlDestinationHealth.Healthy }),
-    );
+    expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
 
     selection.record({ bytesSent: 1024, bytesReceived: 64, durationMs: 40, outcome: 'success' });
     await vi.waitFor(() =>
@@ -650,7 +668,12 @@ describe('selectMlDestination', () => {
   });
 
   it('refuses when the destination is unreachable and records the failed probe', async () => {
-    const d = deps({ probe: mlProbeStub.unreachable });
+    const d = deps({
+      probe: {
+        ...mlProbeStub.unreachable,
+        probedAt: new Date(mlProbeStub.unreachable.probedAt.getTime() + 1),
+      },
+    });
     const error = await selectMlDestination(d, {
       workload: MlWorkload.Face,
       destinationId: 'ml-destination-local',

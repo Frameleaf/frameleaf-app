@@ -806,13 +806,21 @@ export const selectMlDestination = async (
   const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, {
     maxAgeMs: destination.kind === MlDestinationKind.FrameleafCloud ? 0 : ML_PROBE_FRESHNESS_MS,
   });
-  await mlDestinationRepository.recordProbe(destination.id, {
-    health: healthFromProbe(probe),
-    summary: summarizeProbe(probe),
-    workloads: probe.reachable ? probe.workloads : null,
-    probedAt: probe.probedAt,
-    ...(probe.cloud !== undefined && { cloud: probe.cloud }),
-  });
+  // Local admissions share a cached observation. Its timestamp is already in the row we read,
+  // so avoid another database round trip until the worker is actually probed again.
+  if (
+    destination.kind === MlDestinationKind.FrameleafCloud ||
+    !destination.lastProbeAt ||
+    probe.probedAt.getTime() > new Date(destination.lastProbeAt).getTime()
+  ) {
+    await mlDestinationRepository.recordProbe(destination.id, {
+      health: healthFromProbe(probe),
+      summary: summarizeProbe(probe),
+      workloads: probe.reachable ? probe.workloads : null,
+      probedAt: probe.probedAt,
+      ...(probe.cloud !== undefined && { cloud: probe.cloud }),
+    });
+  }
 
   // FL-186: the Frameleaf Cloud model an administrator chose for this job's model group, whatever the
   // workload's route points at, so a "Both" workload routed to this server still sends its chosen model

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, SqlBool, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
@@ -149,6 +149,15 @@ export class MlDestinationRepository {
   }
 
   async recordProbe(id: string, probe: MlProbeRecord): Promise<void> {
+    const diagnostics = {
+      ...(probe.hardware !== undefined && {
+        lastProbeHardware: probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
+      }),
+      ...(probe.latencyMs !== undefined && { lastProbeLatencyMs: probe.latencyMs }),
+      ...(probe.cloud !== undefined && {
+        lastProbeCloud: probe.cloud === null ? null : (toJson(probe.cloud) as unknown as CloudProbeFacts),
+      }),
+    };
     await this.db
       .updateTable('ml_destination')
       .set({
@@ -156,15 +165,26 @@ export class MlDestinationRepository {
         lastProbeHealth: probe.health,
         lastProbeSummary: probe.summary,
         lastProbeWorkloads: probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
-        ...(probe.hardware !== undefined && {
-          lastProbeHardware: probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
-        }),
-        ...(probe.latencyMs !== undefined && { lastProbeLatencyMs: probe.latencyMs }),
-        ...(probe.cloud !== undefined && {
-          lastProbeCloud: probe.cloud === null ? null : (toJson(probe.cloud) as unknown as CloudProbeFacts),
-        }),
+        ...diagnostics,
       })
       .where('id', '=', id)
+      // Concurrent admissions may have read the row before this observation was persisted.
+      .where((eb) =>
+        eb.or([
+          eb('lastProbeAt', 'is', null),
+          eb('lastProbeAt', '<', probe.probedAt),
+          // Admission can cache/persist the observation while a manual probe is still gathering GPU
+          // inventory. Let that same observation add diagnostics without rewriting identical records.
+          eb.and([
+            eb('lastProbeAt', '=', probe.probedAt),
+            eb.or(
+              Object.entries(diagnostics).map(
+                ([column, value]) => sql<SqlBool>`${sql.ref(column)} is distinct from ${value}`,
+              ),
+            ),
+          ]),
+        ]),
+      )
       .execute();
   }
 

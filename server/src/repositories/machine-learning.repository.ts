@@ -439,7 +439,7 @@ export class MachineLearningRepository implements RestorationInference {
     form.append(
       'entries',
       JSON.stringify({
-        'semantic-mask': { visual: { modelName: 'frameleaf-florence2-sam2.1', options: { target, device: 'cpu' } } },
+        'semantic-mask': { visual: { modelName: 'frameleaf-florence2-sam2.1', options: { target } } },
       }),
     );
     form.append('image', new Blob([new Uint8Array(canvas)]));

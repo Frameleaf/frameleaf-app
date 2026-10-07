@@ -26,8 +26,8 @@ it('sends pinned semantic task to one local worker and refuses Cloud or redirect
   expect(String(fetch.mock.calls[0][0])).toBe(`${local}/predict`);
   const request = fetch.mock.calls[0][1];
   expect(request.redirect).toBe('error');
-  expect(JSON.parse(request.body.get('entries'))).toMatchObject({
-    'semantic-mask': { visual: { modelName: 'frameleaf-florence2-sam2.1', options: { target: 'sky', device: 'cpu' } } },
+  expect(JSON.parse(request.body.get('entries'))).toEqual({
+    'semantic-mask': { visual: { modelName: 'frameleaf-florence2-sam2.1', options: { target: 'sky' } } },
   });
   fetch.mockClear();
   await expect(repo(FRAMELEAF_CLOUD_ENDPOINT.url).semanticMaskLocal(Buffer.alloc(1), 'subject')).rejects.toThrow();
