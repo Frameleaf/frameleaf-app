@@ -143,3 +143,22 @@ actual output gamut against D65 RGB/XYZ references. The 48MP resource test uses 
 throughout: comparing raw RGB numbers across different gamuts is invalid. Neither
 synthetic numerical agreement nor successful codec builds establishes physical
 HDR-display or real-camera acceptance; `qualified` remains false.
+
+
+## ISO 10-bit reconstruction (experimental)
+
+`iso-gain-map-10bit.heic` is a synthetic neutral Display P3 SDR ramp with an
+ISO gain map and 8× HDR light, authored by Core Image's HEIF10 writer. It
+contains no camera/user media. `generate-iso-highbit-ramp.swift` regenerates it;
+`generate-apple-reference.swift` produces the independent extended-linear
+BT.2020 reference, bound to its SHA-256 in `iso-gain-map-10bit-reference.json`.
+The native regression pins maximum RGB error below 0.003 and RMS below 0.001.
+
+The decoder retains 9/10-bit primary pixels in packed 10-bit RGB and higher
+precision primary pixels in floating-point RGB. The high-precision path uses
+analytic sRGB inversion, avoiding the SDR lookup table's quantization. Only
+explicit SDR delivery becomes 8-bit. Resource limits and separate alpha remain
+in force. The fixture qualifies the 10-bit path; higher source depths still
+require container fixtures, and this does not establish camera or HDR display
+acceptance. Patch revision 3 also keeps metadata/decode failures on the shared
+cleanup path and preserves resource-limit classification during gain-map decode.
