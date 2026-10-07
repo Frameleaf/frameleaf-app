@@ -334,7 +334,12 @@
       "path": "patches/0069-persisted-track-pan.patch",
       "sha256": "166b803f5b81c47fccd588d3fe621b96bd9e3a29247a91c4bd556dbaa826d29c",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0070-linear-hdr-contrast.patch",
+      "sha256": "d89410f0e7b0eab89820346eeaa20514fd3f1a45f4caa6a991e34d71d77cafa7",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "9d1159894e99d437cb6de57b6590eb2ce2fedb26949a4d0c9d52e4bba398d883"
+  "sourceSha256": "c56138cfca174d66c0136246079980877775b529421735cd82ad647fed25e0c0"
 }

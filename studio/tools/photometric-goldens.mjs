@@ -63,13 +63,13 @@ export function photometricSdrExpected(entry) {
   });
 }
 
-// Brightness alone keeps the additive equation when the input is linear light.
+// Brightness/contrast keep their affine equations when the input is linear light.
 // Other historical encoded equations remain ineligible for the linear domain.
-export const linearBrightnessCases = photometricCases.filter(entry => entry.id === 'gpu-brightness');
+export const linearColorCases = photometricCases.filter(entry => ['gpu-brightness', 'gpu-contrast'].includes(entry.id));
 
 export function validatePhotometricResults(results, domain = 'historical-encoded-hdr') {
   assert(['historical-encoded-hdr', 'srgb-display-bt709', 'linear-display-bt709-v1'].includes(domain), 'unqualified photometric working domain');
-  assert.deepEqual(results.map(({ name, id, params }) => ({ name, id, params })), domain === 'linear-display-bt709-v1' ? linearBrightnessCases : photometricCases,
+  assert.deepEqual(results.map(({ name, id, params }) => ({ name, id, params })), domain === 'linear-display-bt709-v1' ? linearColorCases : photometricCases,
     'photometric cases must be complete, ordered, unique and retain their parameters');
   let channels = 0;
   for (const entry of results) {
@@ -95,6 +95,6 @@ export function validatePhotometricResults(results, domain = 'historical-encoded
       channels++;
     });
   }
-  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 256 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
+  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 512 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
   return { cases: results.length, channels };
 }
