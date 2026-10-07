@@ -393,3 +393,42 @@ test('Apple HEIC traverses HDR renditions, Develop and exports while retaining i
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+// Opt-in until the ISO HEIF codec port is qualified and installed in the target build.
+test(
+  'ISO HEIC retains its authored SDR appearance through the admitted rendition worker',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  async () => {
+    const input = new URL('./fixtures/apple-iso-gain-map.heic', import.meta.url);
+    const original = await readFile(input);
+    assert.equal(codec.inspect(original, ...limits).reconstructionAvailable, true);
+    const base = codec.decodePaired(original, ...limits);
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-iso-worker-'));
+    const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+    try {
+      const output = join(folder, 'rendition.jpg');
+      await pool.run('generateHdrRenditions', [original, [{ path: output }]]);
+      const actual = codec.decodePaired(await readFile(output), ...limits);
+      assert.equal(actual.sdrGamut, base.sdrGamut);
+      assert.deepEqual([actual.width, actual.height], [base.width, base.height]);
+      let maximum = 0,
+        squared = 0,
+        count = 0;
+      for (let i = 0; i < actual.sdr.length; i++)
+        if (i % 4 !== 3) {
+          const error = actual.sdr[i] - base.sdr[i];
+          maximum = Math.max(maximum, Math.abs(error));
+          squared += error * error;
+          count++;
+        }
+      const rms = Math.sqrt(squared / count);
+      assert.ok(maximum <= 8 && rms <= 2, `authored SDR error max ${maximum}, RMS ${rms}`);
+      assert.deepEqual(await readFile(input), original);
+    } finally {
+      await pool.close();
+      await rm(folder, { recursive: true, force: true });
+    }
+  },
+);

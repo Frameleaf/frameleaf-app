@@ -118,3 +118,11 @@ applies the original gain map with Apple's Core Image API at full content
 headroom. It never re-encodes the baseline or uses Frameleaf to reconstruct the
 reference. Normal platform display adaptation remains separate from this
 reconstruction check.
+
+## ISO HEIC authored SDR regression (experimental)
+
+`apple-iso-gain-map.heic` is an authored synthetic Display P3 SDR base with an ISO RGB gain map, written by Core Image on macOS 26.5.2 (25F84). SHA-256: `391cb5eced34d9cc12114a255bd203d2cbcbf3f94cc49627749c42d5b5ab35c8`. It has no camera or user content. It does not establish real-camera or HDR-display acceptance.
+
+Generate with `swift generate-iso-gain-map.swift develop-hdr.jpg /path/to/apple-iso-gain-map.heic`. Compressed output can vary with OS codec builds. The worker test reserves a maximum 8 code-value error and RMS 2 for lossy JPEG re-encoding; the original failure was maximum 47 and RMS 10.57 from a second tone map.
+
+Run `FRAMELEAF_HDR_ISO_TEST=1 FRAMELEAF_HDR_BINDING=/path/to/experimental/image-hdr.node node --test server/test/native/image-hdr-renditions.test.mjs`. The default skips this one ISO-only check until the decoder port is installed and qualified. Existing JPEG, Apple, PQ, HLG, resource and immutable-source checks still run.
