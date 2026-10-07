@@ -12862,6 +12862,20 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Explicit full-resolution still export. Overrides dynamicRange and requires download permission. Original downloads use the existing original endpoint; motion is never included in a still export.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sdr-jpeg",
+                "hdr-jpeg",
+                "hdr-heic"
+              ]
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",

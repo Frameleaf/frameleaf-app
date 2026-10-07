@@ -1,7 +1,19 @@
-import { defaults } from '@frameleaf/sdk';
-import { parseHdrHistogram, requestDevelopPreview } from './develop-api';
+import { AssetDevelopFileKind, defaults } from '@frameleaf/sdk';
+import { developFileUrl, parseHdrHistogram, requestDevelopPreview } from './develop-api';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} } }));
+
+it('keeps explicit photo exports on the authorized revision route', () => {
+  const url = new URL(
+    developFileUrl('asset', 'revision', AssetDevelopFileKind.Master, 'rendered', 'hdr-jpeg'),
+    'https://frameleaf.test',
+  );
+  expect(url.pathname).toBe('/api/assets/asset/develop/revisions/revision/file');
+  expect(url.searchParams.get('format')).toBe('hdr-jpeg');
+  expect(url.searchParams.get('kind')).toBe('master');
+  expect(url.searchParams.get('c')).toBe('rendered');
+  expect(new URL(developFileUrl('asset', 'revision'), 'https://frameleaf.test').searchParams.has('format')).toBe(false);
+});
 
 it('accepts a bounded linear HDR histogram and refuses corrupt response evidence', () => {
   const value = {

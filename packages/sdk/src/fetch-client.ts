@@ -18550,8 +18550,9 @@ export function revertAssetDevelop({ id, assetDevelopRevertDto }: {
 /**
  * View a rendered develop file
  */
-export function viewAssetDevelopFile({ dynamicRange, id, kind, revisionId }: {
+export function viewAssetDevelopFile({ dynamicRange, format, id, kind, revisionId }: {
     dynamicRange?: "auto" | "sdr" | "hdr";
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic";
     id: string;
     kind?: AssetDevelopFileKind;
     revisionId: string;
@@ -18561,6 +18562,7 @@ export function viewAssetDevelopFile({ dynamicRange, id, kind, revisionId }: {
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file${QS.query(QS.explode({
         dynamicRange,
+        format,
         kind
     }))}`, {
         ...opts

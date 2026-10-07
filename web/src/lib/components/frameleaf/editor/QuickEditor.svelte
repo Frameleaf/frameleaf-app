@@ -1644,11 +1644,32 @@
                       {#if revision.hasMaster}
                         <a
                           class="ed-chip"
-                          href={developFileUrl(asset.id, revision.id, AssetDevelopFileKind.Master, revision.renderedAt)}
+                          href={developFileUrl(
+                            asset.id,
+                            revision.id,
+                            AssetDevelopFileKind.Master,
+                            revision.renderedAt,
+                            'sdr-jpeg',
+                          )}
                           download
                         >
-                          {$t('frameleaf_editor_download_master')}
+                          {$t('frameleaf_editor_export_sdr_jpeg')}
                         </a>
+                        {#if revision.hasHdrMaster}
+                          <a
+                            class="ed-chip"
+                            href={developFileUrl(
+                              asset.id,
+                              revision.id,
+                              AssetDevelopFileKind.Master,
+                              revision.renderedAt,
+                              'hdr-jpeg',
+                            )}
+                            download
+                          >
+                            {$t('frameleaf_editor_export_hdr_jpeg')}
+                          </a>
+                        {/if}
                       {/if}
                       {#if isRevisionBusy(revision.status)}
                         <button type="button" class="ed-chip" onclick={() => cancelRender(revision)}>
