@@ -223,6 +223,12 @@ export const factory = {
     validationError: (errors?: ReadonlyArray<{ path: ReadonlyArray<string | number>; message: string }>) => ({
       message: 'Validation failed',
       errors: errors ? expect.arrayContaining(errors.map((e) => expect.objectContaining(e))) : expect.any(Array),
+      displayError: {
+        version: 1,
+        code: 'request_validation_failed',
+        args: {},
+        fallback: { locale: 'en', message: 'This request could not be accepted.' },
+      },
     }),
   },
 };
