@@ -4,6 +4,14 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 
 export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaRepository>> => {
   return {
+    inspectImageEncoding: vitest.fn().mockResolvedValue({
+      dynamicRange: 'unknown',
+      gainMap: 'none',
+      referenceWhite: 203,
+      reconstructionAvailable: false,
+    }),
+    decodeHdrImage: vitest.fn(),
+    encodeHdrImage: vitest.fn(),
     onModuleDestroy: vitest.fn().mockResolvedValue(undefined),
     generateThumbnail: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateImageThumbnails: vitest.fn().mockResolvedValue({

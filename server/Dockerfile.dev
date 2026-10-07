@@ -107,6 +107,17 @@ FROM base-server-build AS base-server-libheif
 COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh ./
 RUN ./libheif.sh
 
+FROM base-server-libheif AS base-server-image-hdr
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq libnode-dev
+COPY server/base-image/sources/libultrahdr.json server/base-image/sources/libultrahdr.sh ./
+RUN ./libultrahdr.sh
+COPY server/native/ ./image-hdr/
+RUN cmake -S image-hdr -B image-hdr/build -DCMAKE_BUILD_TYPE=Release && \
+  cmake --build image-hdr/build --parallel "$(nproc)" && cmake --install image-hdr/build
+COPY server/test/native/image-hdr.test.mjs ./
+COPY server/test/native/fixtures/ ./fixtures/
+RUN node --test image-hdr.test.mjs
+
 FROM base-server-build AS base-server-libjxl
 
 COPY server/base-image/sources/libjxl.json server/base-image/sources/libjxl.sh ./
@@ -159,6 +170,8 @@ COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh
 RUN ./ffmpeg.sh
 
 COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-image-hdr /usr/local/lib/libuhdr* /usr/local/lib/
+COPY --from=base-server-image-hdr /usr/local/lib/frameleaf/ /usr/local/lib/frameleaf/
 COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
 COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/

@@ -108,6 +108,17 @@ export type ExtractResult = {
 
 @Injectable()
 export class MediaRepository {
+  inspectImageEncoding(input: string | Buffer) {
+    return sharpProcessPool.run('inspectImageEncoding', [input]);
+  }
+
+  decodeHdrImage(input: string | Buffer) {
+    return sharpProcessPool.run('decodeHdrImage', [input]);
+  }
+
+  encodeHdrImage(image: SharpArguments<'encodeHdrImage'>[0]) {
+    return sharpProcessPool.run('encodeHdrImage', [image]);
+  }
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(MediaRepository.name);
   }

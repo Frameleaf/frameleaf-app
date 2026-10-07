@@ -1007,6 +1007,17 @@ export class AssetDevelopService {
 
   private async decodeSource(source: DevelopSource, image: SystemConfig['image'], size?: number) {
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
+    if (!isRaw) {
+      const encoding = await this.mediaRepository.inspectImageEncoding(source.originalPath);
+      if (encoding.dynamicRange === 'hdr') {
+        // The historical SDR renderer must never be reused for a new HDR-preserving result.
+        throw new BadRequestException({
+          code: 'develop_hdr_render_unavailable',
+          message:
+            'This source contains HDR. HDR-preserving Develop rendering is not available yet; the previous version and original remain unchanged.',
+        });
+      }
+    }
     const colorspace = this.isSRGB(source.exifInfo) ? Colorspace.Srgb : image.colorspace;
     // Camera JPEGs are preview evidence, never develop source. LibRaw applies orientation once.
     const input = isRaw ? await renderRawWithLibRaw(source.originalPath, jobSignal()) : source.originalPath;

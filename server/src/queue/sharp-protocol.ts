@@ -1,6 +1,9 @@
 import type { SharpOperations } from 'src/queue/sharp-operations.js';
 
 export const SHARP_OPERATIONS = [
+  'inspectImageEncoding',
+  'decodeHdrImage',
+  'encodeHdrImage',
   'decodeImage',
   'generateImageThumbnails',
   'generateThumbnail',
