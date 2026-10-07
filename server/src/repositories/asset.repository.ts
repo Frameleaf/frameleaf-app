@@ -2428,6 +2428,7 @@ export class AssetRepository {
           // in the cursor rather than round-tripping the display date through JavaScript Date.
           .$if(!!page?.cursor, (qb) => {
             const { key, date, id } = page!.cursor!;
+            const cursorDate = sql<Date>`${date}::timestamptz`;
             const keyOp = keyAscending === reverse ? '<' : '>';
             const dateOp = reverse ? '>' : '<';
             const idOp = reverse ? '<' : '>';
@@ -2436,8 +2437,8 @@ export class AssetRepository {
               .where((eb) =>
                 eb.or([
                   eb(sortKey, keyOp, key),
-                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', dateOp, date)]),
-                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', '=', date), eb('asset.id', idOp, id)]),
+                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', dateOp, cursorDate)]),
+                  eb.and([eb(sortKey, '=', key), eb('asset.fileCreatedAt', '=', cursorDate), eb('asset.id', idOp, id)]),
                 ]),
               );
           })
