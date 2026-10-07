@@ -53,6 +53,30 @@ public-key identity, recovery/snapshot/vault identifiers, scope and private hash
 of the staged artifact and prepared plan. It must not be supplied by a historical
 manifest or published through ordinary status responses.
 
+The host owner can create a request with the existing offline administrator command:
+
+```sh
+FRAMELEAF_BUDDY_BOOT_BINDING_FILE=/data/frameleaf/identity/buddy-boot-binding.json \
+  frameleaf-admin buddy-backup request-boot \
+  --recovery /local-recovery/recovery/RECOVERY_UUID --grant /private/boot-grant.json
+```
+
+Use the replacement server's actual mounted paths and identity environment, and
+run as the account that owns its private identity and recovery files. The grant
+file and its parent must be owned by that account with modes `0600` and `0700`.
+For application settings, the grant contains only
+`{"environmentKeys":["FRAMELEAF_PORT"]}`. It can also include the explicit
+`workerService` and `mountService` profiles described below. Both the selected
+keys and any service profile must pass the existing admission rules.
+
+The command derives the replacement public-key identity, recovery/snapshot/vault
+identifiers, scope, Keep/Replace mode and private evidence hashes from that exact
+local plan. Those fields and `state` cannot be supplied in the grant. It validates
+the prospective environment and service profiles before publishing a private
+request, without changing boot inputs or granting readiness. An existing output
+file or symlink is refused and preserved. The command uses local files only;
+no database or Cloud connection is needed.
+
 Version 1 local requests use `state: "request"`. Actual maintenance recovery
 finalizes that same file to `state: "ready"` only after verified publication has
 completed while the live maintenance fence is held. A complete-state retry verifies
@@ -114,7 +138,7 @@ adapters. Identity/link/entitlement, security and feature enabling inputs, histo
 configuration paths and database credentials are not activated by this
 registry. Existing database credential-file sources remain unchanged; a matching
 local service adapter must establish and verify credential changes before those
-inputs can become effective. The owner-facing binding controls, deployment
+inputs can become effective. Web review/activation controls, further deployment
 adapters, actual dependency connectivity, complete database replacement/restart and
 real two-network acceptance remain required. This source bridge does not establish
 full replacement readiness or enable Buddy Backup by default.

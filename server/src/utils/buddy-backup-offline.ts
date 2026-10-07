@@ -18,9 +18,31 @@ export const buddyBackupCommand = async (args: string[]) => {
       output: { type: 'string' },
       kit: { type: 'string' },
       snapshot: { type: 'string' },
+      recovery: { type: 'string' },
+      grant: { type: 'string' },
     },
   });
-  if (positionals.length !== 1 || !['recover', 'export'].includes(positionals[0]) || !values.vault || !values.output)
+  if (positionals.length === 1 && positionals[0] === 'request-boot') {
+    if (
+      !values.recovery ||
+      !values.grant ||
+      [values.vault, values.output, values.kit, values.snapshot].some((value) => value !== undefined)
+    )
+      throw new Error(
+        'Usage: frameleaf-admin buddy-backup request-boot --recovery /recovery/UUID --grant /private-grant.json',
+      );
+    const { requestBuddyBootBinding } = await import('./buddy-boot-binding.ts');
+    await requestBuddyBootBinding(values.recovery, values.grant);
+    return;
+  }
+  if (
+    positionals.length !== 1 ||
+    !['recover', 'export'].includes(positionals[0]) ||
+    !values.vault ||
+    !values.output ||
+    values.recovery !== undefined ||
+    values.grant !== undefined
+  )
     throw new Error(
       'Usage: frameleaf-admin buddy-backup recover|export --vault /vault/UUID --output /empty-directory [--kit /recovery-kit.json] [--snapshot UUID]',
     );

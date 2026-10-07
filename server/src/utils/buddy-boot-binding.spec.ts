@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import { buddyBackupCommand } from 'src/utils/buddy-backup-offline.js';
 import { BuddyRecoveryFiles, readBuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { finalizeBuddyBootBinding, loadBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 import { type BuddyBootConfiguration, stageBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
@@ -152,6 +153,152 @@ describe('Replacement-local Buddy boot authority', () => {
     expect(JSON.stringify(process.env) === JSON.stringify({ ...before, FRAMELEAF_PORT: '2391' })).toBe(true);
     await loadBuddyBootBinding();
     expect(JSON.stringify(process.env) === JSON.stringify({ ...before, FRAMELEAF_PORT: '2391' })).toBe(true);
+  });
+
+  describe('Owner boot request command', () => {
+    const saveGrant = async (grant: unknown) => {
+      const path = join(identity, 'boot-grant.json');
+      await writeFile(path, JSON.stringify(grant), { mode: 0o600 });
+      return path;
+    };
+    const request = async (grant: unknown) => {
+      const path = await saveGrant(grant);
+      await buddyBackupCommand(['request-boot', '--recovery', directory, '--grant', path]);
+    };
+
+    it('derives a private request from the local identity and selected plan without granting readiness', async () => {
+      await rm(bindingPath);
+      await files.state('files-ready');
+      const before = JSON.stringify(process.env);
+      await request({ environmentKeys: ['FRAMELEAF_PORT'] });
+      const created = JSON.parse(await readFile(bindingPath, 'utf8'));
+      expect(created).toEqual({ ...binding, state: 'request' });
+      expect((await lstat(bindingPath)).mode & 0o777).toBe(0o600);
+      expect(JSON.stringify(process.env)).toBe(before);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      await marker();
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await files.state('complete');
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      await loadBuddyBootBinding();
+      expect(JSON.stringify(process.env)).toBe(before);
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_PORT).toBe('2391');
+    });
+
+    it('requests the paired server profiles with their exact original directory receipt', async () => {
+      const media = join(root, 'media');
+      configuration.entries.push(
+        { key: 'FRAMELEAF_MEDIA_LOCATION', state: 'value', value: media },
+        { key: 'FRAMELEAF_WORKERS_INCLUDE', state: 'value', value: 'api,microservices,edge' },
+        { key: 'FRAMELEAF_WORKERS_EXCLUDE', state: 'value', value: 'edge' },
+      );
+      const environmentKeys = ['FRAMELEAF_MEDIA_LOCATION', 'FRAMELEAF_WORKERS_INCLUDE', 'FRAMELEAF_WORKERS_EXCLUDE'];
+      await prepare('replace', environmentKeys, 'server');
+      await rm(bindingPath);
+      const metadata = await lstat(media, { bigint: true });
+      const grant = {
+        environmentKeys,
+        workerService: 'supervisor',
+        mountService: { roots: [{ path: media, device: String(metadata.dev), inode: String(metadata.ino) }] },
+      };
+      const before = JSON.stringify(process.env);
+      await request(grant);
+      expect(JSON.parse(await readFile(bindingPath, 'utf8'))).toEqual({ ...binding, ...grant, state: 'request' });
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it.each([
+      ['ready state', { state: 'ready' }],
+      ['snapshot override', { snapshotId: randomUUID() }],
+      ['identity override', { replacementIdentity: 'A'.repeat(43) }],
+      ['mode override', { mode: 'keep' }],
+      ['scope override', { scope: 'server' }],
+      ['undeclared key', { environmentKeys: ['FRAMELEAF_HOST'] }],
+      ['dependency credential', { environmentKeys: ['DB_PASSWORD'] }],
+      ['settings service grant', { workerService: 'supervisor' }],
+    ])('refuses %s without creating authority or changing boot inputs', async (_name, changes) => {
+      await rm(bindingPath);
+      const before = JSON.stringify(process.env);
+      await expect(request({ environmentKeys: ['FRAMELEAF_PORT'], ...changes })).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      await expect(readFile(bindingPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it.each(['ready binding', 'identity key', 'symlink'])(
+      'preserves an existing %s instead of overwriting it',
+      async (kind) => {
+        const keyPath = join(identity, 'instance-key.pem');
+        const key = await readFile(keyPath);
+        const original = await readFile(bindingPath);
+        if (kind === 'identity key') vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', keyPath);
+        else if (kind === 'symlink') {
+          await rm(bindingPath);
+          await symlink(keyPath, bindingPath);
+        }
+        const before = JSON.stringify(process.env);
+        await expect(request({ environmentKeys: ['FRAMELEAF_PORT'] })).rejects.toThrow(
+          'Invalid replacement-local Buddy boot authority',
+        );
+        expect((await readFile(keyPath)).equals(key)).toBe(true);
+        if (kind === 'symlink') expect((await lstat(bindingPath)).isSymbolicLink()).toBe(true);
+        else expect((await readFile(bindingPath)).equals(original)).toBe(true);
+        expect(JSON.stringify(process.env)).toBe(before);
+      },
+    );
+
+    it.each([
+      'public grant',
+      'symlink grant',
+      'foreign maintenance',
+      'changed artifact',
+      'foreign output',
+      'mixed options',
+    ])('refuses %s without publishing a request', async (kind) => {
+      await rm(bindingPath);
+      const grant = await saveGrant({ environmentKeys: ['FRAMELEAF_PORT'] });
+      const args = ['request-boot', '--recovery', directory, '--grant', grant];
+      switch (kind) {
+        case 'public grant': {
+          await chmod(grant, 0o644);
+          break;
+        }
+        case 'symlink grant': {
+          const target = join(identity, 'original-grant.json');
+          await rename(grant, target);
+          await symlink(target, grant);
+          break;
+        }
+        case 'foreign maintenance': {
+          await marker(randomUUID());
+          break;
+        }
+        case 'changed artifact': {
+          await stageBuddyBootConfiguration(directory, snapshotId, {
+            version: 1,
+            entries: [{ key: 'FRAMELEAF_PORT', state: 'value', value: 2491 }],
+          });
+          break;
+        }
+        case 'foreign output': {
+          vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', join(root, 'foreign.json'));
+          break;
+        }
+        case 'mixed options': {
+          args.push('--snapshot', '');
+          break;
+        }
+      }
+      const before = JSON.stringify(process.env);
+      await expect(buddyBackupCommand(args)).rejects.toThrow();
+      await expect(readFile(bindingPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(join(root, 'foreign.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
   });
 
   it.each(['process', 'thread'] as const)('passes validated and cleared values to fresh %s workers', async (kind) => {

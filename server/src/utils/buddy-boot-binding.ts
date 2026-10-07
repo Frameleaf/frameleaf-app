@@ -264,6 +264,67 @@ const bootEnvironmentOverlay = (
   return prospective;
 };
 
+/** Explicit local owner consent creates a request; only fenced recovery can make it ready. */
+export const requestBuddyBootBinding = async (recoveryDirectory: string, grantPath: string) => {
+  try {
+    const path = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
+    if (
+      !path ||
+      [path, recoveryDirectory].some((value) => !isAbsolute(value) || resolve(value) !== value || value.includes('\0'))
+    )
+      throw refusal();
+    const grantBytes = await readPrivateBootFile(grantPath);
+    const grant = z
+      .strictObject({
+        environmentKeys: bindingSchema.shape.environmentKeys,
+        workerService: bindingSchema.shape.workerService,
+        mountService: bindingSchema.shape.mountService,
+      })
+      .parse(JSON.parse(grantBytes.toString()));
+    const prepared = await readPrivateBootFile(join(recoveryDirectory, 'prepared.json'), 1024 ** 3);
+    const artifact = await readPrivateBootFile(join(recoveryDirectory, 'boot-configuration.json'));
+    const recoveryId = basename(recoveryDirectory);
+    const plan = await readBuddyRecovery(dirname(dirname(recoveryDirectory)), recoveryId);
+    const local = await replacementBootIdentity(path, process.env);
+    const binding = await readBootBinding(
+      path,
+      Buffer.from(
+        JSON.stringify({
+          ...grant,
+          version: 1,
+          state: 'request',
+          recoveryId,
+          snapshotId: plan.manifest.snapshotId,
+          vaultId: plan.manifest.vaultId,
+          replacementIdentity: local.identity,
+          scope: plan.scope,
+          mode: plan.mode,
+          recoveryDirectory,
+          artifactDigest: hash(artifact),
+          preparedDigest: hash(prepared),
+        }),
+      ),
+    );
+    const authorize = async () => {
+      if (!(await readPrivateBootFile(grantPath)).equals(grantBytes)) throw refusal();
+      const current = await replacementBootIdentity(path, process.env);
+      if (
+        current.identity !== binding.replacementIdentity ||
+        (current.marker && current.marker.action?.buddyRecoveryId !== recoveryId)
+      )
+        throw refusal();
+      const { configuration, storageRoot } = await bindingEvidence(binding, false);
+      const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
+      await validateMountProfile(binding, path, prospective, storageRoot);
+    };
+    await authorize();
+    // Exclusive publication also refuses existing requests, ready bindings and identity files.
+    await writeBuddyFile(path, JSON.stringify(binding), true, authorize);
+  } catch {
+    throw refusal();
+  }
+};
+
 export const loadBuddyBootBinding = async () => {
   const path = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
   if (path === undefined) return;
