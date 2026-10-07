@@ -437,8 +437,8 @@ test('resource admission requires a transparent proxied entry GET before absence
   assert.throws(() => assertNoProxyErrors({observations: [request, {kind: 'error'}]}, origin, '/headless.html'), /could not reach/);
 });
 
-test('native control runners admit Safari dispatch and refuse unsupported or incomplete input before launch', () => {
-  for (const name of ['editor-controls', 'auto-key-control', 'easing-control']) {
+test('native control and geometry runners admit Safari dispatch and refuse unsupported or incomplete input before launch', () => {
+  for (const name of ['editor-controls', 'auto-key-control', 'easing-control', 'boundary-hit', 'linked-edit-axis']) {
     for (const browser of ['safari', 'firefox', 'webkit']) {
       const result = spawnSync(process.execPath, [new URL(`../${name}.browser.mjs`, import.meta.url).pathname], {
         env: {...process.env, BROWSER: browser, WEBDRIVER_ENDPOINT: ''}, encoding: 'utf8', timeout: 5000,
