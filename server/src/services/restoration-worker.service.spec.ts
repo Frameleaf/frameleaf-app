@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -15,12 +15,14 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
   RESTORATION_ABANDONED_RESULT_DAYS,
   RestorationErrorCode,
+  RestorationInferenceResult,
   RestorationSnapshot,
   restorationAdmissionOf,
 } from 'src/utils/restoration.js';
@@ -43,7 +45,7 @@ describe(RestorationWorkerService.name, () => {
   let mocks: ServiceMocks;
   let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
   let operations: AutoMocked<MediaOperationRepository>;
-  let restore: ReturnType<typeof vi.fn>;
+  let restore: ReturnType<typeof vi.fn<MachineLearningRepository['restore']>>;
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
     .exif({ exifImageWidth: 4000, exifImageHeight: 3000, orientation: null, colorspace: 'sRGB' })
@@ -237,7 +239,7 @@ describe(RestorationWorkerService.name, () => {
     mocks.storage.checkFileExists.mockResolvedValue(true);
 
     // MachineLearningRepository.restore (FL-114): `restore(selection, input, options)`, mocked here.
-    restore = vi.fn().mockImplementation((_selection, _input, options) =>
+    restore = vi.fn<MachineLearningRepository['restore']>().mockImplementation((_selection, _input, options) =>
       Promise.resolve({
         outputPath: options.outputPath,
         width: 2048,
@@ -778,6 +780,188 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
       expect(restorations.transition).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('run: lease renewal (FL-344)', () => {
+    let signal: AbortSignal;
+    let finishRestore: (() => void) | undefined;
+    let rendering: ReturnType<typeof Promise.withResolvers<void>>;
+    let inference: ReturnType<typeof Promise.withResolvers<RestorationInferenceResult>>;
+    let renewal: ReturnType<typeof Promise.withResolvers<boolean>> | undefined;
+    let running: Promise<void> | undefined;
+    let unhandled: ReturnType<typeof vi.fn<() => void>>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      rendering = Promise.withResolvers<void>();
+      inference = Promise.withResolvers<RestorationInferenceResult>();
+      renewal = undefined;
+      running = undefined;
+      finishRestore = undefined;
+      unhandled = vi.fn<() => void>();
+      process.on('unhandledRejection', unhandled);
+      restore.mockImplementation((_selection, _input, options) => {
+        signal = options.signal;
+        signal.addEventListener('abort', () => inference.reject(signal.reason), { once: true });
+        finishRestore = () =>
+          inference.resolve({
+            outputPath: options.outputPath,
+            width: 2048,
+            height: 1536,
+            modelName: 'faithful-v1',
+            modelVersion: '1.0',
+          });
+        rendering.resolve();
+        return inference.promise;
+      });
+    });
+
+    afterEach(async () => {
+      try {
+        sut.stop();
+        renewal?.resolve(true);
+        finishRestore?.();
+        await running;
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    });
+
+    const begin = async () => {
+      running = sut.run(operation(), CLAIM);
+      await rendering.promise;
+    };
+
+    it.each(['heartbeat', 'getForOwner'] as const)('interrupts safely when renewal %s rejects', async (method) => {
+      const error = new Error(`${method} database unavailable`);
+      operations[method].mockRejectedValueOnce(error);
+      await begin();
+
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
+
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason).toBeInstanceOf(Error);
+      expect(signal.reason.message).toBe('Restoration interrupted');
+      await running;
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(error.message));
+      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['cancel', true, operation({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() })],
+      ['pause', true, operation({ status: MediaOperationStatus.Rendering, pauseRequestedAt: new Date() } as never)],
+      ['lost claim', false, operation({ status: MediaOperationStatus.Queued, claimToken: null })],
+    ] as const)('settles a renewal interrupted by %s without failing the render', async (reason, alive, current) => {
+      operations.heartbeat.mockResolvedValue(alive);
+      operations.getForOwner.mockResolvedValue(current);
+      operations.requeue.mockResolvedValue(false);
+      await begin();
+
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
+
+      expect(signal.aborted).toBe(true);
+      await running;
+      if (reason === 'cancel') {
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
+        expect(restorations.transition).toHaveBeenCalledWith(
+          RESTORATION_ID,
+          [AssetRestorationStatus.PreviewRendering],
+          { status: AssetRestorationStatus.PreviewCancelled },
+        );
+      } else if (reason === 'pause') {
+        expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
+        expect(restorations.transition).not.toHaveBeenCalled();
+      } else {
+        expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+        expect(restorations.transition).not.toHaveBeenCalled();
+      }
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('keeps successful renewals serial while inference continues', async () => {
+      renewal = Promise.withResolvers<boolean>();
+      operations.heartbeat.mockReturnValueOnce(renewal.promise);
+      await begin();
+
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+      expect(operations.heartbeat).toHaveBeenCalledWith(OPERATION_ID, CLAIM, RESTORATION_LEASE_MS);
+      expect(operations.getForOwner).not.toHaveBeenCalled();
+      expect(signal.aborted).toBe(false);
+      renewal.resolve(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(operations.getForOwner).toHaveBeenCalledWith(OPERATION_ID, asset.ownerId);
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
+      expect(operations.heartbeat).toHaveBeenCalledTimes(2);
+      expect(signal.aborted).toBe(false);
+      finishRestore!();
+      await running;
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('clears the interval and drains a pending renewal before a completed run returns', async () => {
+      renewal = Promise.withResolvers<boolean>();
+      operations.heartbeat.mockReturnValueOnce(renewal.promise);
+      await begin();
+      let returned = false;
+      void running!.then(() => (returned = true));
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
+      finishRestore!();
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+      expect(returned).toBe(false);
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      renewal.resolve(true);
+      await running;
+      expect(returned).toBe(true);
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts on shutdown and drains renewal before handing the claim back', async () => {
+      renewal = Promise.withResolvers<boolean>();
+      operations.heartbeat.mockReturnValueOnce(renewal.promise);
+      await begin();
+      let returned = false;
+      void running!.then(() => (returned = true));
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
+
+      sut.onShutdown();
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+
+      expect(signal.aborted).toBe(true);
+      expect(returned).toBe(false);
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      renewal.resolve(true);
+      await running;
+      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
+      await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
+      expect(operations.heartbeat).toHaveBeenCalledTimes(1);
     });
   });
 

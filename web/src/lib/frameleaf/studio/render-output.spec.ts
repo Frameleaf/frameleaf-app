@@ -16,16 +16,31 @@ import {
 
 const GIB = 1024 ** 3;
 
-const evidence = (overrides: Partial<StudioRenderEvidenceDto> = {}): StudioRenderEvidenceDto => ({
-  destination: MediaOperationDestination.Lan,
-  sessions: 1,
-  gpuMemoryBytes: 8 * GIB,
-  codecs: ['hevc_nvenc', 'h264_nvenc'],
-  maxBitDepth: 10,
-  hdr10: true,
-  dolbyVision: false,
-  ...overrides,
-});
+const evidence = (overrides: Partial<StudioRenderEvidenceDto> = {}): StudioRenderEvidenceDto => {
+  const row = {
+    destination: MediaOperationDestination.Lan,
+    sessions: 1,
+    gpuMemoryBytes: 8 * GIB,
+    codecs: ['hevc_nvenc', 'h264_nvenc'],
+    maxBitDepth: 10,
+    hdr10: true,
+    dolbyVision: false,
+    ...overrides,
+  };
+  return {
+    ...row,
+    candidates: [
+      {
+        gpuMemoryBytes: row.gpuMemoryBytes,
+        outputFormats: [StudioExportFormat.Mp4HevcMain10, StudioExportFormat.Mp4H264],
+        maxBitDepth: row.maxBitDepth,
+        hdr10: row.hdr10,
+        dolbyVision: row.dolbyVision,
+      },
+    ],
+    ...overrides,
+  };
+};
 
 const settings: StudioRenderSettings = {
   format: StudioExportFormat.Mp4HevcMain10,
@@ -62,6 +77,50 @@ describe('Studio render output (FL-42)', () => {
     expect(evaluateStudioRender([evidence({ maxBitDepth: 8 })], lan, settings)).toMatchObject({
       refusal: 'incompatible-color',
     });
+  });
+
+  it('never combines memory, writer or colour proof from different sessions (FL-342)', () => {
+    const row = evidence();
+    const [candidate] = row.candidates!;
+    const mixed = evidence({
+      sessions: 2,
+      candidates: [
+        { ...candidate, outputFormats: [StudioExportFormat.Mp4H264], maxBitDepth: 8, hdr10: false },
+        { ...candidate, gpuMemoryBytes: 2 * GIB },
+      ],
+    });
+    expect(
+      evaluateStudioRender([mixed], MediaOperationDestination.Lan, { ...settings, color: StudioExportColor.Hdr10 }),
+    ).toEqual({ supported: false, refusal: 'codec-unavailable' });
+    expect(
+      evaluateStudioRender([mixed], MediaOperationDestination.Lan, {
+        ...settings,
+        resolution: StudioExportResolution.$720P,
+        color: StudioExportColor.Hdr10,
+      }),
+    ).toEqual({ supported: true });
+    expect(
+      evaluateStudioRender(
+        [
+          evidence({
+            candidates: [
+              { ...candidate, maxBitDepth: 8, hdr10: false },
+              { ...candidate, outputFormats: [StudioExportFormat.Mp4H264] },
+            ],
+          }),
+        ],
+        MediaOperationDestination.Lan,
+        { ...settings, color: StudioExportColor.Hdr10 },
+      ),
+    ).toEqual({ supported: false, refusal: 'incompatible-color' });
+  });
+
+  it('requires per-session writer/container proof even if the legacy aggregate looks capable', () => {
+    for (const candidates of [undefined, [], [{ ...evidence().candidates![0], outputFormats: [] }]]) {
+      expect(evaluateStudioRender([evidence({ candidates })], MediaOperationDestination.Lan, settings).supported).toBe(
+        false,
+      );
+    }
   });
 
   it('judges every choice against the other two settings as chosen', () => {

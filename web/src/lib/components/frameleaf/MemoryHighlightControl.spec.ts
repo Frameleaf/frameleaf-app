@@ -4,6 +4,7 @@ import {
   MemoryHighlightAudio,
   MemoryHighlightDestination,
   StudioExportResolution,
+  StudioExportFormat,
   type MemoryExportResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -62,6 +63,15 @@ const capable = {
         maxBitDepth: 10,
         hdr10: true,
         dolbyVision: false,
+        candidates: [
+          {
+            gpuMemoryBytes: 16 * 1024 ** 3,
+            outputFormats: [StudioExportFormat.Mp4HevcMain10, StudioExportFormat.Mp4H264],
+            maxBitDepth: 10,
+            hdr10: true,
+            dolbyVision: false,
+          },
+        ],
       },
     ],
   },

@@ -1,9 +1,16 @@
 import { Kysely, sql } from 'kysely';
-import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetVisibility,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { PreservationEntrySchema } from 'src/utils/preservation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
@@ -149,6 +156,161 @@ describe(PreservationRepository.name, () => {
 
       expect(created).toBeNull();
       expect(await sut.listPackages(owner.id)).toEqual([]);
+    });
+  });
+
+  describe('withExportClaim (FL-343)', () => {
+    const claimedExport = async (status = MediaOperationStatus.Preparing) => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const created = await sut.createExport(
+        packageInput(owner.id),
+        (id) => `/exports/${id}`,
+        { assetIds: [asset.id] },
+        false,
+        100,
+      );
+      const packageId = created!.package.id;
+      const [item] = (await sut.listItems(packageId, { take: 10, skip: 0 })).items;
+      const claimToken = newUuid();
+      const operation = await defaultDatabase
+        .insertInto('media_operation')
+        .values({
+          ownerId: owner.id,
+          kind: MediaOperationKind.PreservationExport,
+          status,
+          destination: MediaOperationDestination.Local,
+          label: 'Everything',
+          snapshot: { packageId },
+          settings: {},
+          claimToken,
+          claimedBy: 'preservation-worker',
+          claimExpiresAt: sql<Date>`clock_timestamp() + interval '10 minutes'`,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const entry = { sourceAssetId: asset.id, originalFileName: 'lake.jpg' };
+      const manifest = { packageId, items: 1 };
+      const write = async (repository: PreservationRepository) => {
+        await repository.beginItemAttempt(item.id);
+        await repository.finishItem(item.id, { state: 'copied', entry });
+        await repository.updatePackage(packageId, { status: 'ready', manifest });
+        return 'committed';
+      };
+      const read = () =>
+        Promise.all([
+          sut.getPackageById(packageId),
+          defaultDatabase
+            .selectFrom('preservation_item')
+            .selectAll()
+            .where('id', '=', item.id)
+            .executeTakeFirstOrThrow(),
+        ]);
+      return { sut, operationId: operation.id, claimToken, entry, manifest, write, read };
+    };
+
+    it.each([
+      ['replaced', { claimToken: newUuid() }],
+      ['expired', { claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` }],
+      ['cancelled', { cancelRequestedAt: new Date(0) }],
+      ['paused', { pauseRequestedAt: new Date(0) }],
+      ['another operation kind', { kind: MediaOperationKind.PreservationVerify }],
+      ['an inactive status', { status: MediaOperationStatus.Paused }],
+    ] as const)('refuses a %s claim before callback or item/package mutation', async (_reason, patch) => {
+      const { sut, operationId, claimToken, write, read } = await claimedExport();
+      const before = await read();
+      await defaultDatabase.updateTable('media_operation').set(patch).where('id', '=', operationId).execute();
+      const callback = vi.fn(write);
+
+      await expect(sut.withExportClaim(operationId, claimToken, callback)).rejects.toBeInstanceOf(
+        OperationClaimLostError,
+      );
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(await read()).toEqual(before);
+    });
+
+    it.each([MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])(
+      'commits item attempts, copied entries, and the package under a live %s claim',
+      async (status) => {
+        const { sut, operationId, claimToken, entry, manifest, write, read } = await claimedExport(status);
+
+        await expect(sut.withExportClaim(operationId, claimToken, write)).resolves.toBe('committed');
+
+        const [packaged, item] = await read();
+        expect(item).toMatchObject({ attempts: 1, state: 'copied', entry });
+        expect(packaged).toMatchObject({ status: 'ready', manifest });
+      },
+    );
+
+    it('rolls back every item and package mutation when the callback throws', async () => {
+      const { sut, operationId, claimToken, write, read } = await claimedExport();
+      const before = await read();
+      const failure = new Error('Export commit interrupted');
+
+      await expect(
+        sut.withExportClaim(operationId, claimToken, async (repository) => {
+          await write(repository);
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+
+      expect(await read()).toEqual(before);
+    });
+
+    it('rechecks the token after waiting for a concurrent claim replacement', async () => {
+      const { sut, operationId, claimToken, write, read } = await claimedExport();
+      const before = await read();
+      const replacementToken = newUuid();
+      const release = Promise.withResolvers<void>();
+      const locked = Promise.withResolvers<number>();
+      const replacement = defaultDatabase.transaction().execute(async (tx) => {
+        await tx
+          .updateTable('media_operation')
+          .set({ claimToken: replacementToken })
+          .where('id', '=', operationId)
+          .execute();
+        const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
+        locked.resolve(rows[0].pid);
+        await release.promise;
+      });
+      void replacement.catch(locked.reject);
+      const callback = vi.fn(write);
+      let writing: Promise<string> | undefined;
+      try {
+        const blockerPid = await locked.promise;
+        writing = sut.withExportClaim(operationId, claimToken, callback);
+        void writing.catch(() => {});
+        await expect
+          .poll(
+            async () => {
+              const { rows } = await sql`
+                SELECT 1 FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock'
+                  AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]
+              `.execute(defaultDatabase);
+              return rows.length > 0;
+            },
+            { timeout: 1000 },
+          )
+          .toBe(true);
+      } finally {
+        release.resolve();
+        await Promise.allSettled([replacement, writing]);
+      }
+
+      await replacement;
+      await expect(writing).rejects.toBeInstanceOf(OperationClaimLostError);
+      expect(callback).not.toHaveBeenCalled();
+      expect(await read()).toEqual(before);
+      expect(
+        await defaultDatabase
+          .selectFrom('media_operation')
+          .select('claimToken')
+          .where('id', '=', operationId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ claimToken: replacementToken });
     });
   });
 
@@ -311,7 +473,9 @@ describe(PreservationRepository.name, () => {
       expect(await sut.countRestoreItems(restore.id)).toMatchObject({ total: 3, locked: 2 });
 
       const locked = await sut.lockedRestoreItemIds(restore.id, [idOf(ids[0]), idOf(ids[1]), idOf(ids[2])]);
-      expect(locked.toSorted()).toEqual([idOf(ids[1]), idOf(ids[2])].toSorted());
+      expect(locked.toSorted((left, right) => left.localeCompare(right))).toEqual(
+        [idOf(ids[1]), idOf(ids[2])].toSorted((left, right) => left.localeCompare(right)),
+      );
     });
   });
   describe('retrying a restoration (FL-74)', () => {
