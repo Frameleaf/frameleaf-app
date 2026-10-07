@@ -751,7 +751,7 @@ test("applyCommandMatrixCoverage leaves a ruled command-axis waiver as it is", a
   assert.equal(summary.blocked, 0);
 });
 
-test('brightness/contrast/exposure HDR coverage is bound only to its actual migrated routes', async () => {
+test('brightness/contrast/exposure/saturation HDR coverage is bound only to its actual migrated routes', async () => {
   const report = await familyReport();
   const runner = 'studio/tools/effects-matrix.browser.mjs';
   report.source.runner = { path: runner, sha256: createHash('sha256').update(await readFile(path.join(ROOT,runner))).digest('hex') };
@@ -764,24 +764,28 @@ test('brightness/contrast/exposure HDR coverage is bound only to its actual migr
       hdr:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
     { id:'gpu-exposure',cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),
       hdr:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
+    { id:'gpu-saturation',cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),hdr:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
     { id:'gpu-levels',cases:cases(),hdrRefusal:{outcome:'refused',errorType:'HdrRenderUnavailableError'} },
   ];
   report.observations = domainObservations(report);
-  const args = [{engineRevision:'e',rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-levels'].map(id=>overlayRow(`effect.${id}`))},
-    {rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-levels'].map(id=>fixture(`effect.${id}`))},manifest(),build(),'effect','chromium'];
+  const args = [{engineRevision:'e',rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-levels'].map(id=>overlayRow(`effect.${id}`))},
+    {rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-levels'].map(id=>fixture(`effect.${id}`))},manifest(),build(),'effect','chromium'];
   const overlay = structuredClone(args);
-  assert.equal((await applyFamilyCoverage(...overlay,report)).pendingArtifact,3);
+  assert.equal((await applyFamilyCoverage(...overlay,report)).pendingArtifact,4);
   assert.equal(overlay[0].rows[0].axes.chromium.status,'blocked');
   assert.equal(overlay[0].rows[1].axes.chromium.status,'blocked');
   assert.equal(overlay[0].rows[2].axes.chromium.status,'blocked');
-  assert.match(overlay[0].rows[3].axes.chromium.reason,/typed-refused/);
+  assert.equal(overlay[0].rows[3].axes.chromium.status,'blocked');
+  assert.match(overlay[0].rows[4].axes.chromium.reason,/typed-refused/);
   for (const change of [
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-contrast/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.1.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/animated' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.hdr.stack';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-exposure/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.2.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-exposure/apply/animated' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.2.hdr.stack';},
-    r => {const e=r.observations.find(e=>e.fixtureId==='effect.gpu-levels/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id);Object.assign(e,{expected:'rendered',observed:'rendered',witness:'effects.2.hdr.cases'});},
+    r => {r.observations.find(e=>e.fixtureId==='effect.gpu-saturation/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.3.cases';},
+    r => {r.observations.find(e=>e.fixtureId==='effect.gpu-saturation/apply/animated' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.3.hdr.stack';},
+    r => {const e=r.observations.find(e=>e.fixtureId==='effect.gpu-levels/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id);Object.assign(e,{expected:'rendered',observed:'rendered',witness:'effects.3.hdr.cases'});},
   ]) {
     const forged=structuredClone(report);change(forged);
     await assert.rejects(applyFamilyCoverage(...structuredClone(args),forged),/route binding/);

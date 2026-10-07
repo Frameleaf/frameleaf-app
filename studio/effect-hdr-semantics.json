@@ -248,8 +248,8 @@
     "gpu-saturation": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR computes artistic gray dot(linear BT.709 RGB, [0.299, 0.587, 0.114]) then gray + (RGB-gray)*amount, dimensionless amount [0, 3], reference white 203 cd/m². These retained 601-style artistic weights are not physical BT.709 luminance. Signed binary16 RGB limits and straight alpha are unchanged. SDR retains the same weights on encoded RGB and [0, 1] clamp."
     },
     "gpu-scanlines": {
       "sdrParity": true,
