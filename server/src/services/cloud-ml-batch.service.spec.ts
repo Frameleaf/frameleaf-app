@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
@@ -1225,7 +1226,7 @@ describe(CloudMlBatchService.name, () => {
       });
     const answer = (data: unknown, retryAfterSeconds: number | null = null) =>
       ({ notModified: false, data, etag: '"v2"', retryAfterSeconds }) as never;
-    let publish: ReturnType<typeof vi.spyOn>;
+    let publish: MockInstance<ImageEnrichmentService['publishCloudDescription']>;
 
     beforeEach(() => {
       addAssets(photos(ownerA, 2, 'a'));
@@ -1523,7 +1524,7 @@ describe(CloudMlBatchService.name, () => {
       beforeEach(() => {
         mocks.frameleafCloudMl.getJobView.mockResolvedValue(answer(completedView));
         publish.mockImplementation((_id, _item, source) => {
-          deferJobAdoption(async () => source.onPublished({ status: JobStatus.Success }));
+          deferJobAdoption(async () => source.onPublished!({ status: JobStatus.Success }));
           return Promise.resolve({ status: JobStatus.Success });
         });
       });
@@ -1555,7 +1556,7 @@ describe(CloudMlBatchService.name, () => {
         );
         publish.mockImplementation((id, _item, source) => {
           deferJobAdoption(async () =>
-            source.onPublished(
+            source.onPublished!(
               id === 'a-1' ? { status: JobStatus.Skipped, reasonKey: 'not-eligible' } : { status: JobStatus.Success },
             ),
           );
