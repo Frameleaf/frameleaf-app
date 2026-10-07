@@ -66,7 +66,10 @@ export type StudioProjectSeed = {
   importedFromDigest?: string | null;
   /** The import job that creates it. Unique: a retried job finds the first attempt's project. */
   importOperationId?: string | null;
-  revision: {
+  /** Interactive creation grants this lease in the same transaction as the initial document. */
+  lease?: { clientId: string; leaseMs: number };
+  creation?: { requestKey: string; digest: string };
+  revision?: {
     authorId: string;
     envelope: Record<string, unknown>;
     digest: string;
@@ -201,7 +204,7 @@ export class StudioProjectRepository {
     ) as unknown as Promise<StudioProject>;
   }
   /**
-   * Create a project whose revision 1 is already written, in one transaction (FL-91).
+   * Create a project and its optional initial document and lease in one transaction.
    *
    * The lease is left free: nobody is editing a project that was just duplicated or imported, and
    * the first editor to open it takes the lease as usual. An import carries its job id; when a
@@ -218,6 +221,12 @@ export class StudioProjectRepository {
         return { project: existing, created: false };
       }
     }
+    if (seed.creation) {
+      const existing = await this.getByCreateRequestKey(seed.ownerId, seed.creation.requestKey);
+      if (existing) {
+        return { project: existing, created: false };
+      }
+    }
     try {
       const project = await this.db.transaction().execute(async (trx) => {
         const row = await trx
@@ -226,27 +235,36 @@ export class StudioProjectRepository {
             ownerId: seed.ownerId,
             name: seed.name,
             spaceId: seed.spaceId ?? null,
-            currentRevision: 1,
+            currentRevision: seed.revision ? 1 : 0,
             duplicatedFromId: seed.duplicatedFromId ?? null,
             importedFromDigest: seed.importedFromDigest ?? null,
             importOperationId: seed.importOperationId ?? null,
+            createRequestKey: seed.creation?.requestKey ?? null,
+            createRequestDigest: seed.creation?.digest ?? null,
+            leaseHolderId: seed.lease ? seed.ownerId : null,
+            leaseClientId: seed.lease?.clientId ?? null,
+            leaseExpiresAt: seed.lease
+              ? sql`clock_timestamp() + ${seed.lease.leaseMs} * interval '1 millisecond'`
+              : null,
+            lastOpenedAt: seed.lease ? sql`clock_timestamp()` : null,
           })
           .returningAll()
           .executeTakeFirstOrThrow();
-        await trx
-          .insertInto('studio_project_revision')
-          .values({
-            projectId: row.id,
-            revision: 1,
-            authorId: seed.revision.authorId,
-            envelope: seed.revision.envelope,
-            digest: seed.revision.digest,
-            graphBytes: seed.revision.graphBytes,
-            summary: seed.revision.summary,
-            requestKey: seed.revision.requestKey,
-            restoredFromRevision: null,
-          })
-          .execute();
+        if (seed.revision)
+          await trx
+            .insertInto('studio_project_revision')
+            .values({
+              projectId: row.id,
+              revision: 1,
+              authorId: seed.revision.authorId,
+              envelope: seed.revision.envelope,
+              digest: seed.revision.digest,
+              graphBytes: seed.revision.graphBytes,
+              summary: seed.revision.summary,
+              requestKey: seed.revision.requestKey,
+              restoredFromRevision: null,
+            })
+            .execute();
         return row as unknown as StudioProject;
       });
       return { project, created: true };
@@ -257,8 +275,22 @@ export class StudioProjectRepository {
           return { project: existing, created: false };
         }
       }
+      if (seed.creation && isUniqueViolation(error)) {
+        const existing = await this.getByCreateRequestKey(seed.ownerId, seed.creation.requestKey);
+        if (existing) {
+          return { project: existing, created: false };
+        }
+      }
       throw error;
     }
+  }
+  getByCreateRequestKey(ownerId: string, requestKey: string): Promise<StudioProject | undefined> {
+    return this.db
+      .selectFrom('studio_project')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('createRequestKey', '=', requestKey)
+      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
   }
   async getByImportOperation(operationId: string): Promise<StudioProject | undefined> {
     return this.db

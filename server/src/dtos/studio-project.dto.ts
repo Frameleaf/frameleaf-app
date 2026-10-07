@@ -211,7 +211,9 @@ const StudioProjectCreateSchema = z
     clientId: IdentifierSchema.describe('This editor instance; it receives the lease'),
     spaceId: z.uuidv4().nullable().optional().describe('Share the project with a shared space for review'),
     envelope: StudioProjectEnvelopeSchema.optional().describe('An initial document, saved as revision 1'),
-    requestKey: IdentifierSchema.optional().describe('Idempotency key for the initial save'),
+    requestKey: IdentifierSchema.optional().describe(
+      'Owner-scoped idempotency key for project creation; reuse requires the same payload',
+    ),
   })
   .meta({ id: 'StudioProjectCreateDto' });
 

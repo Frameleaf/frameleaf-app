@@ -1119,6 +1119,65 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'saved', project: { id: 'p-new', revision: 1, hasLease: true } });
       expect(timers.pending().map((timer) => timer.ms)).toEqual([30_000]);
     });
+
+    it('serializes creation and retries a lost response with the same request before saving to the returned project', async () => {
+      let rejectCreate!: (error: Error) => void;
+      api.create
+        .mockReturnValueOnce(new Promise<StudioProjectDetailDto>((_, reject) => (rejectCreate = reject)))
+        .mockResolvedValueOnce(
+          detail({
+            id: 'p-new',
+            name: 'Untitled project',
+            revision: 1,
+            lease: lease({ renewMs: 45_000, autosaveDebounceMs: 2500 }),
+          }),
+        );
+      api.save.mockResolvedValue(saved(2));
+      const session = create(null);
+      await session.open();
+      session.stage({ tracks: ['a'] }, ['clip.add']);
+
+      const first = session.flush();
+      const concurrent = session.flush();
+      expect(api.create).toHaveBeenCalledTimes(1);
+      expect(last()).toMatchObject({ status: 'saving', hasDraft: true });
+      rejectCreate(new TypeError('Failed to fetch'));
+      await Promise.all([first, concurrent]);
+
+      expect(last()).toMatchObject({
+        status: 'dirty',
+        hasDraft: true,
+        project: { id: STUDIO_DRAFT_PROJECT_ID, revision: 0, graph: { tracks: ['a'] } },
+      });
+      await timers.fire((timer) => timer.ms === 5000);
+
+      const request = {
+        name: 'Untitled project',
+        clientId: 'tab-a',
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['a'] } },
+        requestKey: 'key-1',
+      };
+      expect(api.create.mock.calls).toEqual([[request], [request]]);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        hasDraft: false,
+        project: { id: 'p-new', revision: 1, hasLease: true, graph: { tracks: ['a'] } },
+      });
+      expect(timers.pending().map((timer) => timer.ms)).toEqual([45_000]);
+
+      session.stage({ tracks: ['a', 'b'] }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 2500);
+
+      expect(api.create).toHaveBeenCalledTimes(2);
+      expect(api.save).toHaveBeenCalledExactlyOnceWith('p-new', {
+        clientId: 'tab-a',
+        requestKey: 'key-2',
+        expectedRevision: 1,
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['a', 'b'] } },
+        summary: { counts: { 'clip.add': 1 }, total: 1 },
+      });
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, project: { id: 'p-new', revision: 2 } });
+    });
   });
 
   describe('restore', () => {
