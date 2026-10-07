@@ -283,7 +283,7 @@
     {
       "path": "patches/0056-hdr-video-fallback-refusal.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "2fbbf4cf7a861928c57df53b11aaa3d04549464324941a6d355846376362a97f"
+      "sha256": "0049764c4ea88aa324776a9d66a48858ad768be93489691374f0f235f6db0562"
     },
     {
       "path": "patches/0058-preview-layout-keyboard-accessibility.patch",
@@ -311,5 +311,5 @@
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "dd60cb9aa38c913787230b6150bd747a86c93b368b52a53f0618c1bd792afcd6"
+  "sourceSha256": "71af99de44df2959b7d1235b34fe42572a9227ad753c0959be11c87bdeb571a6"
 }
