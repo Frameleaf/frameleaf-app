@@ -27,7 +27,11 @@ describe('Replacement-local Buddy boot authority', () => {
 
   const saveBinding = (changes: Record<string, unknown> = {}) =>
     writeFile(bindingPath, JSON.stringify({ ...binding, ...changes }), { mode: 0o600 });
-  const prepare = async (mode: 'keep' | 'replace' = 'replace', environmentKeys = ['FRAMELEAF_PORT']) => {
+  const prepare = async (
+    mode: 'keep' | 'replace' = 'replace',
+    environmentKeys = ['FRAMELEAF_PORT'],
+    scope: 'settings' | 'server' = 'settings',
+  ) => {
     await stageBuddyBootConfiguration(directory, snapshotId, configuration);
     const bytes = Buffer.from('recovered settings');
     const target = join(root, 'selected-settings.json');
@@ -46,7 +50,7 @@ describe('Replacement-local Buddy boot authority', () => {
         instanceId: randomUUID(),
         createdAt: new Date().toISOString(),
         assets: {},
-        database: null,
+        database: scope === 'server' ? { key: 'database.sql.gz', sha256: digest(bytes), size: bytes.length } : null,
         albums: {},
         people: {},
         profiles: {},
@@ -62,7 +66,7 @@ describe('Replacement-local Buddy boot authority', () => {
       storageRoots: [join(root, 'media')],
       settings: { system: {}, users: [] },
     };
-    const prepared = Buffer.from(JSON.stringify({ version: 1, scope: 'settings', mode, manifest, files: [file] }));
+    const prepared = Buffer.from(JSON.stringify({ version: 1, scope, mode, manifest, files: [file] }));
     await writeFile(join(directory, 'prepared.json'), prepared, { mode: 0o600 });
     files = new BuddyRecoveryFiles(root, recoveryId, async () => {});
     await files.state('publishing');
@@ -73,6 +77,7 @@ describe('Replacement-local Buddy boot authority', () => {
     expect((await readFile(target)).equals(bytes)).toBe(true);
     binding = {
       ...binding,
+      scope,
       mode,
       environmentKeys,
       artifactDigest: digest(await readFile(join(directory, 'boot-configuration.json'))),
@@ -296,5 +301,147 @@ if (parentPort) {
     await prepare('replace');
     await loadBuddyBootBinding();
     expect(process.env.FRAMELEAF_PORT).toBeUndefined();
+  });
+
+  describe('Supervisor worker service adapter', () => {
+    const workerKeys = ['FRAMELEAF_WORKERS_INCLUDE', 'FRAMELEAF_WORKERS_EXCLUDE'];
+    const prepareWorkers = async (mode: 'keep' | 'replace' = 'replace', included = 'api,microservices,edge') => {
+      configuration.entries.push(
+        { key: 'FRAMELEAF_WORKERS_INCLUDE', state: 'value', value: included },
+        { key: 'FRAMELEAF_WORKERS_EXCLUDE', state: 'value', value: 'api' },
+      );
+      await prepare(mode, workerKeys, 'server');
+      binding.workerService = 'supervisor';
+      await saveBinding();
+    };
+
+    it.each(['process', 'thread'] as const)(
+      'restores the admitted profile for fresh %s workers and restarts',
+      async (kind) => {
+        await prepareWorkers();
+        vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+        vi.stubEnv('IMMICH_WORKERS_EXCLUDE', 'edge');
+        const before = { ...process.env };
+        await loadBuddyBootBinding();
+        const expected: NodeJS.ProcessEnv = {
+          ...before,
+          FRAMELEAF_WORKERS_INCLUDE: 'api,microservices,edge',
+          FRAMELEAF_WORKERS_EXCLUDE: 'api',
+        };
+        delete expected.IMMICH_WORKERS_INCLUDE;
+        delete expected.IMMICH_WORKERS_EXCLUDE;
+        expect(JSON.stringify(process.env) === JSON.stringify(expected)).toBe(true);
+        const workerFile = join(root, 'observe-worker-profile.mjs');
+        await writeFile(
+          workerFile,
+          `import { parentPort } from 'node:worker_threads';
+import { parseWorkerSelection } from ${JSON.stringify(new URL('environment-values.ts', import.meta.url).href)};
+const result = parseWorkerSelection(process.env).join(',');
+if (parentPort) {
+  parentPort.postMessage(result);
+  parentPort.close();
+} else {
+  process.send(result, () => process.disconnect());
+}
+`,
+          { mode: 0o600 },
+        );
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const worker =
+            kind === 'process'
+              ? fork(workerFile, [], {
+                  execArgv: ['--experimental-transform-types'],
+                  stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+                })
+              : new Worker(workerFile, { execArgv: ['--experimental-transform-types'], stdout: true, stderr: true });
+          try {
+            const signal = AbortSignal.timeout(5000);
+            const [[result], [code]] = await Promise.all([
+              once(worker, 'message', { signal }),
+              once(worker, 'exit', { signal }),
+            ]);
+            expect(result).toBe('microservices,edge');
+            expect(code).toBe(0);
+          } finally {
+            if (worker instanceof Worker) await worker.terminate();
+            else worker.kill();
+          }
+        }
+      },
+    );
+
+    it('keeps the whole local worker profile when either local input is present', async () => {
+      await prepareWorkers('keep');
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+      const before = JSON.stringify(process.env);
+      await loadBuddyBootBinding();
+      expect(JSON.stringify(process.env)).toBe(before);
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', undefined);
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api,microservices,edge');
+      expect(process.env.FRAMELEAF_WORKERS_EXCLUDE).toBe('api');
+    });
+
+    it('clears an explicitly unset profile and restores ordinary supervisor defaults', async () => {
+      configuration.entries.push(...workerKeys.map((key) => ({ key, state: 'unset' as const })));
+      await prepare('replace', workerKeys, 'server');
+      await saveBinding({ workerService: 'supervisor' });
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+      vi.stubEnv('IMMICH_WORKERS_EXCLUDE', 'edge');
+      await loadBuddyBootBinding();
+      const { parseWorkerSelection } = await import('src/utils/environment-values.js');
+      expect(parseWorkerSelection(process.env)).toEqual(['api', 'microservices', 'edge']);
+      for (const key of [...workerKeys, 'IMMICH_WORKERS_INCLUDE', 'IMMICH_WORKERS_EXCLUDE']) {
+        expect(process.env[key]).toBeUndefined();
+      }
+    });
+
+    it.each([
+      ['no service grant', { workerService: undefined }],
+      ['unknown service', { workerService: 'postgres' }],
+      ['settings recovery', { scope: 'settings' }],
+      ['incomplete profile', { environmentKeys: ['FRAMELEAF_WORKERS_INCLUDE'] }],
+      ['dependency credential', { environmentKeys: [...workerKeys, 'DB_PASSWORD'] }],
+    ])('refuses %s without changing any boot input', async (_name, change) => {
+      await prepareWorkers();
+      await saveBinding(change);
+      const before = JSON.stringify(process.env);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it('refuses an invalid worker before finalizing readiness or changing boot inputs', async () => {
+      await prepareWorkers('replace', 'api,first-launch');
+      await marker();
+      await saveBinding({ state: 'request' });
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await saveBinding();
+      const before = JSON.stringify(process.env);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it('retains the replacement profile in maintenance and activates only after fenced completion', async () => {
+      await prepareWorkers();
+      vi.stubEnv('FRAMELEAF_WORKERS_INCLUDE', 'api');
+      await marker();
+      await saveBinding({ state: 'request' });
+      await files.state('files-ready');
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api');
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+      await files.state('complete');
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api,microservices,edge');
+      expect(process.env.FRAMELEAF_WORKERS_EXCLUDE).toBe('api');
+    });
   });
 });

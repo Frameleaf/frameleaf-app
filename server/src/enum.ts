@@ -5,6 +5,7 @@ import z from 'zod';
 export {
   ImmichEnvironment,
   ImmichEnvironmentSchema,
+  ImmichWorker,
   LogFormat,
   LogFormatSchema,
   LogLevel,
@@ -1943,24 +1944,6 @@ export enum CacheControl {
   PrivateWithCache = 'private_with_cache',
   PrivateWithoutCache = 'private_without_cache',
   None = 'none',
-}
-
-export enum ImmichWorker {
-  Api = 'api',
-  Maintenance = 'maintenance',
-  Microservices = 'microservices',
-  /**
-   * FL-165: the edge worker. Serves remote access (the direct HTTPS listener, later the relay tunnel)
-   * and proxies it to the API over loopback with the via contract. Idle until the server is linked,
-   * entitled and remote access is on.
-   */
-  Edge = 'edge',
-  /**
-   * FL-295: the "Getting Ready…" worker. On the first start on a library the official server created it
-   * serves the web UI's "Getting Ready…" screen (every other route answers 503) while it takes the
-   * safety copy of the database, then hands over to the configured workers. Started by the supervisor
-   * only, never through FRAMELEAF_WORKERS_INCLUDE.
-   */
 }
 
 export enum ImmichTelemetry {

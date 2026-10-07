@@ -71,7 +71,20 @@ unchanged. Administrative commands retain their existing dispatch; offline Buddy
 commands load their existing utility without importing the supervisor.
 
 This bounded activation registry covers server port/host, logging, paired shutdown
-grace/deadline, help links and color output. All other declared canonical values
+grace/deadline, help links and color output. A replacement-local request can also
+grant `workerService: "supervisor"` for a full-server recovery. This grant requires
+both `FRAMELEAF_WORKERS_INCLUDE` and `FRAMELEAF_WORKERS_EXCLUDE` in its selected
+`environmentKeys` and in the snapshot's declared boot configuration. It uses the
+ordinary supervisor's worker-selection parser and rejects invalid worker profiles
+before finalizing readiness or changing the next process's environment. Maintenance
+continues using the replacement profile until verified publication completes and
+the matching maintenance marker is removed. Fresh workers and restarts then inherit
+the admitted profile. Keep preserves the entire local pair if either local input
+exists; otherwise it fills both. Replace changes the pair and clears their legacy
+aliases, including explicit unset values. This grant controls worker selection only;
+it does not authorize Cloud linking, credentials, feature enabling or mounts.
+
+All other declared canonical values
 remain privately recoverable but require further replacement-local activation
 adapters. Identity/link/entitlement, security and feature enabling inputs, historical
 mount/configuration paths and database credentials are not activated by this

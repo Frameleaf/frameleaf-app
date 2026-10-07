@@ -19,10 +19,10 @@ import {
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
+import { parseWorkerSelection } from 'src/utils/environment-values.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
 import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
-import { setDifference } from 'src/utils/set.js';
 import {
   DEFAULT_SHUTDOWN_DEADLINE_SECONDS,
   DEFAULT_SHUTDOWN_GRACE_SECONDS,
@@ -162,14 +162,6 @@ export interface EnvData {
   deprecatedEnv: Array<Pick<EnvAlias, 'legacy' | 'current'>>;
 }
 
-// FL-295: the "Getting Ready…" worker is the supervisor's to start, never a configured one
-const WORKER_TYPES = new Set<ImmichWorker>(Object.values(ImmichWorker));
-
-const asSet = <T>(value: string | undefined, defaults: T[]) => {
-  const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
-  return new Set(values.length === 0 ? defaults : (values as T[]));
-};
-
 const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) => {
   // default is off
   if (!helmetFile || helmetFile === 'false') {
@@ -201,25 +193,7 @@ const getEnv = (): EnvData => {
   const dto = parseResult.data;
   const helpLinks = parseHelpLinks(dto);
 
-  // FL-165: the edge worker runs by default; it stays idle (no listener, no network call) until
-  // remote access is on for a linked, entitled server
-  const includedWorkers = asSet(dto.FRAMELEAF_WORKERS_INCLUDE, [
-    ImmichWorker.Api,
-    ImmichWorker.Microservices,
-    ImmichWorker.Edge,
-  ]);
-  const excludedWorkers = asSet(dto.FRAMELEAF_WORKERS_EXCLUDE, []);
-  let workers = [...setDifference(includedWorkers, excludedWorkers)];
-  // FL-165: by default the edge worker runs where the API does; a container without the API (for
-  // example one that only runs jobs) runs it only when FRAMELEAF_WORKERS_INCLUDE names it
-  if (!dto.FRAMELEAF_WORKERS_INCLUDE && !workers.includes(ImmichWorker.Api)) {
-    workers = workers.filter((worker) => worker !== ImmichWorker.Edge);
-  }
-  for (const worker of workers) {
-    if (!WORKER_TYPES.has(worker)) {
-      throw new Error(`Invalid worker(s) found: ${workers.join(',')}`);
-    }
-  }
+  const workers = parseWorkerSelection(dto);
 
   const environment = dto.FRAMELEAF_ENV || ImmichEnvironment.Production;
   const buildFolder = dto.FRAMELEAF_BUILD_DATA || '/build';
