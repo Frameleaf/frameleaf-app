@@ -22,6 +22,9 @@ import {
   NotificationType,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution, deferJobAdoption } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import { CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
@@ -1463,13 +1466,17 @@ describe(CloudMlBatchService.name, () => {
       expect(publish).toHaveBeenCalledWith(
         'a-1',
         expect.objectContaining({ description: expect.stringContaining('golden retriever'), confidence: 0.87 }),
-        { destinationId: cloud.id, modelName: DEFAULT_SKU, failure: undefined },
+        expect.objectContaining({ destinationId: cloud.id, modelName: DEFAULT_SKU, failure: undefined }),
       );
-      expect(publish).toHaveBeenCalledWith('a-2', expect.anything(), {
-        destinationId: cloud.id,
-        modelName: DEFAULT_SKU,
-        failure: 'Frameleaf Cloud could not describe this photo (input-too-large)',
-      });
+      expect(publish).toHaveBeenCalledWith(
+        'a-2',
+        expect.anything(),
+        expect.objectContaining({
+          destinationId: cloud.id,
+          modelName: DEFAULT_SKU,
+          failure: 'Frameleaf Cloud could not describe this photo (input-too-large)',
+        }),
+      );
       // released only once every photo is written, so a crash before it reads the results again
       expect(order).toEqual(['publish a-1', 'publish a-2', 'release']);
       expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
@@ -1485,8 +1492,115 @@ describe(CloudMlBatchService.name, () => {
           { assetId: 'a-2', outcome: 'failed', warnings: ['input-too-large'], costShareUsd: 0.1013 },
         ],
       });
-      expect(mocks.mediaOperation.complete).toHaveBeenCalledWith(BATCH_ID, 'claim-1', { resultAssetId: null });
+      expect(mocks.mediaOperation.complete).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        { resultAssetId: null },
+        undefined,
+        true,
+      );
       expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+    });
+
+    describe('parent queue adoption', () => {
+      const execution = (signal = new AbortController().signal): QueueExecution => ({
+        claim: {} as QueueExecution['claim'],
+        signal,
+        progress: () => {},
+        progressUnits: 0,
+        buffering: true,
+        followups: [],
+        adoptions: [],
+      });
+      const adopt = (context: QueueExecution) =>
+        queueExecution.run(context, () =>
+          publicationTransaction.run({} as never, async () => {
+            for (const publish of context.adoptions) await publish({} as never);
+            context.signal.throwIfAborted();
+          }),
+        );
+
+      beforeEach(() => {
+        mocks.frameleafCloudMl.getJobView.mockResolvedValue(answer(completedView));
+        publish.mockImplementation((_id, _item, source) => {
+          deferJobAdoption(async () => source.onPublished({ status: JobStatus.Success }));
+          return Promise.resolve({ status: JobStatus.Success });
+        });
+      });
+
+      it('persists outcomes and completes only at adoption, then releases after commit', async () => {
+        const context = execution();
+        await queueExecution.run(context, () => sut.step(submitted(), 'claim-1', now));
+        expect(written().phase).toBe(CloudDescriptionPhase.Submitted);
+        expect(written().items.every((item) => !item.outcome)).toBe(true);
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+        await adopt(context);
+        expect(written().phase).toBe(CloudDescriptionPhase.Finished);
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          { resultAssetId: null },
+          expect.anything(),
+          true,
+        );
+        expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+        for (const observe of context.afterCommit ?? []) await observe();
+        expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledTimes(1);
+      });
+
+      it('uses each actual adoption outcome, retaining another eligible photo', async () => {
+        mocks.storage.readFile.mockImplementation((file) =>
+          Promise.resolve(Buffer.from(resultDocument('result.json', file.endsWith('p1.json') ? 'p1' : 'p2'))),
+        );
+        publish.mockImplementation((id, _item, source) => {
+          deferJobAdoption(async () =>
+            source.onPublished(
+              id === 'a-1' ? { status: JobStatus.Skipped, reasonKey: 'not-eligible' } : { status: JobStatus.Success },
+            ),
+          );
+          return Promise.resolve({ status: JobStatus.Success });
+        });
+        const context = execution();
+        await queueExecution.run(context, () => sut.step(submitted(), 'claim-1', now));
+        await adopt(context);
+        expect(written().items).toMatchObject([{ outcome: 'failed', error: 'not-eligible' }, { outcome: 'described' }]);
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledTimes(1);
+      });
+
+      it('retains the paid job when the media lease is lost before adoption', async () => {
+        const context = execution();
+        await queueExecution.run(context, () => sut.step(submitted(), 'claim-1', now));
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+        await expect(adopt(context)).rejects.toThrow('claim changed before adoption');
+        expect(written().items.every((item) => !item.outcome)).toBe(true);
+        expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+        await context.failureSettlements![0]({} as never, 'lease lost', false);
+        expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          { delayMs: CLOUD_DESCRIPTION_POLL_MS, returnAttempt: true },
+          undefined,
+          expect.anything(),
+        );
+      });
+
+      it('keeps completion when post-commit release fails, and cleanup retries release', async () => {
+        const context = execution();
+        await queueExecution.run(context, () => sut.step(submitted(), 'claim-1', now));
+        await adopt(context);
+        mocks.frameleafCloudMl.deleteJob.mockRejectedValueOnce(new Error('offline'));
+        for (const observe of context.afterCommit ?? []) await observe();
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledTimes(1);
+        expect(mocks.mediaOperation.markRemoteReleased).not.toHaveBeenCalled();
+        mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([
+          { ...submitted(), status: MediaOperationStatus.Completed },
+        ]);
+        await sut.runPass(now);
+        expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledTimes(2);
+        expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(BATCH_ID);
+        expect(publish).toHaveBeenCalledTimes(2);
+      });
     });
 
     it('records the model by its name when the batch knows it', async () => {
@@ -1591,7 +1705,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_nothing_described' }),
-        { retry: false },
+        { retry: false, executor: undefined },
       );
     });
 
@@ -1634,7 +1748,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         { errorCode: 'cloud_description_job_worker_unavailable', error: failedView.error!.message },
-        { retry: false },
+        { retry: false, executor: undefined },
       );
     });
 
@@ -1702,6 +1816,28 @@ describe(CloudMlBatchService.name, () => {
   });
 
   describe('runPass', () => {
+    it('leaves stopped-parent settlement in charge when collection is aborted', async () => {
+      const abort = new AbortController();
+      const context: QueueExecution = {
+        claim: {} as QueueExecution['claim'],
+        signal: abort.signal,
+        progress: () => {},
+        progressUnits: 0,
+        buffering: true,
+        followups: [],
+        adoptions: [],
+      };
+      mocks.mediaOperation.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: 'claim-1' });
+      const step = vi.spyOn(sut, 'step').mockImplementation(async () => {
+        abort.abort(new Error('parent stopped'));
+        abort.signal.throwIfAborted();
+        return false;
+      });
+      await expect(queueExecution.run(context, () => sut.runPass(now))).rejects.toThrow('parent stopped');
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      step.mockRestore();
+    });
+
     it('releases the cloud job of a batch cancelled while it waited, asking only for its own kind', async () => {
       mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([
         operation({ row: { status: MediaOperationStatus.Cancelled, remoteJobId: admitted.jobId } }),
