@@ -15,6 +15,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
@@ -44,7 +45,7 @@ describe(RestorationWorkerService.name, () => {
   let mocks: ServiceMocks;
   let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
   let operations: AutoMocked<MediaOperationRepository>;
-  let restore: ReturnType<typeof vi.fn>;
+  let restore: ReturnType<typeof vi.fn<MachineLearningRepository['restore']>>;
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
     .exif({ exifImageWidth: 4000, exifImageHeight: 3000, orientation: null, colorspace: 'sRGB' })
@@ -238,7 +239,7 @@ describe(RestorationWorkerService.name, () => {
     mocks.storage.checkFileExists.mockResolvedValue(true);
 
     // MachineLearningRepository.restore (FL-114): `restore(selection, input, options)`, mocked here.
-    restore = vi.fn().mockImplementation((_selection, _input, options) =>
+    restore = vi.fn<MachineLearningRepository['restore']>().mockImplementation((_selection, _input, options) =>
       Promise.resolve({
         outputPath: options.outputPath,
         width: 2048,
@@ -789,7 +790,7 @@ describe(RestorationWorkerService.name, () => {
     let inference: ReturnType<typeof Promise.withResolvers<RestorationInferenceResult>>;
     let renewal: ReturnType<typeof Promise.withResolvers<boolean>> | undefined;
     let running: Promise<void> | undefined;
-    let unhandled: ReturnType<typeof vi.fn>;
+    let unhandled: ReturnType<typeof vi.fn<() => void>>;
 
     beforeEach(() => {
       vi.useFakeTimers();
@@ -798,7 +799,7 @@ describe(RestorationWorkerService.name, () => {
       renewal = undefined;
       running = undefined;
       finishRestore = undefined;
-      unhandled = vi.fn();
+      unhandled = vi.fn<() => void>();
       process.on('unhandledRejection', unhandled);
       restore.mockImplementation((_selection, _input, options) => {
         signal = options.signal;
