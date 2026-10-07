@@ -3223,6 +3223,8 @@
   "frameleaf_buddy_database_estimate": "Current database size",
   "frameleaf_buddy_dedicated_hosting_directory": "Dedicated hosting directory",
   "frameleaf_buddy_deployment_configuration_files_one_absolute_path_per_line": "Deployment configuration files, one absolute path per line",
+  "frameleaf_buddy_deployment_settings_and_secrets": "Deployment settings and secrets",
+  "frameleaf_buddy_deployment_settings_help": "Select the environment variable names to include in encrypted snapshots. Values are read on this server. Hold Command or Ctrl to select more than one. Include both shutdown grace and deadline when selecting either.",
   "frameleaf_buddy_disk_used": "Disk used",
   "frameleaf_buddy_download_limit_mbit_s": "Download limit (Mbit/s)",
   "frameleaf_buddy_download_verify_recovery": "Download & verify recovery",
