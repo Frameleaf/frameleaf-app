@@ -258,6 +258,7 @@ test('inspected CONNECT cannot bypass substitutions, origin checks or upgrade re
     assert.match(await exchange(`GET https://${authority}/weights.bin HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`), /403 Forbidden/);
     assert.match(await exchange(`GET /?token=hmr HTTP/1.1\r\nHost: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n`), /403 Forbidden/);
     assert.match(await exchange(`GET /unknown HTTP/1.1\r\nHost: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`), /403 Forbidden/);
+    assert.match(await exchange(`GET /weights.bin HTTP/1.1\r\nHost: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n`), /403 Forbidden/);
     assert.match(await exchange('GET /bad-host HTTP/1.1\r\nHost: [invalid\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n'), /403 Forbidden/);
     assert.match(await exchange(Buffer.from([0x16, 0x03, 0x01, 0, 0])), /400 Bad Request/);
     assert.match(await exchange(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`), /403 Forbidden/);
@@ -266,7 +267,8 @@ test('inspected CONNECT cannot bypass substitutions, origin checks or upgrade re
     assert.ok(!harness.observations.some(o => o.kind === 'tunnelled'));
     assert.ok(harness.observations.some(o => o.kind === 'override' && o.url === upstream.url + '/weights.bin'));
     assert.ok(harness.observations.some(o => o.kind === 'proxied' && o.url === upstream.url + '/module.js'));
-    assert.ok(harness.observations.some(o => o.kind === 'blocked' && o.upgradeProtocol === 'vite-hmr'));
+    assert.ok(harness.observations.some(o => o.kind === 'upgrade-refused' && o.upgradeProtocol === 'vite-hmr'));
+    assert.ok(harness.observations.some(o => o.kind === 'error' && o.url === upstream.url + '/weights.bin'));
     assert.ok(harness.observations.some(o => o.kind === 'error' && o.url === upstream.url + '/unknown'));
     assert.ok(harness.observations.some(o => o.kind === 'error' && o.method === 'CONNECT'));
     const alternate = `//${new URL(foreign.url).host}/weights.bin`;

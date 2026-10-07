@@ -93,7 +93,7 @@ try {
     const resourcePayloads = [];
     const overrides = [binaryAssetOverride(resourcePayloads)];
     if (!process.env.STUDIO_TEST_BUILT) overrides.push(policyOverride(blockedPolicy));
-    const harness = createHarness({ upstream: origin, overrides });
+    const harness = createHarness({ upstream: origin, overrides, inspectConnect: true });
     harnesses.push(harness);
     const harnessOrigin = await harness.listen();
     const session = await openPage(harnessOrigin, process.env.STUDIO_TEST_BUILT ? 'allow' : 'block', driverOptions);
@@ -269,7 +269,7 @@ try {
   // Owner decision 2026-09-29: every ONNX Runtime WebAssembly the engine loads is served by the
   // engine itself. Each path is same-origin and answers WebAssembly bytes; nothing reaches a CDN.
   if (!process.env.STUDIO_TEST_BUILT) {
-    const ortHarness = createHarness({ upstream: origin });
+    const ortHarness = createHarness({ upstream: origin, inspectConnect: true });
     harnesses.push(ortHarness);
     const ortHarnessOrigin = await ortHarness.listen();
     const session = await openPage(ortHarnessOrigin, 'block', driverOptions);
@@ -319,6 +319,7 @@ try {
   // that's strictly narrower than "no blocking at all" and nothing in this pass hits it.
   const fixtureHarness = createHarness({
     upstream: origin,
+    inspectConnect: true,
     overrides: [policyOverride({ 'model:synthetic-contract/admission': fixturePolicy })],
   });
   harnesses.push(fixtureHarness);
@@ -347,6 +348,7 @@ try {
 } finally {
   await Promise.allSettled(drivers.map((driver) => driver.close()));
   await Promise.allSettled(harnesses.map((harness) => harness.close()));
+  report.harnesses = harnesses.map(harness => ({observations: harness.observations}));
   if (process.env.RESOURCE_ADMISSION_REPORT) await writeFile(process.env.RESOURCE_ADMISSION_REPORT, JSON.stringify(report, null, 2));
 }
 }
