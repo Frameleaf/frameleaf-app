@@ -2,7 +2,7 @@
 name: immich-buddy-e2e
 
 x-app: &app
-  image: immich-server:latest
+  image: frameleaf-server:latest
   user: '${BUDDY_UID:?}:${BUDDY_GID:?}'
   environment: &environment
     DB_USERNAME: postgres

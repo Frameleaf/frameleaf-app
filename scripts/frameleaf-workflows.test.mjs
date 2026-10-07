@@ -458,7 +458,7 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   assert.match(prepare.run, /sig == 7 \|\| sig == 11 \|\| sig == 6/u);
   assert.ok(prepare.run.indexOf('/filter"') < prepare.run.indexOf('/enable"'));
   assert.match(prepare.run, /echo 64 > "\$instance\/buffer_size_kb"/u);
-  assert.match(prepare.run, /docker compose ps --quiet immich-server/u);
+  assert.match(prepare.run, /docker compose ps --quiet frameleaf-server/u);
   assert.match(prepare.run, /docker top "\$container_id" -eo pid,comm/u);
   assert.match(prepare.run, /Server process names unavailable/u);
   assert.match(prepare.run, /Signal observation unavailable/u);

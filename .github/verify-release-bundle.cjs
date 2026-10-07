@@ -107,7 +107,7 @@ async function verifyBundle(
         `${name}: NAS ${image} differs`,
       );
     for (const [service, image] of [
-      ["immich-server", "frameleaf-server"],
+      ["frameleaf-server", "frameleaf-server"],
       ["immich-machine-learning", "frameleaf-machine-learning"],
     ])
       assert.equal(

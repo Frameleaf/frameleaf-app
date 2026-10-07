@@ -100,7 +100,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         build: '1234567890',
         buildUrl: 'https://github.com/immich-app/immich/actions/runs/1234567890',
         buildImage: 'e2e',
-        buildImageUrl: 'https://github.com/immich-app/immich/pkgs/container/immich-server',
+        buildImageUrl: 'https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server',
         repository: 'immich-app/immich',
         repositoryUrl: 'https://github.com/immich-app/immich',
         sourceRef: 'e2e',

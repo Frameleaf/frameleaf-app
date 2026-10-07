@@ -39,7 +39,7 @@ Sometimes, an external library will not scan correctly. This can happen if Frame
 - Are the permissions set correctly?
 - Make sure you are using forward slashes (`/`) and not backward slashes.
 
-To validate that Frameleaf can reach your external library, start a shell inside the container. From your Compose directory, run `docker compose exec immich-server bash` to open a shell. If your import path is `/mnt/photos`, check it with `ls /mnt/photos`. If you are using a dedicated microservices container, make sure to add the same mount point and check for availability within the microservices container as well.
+To validate that Frameleaf can reach your external library, start a shell inside the container. From your Compose directory, run `docker compose exec frameleaf-server bash` to open a shell. If your import path is `/mnt/photos`, check it with `ls /mnt/photos`. If you are using a dedicated microservices container, make sure to add the same mount point and check for availability within the microservices container as well.
 
 ### Exclusion Patterns
 
@@ -102,10 +102,10 @@ First, we need to plan how we want to organize the libraries. The christmas trip
 
 <ComposeBuilder query="storage.externalLibraries.0.path=&storage.externalLibraries.0.readOnly=true" />
 
-The `immich-server` container will need access to the gallery. Modify your docker compose file as follows
+The `frameleaf-server` container will need access to the gallery. Modify your docker compose file as follows
 
 ```diff title="docker-compose.yml"
-  immich-server:
+  frameleaf-server:
     volumes:
       - ${UPLOAD_LOCATION}:/data
 +     - /mnt/nas/christmas-trip:/mnt/media/christmas-trip:ro

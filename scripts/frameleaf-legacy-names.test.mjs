@@ -38,7 +38,7 @@ test("old variables and commands are found; similar identifiers are not", () => 
       "OFFICIAL_IMMICH_TAG=v3.1.0",
       "PUBLIC_IMMICH_HOSTNAME",
       "IMMICH_*",
-      "docker compose logs immich-server",
+      "docker compose logs frameleaf-server",
     ].join("\n"),
     { file: "docs/docs/example.md" },
   );

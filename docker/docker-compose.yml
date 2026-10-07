@@ -10,7 +10,7 @@
 name: immich
 
 services:
-  immich-server:
+  frameleaf-server:
     container_name: frameleaf_server
     image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
     # extends:

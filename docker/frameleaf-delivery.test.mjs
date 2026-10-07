@@ -27,6 +27,18 @@ const compose = (path) =>
 const databaseImage =
   "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d";
 
+test("server identifiers use Frameleaf throughout the tracked source", () => {
+  const result = spawnSync(
+    "git",
+    ["grep", "-n", "-I", "-i", "-e", "immich[-]server", "--", "."],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  );
+  assert.equal(result.status, 1, result.stdout || result.stderr);
+});
+
 for (const [filename, project, rootless] of [
   ["docker-compose.yml", "immich", false],
   ["docker-compose.rootless.yml", "immich", true],
@@ -35,11 +47,11 @@ for (const [filename, project, rootless] of [
     const config = compose(`docker/${filename}`);
     assert.equal(config.name, project);
     assert.deepEqual(Object.keys(config.services), [
-      "immich-server",
+      "frameleaf-server",
       "immich-machine-learning",
       "database",
     ]);
-    const server = config.services["immich-server"];
+    const server = config.services["frameleaf-server"];
     const ml = config.services["immich-machine-learning"];
     assert.equal(
       server.image,
@@ -94,7 +106,8 @@ test("every server service gives the graceful stop its 10 s", () => {
     "docker-compose.dev.yml",
   ]) {
     assert.equal(
-      compose(`docker/${filename}`).services["immich-server"].stop_grace_period,
+      compose(`docker/${filename}`).services["frameleaf-server"]
+        .stop_grace_period,
       "10s",
       filename,
     );
@@ -109,7 +122,7 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
     const config = compose(`docker/${filename}`);
     assert.equal(config.name, project);
     assert.ok(
-      config.services["immich-server"].volumes.includes(
+      config.services["frameleaf-server"].volumes.includes(
         "${UPLOAD_LOCATION}/photos:/data",
       ),
     );
@@ -140,18 +153,21 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
   const dev = compose("docker/docker-compose.dev.yml");
   for (const path of [".devcontainer/server/container-compose-overrides.yml"]) {
     assert.equal(
-      compose(path).services["immich-server"].image,
-      dev.services["immich-server"].image,
+      compose(path).services["frameleaf-server"].image,
+      dev.services["frameleaf-server"].image,
     );
   }
   assert.equal(
-    dev.services["immich-server"].environment.FRAMELEAF_SOURCE_COMMIT,
+    dev.services["frameleaf-server"].environment.FRAMELEAF_SOURCE_COMMIT,
     "",
   );
-  assert.equal(dev.services["immich-server"].environment.FRAMELEAF_BUILD, "");
+  assert.equal(
+    dev.services["frameleaf-server"].environment.FRAMELEAF_BUILD,
+    "",
+  );
   // FL-294: the development stack uses the FRAMELEAF_* names only
   assert.deepEqual(
-    Object.keys(dev.services["immich-server"].environment).filter((key) =>
+    Object.keys(dev.services["frameleaf-server"].environment).filter((key) =>
       key.startsWith("IMMICH_"),
     ),
     [],
@@ -300,7 +316,12 @@ test("the selective server build admits owned SQL-tools and retains its producti
   assert.ok(ignore.includes("!packages/sql-tools/dist/**"));
   assert.deepEqual(
     ignore.filter((line) => line.startsWith("!") && line.includes("dist")),
-    ["!packages/sql-tools/dist/", "!packages/sql-tools/dist/**", "!packages/ui/dist/", "!packages/ui/dist/**"],
+    [
+      "!packages/sql-tools/dist/",
+      "!packages/sql-tools/dist/**",
+      "!packages/ui/dist/",
+      "!packages/ui/dist/**",
+    ],
     "No blanket exception for other generated dist directories",
   );
   const manifest = JSON.parse(read("packages/sql-tools/package.json"));
@@ -499,7 +520,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
     for (const filename of files) {
       const result = run([filename]);
       assert.equal(
-        result.services["immich-server"].container_name,
+        result.services["frameleaf-server"].container_name,
         "frameleaf_server",
       );
       assert.equal(
@@ -508,7 +529,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       );
       if (!filename.includes(".dev.") && !filename.includes(".prod.")) {
         assert.equal(
-          result.services["immich-server"].image,
+          result.services["frameleaf-server"].image,
           "ghcr.io/frameleaf/frameleaf-server:frameleaf-v3.1.0-7",
         );
         assert.equal(
@@ -521,7 +542,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       resolve(directory, "hardware.yml"),
       [
         "services:",
-        "  immich-server:",
+        "  frameleaf-server:",
         "    extends:",
         "      file: hwaccel.transcoding.yml",
         "      service: nvenc",
@@ -539,7 +560,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       "ghcr.io/frameleaf/frameleaf-machine-learning:frameleaf-v3.1.0-7-cuda",
     );
     assert.equal(
-      hardware.services["immich-server"].deploy.resources.reservations
+      hardware.services["frameleaf-server"].deploy.resources.reservations
         .devices[0].driver,
       "nvidia",
     );
@@ -575,7 +596,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       ]) {
         const result = run([filename]);
         assert.equal(
-          result.services["immich-server"].image,
+          result.services["frameleaf-server"].image,
           `ghcr.io/frameleaf/frameleaf-server:${tag}`,
         );
         assert.equal(

@@ -9,9 +9,9 @@ services:
     ports:
       - 2286:2286
 
-  immich-server:
+  frameleaf-server:
     container_name: immich-e2e-server
-    image: immich-server:latest
+    image: frameleaf-server:latest
     build:
       context: ../
       dockerfile: server/Dockerfile
@@ -70,7 +70,7 @@ services:
       start_period: 10s
 
 secrets:
-  # GITHUB_TOKEN is used by the immich-server build (mise install) to authenticate
+  # GITHUB_TOKEN is used by the frameleaf-server build (mise install) to authenticate
   # against the GitHub releases API for cached binary downloads.
   #
   # Inside CI: test.yml sets `env: { GITHUB_TOKEN: ${{ github.token }} }` on the

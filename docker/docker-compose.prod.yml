@@ -10,7 +10,7 @@
 name: immich-prod
 
 services:
-  immich-server:
+  frameleaf-server:
     container_name: frameleaf_server
     image: frameleaf-server:local
     # extends:

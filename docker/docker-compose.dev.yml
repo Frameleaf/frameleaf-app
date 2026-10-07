@@ -58,7 +58,7 @@ services:
       retries: 300
       start_period: 300s
 
-  immich-server:
+  frameleaf-server:
     extends:
       service: immich-app-base
     profiles: !reset []
@@ -125,7 +125,7 @@ services:
     depends_on:
       immich-init:
         condition: service_healthy
-      immich-server:
+      frameleaf-server:
         condition: service_started
 
   immich-machine-learning:

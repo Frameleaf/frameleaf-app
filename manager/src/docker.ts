@@ -263,7 +263,7 @@ export class Docker {
   ): Promise<void> {
     if (
       !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
-      services.some((s) => !['database', 'redis', 'immich-server', 'immich-machine-learning'].includes(s))
+      services.some((s) => !['database', 'redis', 'frameleaf-server', 'immich-machine-learning'].includes(s))
     )
       throw new Refusal('invalid_managed_project');
     await this.execute(
@@ -317,7 +317,7 @@ export class Docker {
         '-T',
         '--entrypoint',
         'node',
-        'immich-server',
+        'frameleaf-server',
         'dist/main.js',
         'frameleaf-admin',
         'import-immich',
@@ -353,7 +353,7 @@ export class Docker {
       if (
         existing.Config.Labels['app.frameleaf.manager.restore'] !== operationId ||
         existing.Config.Labels['app.frameleaf.manager'] !== project.slice(10) ||
-        existing.Config.Labels['com.docker.compose.service'] !== 'immich-server'
+        existing.Config.Labels['com.docker.compose.service'] !== 'frameleaf-server'
       )
         throw new Refusal('restore_container_identity_changed');
       if (existing.State.Running) throw new Refusal('restore_still_running_retry_when_stopped');
@@ -381,7 +381,7 @@ export class Docker {
         `FRAMELEAF_MANAGER_RESTORE_OPERATION_ID=${operationId}`,
         '--entrypoint',
         'node',
-        'immich-server',
+        'frameleaf-server',
         'dist/main.js',
         'frameleaf-admin',
         'restore-state',

@@ -30,7 +30,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
           : name.startsWith('docker-compose')
             ? [
                 'services:',
-                '  immich-server:',
+                '  frameleaf-server:',
                 '    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
                 '  immich-machine-learning:',
                 '    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',

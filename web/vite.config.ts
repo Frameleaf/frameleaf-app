@@ -27,7 +27,7 @@ const mdiIconPaths = (): Plugin => ({
 });
 
 const upstream = {
-  target: process.env.FRAMELEAF_SERVER_URL || process.env.IMMICH_SERVER_URL || 'http://immich-server:2283/',
+  target: process.env.FRAMELEAF_SERVER_URL || process.env.IMMICH_SERVER_URL || 'http://frameleaf-server:2283/',
   secure: true,
   changeOrigin: true,
   logLevel: 'info',

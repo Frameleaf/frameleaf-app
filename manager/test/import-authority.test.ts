@@ -91,7 +91,7 @@ async function fixture() {
     join(operations.directory(), 'compose.json'),
     JSON.stringify({
       services: {
-        'immich-server': {
+        'frameleaf-server': {
           environment: { OLD_VALUE: 'removed' },
           labels: {},
           ports: ['2283:2283'],
@@ -149,7 +149,7 @@ test('offline import preserves exact mounts read-only and escapes literal dollar
       deploymentId: f.installation.id,
     });
     const compose = JSON.parse(await readFile(join(f.operations.directory(), 'import-compose.json'), 'utf8'));
-    const app = compose.services['immich-server'];
+    const app = compose.services['frameleaf-server'];
     assert.deepEqual(app.volumes.slice(0, 2), [
       { type: 'bind', source: '/fixture/$$media', target: '/data', read_only: true },
       { type: 'volume', source: 'source-media-1', target: '/data/library', read_only: true, volume: { nocopy: true } },
@@ -182,7 +182,7 @@ test('actual offline verify command receives only the matching Manager import au
     // Stale live-app authority must never be carried into this operation's dedicated CLI.
     const file = join(f.operations.directory(), 'compose.json');
     const runtime = JSON.parse(await readFile(file, 'utf8'));
-    runtime.services['immich-server'].environment = {
+    runtime.services['frameleaf-server'].environment = {
       FRAMELEAF_MANAGER_ORIGIN: 'restored_library',
       FRAMELEAF_MANAGER_INSTALLATION: 'cccccccccccc',
       FRAMELEAF_IMPORT_MANAGER_OPERATION_ID: 'stale-operation',
@@ -199,7 +199,7 @@ test('actual offline verify command receives only the matching Manager import au
       assert.equal(path, join(directory, 'import-compose.json'));
       const generated = JSON.parse(await readFile(path, 'utf8'));
       const config = JSON.parse(await readFile(join(directory, 'import.json'), 'utf8'));
-      const environment = generated.services['immich-server'].environment;
+      const environment = generated.services['frameleaf-server'].environment;
       assert.equal(config.media.mode, 'manager-in-place');
       assert.equal(config.media.authority, 'frameleaf-manager');
       assert.match(config.media.deploymentId, /^[a-f0-9]{12}$/);
@@ -270,7 +270,7 @@ test('repeated import configuration refreshes both database IPs without changing
     assert.equal(await readFile(join(f.operations.directory(), 'import.json'), 'utf8'), config);
     assert.deepEqual(f.store.get(`import-reader:${f.operation.id}`), reader);
     const compose = JSON.parse(await readFile(join(f.operations.directory(), 'import-compose.json'), 'utf8'));
-    const app = compose.services['immich-server'];
+    const app = compose.services['frameleaf-server'];
     assert.equal(new URL(app.environment.DB_URL).hostname, '172.20.0.18');
     assert.equal(new URL(app.environment.FRAMELEAF_IMPORT_SOURCE_URL).hostname, '172.19.0.17');
     assert.equal(
@@ -351,7 +351,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
     await writeFile(
       join(releaseDirectory, 'docker-compose.yml'),
       JSON.stringify({
-        services: { database: {}, 'immich-server': {}, 'immich-machine-learning': {} },
+        services: { database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {} },
       }),
     );
     const liveSettings = {

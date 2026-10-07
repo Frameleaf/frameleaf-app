@@ -40,7 +40,7 @@ services:
       timeout: 5s
       retries: 10
 
-  immich-server:
+  frameleaf-server:
     environment:
       FRAMELEAF_ICLOUD_BRIDGE_URL: https://icloud-bridge-fixture:9443/
       FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE: /run/icloud-test-only/test-only-bridge-token

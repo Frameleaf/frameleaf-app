@@ -170,7 +170,7 @@ async function checkInstallation({
 
   // FL-292: a new server is claimed with the setup code it shows on its console; the admin command
   // line prints it, as it would for a person whose console output is gone
-  const setupCode = exec("immich-server", [
+  const setupCode = exec("frameleaf-server", [
     "frameleaf-admin",
     "setup-code",
     "--plain",
@@ -266,7 +266,7 @@ async function checkInstallation({
   }
 
   // Every canonical public migration shipped by the image must be recorded as applied.
-  const shipped = exec("immich-server", [
+  const shipped = exec("frameleaf-server", [
     "sh",
     "-c",
     "ls /usr/src/app/server/dist/schema/migrations",
@@ -296,7 +296,7 @@ async function checkInstallation({
   const log = logs();
   const starts = log.match(/Starting edge worker/g)?.length ?? 0;
   assert.equal(starts, 1, `The edge worker started ${starts} times`);
-  const procNet = exec("immich-server", [
+  const procNet = exec("frameleaf-server", [
     "sh",
     "-c",
     "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null",
@@ -593,7 +593,7 @@ async function main(env = process.env) {
       () => docker("ps", "--all", "--format", "json"),
       Number(env.WAIT_SECONDS || 900) * 1000,
     );
-    const mapped = docker("port", "immich-server", String(EDGE_PORT)).trim();
+    const mapped = docker("port", "frameleaf-server", String(EDGE_PORT)).trim();
     assert.match(
       mapped,
       new RegExp(`:${EDGE_PORT}$`),
@@ -602,7 +602,7 @@ async function main(env = process.env) {
     evidence = await checkInstallation({
       api: new Api(env.API_URL || "http://127.0.0.1:2283/api"),
       exec: (service, command) => docker("exec", "-T", service, ...command),
-      logs: () => docker("logs", "--no-color", "immich-server"),
+      logs: () => docker("logs", "--no-color", "frameleaf-server"),
       expectedVersion,
       sourceSha: env.SERVER_SOURCE_SHA || env.SOURCE_SHA,
       password: crypto.randomBytes(18).toString("base64url"),
