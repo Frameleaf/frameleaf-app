@@ -22,29 +22,27 @@
  *   node studio/tools/linked-edit-axis.browser.mjs
  */
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHarness } from "./lib/cross-browser-harness.mjs";
-import {
-  createChromiumDriver,
-  createWebDriverClassicDriver,
-} from "./lib/browser-driver.mjs";
+import { admittedHostCapabilities } from "./lib/browser-driver.mjs";
+import { openPage } from "./resource-admission.browser.mjs";
 import { geometry, layoutSettled } from "./lib/dopesheet-geometry.mjs";
 
 const origin = process.env.STUDIO_TEST_ORIGIN ?? "http://127.0.0.1:5199";
 const browser = process.env.BROWSER ?? "chromium";
 const evidence = process.env.STUDIO_TEST_EVIDENCE;
-assert.ok(["chromium", "firefox"].includes(browser));
+admittedHostCapabilities(browser);
+if (browser !== "chromium") assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
 assert.ok(
   evidence,
   "STUDIO_TEST_EVIDENCE is required to retain pre-click failures",
 );
 await mkdir(evidence, { recursive: true });
 const harness = createHarness({ upstream: origin });
-const harnessOrigin = await harness.listen();
 const reports = [];
 let driver;
+let browserProvenance;
 
 const K0 = '[data-testid="row-keyframe-x-k0"]';
 const K30 = '[data-testid="row-keyframe-x-k30"]';
@@ -305,28 +303,10 @@ const cases = [
 ];
 
 try {
-  const require = createRequire(
-    new URL("../engine/package.json", import.meta.url),
-  );
-  driver =
-    browser === "chromium"
-      ? await createChromiumDriver({
-          harnessOrigin,
-          chromium: require("playwright").chromium,
-        })
-      : await createWebDriverClassicDriver({
-          endpoint: process.env.WEBDRIVER_ENDPOINT,
-          harnessOrigin,
-          capabilities: {
-            browserName: "firefox",
-            "moz:firefoxOptions": {
-              binary: "/Applications/Firefox.app/Contents/MacOS/firefox",
-              args: ["-headless"],
-              prefs: { "network.proxy.allow_hijacking_localhost": true },
-            },
-          },
-        });
-  const page = await driver.newPage();
+  const harnessOrigin = await harness.listen();
+  driver = await openPage(harnessOrigin, undefined, {browser, endpoint: process.env.WEBDRIVER_ENDPOINT});
+  const page = driver.page;
+  browserProvenance = driver.browser;
   await page.goto(`${origin}/studio-engine/test/linked-edit-axis.browser.html`);
   await page.waitForFunction(() => !!window.fl100Linked);
   for (const test of cases) {
@@ -361,6 +341,7 @@ try {
       JSON.stringify(
         {
           browser,
+          browserProvenance,
           reports,
           requests: harness.observations,
           scope:

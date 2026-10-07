@@ -7,9 +7,9 @@
 // Both implementations route every request through `harnessOrigin` (from
 // `cross-browser-harness.mjs`) via the browser's own proxy settings, not a script-level flag -
 // Chromium via its `--proxy-server` launch option, WebDriver classic via the standard W3C `proxy`
-// capability, which both geckodriver and safaridriver, as W3C-conformant WebDriver
-// implementations, accept directly. Neither implementation needs page-level network
-// interception, so the interface has none.
+// capability. geckodriver accepts it; actual Safari 26.5.2 rejects it at session creation.
+// That refusal must not fall back to an unproxied session: no existing classic interception
+// primitive preserves the harness's admission guarantee without the proxy.
 import { createRequire } from 'node:module';
 
 /** Actual admitted-host browser profiles; WebKit cannot stand in for Safari. */
@@ -123,7 +123,7 @@ const w3cSuccess = async (response) => {
  * @param {string} options.endpoint - the running driver's own base URL, e.g. http://127.0.0.1:4444
  *   for geckodriver, http://127.0.0.1:4445 for safaridriver.
  * @param {string} options.harnessOrigin - proxied via the W3C `proxy` capability, not a launch arg
- *   - safaridriver has no launch-arg equivalent, so this is the one mechanism that works for both.
+ *   - safaridriver has no launch-arg equivalent and may refuse this required capability.
  * @param {object} [options.capabilities] - merged into `capabilities.alwaysMatch`, e.g.
  *   `{ 'moz:firefoxOptions': { prefs: { 'dom.webgpu.enabled': true, 'network.proxy.allow_hijacking_localhost': true } } }`.
  */
