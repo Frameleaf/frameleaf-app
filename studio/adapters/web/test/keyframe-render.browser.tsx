@@ -146,6 +146,8 @@ async function runKeyframeBrowserFixtures(mutation?: string) {
     fontSize: 28,
     textAlign: "center",
     verticalAlign: "middle",
+    // Keep both word units on one line even with Linux's wider monospace fallback.
+    textPadding: 0,
     letterSpacing: 12,
     transform: { x: 0, y: 0, width: 100, height: 60, rotation: 0, opacity: 1 },
     textMotion: {
