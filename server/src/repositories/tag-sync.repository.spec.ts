@@ -80,3 +80,32 @@ it.each(newestKinds)('acks delivered %s by durable order rather than UUID compar
   expect(updated).not.toContain('"eventId" <=');
   expect(updated).toContain('"delivered" =');
 });
+
+it.each([
+  SyncEntityType.MemoryV1,
+  SyncEntityType.MemoryDeleteV1,
+  SyncEntityType.MemoryToAssetV1,
+  SyncEntityType.MemoryToAssetDeleteV1,
+])('ignores a late legacy %s ACK without persisting a stale checkpoint', async (type) => {
+  const { db, queries } = scriptedKysely();
+  await expect(
+    new TagSync(db).acknowledge(authStub.user1.session!.id, {
+      type,
+      updateId: '00000000-0000-7000-8000-000000000001',
+    }),
+  ).resolves.toBe(true);
+  expect(queries).toEqual([]);
+});
+
+it.each(['memory', 'memoryAsset'] as const)(
+  'scopes %s reconciliation to the owner and rejects any hidden source',
+  async (kind) => {
+    const { db, queries } = scriptedKysely();
+    await new TagSync(db).reconcile(authStub.user1, kind);
+    const projection = queries.find(({ sql }) => sql.includes('from "memory"'))!;
+    expect(projection.sql).toContain('"memory"."ownerId" =');
+    expect(projection.parameters).toContain(authStub.user1.user.id);
+    expect(projection.sql).toContain('hidden_memory_asset');
+    expect(projection.sql).toContain('asset_lock');
+  },
+);
