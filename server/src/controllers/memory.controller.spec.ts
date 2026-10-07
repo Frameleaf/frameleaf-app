@@ -41,6 +41,7 @@ describe(MemoryController.name, () => {
       // reports the miss on `data` and nests each branch; the on-this-day branch still needs a year.
       expect(body).toEqual({
         message: 'Validation failed',
+        displayError: errorDto.validationError().displayError,
         errors: [
           expect.objectContaining({
             path: ['data'],
