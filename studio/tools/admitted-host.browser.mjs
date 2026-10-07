@@ -6,7 +6,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 import { createHarness } from "./lib/cross-browser-harness.mjs";
-import { createChromiumDriver, createWebDriverClassicDriver } from "./lib/browser-driver.mjs";
+import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from "./lib/browser-driver.mjs";
 const scenario = process.env.STUDIO_HOST_SCENARIO ?? "track";
 assert.ok(["track", "auto-key", "ease-out"].includes(scenario));
 const dependencyRoot = process.env.STUDIO_DEPENDENCY_ROOT ?? root;
@@ -782,7 +782,7 @@ try {
 /** Actual host/native edits only; no fixture store hook or substituted render. */
 async function runEaseOutHost(project, graph) {
   const browserName = process.env.BROWSER ?? "chromium";
-  assert.ok(["chromium", "firefox"].includes(browserName));
+  const capabilities = admittedHostCapabilities(browserName);
   const harness = createHarness({ upstream: base });
   const harnessOrigin = await harness.listen();
   let driver, host;
@@ -1197,14 +1197,7 @@ async function runEaseOutHost(project, graph) {
         : await createWebDriverClassicDriver({
             endpoint: process.env.WEBDRIVER_ENDPOINT,
             harnessOrigin,
-            capabilities: {
-              browserName: "firefox",
-              "moz:firefoxOptions": {
-                binary: "/Applications/Firefox.app/Contents/MacOS/firefox",
-                args: ["-headless"],
-                prefs: { "network.proxy.allow_hijacking_localhost": true },
-              },
-            },
+            capabilities,
           });
     host = await driver.newPage();
     await host.goto(base + "/auth/login");

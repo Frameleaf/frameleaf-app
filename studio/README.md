@@ -24,6 +24,13 @@ pointer/keyboard/touch coverage, measured performance budgets and long-timeline 
 remain required on each browser against an admitted worker. Real Safari/iPad evidence remains
 separate from Playwright WebKit; the committed conformance statuses are unchanged.
 
+The admitted-host `STUDIO_HOST_SCENARIO=ease-out` save/reopen scenario accepts
+`BROWSER=chromium`, `firefox` or `safari`. Firefox and Safari use the supplied
+`WEBDRIVER_ENDPOINT` for real geckodriver or safaridriver; Safari receives no Firefox
+binary or preferences. The same GPU admission, visible-canvas and pixel oracle gates apply.
+The track and auto-key host scenarios still use Chromium. This dispatch support does not
+qualify Safari/iPad hardware, touch, every manifest row or exported-media parity.
+
 ## Studio graph protocol (native apps)
 
 `docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.

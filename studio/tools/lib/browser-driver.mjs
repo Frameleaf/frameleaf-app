@@ -12,6 +12,22 @@
 // interception, so the interface has none.
 import { createRequire } from 'node:module';
 
+/** Actual admitted-host browser profiles; WebKit cannot stand in for Safari. */
+export function admittedHostCapabilities(browserName) {
+  if (!['chromium', 'firefox', 'safari'].includes(browserName))
+    throw new Error(`unsupported admitted-host browser: ${browserName}`);
+  return {
+    browserName,
+    ...(browserName === 'firefox' ? {
+      'moz:firefoxOptions': {
+        binary: '/Applications/Firefox.app/Contents/MacOS/firefox',
+        args: ['-headless'],
+        prefs: { 'network.proxy.allow_hijacking_localhost': true },
+      },
+    } : {}),
+  };
+}
+
 /**
  * @param {object} options
  * @param {string} options.harnessOrigin - `http://127.0.0.1:<port>` from `harness.listen()`.

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import test from 'node:test';
-import { createChromiumDriver, createWebDriverClassicDriver } from './browser-driver.mjs';
+import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './browser-driver.mjs';
 
 /**
  * A minimal stub speaking just enough of the W3C WebDriver wire protocol to prove
@@ -107,6 +107,34 @@ test('creates a session with the harness as the manual proxy target', async () =
   } finally {
     await stub.close();
   }
+});
+
+test('admitted host selects actual Safari and Firefox without leaking Firefox options or accepting WebKit', async () => {
+  const stub = await startStubDriver();
+  try {
+    for (const browser of ['safari', 'firefox']) {
+      const driver = await createWebDriverClassicDriver({
+        endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555',
+        capabilities: admittedHostCapabilities(browser),
+      });
+      try {
+        await (await driver.newPage()).goto('http://127.0.0.1:5186/studio?project=fixture');
+      } finally { await driver.close(); }
+      const request = stub.requests.filter(r => r.url === '/session').at(-1);
+      const capabilities = request.body.capabilities.alwaysMatch;
+      assert.equal(capabilities.browserName, browser);
+      assert.equal(capabilities.proxy.httpProxy, '127.0.0.1:5555');
+      if (browser === 'safari') assert.equal(capabilities['moz:firefoxOptions'], undefined);
+      else assert.deepEqual(capabilities['moz:firefoxOptions'], {
+        binary: '/Applications/Firefox.app/Contents/MacOS/firefox', args: ['-headless'],
+        prefs: { 'network.proxy.allow_hijacking_localhost': true },
+      });
+    }
+    assert.equal(stub.requests.filter(r => r.method === 'DELETE').length, 2);
+    assert.deepEqual(admittedHostCapabilities('chromium'), { browserName: 'chromium' });
+    for (const browser of ['webkit', 'chrome', 'unknown'])
+      assert.throws(() => admittedHostCapabilities(browser), /unsupported admitted-host browser/);
+  } finally { await stub.close(); }
 });
 
 test('merges extra capabilities (e.g. moz:firefoxOptions prefs) alongside the proxy', async () => {
