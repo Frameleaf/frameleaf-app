@@ -1,4 +1,5 @@
 import {
+  applyHdrDevelopDetail,
   applyHdrDevelopMasks,
   applyHdrDevelopTone,
   linearizeDevelopFill,
@@ -173,4 +174,62 @@ it('converts normalized sRGB fill pixels to linear source-gamut light at referen
   expect(result.data[5]).toBeCloseTo((0.03319419885 * 128) / 255, 6);
   expect(result.data[6]).toBeCloseTo((0.01708263072 * 128) / 255, 6);
   expect(result.data[7]).toBeCloseTo(128 / 255, 6);
+});
+
+it('retains neutral HDR and alpha through detail and admits both filter surfaces together', () => {
+  const pixels = new Float32Array([4.125, 4.125, 4.125, 1, 8.25, 8.25, 8.25, 0.5, 16.5, 16.5, 16.5, 1]);
+  const image = {
+    data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+    width: 3,
+    height: 1,
+    gamut: 0 as const,
+    referenceWhite: 203 as const,
+  };
+  applyHdrDevelopDetail(image, defaultDevelopRecipe(), 1024);
+  expect([...pixels]).toEqual([4.125, 4.125, 4.125, 1, 8.25, 8.25, 8.25, 0.5, 16.5, 16.5, 16.5, 1]);
+  expect(() => applyHdrDevelopDetail(image, { ...defaultDevelopRecipe(), sharpen: 50 }, 100)).toThrow('budget');
+});
+
+it.each([
+  ['sharpen', 100],
+  ['clarity', 100],
+  ['clarity', -100],
+  ['noiseReduction', 100],
+] as const)('filters %s in float HDR without leaking invisible colour', (control, amount) => {
+  const pixels = new Float32Array([32, 32, 32, 0, 4.125, 4.125, 4.125, 1, 4.125, 4.125, 4.125, 1]);
+  const image = {
+    data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+    width: 3,
+    height: 1,
+    gamut: 0 as const,
+    referenceWhite: 203 as const,
+  };
+  applyHdrDevelopDetail(image, { ...defaultDevelopRecipe(), [control]: amount }, 1024);
+  expect(pixels[3]).toBe(0);
+  expect(pixels[7]).toBe(1);
+  expect(pixels[11]).toBe(1);
+  expect(pixels[4]).toBeCloseTo(4.125, 5);
+  expect(pixels[8]).toBeCloseTo(4.125, 5);
+});
+
+it.each([
+  ['sharpen', 100, 'more'],
+  ['clarity', 100, 'more'],
+  ['clarity', -100, 'less'],
+  ['noiseReduction', 100, 'less'],
+] as const)('changes visible contrast for %s=%s', (control, amount, direction) => {
+  const pixels = new Float32Array([4.125, 4.125, 4.125, 1, 4.25, 4.25, 4.25, 1, 4.125, 4.125, 4.125, 1]);
+  const image = {
+    data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+    width: 3,
+    height: 1,
+    gamut: 0 as const,
+    referenceWhite: 203 as const,
+  };
+  applyHdrDevelopDetail(image, { ...defaultDevelopRecipe(), [control]: amount }, 1024);
+  const contrast = pixels[4] - pixels[0];
+  if (direction === 'more') expect(contrast).toBeGreaterThan(0.125);
+  else expect(contrast).toBeLessThan(0.125);
+  expect(pixels[0]).toBeGreaterThan(1);
+  expect(pixels[4]).toBeGreaterThan(1);
 });
