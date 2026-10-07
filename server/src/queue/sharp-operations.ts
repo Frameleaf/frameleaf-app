@@ -1,17 +1,30 @@
+/* Relative imports keep the isolated worker free of application alias loaders. */
+/* eslint-disable no-restricted-imports */
 import { open, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
 // Standalone Node child has no application alias loader.
-// eslint-disable-next-line no-restricted-imports
+
+import {
+  applyHdrDevelopDetail,
+  applyHdrDevelopMasks,
+  applyHdrDevelopTone,
+  linearizeDevelopFill,
+  transformHdrGeometry,
+} from './image-hdr-develop.js';
+
 import { resizeHdrImage } from './image-hdr-pixels.js';
-// eslint-disable-next-line no-restricted-imports
+
 import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
 
-// eslint-disable-next-line no-restricted-imports
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
+import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
+import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
 
+import type { KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
 import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 import type { ImageFormat } from 'src/enum.js';
 import type {
   DecodeToBufferOptions,
@@ -20,7 +33,21 @@ import type {
   ImageDimensions,
   RawImageInfo,
 } from 'src/types.js';
+import type { DevelopBitmap, DevelopLinearFill } from 'src/utils/develop-cleanup.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
+
+/** Recipe projection and owner-verified artifacts supplied by the existing Develop admission. */
+export type HdrDevelopRender = {
+  recipe: KnownAssetDevelopRecipe;
+  seed: number;
+  masks: Record<string, DevelopBitmap>;
+  fills: Record<string, DevelopBitmap>;
+};
+export type HdrRenditionOutput = {
+  path: string;
+  size?: number;
+  dynamicRange?: 'hdr' | 'sdr';
+};
 
 export type ThumbnailOutput = {
   path: string;
@@ -78,50 +105,125 @@ export class SharpOperations {
     );
   }
 
-  async generateHdrRenditions(input: string | Buffer, outputs: { path: string; size?: number }[]) {
+  async generateHdrRenditions(input: string | Buffer, outputs: HdrRenditionOutput[], develop?: HdrDevelopRender) {
     if (
       outputs.length === 0 ||
-      outputs.length > 2 ||
+      outputs.length > (develop ? 4 : 2) ||
       new Set(outputs.map(({ path }) => resolve(path))).size !== outputs.length
     ) {
       throw new Error('INVALID_HDR_OUTPUTS');
     }
-    for (const { path, size } of outputs) {
+    for (const { path, size, dynamicRange } of outputs) {
       if (typeof input === 'string' && resolve(path) === resolve(input))
         throw new Error('Cannot overwrite original media');
       if (size !== undefined && (!Number.isSafeInteger(size) || size < 1)) throw new Error('INVALID_HDR_OUTPUT_SIZE');
+      if (dynamicRange !== undefined && dynamicRange !== 'hdr' && dynamicRange !== 'sdr')
+        throw new Error('INVALID_HDR_DYNAMIC_RANGE');
     }
     const bytes = await imageHdrInput(input, this.maxBytes);
     const encoding = imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
     if (encoding.dynamicRange !== 'hdr' || !encoding.reconstructionAvailable)
       throw new Error('HDR_RECONSTRUCTION_UNAVAILABLE');
-    const authored = encoding.container === 'jpeg' && encoding.gainMap !== 'none';
-    const source = imageHdrOperation<LinearHdrImage | PairedHdrImage>((codec) =>
+    const artifactBytes = develop
+      ? [...Object.values(develop.masks), ...Object.values(develop.fills)].reduce(
+          (total, bitmap) => total + bitmap.data.byteLength,
+          0,
+        )
+      : 0;
+    const decodeBudget = this.maxBytes - artifactBytes - bytes.length;
+    if (decodeBudget <= 0) throw new SharpResourceLimitError('HDR artifacts exceed the combined surface budget');
+    const authored = !develop && encoding.container === 'jpeg' && encoding.gainMap !== 'none';
+    let source = imageHdrOperation<LinearHdrImage | PairedHdrImage>((codec) =>
       authored
-        ? codec.decodePaired(bytes, this.maxPixels, this.maxBytes)
-        : codec.decode(bytes, this.maxPixels, this.maxBytes),
+        ? codec.decodePaired(bytes, this.maxPixels, decodeBudget)
+        : codec.decode(bytes, this.maxPixels, decodeBudget),
     );
     this.progress();
+    let retainedEditBytes = 0;
+    if (develop) {
+      const { recipe } = develop;
+      const needed = developRenderArtifacts(recipe);
+      const masks = new Map(Object.entries(develop.masks));
+      const fills = new Map<string, DevelopLinearFill>();
+      if (needed.mask.some((id) => !masks.has(id)) || needed.fill.some((id) => !develop.fills[id])) {
+        throw new Error('MISSING_DEVELOP_ARTIFACT');
+      }
+      const maskBytes = Object.values(develop.masks).reduce((total, bitmap) => total + bitmap.data.byteLength, 0);
+      let fillBytes = 0;
+      for (const id of needed.fill) {
+        const fill = linearizeDevelopFill(
+          develop.fills[id],
+          source.gamut,
+          this.maxBytes -
+            bytes.length -
+            artifactBytes -
+            source.data.length -
+            fillBytes +
+            develop.fills[id].data.byteLength,
+        );
+        fills.set(id, fill);
+        fillBytes += fill.data.byteLength;
+      }
+      const available = this.maxBytes - bytes.length - artifactBytes - fillBytes;
+      const pixels = new Float32Array(source.data.buffer, source.data.byteOffset, source.data.length / 4);
+      applyDevelopCleanup(
+        pixels,
+        { width: source.width, height: source.height, channels: 4 },
+        recipe.cleanup,
+        fills,
+        available,
+      );
+      const plan = planDevelopGeometry(recipe, source.width, source.height);
+      retainedEditBytes = source.data.length + artifactBytes + fillBytes;
+      source = transformHdrGeometry(source, plan, available);
+      this.progress();
+      applyHdrDevelopTone(source, recipe, develop.seed);
+      applyHdrDevelopMasks(
+        source,
+        recipe.masks,
+        plan,
+        this.maxBytes - bytes.length - retainedEditBytes + maskBytes,
+        masks,
+      );
+      // Coverage caches remain reachable through the recipe while detail and encoding run.
+      retainedEditBytes +=
+        (pixels.byteLength / 4) *
+        recipe.masks.filter((mask) => isActiveMask(mask) && (mask.kind === 'brush' || !!mask.strokes?.length)).length;
+      applyHdrDevelopDetail(source, recipe, this.maxBytes - bytes.length - retainedEditBytes);
+      this.progress();
+    }
     const written: string[] = [];
     const results = [];
     try {
-      for (const { path, size } of outputs) {
+      for (const { path, size, dynamicRange = 'hdr' } of outputs) {
         const scale = Math.min(
           1,
           (size ?? Math.max(source.width, source.height)) / Math.max(source.width, source.height),
         );
         const width = Math.max(1, Math.round(source.width * scale)),
           height = Math.max(1, Math.round(source.height * scale));
-        const retained = bytes.length + source.data.length + ('sdr' in source ? source.sdr.length : 0);
+        const retained =
+          bytes.length + retainedEditBytes + source.data.length + ('sdr' in source ? source.sdr.length : 0);
         if (retained + width * height * ('sdr' in source ? 68 : 64) > this.maxBytes) {
           throw new SharpResourceLimitError('HDR rendition exceeds the combined surface budget');
         }
         const image = resizeHdrImage(source, size ?? Math.max(source.width, source.height), this.maxBytes);
-        const encoded = this.encodeHdrImage(image);
-        const metadata = imageHdrOperation((codec) => codec.inspect(encoded, this.maxPixels, this.maxBytes));
+        let encoded = this.encodeHdrImage(image);
+        if (dynamicRange === 'sdr') {
+          // The qualified encoder's paired tone mapper owns the SDR baseline. Re-encode its base
+          // to remove gain-map metadata and embed an explicit compatible sRGB profile.
+          encoded = await sharp(encoded, { limitInputPixels: this.maxPixels })
+            .withIccProfile('srgb')
+            .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
+            .toBuffer();
+        }
+        const inspected = imageHdrOperation((codec) => codec.inspect(encoded, this.maxPixels, this.maxBytes));
+        const dimensions =
+          dynamicRange === 'sdr' ? await sharp(encoded, { limitInputPixels: this.maxPixels }).metadata() : inspected;
+        const metadata: ImageEncodingInfo = { ...inspected, width: dimensions.width, height: dimensions.height };
         if (
-          !metadata.reconstructionAvailable ||
-          metadata.dynamicRange !== 'hdr' ||
+          (dynamicRange === 'hdr' && (!metadata.reconstructionAvailable || metadata.dynamicRange !== 'hdr')) ||
+          (dynamicRange === 'sdr' && metadata.dynamicRange !== 'sdr') ||
           metadata.width !== image.width ||
           metadata.height !== image.height
         )
@@ -134,7 +236,13 @@ export class SharpOperations {
         } finally {
           await file.close();
         }
-        results.push({ path, width: image.width, height: image.height, gamut: image.gamut, encoding: metadata });
+        results.push({
+          path,
+          width: image.width,
+          height: image.height,
+          gamut: dynamicRange === 'sdr' ? 0 : image.gamut,
+          encoding: metadata,
+        });
         this.progress();
       }
       return results;
