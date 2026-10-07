@@ -269,3 +269,101 @@ export function applyHdrDevelopMasks(
   }
   return image;
 }
+
+/** Linear detail, with reusable premultiplied filter surfaces and no integer or SDR intermediates. */
+export function applyHdrDevelopDetail(
+  image: LinearHdrImage,
+  recipe: KnownAssetDevelopRecipe,
+  maxBytes: number,
+): LinearHdrImage {
+  const { params } = effectiveDevelop(recipe);
+  if (!params.noiseReduction && !params.sharpen && !params.clarity) return image;
+  if (!Number.isSafeInteger(maxBytes) || image.data.length * 3 > maxBytes) {
+    throw new SharpResourceLimitError('HDR detail exceeds the float surface budget');
+  }
+  const pixels = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+  const a = new Float32Array(pixels.length);
+  const b = new Float32Array(pixels.length);
+  const weights =
+    image.gamut === 2
+      ? [0.2627, 0.678, 0.0593]
+      : image.gamut === 1
+        ? [0.2289746, 0.6917385, 0.0792869]
+        : [0.2126, 0.7152, 0.0722];
+  const box = (input: Float32Array, output: Float32Array, radius: number, horizontal: boolean) => {
+    const length = horizontal ? image.width : image.height;
+    const lines = horizontal ? image.height : image.width;
+    const stride = horizontal ? 4 : image.width * 4;
+    const divisor = radius * 2 + 1;
+    for (let line = 0; line < lines; line++) {
+      const start = line * (horizontal ? image.width : 1) * 4;
+      // Double sums retain precision when the sliding window removes bright HDR samples.
+      const sums = [0, 0, 0, 0];
+      for (let offset = -radius; offset <= radius; offset++) {
+        const index = start + Math.max(0, Math.min(length - 1, offset)) * stride;
+        for (let c = 0; c < 4; c++) sums[c] += input[index + c];
+      }
+      for (let position = 0; position < length; position++) {
+        const index = start + position * stride;
+        const remove = start + Math.max(0, position - radius) * stride;
+        const add = start + Math.min(length - 1, position + radius + 1) * stride;
+        for (let c = 0; c < 4; c++) {
+          output[index + c] = sums[c] / divisor;
+          sums[c] += input[add + c] - input[remove + c];
+        }
+      }
+    }
+  };
+  const blur = (sigma: number) => {
+    for (let i = 0; i < pixels.length; i += 4) {
+      for (let c = 0; c < 3; c++) a[i + c] = pixels[i + c] * pixels[i + 3];
+      a[i + 3] = pixels[i + 3];
+    }
+    // Three variance-matched box passes approximate a Gaussian in O(pixels), independent of radius.
+    const ideal = Math.sqrt(4 * sigma * sigma + 1);
+    let lower = Math.floor(ideal);
+    if (lower % 2 === 0) lower--;
+    const upper = lower + 2;
+    const lowerCount = Math.round((12 * sigma * sigma - 3 * lower * lower - 12 * lower - 9) / (-4 * lower - 4));
+    for (let pass = 0; pass < 3; pass++) {
+      const radius = ((pass < lowerCount ? lower : upper) - 1) / 2;
+      box(a, b, radius, true);
+      box(b, a, radius, false);
+    }
+  };
+  const stages = [
+    { amount: params.noiseReduction / 100, sigma: 0.4 + (params.noiseReduction / 100) * 0.8, kind: 'noise' },
+    { amount: (params.sharpen / 100) * 1.6, sigma: 0.8 + (params.sharpen / 100) * 1.2, kind: 'sharpen' },
+    {
+      amount: params.clarity / 100,
+      sigma: Math.max(2, Math.min(24, Math.min(image.width, image.height) / 160)),
+      kind: 'clarity',
+    },
+  ];
+  for (const stage of stages) {
+    if (!stage.amount) continue;
+    blur(stage.sigma);
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] <= 0 || a[i + 3] <= 0) continue;
+      const luma = pixels[i] * weights[0] + pixels[i + 1] * weights[1] + pixels[i + 2] * weights[2];
+      const blurredLuma = (a[i] * weights[0] + a[i + 1] * weights[1] + a[i + 2] * weights[2]) / a[i + 3];
+      let amount = stage.amount;
+      if (stage.kind === 'noise') {
+        const tolerance = 0.025 + 0.06 * Math.sqrt(Math.max(0, luma));
+        amount *= Math.exp(-(((luma - blurredLuma) / tolerance) ** 2));
+        for (let c = 0; c < 3; c++) pixels[i + c] += (a[i + c] / a[i + 3] - pixels[i + c]) * amount;
+      } else if (stage.kind === 'sharpen') {
+        for (let c = 0; c < 3; c++) pixels[i + c] += (pixels[i + c] - a[i + c] / a[i + 3]) * amount;
+      } else {
+        const brightness = Math.max(0, luma) / (1 + Math.max(0, luma));
+        const delta = (luma - blurredLuma) * amount * 4 * brightness * (1 - brightness);
+        // Luminance contrast preserves hue; alpha stays the source alpha.
+        if (luma > 1e-6) {
+          const gain = (luma + delta) / luma;
+          for (let c = 0; c < 3; c++) pixels[i + c] *= gain;
+        }
+      }
+    }
+  }
+  return image;
+}
