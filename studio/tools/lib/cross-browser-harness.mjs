@@ -45,29 +45,54 @@ export function assertProjectOnlyReopen(observations, upstream, projectId) {
 /**
  * @param {object} options
  * @param {string} options.upstream - the real Studio origin to front, e.g. http://127.0.0.1:5186.
+ * @param {boolean} [options.inspectConnect] - parse same-origin HTTP CONNECT traffic through overrides; deny upgrades.
  * @param {Array<{test: (url: URL, req: import('node:http').IncomingMessage) => boolean, respond: (url: URL, req: import('node:http').IncomingMessage) => (object | Promise<object>)}>} [options.overrides]
  *   Checked in order; the first whose `test` returns true has its `respond` result
  *   (`{ status = 200, contentType = 'text/plain', headers, body }`) sent back verbatim.
  */
-export function createHarness({ upstream, overrides = [] } = {}) {
+export function createHarness({ upstream, overrides = [], inspectConnect = false } = {}) {
   if (!upstream) {
     throw new Error('createHarness requires an upstream origin');
   }
   const upstreamUrl = new URL(upstream);
+  if (inspectConnect) assert.equal(upstreamUrl.protocol, 'http:', 'CONNECT inspection requires an HTTP origin');
   const observations = [];
   // HTTP server.close() does not dispose upgraded/CONNECT sockets. Own both ends so a
   // matrix session cannot leave an admitted tunnel alive after its harness is closed.
   const tunnelSockets = new Set();
   let closing = false;
 
-  const server = http.createServer((req, res) => {
+  const onRequest = (req, res) => {
     handleRequest(req, res).catch((error) => {
       observations.push({ method: req.method, url: req.url, kind: 'error', error: String(error) });
       if (!res.headersSent) res.writeHead(502);
       res.end();
     });
+  };
+  const server = http.createServer(onRequest);
+  const isUpstreamRequest = (url) => url.host === upstreamUrl.host &&
+    (!inspectConnect || url.protocol === upstreamUrl.protocol);
+  const inspected = inspectConnect ? http.createServer(onRequest) : null;
+  inspected?.on('upgrade', (req, socket) => {
+    const upgradeProtocol = req.headers['sec-websocket-protocol'];
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const hmr = isUpstreamRequest(url) && req.method === 'GET' &&
+        req.headers.upgrade?.toLowerCase() === 'websocket' && upgradeProtocol === 'vite-hmr';
+      observations.push({method: req.method, url: url.href, kind: hmr ? 'blocked' : 'error', upgradeProtocol});
+    } catch (error) {
+      observations.push({method: req.method, url: req.url, kind: 'error', error: error.code});
+    }
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
   });
-  const isUpstreamRequest = (url) => url.host === upstreamUrl.host;
+  inspected?.on('connect', (req, socket) => {
+    observations.push({method: 'CONNECT', url: req.url, kind: 'error', error: 'Nested CONNECT refused'});
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+  });
+  inspected?.on('clientError', (error, socket) => {
+    observations.push({method: 'CONNECT', url: upstreamUrl.host, kind: 'error', error: error.code});
+    socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+  });
 
   // A browser tunnels WebSockets (Vite's HMR client) through its proxy with CONNECT, so a tunnel to
   // the Studio origin itself is opened; overrides never apply inside it. Any other CONNECT (HTTPS to
@@ -81,6 +106,18 @@ export function createHarness({ upstream, overrides = [] } = {}) {
     if (req.url !== upstreamUrl.host) {
       observations.push({ method: 'CONNECT', url: req.url, kind: 'blocked' });
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return;
+    }
+    if (inspected) {
+      observations.push({method: 'CONNECT', url: req.url, kind: 'inspected'});
+      tunnelSockets.add(socket);
+      socket.on('error', () => socket.destroy());
+      socket.on('close', () => tunnelSockets.delete(socket));
+      socket.pause();
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      inspected.emit('connection', socket);
+      if (head.length) socket.unshift(head);
+      socket.resume();
       return;
     }
     observations.push({ method: 'CONNECT', url: req.url, kind: 'tunnelled' });
@@ -128,7 +165,9 @@ export function createHarness({ upstream, overrides = [] } = {}) {
     }
 
     observations.push({ method: req.method, url: requestUrl.href, kind: 'proxied' });
-    const target = new URL(requestUrl.pathname + requestUrl.search, upstreamUrl);
+    const target = new URL(upstreamUrl);
+    target.pathname = requestUrl.pathname;
+    target.search = requestUrl.search;
     const upstreamRes = await new Promise((resolve, reject) => {
       const proxyReq = http.request(
         target,
