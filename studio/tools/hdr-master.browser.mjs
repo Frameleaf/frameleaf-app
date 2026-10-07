@@ -5,13 +5,15 @@
 // measured HDR10 metadata, and is decoded back independently. Requires FFmpeg
 // with libx265 (installed in the engine workflow).
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
-import { decodeMaster, encodeHdrMaster, probeMaster } from './hdr-master.mjs';
+import { encodeHdrMaster } from './hdr-master.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
@@ -98,11 +100,16 @@ window.__vite_plugin_react_preamble_installed__ = true
 // Raw measurements for conformance evidence: the rendered frames before any assertion, then
 // the encoded masters' probe and light metadata once they are checked.
 const writeReport = (masters) =>
-  process.env.HDR_MASTER_REPORT && writeFile(process.env.HDR_MASTER_REPORT, JSON.stringify({ rendered, masters }));
+  process.env.HDR_MASTER_REPORT && writeFile(process.env.HDR_MASTER_REPORT, JSON.stringify({
+    qualification: 'diagnostic helper only; physical monitor and admitted deployments unqualified',
+    tools: Object.fromEntries(['ffmpeg', 'ffprobe'].map((tool) => [tool, execFileSync(tool, ['-version']).toString().split('\n')[0]])),
+    rendered, masters,
+  }));
 await writeReport(null);
 
 const points = { clip: [8, 8], exposed: [20, 8], dodge: [28, 8] };
-const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-master-e2e-'));
+const dir = mkdtempSync(process.env.HDR_MASTER_REPORT
+  ? `${path.resolve(process.env.HDR_MASTER_REPORT)}.artifacts-` : path.join(tmpdir(), 'fl-hdr-master-e2e-'));
 try {
   const summary = {};
   for (const transfer of ['pq', 'hlg']) {
@@ -116,36 +123,40 @@ try {
       }
     });
     const output = path.join(dir, `edited-${transfer}.mp4`);
-    const { light } = await encodeHdrMaster({ frames, fps: 24, transfer, output, lossless: true,
-      mastering: { maxNits: 4000, minNits: 0.005 } });
-    const probe = probeMaster('ffprobe', output);
-    assert.equal(probe.codec, 'hevc');
-    assert.equal(probe.profile, 'Main 10');
-    assert.equal(probe.pixFmt, 'yuv420p10le');
-    assert.equal(probe.primaries, 'bt2020');
-    assert.equal(probe.transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
-    assert.equal(probe.frames, FRAMES);
-    assert.equal(probe.rFrameRate, '24/1');
-    if (transfer === 'pq') {
-      assert.equal(Number(probe.contentLight?.max_content), light.maxCll);
-      assert.equal(Number(probe.contentLight?.max_average), light.maxFall);
-      assert.ok(light.maxCll > 203, 'the edit carries light above reference white');
-    }
-    const decoded = decodeMaster('ffmpeg', output, W, H);
-    assert.equal(decoded.length, FRAMES);
-    decoded.forEach((pixels, n) => {
-      for (const [key, [x, y]] of Object.entries(points)) {
-        const i = y * W + x;
-        for (let c = 0; c < 3; c++) {
-          assert.ok(Math.abs(pixels[i * 3 + c] - frames[n].rgba[i * 4 + c]) <= 2 / 1023,
-            `${transfer} decoded frame ${n} ${key} channel ${c}: ${pixels[i * 3 + c]} != ${frames[n].rgba[i * 4 + c]}`);
+    const encoded = await encodeHdrMaster({ frames, fps: 24, transfer, output, lossless: true,
+      mastering: { maxNits: 4000, minNits: 0.005 }, validate: ({ light, probe, decoded }) => {
+        assert.equal(probe.codec, 'hevc');
+        assert.equal(probe.profile, 'Main 10');
+        assert.equal(probe.pixFmt, 'yuv420p10le');
+        assert.equal(probe.primaries, 'bt2020');
+        assert.equal(probe.transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
+        assert.equal(probe.frames, FRAMES);
+        assert.equal(probe.rFrameRate, '24/1');
+        if (transfer === 'pq') {
+          assert.equal(Number(probe.contentLight?.max_content), light.maxCll);
+          assert.equal(Number(probe.contentLight?.max_average), light.maxFall);
+          assert.ok(light.maxCll > 203, 'the edit carries light above reference white');
         }
-      }
-    });
-    summary[transfer] = { light, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
+        assert.equal(decoded.length, FRAMES);
+        decoded.forEach((pixels, n) => {
+          for (const [key, [x, y]] of Object.entries(points)) {
+            const i = y * W + x;
+            for (let c = 0; c < 3; c++) {
+              assert.ok(Math.abs(pixels[i * 3 + c] - frames[n].rgba[i * 4 + c]) <= 2 / 1023,
+                `${transfer} decoded frame ${n} ${key} channel ${c}: ${pixels[i * 3 + c]} != ${frames[n].rgba[i * 4 + c]}`);
+            }
+          }
+        });
+        summary[transfer] = { light, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
+    } });
+    summary[transfer].inputSha256 = createHash('sha256').update(JSON.stringify(rendered.out[transfer])).digest('hex');
+    summary[transfer].outputSha256 = createHash('sha256').update(readFileSync(output)).digest('hex');
+    summary[transfer].outputPath = process.env.HDR_MASTER_REPORT
+      ? path.relative(path.dirname(path.resolve(process.env.HDR_MASTER_REPORT)), output) : null;
+    summary[transfer].encoderArgs = encoded.args.map((arg) => arg.endsWith('.partial.mp4') ? '<unpublished-output>' : arg);
   }
   await writeReport(summary);
   console.log(JSON.stringify({ check: 'edited HDR sequence through float route, explicit output and HEVC Main10 master', ...summary }));
 } finally {
-  rmSync(dir, { recursive: true, force: true });
+  if (!process.env.HDR_MASTER_REPORT) rmSync(dir, { recursive: true, force: true });
 }

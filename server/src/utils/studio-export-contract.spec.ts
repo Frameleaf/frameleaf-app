@@ -89,6 +89,10 @@ describe('buildStudioExportContract (FL-102)', () => {
     expect(
       buildStudioExportContract({ format: 'mp4-h264', color: 'preserve' }, graph([]), [facts('a') as never]),
     ).toEqual({ video: { minBitDepth: 8, transfer: null }, audio: null });
+    expect(buildStudioExportContract({ format: 'webm-av1', color: 'preserve' }, graph([]), [])).toEqual({
+      video: { minBitDepth: 10, transfer: null },
+      audio: null,
+    });
   });
 
   it('carries the widest audible layout at the highest rate, ignoring a muted track', () => {
@@ -117,18 +121,65 @@ describe('buildStudioExportContract (FL-102)', () => {
 
 describe('findStudioExportOutputMismatch (FL-102)', () => {
   const contract = { video: { minBitDepth: 8 as const, transfer: null }, audio: null };
-  const stream = { pixelFormat: 'yuv420p', colorTransfer: ColorTransfer.Bt709, duration: 5, frameRate: 25 };
+  const stream = {
+    codecName: 'h264',
+    pixelFormat: 'yuv420p',
+    colorTransfer: ColorTransfer.Bt709,
+    duration: 5,
+    frameRate: 25,
+  };
 
   it('refuses a result with no picture and accepts a silent one when nothing was promised', () => {
-    expect(findStudioExportOutputMismatch(contract, { videoStreams: [], audioStreams: [] })).toMatch('no video');
-    expect(findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [] })).toBeNull();
+    expect(findStudioExportOutputMismatch(contract, { videoStreams: [], audioStreams: [] }, 'mp4-h264')).toMatch(
+      'no video',
+    );
+    expect(
+      findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [] }, 'mp4-h264'),
+    ).toBeNull();
   });
 
   it('still checks alignment of an audio track nobody promised', () => {
     const audio = { codecName: 'aac', sampleRate: 48_000, duration: 3 };
     expect(
-      findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [audio as never] }),
+      findStudioExportOutputMismatch(
+        contract,
+        { videoStreams: [stream as never], audioStreams: [audio as never] },
+        'mp4-h264',
+      ),
     ).toMatch('misaligned');
+  });
+
+  it.each([
+    ['mp4-h264', 'h264'],
+    ['mp4-hevc-main10', 'hevc'],
+    ['webm-av1', 'av1'],
+    ['prores-422-hq', 'prores'],
+  ])('accepts the actual codec of %s and refuses a changed or unknown codec', (format, codecName) => {
+    const output = (codecName: string | null) => ({
+      videoStreams: [{ ...stream, codecName, pixelFormat: 'yuv420p10le' } as never],
+      audioStreams: [],
+    });
+    expect(findStudioExportOutputMismatch(contract, output(codecName), format)).toBeNull();
+    expect(findStudioExportOutputMismatch(contract, output('vp9'), format)).toMatch('video codec');
+    expect(findStudioExportOutputMismatch(contract, output(null), format)).toMatch('video codec');
+  });
+
+  it('holds an older eight-bit AV1 contract to the selected format minimum', () => {
+    for (const pixelFormat of ['yuv420p', 'yuv420p9le', 'unknown']) {
+      expect(
+        findStudioExportOutputMismatch(
+          contract,
+          { videoStreams: [{ ...stream, codecName: 'av1', pixelFormat } as never], audioStreams: [] },
+          'webm-av1',
+        ),
+      ).toMatch('below the 10-bit');
+    }
+  });
+
+  it('refuses an unknown format even when the codec matches another supported format', () => {
+    expect(
+      findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [] }, 'toString'),
+    ).toMatch('unsupported video format');
   });
 });
 
@@ -138,6 +189,7 @@ describe.each([
 ] as const)('HDR export signalling (%s, FL-107)', (_, transfer, colorTransfer) => {
   const contract = { video: { minBitDepth: 10 as const, transfer }, audio: null };
   const stream = {
+    codecName: 'hevc',
     pixelFormat: 'yuv420p10le',
     colorTransfer,
     colorPrimaries: ColorPrimaries.Bt2020,
@@ -153,12 +205,22 @@ describe.each([
     ['unknown matrix', { colorMatrix: ColorMatrix.Unknown }, /matrix/i],
   ])('rejects %s even when ten-bit precision and transfer match', (_, tags, reason) => {
     expect(
-      findStudioExportOutputMismatch(contract, { videoStreams: [{ ...stream, ...tags } as never], audioStreams: [] }),
+      findStudioExportOutputMismatch(
+        contract,
+        { videoStreams: [{ ...stream, ...tags } as never], audioStreams: [] },
+        'mp4-hevc-main10',
+      ),
     ).toMatch(reason);
   });
 
   it('accepts ten-bit BT.2020 with the BT.2020 non-constant-luminance matrix', () => {
-    expect(findStudioExportOutputMismatch(contract, { videoStreams: [stream as never], audioStreams: [] })).toBeNull();
+    expect(
+      findStudioExportOutputMismatch(
+        contract,
+        { videoStreams: [stream as never], audioStreams: [] },
+        'mp4-hevc-main10',
+      ),
+    ).toBeNull();
   });
 });
 
@@ -169,6 +231,7 @@ it('keeps SDR BT.709 exports eligible without an HDR gamut requirement (FL-107)'
       {
         videoStreams: [
           {
+            codecName: 'h264',
             pixelFormat: 'yuv420p',
             colorTransfer: ColorTransfer.Bt709,
             colorPrimaries: ColorPrimaries.Bt709,
@@ -179,6 +242,7 @@ it('keeps SDR BT.709 exports eligible without an HDR gamut requirement (FL-107)'
         ],
         audioStreams: [],
       },
+      'mp4-h264',
     ),
   ).toBeNull();
 });

@@ -1075,7 +1075,7 @@ export class StudioExportService {
 
   /**
    * FL-102: the file is probed here, on this server, and held to what the export promised: the bit
-   * depth and transfer of its format and colour, the source audio layout and rate (or the chosen
+   * codec, depth and transfer of its format and colour, the source audio layout and rate (or the chosen
    * stereo downmix), and audio that ends with the picture. An export submitted before the contract
    * existed is still held to the precision its settings promise.
    */
@@ -1090,7 +1090,7 @@ export class StudioExportService {
     if (!probe) {
       throw new StudioExportRefusal('output-rejected', 'The rendered file could not be read as video');
     }
-    const mismatch = findStudioExportOutputMismatch(expected, probe);
+    const mismatch = findStudioExportOutputMismatch(expected, probe, settings.format);
     if (mismatch) {
       throw new StudioExportRefusal('output-rejected', mismatch);
     }

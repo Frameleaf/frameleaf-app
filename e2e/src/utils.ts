@@ -337,105 +337,103 @@ export const utils = {
           };
           try {
             await db.connect();
-            await withDeadline(
-              'Quiescing test database',
-              Math.min(6000, total.remaining()),
-              async (context) => {
-                const ownerToken = async (ownerId: string) => {
-                  const existing = sessions.get(ownerId);
-                  if (existing) {
-                    return existing.token;
-                  }
-                  const token = randomBytes(32).toString('hex');
-                  const hashed = createHash('sha256').update(token).digest();
-                  // Record ownership before the write so an ambiguous insert is still cleaned up.
-                  sessions.set(ownerId, { token, hashed });
-                  await query(context, `INSERT INTO "session" ("userId", token) VALUES ($1, $2)`, [ownerId, hashed]);
-                  return token;
-                };
-                const unfinishedOperations = async (id?: string) => {
-                  const { rows } = await query(
-                    context,
-                    `SELECT id, "ownerId", status, "cancelRequestedAt",
-                "claimToken" IS NOT NULL AS claimed,
-                "remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL AS "remotePending"
-                FROM media_operation WHERE ($1::uuid IS NULL OR id = $1::uuid) AND (
-                  status NOT IN ('completed', 'cancelled', 'failed') OR "claimToken" IS NOT NULL
-                  OR ("remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL))
-                ORDER BY id LIMIT 251`,
-                    [id ?? null],
+            const context = total;
+            const ownerToken = async (context: WaitContext, ownerId: string) => {
+              const existing = sessions.get(ownerId);
+              if (existing) {
+                return existing.token;
+              }
+              const token = randomBytes(32).toString('hex');
+              const hashed = createHash('sha256').update(token).digest();
+              // Record ownership before the write so an ambiguous insert is still cleaned up.
+              sessions.set(ownerId, { token, hashed });
+              await query(context, `INSERT INTO "session" ("userId", token) VALUES ($1, $2)`, [ownerId, hashed]);
+              return token;
+            };
+            const unfinishedOperations = async (context: WaitContext, id?: string) => {
+              const { rows } = await query(
+                context,
+                `SELECT id, "ownerId", status, "cancelRequestedAt",
+            "claimToken" IS NOT NULL AS claimed,
+            "remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL AS "remotePending"
+            FROM media_operation WHERE ($1::uuid IS NULL OR id = $1::uuid) AND (
+              status NOT IN ('completed', 'cancelled', 'failed') OR "claimToken" IS NOT NULL
+              OR ("remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL))
+            ORDER BY id LIMIT 251`,
+                [id ?? null],
+              );
+              if (rows.length > 250) {
+                throw new Error('Reset refused: more than 250 unfinished media operations require owner cleanup');
+              }
+              return rows;
+            };
+            const cancelOperations = async (context: WaitContext) => {
+              const operations = await unfinishedOperations(context);
+              for (const operation of operations) {
+                if (['completed', 'cancelled', 'failed'].includes(operation.status)) {
+                  throw new Error(
+                    `Reset refused: media operation ${operation.id} still has ${operation.remotePending ? 'unreleased remote work' : 'an unsettled worker claim'}`,
                   );
-                  if (rows.length > 250) {
-                    throw new Error('Reset refused: more than 250 unfinished media operations require owner cleanup');
+                }
+                if (operation.cancelRequestedAt !== null) {
+                  continue;
+                }
+                try {
+                  await cancelMediaOperation(
+                    { id: operation.id },
+                    {
+                      headers: asBearerAuth(await ownerToken(context, operation.ownerId)),
+                      signal: context.signal,
+                    },
+                  );
+                } catch (error) {
+                  // A normal completion may win the cancellation race. It is safe only once the
+                  // actual row has no live claim or retained remote-cleanup obligation.
+                  let remaining;
+                  try {
+                    remaining = await unfinishedOperations(context, operation.id);
+                  } catch (error_) {
+                    throw new AggregateError(
+                      [error, error_],
+                      `Reset could not confirm media operation ${operation.id} stopped`,
+                      { cause: error_ },
+                    );
                   }
-                  return rows;
-                };
-                const cancelOperations = async () => {
-                  const operations = await unfinishedOperations();
-                  for (const operation of operations) {
-                    if (['completed', 'cancelled', 'failed'].includes(operation.status)) {
-                      throw new Error(
-                        `Reset refused: media operation ${operation.id} still has ${operation.remotePending ? 'unreleased remote work' : 'an unsettled worker claim'}`,
-                      );
-                    }
-                    if (operation.cancelRequestedAt !== null) {
-                      continue;
-                    }
-                    try {
-                      await cancelMediaOperation(
-                        { id: operation.id },
-                        {
-                          headers: asBearerAuth(await ownerToken(operation.ownerId)),
-                          signal: context.signal,
-                        },
-                      );
-                    } catch (error) {
-                      // A normal completion may win the cancellation race. It is safe only once the
-                      // actual row has no live claim or retained remote-cleanup obligation.
-                      let remaining;
-                      try {
-                        remaining = await unfinishedOperations(operation.id);
-                      } catch (error_) {
-                        throw new AggregateError(
-                          [error, error_],
-                          `Reset could not confirm media operation ${operation.id} stopped`,
-                          { cause: error_ },
-                        );
-                      }
-                      if (remaining.length > 0) {
-                        throw new Error(
-                          `Reset refused: owner cancellation of media operation ${operation.id} (${operation.status}) was not accepted`,
-                          { cause: error },
-                        );
-                      }
-                    }
+                  if (remaining.length > 0) {
+                    throw new Error(
+                      `Reset refused: owner cancellation of media operation ${operation.id} (${operation.status}) was not accepted`,
+                      { cause: error },
+                    );
                   }
-                  return operations.length > 0;
-                };
-                phase = 'authenticate reset';
-                const { rows: admins } = await query(
-                  context,
-                  `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
-                );
-                let token = admins.length > 0 ? await ownerToken(admins[0].id) : undefined;
-                await resetWhilePaused({
-                  pause: async () => {
-                    phase = 'pause queues';
-                    await query(context, 'BEGIN');
-                    try {
-                      const { rows } = await query(
-                        context,
-                        'SELECT name, paused FROM job_queue ORDER BY name FOR UPDATE',
-                      );
-                      await query(context, 'UPDATE job_queue SET paused = true');
-                      await query(context, 'COMMIT');
-                      return rows as QueuePauseSnapshot;
-                    } catch (error) {
-                      await db.query('ROLLBACK');
-                      throw error;
-                    }
-                  },
-                  drain: async () => {
+                }
+              }
+              return operations.length > 0;
+            };
+            phase = 'authenticate reset';
+            const { rows: admins } = await query(
+              context,
+              `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
+            );
+            let token = admins.length > 0 ? await ownerToken(context, admins[0].id) : undefined;
+            await resetWhilePaused({
+              pause: async () => {
+                phase = 'pause queues';
+                await query(context, 'BEGIN');
+                try {
+                  const { rows } = await query(context, 'SELECT name, paused FROM job_queue ORDER BY name FOR UPDATE');
+                  await query(context, 'UPDATE job_queue SET paused = true');
+                  await query(context, 'COMMIT');
+                  return rows as QueuePauseSnapshot;
+                } catch (error) {
+                  await db.query('ROLLBACK');
+                  throw error;
+                }
+              },
+              drain: () =>
+                withDeadline(
+                  'Quiescing test database',
+                  Math.min(6000, total.remaining()),
+                  async (context) => {
                     phase = 'request active-job cancellation';
                     await query(
                       context,
@@ -447,7 +445,7 @@ export const utils = {
                         // Independent bulk/render/import workers do not claim from job_queue. Cancel
                         // through the owner's real API, preserving edit refusal and remote cleanup.
                         phase = 'cancel media operations';
-                        await cancelOperations();
+                        await cancelOperations(context);
                         phase = 'confirm executor stop';
                         return drainAfterExecutorStop(
                           (text) => query(context, text),
@@ -459,14 +457,14 @@ export const utils = {
                               const { rows } = await query(
                                 context,
                                 `SELECT
-                        EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
-                        OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
-                        OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
-                          WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
-                        OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
+                    EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
+                    OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
+                    OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
+                      WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
+                    OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
                               );
                               if (!rows[0].unfinished) {
-                                const operations = await unfinishedOperations();
+                                const operations = await unfinishedOperations(context);
                                 return operations.length > 0;
                               }
                               // Record ownership before the atomic write, including an ambiguous response.
@@ -475,12 +473,12 @@ export const utils = {
                               await query(
                                 context,
                                 `WITH owned_group AS (
-                                  INSERT INTO cluster_group (id) VALUES ($1) RETURNING id
-                                ) INSERT INTO "user" (id, email, "isAdmin", "clusterGroupId")
-                                  SELECT id, $2, true, id FROM owned_group`,
+                              INSERT INTO cluster_group (id) VALUES ($1) RETURNING id
+                            ) INSERT INTO "user" (id, email, "isAdmin", "clusterGroupId")
+                              SELECT id, $2, true, id FROM owned_group`,
                                 [resetAdminId, `reset-${resetAdminId}@example.invalid`],
                               );
-                              token = await ownerToken(resetAdminId);
+                              token = await ownerToken(context, resetAdminId);
                             }
                             const headers = asBearerAuth(token);
                             phase = 'read queues before clear';
@@ -490,8 +488,8 @@ export const utils = {
                             const { rows: dirtyIntents } = await query(
                               context,
                               `SELECT DISTINCT queue FROM job_run_item WHERE "jobId" IS NULL
-                                AND "libraryIntent"->>'sensitive' = 'true'
-                                AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
+                            AND "libraryIntent"->>'sensitive' = 'true'
+                            AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
                             );
                             const dirtyQueues = new Set(dirtyIntents.map((row) => row.queue));
                             for (const queue of before) {
@@ -518,7 +516,7 @@ export const utils = {
                               return true;
                             }
                             phase = 'inspect media operations';
-                            const operations = await unfinishedOperations();
+                            const operations = await unfinishedOperations(context);
                             return operations.length > 0;
                           },
                         );
@@ -527,43 +525,42 @@ export const utils = {
                       100,
                     );
                   },
-                  mutate: async () => {
-                    phase = 'confirm stop before mutation';
-                    context.remaining();
-                    // Recheck retained attempts after terminal clearing and immediately before the
-                    // callback that can delete fixtures. Cleared state/data never substitute for proof.
-                    await assertResetExecutionsStopped((text) => query(context, text));
-                    phase = 'mutate fixtures';
-                    await mutate?.(db, context);
-                  },
-                  restore: (snapshot) =>
-                    withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
-                      cleanupPhase = 'restore queue settings';
-                      await query(cleanup, 'BEGIN');
-                      try {
-                        if (resetAdminId) {
-                          // Revocation cascades to this fixture's sessions. Full reset may already have
-                          // truncated these rows; partial/failed resets still remove only our identity.
-                          await query(cleanup, 'DELETE FROM "user" WHERE id = $1', [resetAdminId]);
-                          await query(cleanup, 'DELETE FROM user_audit WHERE "userId" = $1', [resetAdminId]);
-                          await query(cleanup, 'DELETE FROM cluster_group WHERE id = $1', [resetAdminId]);
-                        }
-                        await query(
-                          cleanup,
-                          `UPDATE job_queue q SET paused = original.paused
-                  FROM jsonb_to_recordset($1::jsonb) AS original(name text, paused boolean) WHERE q.name = original.name`,
-                          [JSON.stringify(snapshot)],
-                        );
-                        await query(cleanup, 'COMMIT');
-                      } catch (error) {
-                        await db.query('ROLLBACK');
-                        throw error;
-                      }
-                    }),
-                });
+                  total.signal,
+                ),
+              mutate: async () => {
+                phase = 'confirm stop before mutation';
+                context.remaining();
+                // Recheck retained attempts after terminal clearing and immediately before the
+                // callback that can delete fixtures. Cleared state/data never substitute for proof.
+                await assertResetExecutionsStopped((text) => query(context, text));
+                phase = 'mutate fixtures';
+                await mutate?.(db, context);
               },
-              total.signal,
-            );
+              restore: (snapshot) =>
+                withDeadline('Restoring queue pause settings', cleanupBudget(), async (cleanup) => {
+                  cleanupPhase = 'restore queue settings';
+                  await query(cleanup, 'BEGIN');
+                  try {
+                    if (resetAdminId) {
+                      // Revocation cascades to this fixture's sessions. Full reset may already have
+                      // truncated these rows; partial/failed resets still remove only our identity.
+                      await query(cleanup, 'DELETE FROM "user" WHERE id = $1', [resetAdminId]);
+                      await query(cleanup, 'DELETE FROM user_audit WHERE "userId" = $1', [resetAdminId]);
+                      await query(cleanup, 'DELETE FROM cluster_group WHERE id = $1', [resetAdminId]);
+                    }
+                    await query(
+                      cleanup,
+                      `UPDATE job_queue q SET paused = original.paused
+              FROM jsonb_to_recordset($1::jsonb) AS original(name text, paused boolean) WHERE q.name = original.name`,
+                      [JSON.stringify(snapshot)],
+                    );
+                    await query(cleanup, 'COMMIT');
+                  } catch (error) {
+                    await db.query('ROLLBACK');
+                    throw error;
+                  }
+                }),
+            });
           } catch (error) {
             failed = true;
             primary = error;

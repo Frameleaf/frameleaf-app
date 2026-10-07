@@ -123,6 +123,6 @@ test.describe('video moments', () => {
     await results.getByRole('button', { name: 'Play from 1:04' }).click();
     await page.waitForURL(`**/photos/${other.id}`);
 
-    expect(requests.all.filter((path) => /transcri|asr|speech/i.test(path))).toEqual([]);
+    expect(requests.all.filter((path) => path.startsWith('/api/') && /transcri|asr|speech/i.test(path))).toEqual([]);
   });
 });

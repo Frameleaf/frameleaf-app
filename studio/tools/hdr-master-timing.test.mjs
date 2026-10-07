@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, watch, writ
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { encodeHdrMaster, decodeMaster, probeMaster } from './hdr-master.mjs';
+import { encodeHdrMaster } from './hdr-master.mjs';
 import { sourceTimeline } from './preflight-validators.mjs';
 
 const run = (tool, args) => {
@@ -29,7 +29,8 @@ const hasEncoder = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding
 test('VFR output PTS, channel order and atomic interrupted restart', {
   skip: hasEncoder.status !== 0 || !/libx265/.test(hasEncoder.stdout) ? 'FFmpeg with libx265 unavailable' : false,
 }, async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-timing-'));
+  const dir = mkdtempSync(process.env.HDR_TIMING_REPORT
+    ? `${path.resolve(process.env.HDR_TIMING_REPORT)}.artifacts-` : path.join(tmpdir(), 'fl-hdr-timing-'));
   try {
     report.tools = Object.fromEntries(['ffmpeg', 'ffprobe'].map((tool) => [tool, run(tool, ['-version']).toString().split('\n')[0]]));
     const source = path.join(dir, 'vfr.mkv');
@@ -51,25 +52,30 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
         run('ffmpeg', audioArgs);
         const output = path.join(dir, `${transfer}-${layout}.mp4`);
         const options = { frames, fps: 25, transfer, timeline, audio: { path: audio }, mastering: { maxNits: 1000, minNits: 0.005 }, output, lossless: true };
-        const encoded = await encodeHdrMaster(options);
-        const outputProbe = probe(output, 'stream=time_base:frame=pts', 'v:0', ['-show_frames']);
-        assert.equal(outputProbe.streams[0].time_base, '1/1000');
-        assert.deepEqual(outputProbe.frames.map((f) => f.pts), expectedPts);
-        assert.equal(probeMaster('ffprobe', output).transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
-        const decoded = decodeMaster('ffmpeg', output, 64, 32);
-        assert.equal(decoded.length, frames.length);
-        decoded.forEach((pixels, n) => assert.ok(Math.abs(pixels[0] - frames[n].rgba[0]) <= 2 / 1023, `frame identity at PTS ${expectedPts[n]}`));
-        const audioEntries = 'stream=codec_name,channels,channel_layout,sample_rate:packet=data_hash';
-        const inputAudio = probe(audio, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
-        const outputAudio = probe(output, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
-        assert.equal(inputAudio.streams[0].channel_layout, layout);
-        assert.equal(inputAudio.streams[0].channels, channels);
-        assert.deepEqual(outputAudio, inputAudio, 'layout and compressed audio packets preserved');
+        let outputProbe;
+        let outputAudio;
+        let inputPcm;
+        options.validate = ({ probe: master, decoded, output }) => {
+          outputProbe = probe(output, 'stream=time_base:frame=pts', 'v:0', ['-show_frames']);
+          assert.equal(outputProbe.streams[0].time_base, '1/1000');
+          assert.deepEqual(outputProbe.frames.map((f) => f.pts), expectedPts);
+          assert.equal(master.transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
+          assert.equal(decoded.length, frames.length);
+          decoded.forEach((pixels, n) => assert.ok(Math.abs(pixels[0] - frames[n].rgba[0]) <= 2 / 1023, `frame identity at PTS ${expectedPts[n]}`));
+          const audioEntries = 'stream=codec_name,channels,channel_layout,sample_rate:packet=data_hash';
+          const inputAudio = probe(audio, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
+          outputAudio = probe(output, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
+          assert.equal(inputAudio.streams[0].channel_layout, layout);
+          assert.equal(inputAudio.streams[0].channels, channels);
+          assert.deepEqual(outputAudio, inputAudio, 'layout and compressed audio packets preserved');
+          inputPcm = decodeAudio(audio);
+          assert.deepEqual(decodeAudio(output), inputPcm, 'independent PCM decode preserves channel order');
+          const samples = new Int32Array(inputPcm.buffer, inputPcm.byteOffset, channels);
+          Array.from(samples).forEach((sample, n) => assert.equal(sample, (n + 1) * 2 ** 27, `ordered channel ${n}`));
+        };
         const decodeAudio = (file) => run('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:a:0', '-c:a', 'pcm_s32le', '-f', 's32le', '-']);
-        const inputPcm = decodeAudio(audio);
-        assert.deepEqual(decodeAudio(output), inputPcm, 'independent PCM decode preserves channel order');
-        const samples = new Int32Array(inputPcm.buffer, inputPcm.byteOffset, channels);
-        Array.from(samples).forEach((sample, n) => assert.equal(sample, (n + 1) * 2 ** 27, `ordered channel ${n}`));
+        const encoded = await encodeHdrMaster(options);
+        const expectedOutputProbe = outputProbe;
         const completeDigest = digest(output);
         // A real ffmpeg attempt is killed after opening its unpublished output.
         const controller = new AbortController();
@@ -82,9 +88,12 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
         assert.equal(digest(output), completeDigest, 'interruption leaves the prior complete master intact');
         assert.ok(!readdirSync(dir).some((name) => name.endsWith('.partial.mp4')), 'no torn attempt is exposed');
         await encodeHdrMaster(options);
-        assert.deepEqual(probe(output, 'stream=time_base:frame=pts', 'v:0', ['-show_frames']), outputProbe, 'restart preserves exact PTS');
+        assert.deepEqual(probe(output, 'stream=time_base:frame=pts', 'v:0', ['-show_frames']), expectedOutputProbe, 'restart preserves exact PTS');
         assert.deepEqual(decodeAudio(output), inputPcm, 'restart preserves ordered audio');
+        const retainedPath = (file) => process.env.HDR_TIMING_REPORT
+          ? path.relative(path.dirname(path.resolve(process.env.HDR_TIMING_REPORT)), file) : null;
         report.cases.push({ transfer, layout, axes: ['pts', 'audio', 'temporal-recovery'], sourceSha256: digest(source), audioSha256: digest(audio), outputSha256: digest(output),
+          sourcePath: retainedPath(source), audioPath: retainedPath(audio), outputPath: retainedPath(output),
           timeline, outputTimeline: outputProbe, audio: outputAudio, frameIdentity: true, interruptedPriorOutputUnchanged: true, restartVerified: true,
           fixtureArgs: fixtureArgs.slice(0, -1), audioArgs: audioArgs.slice(0, -1), encoderArgs: encoded.args.map((arg) => arg === audio ? '<audio>' : arg.endsWith('.partial.mp4') ? '<unpublished-output>' : arg) });
       }
@@ -92,5 +101,5 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
     await assert.rejects(encodeHdrMaster({ frames, fps: 25, transfer: 'hlg', output: path.join(dir, 'bad.mp4'), timeline: { timeBase: '1/1000', pts: [0, 40] } }), /One output PTS/);
     assert.ok(!existsSync(path.join(dir, 'bad.mp4')));
     if (process.env.HDR_TIMING_REPORT) writeFileSync(process.env.HDR_TIMING_REPORT, `${JSON.stringify(report, null, 2)}\n`);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally { if (!process.env.HDR_TIMING_REPORT) rmSync(dir, { recursive: true, force: true }); }
 });

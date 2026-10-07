@@ -11,11 +11,12 @@ import { BuddyKitSchema, type BuddyRestoreStatusDto, type BuddyStatusDto } from 
 import { type BuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
-import { BUDDY_SIDES, type BuddySide, startBuddyCloud } from 'test/fixtures/buddy-cloud.js';
+import { BUDDY_SIDES, type BuddySide, buddyHost, buddyPort, startBuddyCloud } from 'test/fixtures/buddy-cloud.js';
 import { buddyForwardingDiagnostic, startBuddyTransport } from 'test/fixtures/buddy-transport.js';
+import z from 'zod';
 
 // Fails if app capture/pg_dump/crypto/commit/restore stops working, crosses an owner, or indexes hosted media.
-// This is direct HTTPS with a fixture coordinator/enrollment; it does not qualify real Cloud/relay/NAT.
+// Direct HTTPS enrollment remains a fixture; actual mode consumes an independently owned Cloud runtime.
 // Includes paused restart and durable unpaused recovery through explicit peer backpressure.
 // Simultaneous uncontrolled restart on real Cloud/relay/two networks remains unqualified.
 const compose = fileURLToPath(new URL('../../../e2e/docker-compose.buddy.yml', import.meta.url));
@@ -192,6 +193,9 @@ it('retains causal forwarding state without leaking request identities or error 
 
 it('backs up and restores two real apps bidirectionally without exposing hosted Buddy photos', async () => {
   const started = Date.now();
+  const mode = process.env.BUDDY_CLOUD_MODE ?? 'fake';
+  expect(['fake', 'actual']).toContain(mode);
+  const actual = mode === 'actual';
   const root = await realpath(process.env.BUDDY_ROOT ?? '');
   expect(process.env.CI).toBeTruthy();
   expect(process.env.FRAMELEAF_BUDDY_BACKUP).toBe('true');
@@ -199,7 +203,9 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
   await access(join(root, '.fl310-buddy-fixture'));
   const report: Record<string, unknown> = {
     source: process.env.GITHUB_SHA,
-    scope: 'two-real-apps/direct-fixture-coordinator-and-enrollment',
+    scope: actual
+      ? 'two-real-apps/actual-cloud-fixture-enrollment'
+      : 'two-real-apps/direct-fixture-coordinator-and-enrollment',
     restartMode: 'controlled-paused-restart',
     unpausedRecoveryMode: 'durable-pending-verification/explicit-peer-unavailability',
     phase: 'setup',
@@ -219,14 +225,107 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
   const transports: Array<Awaited<ReturnType<typeof startBuddyTransport>>> = [];
   let coordinator: Awaited<ReturnType<typeof startBuddyCloud>> | undefined;
   try {
-    coordinator = await startBuddyCloud();
+    const manifest = actual
+      ? z
+          .object({
+            sourceHead: z.string().regex(/^[a-f\d]{40}$/),
+            executingSource: z.object({
+              builtFromCleanHead: z.string().regex(/^[a-f\d]{40}$/),
+              sourceTrees: z.object({
+                api: z.string().regex(/^[a-f\d]{64}$/),
+                contracts: z.string().regex(/^[a-f\d]{64}$/),
+              }),
+              compiledTrees: z.object({
+                api: z.string().regex(/^[a-f\d]{64}$/),
+                contracts: z.string().regex(/^[a-f\d]{64}$/),
+              }),
+            }),
+            origin: z.url(),
+            accounts: z.object({ a: z.uuid(), b: z.uuid() }),
+            ownedFixtureOnly: z.literal(true),
+            isolatedPostgres: z.literal(true),
+            isolatedValkey: z.literal(true),
+            providerOverrides: z.literal(0),
+            bearerCompatibility: z.literal(false),
+          })
+          .parse(JSON.parse(await readFile(process.env.BUDDY_CLOUD_MANIFEST ?? '', 'utf8')))
+      : undefined;
+    const control = async (command: Record<string, unknown>) => {
+      // All command input stays on stdin; discard child errors/output to keep codes and keys private.
+      try {
+        if (!process.env.BUDDY_CLOUD_CONTROL_NODE || !process.env.BUDDY_CLOUD_CONTROL_CLIENT) {
+          throw new Error('Missing owned Cloud control client');
+        }
+        const input = JSON.stringify(command);
+        if (Buffer.byteLength(input) > 4096) {
+          throw new Error('Owned Cloud control input too large');
+        }
+        const stdout = await new Promise<string>((resolve, reject) => {
+          const child = execFile(
+            process.env.BUDDY_CLOUD_CONTROL_NODE!,
+            [process.env.BUDDY_CLOUD_CONTROL_CLIENT!, '-'],
+            { timeout: 20_000, maxBuffer: 64 * 1024 },
+            (error, stdout) => (error ? reject(error) : resolve(stdout)),
+          );
+          child.stdin!.on('error', reject);
+          child.stdin!.end(input);
+        });
+        const reply = JSON.parse(stdout) as { ok: boolean; result: unknown };
+        if (reply.ok !== true) {
+          throw new Error('Owned Cloud control refused');
+        }
+        return reply.result;
+      } catch {
+        throw new Error('Owned Cloud control unavailable or refused; private command input omitted');
+      }
+    };
+    if (manifest) {
+      expect(process.env.FRAMELEAF_CLOUD_URL).toBe(manifest.origin);
+      expect(process.env.BUDDY_CLOUD_SOURCE_SHA).toBe(manifest.sourceHead);
+      const live = z
+        .object({
+          origin: z.url(),
+          accounts: z.object({ a: z.uuid(), b: z.uuid() }),
+          instances: z.array(z.unknown()),
+          pairings: z.array(z.unknown()),
+          executingSource: z.object({
+            builtFromCleanHead: z.string().regex(/^[a-f\d]{40}$/),
+            sourceTrees: z.object({
+              api: z.string().regex(/^[a-f\d]{64}$/),
+              contracts: z.string().regex(/^[a-f\d]{64}$/),
+            }),
+            compiledTrees: z.object({
+              api: z.string().regex(/^[a-f\d]{64}$/),
+              contracts: z.string().regex(/^[a-f\d]{64}$/),
+            }),
+          }),
+        })
+        .parse(await control({ command: 'status' }));
+      expect(live.origin).toBe(manifest.origin);
+      expect(live.accounts).toEqual(manifest.accounts);
+      expect(live.instances).toHaveLength(0);
+      expect(live.pairings).toHaveLength(0);
+      report.manifestCloudSource = manifest.sourceHead;
+      expect(live.executingSource.builtFromCleanHead).toBe(process.env.BUDDY_CLOUD_SOURCE_SHA);
+      expect(live.executingSource).toEqual(manifest.executingSource);
+      report.executingCloudSource = live.executingSource;
+      // Arm exactly once before any Library Cloud/device request; fresh app DBs must have no link token.
+      const armed = z.object({ armed: z.literal(true) }).parse(await control({ command: 'privacy-start' }));
+      report.cloudPrivacy = armed;
+    } else {
+      coordinator = await startBuddyCloud();
+    }
+    const accounts = manifest?.accounts ?? coordinator!.accounts;
     const kits: BuddyKeyring[] = [];
     const items: Array<{ missing: Item; current: Item; member: Item; emptyAlbum: string; album: string }> = [];
     const snapshotIds: string[] = [];
     const sentinels: string[] = [];
     for (const side of BUDDY_SIDES) {
       const url = `http://127.0.0.1:${side === 'a' ? 3285 : 3286}`;
-      const db = postgres(`postgres://postgres:postgres@127.0.0.1:${side === 'a' ? 5535 : 5536}/frameleaf`, { max: 2 });
+      const db = postgres(`postgres://postgres:postgres@127.0.0.1:${side === 'a' ? 5535 : 5536}/frameleaf`, {
+        max: 2,
+        connection: { search_path: 'public' },
+      });
       const app = { side, url, db, admin: { token: '', id: '' }, member: { token: '', id: '' } };
       apps.push(app);
       expect((await db`show fsync`)[0].fsync).toBe('on');
@@ -259,8 +358,21 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         app.admin.token,
       );
       expect(config.frameleafCloud.remoteAccess.enabled).toBe(false);
-      const link = await json<{ state: string }>(app, '/admin/cloud/link', 'POST', app.admin.token, undefined, 201);
+      const link = await json<{ state: string; pending: { userCode: string } | null }>(
+        app,
+        '/admin/cloud/link',
+        'POST',
+        app.admin.token,
+        undefined,
+        201,
+      );
       expect(link.state).toBe('pending');
+      if (actual) {
+        if (!link.pending?.userCode) {
+          throw new Error('Actual device link did not emit an approval code');
+        }
+        await control({ command: 'approve', account: side, userCode: link.pending.userCode });
+      }
       await until(
         'Normal device linking',
         () => json<{ state: string }>(app, '/admin/cloud/link', 'GET', app.admin.token),
@@ -343,7 +455,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       {
         version: 1,
         instanceId: (await status(a)).instanceId,
-        targetAccountId: coordinator.accounts.b,
+        targetAccountId: accounts.b,
         quotaBytes: 10 * 1024 ** 3,
         retention: { days: 30, monthly: 12 },
       },
@@ -369,8 +481,14 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     for (const app of apps) {
       await json(app, `${adminRoute}/refresh`, 'POST', app.admin.token, undefined, 201);
     }
-    const pair = coordinator.pairing()!;
+    const pair = (await status(a)).pairing;
+    if (!pair) {
+      throw new Error('Actual Library status did not return a pairing');
+    }
     expect(pair.state).toBe('active');
+    if (coordinator) {
+      expect(pair).toEqual(coordinator.pairing());
+    }
     expect(pair.vaults[0].vaultId === pair.vaults[1].vaultId).toBe(false);
     expect(pair.vaults[0].sourceKey.x === pair.vaults[1].sourceKey.x).toBe(false);
     for (const app of apps) {
@@ -381,6 +499,19 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       sentinels.push(...Object.values(kit.keys));
       await json(app, `${adminRoute}/key/verify`, 'POST', app.admin.token, kit, 201);
       transports.push(await startBuddyTransport(root, app.side, saved.instanceId, () => report.phase));
+    }
+    if (actual) {
+      report.phase = 'actual-peer-publication';
+      // Never invent Cloud connections or write EdgeState: the app must publish its own real endpoint.
+      for (const app of apps) {
+        const published = await json<{ connections: Array<{ uri: string }> }>(app, '/server/connections');
+        const expected = `https://${buddyHost(app.side)}:${buddyPort(app.side)}`;
+        if (!published.connections.some(({ uri }) => uri === expected)) {
+          report.peerPublication = 'missing-gate: genuine heartbeat publication matching fixture TLS/SNI required';
+          throw new Error('Actual peer discovery missing: genuine published HTTPS endpoint must match fixture TLS/SNI');
+        }
+        await json(app, '/admin/cloud/heartbeat', 'POST', app.admin.token, undefined, 201);
+      }
     }
     expect(kits[0].keys['1'] === kits[1].keys['1']).toBe(false);
     for (const app of apps) {
@@ -939,19 +1070,48 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         side: app.side,
       });
     }
-    expect(coordinator.errors).toEqual([]);
-    const paths = new Set([...coordinator.cloud.routes.keys(), 'GET /.well-known/frameleaf-services']);
-    for (const request of coordinator.cloud.requests) {
-      expect(paths.has(`${request.method} ${request.path}`)).toBe(true);
-      for (const sentinel of sentinels) {
-        expect(request.body.includes(sentinel)).toBe(false);
-      }
-      if (request.path.startsWith('/v1/buddy/')) {
-        expect(request.dpop).not.toBeNull();
+    if (coordinator) {
+      expect(coordinator.errors).toEqual([]);
+      const paths = new Set([...coordinator.cloud.routes.keys(), 'GET /.well-known/frameleaf-services']);
+      for (const request of coordinator.cloud.requests) {
+        expect(paths.has(`${request.method} ${request.path}`)).toBe(true);
+        for (const sentinel of sentinels) {
+          expect(request.body.includes(sentinel)).toBe(false);
+        }
+        if (request.path.startsWith('/v1/buddy/')) {
+          expect(request.dpop).not.toBeNull();
+        }
       }
     }
     for (const transport of transports) {
       expect(transport.failures).toEqual([]);
+    }
+    if (actual) {
+      report.mediaJourneyPassed = true;
+      report.phase = 'cloud-privacy';
+      const privacy = z
+        .object({
+          armed: z.boolean(),
+          complete: z.boolean(),
+          leaked: z.boolean(),
+          requests: z.number().int().nonnegative(),
+          buddyRequests: z.number().int().nonnegative(),
+          acceptedBuddyRequests: z.number().int().nonnegative(),
+          unknownBuddyRoutes: z.number().int().nonnegative(),
+          missingBuddyProof: z.number().int().nonnegative(),
+        })
+        .parse(await control({ command: 'privacy-check', sentinels }));
+      report.cloudPrivacy = privacy;
+      expect(privacy).toMatchObject({
+        armed: true,
+        complete: true,
+        leaked: false,
+        unknownBuddyRoutes: 0,
+        missingBuddyProof: 0,
+      });
+      expect(privacy.requests).toBeGreaterThan(0);
+      expect(privacy.buddyRequests).toBeGreaterThan(0);
+      expect(privacy.acceptedBuddyRequests).toBeGreaterThan(0);
     }
     report.passed = true;
     report.phase = 'complete';

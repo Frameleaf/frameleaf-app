@@ -2,7 +2,7 @@
 // round trip (skipped only when FFmpeg with libx265 is not installed).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -69,6 +69,32 @@ const hasEncoder = (() => {
   const result = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' });
   return result.status === 0 && /libx265/.test(result.stdout) && spawnSync('ffprobe', ['-version']).status === 0;
 })();
+
+test('encoding and QC validation precede atomic publication', { skip: !hasEncoder }, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-publish-'));
+  try {
+    const output = path.join(dir, 'master.mp4');
+    const previous = Buffer.from('previous complete master');
+    writeFileSync(output, previous);
+    const invalidEncoder = path.join(dir, 'invalid-encoder.mjs');
+    writeFileSync(invalidEncoder, '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\nprocess.stdin.resume();\nprocess.stdin.on("end", () => writeFileSync(process.argv.at(-1), "invalid encoded output"));\n', { mode: 0o700 });
+    const options = { frames: [frame(16, 16, () => [0.3, 0.3, 0.3, 1])], fps: 24,
+      transfer: 'hlg', output, lossless: true };
+    await assert.rejects(encodeHdrMaster({ ...options, ffmpeg: invalidEncoder }), /ffprobe/);
+    assert.deepEqual(readFileSync(output), previous);
+    await assert.rejects(encodeHdrMaster({ ...options, validate: ({ probe, decoded, output: partial }) => {
+      assert.equal(probe.transfer, 'arib-std-b67');
+      assert.equal(decoded.length, 1);
+      assert.notEqual(partial, output);
+      assert.deepEqual(readFileSync(output), previous);
+      throw new Error('independent picture QC refused');
+    } }), /independent picture QC refused/);
+    assert.deepEqual(readFileSync(output), previous);
+    assert.ok(!readdirSync(dir).some((name) => name.endsWith('.partial.mp4')));
+    await encodeHdrMaster(options);
+    assert.notDeepEqual(readFileSync(output), previous);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('HEVC Main10 HDR10 and HLG masters round-trip the signal', { skip: !hasEncoder && 'FFmpeg with libx265 unavailable' }, async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-master-'));

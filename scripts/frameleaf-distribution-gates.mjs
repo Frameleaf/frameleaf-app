@@ -94,12 +94,16 @@ function blockedEmbeddedComponents(attribution) {
 
 /** Cross-checks the gate register against the reviewed bill of materials it must not duplicate or drop. */
 export function validateCoverage(gates, attribution) {
-  const text = gates
-    .map((gate) => `${gate.component ?? ""} ${gate.description}`)
-    .join("\n");
+  const components = new Set(
+    gates
+      .filter((gate) => gate.status === "blocked-on-owner")
+      .flatMap((gate) =>
+        `${gate.component ?? ""} ${gate.description}`.split(/[^a-z0-9-]+/),
+      ),
+  );
   const missing = blockedEmbeddedComponents(attribution).filter((label) => {
     const [id] = label.split(" ");
-    return !text.includes(id);
+    return !components.has(id);
   });
   if (missing.length > 0) {
     fail(

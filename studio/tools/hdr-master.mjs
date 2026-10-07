@@ -7,6 +7,7 @@
 //   - encodes HEVC Main10 BT.2020 with explicit matrix/range/dither (the FL-102
 //     float-to-integer convention) and HDR10 SEI, and
 //   - verifies the written stream by probing and decoding it back.
+import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { rename, rm } from 'node:fs/promises';
@@ -119,7 +120,7 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
 }
 
 /** Encodes frames (an array of signal frames) into an MP4 HDR master. */
-export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', frames, fps, transfer, mastering, output, lossless = false, timeline, audio, signal }) {
+export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', frames, fps, transfer, mastering, output, lossless = false, timeline, audio, signal, validate }) {
   if (!['pq', 'hlg'].includes(transfer)) throw new Error(`Unsupported HDR transfer ${transfer}`);
   if (frames.length === 0) throw new Error('No frames to encode');
   const { width, height } = frames[0];
@@ -164,6 +165,29 @@ export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', frames, fps, transfer
       child.stdin.end();
     });
     signal?.throwIfAborted();
+    const probe = probeMaster(ffprobe, partial);
+    const trc = transfer === 'pq' ? 'smpte2084' : 'arib-std-b67';
+    assert.deepEqual([probe.codec, probe.profile, probe.pixFmt, probe.primaries, probe.transfer, probe.matrix, probe.range],
+      ['hevc', 'Main 10', 'yuv420p10le', 'bt2020', trc, 'bt2020nc', 'tv'], 'HDR master signalling mismatch');
+    assert.deepEqual([probe.width, probe.height, probe.frames], [width, height, frames.length], 'HDR master picture count/size mismatch');
+    if (light) {
+      assert.deepEqual([Number(probe.contentLight?.max_content), Number(probe.contentLight?.max_average)],
+        [light.maxCll, light.maxFall], 'HDR master content-light mismatch');
+      const ratio = (value) => { const [num, den] = String(value).split('/').map(Number); return num / den; };
+      const data = probe.mastering;
+      assert.deepEqual([ratio(data?.max_luminance), ratio(data?.min_luminance)],
+        [Math.round(mastering.maxNits * 10000) / 10000, Math.round(mastering.minNits * 10000) / 10000],
+        'HDR master mastering luminance mismatch');
+      for (const [key, prefix] of [['R', 'red'], ['G', 'green'], ['B', 'blue'], ['WP', 'white_point']]) {
+        assert.deepEqual([ratio(data?.[`${prefix}_x`]), ratio(data?.[`${prefix}_y`])],
+          BT2020_MASTERING_PRIMARIES[key].map((value) => value / 50000), 'HDR master mastering chromaticity mismatch');
+      }
+    }
+    const decoded = decodeMaster(ffmpeg, partial, width, height);
+    assert.equal(decoded.length, frames.length, 'HDR master decoded frame count mismatch');
+    // Caller-specific picture/timing/audio QC must pass while the result is still private.
+    await validate?.({ output: partial, probe, decoded, light });
+    signal?.throwIfAborted();
     await rename(partial, output);
   } finally {
     await rm(partial, { force: true });
@@ -187,6 +211,7 @@ export function probeMaster(ffprobe, file) {
     codec: stream.codec_name, profile: stream.profile, pixFmt: stream.pix_fmt,
     primaries: stream.color_primaries, transfer: stream.color_transfer, matrix: stream.color_space,
     range: stream.color_range, frames: Number(stream.nb_frames), rFrameRate: stream.r_frame_rate,
+    width: stream.width, height: stream.height,
     contentLight: find('Content light level metadata'),
     mastering: find('Mastering display metadata'),
   };
@@ -194,7 +219,7 @@ export function probeMaster(ffprobe, file) {
 
 /** Decodes the master back to full-range BT.2020 RGB signal (rgb48le) for comparison. */
 export function decodeMaster(ffmpeg, file, width, height) {
-  const result = spawnSync(ffmpeg, ['-v', 'error', '-i', file,
+  const result = spawnSync(ffmpeg, ['-v', 'error', '-xerror', '-i', file,
     '-vf', 'scale=in_range=tv:out_range=pc:in_color_matrix=bt2020:flags=accurate_rnd+full_chroma_int,format=rgb48le',
     '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${result.stderr}`);
