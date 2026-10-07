@@ -1,0 +1,192 @@
+diff --git a/src/features/export/utils/hdr-raster-sources.ts b/src/features/export/utils/hdr-raster-sources.ts
+--- a/src/features/export/utils/hdr-raster-sources.ts
++++ b/src/features/export/utils/hdr-raster-sources.ts
+@@ -29,7 +29,7 @@
+     !Number.isSafeInteger(input.height) ||
+     input.width <= 0 ||
+     input.height <= 0 ||
+-    input.width * input.height > 16_777_216
++    input.width * input.height > 48_000_000
+   )
+     throw new Error('Invalid HDR raster input')
+   if (input.transfer === 'linear') {
+@@ -73,7 +73,7 @@
+       Object.entries(inputs).map(([id, input]) => {
+         validateHdrRaster(input)
+         pixels += input.width * input.height
+-        if (!id || pixels > 16_777_216) throw new Error('HDR raster resource limit')
++        if (!id || pixels > 64_000_000) throw new Error('HDR raster resource limit')
+         return [
+           id,
+           input.transfer === 'linear'
+@@ -121,6 +121,8 @@
+           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+         })
+         const stride = Math.ceil((input.width * (linear ? 16 : 8)) / 256) * 256
++        if (stride * input.height > device.limits.maxBufferSize)
++          throw new Error('HDR raster exceeds device upload limits')
+         const pixels = linear
+           ? new Float32Array((stride / 4) * input.height)
+           : new Uint16Array((stride / 2) * input.height)
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -871,6 +871,7 @@
+     height: number
+     output: GPUTexture
+     buffer: GPUBuffer
++    rowsPerBuffer: number
+   } | null = null
+   const signalTargetsFor = (device: GPUDevice, width: number, height: number) => {
+     if (signalTargets && signalTargets.width === width && signalTargets.height === height) {
+@@ -878,16 +879,20 @@
+     }
+     signalTargets?.output.destroy()
+     signalTargets?.buffer.destroy()
++    const bytesPerRow = Math.ceil((width * 16) / 256) * 256
++    const rowsPerBuffer = Math.min(height, Math.floor(device.limits.maxBufferSize / bytesPerRow))
++    if (rowsPerBuffer < 1) throw new Error('HDR readback exceeds GPU buffer limit')
+     signalTargets = {
+       width,
+       height,
++      rowsPerBuffer,
+       output: device.createTexture({
+         size: [width, height],
+         format: 'rgba32float',
+         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+       }),
+       buffer: device.createBuffer({
+-        size: Math.ceil((width * 16) / 256) * 256 * height,
++        size: bytesPerRow * rowsPerBuffer,
+         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+       }),
+     }
+@@ -899,19 +904,30 @@
+     if (!request || !device) return null
+     colorOutput ??= new ColorOutputPipeline(device)
+     const { width, height } = composite
+-    const { output, buffer } = signalTargetsFor(device, width, height)
++    const { output, buffer, rowsPerBuffer } = signalTargetsFor(device, width, height)
+     const bytesPerRow = Math.ceil((width * 16) / 256) * 256
+     try {
+       colorOutput.convert(composite, output, request.target, colorManagement)
+-      const encoder = device.createCommandEncoder()
+-      encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow }, [width, height])
+-      device.queue.submit([encoder.finish()])
+-      await buffer.mapAsync(GPUMapMode.READ)
+-      const mapped = new Float32Array(buffer.getMappedRange())
+       const rgba = new Float32Array(width * height * 4)
+       const rowFloats = bytesPerRow / 4
+-      for (let y = 0; y < height; y++) {
+-        rgba.set(mapped.subarray(y * rowFloats, y * rowFloats + width * 4), y * width * 4)
++      for (let firstRow = 0; firstRow < height; firstRow += rowsPerBuffer) {
++        const rows = Math.min(rowsPerBuffer, height - firstRow)
++        const encoder = device.createCommandEncoder()
++        encoder.copyTextureToBuffer(
++          { texture: output, origin: [0, firstRow] },
++          { buffer, bytesPerRow },
++          [width, rows],
++        )
++        device.queue.submit([encoder.finish()])
++        await buffer.mapAsync(GPUMapMode.READ)
++        const mapped = new Float32Array(buffer.getMappedRange())
++        for (let y = 0; y < rows; y++) {
++          rgba.set(
++            mapped.subarray(y * rowFloats, y * rowFloats + width * 4),
++            (firstRow + y) * width * 4,
++          )
++        }
++        buffer.unmap()
+       }
+       request.result = { width, height, rgba }
+     } finally {
+@@ -2789,13 +2805,23 @@
+       frame: number,
+       target: ColorOutputTarget,
+     ): Promise<{ width: number; height: number; rgba: Float32Array }> {
++      const pipeline = await gpu.ensureEffects()
++      const device = pipeline?.getDevice()
++      if (!device) throw new Error('Signal rendering requires WebGPU')
++      device.pushErrorScope('validation')
++      device.pushErrorScope('out-of-memory')
+       const request: NonNullable<typeof floatCapture> = { target, result: null }
+       floatCapture = request
++      let gpuError: GPUError | null = null
+       try {
+         await this.renderFrame(frame)
+       } finally {
+         floatCapture = null
+-      }
++        const memoryError = await device.popErrorScope()
++        const validationError = await device.popErrorScope()
++        gpuError = memoryError ?? validationError
++      }
++      if (gpuError) throw new Error(`GPU signal render failed: ${gpuError.message}`)
+       if (!request.result) {
+         throw new Error(
+           `Frame ${frame} could not be composited on the float route; ${target} delivery requires WebGPU`,
+diff --git a/src/features/export/utils/client-render-engine.dispose.test.ts b/src/features/export/utils/client-render-engine.dispose.test.ts
+--- a/src/features/export/utils/client-render-engine.dispose.test.ts
++++ b/src/features/export/utils/client-render-engine.dispose.test.ts
+@@ -1,7 +1,9 @@
+ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { createCompositionRenderer } from './client-render-engine'
+
+-const resources = vi.hoisted(() => ({ destroyColor: vi.fn(), disposeGpu: vi.fn() }))
++const resources = vi.hoisted(() => ({
++  destroyColor: vi.fn(), disposeGpu: vi.fn(), gpuError: null as Error | null,
++}))
+ vi.mock('@/infrastructure/gpu-color', () => ({
+   ColorOutputPipeline: class {
+     convert() {}
+@@ -21,10 +23,14 @@
+   GpuPipelineManager: class {
+     effects = {
+       getDevice: () => ({
++        limits: { maxBufferSize: 256 },
++        pushErrorScope: vi.fn(),
++        popErrorScope: async () => resources.gpuError,
+         createTexture: () => ({ destroy: vi.fn() }),
+         createBuffer: () => ({
+           destroy: vi.fn(),
+           mapState: 'unmapped',
++          unmap: vi.fn(),
+           mapAsync: async () => {},
+           getMappedRange: () => new ArrayBuffer(256),
+         }),
+@@ -94,6 +100,9 @@
+       )
+       // Rendering makes the lazy, per-renderer output pipeline own a resource.
+       await renderer.renderFrameSignal(0, 'pq')
++      resources.gpuError = new Error('allocation failed')
++      await expect(renderer.renderFrameSignal(0, 'pq')).rejects.toThrow('GPU signal render failed')
++      resources.gpuError = null
+       expect(resources.destroyColor).not.toHaveBeenCalled()
+       renderer.dispose()
+       expect(resources.destroyColor).toHaveBeenCalledTimes(1)
+diff --git a/src/features/export/utils/hdr-raster-sources.test.ts b/src/features/export/utils/hdr-raster-sources.test.ts
+--- a/src/features/export/utils/hdr-raster-sources.test.ts
++++ b/src/features/export/utils/hdr-raster-sources.test.ts
+@@ -11,7 +11,7 @@
+   const buffers: { destroy: ReturnType<typeof vi.fn> }[] = []
+   const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() }
+   const device = {
+-    limits: { maxTextureDimension2D: 8192 },
++    limits: { maxTextureDimension2D: 8192, maxBufferSize: 256 },
+     createTexture: vi.fn((_descriptor: GPUTextureDescriptor) => {
+       const t = { createView: vi.fn(), destroy: vi.fn() }
+       textures.push(t)
+diff --git a/src/infrastructure/gpu-effects/effects-pipeline.ts b/src/infrastructure/gpu-effects/effects-pipeline.ts
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -184,7 +184,9 @@
+       try {
+         const adapter = await navigator.gpu.requestAdapter()
+         if (!adapter) return null
+-        const device = await adapter.requestDevice()
++        const device = await adapter.requestDevice({
++          requiredLimits: { maxBufferSize: Math.min(adapter.limits.maxBufferSize, 1024 ** 3) },
++        })
+         EffectsPipeline._cachedDevice = device
+         device.lost.then(() => {
+           if (EffectsPipeline._cachedDevice === device) {
