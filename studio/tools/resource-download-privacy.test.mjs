@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +14,7 @@ test('model download transport refuses uploads before forwarding and preserves b
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(path.resolve(import.meta.dirname, '../runtime'), path.join(root, 'runtime'), { recursive: true });
   const row = { id: 'model:synthetic-contract/privacy', kind: 'model', locator: 'synthetic-contract/privacy', revision: 'a'.repeat(40),
-    licenseDeclared: 'Synthetic contract only', decisions: { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' }, files: [] };
+    licenseDeclared: 'Synthetic contract only', decisions: { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' }, files: [{ path: 'config.json', sha256: createHash('sha256').update('synthetic').digest('hex') }] };
   await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify({ schemaVersion: 1, resources: [row] }));
   await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify({ schemaVersion: 1, approvedBy: 'Synthetic contract',
     approvedOn: '2026-10-07', source: 'Authored privacy check, not production approval', uses: ['localRuntime'],

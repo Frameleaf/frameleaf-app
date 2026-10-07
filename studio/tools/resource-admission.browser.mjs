@@ -14,6 +14,7 @@ import { createHarness } from './lib/cross-browser-harness.mjs';
 import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 import { readFile, writeFile } from 'node:fs/promises';
+import { runModelTransportAdmission } from './model-transport-byte-admission.browser.mjs';
 
 export function assertNoProxyErrors(harness, origin, entry) {
   assert.deepEqual(harness.observations.filter(o => o.kind === 'error'), [], `${entry}: harness could not reach the dev server`);
@@ -303,17 +304,22 @@ try {
     console.log('ONNX Runtime WebAssembly: 3 builds served same-origin; no CDN request');
     await closeOrt(); await ortHarness.close();
   }
+  if (browser === 'chromium') report.modelTransport = await runModelTransportAdmission();
   // A test-only network substitution supplies one approved fixture with a recorded byte digest.
-  // The generated policy records no byte digests, so byte verification fails closed in production.
+  // Root identities never carry byte digests; this fixture supplies one exact-file binding.
   if (!process.env.STUDIO_TEST_BUILT) {
   const hash = createHash('sha256').update(new Uint8Array([1, 2, 3])).digest('hex');
+  const fixtureUrl = `https://huggingface.co/synthetic-contract/admission/resolve/${'a'.repeat(40)}/fixture.bin`;
+  const fixturePolicy = { localRuntime: 'allowed', approvalSha256: hash, sha256: null,
+    locator: 'synthetic-contract/admission', revision: 'a'.repeat(40),
+    files: { [fixtureUrl]: { url: fixtureUrl, sha256: hash, revision: 'a'.repeat(40), approvalSha256: hash } } };
   // No blocking override here, per studio-editing's review - this pass only ever substitutes the
   // policy; nothing else runs during it. The harness's always-on deny-all for non-upstream hosts
   // still applies underneath (there's no way to disable it - it's the harness's whole point), but
   // that's strictly narrower than "no blocking at all" and nothing in this pass hits it.
   const fixtureHarness = createHarness({
     upstream: origin,
-    overrides: [policyOverride({ 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } })],
+    overrides: [policyOverride({ 'model:synthetic-contract/admission': fixturePolicy })],
   });
   harnesses.push(fixtureHarness);
   const fixtureHarnessOrigin = await fixtureHarness.listen();
@@ -322,16 +328,16 @@ try {
   const { page: fixturePage, close: closeFixture } = session;
   await fixturePage.goto(origin + '/headless.html');
   assertNoProxyErrors(fixtureHarness, origin, '/headless.html');
-  const fixture = await fixturePage.evaluate(async () => {
+  const fixture = await fixturePage.evaluate(async (fixtureUrl) => {
     const { verifyResourceBytes } = await import('/src/shared/utils/resource-admission.mjs');
-    const accepted = [...await verifyResourceBytes('fixture:approved', new Uint8Array([1, 2, 3]))];
+    const accepted = [...await verifyResourceBytes(fixtureUrl, new Uint8Array([1, 2, 3]))];
     const refuses = async (id, bytes) => { try { await verifyResourceBytes(id, bytes); return false; } catch (e) { return String(e).includes('FRAMELEAF_RESOURCE_BLOCKED'); } };
     const blob = URL.createObjectURL(new Blob([new Uint8Array([1, 2, 3])]));
     const aliasDenied = await refuses(blob, new Uint8Array([1, 2, 3]));
     URL.revokeObjectURL(blob);
-    return { accepted, tamperDenied: await refuses('fixture:approved', new Uint8Array([1, 2, 4])),
+    return { accepted, tamperDenied: await refuses(fixtureUrl, new Uint8Array([1, 2, 4])),
       aliasDenied, userImportDenied: await refuses('asset:user-import', new Uint8Array([1, 2, 3])) };
-  });
+  }, fixtureUrl);
   report.fixture = { browser: session.browser, ...fixture };
   assert.deepEqual(fixture, { accepted: [1, 2, 3], tamperDenied: true, aliasDenied: true, userImportDenied: true });
   assertNoProxyErrors(fixtureHarness, origin, '/headless.html');

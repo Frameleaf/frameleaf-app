@@ -86,34 +86,136 @@ function rewriteHuggingFace(input) {
 }
 
 const PINNED = Symbol.for('frameleaf.resource-admission.fetch-pinned');
+const STORES = new Set(['transformers-cache', 'kokoro-voices']);
+const nativeRequestUrl = Object.getOwnPropertyDescriptor(Request.prototype, 'url').get;
+
+function fileRequest(input, init) {
+  let url;
+  let native = false;
+  try { url = nativeRequestUrl.call(input); native = true; } catch { url = String(input); }
+  const parsed = new URL(url);
+  if (parsed.href !== url || parsed.origin !== 'https://huggingface.co' || parsed.username
+    || parsed.password || parsed.search || parsed.hash || /%2f|%5c/i.test(parsed.pathname)) throw new ResourceBlockedError(url);
+  const parts = parsed.pathname.split('/');
+  const repository = `${parts[1]}/${parts[2]}`;
+  const revision = pinnedRevision(repository);
+  if (parts[3] !== 'resolve' || !revision || !['main', revision].includes(parts[4])) throw new ResourceBlockedError(url);
+  const request = new Request(native ? input : url, init);
+  if (!['GET', 'HEAD'].includes(request.method) || request.body !== null) throw new ResourceBlockedError(url);
+  const target = rewriteHuggingFace(request.url);
+  approvedFile(target); // Admit identity before transport or reading a body.
+  return { original: request, request: target === request.url ? request : new Request(target, request) };
+}
+
+function approvedFile(id) {
+  const resource = requireResource(id);
+  const file = typeof id === 'string' && Object.hasOwn(resource.files ?? {}, id) ? resource.files[id] : undefined;
+  if (!file || file.url !== id || file.approvalSha256 !== resource.approvalSha256
+    || file.revision !== resource.revision || !/^[a-f0-9]{40}$/.test(file.revision ?? '')
+    || !APPROVAL.test(file.sha256 ?? '')) throw new ResourceBlockedError(id);
+  return file;
+}
+
+async function verifiedResponse(request, response) {
+  request.signal.throwIfAborted();
+  if (!response.ok || response.status === 206 || ['opaque', 'opaqueredirect'].includes(response.type)) throw new ResourceBlockedError(request.url);
+  const bytes = await response.arrayBuffer();
+  request.signal.throwIfAborted();
+  const verified = await verifyResourceBytes(request.url, bytes);
+  request.signal.throwIfAborted();
+  // Both installed Transformers versions and Kokoro consume headers/status/body, never url/type.
+  // Return the immutable bytes we hashed, rather than releasing the original body's stream.
+  return new Response(verified, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
 if (typeof globalThis.fetch === 'function' && !globalThis[PINNED]) {
   const original = globalThis.fetch;
-  globalThis.fetch = function pinnedFetch(input, init) {
+  globalThis.fetch = async function pinnedFetch(input, init) {
     let requestUrl;
-    try {
-      requestUrl = Object.getOwnPropertyDescriptor(Request.prototype, 'url').get.call(input);
-    } catch { /* Non-Requests use native fetch's string input form, regardless of realm. */ }
-    let normalized;
-    try { normalized = requestUrl ?? String(input); }
-    catch (error) { return Promise.reject(error); }
+    try { requestUrl = nativeRequestUrl.call(input); } catch { /* Native string form across realms. */ }
+    const normalized = requestUrl ?? String(input);
     let destination;
-    try {
-      destination = new URL(normalized, globalThis.location?.href);
-    } catch { /* Invalid inputs retain native fetch handling. */ }
+    try { destination = new URL(normalized, globalThis.location?.href); } catch { /* Native rejection below. */ }
     if (destination?.hostname.replace(/\.$/, '') === 'huggingface.co') {
-      let request;
-      try { request = new Request(requestUrl === undefined ? normalized : input, init); }
-      catch { return Promise.reject(new ResourceBlockedError(destination.origin + destination.pathname)); }
-      if ((request.method !== 'GET' && request.method !== 'HEAD') || request.body !== null) {
-        return Promise.reject(new ResourceBlockedError(destination.origin + destination.pathname));
+      let checked;
+      try { checked = fileRequest(requestUrl === undefined ? normalized : input, init); }
+      catch { throw new ResourceBlockedError(destination.origin + destination.pathname); }
+      const { request } = checked;
+      request.signal.throwIfAborted();
+      const response = await original.call(globalThis, request);
+      request.signal.throwIfAborted();
+      if (request.method === 'HEAD') return response;
+      if (!response.ok) {
+        await response.body?.cancel();
+        request.signal.throwIfAborted();
+        // Transformers checks status for optional files; Kokoro reads bodies regardless of status.
+        // Preserve HTTP failure metadata, but no failed body may reach a voice/model or its Map.
+        const body = new ReadableStream({ start(controller) { controller.error(new ResourceBlockedError(request.url)); } });
+        return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
       }
-      // Forward only the checked native state; caller accessors are never evaluated again.
-      const target = rewriteHuggingFace(request.url);
-      return original.call(globalThis, target === request.url ? request : new Request(target, request));
+      return verifiedResponse(request, response);
     }
     return original.call(globalThis, requestUrl === undefined ? normalized : input, init);
   };
   globalThis[PINNED] = true;
+}
+
+const CACHE_PINNED = Symbol.for('frameleaf.resource-admission.cache-pinned');
+if (globalThis.caches && !globalThis[CACHE_PINNED]) {
+  const storage = globalThis.caches;
+  const open = storage.open.bind(storage);
+  const storageMatch = storage.match.bind(storage);
+  const wrap = (cache) => new Proxy(cache, {
+    get(target, method) {
+      if (method === 'match') return async (input, options) => {
+        const { original, request } = fileRequest(input);
+        if (request.method !== 'GET' || options?.ignoreSearch || options?.ignoreMethod || options?.ignoreVary) throw new ResourceBlockedError(request.url);
+        request.signal.throwIfAborted();
+        for (const key of request.url === original.url ? [request] : [request, original]) {
+          let response;
+          try { response = await target.match(key); }
+          catch { request.signal.throwIfAborted(); return undefined; }
+          if (!response) continue;
+          try { return await verifiedResponse(request, response); }
+          catch {
+            try { await target.delete(key); } catch { /* Never return corrupt bytes even when eviction fails. */ }
+            request.signal.throwIfAborted();
+            return undefined; // A miss can fall back only through the independently verified fetch.
+          }
+        }
+        return undefined;
+      };
+      if (method === 'put') return async (input, response) => {
+        const { request } = fileRequest(input);
+        if (request.method !== 'GET') throw new ResourceBlockedError(request.url);
+        const verified = await verifiedResponse(request, response.clone());
+        request.signal.throwIfAborted();
+        return target.put(request, verified);
+      };
+      if (['matchAll', 'add', 'addAll'].includes(method)) return () => Promise.reject(new ResourceBlockedError(String(method)));
+      const value = Reflect.get(target, method, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  storage.open = async (name) => {
+    const normalized = String(name);
+    const cache = await open(normalized);
+    return STORES.has(normalized) ? wrap(cache) : cache;
+  };
+  storage.match = async (input, options) => {
+    const cacheName = options?.cacheName;
+    const name = cacheName === undefined ? undefined : String(cacheName);
+    if (STORES.has(name)) return (await storage.open(name)).match(input, options);
+    if (name !== undefined) return storageMatch(input, { ...options, cacheName: name });
+    let url;
+    try { url = nativeRequestUrl.call(input); } catch { url = String(input); }
+    if (new URL(url, globalThis.location?.href).hostname !== 'huggingface.co') return storageMatch(input, options);
+    const { request } = fileRequest(input);
+    if (request.method !== 'GET' || options?.ignoreSearch || options?.ignoreMethod || options?.ignoreVary) throw new ResourceBlockedError(request.url);
+    const response = await storageMatch(input);
+    return response ? verifiedResponse(request, response) : undefined;
+  };
+  globalThis[CACHE_PINNED] = true;
 }
 
 export { rewriteHuggingFace as pinnedHuggingFaceUrl };
@@ -139,14 +241,7 @@ export function approvedRevision(id) {
 }
 
 export async function verifyResourceBytes(id, bytes) {
-  const resource = requireResource(id);
-  // Model IDs and locator roots cannot borrow a file's hash. Resolve exactly one URL through
-  // the most-specific admitted row; blocked overlapping rows still refuse it in requireResource.
-  const file = typeof id === 'string' && Object.hasOwn(resource.files ?? {}, id) ? resource.files[id] : undefined;
-  if (!file || file.url !== id || file.approvalSha256 !== resource.approvalSha256
-    || file.revision !== resource.revision || !/^[a-f0-9]{40}$/.test(file.revision ?? '')
-    || !/^[a-f0-9]{64}$/.test(file.sha256 ?? '')) throw new ResourceBlockedError(id);
-  const expectedSha256 = file.sha256;
+  const expectedSha256 = approvedFile(id).sha256;
   // Copy before awaiting so caller mutation cannot race the digest check.
   const copy = new Uint8Array(bytes).slice();
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', copy))]
