@@ -4,6 +4,7 @@ export const SHARP_OPERATIONS = [
   'inspectImageEncoding',
   'decodeHdrImage',
   'encodeHdrImage',
+  'generateHdrRenditions',
   'decodeImage',
   'generateImageThumbnails',
   'generateThumbnail',
