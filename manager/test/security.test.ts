@@ -135,3 +135,35 @@ test('a persisted destructive intent prevents concurrent or repeated operations 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test('optional same-host HTTPS framing retains Manager origin and CSRF protection', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-frame-'));
+  const store = new Store(directory);
+  try {
+    const origin = 'https://nas.test:9443';
+    const invoke = (frame?: string, headers = { host: 'nas.test:9443' }, method = 'GET', path = '/') => {
+      let csp = '', status = 0, next = false;
+      const security = new Security(store, origin, join(directory, 'claim-key'), frame);
+      const response = {
+        set: (value: Record<string, string>) => { csp = value['Content-Security-Policy']; },
+        status: (value: number) => { status = value; return response; },
+        json: () => {},
+      } as unknown as Response;
+      security.guard({ headers, method, path, socket: { remoteAddress: 'fixture' }, is: () => true } as unknown as Request,
+        response, () => { next = true; });
+      return { csp, status, next };
+    };
+    assert.match(invoke().csp, /frame-ancestors 'none'/);
+    assert.match(invoke('https://nas.test:5001').csp, /frame-ancestors https:\/\/nas.test:5001;/);
+    assert.equal(invoke('https://nas.test:5001').next, true);
+    for (const frame of ['http://nas.test:5000', 'https://other.test:5001', 'https://user@nas.test:5001',
+      'https://nas.test:5001/path', 'https://nas.test:5001?query=1', 'https://nas.test:5001#fragment', '*'])
+      assert.throws(() => invoke(frame));
+    assert.equal(invoke('https://nas.test:5001', { host: 'evil.test' }).status, 403);
+    const dsmWrite = invoke('https://nas.test:5001', { host: 'nas.test:9443', origin: 'https://nas.test:5001' } as any,
+      'POST', '/manager-api/login');
+    assert.equal(dsmWrite.status, 403, 'Framing does not grant the parent origin API access');
+    assert.equal(dsmWrite.next, false);
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});

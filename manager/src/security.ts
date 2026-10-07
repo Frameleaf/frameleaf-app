@@ -12,15 +12,26 @@ const COOKIE = '__Host-frameleaf-manager';
 const LIFETIME = 8 * 60 * 60 * 1000;
 
 export class Security {
+  private readonly frameAncestors: string;
   constructor(
     private store: Store,
     readonly origin: string,
     private bootstrapFile: string,
+    frameOrigin?: string,
   ) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
       throw new Error('Invalid Manager HTTPS origin');
     this.origin = url.origin;
+    this.frameAncestors = "'none'";
+    if (frameOrigin) {
+      const frame = new URL(frameOrigin);
+      if (
+        frame.protocol !== 'https:' || frame.pathname !== '/' || frame.search || frame.hash ||
+        frame.username || frame.password || frame.hostname !== url.hostname
+      ) throw new Error('Frame origin must be an exact HTTPS origin on the Manager hostname');
+      this.frameAncestors = frame.origin;
+    }
   }
   claimed(): boolean {
     return !!this.store.get('administrator');
@@ -119,7 +130,7 @@ export class Security {
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',
         'Content-Security-Policy':
-          "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          `default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors ${this.frameAncestors}; base-uri 'none'; form-action 'self'`,
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       });
       // Host equality rejects DNS rebinding, including on read-only endpoints. Never trust proxy headers.

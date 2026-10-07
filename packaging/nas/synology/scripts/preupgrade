@@ -1,5 +1,0 @@
-#!/bin/sh
-[ "${wizard_backup_confirm:-false}" = true ] || {
-  echo 'Back up the PostgreSQL directory and media together before upgrading.' >&2
-  exit 1
-}

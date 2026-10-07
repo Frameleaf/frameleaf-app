@@ -2,7 +2,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { buildSpk } = require('./build-spk.cjs');
 const { verifyBundle, verifyNasManifest } = require('../../.github/verify-release-bundle.cjs');
 
 const root = __dirname;
@@ -57,7 +56,6 @@ async function build(directory, expectedTag, output, verification = {}) {
   write('truenas/ix-dev/community/frameleaf/README.md',
     `Frameleaf ${manifest.tag}. Maintained by Frameleaf. Install on TrueNAS 24.10.2.2 or later.\n`);
   write('nas-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-  buildSpk(manifest, path.join(output, 'synology'));
 }
 
 if (require.main === module) {
