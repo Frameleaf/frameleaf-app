@@ -45,7 +45,7 @@ export function domainObservations(report) {
     observations.push({ fixtureId: `${family === 'effects' ? 'effect' : family}.${id}/apply/${name}`,
       workingDomain, expected, observed: expected, result: 'passed', witness,
       oracle: workingDomain === WORKING_DOMAINS.sdr ? oracle : expected === 'rendered' ?
-        (family === 'effects' ? 'independent linear brightness addition and contrast pivot/gain, parameter limits, resolver, alpha and stack assertions' :
+        (family === 'effects' ? 'independent linear brightness, contrast and signed exposure equations, parameter limits, resolver, alpha and stack assertions' :
           'independent linear straight-alpha source-over equation') : 'actual registered operator throws shared HdrRenderUnavailableError' });
   };
   const rows = family === 'effects' ? report.effects : family === 'blend' ? report.results : report.transitions;
@@ -56,7 +56,7 @@ export function domainObservations(report) {
     if (family === 'effects') {
       for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
         add(id, name, WORKING_DOMAINS.sdr, `effects.${index}.${route}`);
-      if (id === 'gpu-brightness' || id === 'gpu-contrast') {
+      if (id === 'gpu-brightness' || id === 'gpu-contrast' || id === 'gpu-exposure') {
         for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
           add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.hdr.${route}`);
       } else add(id, 'extreme', WORKING_DOMAINS.hdr, `effects.${index}.hdrRefusal`, 'refused');

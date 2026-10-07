@@ -63,9 +63,9 @@ export function photometricSdrExpected(entry) {
   });
 }
 
-// Brightness/contrast keep their affine equations when the input is linear light.
+// Brightness/contrast are affine; exposure uses EV gain, linear offset and signed gamma.
 // Other historical encoded equations remain ineligible for the linear domain.
-export const linearColorCases = photometricCases.filter(entry => ['gpu-brightness', 'gpu-contrast'].includes(entry.id));
+export const linearColorCases = photometricCases.filter(entry => ['gpu-brightness', 'gpu-contrast', 'gpu-exposure'].includes(entry.id));
 
 export function validatePhotometricResults(results, domain = 'historical-encoded-hdr') {
   assert(['historical-encoded-hdr', 'srgb-display-bt709', 'linear-display-bt709-v1'].includes(domain), 'unqualified photometric working domain');
@@ -95,6 +95,6 @@ export function validatePhotometricResults(results, domain = 'historical-encoded
       channels++;
     });
   }
-  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 512 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
+  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 768 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
   return { cases: results.length, channels };
 }

@@ -1,4 +1,4 @@
-// Independent display-light oracles through the managed graph and linear brightness/contrast.
+// Independent display-light oracles through the managed graph and linear brightness/contrast/exposure.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
@@ -195,15 +195,23 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     const background=[.2,.2,.2].map(decode);const graphic=[.4,.6,.8].map(decode);
     const grade=(amount)=>[{id:'contrast',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-contrast',params:{amount}}}];
     const contrast=(rgb,amount)=>rgb.map(v=>(v-.5)*amount+.5);
+    const expose=(exposure,offset=0,gamma=1)=>[{id:'exposure',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-exposure',params:{exposure,offset,gamma}}}];
+    const exposed=(rgb,exposure,offset=0,gamma=1)=>rgb.map(v=>{const x=v*2**exposure+offset;return Math.max(-65504,Math.min(65504,Math.sign(x)*Math.abs(x)**(1/gamma)));});
+    await render('root exposure one EV doubles linear white',comp([track(shape('exposure-white','#ffffff',.5,{effects:expose(1)}),0)]),over(background,[2,2,2],.5));
+    await render('SDR decode before exposure offset and signed gamma',comp([track(shape('exposure','#6699cc',.5,{effects:expose(1,.125,2)}),0)]),over(background,exposed(graphic,1,.125,2),.5));
     await render('contrast pivot is 101.5 nits; zero gain preserves alpha',comp([track(shape('contrast-pivot','#6699cc',.5,{effects:grade(0)}),0)]),over(background,[.5,.5,.5],.5));
     const lift=(amount)=>[{id:'brightness',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-brightness',params:{amount}}}];
     await render('root brightness before straight alpha',comp([track(shape('bright','#6699cc',.5,{effects:lift(.125)}),0)]),over(background,graphic.map(v=>v+.125),.5));
     await render('root signed HDR brightness',comp([track({...image('pq',.6),effects:lift(-.125)},0)]),over(background,linear.pq.map(v=>v-.125),.6));
     await render('root signed HDR contrast',comp([track({...image('pq',.6),effects:grade(1.5)},0)]),over(background,contrast(linear.pq,1.5),.6));
+    await render('root signed HDR exposure',comp([track({...image('pq',.6),effects:expose(-1,-.125,.75)},0)]),over(background,exposed(linear.pq,-1,-.125,.75),.6));
     for(const reverse of [false,true]) {
       const chain=reverse?[...lift(.125),...grade(1.5)]:[...grade(1.5),...lift(.125)];
       const want=reverse?contrast(graphic.map(v=>v+.125),1.5):contrast(graphic,1.5).map(v=>v+.125);
       await render(`root brightness/contrast order ${reverse}`,comp([track(shape('ordered','#6699cc',.5,{effects:chain}),0)]),over(background,want,.5));
+      const triple=reverse?[...expose(1,.125,2),...grade(1.5),...lift(.125)]:[...lift(.125),...grade(1.5),...expose(1,.125,2)];
+      const tripleWant=reverse?contrast(exposed(graphic,1,.125,2),1.5).map(v=>v+.125):exposed(contrast(graphic.map(v=>v+.125),1.5),1,.125,2);
+      await render(`root brightness/contrast/exposure order ${reverse}`,comp([track(shape('three-ordered','#6699cc',.5,{effects:triple}),0)]),over(background,tripleWant,.5));
     }
     const mixed=over(over(over(background,linear.pq,.6),linear.hlg,.4),graphic,.25);
     await render('root mixed linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(image('hlg',.4),1),track(image('pq',.6),2)]),mixed);
@@ -212,6 +220,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       for(const transfer of ['pq','hlg']) registerHdrSourceUrl(`root-video-${transfer}`,`/hdr-fixture/${transfer}.mp4`);
       const want=over(over(over(background,videoReferences.pq,.6),videoReferences.hlg,.4),graphic,.25);
       await render('decoded HDR video contrast',comp([track({...video('pq',.6),effects:grade(.75)},0)]),over(background,contrast(videoReferences.pq,.75),.6),{},25);
+      await render('decoded HDR video exposure',comp([track({...video('pq',.6),effects:expose(-1,-.125,.75)},0)]),over(background,exposed(videoReferences.pq,-1,-.125,.75),.6),{},25);
       await render('decoded HDR video brightness',comp([track({...video('pq',.6),effects:lift(.125)},0)]),over(background,videoReferences.pq.map(v=>v+.125),.6),{},25);
       await render('root real decoded video linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(video('hlg',.4),1),track(video('pq',.6),2)]),want,{},25);
     } finally {for(const transfer of ['pq','hlg'])registerHdrSourceUrl(`root-video-${transfer}`,null);}
@@ -239,6 +248,12 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const contrastNumerator=contrast(graphic,1.5).map((v,c)=>v*.25+linear.pq[c]*.6*.75);
       await render('nested child contrast',comp([track({...instance,compositionId:contrasted.id},0)]),background.map((v,c)=>v*(1-alpha*.5)+contrastNumerator[c]*.5));
       await render('nested instance contrast preserves coverage',comp([track({...instance,effects:grade(.75)},0)]),background.map((v,c)=>v*(1-alpha*.5)+((numerator[c]/alpha-.5)*.75+.5)*alpha*.5));
+      const exposureInner={...nested,id:'exposure-inner',tracks:[track(shape('exposure-child','#6699cc',.25,{effects:expose(1,.125,2)}),0),track(image('pq',.6),1)]};
+      exposureInner.items=exposureInner.tracks.flatMap(t=>t.items);useCompositionsStore.getState().setCompositions([nested,exposureInner]);
+      const exposureNumerator=exposed(graphic,1,.125,2).map((v,c)=>v*.25+linear.pq[c]*.6*.75);
+      await render('nested child exposure',comp([track({...instance,compositionId:exposureInner.id},0)]),background.map((v,c)=>v*(1-alpha*.5)+exposureNumerator[c]*.5));
+      const instanceExposure=exposed(numerator.map(v=>v/alpha),-1,-.125,.75);
+      await render('nested instance exposure preserves coverage',comp([track({...instance,effects:expose(-1,-.125,.75)},0)]),background.map((v,c)=>v*(1-alpha*.5)+instanceExposure[c]*alpha*.5));
       const matte=shape('nested-mask','#ffffff',.5,{isMask:true,maskType:'alpha'});
       const masked={...nested,id:'linear-masked-inner',tracks:[track(matte,0),...children.map(t=>({...t,order:t.order+1}))],items:[matte,...nested.items]};
       useCompositionsStore.getState().setCompositions([masked]);
@@ -375,12 +390,13 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       maskUploadPreview.after=poolUsage();
     }finally{renderer.dispose();CanvasPool.prototype.acquire=acquireCanvas;GpuTexturePool.prototype.acquire=acquireTexture;}
     const refusals=[];
-    const fx=[{id:'fx',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-exposure',params:{exposure:1,offset:0,gamma:1}}}];
+    const fx=[{id:'fx',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-levels',params:{inputBlack:0,inputWhite:1,gamma:1,outputBlack:0,outputWhite:1}}}];
     CanvasPool.prototype.acquire=function(...args){pools.canvas.add(this);return acquireCanvas.apply(this,args);};
     GpuTexturePool.prototype.acquire=function(...args){pools.texture.add(this);return acquireTexture.apply(this,args);};
     const gatedCompositions=[
-      ['mixed contrast and exposure',comp([track(shape('mixed-contrast','#ffffff',1,{effects:[...grade(1.5),...fx]}),0)])],
-      ['mixed brightness and exposure',comp([track(shape('mixed','#ffffff',1,{effects:[...lift(.125),...fx]}),0)])],
+      ['mixed contrast and levels',comp([track(shape('mixed-contrast','#ffffff',1,{effects:[...grade(1.5),...fx]}),0)])],
+      ['mixed brightness and levels',comp([track(shape('mixed','#ffffff',1,{effects:[...lift(.125),...fx]}),0)])],
+      ['mixed exposure and levels',comp([track(shape('mixed-exposure','#ffffff',1,{effects:[...expose(1,.125,2),...fx]}),0)])],
       ['effect',comp([track(shape('effect','#ffffff',1,{effects:fx}),0)])],
       ['blend',comp([track(shape('blend','#ffffff',.5,{blendMode:'screen'}),0)])],
       ['transition',{...comp([track(image('pq',1),0)]),tracks:[{...track(image('pq',1),0),items:[{...image('pq',1),durationInFrames:30},{...image('hlg',1),from:30,trackId:'pq'}]}],transitions:[{id:'cut',type:'crossfade',presentation:'dissolve',timing:'linear',trackId:'pq',leftClipId:'pq',rightClipId:'hlg',durationInFrames:20,alignment:.5}]}],
@@ -413,17 +429,23 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     try {
       const brightness=[{id:'brightness',type:'gpu-brightness',name:'brightness',enabled:true,params:{amount:.125}}];
       const contrastEffects=[{id:'contrast',type:'gpu-contrast',name:'contrast',enabled:true,params:{amount:1.5}}];
+      const exposureEffects=[{id:'exposure',type:'gpu-exposure',name:'exposure',enabled:true,params:{exposure:1,offset:.125,gamma:2}}];
       const legacyVideo=document.createElement('video');
+      refuse('HDR legacy canvas exposure',()=>gpu.effects.applyEffectsToCanvas(canvas,exposureEffects));
+      refuse('HDR legacy video exposure',()=>gpu.effects.applyEffectsToVideoTexture(legacyVideo,exposureEffects,{x:0,y:0,width:2,height:2},2,2,gateOutput));
       refuse('HDR legacy canvas contrast',()=>gpu.effects.applyEffectsToCanvas(canvas,contrastEffects));
       refuse('HDR legacy video contrast',()=>gpu.effects.applyEffectsToVideoTexture(legacyVideo,contrastEffects,{x:0,y:0,width:2,height:2},2,2,gateOutput));
       refuse('HDR legacy canvas brightness',()=>gpu.effects.applyEffectsToCanvas(canvas,brightness));
       refuse('HDR legacy video canvas brightness',()=>gpu.effects.applyEffectsToVideo(legacyVideo,brightness,{x:0,y:0,width:2,height:2},2,2));
       refuse('HDR legacy video texture brightness',()=>gpu.effects.applyEffectsToVideoTexture(legacyVideo,brightness,{x:0,y:0,width:2,height:2},2,2,gateOutput));
       const encodedOutput=device.createTexture({size:[2,2],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_DST});
-      try { refuse('HDR brightness encoded output',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,brightness,encodedOutput,2,2)); }
+      try {
+        refuse('HDR brightness encoded output',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,brightness,encodedOutput,2,2));
+        refuse('HDR exposure encoded output',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,exposureEffects,encodedOutput,2,2));
+      }
       finally { encodedOutput.destroy(); }
       refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
-      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
+      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
       for(const id of GPU_TRANSITION_REGISTRY.keys())refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
     }finally{gateInput.destroy();gateOutput.destroy();transition.destroy();}

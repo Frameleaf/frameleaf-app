@@ -48,9 +48,9 @@ test('current SDR measurements use pinned clamps and gamma; the historical signe
   assert.throws(() => validatePhotometricResults(wrong, 'srgb-display-bt709'), /channel/);
 });
 
-test('linear HDR admits exactly brightness/contrast lift/lower and rejects clipping, identity and changed alpha', () => {
+test('linear HDR admits exactly brightness/contrast/exposure cases and rejects clipping, identity and changed alpha', () => {
   const samples = () => linearColorCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
-  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 4, channels: 512 });
+  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 6, channels: 768 });
   assert.throws(() => validatePhotometricResults(fixture(), 'linear-display-bt709-v1'), /complete, ordered, unique/);
   for (const mutate of [
     entry => { entry.pixels = [...photometricInput]; },
@@ -59,6 +59,20 @@ test('linear HDR admits exactly brightness/contrast lift/lower and rejects clipp
   ]) {
     const results = samples(); mutate(results[0]);
     assert.throws(() => validatePhotometricResults(results, 'linear-display-bt709-v1'), /channel/);
+  }
+});
+
+test('linear exposure retains EV gain, linear offset, signed gamma and straight alpha', () => {
+  const samples = () => linearColorCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
+  for (const mutate of [
+    entry => { entry.pixels = photometricExpected(entry, true); },
+    entry => { entry.pixels = photometricInput.map((v,i) => i%4 === 3 ? v : Math.sign(v+entry.params.offset)*Math.abs(v+entry.params.offset)**(1/entry.params.gamma)*2**entry.params.exposure); },
+    entry => { entry.pixels = [...photometricInput]; },
+    entry => { entry.pixels = entry.pixels.map((v,i) => i%4 === 3 ? v : Math.max(0,Math.min(1,v))); },
+    entry => { entry.pixels[3] = .5; },
+  ]) {
+    const results=samples();mutate(results.find(entry=>entry.id==='gpu-exposure'));
+    assert.throws(()=>validatePhotometricResults(results,'linear-display-bt709-v1'),/exposure-lift-gamma: channel/);
   }
 });
 
