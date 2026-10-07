@@ -2885,3 +2885,1452 @@ new file mode 100644
 +    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
 +  })
 +})
+diff --git a/src/features/timeline/constants.ts b/src/features/timeline/constants.ts
+--- a/src/features/timeline/constants.ts
++++ b/src/features/timeline/constants.ts
+@@ -99,9 +99,7 @@
+   return currentZoom
+ }
+
+-// Temporary gate: keep slip/slide implementation in code, but hide the UI and
+-// disable their keyboard shortcuts until the tools are ready to expose again.
+-export const SLIP_SLIDE_TOOLS_ENABLED = false
++export const SLIP_SLIDE_TOOLS_ENABLED = true
+
+ // =============================================================================
+ // COLORS
+diff --git a/src/features/timeline/components/timeline-header.tsx b/src/features/timeline/components/timeline-header.tsx
+--- a/src/features/timeline/components/timeline-header.tsx
++++ b/src/features/timeline/components/timeline-header.tsx
+@@ -1,5 +1,11 @@
+-import { useEffect, useCallback, memo, useLayoutEffect, useReducer, useRef } from 'react'
++import { useEffect, useCallback, memo, useLayoutEffect, useReducer, useRef, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
++import type { TimelineItem } from '@/types/timeline'
++import { Input } from '@/components/ui/input'
++import { useItemsStore } from '../stores/items-store'
++import { useTimelineSlipSlide } from '../hooks/use-timeline-slip-slide'
++import { isMediaItem } from '../utils/source-calculations'
++import { resolveEffectiveTrackStates } from '../utils/group-utils'
+ import { Button } from '@/components/ui/button'
+ import {
+   DropdownMenu,
+@@ -349,12 +355,7 @@
+         finishSliderZoomInteraction()
+       }
+     },
+-    [
+-      commitSliderZoom,
+-      finishSliderZoomInteraction,
+-      releaseSliderZoomGesture,
+-      renderSliderPreview,
+-    ],
++    [commitSliderZoom, finishSliderZoomInteraction, releaseSliderZoomGesture, renderSliderPreview],
+   )
+
+   const controlledSliderValue = zoomToSlider(settledZoomLevel)
+@@ -444,6 +445,187 @@
+  * - In/Out points, Snap toggle
+  * - Zoom controls
+  */
++function SlipSlidePreviewControls({
++  item,
++  mode,
++  timelineDuration,
++}: {
++  item: TimelineItem
++  mode: 'slip' | 'slide'
++  timelineDuration: number
++}) {
++  const { t } = useTranslation()
++  const [frames, setFrames] = useState('0')
++  const [previewUnavailable, setPreviewUnavailable] = useState(false)
++  const inputRef = useRef<HTMLInputElement>(null)
++  const previewButtonRef = useRef<HTMLButtonElement>(null)
++  const wasActiveRef = useRef(false)
++  const {
++    isSlipSlideActive,
++    slipSlideDelta,
++    slipSlideConstrained,
++    slipSlideConstraintLabel,
++    startSlipSlidePreview,
++    updateSlipSlidePreview,
++    commitSlipSlidePreview,
++    cancelSlipSlidePreview,
++  } = useTimelineSlipSlide(item, timelineDuration)
++  useEffect(() => {
++    if (isSlipSlideActive) inputRef.current?.focus()
++    else {
++      setFrames('0')
++      if (wasActiveRef.current) previewButtonRef.current?.focus()
++    }
++    wasActiveRef.current = isSlipSlideActive
++  }, [isSlipSlideActive])
++  const validFrames = frames.trim() !== '' && Number.isSafeInteger(Number(frames))
++
++  return (
++    <form
++      className="flex items-center gap-1"
++      onSubmit={(event) => {
++        event.preventDefault()
++        if (!isSlipSlideActive || !validFrames) return
++        updateSlipSlidePreview(Number(frames))
++        commitSlipSlidePreview()
++      }}
++      onKeyDown={(event) => {
++        if (event.key === 'Escape') {
++          event.preventDefault()
++          event.stopPropagation()
++          cancelSlipSlidePreview()
++        }
++      }}
++    >
++      <Input
++        ref={inputRef}
++        type="number"
++        step={1}
++        value={frames}
++        disabled={!isSlipSlideActive}
++        className="h-6 w-20 px-2 text-xs"
++        aria-label={t(
++          mode === 'slip'
++            ? 'timeline.header.slipSourceFrames'
++            : 'timeline.header.slideTimelineFrames',
++          {
++            defaultValue: mode === 'slip' ? 'Slip source frames' : 'Slide timeline frames',
++          },
++        )}
++        onChange={(event) => {
++          const value = event.currentTarget.value
++          setFrames(value)
++          if (value.trim() !== '' && Number.isSafeInteger(Number(value)))
++            updateSlipSlidePreview(Number(value))
++        }}
++      />
++      {isSlipSlideActive ? (
++        <>
++          <output className="text-xs whitespace-nowrap" aria-live="polite">
++            {t('timeline.header.editPreviewOffset', {
++              defaultValue: '{{frames}} frames',
++              frames: slipSlideDelta,
++            })}
++            {slipSlideConstrained ? ` (${slipSlideConstraintLabel ?? 'limit'})` : ''}
++          </output>
++          <Button
++            type="submit"
++            variant="ghost"
++            className="h-6 px-2 text-xs"
++            disabled={!validFrames}
++          >
++            {t('timeline.header.applyEditPreview', { defaultValue: 'Apply' })}
++          </Button>
++          <Button
++            type="button"
++            variant="ghost"
++            className="h-6 px-2 text-xs"
++            onClick={cancelSlipSlidePreview}
++          >
++            {t('timeline.header.cancelEditPreview', { defaultValue: 'Cancel' })}
++          </Button>
++        </>
++      ) : (
++        <Button
++          type="button"
++          variant="ghost"
++          className="h-6 px-2 text-xs"
++          ref={previewButtonRef}
++          onClick={() => setPreviewUnavailable(!startSlipSlidePreview(mode))}
++        >
++          {t(mode === 'slip' ? 'timeline.header.previewSlip' : 'timeline.header.previewSlide', {
++            defaultValue: mode === 'slip' ? 'Preview slip' : 'Preview slide',
++          })}
++        </Button>
++      )}
++      {previewUnavailable && !isSlipSlideActive ? (
++        <span role="status" className="text-xs">
++          {t('timeline.header.previewUnavailable', {
++            defaultValue: 'Preview unavailable: check locked tracks or another active edit.',
++          })}
++        </span>
++      ) : null}
++    </form>
++  )
++}
++
++function SlipSlideControls({ mode }: { mode: 'slip' | 'slide' }) {
++  const { t } = useTranslation()
++  const items = useItemsStore((state) => state.items)
++  const tracks = useItemsStore((state) => state.tracks)
++  const selectedIds = useSelectionStore((state) => state.selectedItemIds)
++  const selectItems = useSelectionStore((state) => state.selectItems)
++  const sourceItems = items.filter((item) => isMediaItem(item) && item.sourceEnd !== undefined)
++  const item = sourceItems.find((candidate) => candidate.id === selectedIds[0])
++  const effectiveTracks = resolveEffectiveTrackStates(tracks)
++  const timelineDuration = items.reduce(
++    (end, candidate) => Math.max(end, candidate.from + candidate.durationInFrames),
++    0,
++  )
++  return (
++    <div className="flex items-center gap-1">
++      <select
++        className="h-6 max-w-40 rounded border border-input bg-background px-1 text-xs"
++        aria-label={t(
++          mode === 'slip' ? 'timeline.header.clipToSlip' : 'timeline.header.clipToSlide',
++          {
++            defaultValue: mode === 'slip' ? 'Clip to slip' : 'Clip to slide',
++          },
++        )}
++        value={item?.id ?? ''}
++        onChange={(event) =>
++          selectItems(event.currentTarget.value ? [event.currentTarget.value] : [])
++        }
++      >
++        <option value="">
++          {t('timeline.header.chooseSourceClip', { defaultValue: 'Choose source clip' })}
++        </option>
++        {sourceItems.map((candidate) => (
++          <option
++            key={candidate.id}
++            value={candidate.id}
++            disabled={
++              !effectiveTracks.some((track) => track.id === candidate.trackId && !track.locked)
++            }
++          >
++            {candidate.label} (
++            {effectiveTracks.find((track) => track.id === candidate.trackId)?.name},{' '}
++            {candidate.from}f)
++          </option>
++        ))}
++      </select>
++      {item ? (
++        <SlipSlidePreviewControls
++          key={`${mode}:${item.id}`}
++          item={item}
++          mode={mode}
++          timelineDuration={timelineDuration}
++        />
++      ) : null}
++    </div>
++  )
++}
++
+ export const TimelineHeader = memo(function TimelineHeader({
+   onZoomChange,
+   onZoomIn,
+@@ -627,6 +809,10 @@
+             ) : null}
+           </div>
+
++          {activeTool === 'slip' || activeTool === 'slide' ? (
++            <SlipSlideControls mode={activeTool} />
++          ) : null}
++
+           <Separator orientation="vertical" className="h-5 mx-1.5" />
+
+           {/* Undo/Redo */}
+diff --git a/src/features/timeline/hooks/use-timeline-slip-slide.ts b/src/features/timeline/hooks/use-timeline-slip-slide.ts
+--- a/src/features/timeline/hooks/use-timeline-slip-slide.ts
++++ b/src/features/timeline/hooks/use-timeline-slip-slide.ts
+@@ -4,6 +4,9 @@
+ import { commitPreviewFrameToCurrentFrame } from '@/shared/state/playback'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { DRAG_THRESHOLD_PIXELS } from '../constants'
++import { useItemsStore } from '../stores/items-store'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import { resolveEffectiveTrackStates } from '../utils/group-utils'
+ import { useTimelineStore } from '../stores/timeline-store'
+ import { useTransitionsStore } from '../stores/transitions-store'
+ import { useSelectionStore } from '@/shared/state/selection'
+@@ -247,6 +250,44 @@
+   const latestDeltaRef = useRef(0)
+   const pendingStartCleanupRef = useRef<(() => void) | null>(null)
+   const slideGestureContextRef = useRef<SlideGestureContext | null>(null)
++  const inputRef = useRef<'pointer' | 'keyboard' | null>(null)
++  const gestureCleanupRef = useRef<(() => void) | null>(null)
++  const validateGestureRef = useRef<(() => boolean) | null>(null)
++
++  const cancelSlipSlidePreview = useCallback(() => {
++    pendingStartCleanupRef.current?.()
++    const stopObservers = gestureCleanupRef.current
++    gestureCleanupRef.current = null
++    validateGestureRef.current = null
++    inputRef.current = null
++    slideGestureContextRef.current = null
++    latestDeltaRef.current = 0
++    if (!stateRef.current.isActive) {
++      stopObservers?.()
++      return
++    }
++    stateRef.current = {
++      ...stateRef.current,
++      isActive: false,
++      mode: null,
++      currentDelta: 0,
++      leftNeighborId: null,
++      rightNeighborId: null,
++      isConstrained: false,
++      constraintEdge: null,
++      constraintLabel: null,
++    }
++    try {
++      // Cleanup publishes notifications too; policy changes must still invalidate admission.
++      useSlipEditPreviewStore.getState().clearPreview()
++      useSlideEditPreviewStore.getState().clearPreview()
++      useLinkedEditPreviewStore.getState().clear()
++      setDragState(null)
++      setState(stateRef.current)
++    } finally {
++      stopObservers?.()
++    }
++  }, [setDragState])
+
+   const getItemFromStore = useCallback(() => {
+     return useTimelineStore.getState().items.find((i) => i.id === item.id) ?? item
+@@ -380,19 +421,92 @@
+   )
+
+   const beginSlipSlideGesture = useCallback(
+-    (startX: number, mode: 'slip' | 'slide') => {
+-      commitPreviewFrameToCurrentFrame()
+-
++    (startX: number, mode: 'slip' | 'slide', input: 'pointer' | 'keyboard' = 'pointer') => {
++      if (trackLocked || stateRef.current.isActive || useSelectionStore.getState().dragState)
++        return false
++      const current = useItemsStore.getState()
++      const currentItem = current.itemById[item.id]
++      if (!currentItem || !isMediaItem(currentItem) || currentItem.sourceEnd === undefined)
++        return false
+       const { leftNeighbor, rightNeighbor } = findNeighbors()
+-      const currentItem = getItemFromStore()
+-
+-      setDragState({
+-        isDragging: true,
+-        draggedItemIds: [item.id],
+-        offset: { x: 0, y: 0 },
+-      })
+-
+-      setState({
++      const context =
++        mode === 'slide' ? buildSlideGestureContext(currentItem, leftNeighbor, rightNeighbor) : null
++      const participants = useEditorStore.getState().linkedSelectionEnabled
++        ? getSynchronizedLinkedItems(current.items, currentItem.id)
++        : [currentItem]
++      const affectedItems = [
++        ...participants,
++        ...(context
++          ? [
++              context.leftNeighbor,
++              context.rightNeighbor,
++              context.leftCounterpart,
++              context.rightCounterpart,
++              ...context.participantContexts.flatMap(({ leftAdjacent, rightAdjacent }) => [
++                leftAdjacent,
++                rightAdjacent,
++              ]),
++            ]
++          : []),
++      ].filter((candidate): candidate is TimelineItem => candidate !== null)
++      const tracks = resolveEffectiveTrackStates(current.tracks)
++      if (
++        affectedItems.some(
++          (candidate) => !tracks.some((track) => track.id === candidate.trackId && !track.locked),
++        )
++      )
++        return false
++      const originalKeyframes = useKeyframesStore.getState().keyframesByItemId
++      const originalTransitions = useTransitionsStore.getState().transitions
++      const linkedSelectionEnabled = useEditorStore.getState().linkedSelectionEnabled
++      const originalSelection = useSelectionStore.getState().selectedItemIds
++      const originalTool = useSelectionStore.getState().activeTool
++      let dragPublished = false
++      let invalidated = false
++      const isValid = () => {
++        if (invalidated) return false
++        const live = useItemsStore.getState()
++        const effectiveTracks = resolveEffectiveTrackStates(live.tracks)
++        const selection = useSelectionStore.getState()
++        const valid =
++          live.items === current.items &&
++          useKeyframesStore.getState().keyframesByItemId === originalKeyframes &&
++          useTransitionsStore.getState().transitions === originalTransitions &&
++          useEditorStore.getState().linkedSelectionEnabled === linkedSelectionEnabled &&
++          useTimelineSettingsStore.getState().fps === fps &&
++          selection.activeTool === originalTool &&
++          (!gestureCleanupRef.current ||
++            !dragPublished ||
++            (selection.dragState?.isDragging === true &&
++              selection.dragState.draggedItemIds.length === 1 &&
++              selection.dragState.draggedItemIds[0] === item.id)) &&
++          (input !== 'keyboard' ||
++            (selection.selectedItemIds.length === originalSelection.length &&
++              selection.selectedItemIds.every((id, index) => id === originalSelection[index]))) &&
++          affectedItems.every((candidate) =>
++            effectiveTracks.some((track) => track.id === candidate.trackId && !track.locked),
++          )
++        invalidated = !valid
++        return valid
++      }
++      validateGestureRef.current = isValid
++      const cancelInvalidGesture = () => {
++        if (!isValid()) cancelSlipSlidePreview()
++      }
++      // ponytail: any item/keyframe/transition edit cancels; narrow to participant tracks if concurrent editing is needed.
++      const subscriptions = [
++        useItemsStore.subscribe(cancelInvalidGesture),
++        useKeyframesStore.subscribe(cancelInvalidGesture),
++        useTransitionsStore.subscribe(cancelInvalidGesture),
++        useEditorStore.subscribe(cancelInvalidGesture),
++        useTimelineSettingsStore.subscribe(cancelInvalidGesture),
++        useSelectionStore.subscribe(cancelInvalidGesture),
++      ]
++      gestureCleanupRef.current = () => {
++        for (const unsubscribe of subscriptions) unsubscribe()
++      }
++      inputRef.current = input
++      stateRef.current = {
+         isActive: true,
+         mode,
+         startX,
+@@ -402,18 +516,24 @@
+         isConstrained: false,
+         constraintEdge: null,
+         constraintLabel: null,
+-      })
++      }
++      setState(stateRef.current)
++      commitPreviewFrameToCurrentFrame()
++      if (validateGestureRef.current !== isValid) return false
++      dragPublished = true
++      setDragState({ isDragging: true, draggedItemIds: [item.id], offset: { x: 0, y: 0 } })
++      if (validateGestureRef.current !== isValid) return false
+       latestDeltaRef.current = 0
+
+       // Seed preview stores immediately so linked companions show their
+       // overlays on the same frame as the primary clip (no 1-frame delay).
+       if (mode === 'slip') {
++        slideGestureContextRef.current = null
+         useSlipEditPreviewStore.getState().setPreview({
+           itemId: item.id,
+           trackId: currentItem.trackId,
+           slipDelta: 0,
+         })
+-        slideGestureContextRef.current = null
+       } else {
+         // Compute the effective slide range (tightest across all tracks),
+         // incorporating transition constraints so the initial limit box matches
+@@ -448,6 +568,7 @@
+           transitions,
+           fps,
+         )
++        slideGestureContextRef.current = context
+         useSlideEditPreviewStore.getState().setPreview({
+           itemId: item.id,
+           trackId: currentItem.trackId,
+@@ -457,15 +578,10 @@
+           minDelta: slideMinDelta,
+           maxDelta: slideMaxDelta,
+         })
+-        slideGestureContextRef.current = buildSlideGestureContext(
+-          currentItem,
+-          leftNeighbor ?? null,
+-          rightNeighbor ?? null,
+-        )
+-      }
+-
++      }
++
++      if (validateGestureRef.current !== isValid) return false
+       // Seed linked companion previews with zero-delta so their overlays appear immediately
+-      const linkedSelectionEnabled = useEditorStore.getState().linkedSelectionEnabled
+       if (linkedSelectionEnabled) {
+         const allItems = useTimelineStore.getState().items
+         const companions = getSynchronizedLinkedItems(allItems, currentItem.id).filter(
+@@ -478,10 +594,18 @@
+           useLinkedEditPreviewStore.getState().setUpdates(updates)
+         }
+       }
+-      // Note: clampSlideDelta intentionally omitted — it reads fps from store at
+-      // call time, and including it would cause a TDZ error (defined after this hook).
++      return validateGestureRef.current === isValid
++      // clampSlideDelta is read through its ref because it is defined below this callback.
+     },
+-    [buildSlideGestureContext, findNeighbors, fps, getItemFromStore, item.id, setDragState],
++    [
++      buildSlideGestureContext,
++      cancelSlipSlidePreview,
++      findNeighbors,
++      fps,
++      item.id,
++      setDragState,
++      trackLocked,
++    ],
+   )
+
+   /**
+@@ -851,14 +975,16 @@
+     [fps],
+   )
+
+-  // Mouse move handler
+-  const handleMouseMove = useCallback(
+-    (e: MouseEvent) => {
+-      if (!stateRef.current.isActive || trackLocked) return
+-
+-      const deltaX = e.clientX - stateRef.current.startX
+-      const deltaTime = pixelsToTime(deltaX)
+-      let deltaFrames = Math.round(deltaTime * fps)
++  // Pointer and native numeric previews use the same source/neighbor constraints.
++  const updateSlipSlideDelta = useCallback(
++    (requestedFrames: number) => {
++      if (!stateRef.current.isActive || !Number.isSafeInteger(requestedFrames)) return
++      if (!validateGestureRef.current?.()) {
++        cancelSlipSlidePreview()
++        return
++      }
++      const gesture = validateGestureRef.current
++      let deltaFrames = requestedFrames
+       const mode = stateRef.current.mode
+
+       if (mode === 'slip') {
+@@ -868,12 +994,10 @@
+         const currentItem = getItemFromStore()
+         const { speed, sourceFps } = getSourceProperties(currentItem)
+         const effectiveSourceFps = sourceFps ?? fps
+-        const sourceFramesDelta = -timelineToSourceFrames(
+-          deltaFrames,
+-          speed,
+-          fps,
+-          effectiveSourceFps,
+-        )
++        const sourceFramesDelta =
++          inputRef.current === 'keyboard'
++            ? deltaFrames
++            : -timelineToSourceFrames(deltaFrames, speed, fps, effectiveSourceFps)
+
+         const sourceClamped = clampSlipDelta(sourceFramesDelta)
+         const allItems = useTimelineStore.getState().items
+@@ -919,6 +1043,7 @@
+         } else if (previewStore.slipDelta !== clamped) {
+           previewStore.setSlipDelta(clamped)
+         }
++        if (validateGestureRef.current !== gesture) return
+
+         if (
+           clamped !== latestDeltaRef.current ||
+@@ -949,7 +1074,7 @@
+         const storeItem = slideContext?.currentItem ?? getItemFromStore()
+
+         // Apply snapping for slide (clip edges snap to items/playhead/grid)
+-        if (isSnapEnabled()) {
++        if (inputRef.current === 'pointer' && isSnapEnabled()) {
+           const targets = slideContext?.snapTargets ?? getMagneticSnapTargets()
+           const excludeIds =
+             slideContext?.snapExcludeIds ??
+@@ -1062,6 +1187,7 @@
+         } else if (previewStore.slideDelta !== clamped) {
+           previewStore.setSlideDelta(clamped)
+         }
++        if (validateGestureRef.current !== gesture) return
+
+         if (
+           clamped !== latestDeltaRef.current ||
+@@ -1141,9 +1267,8 @@
+       }
+     },
+     [
+-      pixelsToTime,
++      cancelSlipSlidePreview,
+       fps,
+-      trackLocked,
+       item.id,
+       getItemFromStore,
+       clampSlipDelta,
+@@ -1156,75 +1281,66 @@
+     ],
+   )
+
+-  // Mouse up handler — commits changes
+-  const handleMouseUp = useCallback(() => {
++  const finishSlipSlidePreview = useCallback(() => {
+     if (!stateRef.current.isActive) return
+-
+     const { mode, leftNeighborId, rightNeighborId } = stateRef.current
+     const currentDelta = latestDeltaRef.current
+-
+-    try {
+-      if (currentDelta !== 0) {
+-        if (mode === 'slip') {
+-          slipItem(item.id, currentDelta)
+-        } else if (mode === 'slide') {
+-          slideItem(item.id, currentDelta, leftNeighborId, rightNeighborId)
+-        }
+-      }
+-    } finally {
+-      // Clear preview stores
+-      useSlipEditPreviewStore.getState().clearPreview()
+-      useSlideEditPreviewStore.getState().clearPreview()
+-      useLinkedEditPreviewStore.getState().clear()
+-
+-      // Clear drag state
+-      setDragState(null)
+-
+-      setState({
+-        isActive: false,
+-        mode: null,
+-        startX: 0,
+-        currentDelta: 0,
+-        leftNeighborId: null,
+-        rightNeighborId: null,
+-        isConstrained: false,
+-        constraintEdge: null,
+-        constraintLabel: null,
+-      })
+-      latestDeltaRef.current = 0
+-      slideGestureContextRef.current = null
++    const validate = validateGestureRef.current
++    cancelSlipSlidePreview()
++    // Recheck after cleanup notifications, before the durable action writes.
++    if (!validate?.() || currentDelta === 0) return
++    if (mode === 'slip') slipItem(item.id, currentDelta)
++    else if (mode === 'slide') slideItem(item.id, currentDelta, leftNeighborId, rightNeighborId)
++  }, [cancelSlipSlidePreview, item.id])
++
++  const handleMouseMove = useCallback(
++    (event: MouseEvent) => {
++      if (inputRef.current !== 'pointer') return
++      updateSlipSlideDelta(Math.round(pixelsToTime(event.clientX - stateRef.current.startX) * fps))
++    },
++    [fps, pixelsToTime, updateSlipSlideDelta],
++  )
++
++  const handleMouseUp = useCallback(() => {
++    if (inputRef.current === 'pointer') finishSlipSlidePreview()
++  }, [finishSlipSlidePreview])
++
++  useEffect(() => {
++    if (!state.isActive) return
++    const handleKeyDown = (event: KeyboardEvent) => {
++      if (event.key === 'Escape') {
++        event.preventDefault()
++        event.stopPropagation()
++        cancelSlipSlidePreview()
++      }
+     }
+-  }, [item.id, setDragState])
+-
+-  // Setup/cleanup mouse event listeners
+-  useEffect(() => {
+-    if (state.isActive) {
+-      window.addEventListener('mousemove', handleMouseMove)
+-      window.addEventListener('mouseup', handleMouseUp)
+-
+-      return () => {
+-        window.removeEventListener('mousemove', handleMouseMove)
+-        window.removeEventListener('mouseup', handleMouseUp)
+-      }
++    window.addEventListener('mousemove', handleMouseMove)
++    window.addEventListener('mouseup', handleMouseUp)
++    window.addEventListener('keydown', handleKeyDown)
++    window.addEventListener('blur', cancelSlipSlidePreview)
++    return () => {
++      window.removeEventListener('mousemove', handleMouseMove)
++      window.removeEventListener('mouseup', handleMouseUp)
++      window.removeEventListener('keydown', handleKeyDown)
++      window.removeEventListener('blur', cancelSlipSlidePreview)
+     }
+-  }, [state.isActive, handleMouseMove, handleMouseUp])
+-
+-  useEffect(
+-    () => () => {
+-      pendingStartCleanupRef.current?.()
+-      // Effect dependency changes may replace the window listeners during an
+-      // active gesture. Only a true unmount should abandon its preview state.
+-      if (stateRef.current.isActive) {
+-        useSlipEditPreviewStore.getState().clearPreview()
+-        useSlideEditPreviewStore.getState().clearPreview()
+-        useLinkedEditPreviewStore.getState().clear()
+-        useSelectionStore.getState().setDragState(null)
+-        latestDeltaRef.current = 0
+-      }
+-      slideGestureContextRef.current = null
++  }, [state.isActive, handleMouseMove, handleMouseUp, cancelSlipSlidePreview])
++
++  useEffect(() => () => cancelSlipSlidePreview(), [cancelSlipSlidePreview])
++
++  const startSlipSlidePreview = useCallback(
++    (mode: 'slip' | 'slide') => beginSlipSlideGesture(0, mode, 'keyboard'),
++    [beginSlipSlideGesture],
++  )
++  const updateSlipSlidePreview = useCallback(
++    (frames: number) => {
++      if (inputRef.current === 'keyboard') updateSlipSlideDelta(frames)
+     },
+-    [],
++    [updateSlipSlideDelta],
+   )
++  const commitSlipSlidePreview = useCallback(() => {
++    if (inputRef.current === 'keyboard') finishSlipSlidePreview()
++  }, [finishSlipSlidePreview])
+
+   // Start slip/slide drag
+   const handleSlipSlideStart = useCallback(
+@@ -1243,6 +1359,9 @@
+         const cleanupPendingStart = () => {
+           window.removeEventListener('mousemove', checkPendingStart)
+           window.removeEventListener('mouseup', cancelPendingStart)
++          window.removeEventListener('keydown', cancelPendingKey)
++          window.removeEventListener('blur', cancelPendingStart)
++          for (const unsubscribe of pendingSubscriptions) unsubscribe()
+           pendingStartCleanupRef.current = null
+         }
+
+@@ -1267,9 +1386,38 @@
+           cleanupPendingStart()
+         }
+
++        const cancelPendingKey = (event: KeyboardEvent) => {
++          if (event.key === 'Escape') {
++            event.preventDefault()
++            cleanupPendingStart()
++          }
++        }
++
++        // Pending drags also abandon their original source/track context on edits.
++        const pendingSubscriptions = [
++          useItemsStore.subscribe(cleanupPendingStart),
++          useKeyframesStore.subscribe(cleanupPendingStart),
++          useTransitionsStore.subscribe(cleanupPendingStart),
++          useEditorStore.subscribe((next, previous) => {
++            if (next.linkedSelectionEnabled !== previous.linkedSelectionEnabled)
++              cleanupPendingStart()
++          }),
++          useSelectionStore.subscribe((next, previous) => {
++            if (
++              next.activeTool !== previous.activeTool ||
++              next.selectedItemIds !== previous.selectedItemIds
++            )
++              cleanupPendingStart()
++          }),
++          useTimelineSettingsStore.subscribe((next, previous) => {
++            if (next.fps !== previous.fps) cleanupPendingStart()
++          }),
++        ]
+         pendingStartCleanupRef.current = cleanupPendingStart
+         window.addEventListener('mousemove', checkPendingStart)
+         window.addEventListener('mouseup', cancelPendingStart)
++        window.addEventListener('keydown', cancelPendingKey)
++        window.addEventListener('blur', cancelPendingStart)
+         return
+       }
+
+@@ -1287,5 +1435,9 @@
+     slipSlideConstraintEdge: state.constraintEdge,
+     slipSlideConstraintLabel: state.constraintLabel,
+     handleSlipSlideStart,
++    startSlipSlidePreview,
++    updateSlipSlidePreview,
++    commitSlipSlidePreview,
++    cancelSlipSlidePreview,
+   }
+ }
+diff --git a/src/features/timeline/hooks/use-timeline-slip-slide.test.tsx b/src/features/timeline/hooks/use-timeline-slip-slide.test.tsx
+--- a/src/features/timeline/hooks/use-timeline-slip-slide.test.tsx
++++ b/src/features/timeline/hooks/use-timeline-slip-slide.test.tsx
+@@ -1,10 +1,12 @@
+-import { beforeEach, describe, expect, it } from 'vite-plus/test'
+-import { act, renderHook } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
+ import type { CompositionItem, TimelineItem } from '@/types/timeline'
++import { TimelineHeader } from '../components/timeline-header'
++import { useToolShortcuts } from './shortcuts/use-tool-shortcuts'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { resetPlaybackPreviewState } from '@/shared/state/playback-preview-test-helpers'
+ import { useSelectionStore } from '@/shared/state/selection'
+-import { makeTimelineTrack, makeTimelineVideoItem } from '../test-helpers'
++import { makeTimelineAudioItem, makeTimelineTrack, makeTimelineVideoItem } from '../test-helpers'
+ import { useItemsStore } from '../stores/items-store'
+ import { useKeyframesStore } from '../stores/keyframes-store'
+ import { useLinkedEditPreviewStore } from '../stores/linked-edit-preview-store'
+@@ -15,6 +17,8 @@
+ import { useTransitionsStore } from '../stores/transitions-store'
+ import { useZoomStore } from '../stores/zoom-store'
+ import { useTimelineSlipSlide } from './use-timeline-slip-slide'
++
++vi.mock('../components/mic-record-control', () => ({ MicRecordControl: () => null }))
+
+ const TIMELINE_DURATION = 600
+
+@@ -36,6 +40,8 @@
+   useTransitionsStore.getState().setTransitions([])
+   useKeyframesStore.getState().setKeyframes([])
+   useEditorStore.setState({ linkedSelectionEnabled: false })
++  useSelectionStore.getState().selectItems([])
++  useSelectionStore.getState().setActiveTool('select')
+   useSelectionStore.getState().setDragState(null)
+   useSelectionStore.getState().setActiveSnapTarget(null)
+   useSlipEditPreviewStore.getState().clearPreview()
+@@ -217,3 +223,663 @@
+     expect(useSelectionStore.getState().dragState).toBeNull()
+   })
+ })
++
++function ToolHeader() {
++  useToolShortcuts({})
++  return <TimelineHeader />
++}
++
++function expectNoEditPreview() {
++  expect(useSlipEditPreviewStore.getState().itemId).toBeNull()
++  expect(useSlideEditPreviewStore.getState().itemId).toBeNull()
++  expect(Object.keys(useLinkedEditPreviewStore.getState().updatesById)).toHaveLength(0)
++  expect(useSelectionStore.getState().dragState).toBeNull()
++}
++
++describe('native slip/slide preview entry', () => {
++  beforeEach(() => setupStores(true))
++
++  it.each(['slip', 'slide'] as const)(
++    'reaches %s from its shortcut and native clip/input/form controls',
++    (mode) => {
++      const { left, center, right } = makeSlideItems()
++      const spedCenter = { ...center, speed: 2, sourceFps: 60 }
++      useItemsStore.getState().setItems([left, spedCenter, right])
++      const initialItems = useItemsStore.getState().items
++      render(<ToolHeader />)
++
++      expect(screen.getByRole('button', { name: 'Slip Slide Tools' })).toBeEnabled()
++      fireEvent.keyDown(document, {
++        key: mode === 'slip' ? 'y' : 'u',
++        code: mode === 'slip' ? 'KeyY' : 'KeyU',
++      })
++      expect(useSelectionStore.getState().activeTool).toBe(mode)
++      expect(screen.getByRole('option', { name: /Compound Clip \([^,]+, 60f\)/ })).toHaveValue(
++        center.id,
++      )
++      fireEvent.change(screen.getByRole('combobox', { name: `Clip to ${mode}` }), {
++        target: { value: center.id },
++      })
++      const preview = screen.getByRole('button', { name: `Preview ${mode}` })
++      preview.focus()
++      expect(preview).toHaveFocus()
++      fireEvent.click(preview)
++      expect(
++        mode === 'slip'
++          ? useSlipEditPreviewStore.getState().itemId
++          : useSlideEditPreviewStore.getState().itemId,
++      ).toBe(center.id)
++      const input = screen.getByRole('spinbutton', {
++        name: mode === 'slip' ? 'Slip source frames' : 'Slide timeline frames',
++      })
++      expect(input).toHaveFocus()
++      fireEvent.change(input, { target: { value: '5' } })
++      expect(input).toHaveFocus()
++      expect(
++        mode === 'slip'
++          ? useSlipEditPreviewStore.getState().slipDelta
++          : useSlideEditPreviewStore.getState().slideDelta,
++      ).toBe(5)
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      releaseMouse()
++      expect(
++        mode === 'slip'
++          ? useSlipEditPreviewStore.getState().itemId
++          : useSlideEditPreviewStore.getState().itemId,
++      ).toBe(center.id)
++      fireEvent.submit(input.closest('form')!)
++
++      expectNoEditPreview()
++      expect(getItem(center.id)).toMatchObject(
++        mode === 'slip' ? { from: 60, sourceStart: 35, sourceEnd: 95 } : { from: 65 },
++      )
++      if (mode === 'slide') {
++        expect(getItem(left.id).durationInFrames).toBe(65)
++        expect(getItem(right.id)).toMatchObject({ from: 125, durationInFrames: 55 })
++      }
++      const committedItems = useItemsStore.getState().items
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      act(() => useTimelineCommandStore.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(initialItems)
++      act(() => useTimelineCommandStore.getState().redo())
++      expect(useItemsStore.getState().items).toEqual(committedItems)
++    },
++  )
++
++  it.each(['slip', 'slide'] as const)(
++    'cancels %s with Escape and ignores later submit/release',
++    (mode) => {
++      const { left, center, right } = makeSlideItems()
++      useItemsStore.getState().setItems([left, center, right])
++      useSelectionStore.getState().selectItems([center.id])
++      useSelectionStore.getState().setActiveTool(mode)
++      const initialItems = useItemsStore.getState().items
++      render(<ToolHeader />)
++      fireEvent.click(screen.getByRole('button', { name: `Preview ${mode}` }))
++      const input = screen.getByRole('spinbutton', {
++        name: mode === 'slip' ? 'Slip source frames' : 'Slide timeline frames',
++      })
++      fireEvent.change(input, { target: { value: '8' } })
++      fireEvent.keyDown(input, { key: 'Escape' })
++      expectNoEditPreview()
++      expect(screen.getByRole('button', { name: `Preview ${mode}` })).toHaveFocus()
++      fireEvent.submit(input.closest('form')!)
++      releaseMouse()
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++
++  it.each(['slip', 'slide'] as const)(
++    'rejects invalid %s input and creates no history for identity',
++    (mode) => {
++      const { left, center, right } = makeSlideItems()
++      useItemsStore.getState().setItems([left, center, right])
++      useSelectionStore.getState().selectItems([center.id])
++      useSelectionStore.getState().setActiveTool(mode)
++      render(<ToolHeader />)
++      fireEvent.click(screen.getByRole('button', { name: `Preview ${mode}` }))
++      const input = screen.getByRole('spinbutton', {
++        name: mode === 'slip' ? 'Slip source frames' : 'Slide timeline frames',
++      })
++      for (const value of ['', '0.5', '1e100']) {
++        fireEvent.change(input, { target: { value } })
++        fireEvent.submit(input.closest('form')!)
++        expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      }
++      fireEvent.change(input, { target: { value: '0' } })
++      fireEvent.submit(input.closest('form')!)
++      expectNoEditPreview()
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++})
++
++describe('shared slip/slide gesture cancellation and locks', () => {
++  beforeEach(() => setupStores(false))
++
++  it.each(['slip', 'slide'] as const)('cancels pointer %s on Escape before release', (mode) => {
++    const { left, center, right } = makeSlideItems()
++    useItemsStore.getState().setItems([left, center, right])
++    const initialItems = useItemsStore.getState().items
++    const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() =>
++      result.current.handleSlipSlideStart(
++        { button: 0, clientX: 0, stopPropagation() {}, preventDefault() {} } as React.MouseEvent,
++        mode,
++      ),
++    )
++    moveMouse(10)
++    fireEvent.keyDown(window, { key: 'Escape' })
++    expectNoEditPreview()
++    moveMouse(20)
++    releaseMouse()
++    expect(useItemsStore.getState().items).toBe(initialItems)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it.each(['slip', 'slide'] as const)('refuses %s with an inherited lock at entry', (mode) => {
++    const { left, center, right } = makeSlideItems()
++    useItemsStore.getState().setItems([left, center, right])
++    const currentTrackId = getItem(center.id).trackId
++    useItemsStore
++      .getState()
++      .setTracks([
++        makeTimelineTrack({ id: 'group', name: 'Group', order: 0, isGroup: true, locked: true }),
++        makeTimelineTrack({ id: currentTrackId, name: 'V1', order: 1, parentTrackId: 'group' }),
++      ])
++    const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() => result.current.startSlipSlidePreview(mode))
++    expectNoEditPreview()
++    act(() =>
++      result.current.handleSlipSlideStart(
++        { button: 0, clientX: 0, stopPropagation() {}, preventDefault() {} } as React.MouseEvent,
++        mode,
++      ),
++    )
++    moveMouse(10)
++    releaseMouse()
++    expectNoEditPreview()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it.each(['slip', 'slide'] as const)(
++    'keeps %s canceled across synchronous lock/unlock',
++    (mode) => {
++      const { left, center, right } = makeSlideItems()
++      useItemsStore.getState().setItems([left, center, right])
++      const initialItems = useItemsStore.getState().items
++      const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++      act(() => {
++        result.current.startSlipSlidePreview(mode)
++        result.current.updateSlipSlidePreview(10)
++      })
++      const tracks = useItemsStore.getState().tracks
++      act(() => {
++        useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++        expectNoEditPreview()
++        useItemsStore.getState().setTracks(tracks)
++        result.current.updateSlipSlidePreview(20)
++        result.current.commitSlipSlidePreview()
++      })
++      expectNoEditPreview()
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      act(() => {
++        result.current.startSlipSlidePreview(mode)
++        result.current.updateSlipSlidePreview(5)
++        result.current.commitSlipSlidePreview()
++      })
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    },
++  )
++
++  it.each([
++    'remove',
++    'edit',
++    'keyframes',
++    'transitions',
++    'linked-mode',
++    'tool',
++    'selection',
++    'fps',
++    'drag-cleared',
++    'blur',
++  ] as const)('invalidates the active slide on %s', (change) => {
++    const { left, center, right } = makeSlideItems()
++    useItemsStore.getState().setItems([left, center, right])
++    const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() => {
++      result.current.startSlipSlidePreview('slide')
++      result.current.updateSlipSlidePreview(10)
++    })
++    act(() => {
++      switch (change) {
++        case 'remove':
++          useItemsStore.getState().setItems([left, center])
++          break
++        case 'edit':
++          useItemsStore.getState()._updateItem(right.id, { sourceStart: 45 })
++          break
++        case 'keyframes':
++          useKeyframesStore.getState().setKeyframes([{ itemId: right.id, properties: [] }])
++          break
++        case 'transitions':
++          useTransitionsStore.getState().setTransitions([
++            {
++              id: 'transition',
++              leftClipId: left.id,
++              rightClipId: center.id,
++              durationInFrames: 10,
++              alignment: 0.5,
++              type: 'crossfade',
++              presentation: 'fade',
++              timing: 'linear',
++              trackId: center.trackId,
++            },
++          ])
++          break
++        case 'linked-mode':
++          useEditorStore.setState({ linkedSelectionEnabled: true })
++          break
++        case 'tool':
++          useSelectionStore.getState().setActiveTool('razor')
++          break
++        case 'selection':
++          useSelectionStore.getState().selectItems([right.id])
++          break
++        case 'fps':
++          useTimelineSettingsStore.setState({ fps: 60 })
++          break
++        case 'drag-cleared':
++          useSelectionStore.getState().setDragState(null)
++          break
++        case 'blur':
++          window.dispatchEvent(new Event('blur'))
++          break
++      }
++    })
++    const itemsAfterChange = useItemsStore.getState().items
++    expectNoEditPreview()
++    act(() => {
++      result.current.updateSlipSlidePreview(20)
++      result.current.commitSlipSlidePreview()
++    })
++    releaseMouse()
++    expect(useItemsStore.getState().items).toBe(itemsAfterChange)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it('abandons threshold-pending slide on Escape and refuses a deleted stale item', () => {
++    const { center } = makeSlideItems()
++    useItemsStore.getState().setItems([center])
++    const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() =>
++      result.current.handleSlipSlideStart(
++        {
++          button: 0,
++          clientX: 0,
++          clientY: 0,
++          stopPropagation() {},
++          preventDefault() {},
++        } as React.MouseEvent,
++        'slide',
++        { activateOnMoveThreshold: true },
++      ),
++    )
++    fireEvent.keyDown(window, { key: 'Escape' })
++    moveMouse(20)
++    expectNoEditPreview()
++    act(() => useItemsStore.getState().setItems([]))
++    act(() => result.current.startSlipSlidePreview('slide'))
++    expectNoEditPreview()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++})
++
++function makeLinkedSlideItems() {
++  const { left, center, right } = makeSlideItems()
++  const videos = [left, center, right].map((item) =>
++    makeTimelineVideoItem({
++      id: item.id,
++      from: item.from,
++      sourceStart: item.sourceStart,
++      sourceEnd: item.sourceEnd,
++      sourceDuration: item.sourceDuration,
++      linkedGroupId: `linked-${item.id}`,
++      mediaId: `media-${item.id}`,
++    }),
++  )
++  const audios = videos.map((item) =>
++    makeTimelineAudioItem({
++      id: `audio-${item.id}`,
++      trackId: 'track-v2',
++      from: item.from,
++      sourceStart: item.sourceStart,
++      sourceEnd: item.sourceEnd,
++      sourceDuration: item.sourceDuration,
++      linkedGroupId: item.linkedGroupId,
++      mediaId: item.mediaId,
++    }),
++  )
++  useEditorStore.setState({ linkedSelectionEnabled: true })
++  useItemsStore.getState().setItems([...videos, ...audios])
++  return { videos, audios }
++}
++
++describe('preview/durable slip-slide correspondence', () => {
++  beforeEach(() => setupStores(false))
++
++  it.each(['slip', 'slide'] as const)(
++    'previews and commits linked %s with one undo/redo step',
++    (mode) => {
++      const { videos, audios } = makeLinkedSlideItems()
++      const center = videos[1]!
++      const initialItems = useItemsStore.getState().items
++      const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++      act(() => {
++        result.current.startSlipSlidePreview(mode)
++        result.current.updateSlipSlidePreview(10)
++      })
++      const updates = useLinkedEditPreviewStore.getState().updatesById
++      expect(updates[audios[1]!.id]).toMatchObject(
++        mode === 'slip' ? { sourceStart: 40, sourceEnd: 100 } : { from: 70 },
++      )
++      if (mode === 'slide') {
++        expect(updates[audios[0]!.id]).toMatchObject({ durationInFrames: 70 })
++        expect(updates[audios[2]!.id]).toMatchObject({ from: 130, durationInFrames: 50 })
++      }
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      act(() => result.current.commitSlipSlidePreview())
++      const committedItems = useItemsStore.getState().items
++      expect(getItem(audios[1]!.id)).toMatchObject(
++        mode === 'slip' ? { sourceStart: 40, sourceEnd: 100 } : { from: 70 },
++      )
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      expectNoEditPreview()
++      act(() => useTimelineCommandStore.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(initialItems)
++      act(() => useTimelineCommandStore.getState().redo())
++      expect(useItemsStore.getState().items).toEqual(committedItems)
++    },
++  )
++
++  it.each(['slip', 'slide'] as const)(
++    'refuses a locked %s companion and keeps cancellation after unlock',
++    (mode) => {
++      const { videos, audios } = makeLinkedSlideItems()
++      const initialItems = useItemsStore.getState().items
++      const { result } = renderHook(() => useTimelineSlipSlide(videos[1]!, TIMELINE_DURATION))
++      const tracks = useItemsStore.getState().tracks
++      const companionTrackId = getItem(audios[1]!.id).trackId
++      const primaryTrackId = getItem(videos[1]!.id).trackId
++      expect(companionTrackId).not.toBe(primaryTrackId)
++      const lockedTracks = tracks.map((track) =>
++        track.id === companionTrackId ? { ...track, locked: true } : track,
++      )
++      expect(lockedTracks.find((track) => track.id === primaryTrackId)?.locked).toBe(false)
++      act(() => useItemsStore.getState().setTracks(lockedTracks))
++      act(() => result.current.startSlipSlidePreview(mode))
++      expectNoEditPreview()
++      act(() => useItemsStore.getState().setTracks(tracks))
++      act(() => {
++        result.current.startSlipSlidePreview(mode)
++        result.current.updateSlipSlidePreview(10)
++        useItemsStore.getState().setTracks(lockedTracks)
++        expectNoEditPreview()
++        useItemsStore.getState().setTracks(tracks)
++        result.current.updateSlipSlidePreview(20)
++        result.current.commitSlipSlidePreview()
++      })
++      expectNoEditPreview()
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++
++  it.each([
++    ['slip', 90],
++    ['slide', 59],
++  ] as const)('clamps %s to the same source/neighbor bound as commit', (mode, delta) => {
++    const { left, center, right } = makeSlideItems()
++    useItemsStore.getState().setItems([left, center, right])
++    const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() => {
++      result.current.startSlipSlidePreview(mode)
++      result.current.updateSlipSlidePreview(1000)
++    })
++    expect(result.current.slipSlideDelta).toBe(delta)
++    expect(result.current.slipSlideConstrained).toBe(true)
++    act(() => result.current.commitSlipSlidePreview())
++    expect(getItem(center.id)).toMatchObject(
++      mode === 'slip' ? { from: 60, sourceStart: 120, sourceEnd: 180 } : { from: 119 },
++    )
++    expectNoEditPreview()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  })
++
++  it.each(['slip', 'slide'] as const)(
++    'cancels %s when locked synchronously by drag-state publication',
++    (mode) => {
++      const { left, center, right } = makeSlideItems()
++      useItemsStore.getState().setItems([left, center, right])
++      const tracks = useItemsStore.getState().tracks
++      const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++      const stop = useSelectionStore.subscribe((state) => {
++        if (state.dragState)
++          useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++      })
++      try {
++        act(() => result.current.startSlipSlidePreview(mode))
++        expectNoEditPreview()
++        act(() => result.current.commitSlipSlidePreview())
++        expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      } finally {
++        stop()
++      }
++    },
++  )
++
++  it.each(['slip', 'slide'] as const)('cleans up an unmounted keyboard %s preview', (mode) => {
++    const { left, center, right } = makeSlideItems()
++    useItemsStore.getState().setItems([left, center, right])
++    const initialItems = useItemsStore.getState().items
++    const { result, unmount } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++    act(() => {
++      result.current.startSlipSlidePreview(mode)
++      result.current.updateSlipSlidePreview(10)
++    })
++    unmount()
++    expectNoEditPreview()
++    act(() => result.current.commitSlipSlidePreview())
++    releaseMouse()
++    expect(useItemsStore.getState().items).toBe(initialItems)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++})
++
++it('retains the active preview when an idle slip/slide hook unmounts', () => {
++  setupStores(false)
++  const { left, center, right } = makeSlideItems()
++  useItemsStore.getState().setItems([left, center, right])
++  const { result } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++  const idle = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++  act(() => {
++    result.current.startSlipSlidePreview('slip')
++    result.current.updateSlipSlidePreview(5)
++  })
++  idle.unmount()
++  expect(useSlipEditPreviewStore.getState()).toMatchObject({ itemId: center.id, slipDelta: 5 })
++  expect(useSelectionStore.getState().dragState).not.toBeNull()
++  act(() => result.current.commitSlipSlidePreview())
++  expect(getItem(center.id).sourceStart).toBe(35)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  expectNoEditPreview()
++})
++
++it.each(['slip', 'slide'] as const)(
++  'does not republish linked %s after a preview observer locks a track',
++  (mode) => {
++    setupStores(false)
++    const { videos } = makeLinkedSlideItems()
++    const initialItems = useItemsStore.getState().items
++    const tracks = useItemsStore.getState().tracks
++    const { result } = renderHook(() => useTimelineSlipSlide(videos[1]!, TIMELINE_DURATION))
++    act(() => result.current.startSlipSlidePreview(mode))
++    const lockOnDelta = () => {
++      const delta =
++        mode === 'slip'
++          ? useSlipEditPreviewStore.getState().slipDelta
++          : useSlideEditPreviewStore.getState().slideDelta
++      if (delta === 10)
++        useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++    }
++    const stop =
++      mode === 'slip'
++        ? useSlipEditPreviewStore.subscribe(lockOnDelta)
++        : useSlideEditPreviewStore.subscribe(lockOnDelta)
++    try {
++      act(() => result.current.updateSlipSlidePreview(10))
++      expectNoEditPreview()
++      act(() => {
++        useItemsStore.getState().setTracks(tracks)
++        result.current.commitSlipSlidePreview()
++      })
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    } finally {
++      stop()
++    }
++  },
++)
++
++it('chooses slip through the keyboard-operated existing tool flyout', () => {
++  setupStores(false)
++  render(<ToolHeader />)
++  const trigger = screen.getByRole('button', { name: 'Slip Slide Tools' })
++  trigger.focus()
++  fireEvent.keyDown(trigger, { key: 'Enter', code: 'Enter' })
++  fireEvent.keyDown(screen.getByRole('menuitem', { name: /Slip Tool/ }), {
++    key: 'Enter',
++    code: 'Enter',
++  })
++  expect(useSelectionStore.getState().activeTool).toBe('slip')
++  expect(screen.getByRole('combobox', { name: 'Clip to slip' })).toBeInTheDocument()
++})
++
++it.each(['slip', 'slide'] as const)(
++  'keeps threshold-pending %s canceled across lock/unlock or source replacement',
++  (mode) => {
++    for (const change of ['lock', 'source'] as const) {
++      setupStores(false)
++      const { left, center, right } = makeSlideItems()
++      useItemsStore.getState().setItems([left, center, right])
++      const { result, unmount } = renderHook(() => useTimelineSlipSlide(center, TIMELINE_DURATION))
++      act(() =>
++        result.current.handleSlipSlideStart(
++          {
++            button: 0,
++            clientX: 0,
++            clientY: 0,
++            stopPropagation() {},
++            preventDefault() {},
++          } as React.MouseEvent,
++          mode,
++          { activateOnMoveThreshold: true },
++        ),
++      )
++      const tracks = useItemsStore.getState().tracks
++      act(() => {
++        if (change === 'lock') {
++          useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++          useItemsStore.getState().setTracks(tracks)
++        } else useItemsStore.getState()._updateItem(center.id, { sourceStart: 40, sourceEnd: 100 })
++      })
++      const itemsAfterChange = useItemsStore.getState().items
++      moveMouse(20)
++      expectNoEditPreview()
++      releaseMouse()
++      expect(useItemsStore.getState().items).toBe(itemsAfterChange)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      unmount()
++    }
++  },
++)
++
++const commitClearCases = (['slip', 'slide'] as const).flatMap((mode) =>
++  (['primary', 'companion'] as const).flatMap((target) =>
++    (['preview', 'drag'] as const).flatMap((notification) =>
++      [false, true].map((unlockInside) => ({ mode, target, notification, unlockInside })),
++    ),
++  ),
++)
++
++it.each(commitClearCases)(
++  'refuses $mode when $target locks during $notification cleanup (unlockInside=$unlockInside)',
++  ({ mode, target, notification, unlockInside }) => {
++    setupStores(false)
++    const { videos, audios } = makeLinkedSlideItems()
++    const primary = videos[1]!
++    const affected = target === 'primary' ? primary : audios[1]!
++    const trackId = getItem(affected.id).trackId
++    const tracks = useItemsStore.getState().tracks
++    const initialItems = useItemsStore.getState().items
++    const { result } = renderHook(() => useTimelineSlipSlide(primary, TIMELINE_DURATION))
++    act(() => {
++      result.current.startSlipSlidePreview(mode)
++      result.current.updateSlipSlidePreview(10)
++    })
++    const retainedCommit = result.current.commitSlipSlidePreview
++    let notified = false
++    const lockOnClear = () => {
++      const cleared =
++        notification === 'drag'
++          ? useSelectionStore.getState().dragState === null
++          : (mode === 'slip'
++              ? useSlipEditPreviewStore.getState().itemId
++              : useSlideEditPreviewStore.getState().itemId) === null
++      if (!cleared || notified) return
++      notified = true
++      useItemsStore
++        .getState()
++        .setTracks(
++          tracks.map((track) => (track.id === trackId ? { ...track, locked: true } : track)),
++        )
++      if (unlockInside) useItemsStore.getState().setTracks(tracks)
++    }
++    const stop =
++      notification === 'drag'
++        ? useSelectionStore.subscribe(lockOnClear)
++        : mode === 'slip'
++          ? useSlipEditPreviewStore.subscribe(lockOnClear)
++          : useSlideEditPreviewStore.subscribe(lockOnClear)
++    try {
++      act(() => retainedCommit())
++      expect(notified).toBe(true)
++      expectNoEditPreview()
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      act(() => {
++        useItemsStore.getState().setTracks(tracks)
++        result.current.updateSlipSlidePreview(20)
++        retainedCommit()
++      })
++      moveMouse(20)
++      releaseMouse()
++      expectNoEditPreview()
++      expect(useItemsStore.getState().items).toBe(initialItems)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    } finally {
++      stop()
++    }
++    act(() => {
++      result.current.startSlipSlidePreview(mode)
++      result.current.updateSlipSlidePreview(5)
++      result.current.commitSlipSlidePreview()
++    })
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    expectNoEditPreview()
++  },
++)
