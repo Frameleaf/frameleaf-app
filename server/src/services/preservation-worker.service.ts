@@ -24,6 +24,7 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
+  PreservationFileCommit,
   PreservationFileRepository,
   PreservationPackageSource,
 } from 'src/repositories/preservation-files.repository.js';
@@ -41,6 +42,13 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
+import {
+  advanceExecutionProgress,
+  assertExecutionActive,
+  executionSignal,
+  settleOperationExecution,
+} from 'src/utils/execution-signal.js';
+import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
   GENERATED_DESCRIPTION_MARK,
   PRESERVATION_ALBUMS_ENTRY,
@@ -98,7 +106,7 @@ import { upsertTags } from 'src/utils/tag.js';
 
 /** How often the worker looks for queued preservation jobs. */
 export const PRESERVATION_TICK_MS = 5000;
-/** The claim lease. Extended with every item; a worker that stops writing loses the job. */
+/** The claim lease. Renewed while export work runs, independently of completed items. */
 export const PRESERVATION_LEASE_MS = 2 * 60_000;
 /** How long a restore waits for new originals' metadata before trying their edit recipes again. */
 export const PRESERVATION_EDIT_WAIT_MS = 60_000;
@@ -113,6 +121,7 @@ const FINDING_EDIT_WAITING = 'edit_recipe_waiting';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 type Outcome = 'copied' | 'failed' | 'skipped';
+type ExportCommit = <T>(callback: (repository: PreservationRepository) => Promise<T>) => Promise<T>;
 
 type RestoreContext = {
   auth: AuthDto;
@@ -313,6 +322,20 @@ export class PreservationWorkerService {
    * operation gets (`MediaOperationRepository.fail`); everything below is safe to repeat.
    */
   async run(job: RunningJob): Promise<void> {
+    if (job.operation.kind !== MediaOperationKind.PreservationExport) return this.runClaim(job);
+    return withOperationExecution(
+      {
+        renew: () =>
+          this.operations.heartbeat(job.operation.id, job.claimToken, PRESERVATION_LEASE_MS, {
+            requireActiveClaim: true,
+          }),
+        stopped: () => this.stopping,
+      },
+      () => this.runClaim(job),
+    );
+  }
+
+  private async runClaim(job: RunningJob): Promise<void> {
     const { operation, claimToken } = job;
     try {
       const snapshot = parsePreservationSnapshot(operation.kind, operation.snapshot);
@@ -349,6 +372,29 @@ export class PreservationWorkerService {
         }
       }
     } catch (error) {
+      if (operation.kind === MediaOperationKind.PreservationExport) {
+        const claimStopped =
+          error instanceof OperationClaimLostError || executionSignal()?.reason instanceof OperationClaimLostError;
+        if (await settleOperationStop(this.operations, operation, claimToken)) return;
+        if (claimStopped) {
+          const current = await this.operations.getOfKind(operation.id, operation.kind);
+          if (!current || current.claimToken !== claimToken) return;
+          if (current.cancelRequestedAt) {
+            await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+            return;
+          }
+          if (current.pauseRequestedAt) {
+            await this.operations.settlePause(operation.id, claimToken);
+            return;
+          }
+          // Shutdown/renewal loss unwinds first and hands back this claim without spending a retry.
+          await this.operations.requeue(operation.id, claimToken, {
+            delayMs: PRESERVATION_TICK_MS,
+            returnAttempt: true,
+          });
+          return;
+        }
+      }
       const failure = { error: describe(error), errorCode: codeOf(error, 'preservation_failed') };
       const outcome = await this.operations.fail(operation.id, claimToken, failure);
       if (outcome === 'retrying') {
@@ -390,6 +436,7 @@ export class PreservationWorkerService {
       );
     }
 
+    const commit: ExportCommit = (write) => this.repository.withExportClaim(operation.id, claimToken, write);
     const result = { phase: 'copying', packageId: found.id, copied: 0, failed: 0, skipped: 0 };
     let done = 0;
     let total = await this.repository.countExportWork(found.id, PRESERVATION_ITEM_ATTEMPTS);
@@ -415,7 +462,9 @@ export class PreservationWorkerService {
         }
         for (const item of page) {
           after = item.id;
-          const outcome = await this.exportItem(found, item);
+          assertExecutionActive();
+          const outcome = await this.exportItem(found, item, commit);
+          advanceExecutionProgress(1);
           result[outcome]++;
           done++;
           if (!(await this.checkpoint(operation.id, claimToken, result, done, total))) {
@@ -429,25 +478,35 @@ export class PreservationWorkerService {
     if (!(await this.checkpoint(operation.id, claimToken, result, done, total))) {
       return;
     }
-    const published = await this.publishPackage(found);
+    const published = await this.publishPackage(found, commit);
+    assertExecutionActive();
     await this.finish(operation.id, claimToken, { ...result, phase: 'done', ...published }, done);
     this.logger.log(
       `Preservation package ${found.id} written: ${published.exported} copied, ${published.failed} failed, ${published.skipped} skipped`,
     );
   }
 
-  /** Copy one original and write its sidecar. Never throws for the item; a full disk stops the job. */
-  private async exportItem(found: PreservationPackage, item: PreservationItem): Promise<Outcome> {
-    await this.repository.beginItemAttempt(item.id);
+  /** Copy one original and write its sidecar. A full disk or stopped claim aborts the job. */
+  private async exportItem(found: PreservationPackage, item: PreservationItem, commit: ExportCommit): Promise<Outcome> {
+    const publish: PreservationFileCommit = (write) => commit(() => write());
+    let finishing = false;
+    const finish = (patch: Parameters<PreservationRepository['finishItem']>[1]) => {
+      finishing = true;
+      return commit(async (repository) => {
+        // Interrupted work has no outcome: the operation claim owns its recovery budget.
+        await repository.beginItemAttempt(item.id);
+        await repository.finishItem(item.id, patch);
+      });
+    };
     try {
       const asset = await this.repository.getExportAsset(item.sourceAssetId);
       if (!asset || asset.ownerId !== found.ownerId || asset.deletedAt || asset.status !== 'active') {
-        await this.repository.finishItem(item.id, { state: 'skipped', reasonKey: 'asset_unavailable' });
+        await finish({ state: 'skipped', reasonKey: 'asset_unavailable' });
         return 'skipped';
       }
       // Locked after the package was asked for, from a session that did not include Locked items.
       if (asset.isLocked && !found.includeLocked) {
-        await this.repository.finishItem(item.id, { state: 'skipped', reasonKey: 'locked_excluded', locked: true });
+        await finish({ state: 'skipped', reasonKey: 'locked_excluded', locked: true });
         return 'skipped';
       }
       if (asset.isOffline) {
@@ -456,18 +515,28 @@ export class PreservationWorkerService {
 
       const names = preservationEntryNames(asset.id, asset.originalFileName);
       const destination = join(found.path, names.original);
-      const digests = await this.files.copyOriginal(asset.originalPath, destination);
+      const digests = await this.files.copyOriginal(
+        asset.originalPath,
+        destination,
+        publish,
+        Buffer.from(asset.checksum),
+      );
+      assertExecutionActive();
       const expected = Buffer.from(asset.checksum).toString('hex');
       const measured = asset.checksum.length === 20 ? digests.sha1 : digests.sha256;
       if (expected !== measured) {
-        await this.files.removeFile(destination);
+        await publish(() => this.files.removeFile(destination));
         throw new PreservationPackageError('checksum_mismatch', 'The original does not match its library checksum');
       }
 
       let metadata: (PreservationFileDigest & { path: string }) | null = null;
       if (found.includeMetadata) {
         const sidecar = await this.buildSidecar(found.ownerId, asset, digests);
-        const written = await this.files.writeDocument(join(found.path, names.metadata), preservationJson(sidecar));
+        const written = await this.files.writeDocument(
+          join(found.path, names.metadata),
+          preservationJson(sidecar),
+          publish,
+        );
         metadata = { path: names.metadata, sha256: written.sha256, bytes: written.bytes };
       }
 
@@ -479,11 +548,15 @@ export class PreservationWorkerService {
         original: { path: names.original, sha1: digests.sha1, sha256: digests.sha256, bytes: digests.bytes },
         metadata,
       };
-      await this.repository.finishItem(item.id, { state: 'copied', entry, locked: !!asset.isLocked });
+      await finish({ state: 'copied', entry, locked: !!asset.isLocked });
       return 'copied';
     } catch (error) {
+      // Recover an uncertain commit through the operation, without writing a second item outcome.
+      if (finishing) throw error;
+      assertExecutionActive();
+      if (error instanceof OperationClaimLostError) throw error;
       const reasonKey = codeOf(error, 'item_failed');
-      await this.repository.finishItem(item.id, { state: 'failed', reasonKey, error: describe(error) });
+      await finish({ state: 'failed', reasonKey, error: describe(error) });
       if (reasonKey === 'package_no_space') {
         throw error;
       }
@@ -658,7 +731,8 @@ export class PreservationWorkerService {
   }
 
   /** Write the index documents and the manifest, and publish the package. */
-  private async publishPackage(found: PreservationPackage) {
+  private async publishPackage(found: PreservationPackage, commit: ExportCommit) {
+    const publish: PreservationFileCommit = (write) => commit(() => write());
     const files: Partial<Record<PreservationDocument, PreservationFileDigest>> = {};
 
     if (found.includeMetadata) {
@@ -690,14 +764,17 @@ export class PreservationWorkerService {
       files[PRESERVATION_ALBUMS_ENTRY] = await this.files.writeDocument(
         join(found.path, PRESERVATION_ALBUMS_ENTRY),
         preservationJson(albums),
+        publish,
       );
       files[PRESERVATION_PEOPLE_ENTRY] = await this.files.writeDocument(
         join(found.path, PRESERVATION_PEOPLE_ENTRY),
         preservationJson(people),
+        publish,
       );
       files[PRESERVATION_TAGS_ENTRY] = await this.files.writeDocument(
         join(found.path, PRESERVATION_TAGS_ENTRY),
         preservationJson(tags),
+        publish,
       );
     }
 
@@ -729,7 +806,8 @@ export class PreservationWorkerService {
         yield lines;
       }
     }
-    const index = await this.files.writeLines(join(found.path, PRESERVATION_INDEX_ENTRY), pages());
+    const index = await this.files.writeLines(join(found.path, PRESERVATION_INDEX_ENTRY), pages(), publish);
+    assertExecutionActive();
     files[PRESERVATION_INDEX_ENTRY] = { sha256: index.sha256, bytes: index.bytes };
 
     const counts = (await this.repository.countItems([found.id])).get(found.id);
@@ -768,25 +846,27 @@ export class PreservationWorkerService {
     if (!checked.success) {
       throw new PreservationPackageError('package_manifest_invalid', 'The manifest could not be written');
     }
-    await this.files.writeDocument(join(found.path, PRESERVATION_MANIFEST_ENTRY), preservationJson(manifest));
-    await this.removeLeftovers(found.path, keep);
+    await this.files.writeDocument(join(found.path, PRESERVATION_MANIFEST_ENTRY), preservationJson(manifest), publish);
+    await this.removeLeftovers(found.path, keep, publish);
 
-    await this.repository.updatePackage(found.id, {
-      status: complete ? 'ready' : 'incomplete',
-      sizeBytes: bytes,
-      manifest: {
-        packageId: manifest.packageId,
-        createdAt: manifest.createdAt,
-        producerVersion: manifest.producer.version,
-        complete: manifest.complete,
-        counts: manifest.counts,
-        scope: manifest.scope,
-        files: manifest.files,
-      },
-      // Whatever an earlier verification said was about the package before this write.
-      verification: null,
-      verifiedAt: null,
-    });
+    await commit((repository) =>
+      repository.updatePackage(found.id, {
+        status: complete ? 'ready' : 'incomplete',
+        sizeBytes: bytes,
+        manifest: {
+          packageId: manifest.packageId,
+          createdAt: manifest.createdAt,
+          producerVersion: manifest.producer.version,
+          complete: manifest.complete,
+          counts: manifest.counts,
+          scope: manifest.scope,
+          files: manifest.files,
+        },
+        // Whatever an earlier verification said was about the package before this write.
+        verification: null,
+        verifiedAt: null,
+      }),
+    );
     return { exported, failed, skipped, locked, bytes };
   }
 
@@ -795,12 +875,12 @@ export class PreservationWorkerService {
    * behind, and the copy of an item that was later skipped — one that became Locked after the
    * package was asked for without Locked items, or left the library — are removed.
    */
-  private async removeLeftovers(root: string, keep: ReadonlySet<string>) {
+  private async removeLeftovers(root: string, keep: ReadonlySet<string>, publish: PreservationFileCommit) {
     const source = await this.files.openPackage('directory', root);
     try {
       for (const name of await source.listEntries()) {
         if (!name.endsWith('/') && !keep.has(name)) {
-          await this.files.removeFile(join(root, name));
+          await publish(() => this.files.removeFile(join(root, name)));
         }
       }
     } finally {
@@ -2020,6 +2100,7 @@ export class PreservationWorkerService {
       throw new PreservationPackageError('preservation_claim_lost', 'The job was taken over before it could finish');
     }
     if (await this.operations.beginValidation(id, claimToken)) {
+      await settleOperationExecution();
       await this.operations.complete(id, claimToken, { resultAssetId: null });
       return true;
     }
