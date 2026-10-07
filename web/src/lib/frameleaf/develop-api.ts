@@ -122,7 +122,7 @@ export async function requestDevelopPreview(
       },
       {
         signal,
-        ...(recipe.version === 3 && {
+        ...((recipe.version === 3 || recipe.version === 4) && {
           fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
             const response = await (defaults.fetch ?? fetch)(input, init);
             histogram = parseHdrHistogram(response.headers.get('X-Frameleaf-HDR-Histogram'));

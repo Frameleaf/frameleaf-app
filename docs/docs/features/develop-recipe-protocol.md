@@ -101,3 +101,13 @@ A preset holds the develop sliders (Brilliance included), the look and its stren
 - **Create:** any setting the request leaves out takes its neutral value. A preset saved from the web, which has no Brilliance control, starts with Brilliance at 0.
 - **Update:** `settings` is a patch. Only the settings the request sends change. Every other stored setting keeps its value, including Brilliance and any setting the server or client does not know yet. `masks`, when sent, replaces every mask of the preset.
 - **Apply:** every setting of the preset goes into the photo's recipe. A client applies the settings it has no control for too (the web applies Brilliance this way) and carries them like any other field it cannot show.
+
+### HDR renderer lineage
+
+New HDR quick edits use recipe v4 and `frameleaf-develop-hdr/2`, with HDR policy v2
+and `sdrToneMapper: libultrahdr/2.0.2-frameleaf.2`. Historical recipe v3 keeps
+`frameleaf-develop-hdr/1` and its original policy. The server checks the installed
+codec renderer before rendering; it never regenerates an old recipe with another
+codec policy. Previously published files remain available. Opening a supported
+historical HDR recipe for editing creates a v4 draft, retains opaque fields, and
+saves a new revision. RAW/native v2 and ordinary SDR v1 remain unchanged.

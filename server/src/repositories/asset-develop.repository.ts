@@ -2,7 +2,6 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import {
-  ASSET_DEVELOP_RECIPE_VERSION,
   type AssetDevelopRecipe,
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
@@ -200,7 +199,7 @@ export class AssetDevelopRepository {
               RETURNING id, kind
             `.execute(trx)
           : { rows: [] };
-      if (projection && (projection.version === ASSET_DEVELOP_RECIPE_VERSION || projection.version === 3)) {
+      if (projection && projection.version !== 2) {
         const needed = developRenderArtifacts(projection);
         const kinds = new Map(touched.rows.map((row) => [row.id, row.kind]));
         if (needed.mask.some((id) => kinds.get(id) !== 'mask') || needed.fill.some((id) => kinds.get(id) !== 'fill')) {

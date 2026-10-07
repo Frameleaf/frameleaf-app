@@ -500,6 +500,24 @@ describe(ServerService.name, () => {
         expect(imageCapabilities?.unavailable.includes('apple-gain-map-heic')).toBe(!heicDecoder);
       },
     );
+    it('reports ISO decoding and the exact new renderer without claiming ISO HEIF encoding', async () => {
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+        libheif: '1.23.3',
+        libultrahdr: '2.0.2',
+        heicDecoder: true,
+        avifDecoder: true,
+        isoGainMapDecoder: true,
+        renderer: 'frameleaf-develop-hdr/2',
+      });
+      const { imageCapabilities } = await sut.getFeatures();
+      expect(imageCapabilities).toMatchObject({
+        qualified: false,
+        renderer: 'frameleaf-develop-hdr/2',
+        export: ['sdr-jpeg', 'hdr-jpeg'],
+      });
+      expect(imageCapabilities?.decode).toContain('iso-adaptive-heif');
+      expect(imageCapabilities?.export).not.toContain('iso-adaptive-heif');
+    });
     it('offers HDR HEIC only after the admitted codec verifies ten-bit PQ output', async () => {
       mocks.media.getHdrCodecCapabilities.mockResolvedValue({
         libheif: '1.23.3',

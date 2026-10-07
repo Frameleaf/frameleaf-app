@@ -234,12 +234,31 @@ export function openingRecipe(
 ) {
   const current = develop?.revisions.find((revision) => revision.id === develop.currentRevisionId);
   const recipe = normalizeRecipe(current?.recipe);
-  if (hdrSource && recipe.version === 1) {
+  const wire = toServerRecipe(recipe);
+  const policy = wire.hdr && typeof wire.hdr === 'object' ? (wire.hdr as Record<string, unknown>) : {};
+  const legacyPolicy =
+    (wire.renderer === undefined || wire.renderer === 'frameleaf-develop-hdr/1') &&
+    (policy.version === undefined || policy.version === 1) &&
+    (policy.intent === undefined || policy.intent === 'preserve') &&
+    (policy.referenceWhite === undefined || policy.referenceWhite === 203) &&
+    (policy.sdrToneMapper === undefined || policy.sdrToneMapper === 'libultrahdr/2.0.2');
+  if (
+    hdrSource &&
+    (recipe.version === 1 || recipe.version === 3) &&
+    legacyPolicy &&
+    (wire.hdr === undefined || (wire.hdr !== null && typeof wire.hdr === 'object' && !Array.isArray(wire.hdr)))
+  ) {
     return normalizeRecipe({
-      ...toServerRecipe(recipe),
-      version: 3,
-      renderer: 'frameleaf-develop-hdr/1',
-      hdr: { version: 1, intent: 'preserve', referenceWhite: 203, sdrToneMapper: 'libultrahdr/2.0.2' },
+      ...wire,
+      version: 4,
+      renderer: 'frameleaf-develop-hdr/2',
+      hdr: {
+        ...policy,
+        version: 2,
+        intent: 'preserve',
+        referenceWhite: 203,
+        sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.2',
+      },
     });
   }
   return recipe;

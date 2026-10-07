@@ -1023,6 +1023,13 @@ napi_value capabilities(napi_env env, napi_callback_info info) {
   field(env, result, "heicDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "appleGainMapDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "avifDecoder", heif_have_decoder_for_format(heif_compression_AV1) != 0);
+#ifdef UHDR_FRAMELEAF_RESOURCE_LIMITS_API
+  field(env, result, "renderer", "frameleaf-develop-hdr/2");
+  field(env, result, "isoGainMapDecoder", uhdr_is_heif_supported() != 0);
+#else
+  field(env, result, "renderer", "frameleaf-develop-hdr/1");
+  field(env, result, "isoGainMapDecoder", false);
+#endif
   return result;
   });
 }

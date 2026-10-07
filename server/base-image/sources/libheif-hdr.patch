@@ -1,0 +1,494 @@
+diff --git a/libheif/CMakeLists.txt b/libheif/CMakeLists.txt
+index bddfc6e6..051c96eb 100644
+--- a/libheif/CMakeLists.txt
++++ b/libheif/CMakeLists.txt
+@@ -4,6 +4,7 @@ configure_file(api/libheif/heif_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/heif_ve
+ 
+ set(libheif_headers
+         api/libheif/heif.h
++        api/libheif/heif_gainmap.h
+         api/libheif/heif_export.h
+         api/libheif/heif_library.h
+         api/libheif/heif_image.h
+@@ -75,6 +76,7 @@ set(libheif_sources
+         text.h
+         api_structs.h
+         api/libheif/heif.cc
++        api/libheif/heif_gainmap.cc
+         api/libheif/heif_library.cc
+         api/libheif/heif_image.cc
+         api/libheif/heif_color.cc
+@@ -343,6 +345,10 @@ target_sources(heif PRIVATE
+         omaf_boxes.h
+         omaf_boxes.cc)
+ 
++if (WITH_EXPERIMENTAL_GAIN_MAP)
++    target_compile_definitions(heif PUBLIC WITH_EXPERIMENTAL_GAIN_MAP=1)
++endif ()
++
+ write_basic_package_version_file(${PROJECT_NAME}-config-version.cmake COMPATIBILITY ExactVersion)
+ 
+ install(TARGETS heif EXPORT ${PROJECT_NAME}-config
+diff --git a/libheif/api/libheif/heif.h b/libheif/api/libheif/heif.h
+index f7048b81..f5ae1c98 100644
+--- a/libheif/api/libheif/heif.h
++++ b/libheif/api/libheif/heif.h
+@@ -39,5 +39,6 @@
+ #include <libheif/heif_tiling.h>
+ #include <libheif/heif_components.h>
+ #include <libheif/heif_omaf.h>
++#include <libheif/heif_gainmap.h>
+ 
+ #endif
+diff --git a/libheif/api/libheif/heif_gainmap.cc b/libheif/api/libheif/heif_gainmap.cc
+new file mode 100644
+index 00000000..859ee126
+--- /dev/null
++++ b/libheif/api/libheif/heif_gainmap.cc
+@@ -0,0 +1,168 @@
++/*
++ * HEIF codec.
++ * Copyright (c) 2017-2025 Dirk Farin <dirk.farin@gmail.com>
++ *
++ * This file is part of libheif.
++ *
++ * libheif is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation, either version 3 of
++ * the License, or (at your option) any later version.
++ *
++ * libheif is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with libheif.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "heif.h"
++#include "api_structs.h"
++#include "box.h"
++#include <cstring>
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++struct heif_error heif_image_handle_get_gain_map_image_handle(
++    const struct heif_image_handle* handle, struct heif_image_handle** gain_map_handle) {
++  if (!handle) return heif_error_null_pointer_argument;
++  return exception_guard([&]() -> heif_error {
++  if (!gain_map_handle) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL gain_map_handle passed to heif_image_handle_get_gain_map_image_handle()"};
++  }
++
++  std::shared_ptr<ImageItem> gain_map_image = handle->image->get_gain_map();
++  if (!gain_map_image) {
++    Error err(heif_error_Usage_error, heif_suberror_Nonexisting_item_referenced,
++              "base image handle is not associated with a gain map image");
++    return err.error_struct(handle->image.get());
++  }
++
++  *gain_map_handle = new heif_image_handle();
++  (*gain_map_handle)->image = gain_map_image;
++  (*gain_map_handle)->context = handle->context;
++
++  return Error::Ok.error_struct(handle->image.get());
++  });
++}
++
++size_t heif_image_handle_get_gain_map_metadata_size(const struct heif_image_handle* handle) {
++  std::shared_ptr<ImageMetadata> metadata = handle->image->get_gain_map_metadata();
++
++  if (metadata) {
++    // Ignore unsigned int(8) version = 0; field of ToneMapImage syntax
++    size_t sz = metadata->m_data.size();
++    return sz > 0 ? (sz - 1) : 0;
++  }
++
++  return 0;
++}
++
++struct heif_error heif_image_handle_get_gain_map_metadata(const struct heif_image_handle* handle,
++                                                          void* out_data) {
++  if (!handle) return heif_error_null_pointer_argument;
++  return exception_guard([&]() -> heif_error {
++  if (!out_data) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL out_data passed to heif_image_handle_get_gain_map_metadata()"};
++  }
++
++  std::shared_ptr<ImageMetadata> metadata = handle->image->get_gain_map_metadata();
++  if (!metadata) {
++    Error err(heif_error_Invalid_input, heif_suberror_No_item_data,
++              "base image handle is not associated with a gain map image");
++    return err.error_struct(handle->image.get());
++  }
++
++  uint8_t version = 0xff;
++  size_t pos = 0;
++  std::vector<uint8_t>& buffer = metadata->m_data;
++
++  if (pos >= buffer.size()) {
++    Error err(heif_error_Invalid_input, heif_suberror_End_of_data);
++    return err.error_struct(handle->image.get());
++  }
++  version = buffer[pos++];
++  if (version != 0) {
++    Error err(heif_error_Invalid_input, heif_suberror_Unsupported_data_version,
++              "Box[tmap] has unsupported version");
++    return err.error_struct(handle->image.get());
++  }
++
++  memcpy(out_data, buffer.data() + pos, buffer.size() - pos);
++
++  return heif_error_success;
++  });
++}
++
++struct heif_error heif_image_handle_get_derived_image_nclx_color_profile(
++    const struct heif_image_handle* handle, struct heif_color_profile_nclx** out_data) {
++  if (!handle) return heif_error_null_pointer_argument;
++  return exception_guard([&]() -> heif_error {
++  if (!out_data) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL out_data passed to heif_image_handle_get_derived_image_nclx_color_profile()"};
++  }
++
++  auto nclx_profile = handle->image->get_derived_img_color_profile_nclx();
++  if (!nclx_profile) {
++    Error err(heif_error_Color_profile_does_not_exist, heif_suberror_Unspecified);
++    return err.error_struct(handle->image.get());
++  }
++
++  Error err = nclx_profile->get_nclx_color_profile().get_nclx_color_profile(out_data);
++
++  return err.error_struct(handle->image.get());
++  });
++}
++
++size_t heif_image_handle_get_derived_image_raw_color_profile_size(
++    const struct heif_image_handle* handle) {
++  auto profile_icc = handle->image->get_derived_img_color_profile_icc();
++  if (profile_icc) {
++    return profile_icc->get_data().size();
++  } else {
++    return 0;
++  }
++}
++
++struct heif_error heif_image_handle_get_derived_image_raw_color_profile(
++    const struct heif_image_handle* handle, void* out_data) {
++  if (!handle) return heif_error_null_pointer_argument;
++  return exception_guard([&]() -> heif_error {
++  if (!out_data) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL out_data passed to heif_image_handle_get_derived_image_raw_color_profile()"};
++  }
++
++  auto raw_profile = handle->image->get_derived_img_color_profile_icc();
++  if (raw_profile) {
++    memcpy(out_data, raw_profile->get_data().data(), raw_profile->get_data().size());
++  } else {
++    Error err(heif_error_Color_profile_does_not_exist, heif_suberror_Unspecified);
++    return err.error_struct(handle->image.get());
++  }
++
++  return Error::Ok.error_struct(handle->image.get());
++  });
++}
++
++#endif
++
++
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++struct heif_error heif_context_encode_gain_map_image(
++    struct heif_context* ctx, const struct heif_image_handle* base_image_handle,
++    struct heif_encoder* encoder, const struct heif_image* gain_map_image,
++    const struct heif_encoding_options* input_options, const uint8_t* gain_map_metadata,
++    int gain_map_metadata_len, const struct heif_color_profile_nclx* derived_image_nclx,
++    struct heif_image_handle** out_image_handle) {
++  // Decode-only API compatibility for libultrahdr. Frameleaf uses PQ HEIC export.
++  return {heif_error_Unsupported_feature, heif_suberror_Unspecified,
++          "Adaptive HEIF encoding is not enabled"};
++}
++
++#endif
+diff --git a/libheif/api/libheif/heif_gainmap.h b/libheif/api/libheif/heif_gainmap.h
+new file mode 100644
+index 00000000..61b9aeab
+--- /dev/null
++++ b/libheif/api/libheif/heif_gainmap.h
+@@ -0,0 +1,90 @@
++/*
++ * HEIF codec.
++ * Copyright (c) 2017-2025 Dirk Farin <dirk.farin@gmail.com>
++ *
++ * This file is part of libheif.
++ *
++ * libheif is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation, either version 3 of
++ * the License, or (at your option) any later version.
++ *
++ * libheif is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with libheif.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef LIBHEIF_HEIF_GAINMAP_H
++#define LIBHEIF_HEIF_GAINMAP_H
++#include <libheif/heif.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++/**
++ * HEIF tone map brand (`tmap`).
++ *
++ * This is a compatible brand indicating the file contains a gainmap image.
++ */
++#define heif_brand2_tmap heif_fourcc('t', 'm', 'a', 'p')
++
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++// ------------------------- gain map images -------------------------
++
++// Get the gain map image associated with the main image. If no gain map image is available, this
++// method will return error.
++LIBHEIF_API
++struct heif_error heif_image_handle_get_gain_map_image_handle(
++    const struct heif_image_handle* handle, struct heif_image_handle** gain_map_handle);
++
++// Get the gain map metadata size associated with the main image. If no gain map image is available,
++// this method will return 0
++LIBHEIF_API
++size_t heif_image_handle_get_gain_map_metadata_size(const struct heif_image_handle* handle);
++
++// Get the gain map metadata associated with the main image. if no gain map image is available, this
++// method will return error
++LIBHEIF_API
++struct heif_error heif_image_handle_get_gain_map_metadata(const struct heif_image_handle* handle,
++                                                          void* out_data);
++
++// Get nclx color profile for derived image
++LIBHEIF_API
++struct heif_error heif_image_handle_get_derived_image_nclx_color_profile(
++    const struct heif_image_handle* handle, struct heif_color_profile_nclx** out_data);
++
++// Get raw color profile for derived image
++LIBHEIF_API
++size_t heif_image_handle_get_derived_image_raw_color_profile_size(
++    const struct heif_image_handle* handle);
++
++LIBHEIF_API
++struct heif_error heif_image_handle_get_derived_image_raw_color_profile(
++    const struct heif_image_handle* handle, void* out_data);
++
++#endif
++
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++// Compress the gain map image and write metadata.
++// Returns a handle to the coded image in 'out_image_handle' unless out_image_handle = NULL.
++LIBHEIF_API
++struct heif_error heif_context_encode_gain_map_image(
++    struct heif_context* ctx, const struct heif_image_handle* base_image_handle,
++    struct heif_encoder* encoder, const struct heif_image* gain_map_image,
++    const struct heif_encoding_options* input_options, const uint8_t* gain_map_metadata,
++    int gain_map_metadata_len, const struct heif_color_profile_nclx* derived_image_nclx,
++    struct heif_image_handle** out_image_handle);
++
++#endif
++
++
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/libheif/context.cc b/libheif/context.cc
+index 3b3e1c10..122f7603 100644
+--- a/libheif/context.cc
++++ b/libheif/context.cc
+@@ -615,10 +615,12 @@ Error HeifContext::interpret_heif_file_images()
+   m_top_level_images.clear();
+   m_primary_image.reset();
+ 
+-
+   // --- reference all non-hidden images
+ 
+   std::vector<heif_item_id> image_IDs = m_heif_file->get_item_IDs();
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  bool check_tmap_item = m_heif_file->get_ftyp_box()->has_compatible_brand(heif_brand2_tmap);
++#endif
+ 
+   for (heif_item_id id : image_IDs) {
+     auto infe_box = m_heif_file->get_infe_box(id);
+@@ -1140,6 +1142,12 @@ Error HeifContext::interpret_heif_file_images()
+         // these item types should have data
+         return metadataResult.error();
+       }
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      else if (check_tmap_item && item_type == fourcc("tmap")) {
++        // this also should have data
++        return metadataResult.error();
++      }
++#endif
+       else {
+         // anything else is probably something that we don't understand yet
+         continue;
+@@ -1175,6 +1183,45 @@ Error HeifContext::interpret_heif_file_images()
+         }
+         img_iter->second->add_metadata(metadata);
+       }
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      if (check_tmap_item && item_type == fourcc("tmap")) {
++        std::vector<heif_item_id> image_references = iref_box->get_references(id, fourcc("dimg"));
++        // "'tmap' item MUST be associated with 2 references to images"
++        // "'tmap' item first entry is expected to be referencing primary image"
++        // "'tmap' item reference entries MUST not be duplicate"
++        // "'tmap' item references MUST be pointing to valid image items"
++        if ((int)image_references.size() == 2 &&
++            image_references[0] == m_heif_file->get_primary_image_ID() &&
++            image_references[1] != image_references[0] &&
++            m_all_images.find(image_references[0]) != m_all_images.end() &&
++            m_all_images.find(image_references[1]) != m_all_images.end()) {
++          std::shared_ptr<ImageItem> baseItem = m_all_images.find(image_references[0])->second;
++          std::shared_ptr<ImageItem> gainmapItem = m_all_images.find(image_references[1])->second;
++
++          baseItem->set_gain_map(gainmapItem);
++
++          baseItem->add_metadata(metadata);  // gain map metadata
++
++          auto ipma = m_heif_file->get_ipma_box();
++          auto ipco = m_heif_file->get_ipco_box();
++          auto derived_image_colr = ipco->get_property_for_item_ID(id, ipma, fourcc("colr"));
++          auto colr = std::dynamic_pointer_cast<Box_colr>(derived_image_colr);
++          if (!colr) {
++            return Error(heif_error_Invalid_input, heif_suberror_Invalid_property,
++                         "Tone map derived image has no color profile");
++          }
++          auto nclx =
++              std::dynamic_pointer_cast<const color_profile_nclx>(colr->get_color_profile());
++          if (nclx) {
++            baseItem->set_derived_img_color_profile(nclx);
++          }
++          auto raw = std::dynamic_pointer_cast<const color_profile_raw>(colr->get_color_profile());
++          if (raw) {
++            baseItem->set_derived_img_color_profile(raw);
++          }
++        }
++      }
++#endif
+     }
+   }
+ 
+@@ -1666,6 +1713,8 @@ create_alpha_image_from_image_alpha_channel(const std::shared_ptr<HeifPixelImage
+ }
+ 
+ 
++
++
+ Result<std::shared_ptr<ImageItem>> HeifContext::encode_image(const std::shared_ptr<HeifPixelImage>& pixel_image,
+                                 heif_encoder* encoder,
+                                 const heif_encoding_options& in_options,
+diff --git a/libheif/context.h b/libheif/context.h
+index 8e562be2..c5c2e9ff 100644
+--- a/libheif/context.h
++++ b/libheif/context.h
+@@ -59,6 +59,7 @@ Result<std::shared_ptr<HeifPixelImage>>
+ create_alpha_image_from_image_alpha_channel(const std::shared_ptr<HeifPixelImage>& image,
+                                             const heif_security_limits* limits);
+ 
++class ImageMetadata;
+ 
+ // This is a higher-level view than HeifFile.
+ // Images are grouped logically into main images and their thumbnails.
+diff --git a/libheif/image-items/image_item.h b/libheif/image-items/image_item.h
+index 2c1c7d71..87705a39 100644
+--- a/libheif/image-items/image_item.h
++++ b/libheif/image-items/image_item.h
+@@ -97,12 +97,14 @@ public:
+ 
+   virtual Result<std::vector<uint8_t>> read_bitstream_configuration_data() const { return std::vector<uint8_t>{}; }
+ 
+-  void clear()
+-  {
++  void clear() {
+     m_thumbnails.clear();
+     m_alpha_channel.reset();
+     m_depth_channel.reset();
+     m_aux_images.clear();
++#if WITH_EXPERIMENTAL_GAIN_MAP
++    m_gain_map_image.reset();
++#endif
+   }
+ 
+   HeifContext* get_context() { return m_heif_context; }
+@@ -321,6 +323,44 @@ public:
+     }
+   }
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  // --- gain map
++
++  const std::shared_ptr<ImageItem>& get_gain_map() const { return m_gain_map_image; }
++
++  std::shared_ptr<ImageMetadata> get_gain_map_metadata() {
++    if (m_gain_map_image != nullptr) {
++      for (auto it : m_metadata) {
++        if (it->item_type == "tmap") {
++          return it;
++        }
++      }
++    }
++    return nullptr;
++  }
++
++  const std::shared_ptr<const color_profile_nclx>& get_derived_img_color_profile_nclx() const {
++    return m_derived_img_color_profile_nclx;
++  }
++
++  const std::shared_ptr<const color_profile_raw>& get_derived_img_color_profile_icc() const {
++    return m_derived_img_color_profile_icc;
++  }
++
++  void set_gain_map(std::shared_ptr<ImageItem> img) { m_gain_map_image = std::move(img); }
++
++  void set_derived_img_color_profile(const std::shared_ptr<const color_profile>& profile) {
++    auto icc = std::dynamic_pointer_cast<const color_profile_raw>(profile);
++    if (icc) {
++      m_derived_img_color_profile_icc = std::move(icc);
++    }
++
++    auto nclx = std::dynamic_pointer_cast<const color_profile_nclx>(profile);
++    if (nclx) {
++      m_derived_img_color_profile_nclx = std::move(nclx);
++    }
++  };
++#endif
+ 
+   // --- metadata
+ 
+@@ -489,8 +529,17 @@ private:
+   std::string m_aux_image_type;
+   std::vector<std::shared_ptr<ImageItem>> m_aux_images;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  std::shared_ptr<ImageItem> m_gain_map_image;
++#endif
++
+   std::vector<std::shared_ptr<ImageMetadata>> m_metadata;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  std::shared_ptr<const color_profile_nclx> m_derived_img_color_profile_nclx;
++  std::shared_ptr<const color_profile_raw> m_derived_img_color_profile_icc;
++#endif
++
+   bool m_miaf_compatible = true;
+ 
+   std::vector<heif_item_id> m_region_item_ids;

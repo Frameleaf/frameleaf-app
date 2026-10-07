@@ -71727,6 +71727,265 @@
         ],
         "type": "object"
       },
+      "HdrAssetDevelopRecipeV4": {
+        "additionalProperties": false,
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "brilliance": {
+            "default": 0,
+            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "cleanup": {
+            "default": [],
+            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopCleanup"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "crop": {
+            "$ref": "#/components/schemas/KnownAssetDevelopCrop",
+            "default": {
+              "h": 1,
+              "w": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "flipHorizontal": {
+            "default": false,
+            "description": "Mirror left to right",
+            "type": "boolean"
+          },
+          "flipVertical": {
+            "default": false,
+            "description": "Mirror top to bottom",
+            "type": "boolean"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "hdr": {
+            "additionalProperties": false,
+            "default": {},
+            "properties": {
+              "intent": {
+                "default": "preserve",
+                "enum": [
+                  "preserve"
+                ],
+                "type": "string"
+              },
+              "referenceWhite": {
+                "default": 203,
+                "enum": [
+                  203
+                ],
+                "format": "int32",
+                "type": "integer"
+              },
+              "sdrToneMapper": {
+                "default": "libultrahdr/2.0.2-frameleaf.2",
+                "enum": [
+                  "libultrahdr/2.0.2-frameleaf.2"
+                ],
+                "type": "string"
+              },
+              "version": {
+                "default": 2,
+                "enum": [
+                  2
+                ],
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AssetDevelopPreset",
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "renderer": {
+            "default": "frameleaf-develop-hdr/2",
+            "enum": [
+              "frameleaf-develop-hdr/2"
+            ],
+            "type": "string"
+          },
+          "rotation": {
+            "default": 0,
+            "description": "Quarter-turn rotation in degrees, clockwise",
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "straighten": {
+            "default": 0,
+            "description": "Straighten angle in degrees, applied before the crop",
+            "format": "double",
+            "maximum": 45,
+            "minimum": -45,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "version": {
+            "enum": [
+              4
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
       "HlsVideoResolution": {
         "description": "HLS video resolution",
         "enum": [

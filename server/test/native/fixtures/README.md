@@ -125,4 +125,21 @@ reconstruction check.
 
 Generate with `swift generate-iso-gain-map.swift develop-hdr.jpg /path/to/apple-iso-gain-map.heic`. Compressed output can vary with OS codec builds. The worker test reserves a maximum 8 code-value error and RMS 2 for lossy JPEG re-encoding; the original failure was maximum 47 and RMS 10.57 from a second tone map.
 
-Run `FRAMELEAF_HDR_ISO_TEST=1 FRAMELEAF_HDR_BINDING=/path/to/experimental/image-hdr.node node --test server/test/native/image-hdr-renditions.test.mjs`. The default skips this one ISO-only check until the decoder port is installed and qualified. Existing JPEG, Apple, PQ, HLG, resource and immutable-source checks still run.
+Run `FRAMELEAF_HDR_ISO_TEST=1 FRAMELEAF_HDR_BINDING=/path/to/experimental/image-hdr.node node --test server/test/native/image-hdr-renditions.test.mjs`. The default skips ISO-only checks for legacy local codec builds. The pinned Linux image enables these checks while building its installed decoder port. Existing JPEG, Apple, PQ, HLG, resource and immutable-source checks still run.
+
+The build carries checksum-pinned decoder-only patches in
+`server/base-image/sources/libheif-hdr.patch` and `libultrahdr-hdr.patch`.
+The libheif port adapts Google's `cmake/patches/libheif_pr1503.patch` at
+LibUltraHDR commit `e5f5a022fe96fc4dc2ee35c19f733a50df807abe` to libheif
+`78c9746aea226b22885e8d35241353ce669c4ea5`, preserving its per-context limits and
+current C API. Adaptive HEIF encoding returns unsupported. The Ultra HDR patch
+validates ICC transfer/primaries, preserves alpha and aligned geometry, imposes
+per-decoder resource limits, and reuses scalar wide-gamut RGB-to-YCbCr conversion
+where the ARM coefficient tables diverge. Source licenses remain unchanged.
+These changes identify renderer 2 and require recipe v4 for new edits.
+
+`image-hdr.test.mjs` checks colored linear sRGB, P3 and BT.2020 round trips in the
+actual output gamut against D65 RGB/XYZ references. The 48MP resource test uses P3
+throughout: comparing raw RGB numbers across different gamuts is invalid. Neither
+synthetic numerical agreement nor successful codec builds establishes physical
+HDR-display or real-camera acceptance; `qualified` remains false.

@@ -108,19 +108,19 @@ RUN ./x265.sh
 
 FROM base-server-x265 AS base-server-libheif
 
-COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh ./
+COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh server/base-image/sources/libheif-hdr.patch ./
 RUN ./libheif.sh
 
 FROM base-server-libheif AS base-server-image-hdr
 RUN apt-update-strict && apt-get install --no-install-recommends -yqq libnode-dev
-COPY server/base-image/sources/libultrahdr.json server/base-image/sources/libultrahdr.sh ./
+COPY server/base-image/sources/libultrahdr.json server/base-image/sources/libultrahdr.sh server/base-image/sources/libultrahdr-hdr.patch ./
 RUN ./libultrahdr.sh
 COPY server/native/ ./image-hdr/
 RUN cmake -S image-hdr -B image-hdr/build -DCMAKE_BUILD_TYPE=Release && \
   cmake --build image-hdr/build --parallel "$(nproc)" && cmake --install image-hdr/build
 COPY server/test/native/image-hdr.test.mjs ./
 COPY server/test/native/fixtures/ ./fixtures/
-RUN node --test image-hdr.test.mjs
+RUN FRAMELEAF_HDR_ISO_TEST=1 node --test image-hdr.test.mjs
 
 FROM base-server-build AS base-server-libjxl
 
