@@ -156,6 +156,40 @@ describe('QuickEditor', () => {
     vi.useRealTimers();
   });
 
+  it('uses HDR-preserving server previews and holds the last result while adjusting', async () => {
+    const measure = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 800, 600));
+    const hdr = {
+      ...photo,
+      imageEncoding: { dynamicRange: 'hdr' as const, gainMap: 'ultra-hdr', reconstructionAvailable: true },
+    };
+    const view = render(QuickEditor, { asset: hdr, onClose: vi.fn() });
+    await ready();
+    await waitFor(() =>
+      expect(previewAssetDevelop).toHaveBeenCalledWith(
+        {
+          id: photo.id,
+          assetDevelopPreviewDto: {
+            recipe: expect.objectContaining({ version: 3, hdr: expect.objectContaining({ intent: 'preserve' }) }),
+            size: 1280,
+            dynamicRange: 'auto',
+          },
+        },
+        expect.anything(),
+      ),
+    );
+    await waitFor(() => expect(view.container.querySelector('img[src="blob:preview"]')).toBeInTheDocument());
+    vi.mocked(previewAssetDevelop).mockImplementation(() => new Promise(() => {}));
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    expect(view.container.querySelector('img[src="blob:preview"]')).toHaveStyle('filter: none');
+    expect(screen.getByRole('img', { name: 'frameleaf_editor_histogram_hdr' })).toBeInTheDocument();
+    view.unmount();
+    measure.mockRestore();
+  });
+
   const sdkError = async (status: number, code?: string) => {
     const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     try {

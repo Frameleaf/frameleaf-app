@@ -33,3 +33,24 @@ it('propagates proposal disconnects and preserves the existing artifact response
   );
   expect(res.listenerCount('close')).toBe(0);
 });
+
+it('delivers authoritative HDR histogram evidence on the private preview response', async () => {
+  const res = Object.assign(new EventEmitter(), { destroyed: false, set: vi.fn(), end: vi.fn() });
+  const histogram = { version: 1, peakStops: 3 };
+  const service = {
+    preview: vi.fn().mockResolvedValue({ buffer: Buffer.from('hdr'), contentType: 'image/jpeg', histogram }),
+  };
+  await new AssetDevelopController(service as never, {} as never).previewAssetDevelop(
+    authStub.user1,
+    { id: 'id' },
+    {} as never,
+    res as never,
+  );
+  expect(res.set).toHaveBeenCalledWith(
+    expect.objectContaining({
+      'Cache-Control': 'private, no-store',
+      'X-Frameleaf-HDR-Histogram': JSON.stringify(histogram),
+    }),
+  );
+  expect(res.end).toHaveBeenCalledWith(Buffer.from('hdr'));
+});

@@ -13,6 +13,7 @@ import {
   linearizeDevelopFill,
   transformHdrGeometry,
 } from './image-hdr-develop.js';
+import { hdrHistogram } from './image-hdr-histogram.js';
 
 import { resizeHdrImage } from './image-hdr-pixels.js';
 
@@ -47,6 +48,7 @@ export type HdrRenditionOutput = {
   path: string;
   size?: number;
   dynamicRange?: 'hdr' | 'sdr';
+  histogram?: boolean;
 };
 
 export type ThumbnailOutput = {
@@ -199,7 +201,7 @@ export class SharpOperations {
     const written: string[] = [];
     const results = [];
     try {
-      for (const { path, size, dynamicRange = 'hdr' } of outputs) {
+      for (const { path, size, dynamicRange = 'hdr', histogram } of outputs) {
         const scale = Math.min(
           1,
           (size ?? Math.max(source.width, source.height)) / Math.max(source.width, source.height),
@@ -246,6 +248,7 @@ export class SharpOperations {
           height: image.height,
           gamut: dynamicRange === 'sdr' ? 0 : image.gamut,
           encoding: metadata,
+          ...(histogram && { histogram: hdrHistogram(image) }),
         });
         this.progress();
       }

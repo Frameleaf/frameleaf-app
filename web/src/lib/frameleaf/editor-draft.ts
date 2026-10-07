@@ -230,9 +230,19 @@ export const resetGeometry = (): Partial<EditorRecipe> => ({
 /** The recipe the editor opens with: the current version's, or the original. */
 export function openingRecipe(
   develop: { currentRevisionId: string | null; revisions: AssetDevelopRevisionResponseDto[] } | null | undefined,
+  hdrSource = false,
 ) {
   const current = develop?.revisions.find((revision) => revision.id === develop.currentRevisionId);
-  return normalizeRecipe(current?.recipe);
+  const recipe = normalizeRecipe(current?.recipe);
+  if (hdrSource && recipe.version === 1) {
+    return normalizeRecipe({
+      ...toServerRecipe(recipe),
+      version: 3,
+      renderer: 'frameleaf-develop-hdr/1',
+      hdr: { version: 1, intent: 'preserve', referenceWhite: 203, sdrToneMapper: 'libultrahdr/2.0.2' },
+    });
+  }
+  return recipe;
 }
 
 export const isRevisionBusy = (status: AssetDevelopRevisionStatus) =>

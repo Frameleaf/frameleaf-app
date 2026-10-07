@@ -83,6 +83,7 @@ test('one isolated Develop call publishes newly paired HDR and SDR without modif
       path: join(folder, `${name}.jpg`),
       size: i % 2 ? 16 : undefined,
       dynamicRange: i < 2 ? 'hdr' : 'sdr',
+      histogram: i === 1,
     }));
     const result = await pool.run('generateHdrRenditions', [
       source,
@@ -110,6 +111,9 @@ test('one isolated Develop call publishes newly paired HDR and SDR without modif
     }
     for (const { path } of outputs.slice(2))
       assert.equal(codec.inspect(await readFile(path), ...limits).dynamicRange, 'sdr');
+    assert.equal(result[1].histogram.version, 1);
+    assert.ok(result[1].histogram.peakStops > 1.9);
+    assert.equal(result[1].histogram.samples, result[1].width * result[1].height);
     assert.deepEqual(await readFile(source), original);
     const maskId = '5'.repeat(64),
       fillId = '4'.repeat(64);

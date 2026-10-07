@@ -179,3 +179,21 @@ until real-media and physical-display acceptance pass. An absent field means an
 older server with unknown capabilities. A missing codec reports empty lists,
 without preventing ordinary server feature discovery. Apple gain-map HEIC, ISO
 adaptive HEIF and HDR HEIC export remain explicitly unavailable in this build.
+
+### HDR preview histogram
+
+Recipe v3 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
+for cross-origin clients. The image and histogram come from the same admitted
+worker render. The histogram uses linear pixels before output tone mapping, so
+choosing SDR display does not remove highlight evidence. No source metadata is
+included and the response remains private and uncached.
+
+The version 1 JSON object contains `version: 1`, `bins: 64`, `minStops: -10`,
+`maxStops: 6`, `referenceWhite: 203`, `peakStops`, `samples`, `max`, and four
+64-element count arrays: `red`, `green`, `blue`, `luma`. Bin positions are
+`floor((log2(value) + 10) / 16 * 64)`, clamped to 0–63; 0 EV is reference white.
+Transparent pixels are excluded. `clipped.shadows` is the fraction at or below
+zero luminance; `clipped.highlights` is the fraction with a channel at the
+encoder's 10,000-nit ceiling. Missing or invalid evidence is unavailable, never
+reconstructed from an 8-bit display canvas. This describes the rendered preview,
+not a measurement of the screen's available brightness.

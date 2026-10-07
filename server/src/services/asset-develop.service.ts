@@ -7,6 +7,7 @@ import { setInterval } from 'node:timers/promises';
 import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { HdrHistogram } from 'src/queue/image-hdr-histogram.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf, RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -297,7 +298,7 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopPreviewDto,
     signal?: AbortSignal,
-  ): Promise<{ buffer: Buffer; contentType: string }> {
+  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) {
@@ -1222,13 +1223,14 @@ export class AssetDevelopService {
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
     const output = path.join(folder, 'preview.jpg');
     try {
-      await this.hdrRender(
+      const result = await this.hdrRender(
         source,
         recipe,
         [
           {
             path: output,
             size: dto.size,
+            histogram: true,
             dynamicRange: dto.dynamicRange === 'sdr' || !dto.dynamicRange ? 'sdr' : 'hdr',
           },
         ],
@@ -1237,7 +1239,11 @@ export class AssetDevelopService {
         signal,
       );
       signal?.throwIfAborted();
-      return { buffer: await this.storageRepository.readFile(output), contentType: 'image/jpeg' };
+      return {
+        buffer: await this.storageRepository.readFile(output),
+        contentType: 'image/jpeg',
+        histogram: result[0]?.histogram,
+      };
     } finally {
       await rm(folder, { recursive: true, force: true });
     }

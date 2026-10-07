@@ -71,6 +71,7 @@
     developFileUrl,
     followDevelop,
     requestDevelopPreview,
+    type PreviewResult,
   } from '$lib/frameleaf/develop-api';
   import {
     anyRevisionBusy,
@@ -157,6 +158,7 @@
     resumeEditorContinuity,
     saveEditorContinuity,
   } from '$lib/frameleaf/editor-continuity';
+  import { imageViewingPreference } from '$lib/frameleaf/viewer-preferences';
   import { getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -177,12 +179,15 @@
   let nativeOpen = $state(isRawName(asset.originalFileName));
   const privateStateGeneration = getPrivateBrowserStateGeneration();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  const originalPreviewUrl = getAssetMediaUrl({
-    id: asset.id,
-    size: AssetMediaSize.Preview,
-    cacheKey: asset.thumbhash,
-    edited: false,
-  });
+  const originalPreviewUrl = $derived(
+    getAssetMediaUrl({
+      id: asset.id,
+      size: AssetMediaSize.Preview,
+      cacheKey: asset.thumbhash,
+      edited: false,
+      dynamicRange: asset.imageEncoding?.dynamicRange === 'hdr' ? $imageViewingPreference : undefined,
+    }),
+  );
   const thumbnailUrl = getAssetMediaUrl({
     id: asset.id,
     size: AssetMediaSize.Thumbnail,
@@ -272,7 +277,10 @@
     try {
       develop = await getAssetDevelop({ id: asset.id });
       sourceRevisionId = develop.currentRevisionId ?? undefined;
-      const start = openingRecipe(develop);
+      const start = openingRecipe(
+        develop,
+        asset.imageEncoding?.dynamicRange === 'hdr' && !isRawName(asset.originalFileName),
+      );
       draft = rebaseDraft(draft, start, false);
       opened = start;
       // FL-113: back from Studio (or a reload) with the draft the person left, when it was built on
@@ -311,7 +319,7 @@
   });
 
   /* Server preview ------------------------------------------------------- */
-  let serverPreview = $state<{ url: string; key: string; revoke: () => void } | null>(null);
+  let serverPreview = $state<(PreviewResult & { key: string }) | null>(null);
   let previewPending = $state(false);
   let previewFailed = $state(false);
   let previewAbort: AbortController | undefined;
@@ -322,8 +330,9 @@
       presetFor(recipe.preset).id === AssetDevelopPreset.Original &&
       recipe.masks.every((mask) => !maskIsActive(mask)),
   );
-  const currentToneKey = $derived(toneKey(toServerRecipe(recipe)));
-  const previewMatches = $derived(identityTone || serverPreview?.key === currentToneKey);
+  const hdrEditing = $derived(recipe.version === 3);
+  const currentToneKey = $derived(toneKey(toServerRecipe(recipe)) + (hdrEditing ? $imageViewingPreference : ''));
+  const previewMatches = $derived((!hdrEditing && identityTone) || serverPreview?.key === currentToneKey);
 
   $effect(() => {
     if (isVideo || nativeOpen) {
@@ -334,10 +343,11 @@
     }
     const key = currentToneKey;
     const identity = identityTone;
+    const dynamicRange = hdrEditing ? $imageViewingPreference : undefined;
     const request = tonePreviewRecipe(toServerRecipe(untrack(() => recipe)));
     clearTimeout(previewTimer);
     previewAbort?.abort();
-    if (identity) {
+    if (identity && !hdrEditing) {
       previewPending = false;
       previewFailed = false;
       return;
@@ -354,7 +364,7 @@
       () =>
         void (async () => {
           try {
-            const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal);
+            const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal, dynamicRange);
             if (!result || controller.signal.aborted) {
               return;
             }
@@ -509,7 +519,7 @@
     }
     const width = frame.rotated ? frame.fh : frame.fw;
     const height = frame.rotated ? frame.fw : frame.fh;
-    const filter = plain || previewMatches ? 'none' : filterInfo.filter;
+    const filter = plain || previewMatches || hdrEditing ? 'none' : filterInfo.filter;
     const transform = showingOriginal
       ? 'translate(-50%, -50%) scale(1, 1) rotate(0deg)'
       : `translate(-50%, -50%) scale(${recipe.flipHorizontal ? -1 : 1}, ${recipe.flipVertical ? -1 : 1}) rotate(${recipe.rotation}deg)`;
@@ -528,7 +538,11 @@
       ? `left:${rect.x * frame.fw}px;top:${rect.y * frame.fh}px;width:${rect.w * frame.fw}px;height:${rect.h * frame.fh}px`
       : '',
   );
-  const afterSrc = $derived(!identityTone && serverPreview && previewMatches ? serverPreview.url : originalPreviewUrl);
+  const afterSrc = $derived(
+    (!identityTone || hdrEditing) && serverPreview && (previewMatches || hdrEditing)
+      ? serverPreview.url
+      : originalPreviewUrl,
+  );
   const cropFrame = $derived(
     frame
       ? { width: frame.fw, height: frame.fh, left: stage.w / 2 - frame.fw / 2, top: stage.h / 2 - frame.fh / 2 }
@@ -1170,6 +1184,24 @@
           <Icon icon={mdiOpenInApp} size="20" />
           <span>{$t('frameleaf_editor_open_in_studio')}</span>
         </button>
+        {#if hdrEditing}
+          <button
+            type="button"
+            class="ed-tool labelled"
+            aria-pressed={$imageViewingPreference === 'auto'}
+            onclick={() => imageViewingPreference.set('auto')}
+          >
+            {$t('frameleaf_image_display_auto')}
+          </button>
+          <button
+            type="button"
+            class="ed-tool labelled"
+            aria-pressed={$imageViewingPreference === 'sdr'}
+            onclick={() => imageViewingPreference.set('sdr')}
+          >
+            {$t('frameleaf_image_display_sdr')}
+          </button>
+        {/if}
         {#if busyRevision}
           <span class="ed-progress" role="status">
             <progress max="100" value={busyRevision.progress}></progress>
@@ -1232,7 +1264,7 @@
                     <MaskOverlay mask={selectedMask} onPreview={(next) => (dragMask = next)} onCommit={commitMask} />
                   {/if}
                 </div>
-                {#if !before && !previewMatches}
+                {#if !before && !previewMatches && !hdrEditing}
                   <div class="ed-window" style={windowStyle}>
                     {#each filterInfo.layers as layer (layer.id)}
                       <div class="ed-layer" style={layer.style}></div>
@@ -1283,10 +1315,12 @@
           {:else if before}
             <span class="ed-badge ed-original">{$t('frameleaf_editor_version_original')}</span>
           {/if}
-          {#if !before && !identityTone && previewPending}
+          {#if !before && (!identityTone || hdrEditing) && previewPending}
             <span class="ed-badge centre busy" role="status">{$t('frameleaf_editor_preview_rendering')}</span>
-          {:else if !before && !identityTone && previewFailed}
-            <span class="ed-badge centre" role="status">{$t('frameleaf_editor_preview_approximate')}</span>
+          {:else if !before && (!identityTone || hdrEditing) && previewFailed}
+            <span class="ed-badge centre" role="status"
+              >{$t(hdrEditing ? 'frameleaf_editor_preview_error' : 'frameleaf_editor_preview_approximate')}</span
+            >
           {/if}
         </div>
       </div>
@@ -1334,7 +1368,14 @@
                   <Icon icon={mdiRestore} size="18" />
                 </button>
               </div>
-              <Histogram source={afterImage} approximation={filterInfo} fromServer={previewMatches} tick={imageTick} />
+              <Histogram
+                source={afterImage}
+                approximation={filterInfo}
+                fromServer={previewMatches || hdrEditing}
+                tick={imageTick}
+                hdrMode={hdrEditing}
+                rendered={serverPreview?.histogram}
+              />
               <div class="ed-row spread">
                 <button
                   type="button"
