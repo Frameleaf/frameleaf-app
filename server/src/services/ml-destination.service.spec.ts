@@ -10,6 +10,7 @@ import {
 } from 'src/dtos/restoration-inference.dto.js';
 import {
   ImmichWorker,
+  MediaOperationDestination,
   MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -970,6 +971,9 @@ describe(MlDestinationService.name, () => {
             conformanceReportedAt: new Date(Date.now() - hour),
             expiresAt: new Date(Date.now() + hour),
             revokedAt: null,
+            gpuMemoryBytes: null,
+            codecs: [],
+            colorPrecision: null,
             ...session,
           },
         }) as unknown as AuthenticatedRenderWorker;
@@ -979,6 +983,120 @@ describe(MlDestinationService.name, () => {
         const { studio } = await sut.getCapabilities();
         return { gpuWorker: studio.gpuWorker, renderWorker: studio.renderWorker };
       };
+
+      it('publishes same-session export proof without combining different workers (FL-342)', async () => {
+        const gib = 1024 ** 3;
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession(
+            { destination: MediaOperationDestination.Lan },
+            {
+              id: 'h264',
+              gpuMemoryBytes: String(8 * gib),
+              codecs: ['h264_nvenc'],
+              colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false },
+            },
+          ),
+          liveSession(
+            { destination: MediaOperationDestination.Lan },
+            {
+              id: 'hevc',
+              gpuMemoryBytes: String(2 * gib),
+              codecs: ['hevc_nvenc'],
+              colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+            },
+          ),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockImplementation((id) =>
+          Promise.resolve({
+            codecs: [id === 'h264' ? 'h264_nvenc' : 'hevc_nvenc'],
+            formats: ['mp4'],
+          }),
+        );
+        const { studio } = await sut.getCapabilities();
+        expect(studio.render).toEqual([
+          expect.objectContaining({
+            destination: MediaOperationDestination.Lan,
+            sessions: 2,
+            gpuMemoryBytes: 8 * gib,
+            hdr10: true,
+            candidates: [
+              {
+                gpuMemoryBytes: 8 * gib,
+                outputFormats: ['mp4-h264'],
+                maxBitDepth: 8,
+                hdr10: false,
+                dolbyVision: false,
+              },
+              {
+                gpuMemoryBytes: 2 * gib,
+                outputFormats: ['mp4-hevc-main10'],
+                maxBitDepth: 10,
+                hdr10: true,
+                dolbyVision: false,
+              },
+            ],
+          }),
+        ]);
+      });
+
+      it('does not publish output proof from decoder-only, missing-container or legacy capability records', async () => {
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }, { gpuMemoryBytes: '8589934592' }),
+        ]);
+        for (const capabilities of [
+          { codecs: ['hevc_cuvid'], formats: ['mp4'] },
+          { codecs: ['hevc_nvenc'], formats: [] },
+          { codecs: ['hevc_nvenc'], formats: ['webm'] },
+          undefined,
+        ]) {
+          mocks.renderWorker.getSessionCapabilities.mockResolvedValue(capabilities);
+          const { studio } = await sut.getCapabilities();
+          expect(studio.render[0].candidates).toEqual([expect.objectContaining({ outputFormats: [] })]);
+        }
+      });
+
+      it('uses the same exact writer/container proof as API admission for every output family', async () => {
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }),
+        ]);
+        for (const [codec, container, outputFormat] of [
+          ['webcodecs-avc', 'mp4', 'mp4-h264'],
+          ['hevc_nvenc', 'mp4', 'mp4-hevc-main10'],
+          ['libaom-av1', 'webm', 'webm-av1'],
+          ['prores_ks', 'mov', 'prores-422-hq'],
+        ]) {
+          mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: [codec], formats: [container] });
+          const { studio } = await sut.getCapabilities();
+          expect(studio.render[0].candidates?.[0].outputFormats).toEqual([outputFormat]);
+        }
+      });
+
+      it('publishes export candidates only for live, unrevoked, fresh StudioExport scopes', async () => {
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }, { id: 'live' }),
+          liveSession(
+            { destination: MediaOperationDestination.Local },
+            { id: 'expired', expiresAt: new Date(Date.now() - 1000) },
+          ),
+          liveSession({ destination: MediaOperationDestination.Local }, { id: 'revoked', revokedAt: new Date() }),
+          liveSession(
+            { destination: MediaOperationDestination.Local, status: RenderWorkerStatus.Revoked },
+            { id: 'worker-revoked' },
+          ),
+          liveSession(
+            { destination: MediaOperationDestination.Local },
+            { id: 'stale', conformanceReportedAt: new Date(Date.now() - 48 * hour) },
+          ),
+          liveSession(
+            { destination: MediaOperationDestination.Local },
+            { id: 'other-scope', scopes: [MediaOperationKind.StudioPreview] },
+          ),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['HEVC_NVENC'], formats: ['MP4'] });
+        const { studio } = await sut.getCapabilities();
+        expect(studio.render[0].candidates).toEqual([expect.objectContaining({ outputFormats: ['mp4-hevc-main10'] })]);
+        expect(mocks.renderWorker.getSessionCapabilities.mock.calls).toEqual([['live']]);
+      });
 
       it('reports a GPU render worker while a qualified session is admitted', async () => {
         await expect(studioOf(liveSession())).resolves.toEqual({ gpuWorker: true, renderWorker: true });

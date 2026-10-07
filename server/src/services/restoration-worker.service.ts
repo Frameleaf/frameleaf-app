@@ -147,6 +147,7 @@ const even = (value: number) => Math.max(2, value - (value % 2));
 export class RestorationWorkerService {
   private pollTimer?: ReturnType<typeof setInterval>;
   private sweepTimer?: ReturnType<typeof setInterval>;
+  private activeController?: AbortController;
   private busy = false;
   private readonly workerId = `restoration:${hostname()}:${process.pid}`;
   private backlogReading?: { at: number; value: number };
@@ -190,6 +191,7 @@ export class RestorationWorkerService {
   }
 
   stop() {
+    this.activeController?.abort(new RestorationInterrupted());
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
@@ -353,13 +355,27 @@ export class RestorationWorkerService {
     });
 
     const controller = new AbortController();
+    this.activeController = controller;
+    let renewing: Promise<void> | undefined;
     const watch = setInterval(() => {
-      void this.renew(operation, claimToken).then((alive) => {
-        if (!alive) {
+      if (renewing || controller.signal.aborted) {
+        return;
+      }
+      renewing = this.renew(operation, claimToken)
+        .then((alive) => {
+          if (!alive) {
+            controller.abort(new RestorationInterrupted());
+          }
+        })
+        .catch((error) => {
+          this.logger.warn(`Restoration ${restoration.id} lease renewal failed: ${error}`);
           controller.abort(new RestorationInterrupted());
-        }
-      });
+        })
+        .finally(() => {
+          renewing = undefined;
+        });
     }, RESTORATION_LEASE_MS / 3);
+    controller.signal.addEventListener('abort', () => clearInterval(watch), { once: true });
 
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, restoration.ownerId, restoration.assetId);
     const workDir = restorationWorkDir(base, restoration.id);
@@ -438,10 +454,17 @@ export class RestorationWorkerService {
 
       await this.publish(full, output, statuses);
     } catch (error) {
+      clearInterval(watch);
+      // Finish the in-flight heartbeat before handing the claim back to another attempt.
+      await renewing;
       await this.discard(context.scratch);
       await this.settle(context, error, statuses);
     } finally {
       clearInterval(watch);
+      await renewing;
+      if (this.activeController === controller) {
+        this.activeController = undefined;
+      }
     }
   }
 

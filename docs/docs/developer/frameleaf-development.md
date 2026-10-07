@@ -41,3 +41,9 @@ The owned `frameleaf-postgres` image contains PostgreSQL 19 beta 4 and pgvector 
 Compose and [NAS packaging](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/packaging/nas/README.md) consume the matching release artifacts. Hosted packaging, lifecycle and render tests do not establish physical DSM/TrueNAS/Unraid installation or store approval. Preserve those acceptance boundaries instead of treating a generated package as a deployed product.
 
 Before an authorized merge, verify the destination, exact candidate checks and merge message. Avoid replaying historical Smart Commit commands through a concatenated squash message. After integration, read back the branch ancestry and PR state. Verify publication and deployment independently when they are part of the authorized task, and close the issue only when its own acceptance is satisfied.
+
+## Memory sync visibility
+
+`MemoriesV1` and `MemoryToAssetsV1` keep their V1 payloads and use the session delivery journal. A memory and all its associations are hidden whenever any source is hidden from that session, matching `GET /memories`. Source lock/unlock and PIN elevation changes produce replayable removals/regrants without relying on a memory revision change. A delete contains only identifiers previously delivered to that session; a fresh session does not learn a never-delivered deleted memory. Generation from Locked items remains enabled.
+
+Memory event ACKs are opaque strings ending in `|memory-journal-v1`. A session with any older memory checkpoint receives the existing `SyncResetV1`: the client must clear its mirror and request `reset: true`, then rebuild only currently authorized content. Late unmarked memory ACKs are ignored after reset. Existing reset and ACK-deletion operations clear the memory delivery journal too.

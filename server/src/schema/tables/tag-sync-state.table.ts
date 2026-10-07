@@ -10,6 +10,8 @@ export class TagSyncStateTable {
   sessionId!: string;
   @PrimaryColumn({ type: 'character varying' })
   kind!:
+    | 'memory'
+    | 'memoryAsset'
     | 'tag'
     | 'assetTag'
     | 'pet'

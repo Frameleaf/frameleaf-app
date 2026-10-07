@@ -7,13 +7,14 @@ import type {
 } from 'src/repositories/physical-file-trash.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset } from 'src/database.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   FileTrashItemResponseDto,
   FileTrashListQueryDto,
   FileTrashResponseDto,
   FileTrashRestoreResponseDto,
 } from 'src/dtos/physical-file-trash.dto.js';
-import { AssetVisibility, ChecksumAlgorithm, JobName, StorageFolder } from 'src/enum.js';
+import { AssetVisibility, ChecksumAlgorithm, ImmichWorker, JobName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
@@ -26,6 +27,21 @@ import { mimeTypes } from 'src/utils/mime-types.js';
  */
 @Injectable()
 export class PhysicalFileTrashService extends BaseService {
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  onBootstrap() {
+    return this.recoverMoves();
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async recoverMoves() {
+    try {
+      const deferred = await this.physicalFileTrashRepository.recoverMoves((from, to) => this.move(from, to));
+      if (deferred) this.logger.warn(`${deferred} interrupted file trash moves need review; all copies retained`);
+    } catch (error) {
+      this.logger.warn(`File trash recovery deferred: ${error}`);
+    }
+  }
+
   /**
    * Moves one unreferenced original into the file trash, for callers that release originals themselves
    * (the universal storage migration). Nothing changes while anything references the path.
@@ -74,19 +90,37 @@ export class PhysicalFileTrashService extends BaseService {
       owner.id,
       `${this.cryptoRepository.randomUUID()}${extension}`,
     );
-    const restored = await this.physicalFileTrashRepository.untrash(id, target, (from, to) => this.move(from, to));
+    let stat!: Awaited<ReturnType<typeof this.storageRepository.stat>>;
+    const restored = await this.physicalFileTrashRepository.untrash(id, target, async (from, to) => {
+      await this.move(from, to);
+      try {
+        stat = await this.storageRepository.stat(to);
+      } catch (error) {
+        try {
+          await this.move(to, from);
+        } catch (compensationError) {
+          this.logger.error('File-trash inspection failed', error);
+          this.logger.error('File-trash move-back failed', compensationError);
+          throw new AggregateError(
+            [error, compensationError],
+            `File-trash inspection failed and the file could not be moved back from ${to} to ${from}`,
+            { cause: compensationError },
+          );
+        }
+        throw error;
+      }
+    });
     if (!restored) {
       throw new NotFoundException('File not found in the file trash');
     }
 
-    const stat = await this.storageRepository.stat(target);
     let asset: Asset | undefined;
     try {
       asset = await this.assetRepository.create({
         ownerId: owner.id,
         libraryId: null,
         checksum: entry.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        checksumAlgorithm: entry.checksum.length === 32 ? ChecksumAlgorithm.sha256File : ChecksumAlgorithm.sha1File,
         originalPath: target,
         fileCreatedAt: stat.mtime,
         fileModifiedAt: stat.mtime,

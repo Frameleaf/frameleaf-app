@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import MemoryHighlightDialog from '$lib/components/frameleaf/MemoryHighlightDialog.svelte';
 import StudioExportDialog from '$lib/components/frameleaf/StudioExportDialog.svelte';
 import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
 
@@ -21,16 +22,31 @@ vi.mock('@frameleaf/sdk', async () => ({
 describe('Studio export dialog', () => {
   const exportButton = () => screen.getByRole('button', { name: 'frameleaf_studio_export_start' });
 
-  const evidence = (overrides: Partial<StudioRenderEvidence> = {}): StudioRenderEvidence => ({
-    destination: MediaOperationDestination.Local,
-    sessions: 1,
-    gpuMemoryBytes: 16 * 1024 ** 3,
-    codecs: ['hevc_nvenc', 'h264_nvenc'],
-    maxBitDepth: 10,
-    hdr10: true,
-    dolbyVision: false,
-    ...overrides,
-  });
+  const evidence = (overrides: Partial<StudioRenderEvidence> = {}): StudioRenderEvidence => {
+    const row = {
+      destination: MediaOperationDestination.Local,
+      sessions: 1,
+      gpuMemoryBytes: 16 * 1024 ** 3,
+      codecs: ['hevc_nvenc', 'h264_nvenc'],
+      maxBitDepth: 10,
+      hdr10: true,
+      dolbyVision: false,
+      ...overrides,
+    };
+    return {
+      ...row,
+      candidates: [
+        {
+          gpuMemoryBytes: row.gpuMemoryBytes,
+          outputFormats: [StudioExportFormat.Mp4HevcMain10, StudioExportFormat.Mp4H264],
+          maxBitDepth: row.maxBitDepth,
+          hdr10: row.hdr10,
+          dolbyVision: row.dolbyVision,
+        },
+      ],
+      ...overrides,
+    };
+  };
 
   it("starts from the prototype's defaults and renders on the network", async () => {
     const onExport = vi.fn();
@@ -90,6 +106,84 @@ describe('Studio export dialog', () => {
     expect(screen.queryByText('frameleaf_studio_render_refusal_insufficient_memory')).not.toBeInTheDocument();
     await fireEvent.click(exportButton());
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ resolution: StudioExportResolution.$1080P }));
+  });
+
+  it('keeps Studio export and Memory highlight in agreement for split-worker and supported evidence (FL-342)', () => {
+    const [candidate] = evidence().candidates!;
+    for (const candidates of [
+      [
+        { ...candidate, outputFormats: [StudioExportFormat.Mp4H264] },
+        { ...candidate, gpuMemoryBytes: 2 * 1024 ** 3 },
+      ],
+      [candidate],
+    ]) {
+      const renderEvidence = [evidence({ candidates })];
+      const studio = render(StudioExportDialog, {
+        open: true,
+        sequenceName: 'Lake trip',
+        renderEvidence,
+        onExport: vi.fn(),
+      });
+      const exportDisabled = (exportButton() as HTMLButtonElement).disabled;
+      studio.unmount();
+      const memory = render(MemoryHighlightDialog, {
+        open: true,
+        memoryTitle: 'Lake trip',
+        renderEvidence,
+        onStart: vi.fn(),
+      });
+      expect(
+        (screen.getByRole('button', { name: 'frameleaf_memories_highlight_start' }) as HTMLButtonElement).disabled,
+      ).toBe(exportDisabled);
+      expect(exportDisabled).toBe(candidates.length > 1);
+      memory.unmount();
+    }
+  });
+
+  it('can reach H264/720p when qualified export proof cannot support either default (FL-342)', async () => {
+    const onExport = vi.fn();
+    const [candidate] = evidence().candidates!;
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      onExport,
+      renderEvidence: [
+        evidence({
+          // The summary also includes a preview-only 8 GiB HEVC session; it grants no export proof.
+          candidates: [
+            {
+              ...candidate,
+              gpuMemoryBytes: 2 * 1024 ** 3,
+              outputFormats: [StudioExportFormat.Mp4H264],
+              maxBitDepth: 8,
+              hdr10: false,
+            },
+          ],
+        }),
+      ],
+    });
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const h264 = within(format)
+      .getAllByRole('option')
+      .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4H264) as HTMLOptionElement;
+    expect(h264).not.toBeDisabled();
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.change(format, { target: { value: StudioExportFormat.Mp4H264 } });
+    expect(exportButton()).toBeDisabled();
+    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    const smallest = within(resolution)
+      .getAllByRole('option')
+      .find((item) => (item as HTMLOptionElement).value === StudioExportResolution.$720P) as HTMLOptionElement;
+    expect(smallest).not.toBeDisabled();
+    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$720P } });
+    expect(exportButton()).not.toBeDisabled();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith({
+      format: StudioExportFormat.Mp4H264,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$720P,
+      destination: MediaOperationDestination.Local,
+    });
   });
 
   it('refuses every export when no qualified render worker is online', () => {

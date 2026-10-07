@@ -360,6 +360,28 @@ export class PhotographyWorkflowService {
     const assets = await this.repository.assets(row.ownerId, row.albumId, [
       ...new Set(value.captures.flatMap((c) => c.assetIds)),
     ]);
+    const revisions = await this.repository.eligibleRevisions(row, [
+      ...new Set([
+        ...value.captures.flatMap((capture) =>
+          [capture.proofRevisionId, capture.approvedRevisionId].filter((id): id is string => !!id),
+        ),
+        ...(value.approvedVersions ?? []).map((version) => version.revisionId),
+        ...value.approvals.map((approval) => approval.revisionId),
+        ...value.orders.flatMap((order) =>
+          order.items.flatMap((item) =>
+            this.outputs(order, item).flatMap((output) => (output.revisionId ? [output.revisionId] : [])),
+          ),
+        ),
+      ]),
+    ]);
+    const lockedLogos = await this.lockedWatermarkLogos(
+      row.ownerId,
+      value.orders.flatMap((order) =>
+        order.items.flatMap((item) =>
+          this.outputs(order, item).flatMap((output) => [output.proofWatermark, output.exportWatermark]),
+        ),
+      ),
+    );
     const captures = value.captures.map((capture) => {
       const asset = assets.find((a) => a.id === capture.assetId);
       const eligible =
@@ -371,6 +393,12 @@ export class PhotographyWorkflowService {
       return eligible
         ? {
             ...capture,
+            proofRevisionId:
+              capture.proofRevisionId && revisions.has(capture.proofRevisionId) ? capture.proofRevisionId : null,
+            approvedRevisionId:
+              capture.approvedRevisionId && revisions.has(capture.approvedRevisionId)
+                ? capture.approvedRevisionId
+                : null,
             assetIds: capture.assetIds.filter((id) =>
               assets.some((a) => a.id === id && !a.isOffline && a.rating !== -1),
             ),
@@ -404,15 +432,21 @@ export class PhotographyWorkflowService {
             capturedAt: null,
             rating: null,
             isRaw: null,
+            proofRevisionId: null,
+            approvedRevisionId: null,
+            approvalRequested: false,
           };
     });
+    const visible = new Set(captures.filter((capture) => capture.eligible).map((capture) => capture.id));
     return {
       revision: row.revision,
       shootId: row.id,
       config: value.config,
       presets: value.presets ?? [],
       studioPresets: await this.repository.studioPresets(row.ownerId),
-      approvedVersions: value.approvedVersions ?? [],
+      approvedVersions: (value.approvedVersions ?? []).filter(
+        (version) => visible.has(version.captureId) && revisions.has(version.revisionId),
+      ),
       pendingEdits: new Set(
         value.orders
           .filter(
@@ -422,7 +456,15 @@ export class PhotographyWorkflowService {
           )
           .flatMap((order) =>
             order.items
-              .filter((item) => this.outputs(order, item).some((output) => !output.approved || !output.revisionId))
+              .filter(
+                (item) =>
+                  visible.has(item.captureId) &&
+                  this.outputs(order, item).some(
+                    (output) =>
+                      (!output.revisionId || revisions.has(output.revisionId)) &&
+                      (!output.approved || !output.revisionId),
+                  ),
+              )
               .map((item) => item.captureId),
           ),
       ).size,
@@ -431,13 +473,22 @@ export class PhotographyWorkflowService {
       ordering: value.ordering,
       recipients: value.recipients.map(({ tokenHash: _token, passwordHash, ...recipient }) => ({
         ...recipient,
+        captureIds: recipient.captureIds?.filter((id) => visible.has(id)) ?? null,
+        choices: recipient.choices.filter((id) => visible.has(id)),
+        notes: recipient.notes.filter((note) => visible.has(note.captureId)),
         passwordProtected: !!passwordHash,
       })),
-      rounds: value.rounds,
-      orders: value.orders.map((order) => this.orderView(order, row.id)),
+      rounds: value.rounds.map((round) => ({
+        ...round,
+        captureIds: round.captureIds.filter((id) => visible.has(id)),
+        notes: round.notes.filter((note) => visible.has(note.captureId)),
+      })),
+      orders: value.orders.map((order) => this.orderView(order, row.id, visible, revisions, lockedLogos)),
       publication: this.publicationView(value.publication),
       receipts: value.receipts,
-      approvals: value.approvals,
+      approvals: value.approvals.filter(
+        (approval) => visible.has(approval.captureId) && revisions.has(approval.revisionId),
+      ),
     };
   }
   private publicationView(publication: Publication | null) {
@@ -467,7 +518,22 @@ export class PhotographyWorkflowService {
         this.primary(item);
       }
   }
-  private orderView(order: Order, shootId: string) {
+  private orderView(
+    order: Order,
+    shootId: string,
+    visible: Set<string>,
+    revisions: Set<string>,
+    lockedLogos: Set<string>,
+  ) {
+    const items = order.items
+      .filter((item) => visible.has(item.captureId))
+      .flatMap((item) => {
+        const outputs = this.visibleOutputs(order, item, revisions, lockedLogos);
+        if (outputs.length === 0) return [];
+        const projected = { ...item, outputs };
+        this.primary(projected);
+        return [projected];
+      });
     return {
       id: order.id,
       recipientId: order.recipientId,
@@ -475,21 +541,18 @@ export class PhotographyWorkflowService {
       status: order.status,
       currency: order.currency,
       total: order.total,
-      captureIds: order.captureIds,
+      captureIds: order.captureIds.filter((id) => visible.has(id)),
       terms: order.terms,
       paymentTiming: order.paymentTiming,
       pricing: order.pricing,
       createdAt: order.createdAt,
       acceptedAt: order.acceptedAt,
-      items: order.items.map(({ finalPath, exportWatermark: _watermark, ...item }) => ({
+      items: items.map(({ finalPath, exportWatermark: _watermark, ...item }) => ({
         ...item,
         ready: !!finalPath,
-        outputs: this.outputs(
-          order,
-          order.items.find((candidate) => candidate.captureId === item.captureId)!,
-        ).map((output) => this.outputView(shootId, item, output)),
+        outputs: item.outputs!.map((output) => this.outputView(shootId, item, output)),
       })),
-      readyCount: order.items.filter((item) => item.approved && item.finalPath).length,
+      readyCount: items.filter((item) => item.approved && item.finalPath).length,
       editingBlocked: order.paymentTiming === 'before-editing' && !['settled', 'free'].includes(order.status),
     };
   }
@@ -689,7 +752,7 @@ export class PhotographyWorkflowService {
       revisionId: output.revisionId,
       approved: output.approved,
       approvalPreviewUrl:
-        output.clientApprovalRequired && output.approvalPreviewPath
+        output.clientApprovalRequired && output.approvalPreviewPath && output.proofWatermark
           ? `/api/photography/galleries/${shootId}/photos/${item.captureId}/outputs/${output.id}/preview`
           : null,
       clientApprovalRequired: output.clientApprovalRequired,
@@ -919,7 +982,18 @@ export class PhotographyWorkflowService {
     });
     return { session: token, expiresAt, recipientId: recipient.id };
   }
-  private async eligible(row: WorkflowRow, captureIds: string[]) {
+  private async eligible(row: WorkflowRow, captureIds: string[], publishedPixels = false) {
+    // ponytail: legacy publications do not pin which proof/web watermark rendered each photo; check both until provenance is stored per photo.
+    if (
+      publishedPixels &&
+      (
+        await this.lockedWatermarkLogos(row.ownerId, [
+          row.value.published?.config.proofWatermark,
+          row.value.published?.config.webWatermark,
+        ])
+      ).size > 0
+    )
+      return new Set<string>();
     const captures = row.value.captures.filter((c) => captureIds.includes(c.id));
     const assets = await this.repository.assets(
       row.ownerId,
@@ -941,11 +1015,40 @@ export class PhotographyWorkflowService {
   private proofPermission(recipient: Recipient, id: string) {
     return recipient.canProof && (recipient.captureIds === null || recipient.captureIds.includes(id));
   }
+  private async lockedWatermarkLogos(ownerId: string, watermarks: (PhotographyWatermark | null | undefined)[]) {
+    const locked = new Set<string>();
+    for (const id of new Set(
+      watermarks.flatMap((watermark) =>
+        watermark?.type !== 'text' && watermark?.logoAssetId ? [watermark.logoAssetId] : [],
+      ),
+    )) {
+      if (!(await this.repository.logo(ownerId, id))[0]) locked.add(id);
+    }
+    return locked;
+  }
+  private visibleOutputs(order: Order, item: OrderItem, revisions: Set<string>, lockedLogos: Set<string>) {
+    const hidden = (watermark: PhotographyWatermark | null | undefined) =>
+      !!watermark?.logoAssetId && watermark.type !== 'text' && lockedLogos.has(watermark.logoAssetId);
+    return this.outputs(order, item)
+      .filter((output) => !output.revisionId || revisions.has(output.revisionId))
+      .map((output) => ({
+        ...output,
+        finalPath: hidden(output.exportWatermark) ? null : output.finalPath,
+        approvalPreviewPath:
+          !output.proofWatermark || hidden(output.proofWatermark) ? null : output.approvalPreviewPath,
+      }));
+  }
   private async guestView(row: WorkflowRow, recipient: Recipient) {
     await this.hydrateOutputFiles(row.value);
     const published = row.value.published;
-    const ids = published?.photos.map((p) => p.captureId) ?? [];
+    const ids = [
+      ...new Set([
+        ...(published?.photos.map((p) => p.captureId) ?? []),
+        ...row.value.orders.filter((order) => order.recipientId === recipient.id).flatMap((order) => order.captureIds),
+      ]),
+    ];
     const eligible = await this.eligible(row, ids);
+    const proofEligible = await this.eligible(row, published?.photos.map((photo) => photo.captureId) ?? [], true);
     const revisions = await this.repository.eligibleRevisions(row, [
       ...new Set([
         ...(published?.photos ?? []).flatMap((p) => (p.revisionId ? [p.revisionId] : [])),
@@ -958,11 +1061,21 @@ export class PhotographyWorkflowService {
           ),
       ]),
     ]);
+    const lockedLogos = await this.lockedWatermarkLogos(
+      row.ownerId,
+      row.value.orders
+        .filter((order) => order.recipientId === recipient.id)
+        .flatMap((order) =>
+          order.items.flatMap((item) =>
+            this.outputs(order, item).flatMap((output) => [output.proofWatermark, output.exportWatermark]),
+          ),
+        ),
+    );
     const photos = (published?.photos ?? [])
       .filter(
         (photo) =>
           (!photo.revisionId || revisions.has(photo.revisionId)) &&
-          eligible.has(photo.captureId) &&
+          proofEligible.has(photo.captureId) &&
           this.proofPermission(recipient, photo.captureId),
       )
       .map((photo) => {
@@ -973,7 +1086,7 @@ export class PhotographyWorkflowService {
             order.items
               .filter((item) => item.captureId === capture.id)
               .flatMap((item) =>
-                this.outputs(order, item).map((output) => {
+                this.visibleOutputs(order, item, revisions, lockedLogos).map((output) => {
                   const blockedReason = this.outputBlock(recipient, capture.id, order, output, revisions);
                   return {
                     ...this.outputView(row.id, item, output),
@@ -1052,10 +1165,16 @@ export class PhotographyWorkflowService {
       choices: recipient.choices.filter((id) => visible.has(id)),
       notes: recipient.notes.filter((n) => visible.has(n.captureId)),
       receipts: row.value.receipts.filter((receipt) => receipt.recipientId === recipient.id),
-      rounds: row.value.rounds.filter((round) => round.recipientId === recipient.id),
+      rounds: row.value.rounds
+        .filter((round) => round.recipientId === recipient.id)
+        .map((round) => ({
+          ...round,
+          captureIds: round.captureIds.filter((id) => visible.has(id)),
+          notes: round.notes.filter((note) => visible.has(note.captureId)),
+        })),
       orders: row.value.orders
         .filter((order) => order.recipientId === recipient.id)
-        .map((order) => this.orderView(order, row.id)),
+        .map((order) => this.orderView(order, row.id, eligible, revisions, lockedLogos)),
       publication: this.publicationView(row.value.publication),
       pricing: {
         currency: row.value.config.currency,
@@ -1583,6 +1702,7 @@ export class PhotographyWorkflowService {
       outputId: string;
       revisionId: string;
       path: string;
+      watermark: PhotographyWatermark;
     }[] = [];
     const preparedFinals: { orderId: string; captureId: string; outputId: string; revisionId: string; path: string }[] =
       [];
@@ -1649,7 +1769,7 @@ export class PhotographyWorkflowService {
         for (const item of order.items)
           for (const output of this.outputs(order, item)) {
             if (!output.revisionId || ['cancelled', 'refunded'].includes(order.status)) continue;
-            if (output.clientApprovalRequired && !output.approvalPreviewPath) {
+            if (output.clientApprovalRequired && (!output.approvalPreviewPath || !output.proofWatermark)) {
               activeCaptureId = item.captureId;
               const capture = row.value.captures.find((capture) => capture.id === item.captureId)!;
               const revision = await this.requireRevision(row, capture, output.revisionId);
@@ -1670,6 +1790,7 @@ export class PhotographyWorkflowService {
                 outputId: output.id,
                 revisionId: output.revisionId,
                 path: file,
+                watermark,
               });
             }
             if (!output.approved) continue;
@@ -1736,8 +1857,10 @@ export class PhotographyWorkflowService {
           const order = value.orders.find((order) => order.id === prepared.orderId);
           const item = order?.items.find((item) => item.captureId === prepared.captureId);
           const output = order && item && this.outputs(order, item).find((output) => output.id === prepared.outputId);
-          if (output?.clientApprovalRequired && output.revisionId === prepared.revisionId)
+          if (output?.clientApprovalRequired && output.revisionId === prepared.revisionId) {
             output.approvalPreviewPath = prepared.path;
+            output.proofWatermark = prepared.watermark;
+          }
         }
         value.published = {
           generationId: p.id,
@@ -1868,6 +1991,8 @@ export class PhotographyWorkflowService {
     );
     if (!candidate) throw new ForbiddenException('Approved output is not available for download');
     const { order, output } = candidate;
+    if ((await this.lockedWatermarkLogos(row.ownerId, [output.exportWatermark])).size > 0)
+      throw new ForbiddenException('Output logo is unavailable');
     await this.requireRevision(
       row,
       row.value.captures.find((capture) => capture.id === captureId)!,
@@ -1896,6 +2021,10 @@ export class PhotographyWorkflowService {
       )
       .find((output) => output.id === outputId && output.clientApprovalRequired && output.approvalPreviewPath);
     if (!output?.revisionId) throw new NotFoundException('Approval proof is preparing');
+    if (!output.proofWatermark)
+      throw new ConflictException('Regenerate this approval proof to establish its watermark source');
+    if ((await this.lockedWatermarkLogos(row.ownerId, [output.proofWatermark])).size > 0)
+      throw new ForbiddenException('Proof logo is unavailable');
     await this.requireRevision(
       row,
       row.value.captures.find((capture) => capture.id === captureId)!,
@@ -1933,7 +2062,7 @@ export class PhotographyWorkflowService {
       if (
         !['thumbnail', 'preview'].includes(kind) ||
         !this.proofPermission(recipient, captureId) ||
-        !(await this.eligible(row, [captureId])).has(captureId)
+        !(await this.eligible(row, [captureId], true)).has(captureId)
       )
         throw new ForbiddenException();
       const photo = row.value.published?.photos.find((p) => p.captureId === captureId);
@@ -2214,7 +2343,7 @@ export class PhotographyWorkflowService {
     const row = await this.repository.get(shootId);
     if (!row || row.ownerId !== ownerId) throw new NotFoundException();
     await this.repository.live(row);
-    if (expired(row.value.config.expiresAt) || !(await this.eligible(row, [captureId])).has(captureId))
+    if (expired(row.value.config.expiresAt) || !(await this.eligible(row, [captureId], true)).has(captureId))
       throw new NotFoundException();
     const photo = row.value.published?.photos.find((p) => p.captureId === captureId);
     const capture = row.value.captures.find((c) => c.id === captureId);
