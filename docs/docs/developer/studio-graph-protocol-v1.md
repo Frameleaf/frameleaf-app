@@ -301,10 +301,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (48):** the engine gives them meaning. Their mutation rules are in parts 2 to 4: sections 12, 13 and 14.
+- **Engine (49):** the engine gives them meaning. Their mutation rules are in parts 2 to 4: sections 12, 13 and 14.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (22):** the remaining 22 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (21):** the remaining 21 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
 
@@ -312,16 +312,16 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Engine: clips and timeline edits (part 2)        | `clip.add`, `clip.delete`, `clip.move`, `clip.split`, `clip.trimStart`, `clip.trimEnd`, `clip.slip`, `clip.slide`, `clip.roll`, `clip.setSpeed`, `clip.push`, `clip.reorder`, `clip.insert`, `clip.overwrite`, `clip.join`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`, `track.add`, `track.remove`, `track.reorder`, `track.set`, `track.closeGap`, `marker.add`, `marker.update`, `marker.remove`, `music.add` |
 | Engine: effects, transitions, keyframes (part 3) | `effect.add`, `effect.remove`, `clip.setTransition`, `keyframe.add`, `keyframe.remove`, `keyframe.update`, `keyframe.setEasing`, `property.setExpression`, `property.setModifier`, `property.bakeModifier`, `text.setMotion`, `clip.setKenBurns`                                                                                                                                                                                                    |
-| Engine: compositions and settings (part 4)       | `composition.add`, `clip.group`, `clip.ungroup`, `composition.setPublishedControls`, `composition.setControlOverrides`, `title.add`, `sequence.setSettings`, `project.applyTemplate`                                                                                                                                                                                                                                                                |
+| Engine: compositions and settings (part 4)       | `composition.add`, `clip.group`, `clip.ungroup`, `composition.setPublishedControls`, `composition.setControlOverrides`, `title.add`, `sequence.setSettings`, `project.applyTemplate`, `project.setMasterAudio`                                                                                                                                                                                                                                                                |
 | Host                                             | `history.undo`, `history.redo`                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Not implemented                                  | `captions.set`, `clip.setAudio`, `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setMasterAudio`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                |
+| Not implemented                                  | `captions.set`, `clip.setAudio`, `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 part 3 commands and the 8 part 4 commands in full.
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 part 3 commands, the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 22 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 19 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 21 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 18 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -387,7 +387,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `project.applyTemplate`            | Engine          | 14.6.2  |                                                                                                                        |
 | `project.importBundle`             | Bundle import   | 8.1     | Do not record it. Import through the bundle import API; the open graph does not change.                                |
 | `project.rename`                   | Not implemented | 8.2     | Do not record it. Do not change the graph's `name` (2.1).                                                              |
-| `project.setMasterAudio`           | Not implemented | 8.2     | Do not record it. Do not change `masterBusDb`, `masterBusMuted` or `busAudioEq` (2.3).                                 |
+| `project.setMasterAudio`           | Engine          | 14.7    | Gain and mute only; preserve `busAudioEq`. The `ducking` field is refused.                                               |
 | `project.setSettings`              | Not implemented | 8.2     | Do not record it. Write no editor preference into the graph. Set canvas and rate with `sequence.setSettings` (14.6.1). |
 | `property.bakeModifier`            | Engine          | 13.6.3  |                                                                                                                        |
 | `property.setExpression`           | Engine          | 13.6.1  |                                                                                                                        |
@@ -2043,7 +2043,7 @@ It must not change `alignment`, `type`, the clip ids or `trackId`. **Implementat
 
 ## 14. Part 4: compositions, groups, titles and settings
 
-This section gives the mutation rules of the 8 commands of FL-309 (NAPI-020), and with them the title styles and animations that `clip.update` shares with `title.add`. The engine implements all 8. Section 8.3 lists every graph-changing command with its status.
+This section gives the mutation rules of the 8 commands of FL-309 (NAPI-020), the master-bus gain/mute command of FL-103 (14.7), and the title styles and animations that `clip.update` shares with `title.add`. Section 8.3 lists every graph-changing command with its status.
 
 | Commands                                                              | Section    |
 | --------------------------------------------------------------------- | ---------- |
@@ -2051,6 +2051,7 @@ This section gives the mutation rules of the 8 commands of FL-309 (NAPI-020), an
 | `title.add`, and the `style` and `animation` of `clip.update`         | 14.3       |
 | `composition.setPublishedControls`, `composition.setControlOverrides` | 14.4       |
 | `sequence.setSettings`, `project.applyTemplate`                       | 14.5, 14.6 |
+| `project.setMasterAudio`                                             | 14.7       |
 
 Every command has fixtures named `<command>/<case>`, both applied and rejected. Where this prose and a fixture differ, the fixture is right and this page has a defect.
 
@@ -2390,3 +2391,32 @@ Sets the project's canvas and rate from a template. Payload: `templateId`, optio
 3. The template's rate differs from the project's, the main timeline has content, and `timing` is absent: `invalid`.
 
 **Effect.** As `sequence.setSettings` on `main` with the template's `fps`, `width` and `height`. Nothing else is written. All six templates are 30 frames per second at this revision. **Draws:** none.
+
+### 14.7 `project.setMasterAudio`
+
+Sets the persisted project master bus. Payload: `gainDb` and/or `muted`.
+The monitor/device `volume` and `muted` controls are separate transient playback
+state and never change through this command.
+
+**Refusals, in order**
+
+1. A payload key is not `gainDb`, `muted` or `ducking`: `invalid`.
+2. `gainDb` is present and is not a finite number from -60 to 12 dB: `invalid`.
+3. `muted` is present and is not a boolean: `invalid`.
+4. `ducking` is present and is not a boolean: `invalid`. Either boolean is
+   refused as `not-implemented`: the engine has no project-wide ducking switch.
+   Per-clip sidechain settings are preserved.
+5. Neither `gainDb` nor `muted` is present: `invalid`.
+
+**Effect.** Write a supplied `gainDb` to `timeline.masterBusDb`, and a supplied
+`muted` to `timeline.masterBusMuted`. An omitted field keeps its value.
+Hydration initializes gain from the incoming timeline, or 0 dB when absent,
+even when the project has no saved tracks. Incoming bus EQ survives default-track
+initialization; an absent timeline clears the previous project's EQ.
+`busAudioEq`, tracks, clips, channel layouts and all other graph fields remain
+unchanged. Preview and export consume these same persisted master fields.
+Undo/redo use host graph history (section 9). No ids or timestamps are written.
+A refusal records no graph and applies none of the batch. **Draws:** none.
+
+The fixtures cover combined gain/mute, each field alone, both gain endpoints,
+invalid payloads, unsupported ducking and an atomic rejected batch.

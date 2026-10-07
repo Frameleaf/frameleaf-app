@@ -64,6 +64,7 @@ export const studioEngineCommandIds = [
   'marker.update',
   'music.add',
   'project.applyTemplate',
+  'project.setMasterAudio',
   'property.bakeModifier',
   'property.setExpression',
   'property.setModifier',

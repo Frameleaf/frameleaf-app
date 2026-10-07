@@ -304,7 +304,12 @@
       "path": "patches/0063-onnx-cache-byte-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "16a8dd6cfd8060eb8d35f0c00a5d8f2eea82491b03dfb80a25977e3f54e2d19d"
+    },
+    {
+      "path": "patches/0064-project-master-hydration.patch",
+      "sha256": "4c2ad8e90ee46ba2033193a68a598d2c1dff64582fbaff8ab636e2f22e25ae22",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "736fc2ba101459786a32a04401134e9da22a7d21f900af3829cf031ae525eb7f"
+  "sourceSha256": "e72734149f886b531e61bad552dc63c8c2d8f9e5da5ce82aa78d688e62c8cb8e"
 }

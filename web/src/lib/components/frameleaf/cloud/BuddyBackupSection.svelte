@@ -683,8 +683,7 @@
     <label
       >{$t('frameleaf_buddy_deployment_configuration_files_one_absolute_path_per_line')}<textarea
         rows="3"
-        bind:value={configurationFiles}
-      ></textarea></label
+        bind:value={configurationFiles}></textarea></label
     >
     <p>{$t('frameleaf_buddy_all_users_media_metadata_the_database_frameleaf_settings_preferences_and_locally_c')}</p>
     <label

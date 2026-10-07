@@ -1371,6 +1371,49 @@
         "zoomLevel": 1,
         "scrollPosition": 0
       }
+    },
+    "empty-master": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      },
+      "timeline": {
+        "tracks": [],
+        "items": [],
+        "transitions": [],
+        "keyframes": [],
+        "currentFrame": 0,
+        "zoomLevel": 1,
+        "scrollPosition": 0,
+        "masterBusDb": 3,
+        "masterBusMuted": false,
+        "busAudioEq": {
+          "enabled": true,
+          "lowGainDb": 2
+        }
+      }
+    },
+    "absent-timeline": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      }
     }
   },
   "bases": {
@@ -7755,6 +7798,173 @@
         }
       },
       "digest": "bb96f6def30be9491988b2734caba9b59a2eb2a19a9f9f5ecc8273ee51af822a"
+    },
+    "seed:empty-master": {
+      "seed": "empty-master",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "track-1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "syncLock": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "volume": 0,
+              "order": 0,
+              "items": []
+            },
+            {
+              "id": "track-2",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "syncLock": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "volume": 0,
+              "order": 1,
+              "items": []
+            }
+          ],
+          "items": [],
+          "busAudioEq": {
+            "enabled": true,
+            "outputGainDb": 0,
+            "band1Enabled": false,
+            "band1Type": "high-pass",
+            "band1FrequencyHz": 30,
+            "band1GainDb": 0,
+            "band1Q": 1.1,
+            "band1SlopeDbPerOct": 12,
+            "lowCutEnabled": false,
+            "lowCutFrequencyHz": 30,
+            "lowCutSlopeDbPerOct": 12,
+            "lowEnabled": true,
+            "lowType": "low-shelf",
+            "lowGainDb": 2,
+            "lowFrequencyHz": 120,
+            "lowQ": 2.3,
+            "lowMidEnabled": true,
+            "lowMidType": "peaking",
+            "lowMidGainDb": 0,
+            "lowMidFrequencyHz": 400,
+            "lowMidQ": 1.1,
+            "midGainDb": 0,
+            "highMidEnabled": true,
+            "highMidType": "peaking",
+            "highMidGainDb": 0,
+            "highMidFrequencyHz": 1600,
+            "highMidQ": 1.1,
+            "highEnabled": true,
+            "highType": "high-shelf",
+            "highGainDb": 0,
+            "highFrequencyHz": 2800,
+            "highQ": 2.3,
+            "band6Enabled": false,
+            "band6Type": "low-pass",
+            "band6FrequencyHz": 22000,
+            "band6GainDb": 0,
+            "band6Q": 1.1,
+            "band6SlopeDbPerOct": 12,
+            "highCutEnabled": false,
+            "highCutFrequencyHz": 22000,
+            "highCutSlopeDbPerOct": 12
+          },
+          "masterBusDb": 3,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "ef114886d406cf8bd6c04d4d90af1af3eb84b2ba2f865752aeeccb9bea2c1a80"
+    },
+    "seed:absent-timeline": {
+      "seed": "absent-timeline",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "track-1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "syncLock": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "volume": 0,
+              "order": 0,
+              "items": []
+            },
+            {
+              "id": "track-2",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "syncLock": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "volume": 0,
+              "order": 1,
+              "items": []
+            }
+          ],
+          "items": [],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "130bc9e2514905adbd06cee79a75ba0f5fa4c5f3c359bc9d4b81580a1ea3707d"
     }
   },
   "vectors": {
@@ -139475,32 +139685,6 @@
       }
     },
     {
-      "id": "not-implemented/project.setMasterAudio",
-      "story": "FL-309",
-      "covers": [
-        "project.setMasterAudio"
-      ],
-      "summary": "The engine refuses project.setMasterAudio as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "project.setMasterAudio",
-          "payload": {
-            "gainDb": -3
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/project.setMasterAudio",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "project.setMasterAudio is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/project.setSettings",
       "story": "FL-309",
       "covers": [
@@ -139828,6 +140012,1129 @@
         "index": 1,
         "reason": "not-implemented",
         "detail": "project.rename is not an engine command"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/gain-and-mute",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus gain and mute.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -6,
+            "muted": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/gain-and-mute",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "f39870bca9d91396c8f14590d7040ef5dc70e30256d5740ff91bbc690e6b81dd",
+        "envelopeDigest": "77bea21bb3d345926ee6bfa1d80ae09b116254567a42b7da5ac16b11584dc585",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": -6,
+            "masterBusMuted": true,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/gain-only",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus gain only.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -3
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/gain-only",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "fe9626cf3bad94174c1d088e05c5dd40c6ab325ed7b6f7b9d88f7b08e1cf23f6",
+        "envelopeDigest": "432eae82fa30dce2636953d735dd185be50230c1b75e05f908e2eabd0f1b7c70",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": -3,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/mute-only",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus mute only.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "muted": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/mute-only",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "0c778d2379a0dbd87230ed770c2691dcf7378b15723a21961e1cea923b867492",
+        "envelopeDigest": "513b0d00e582d7688fdb45a8dfde80441bc680989c2f1cd2f0b356e59c2d5b0b",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": true,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/minimum-gain",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus minimum gain.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -60
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/minimum-gain",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "39a31240410c16c6b1ff1d9d5c144b1d691c522b415d265141760343665cdccf",
+        "envelopeDigest": "7b2554ac9dcc3ba4cf3a48decf92c99742ff104929cea70f18141223042686d0",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": -60,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/maximum-gain",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus maximum gain.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": 12
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/maximum-gain",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "f6a0739f1ca60f9f60b7c868e16ab48f43ea0b77489c279bba51312f9c49496d",
+        "envelopeDigest": "32ed0253da201c82639ef3675bf9bef5f8f3518a3177e55798ba301f41a8b293",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 12,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/empty",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus empty.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {},
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/empty",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "project.setMasterAudio needs gainDb or muted"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/gain-outside-range",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus gain outside range.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": 13
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/gain-outside-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "gainDb must be between -60 and 12 dB"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/invalid-mute",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus invalid mute.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "muted": 1
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/invalid-mute",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "muted must be a boolean"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/monitor-field",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus monitor field.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "volume": 0.25
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/monitor-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "project.setMasterAudio: unknown field \"volume\""
+      }
+    },
+    {
+      "id": "project.setMasterAudio/invalid-ducking",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus invalid ducking.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "ducking": "off"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/invalid-ducking",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking must be a boolean"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/ducking",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Master bus ducking.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -3,
+            "ducking": false
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/ducking",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "not-implemented",
+        "index": 0
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "not-implemented",
+        "detail": "ducking: the engine has no project-wide ducking switch"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/atomic-refusal",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "An unsupported ducking envelope refuses the whole batch after a valid master gain edit.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -12
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:master-first",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": -3,
+            "ducking": false
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/ducking",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "not-implemented",
+        "index": 1
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "not-implemented",
+        "detail": "ducking: the engine has no project-wide ducking switch"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/mute-only-empty-master",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Mute-only after hydrating empty master: preserve incoming/default gain and bus EQ.",
+      "base": "seed:empty-master",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "muted": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/mute-only-empty-master",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "dcefd25aacf169b3de7062d623110e1fb2811cb4452b1ab1b5fbcc87221b1dc7",
+        "envelopeDigest": "7d6c3adcc961b571105f60962b3a3bdf050c6751696bed95715302caba29ba03",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "track-1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": 0,
+                "items": []
+              },
+              {
+                "id": "track-2",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": 1,
+                "items": []
+              }
+            ],
+            "items": [],
+            "busAudioEq": {
+              "enabled": true,
+              "outputGainDb": 0,
+              "band1Enabled": false,
+              "band1Type": "high-pass",
+              "band1FrequencyHz": 30,
+              "band1GainDb": 0,
+              "band1Q": 1.1,
+              "band1SlopeDbPerOct": 12,
+              "lowCutEnabled": false,
+              "lowCutFrequencyHz": 30,
+              "lowCutSlopeDbPerOct": 12,
+              "lowEnabled": true,
+              "lowType": "low-shelf",
+              "lowGainDb": 2,
+              "lowFrequencyHz": 120,
+              "lowQ": 2.3,
+              "lowMidEnabled": true,
+              "lowMidType": "peaking",
+              "lowMidGainDb": 0,
+              "lowMidFrequencyHz": 400,
+              "lowMidQ": 1.1,
+              "midGainDb": 0,
+              "highMidEnabled": true,
+              "highMidType": "peaking",
+              "highMidGainDb": 0,
+              "highMidFrequencyHz": 1600,
+              "highMidQ": 1.1,
+              "highEnabled": true,
+              "highType": "high-shelf",
+              "highGainDb": 0,
+              "highFrequencyHz": 2800,
+              "highQ": 2.3,
+              "band6Enabled": false,
+              "band6Type": "low-pass",
+              "band6FrequencyHz": 22000,
+              "band6GainDb": 0,
+              "band6Q": 1.1,
+              "band6SlopeDbPerOct": 12,
+              "highCutEnabled": false,
+              "highCutFrequencyHz": 22000,
+              "highCutSlopeDbPerOct": 12
+            },
+            "masterBusDb": 3,
+            "masterBusMuted": true,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/mute-only-absent-timeline",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "Mute-only after hydrating absent timeline: preserve incoming/default gain and bus EQ.",
+      "base": "seed:absent-timeline",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "muted": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:project.setMasterAudio/mute-only-absent-timeline",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "672c2bd6234aecc0c707d61e24a0461294837d900f8d57119b81d69b2493f0bf",
+        "envelopeDigest": "8875d36ed9f7a3104f709be821b45a652a79849a3665982ab499c86c7df15801",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "track-1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": 0,
+                "items": []
+              },
+              {
+                "id": "track-2",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": 1,
+                "items": []
+              }
+            ],
+            "items": [],
+            "masterBusDb": 0,
+            "masterBusMuted": true,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
       }
     }
   ],
@@ -140470,9 +141777,10 @@
       "section": "8.2"
     },
     "project.setMasterAudio": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-309",
+      "section": "14.7",
+      "note": "Gain and mute only; project-wide ducking is refused."
     },
     "project.setSettings": {
       "status": "not-implemented",
