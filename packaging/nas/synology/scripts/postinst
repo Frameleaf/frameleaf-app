@@ -1,9 +1,0 @@
-#!/bin/sh
-set -eu
-umask 077
-[ -s "$SYNOPKG_PKGDEST/project/.env" ]
-if [ "${SYNOPKG_PKG_STATUS:-INSTALL}" != UPGRADE ]; then
-  cp "$SYNOPKG_PKGDEST/project/.env" "$SYNOPKG_PKGVAR/frameleaf.env.tmp"
-  mv "$SYNOPKG_PKGVAR/frameleaf.env.tmp" "$SYNOPKG_PKGVAR/frameleaf.env"
-fi
-[ -s "$SYNOPKG_PKGVAR/frameleaf.env" ]

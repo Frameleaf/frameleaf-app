@@ -1,0 +1,43 @@
+# TrueNAS 24.10.2.2+ Custom App / Install via YAML. Set the five deployment values
+# before pasting into TrueNAS; its YAML editor does not supply an external .env.
+# Paths below are examples. Keep every host path identical to its container path.
+services:
+  manager:
+    image: @MANAGER_REF@
+    restart: unless-stopped
+    labels:
+      app.frameleaf.manager.role: controller
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    ports: ['9443:9443']
+    environment:
+      MANAGER_ORIGIN: https://nas.example:9443
+      MANAGER_DATA: /mnt/pool/frameleaf/manager
+      MANAGER_STORAGE_ROOTS: /mnt/pool/frameleaf/media
+      MANAGER_DATABASE_ROOTS: /mnt/pool/frameleaf/databases
+      MANAGER_APPDATA_ROOT: /mnt/pool/frameleaf/databases
+      MANAGER_BACKUP_ROOT: /mnt/pool/frameleaf/backups
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: /proc/1/mountinfo
+        target: /run/frameleaf-host/mountinfo
+        read_only: true
+      - type: bind
+        source: /mnt/pool/frameleaf/manager
+        target: /mnt/pool/frameleaf/manager
+        bind: {create_host_path: false}
+      - type: bind
+        source: /mnt/pool/frameleaf/media
+        target: /mnt/pool/frameleaf/media
+        bind: {create_host_path: false}
+      - type: bind
+        source: /mnt/pool/frameleaf/databases
+        target: /mnt/pool/frameleaf/databases
+        bind: {create_host_path: false}
+      - type: bind
+        source: /mnt/pool/frameleaf/backups
+        target: /mnt/pool/frameleaf/backups
+        bind: {create_host_path: false}

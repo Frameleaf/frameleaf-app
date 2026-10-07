@@ -24,9 +24,18 @@
 
 ## Scope and delivery
 
-- Work only in `Frameleaf/frameleaf-app`. Verify the `frameleaf` remote URL before
-  pushing; never write to the upstream Immich repository. The default branch is
-  literally `fork/main`.
+- General Frameleaf application, Manager, Unraid and TrueNAS work belongs in
+  `Frameleaf/frameleaf-app`. Verify the `frameleaf` remote before pushing; never
+  write to upstream Immich. Its default branch is literally `fork/main`.
+- **Synology product boundary:** the approved interactive prototype, native DSM
+  UI, DSM integration, Synology package source, SPK builders, tests and all
+  DSM/Synology package releases belong in the **private** repository
+  `Frameleaf/frameleaf-synology`. Build and publish DSM packages only there.
+  The original native Synology app is Frameleaf's commercial product; do not
+  put its source or packages in this public repository or public CI artifacts.
+  Verify the Synology repository is private before pushing or publishing.
+  Changing this rule requires explicit user instruction. Preserve all inherited
+  and third-party licenses; privacy does not relicense dependency code.
 - Preserve unrelated uncommitted work and use isolated checkouts for changes.
   Use author and committer `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers.
 - PR #140 uses head branch `master/frameleaf-implementation` and base `fork/main` and stays draft, open, and

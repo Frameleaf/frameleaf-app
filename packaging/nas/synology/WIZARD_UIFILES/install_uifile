@@ -1,8 +1,0 @@
-[{
-  "step_title":"Frameleaf storage and network",
-  "items":[
-    {"type":"textfield","desc":"Use absolute directories on persistent volumes. Back up media and database together.","subitems":[{"key":"wizard_media_path","desc":"Media directory","defaultValue":"/volume1/frameleaf/library","validator":{"allowBlank":false}},{"key":"wizard_database_path","desc":"PostgreSQL directory","defaultValue":"/volume1/frameleaf/postgres","validator":{"allowBlank":false}},{"key":"wizard_web_port","desc":"Web port","defaultValue":"2283","validator":{"allowBlank":false}}]},
-    {"type":"password","desc":"Choose a unique database password using letters and digits only.","subitems":[{"key":"wizard_database_password","desc":"Database password","validator":{"allowBlank":false}}]},
-    {"type":"multiselect","desc":"Enable local machine learning?","subitems":[{"key":"wizard_enable_ml","desc":"Enable machine learning","defaultValue":true}]}
-  ]
-}]

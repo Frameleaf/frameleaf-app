@@ -36,7 +36,7 @@ if (!directory || directory !== resolve(directory) || !origin)
 const store = new Store(directory);
 const docker = new Docker();
 const bootstrapFile = join(directory, 'claim-key');
-const security = new Security(store, origin, bootstrapFile);
+const security = new Security(store, origin, bootstrapFile, process.env.MANAGER_FRAME_ORIGIN);
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
@@ -383,9 +383,26 @@ async function main() {
   app.use(security.guard);
   app.use(express.json({ limit: '32kb' }));
   app.useGlobalFilters(new Errors());
-  app.use(
-    express.static(fileURLToPath(new URL('../ui/dist', import.meta.url)), { index: 'index.html', dotfiles: 'deny' }),
-  );
+  let ui = fileURLToPath(new URL('../ui/dist', import.meta.url));
+  if (process.env.MANAGER_UI_DIRECTORY) {
+    // The platform package supplies original UI assets through a read-only mount.
+    // Restrict the override to this one path; never expose arbitrary host/state folders.
+    if (process.env.MANAGER_UI_DIRECTORY !== '/run/frameleaf-ui' ||
+        await realpath('/run/frameleaf-ui') !== '/run/frameleaf-ui' ||
+        await realpath('/run/frameleaf-ui/index.html') !== '/run/frameleaf-ui/index.html')
+      throw new Error('Invalid mounted Manager UI directory');
+    ui = '/run/frameleaf-ui';
+    app.use(async (request: Request, response: Response, next: express.NextFunction) => {
+      if (request.path.startsWith('/manager-api/')) return next();
+      try {
+        const file = resolve(ui, '.' + decodeURIComponent(request.path === '/' ? '/index.html' : request.path));
+        if (!file.startsWith(ui + '/') || await realpath(file) !== file || !(await stat(file)).isFile())
+          return response.sendStatus(404);
+        next();
+      } catch { response.sendStatus(404); }
+    });
+  }
+  app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
   await app.listen(9443, '0.0.0.0');
 }
