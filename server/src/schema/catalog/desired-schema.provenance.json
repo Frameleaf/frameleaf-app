@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "f1933678ab4f10ff83a216faeb0cbe863735e59a",
+  "sourceCommit": "15979a0069faa8c6943c6e9028b187529eee31bb",
   "sourceHashes": {
-    "src/enum.ts": "761d842b4fd7c3f31179b18788646ca94a8ee95ac4997619f1635cd470dbe576",
+    "src/enum.ts": "ef19273c1cf2390b0cb0d769758cf3ead5f3e51c43697e0cd8053f702eba03fb",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
@@ -26,7 +26,7 @@
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
     "src/schema/tables/asset-edit-audit.table.ts": "31ec7ccf506f1d905bab785218246acad68f402e67d98711d89e52500a2dcc2b",
     "src/schema/tables/asset-edit.table.ts": "c59e9f658a075d8945723dbf0401ddecbf5b64dc328e35239386efb768ec8a7a",
-    "src/schema/tables/asset-exif.table.ts": "64de0f2c34d314c7eab39cc9a2ef7dc75f86a7ca27455599302f1a5ccb725975",
+    "src/schema/tables/asset-exif.table.ts": "9187718bb229728523f198c1604625c28dda449045540c837254f025e9b84d9f",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "f448edf1d5db653d445339e45f000077769672d4b2b13400b0e31eec300003d0",
@@ -126,6 +126,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "d76f6f8e2358381d0a15404e1312e870ab44b18f9613aa47a0342506458c93e0",
-  "rawMetadataSha256": "34a83b19e5cba9587433d2a8b30e3c4de7dc59fa61fe92033e2ee6e7c44a6b8f"
+  "dumpSha256": "91341d3073b68abc72d02e2719826d4bbc45ec1adb08729081d71ef80a053a20",
+  "rawMetadataSha256": "3129dbe4bb956095e087831badce46c354f75dea68d97e741da6f941db2ee1fd"
 }

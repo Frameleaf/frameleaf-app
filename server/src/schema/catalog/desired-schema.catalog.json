@@ -9675,6 +9675,15 @@
           "numericPrecision": 32,
           "numericScale": 0,
           "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "imageEncoding",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [

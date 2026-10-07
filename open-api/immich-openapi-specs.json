@@ -59169,6 +59169,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "imageEncoding": {
+            "$ref": "#/components/schemas/ImageEncodingInfo",
+            "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+          },
           "isArchived": {
             "description": "Is archived",
             "type": "boolean"
@@ -60529,6 +60533,10 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "imageEncoding": {
+            "$ref": "#/components/schemas/ImageEncodingInfo",
+            "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
           },
           "isArchived": {
             "description": "Is archived",
@@ -73183,6 +73191,105 @@
         "required": [
           "cloudBatches",
           "queued"
+        ],
+        "type": "object"
+      },
+      "ImageEncodingInfo": {
+        "properties": {
+          "bitDepth": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "codec": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "colorPrimaries": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "container": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "contentHeadroom": {
+            "format": "double",
+            "minimum": 1,
+            "type": "number"
+          },
+          "dynamicRange": {
+            "enum": [
+              "unknown",
+              "sdr",
+              "hdr"
+            ],
+            "type": "string"
+          },
+          "fallbackReason": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "gainMap": {
+            "description": "Gain-map interpretation; unknown values do not imply reconstruction support",
+            "maxLength": 80,
+            "type": "string"
+          },
+          "height": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inspectionStatus": {
+            "enum": [
+              "identified",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "reconstructionAvailable": {
+            "description": "Decoder can reconstruct this source; does not imply a published HDR rendition or qualified display",
+            "type": "boolean"
+          },
+          "referenceWhite": {
+            "description": "Processing reference white in cd/m²; not measured display brightness",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "renderingPolicy": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "transfer": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "adaptive"
+                ]
+              }
+            ]
+          },
+          "width": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dynamicRange",
+          "gainMap",
+          "reconstructionAvailable"
         ],
         "type": "object"
       },
@@ -112378,6 +112485,14 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "imageEncoding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageEncodingInfo"
+              }
+            ],
+            "nullable": true
           },
           "iso": {
             "description": "ISO",

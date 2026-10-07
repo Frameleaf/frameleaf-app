@@ -11,10 +11,11 @@ export const ImageEncodingSchema = z
     transfer: z.union([z.int().min(0).max(65_535), z.literal('adaptive')]).optional(),
     referenceWhite: z
       .number()
+      .meta({ format: 'double' })
       .positive()
       .optional()
       .describe('Processing reference white in cd/m²; not measured display brightness'),
-    contentHeadroom: z.number().min(1).optional(),
+    contentHeadroom: z.number().meta({ format: 'double' }).min(1).optional(),
     gainMap: z.string().max(80).describe('Gain-map interpretation; unknown values do not imply reconstruction support'),
     reconstructionAvailable: z
       .boolean()
