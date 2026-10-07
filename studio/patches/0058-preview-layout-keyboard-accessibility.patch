@@ -1655,3 +1655,312 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
      </div>
    )
  })
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.tsx
+@@ -8,7 +8,8 @@
+   resolveCornerPinForSize,
+   withCornerPinReferenceSize,
+ } from '@/features/editor/deps/composition-runtime'
+-import { useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { resolveEffectiveTrackStates } from '@/features/editor/deps/timeline-utils'
+ import { useCornerPinStore } from '@/features/editor/deps/preview'
+ import { PropertySection, PropertyRow, NumberInput } from '../components'
+ 
+@@ -30,6 +31,13 @@
+   topRight: 'TR',
+   bottomRight: 'BR',
+   bottomLeft: 'BL',
++}
++
++const CORNER_NAMES: Record<CornerKey, string> = {
++  topLeft: 'Top left',
++  topRight: 'Top right',
++  bottomRight: 'Bottom right',
++  bottomLeft: 'Bottom left',
+ }
+ 
+ /**
+@@ -47,6 +55,27 @@
+   } = useCornerPinStore()
+ 
+   const item = items.length === 1 ? items[0]! : null
++  const locked = useItemsStore((state) =>
++    resolveEffectiveTrackStates(state.tracks).some(
++      (track) => track.id === item?.trackId && track.locked,
++    ),
++  )
++  const updateCornerPin = useCallback(
++    (value: TimelineItem['cornerPin']) => {
++      if (!item) return
++      const { itemById, tracks } = useItemsStore.getState()
++      const currentItem = itemById[item.id]
++      if (
++        !currentItem ||
++        resolveEffectiveTrackStates(tracks).some(
++          (track) => track.id === currentItem.trackId && track.locked,
++        )
++      )
++        return
++      updateItem(item.id, { cornerPin: value })
++    },
++    [item, updateItem],
++  )
+   const cornerPin = useMemo(() => {
+     if (!item) return DEFAULT_PIN
+     const targetRect = resolveCornerPinTargetRect(
+@@ -83,12 +112,12 @@
+   const handleCornerChange = useCallback(
+     (corner: CornerKey, axis: 0 | 1, value: number) => {
+       if (!item) return
+-      const current = item.cornerPin ?? DEFAULT_PIN
++      const current = cornerPin
+       const newCorner: [number, number] = [...current[corner]]
+       newCorner[axis] = value
+       const targetRect = resolveCornerPinTargetRect(
+-        item.transform?.width ?? current.referenceWidth ?? 0,
+-        item.transform?.height ?? current.referenceHeight ?? 0,
++        item.transform?.width ?? item.cornerPin?.referenceWidth ?? 0,
++        item.transform?.height ?? item.cornerPin?.referenceHeight ?? 0,
+         item.type === 'video' || item.type === 'image'
+           ? {
+               sourceWidth: item.sourceWidth,
+@@ -97,22 +126,21 @@
+             }
+           : undefined,
+       )
+-      updateItem(item.id, {
+-        cornerPin: withCornerPinReferenceSize(
++      updateCornerPin(
++        withCornerPinReferenceSize(
+           { ...current, [corner]: newCorner },
+           targetRect.width,
+           targetRect.height,
+         ),
+-      })
++      )
+     },
+-    [item, updateItem],
++    [item, cornerPin, updateCornerPin],
+   )
+ 
+   // Reset all corners to [0, 0]
+   const handleReset = useCallback(() => {
+-    if (!item) return
+-    updateItem(item.id, { cornerPin: undefined })
+-  }, [item, updateItem])
++    updateCornerPin(undefined)
++  }, [updateCornerPin])
+ 
+   // Toggle interactive editing
+   const toggleEditMode = useCallback(() => {
+@@ -138,6 +166,7 @@
+           size="sm"
+           className="h-7 text-xs flex-1 gap-1"
+           onClick={toggleEditMode}
++          disabled={locked && !isEditingThisItem}
+           title={
+             isEditingThisItem
+               ? t('editor.cornerPinSection.exitEditor')
+@@ -155,6 +184,7 @@
+             size="icon"
+             className="h-7 w-7 flex-shrink-0"
+             onClick={handleReset}
++            disabled={locked}
+             title={t('editor.cornerPinSection.reset')}
+           >
+             <RotateCcw className="w-3.5 h-3.5" />
+@@ -166,24 +196,30 @@
+       {(Object.keys(CORNER_LABELS) as CornerKey[]).map((corner) => (
+         <PropertyRow key={corner} label={CORNER_LABELS[corner]}>
+           <div className="flex items-center gap-1 w-full">
+-            <NumberInput
+-              value={cornerPin[corner][0]}
+-              onChange={(v) => handleCornerChange(corner, 0, v)}
+-              min={-2000}
+-              max={2000}
+-              step={1}
+-              unit="x"
+-              className="flex-1 min-w-0"
+-            />
+-            <NumberInput
+-              value={cornerPin[corner][1]}
+-              onChange={(v) => handleCornerChange(corner, 1, v)}
+-              min={-2000}
+-              max={2000}
+-              step={1}
+-              unit="y"
+-              className="flex-1 min-w-0"
+-            />
++            <label aria-label={`${CORNER_NAMES[corner]} X`} className="flex-1 min-w-0">
++              <NumberInput
++                value={cornerPin[corner][0]}
++                onChange={(v) => handleCornerChange(corner, 0, v)}
++                disabled={locked}
++                min={-2000}
++                max={2000}
++                step={1}
++                unit="x"
++                className="flex-1 min-w-0"
++              />
++            </label>
++            <label aria-label={`${CORNER_NAMES[corner]} Y`} className="flex-1 min-w-0">
++              <NumberInput
++                value={cornerPin[corner][1]}
++                onChange={(v) => handleCornerChange(corner, 1, v)}
++                disabled={locked}
++                min={-2000}
++                max={2000}
++                step={1}
++                unit="y"
++                className="flex-1 min-w-0"
++              />
++            </label>
+           </div>
+         </PropertyRow>
+       ))}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/corner-pin-section.test.tsx
+@@ -0,0 +1,139 @@
++import { act, fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { useCornerPinStore } from '@/features/editor/deps/preview'
++import {
++  resolveCornerPinForSize,
++  resolveCornerPinTargetRect,
++} from '@/features/editor/deps/composition-runtime'
++import type { ShapeItem, TimelineItem } from '@/types/timeline'
++import { CornerPinSection } from './corner-pin-section'
++
++const SHAPE: ShapeItem = {
++  id: 'pin-1',
++  type: 'shape',
++  shapeType: 'rectangle',
++  fillColor: '#ffffff',
++  trackId: 'track-1',
++  from: 0,
++  durationInFrames: 90,
++  label: 'Pinned shape',
++  transform: { x: 15, y: 25, width: 400, height: 200, rotation: 35, flipHorizontal: true },
++  cornerPin: {
++    topLeft: [10, 20],
++    topRight: [30, 40],
++    bottomRight: [50, 60],
++    bottomLeft: [70, 80],
++    referenceWidth: 200,
++    referenceHeight: 100,
++  },
++}
++
++function Inspector() {
++  const items = useItemsStore((state) => state.items)
++  return <CornerPinSection items={items} />
++}
++
++function openInspector() {
++  render(<Inspector />)
++  fireEvent.click(screen.getByRole('button', { expanded: false }))
++}
++
++describe('CornerPinSection keyboard geometry', () => {
++  beforeEach(() => {
++    useCornerPinStore.getState().stopEditing()
++    useTimelineStore.setState({ keyframes: [] })
++    useItemsStore.getState().setItems([structuredClone(SHAPE)])
++    useItemsStore.getState().setTracks([
++      {
++        id: 'track-1',
++        name: 'Track',
++        order: 0,
++        height: 72,
++        items: [],
++        locked: false,
++        visible: true,
++        muted: false,
++        solo: false,
++      },
++    ])
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  it.each([false, true])(
++    'keeps all other scaled corners when keyboard editing a cropped media target=%s',
++    (media) => {
++      const item = media
++        ? ({
++            ...SHAPE,
++            type: 'image',
++            mediaId: 'fixture',
++            src: '/fixture.png',
++            sourceWidth: 800,
++            sourceHeight: 200,
++            crop: { right: 0.25 },
++          } as TimelineItem)
++        : structuredClone(SHAPE)
++      useItemsStore.getState().setItems([item])
++      useTimelineStore.temporal.getState().clear()
++      const before = structuredClone(useItemsStore.getState().items)
++      const target = resolveCornerPinTargetRect(
++        400,
++        200,
++        media
++          ? {
++              sourceWidth: 800,
++              sourceHeight: 200,
++              crop: { right: 0.25 },
++            }
++          : undefined,
++      )
++      const displayed = resolveCornerPinForSize(item.cornerPin, target.width, target.height)!
++      openInspector()
++      const x = screen.getAllByRole('textbox')[0]!
++      x.focus()
++      fireEvent.keyDown(x, { key: 'ArrowUp' })
++      const after = structuredClone(useItemsStore.getState().items)
++      expect(after[0]!.cornerPin).toEqual({
++        ...displayed,
++        topLeft: [displayed.topLeft[0] + 1, displayed.topLeft[1]],
++        referenceWidth: target.width,
++        referenceHeight: target.height,
++      })
++      expect(after[0]!.transform).toEqual(item.transform)
++      expect(x).toHaveFocus()
++      expect(screen.getByRole('textbox', { name: 'Top left X' })).toBe(x)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(before)
++      act(() => useTimelineStore.temporal.getState().redo())
++      expect(useItemsStore.getState().items).toEqual(after)
++    },
++  )
++
++  it('names every corner axis and refuses edits and reset after an inherited track lock', () => {
++    openInspector()
++    for (const corner of ['Top left', 'Top right', 'Bottom right', 'Bottom left']) {
++      for (const axis of ['X', 'Y'])
++        expect(screen.getByRole('textbox', { name: `${corner} ${axis}` })).toBeEnabled()
++    }
++    const x = screen.getByRole('textbox', { name: 'Top left X' })
++    const reset = screen.getByTitle(/^(Reset corner pin|editor.cornerPinSection.reset)$/)
++    const before = structuredClone(useItemsStore.getState().items)
++    act(() => {
++      const track = useItemsStore.getState().tracks[0]!
++      useItemsStore.getState().setTracks([
++        { ...track, id: 'group', isGroup: true, locked: true },
++        { ...track, parentTrackId: 'group' },
++      ])
++    })
++    expect(x).toBeDisabled()
++    expect(reset).toBeDisabled()
++    // A captured keyboard callback must still reject the write after locking.
++    fireEvent.keyDown(x, { key: 'ArrowUp' })
++    fireEvent.click(reset)
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.getState().keyframes).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++})
