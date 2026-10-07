@@ -4,20 +4,20 @@ on:
     branches: [master/frameleaf-implementation, fork/main]
     paths:
       [
-        "manager/**",
-        ".github/verify-release-bundle*",
-        ".github/verify-manager-release*",
-        "packaging/nas/**",
-        ".github/frameleaf-release.cjs",
-        "docker/postgres/**",
-        "docker/docker-compose*.yml",
-        ".github/workflows/manager.yml",
-        "server/src/*/frameleaf-library-setup*",
-        "server/src/controllers/index*",
-        "server/src/services/index.ts",
-        "server/test/medium/specs/services/frameleaf-library-setup*",
-        "open-api/**",
-        "packages/sdk/**",
+        'manager/**',
+        '.github/verify-release-bundle*',
+        '.github/verify-manager-release*',
+        'packaging/nas/**',
+        '.github/frameleaf-release.cjs',
+        'docker/postgres/**',
+        'docker/docker-compose*.yml',
+        '.github/workflows/manager.yml',
+        'server/src/*/frameleaf-library-setup*',
+        'server/src/controllers/index*',
+        'server/src/services/index.ts',
+        'server/test/medium/specs/services/frameleaf-library-setup*',
+        'open-api/**',
+        'packages/sdk/**',
       ]
   workflow_dispatch:
     inputs:
