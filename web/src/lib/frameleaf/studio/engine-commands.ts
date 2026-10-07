@@ -27,6 +27,7 @@ import type { StudioAssetRef, StudioCommandEngine } from './host-contract';
  * public command rows plus the FL-94 timeline tools.
  */
 export const studioEngineCommandIds = [
+  'captions.set',
   'clip.add',
   'clip.delete',
   'clip.group',

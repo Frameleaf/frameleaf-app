@@ -889,7 +889,7 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
     const status = fixtures.commandStatus[command];
     assert.ok(status, `${command} changes the graph but has no commandStatus entry: specify it in the protocol page and add its fixtures`);
     assert.ok(status.status in labels, `${command}: unknown status ${status.status}`);
-    assert.match(status.story, /^FL-30[6-9]$/, `${command}: story`);
+    assert.match(status.story, /^(FL-30[6-9]|FL-111)$/, `${command}: story`);
     const own = rows.filter((row) => row.id === command);
     assert.equal(own.length, 1, `${command} has ${own.length} rows in section 8.3 of the protocol page`);
     const [row] = own;

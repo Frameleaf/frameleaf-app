@@ -301,10 +301,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (50):** the engine gives them meaning. Their mutation rules are in parts 2 to 4: sections 12, 13 and 14.
+- **Engine (51):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 15.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (20):** the remaining 20 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (19):** the remaining 19 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
 
@@ -315,13 +315,14 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: compositions and settings (part 4)       | `composition.add`, `clip.group`, `clip.ungroup`, `composition.setPublishedControls`, `composition.setControlOverrides`, `title.add`, `sequence.setSettings`, `project.applyTemplate`, `project.setMasterAudio`                                                                                                                                                                                                                                      |
 | Host                                             | `history.undo`, `history.redo`                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Not implemented                                  | `captions.set`, `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                                                           |
+| Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                                                                           |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain/fade fields of `clip.setAudio` (13.9); its mute, pitch and EQ fields are refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 20 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 17 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 19 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 16 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -334,7 +335,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 
 | Command                            | Status          | Section | Native rule                                                                                                            |
 | ---------------------------------- | --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `captions.set`                     | Not implemented | 8.2     | Do not record it. Never create, change or remove captions; carry them through (12.2.1).                                |
+| `captions.set`                     | Engine          | 15      |                                                                                                                        |
 | `clip.add`                         | Engine          | 12.3.1  |                                                                                                                        |
 | `clip.delete`                      | Engine          | 12.3.2  |                                                                                                                        |
 | `clip.group`                       | Engine          | 14.2.5  |                                                                                                                        |
@@ -2432,3 +2433,57 @@ A refusal records no graph and applies none of the batch. **Draws:** none.
 
 The fixtures cover combined gain/mute, each field alone, both gain endpoints,
 invalid payloads, unsupported ducking and an atomic rejected batch.
+
+## 15. `captions.set` (FL-111)
+
+**Payload:** `{ captions: Array<{ id?: string, start: Rational, end: Rational, text: string }> }`.
+It replaces the captions of the main sequence. The bridge still requires the
+`transcriptionWorker` capability, an editable session, the current lease and
+revision. This command applies supplied text; it does not run an inference job.
+
+**Admission (`invalid`).** Only `captions` is accepted at the payload level,
+and only `id`, `start`, `end`, `text` on each non-null object. A supplied id is
+a nonempty string, unique in this set. Occupied ids include main and all retained
+composition items (4.1); an existing id may name only a main sequence text item
+with `textRole: "caption"`. Text is nonblank and excludes
+U+0000–U+0008, U+000B–U+000C, U+000E–U+001F and U+007F. Start and end are safe
+integer rationals with positive denominators, start is nonnegative and end is
+strictly later. Round each endpoint independently to frames using section 4;
+the resulting duration must be at least one frame. Sum the UTF-8 byte lengths
+of each compact JSON `{ id?, start: { num, den }, end: { num, den }, text }`;
+the set must fit 4 MiB, matching inline subtitle import admission. The existing
+whole-graph size limit still applies when saving. Sort cues stably by start
+frame. Overlapping cues are supported; never shift a cue to remove an overlap.
+
+**Effect.** Refuse as `failed` if a caption text item, subtitle segment, or
+item with enabled `transcriptCaptions` that would change is on a locked track.
+Remove main caption text items whose ids are absent and all main subtitle
+segments. Removal cascades their keyframes and transitions, without expanding
+to linked media. Disable main items' enabled `transcriptCaptions`, retaining
+their cues and provenance. An empty list stops here; existing tracks remain.
+Nested compositions and ordinary titles remain unchanged.
+
+For each sorted cue, keep its existing caption track if the new interval does
+not overlap any non-caption item or previously placed cue on it. Otherwise
+use the first compatible visible, unlocked, non-group video track in ascending
+order containing only old caption items or nothing, with no overlap against
+already planned items. If none fits, create a classic video track as in 12.7.1,
+with order one below `min(0, existing orders)`. This separate-track placement
+keeps overlapping cue times unchanged when loading the graph.
+
+A matching caption id retains styling, source metadata, keyframes and unknown
+fields; write `from`, `durationInFrames`, `trackId`, `text`, and a label of the
+first 64 UTF-16 code units. When text changes, clear `textSpans` and
+`textLayoutDrafts` so stale styled content does not override it. New items have
+`type: "text"`, `textRole: "caption"` and no invented `captionSource`. Use the
+standard caption preset: Inter semibold normal, no underline, white, background
+`rgba(0, 0, 0, 0.55)`, radius 4, centered/middle, line height 1.15, letter spacing
+0, padding 12, shadow `{ offsetX: 0, offsetY: 2, blur: 6, color: "rgba(0, 0, 0, 0.6)" }`.
+For canvas width W and height H, font size is `max(8, round(0.04H))`;
+transform is `{ x: 0, y: round(0.36H), width: round(0.7W), height: round(0.16H), rotation: 0, opacity: 1 }`.
+
+**Draws:** mint each needed track first, as `track-` plus the next UUID. A new
+caption without an id draws the next UUID, retrying a collision with an
+incoming explicit id or a preexisting item id anywhere in the graph. Other ids
+are unchanged. No timestamp or model provenance is written. Host history makes the replacement
+undoable (section 9); a refusal records no graph and applies none of the batch.
