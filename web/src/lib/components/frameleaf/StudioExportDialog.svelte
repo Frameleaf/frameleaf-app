@@ -124,7 +124,9 @@
       quality = StudioExportQuality.High;
       declarePqMastering = false;
       smoothFactor = null;
-    } else if (resolution === StudioExportResolution.Original) resolution = StudioExportResolution.$2160P;
+    } else if (resolution === StudioExportResolution.Original) {
+      resolution = StudioExportResolution.$2160P;
+    }
   });
   let color = $state<StudioExportColor>(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);

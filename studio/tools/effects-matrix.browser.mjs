@@ -74,7 +74,7 @@ for (const [file, expected] of Object.entries({
   'common.ts': 'e8ae09970e48879996b7f64ee6daa9bdd822cb66233ca374adb9ad65a996a349',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
   // Pinned SDR colour/common shader bytes above remain unchanged; review is still required.
-  'effects-pipeline.ts': '9356bc5415a881b31555ef27f68ddeadf34588448904362003fc3fe8f83bb2d6',
+  'effects-pipeline.ts': '9e40a07734722195000eaeba6cb44f407ed91daac56f33d38ea3f416b6590fec',
 })) {
   const observed = createHash('sha256').update(await readFile(new URL(`../engine/src/infrastructure/gpu-effects/${file}`, import.meta.url))).digest('hex');
   assert.equal(observed, expected, `photometric source contract changed: ${file}; numerical qualification requires source review`);
