@@ -184,8 +184,8 @@ describe(AssetRestorationService.name, () => {
   });
 
   describe('getOptions', () => {
-    it('checks downstream Cloud model choice (workload-policy mocked; not disclosure qualification)', async () => {
-      vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
+    it('requires the administrator Cloud model choice through the approved disclosure policy', async () => {
+      expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
       const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: 30 })
         .exif({ exifImageWidth: 1920, exifImageHeight: 1080, orientation: '1', fileSizeInByte: 50_000_000 })
         .build();
@@ -209,10 +209,18 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('judges Frameleaf Cloud for a photo as upscaling, the only way it restores photos (FL-162)', async () => {
+      const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
       mocks.mlDestination.getAll.mockResolvedValue([
         {
           ...mlDestinationStub.frameleafCloudConsented,
           workloads: [...mlDestinationStub.frameleafCloudConsented.workloads, MlWorkload.Upscale],
+          lastProbeWorkloads: [...mlDestinationStub.frameleafCloudConsented.lastProbeWorkloads!, MlWorkload.Upscale],
+          lastProbeCloud: {
+            ...facts,
+            modelIds: [...facts.modelIds, 'photo-upscale'],
+            modelGroups: { ...facts.modelGroups, 'photo-upscale': 'upscale' },
+            defaultModels: { ...facts.defaultModels, upscale: 'photo-upscale' },
+          },
         },
       ]);
       mocks.mlDestination.getSpend.mockResolvedValue(0);
@@ -227,8 +235,8 @@ describe(AssetRestorationService.name, () => {
 
       expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
       expect(options.destinations[0]).toMatchObject({
-        available: false,
-        refusal: MlAdmissionRefusal.DisclosurePending,
+        available: true,
+        refusal: null,
       });
     });
 

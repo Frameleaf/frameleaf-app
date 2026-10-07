@@ -63,7 +63,8 @@ export async function createChromiumDriver({ harnessOrigin, args = [], channel, 
           const frame = await (await locator.elementHandle()).contentFrame();
           if (!frame) throw new Error(`iframe unavailable: ${selector}`);
           return run({
-            click: (target) => frame.locator(target).click(),
+            click: (target, options) => frame.locator(target).click(options),
+            fill: (target, value) => frame.locator(target).fill(value),
             hover: (target, position) => frame.locator(target).hover({ position }),
             evaluate: (fn, arg) => frame.evaluate(fn, arg),
             waitForFunction: (fn, options) => frame.waitForFunction(fn, undefined, options),
@@ -190,7 +191,29 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
             { type: 'pointerUp', button: 0 },
           ] }] }),
         }),
-        click: (selector) => elementCommand(selector, 'click'),
+        async click(selector, { position } = {}) {
+          if (!position) return elementCommand(selector, 'click');
+          const id = await element(selector);
+          // W3C element origin is the clipped in-view center, including partially visible backgrounds.
+          const offset = await page.evaluate(({selector, position}) => {
+            const rect = document.querySelector(selector).getClientRects()[0];
+            if (!rect) throw new Error('positioned click requires a rendered element');
+            const x = Math.round(rect.x + position.x), y = Math.round(rect.y + position.y);
+            if (x < 0 || x >= innerWidth || y < 0 || y >= innerHeight)
+              throw new Error('positioned click point must be visible');
+            return {
+              x: x - Math.floor((Math.max(0, rect.x) + Math.min(innerWidth, rect.x + rect.width)) / 2),
+              y: y - Math.floor((Math.max(0, rect.y) + Math.min(innerHeight, rect.y + rect.height)) / 2),
+            };
+          }, {selector, position});
+          return call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ actions: [{ type: 'pointer', id: 'fixture-mouse', parameters: { pointerType: 'mouse' }, actions: [
+              { type: 'pointerMove', origin: { 'element-6066-11e4-a52e-4f735466cecf': id },
+                x: offset.x, y: offset.y, duration: 0 },
+              { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
+            ] }] }),
+          });
+        },
         // W3C element-origin offsets are measured from the element's center, not its top-left.
         async hover(selector, position) {
           const id = await element(selector);

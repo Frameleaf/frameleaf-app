@@ -17,7 +17,7 @@
  */
 import z from 'zod';
 import type { StudioSourceMediaFacts } from 'src/repositories/studio-export.repository.js';
-import type { AudioStreamInfo, VideoStreamInfo } from 'src/types.js';
+import type { AudioStreamInfo, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import { parseSourcePixelLayout } from 'src/utils/media-decode.js';
 import {
@@ -28,6 +28,7 @@ import {
 } from 'src/utils/media-policy.js';
 import {
   type Rational,
+  coerceRational,
   equals,
   formatRational,
   fromInteger,
@@ -41,6 +42,7 @@ import {
   StudioTimingError,
   outputTimeBase,
   projectCadenceOf,
+  timelineFrameTicks,
 } from 'src/utils/studio-timing.js';
 import {
   OutputCadenceMode,
@@ -52,6 +54,7 @@ import {
 
 export const STUDIO_EXPORT_AUDIO = ['preserve', 'stereo'] as const;
 export type StudioExportAudio = (typeof STUDIO_EXPORT_AUDIO)[number];
+export type StudioExportRange = { inPoint: number; outPoint: number };
 
 /** Explicit export authority, never a source's content-light values or a preview assumption. */
 export const StudioExportMasteringSchema = z
@@ -76,6 +79,8 @@ export type StudioExportTiming = {
 };
 
 export type StudioExportContract = {
+  /** Main-timeline frame selection; the output is rebased to zero at this exact cadence. */
+  range?: StudioExportRange & { cadence: string };
   video: {
     minBitDepth: 8 | 10;
     transfer: 'smpte2084' | 'arib-std-b67' | null;
@@ -98,6 +103,46 @@ const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [
 
 const timelineOf = (graph: unknown) => asRecord(asRecord(graph).timeline);
 const itemsOf = (graph: unknown): GraphItem[] => asArray(timelineOf(graph).items).map((value) => asRecord(value));
+
+/** Validate frame bounds against the stored main timeline, without changing that graph. */
+export const resolveStudioExportRange = (graph: unknown, range: StudioExportRange) => {
+  const cadence = projectCadenceOf(asRecord(graph).metadata);
+  const items = itemsOf(graph);
+  if (
+    !cadence ||
+    !Number.isSafeInteger(range.inPoint) ||
+    !Number.isSafeInteger(range.outPoint) ||
+    range.inPoint < 0 ||
+    range.outPoint <= range.inPoint ||
+    items.length === 0 ||
+    asArray(timelineOf(graph).compositions).length > 0 ||
+    asArray(asRecord(graph).compositions).length > 0
+  ) {
+    throw new StudioTimingError(
+      'Frame ranges require a non-empty main timeline with an exact cadence and no nested compositions.',
+    );
+  }
+  let end = 0;
+  for (const item of items) {
+    const from = item.from as number;
+    const duration = item.durationInFrames as number;
+    if (
+      !Number.isSafeInteger(from) ||
+      from < 0 ||
+      !Number.isSafeInteger(duration) ||
+      duration <= 0 ||
+      !Number.isSafeInteger(from + duration) ||
+      item.type === 'composition'
+    ) {
+      throw new StudioTimingError('The main timeline has no usable integer frame bounds.');
+    }
+    end = Math.max(end, from + duration);
+  }
+  if (range.outPoint > end) {
+    throw new StudioTimingError(`The end frame ${range.outPoint} exceeds the main timeline's ${end} frames.`);
+  }
+  return { inPoint: range.inPoint, outPoint: range.outPoint, cadence: formatRational(cadence) };
+};
 
 /**
  * True when the edit places one video source and does nothing to its timing: no second picture, no
@@ -124,7 +169,7 @@ export const isTimingUnchangedSingleSource = (graph: unknown): boolean => {
 };
 
 /** Media ids of the audible audio clips: not muted themselves, not on a muted track. */
-const audibleMediaIds = (graph: unknown): Set<string> => {
+const audibleMediaIds = (graph: unknown, range?: StudioExportRange): Set<string> => {
   const muted = new Set(
     asArray(timelineOf(graph).tracks)
       .map((value) => asRecord(value))
@@ -133,6 +178,12 @@ const audibleMediaIds = (graph: unknown): Set<string> => {
   );
   return new Set(
     itemsOf(graph)
+      .filter(
+        (item) =>
+          !range ||
+          ((item.from as number) < range.outPoint &&
+            (item.from as number) + (item.durationInFrames as number) > range.inPoint),
+      )
       .filter((item) => item.type === 'audio' && item.muted !== true && !muted.has(String(item.trackId)))
       .map((item) => String(item.mediaId ?? item.assetId ?? '')),
   );
@@ -303,10 +354,17 @@ const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
  *   unless a stereo downmix was chosen. With no audible source nothing is promised.
  */
 export const buildStudioExportContract = (
-  settings: { format: string; color: string; audio?: StudioExportAudio; mastering?: StudioExportMastering },
+  settings: {
+    format: string;
+    color: string;
+    audio?: StudioExportAudio;
+    mastering?: StudioExportMastering;
+    range?: StudioExportRange;
+  },
   graph: unknown,
   sources: readonly StudioSourceMediaFacts[],
 ): StudioExportContract => {
+  const range = settings.range ? resolveStudioExportRange(graph, settings.range) : undefined;
   const hdrRequested = settings.color === 'hdr10' || settings.color === 'dolby-vision';
   const videoTransfers = new Set(
     sources.filter((facts) => facts.video).map((facts) => HDR_TRANSFERS[facts.video!.colorTransfer] ?? null),
@@ -323,7 +381,7 @@ export const buildStudioExportContract = (
     throw new StudioExportMasteringError('A mastering display profile applies only to a PQ export');
   }
 
-  const audible = audibleMediaIds(graph);
+  const audible = audibleMediaIds(graph, range);
   const audio = sources.filter((facts) => facts.audio && audible.has(facts.assetId)).map((facts) => facts.audio!);
   const policy = settings.audio ?? 'preserve';
   let expectation: StudioExportContract['audio'] = null;
@@ -345,7 +403,49 @@ export const buildStudioExportContract = (
   return {
     video: { minBitDepth, transfer, ...(mastering.success && { mastering: mastering.data }) },
     audio: expectation,
+    ...(range && { range }),
   };
+};
+
+/** Exact packet evidence for a rendered range; no seconds-to-frame rounding or nominal VFR rate. */
+export const findStudioExportRangeMismatch = (
+  range: NonNullable<StudioExportContract['range']>,
+  video: VideoStreamInfo,
+  packets: VideoPacketInfo | null,
+): string | null => {
+  const cadence = tryParseRational(range.cadence);
+  const timeBase = coerceRational(video.timeBaseRational);
+  const frames = range.outPoint - range.inPoint;
+  const mismatch =
+    'The rendered range does not have the selected frame count and exact presentation span at the declared cadence';
+  if (!cadence || !timeBase || cadence.num <= 0 || timeBase.num <= 0 || !Number.isSafeInteger(frames) || frames <= 0) {
+    return mismatch;
+  }
+  let ticks: number | null;
+  let frameTicks: number | null;
+  try {
+    ticks = timelineFrameTicks(frames, cadence, timeBase);
+    frameTicks = timelineFrameTicks(1, cadence, timeBase);
+  } catch {
+    return mismatch;
+  }
+  const span = packets?.presentation;
+  if (
+    ticks === null ||
+    frameTicks === null ||
+    !span ||
+    packets?.variableFrameRate !== false ||
+    packets.presentationCadenceTicks !== frameTicks ||
+    packets.packetCount !== frames ||
+    !Number.isSafeInteger(span.startPts) ||
+    !Number.isSafeInteger(span.endPts) ||
+    span.startPts !== 0 ||
+    span.endPts !== ticks ||
+    packets.totalDuration !== ticks
+  ) {
+    return mismatch;
+  }
+  return null;
 };
 
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {

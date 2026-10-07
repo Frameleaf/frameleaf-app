@@ -109231,6 +109231,10 @@
             "$ref": "#/components/schemas/StudioExportQuality",
             "description": "Defaults to `high`"
           },
+          "range": {
+            "$ref": "#/components/schemas/StudioExportRangeDto",
+            "description": "Absent renders the whole main timeline"
+          },
           "requestKey": {
             "description": "Idempotency key; a repeated submit answers with the first export",
             "pattern": "^[\\w.:-]{1,128}$",
@@ -109341,6 +109345,28 @@
         ],
         "type": "string"
       },
+      "StudioExportRangeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "inPoint": {
+            "description": "First included frame on the main timeline",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "outPoint": {
+            "description": "First excluded frame on the main timeline",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inPoint",
+          "outPoint"
+        ],
+        "type": "object"
+      },
       "StudioExportRemoteReason": {
         "description": "Why a remote destination is asked to drop Studio export data",
         "enum": [
@@ -109386,6 +109412,10 @@
           "quality": {
             "$ref": "#/components/schemas/StudioExportQuality",
             "description": "Absent on exports made before quality was a choice"
+          },
+          "range": {
+            "$ref": "#/components/schemas/StudioExportRangeDto",
+            "description": "Absent renders the whole main timeline"
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"

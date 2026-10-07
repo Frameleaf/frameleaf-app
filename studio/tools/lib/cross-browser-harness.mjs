@@ -24,8 +24,23 @@
 // nothing like): every request the harness sees is appended, in order, as
 // `{ method, url, kind: 'override' | 'proxied' | 'blocked' }`.
 import http from 'node:http';
+import assert from 'node:assert/strict';
 import net from 'node:net';
 import { once } from 'node:events';
+
+/** Absence is qualified only when this reopen window contains transparent browser project traffic. */
+export function assertProjectOnlyReopen(observations, upstream, projectId) {
+  const origin = new URL(upstream);
+  assert.equal(origin.protocol, 'http:', 'project-only reopen requires an observable HTTP origin');
+  assert.ok(!observations.some(r => r.kind === 'tunnelled'), 'opaque CONNECT traffic cannot qualify project-only reopen');
+  const requests = observations.map(r => ({...r, path: new URL(r.url, origin).pathname}));
+  assert.ok(requests.some(r => r.method === 'GET' && r.kind === 'proxied' &&
+    new URL(r.url).origin === origin.origin && r.path === `/api/studio/projects/${encodeURIComponent(projectId)}`),
+  'project-only reopen requires a project-bound browser GET within the observation window');
+  assert.ok(!requests.some(r => /^\/api\/(?:assets(?:\/search)?|search(?:\/.*)?)$/.test(r.path)),
+    'project-only reopen must not search or list assets');
+  return requests;
+}
 
 /**
  * @param {object} options

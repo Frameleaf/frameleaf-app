@@ -53,9 +53,9 @@
     {
       "file": "features/export/utils/canvas-item-renderer/gpu.ts",
       "code": "format: 'rgba8unorm',",
-      "class": "sdr-graphics",
-      "reason": "Text raster texture: SDR text colour at reference white.",
-      "count": 2
+      "count": 1,
+      "class": "coverage",
+      "reason": "Remaining rgba8unorm texture caches bitmap-mask coverage only."
     },
     {
       "file": "features/export/utils/canvas-item-renderer/gpu.ts",
@@ -395,6 +395,27 @@
       "class": "format-dispatch",
       "reason": "Format check.",
       "count": 2
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/gpu.ts",
+      "code": "format: gpuPipeline.getWorkingRange() === 'hdr' ? 'rgba16float' : 'rgba8unorm',",
+      "count": 1,
+      "class": "sdr-graphics",
+      "reason": "Borrowed SDR Lottie frame is synchronously snapshotted into HDR rgba16float or SDR rgba8unorm before effects; participant releases it."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/gpu.ts",
+      "code": "const format = rctx.gpuPipeline.getWorkingRange() === 'hdr' ? 'rgba16float' : 'rgba8unorm'",
+      "count": 1,
+      "class": "sdr-graphics",
+      "reason": "SDR text source uses rgba8unorm; HDR text source uses rgba16float before all node effects."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/gpu.ts",
+      "code": "const { canvas, ctx } = rctx.canvasPool.acquire()",
+      "count": 1,
+      "class": "sdr-graphics",
+      "reason": "Canvas2D paints only the SDR text source at reference white; upload precedes all float node effects."
     }
   ]
 }

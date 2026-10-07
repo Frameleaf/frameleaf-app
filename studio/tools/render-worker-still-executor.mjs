@@ -20,7 +20,7 @@ const only = (object, keys) =>
 
 /** An explicit first recipe, not general Studio/FL-107 capability admission. */
 export function stillRecipe(claim) {
-  const { quality = 'high', ...settings } = claim.settings ?? {};
+  const { quality = 'high', range, ...settings } = claim.settings ?? {};
   // Same four bitrate presets as the pinned engine's headless render core.
   const bitrates = { low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 };
   assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
@@ -73,6 +73,14 @@ export function stillRecipe(claim) {
   assert.equal(claim.snapshot.timing?.cadence, '24/1', 'UNSUPPORTED_CADENCE');
   assert.equal(claim.snapshot.timing.timeBase, '1/24', 'UNSUPPORTED_TIMEBASE');
   assert.equal(claim.snapshot.timing.sources?.length ?? 0, 0, 'SOURCE_TIMING_UNSUPPORTED');
+  if (range !== undefined) {
+    only(range, ['inPoint', 'outPoint']);
+    assert.ok(Number.isSafeInteger(range.inPoint) && Number.isSafeInteger(range.outPoint) &&
+      range.inPoint >= 0 && range.outPoint > range.inPoint && range.outPoint <= item.durationInFrames,
+      'UNSUPPORTED_EXPORT_RANGE');
+  }
+  assert.deepEqual(claim.snapshot.contract.range ?? null,
+    range ? { ...range, cadence: '24/1' } : null, 'RANGE_CONTRACT_CHANGED');
   assert.ok(
     !claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none',
     'SMOOTH_MOTION_UNSUPPORTED',
@@ -85,7 +93,8 @@ export function stillRecipe(claim) {
     return value == null ? cap : Number(BigInt(value) < BigInt(cap) ? BigInt(value) : BigInt(cap));
   };
   return {
-    frames: item.durationInFrames,
+    frames: range ? range.outPoint - range.inPoint : item.durationInFrames,
+    range: range ?? null,
     maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
     maxMs: ceiling(claim.limits?.maxWallClockMs, 60_000),
     settings: {
@@ -294,7 +303,9 @@ export async function renderStillImage(context, consume) {
         project: engineInputs.input.project,
         media: harness.media,
         settings: recipe.settings,
-        hasRange: false,
+        hasRange: recipe.range !== null,
+        inPoint: recipe.range?.inPoint ?? null,
+        outPoint: recipe.range?.outPoint ?? null,
         missing: [],
         outPath: path.join(folder, 'output.mp4'),
         strict: true,
@@ -374,7 +385,8 @@ export async function executeStillClaim(context) {
       const root = `/api/render-workers/operations/${claim.operationId}`;
       const binding = { claimToken: claim.claimToken };
       const configDigest = digest(
-        JSON.stringify({ recipe: 'single-still-sdr-v1', settings: recipe.settings }),
+        JSON.stringify({ recipe: 'single-still-sdr-v1', settings: recipe.settings,
+          ...(recipe.range && { range: recipe.range }) }),
       );
       const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
       assert.ok(

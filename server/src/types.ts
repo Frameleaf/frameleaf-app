@@ -167,6 +167,10 @@ export interface VideoPacketInfo {
    * Absent/null means packet timing could not be measured safely; never infer it from fps.
    */
   presentation?: { startPts: number; endPts: number } | null;
+  /** FL-105: exact duration/spacing of every sorted non-discard presentation slot.
+   * Null/absent means slots are unknown, duplicated, gapped, off-grid or unequal in duration.
+   */
+  presentationCadenceTicks?: number | null;
   /** Sum of source packet duration across all packets (includes discard). */
   totalDuration: number;
   /** Post-discard packet count. */

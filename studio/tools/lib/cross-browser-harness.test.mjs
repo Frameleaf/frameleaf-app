@@ -3,7 +3,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
 import test from 'node:test';
-import { createHarness } from './cross-browser-harness.mjs';
+import { assertProjectOnlyReopen, createHarness } from './cross-browser-harness.mjs';
 
 async function startFakeUpstream(handler) {
   const server = http.createServer(handler);
@@ -29,6 +29,54 @@ function proxiedGet(harnessOrigin, absoluteUrl) {
     req.end();
   });
 }
+
+test('project-only reopen requires a project-bound transparent browser GET within its observation window', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('{}'));
+  const harness = createHarness({upstream: upstream.url});
+  try {
+    const origin = await harness.listen();
+    await proxiedGet(origin, upstream.url + '/api/studio/projects/fixture');
+    const offset = harness.observations.length;
+    assert.throws(() => assertProjectOnlyReopen(harness.observations.slice(offset), upstream.url, 'fixture'), /project-bound browser GET/);
+    await proxiedGet(origin, upstream.url + '/api/studio/projects/fixture');
+    assert.equal(assertProjectOnlyReopen(harness.observations.slice(offset), upstream.url, 'fixture').length, 1);
+    await proxiedGet(origin, upstream.url + '/api/assets/search');
+    assert.throws(() => assertProjectOnlyReopen(harness.observations.slice(offset), upstream.url, 'fixture'), /search or list assets/);
+  } finally { await harness.close(); await upstream.close(); }
+});
+
+test('project-only reopen refuses a proxied POST metadata search after a valid project GET', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('{}'));
+  const harness = createHarness({upstream: upstream.url});
+  try {
+    const origin = await harness.listen();
+    await proxiedGet(origin, upstream.url + '/api/studio/projects/fixture');
+    await new Promise((resolve, reject) => {
+      const req = http.request(origin, {method: 'POST', path: upstream.url + '/api/search/metadata',
+        headers: {'content-type': 'application/json'}}, res => {
+        res.resume(); res.on('end', resolve);
+      });
+      req.on('error', reject); req.end('{}');
+    });
+    assert.deepEqual(harness.observations.map(r => r.method), ['GET', 'POST']);
+    assert.throws(() => assertProjectOnlyReopen(harness.observations, upstream.url, 'fixture'), /search or list assets/);
+  } finally { await harness.close(); await upstream.close(); }
+});
+
+test('empty, opaque, wrong-project and substituted reopen observations cannot qualify', () => {
+  const base = 'http://127.0.0.1:9004';
+  const project = {method: 'GET', url: base + '/api/studio/projects/fixture', kind: 'proxied'};
+  const tunnel = {method: 'CONNECT', url: '127.0.0.1:9004', kind: 'tunnelled'};
+  for (const observations of [[], [tunnel], [project, tunnel],
+    [{...project, url: base + '/api/studio/projects/other'}],
+    [{...project, url: 'http://127.0.0.1:9005/api/studio/projects/fixture'}],
+    [{...project, kind: 'override'}], [{...project, kind: 'blocked'}]])
+    assert.throws(() => assertProjectOnlyReopen(observations, base, 'fixture'), /project-bound browser GET|opaque/);
+  assert.throws(() => assertProjectOnlyReopen([{...project, url: project.url.replace('http:', 'https:')}], base.replace('http:', 'https:'), 'fixture'), /HTTP origin/);
+  for (const method of ['GET', 'POST'])
+    for (const path of ['/api/assets', '/api/assets/search', '/api/search', '/api/search/metadata'])
+      assert.throws(() => assertProjectOnlyReopen([project, {...project, method, url: base + path}], base, 'fixture'), /search or list assets/);
+});
 
 test('proxies an upstream request through unchanged when nothing overrides it', async () => {
   const upstream = await startFakeUpstream((req, res) => res.end(`hello ${req.url}`));

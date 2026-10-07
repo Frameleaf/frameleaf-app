@@ -129,7 +129,8 @@ describe('FL-159 approved description job → App accounting', () => {
         .set(auth())
         .send({ workload })
         .expect(400);
-      expect(refused.body.code).toBe('disclosure-pending');
+      // This fixture serves descriptions only; approval does not invent provider support.
+      expect(refused.body.code).toBe('workload-not-served');
     }
     const beforeJob = await providerState();
     expect(beforeJob.lifecycle.jobs).toHaveLength(0);

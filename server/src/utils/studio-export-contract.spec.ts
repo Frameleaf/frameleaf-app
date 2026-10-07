@@ -3,8 +3,10 @@ import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import {
   buildStudioExportContract,
   findStudioExportOutputMismatch,
+  findStudioExportRangeMismatch,
   isTimingUnchangedSingleSource,
   parseStudioExportContract,
+  resolveStudioExportRange,
   resolveStudioExportTiming,
   sameTimeBase,
 } from 'src/utils/studio-export-contract.js';
@@ -36,6 +38,81 @@ const facts = (assetId: string, overrides: Record<string, unknown> = {}) => ({
   },
   audio: { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 },
   ...overrides,
+});
+
+it('validates integer main-timeline ranges, preserves the graph and excludes out-of-range audio', () => {
+  const input = graph([
+    video('image', { type: 'image' }),
+    { type: 'audio', mediaId: 'a', trackId: 'a1', from: 0, durationInFrames: 5 },
+    { type: 'audio', mediaId: 'b', trackId: 'a1', from: 5, durationInFrames: 25 },
+  ]);
+  const before = structuredClone(input);
+  const range = { inPoint: 5, outPoint: 7 };
+  expect(resolveStudioExportRange(input, range)).toEqual({ ...range, cadence: '30000/1001' });
+  const contract = buildStudioExportContract({ format: 'mp4-h264', color: 'preserve', range }, input, [
+    facts('a', { audio: { channels: 8, channelLayout: '7.1', sampleRate: 96_000 } }) as never,
+    facts('b') as never,
+  ]);
+  expect(contract.audio).toMatchObject({ channels: 2, channelLayout: 'stereo', sampleRate: 48_000 });
+  expect(contract.range).toEqual({ ...range, cadence: '30000/1001' });
+  expect(input).toEqual(before);
+  for (const invalid of [
+    { inPoint: -1, outPoint: 7 },
+    { inPoint: 5.5, outPoint: 7 },
+    { inPoint: 5, outPoint: 5 },
+    { inPoint: 5, outPoint: 31 },
+  ]) {
+    expect(() => resolveStudioExportRange(input, invalid)).toThrow(StudioTimingError);
+  }
+  expect(() => resolveStudioExportRange(graph([video('c', { type: 'composition' })]), range)).toThrow(
+    StudioTimingError,
+  );
+  expect(() => resolveStudioExportRange(graph([video('a', { durationInFrames: 1.5 })]), range)).toThrow(
+    StudioTimingError,
+  );
+});
+
+it('holds range output to exact rational packet duration, count and zero origin', () => {
+  const range = { inPoint: 5, outPoint: 7, cadence: '30000/1001' };
+  const stream = { timeBaseRational: { num: 1, den: 90_000 } } as never;
+  const packets = {
+    presentation: { startPts: 0, endPts: 6006 },
+    presentationCadenceTicks: 3003,
+    totalDuration: 6006,
+    packetCount: 2,
+    variableFrameRate: false,
+  };
+  expect(findStudioExportRangeMismatch(range, stream, packets as never)).toBeNull();
+  for (const invalid of [
+    null,
+    { ...packets, packetCount: 3 },
+    { ...packets, variableFrameRate: true },
+    { ...packets, presentationCadenceTicks: undefined },
+    { ...packets, presentationCadenceTicks: null },
+    { ...packets, presentationCadenceTicks: 3000 },
+    { ...packets, presentation: { startPts: 3003, endPts: 9009 } },
+    { ...packets, totalDuration: 6007 },
+    { ...packets, presentation: null },
+  ]) {
+    expect(findStudioExportRangeMismatch(range, stream, invalid as never)).toContain('rendered range');
+  }
+  expect(findStudioExportRangeMismatch(range, {} as never, packets as never)).toContain('rendered range');
+  expect(
+    findStudioExportRangeMismatch(
+      { inPoint: 0, outPoint: 2, cadence: '48/1' },
+      { timeBaseRational: { num: 1, den: 24 } } as never,
+      {
+        presentation: { startPts: 0, endPts: 1 },
+        presentationCadenceTicks: 0.5,
+        totalDuration: 1,
+        packetCount: 2,
+        variableFrameRate: false,
+      } as never,
+    ),
+  ).toContain('rendered range');
+  expect(
+    findStudioExportRangeMismatch({ ...range, outPoint: Number.MAX_SAFE_INTEGER }, stream, packets as never),
+  ).toContain('rendered range');
 });
 
 describe('isTimingUnchangedSingleSource (FL-93)', () => {
@@ -150,6 +227,19 @@ describe('buildStudioExportContract (FL-102)', () => {
     expect(
       buildStudioExportContract({ format: 'mp4-h264', color: 'preserve' }, withMute, sources as never).audio,
     ).toEqual({ policy: 'preserve', channels: 6, channelLayout: '5.1', sampleRate: 48_000 });
+  });
+
+  it('preserves both PQ mastering and a selected frame range through construction and parsing', () => {
+    const mastering = { primaries: 'bt2020' as const, maxNits: 1000, minNits: 0.005 };
+    const range = { inPoint: 4, outPoint: 12 };
+    const project = { ...graph([video('source')]), metadata: { fps: 24, frameRate: { num: 24, den: 1 } } };
+    const contract = buildStudioExportContract(
+      { format: 'mp4-hevc-main10', color: 'hdr10', mastering, range },
+      project,
+      [facts('source', { audio: null })] as never,
+    );
+    expect(contract).toMatchObject({ video: { mastering }, range: { ...range, cadence: '24/1' } });
+    expect(parseStudioExportContract(contract)).toEqual(contract);
   });
 
   it('parses only a contract it wrote', () => {

@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const FIXTURE = 'http://127.0.0.1:3010';
 const CLOUD_URL = 'http://frameleaf-cloud-fixture:3010';
 const INSTANCE_ID = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
-// Version lifecycle is exercised on approved descriptions, never on unapproved restoration.
+// FL-286: formerly pending workloads now use the same versioned consent as descriptions.
 const WORKLOAD = 'enrichment';
 const PENDING = ['restoration-faithful', 'restoration-creative', 'upscale', 'interpolation'];
 /** Admission reads the required version from /capabilities, cached for 10 seconds. */
@@ -110,6 +110,14 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     const { status, body } = await admission();
     expect(status).toBe(400);
     expect(body).toMatchObject({ code: 'consent-missing' });
+    for (const workload of PENDING) {
+      const refused = await request(app)
+        .post(`/ml-destinations/${destinationId}/admission`)
+        .set(auth())
+        .send({ workload })
+        .expect(400);
+      expect(refused.body).toMatchObject({ code: 'consent-missing' });
+    }
     expect(await recorded()).toBeNull();
   });
 
@@ -132,14 +140,20 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     expect(admitted.status).toBe(400);
   });
 
-  it('keeps all four restoration workloads disclosure-pending after accepting generic terms', async () => {
+  it('admits approved restoration models and still requires provider support for upscale/interpolation (FL-286)', async () => {
     for (const workload of PENDING) {
       const refused = await request(app)
         .post(`/ml-destinations/${destinationId}/admission`)
         .set(auth())
         .send({ workload });
-      expect(refused.status).toBe(400);
-      expect(refused.body).toMatchObject({ code: 'disclosure-pending' });
+      if (workload.startsWith('restoration-')) {
+        expect(refused.status).toBe(200);
+        expect(refused.body).toMatchObject({ kind: 'frameleaf-cloud', workload });
+      } else {
+        // The fixture advertises restoration only; approval does not invent provider support.
+        expect(refused.status).toBe(400);
+        expect(refused.body).toMatchObject({ code: 'workload-not-served' });
+      }
     }
   });
 
@@ -150,6 +164,14 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     const { status, body } = await admission();
     expect(status).toBe(400);
     expect(body).toMatchObject({ code: 'consent-missing' });
+    for (const workload of PENDING) {
+      const refused = await request(app)
+        .post(`/ml-destinations/${destinationId}/admission`)
+        .set(auth())
+        .send({ workload })
+        .expect(400);
+      expect(refused.body).toMatchObject({ code: 'consent-missing' });
+    }
   });
 
   it('fails closed with consent-version-outdated once the cloud requires a newer version', async () => {
@@ -164,13 +186,21 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     const refused = await admission();
     expect(refused.status).toBe(400);
     expect(refused.body).toMatchObject({ code: 'consent-version-outdated' });
+    for (const workload of PENDING) {
+      const refused = await request(app)
+        .post(`/ml-destinations/${destinationId}/admission`)
+        .set(auth())
+        .send({ workload })
+        .expect(400);
+      expect(refused.body).toMatchObject({ code: 'consent-version-outdated' });
+    }
     const { body: status } = await request(app).get('/admin/cloud/ml').set(auth()).expect(200);
     expect(status.consent).toMatchObject({
       requiredVersion: '2026-10-01.1',
       outdated: true,
     });
 
-    // A new generic version restores description consent, never restoration disclosure approval
+    // Every approved workload still needs the provider's current version and digest.
     const acceptedNew = await accept();
     expect(acceptedNew.status).toBe(200);
     expect(await recorded()).toMatchObject({ version: '2026-10-01.1' });

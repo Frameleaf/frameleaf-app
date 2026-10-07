@@ -5,17 +5,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 const root = fileURLToPath(new URL("../../", import.meta.url));
-import { createHarness } from "./lib/cross-browser-harness.mjs";
+import { assertProjectOnlyReopen, createHarness } from "./lib/cross-browser-harness.mjs";
+import { captureHostPreview, deselectPreview, editHostScenario, openAutoKeyControls } from "./lib/admitted-host-controls.mjs";
 import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from "./lib/browser-driver.mjs";
 const scenario = process.env.STUDIO_HOST_SCENARIO ?? "track";
 assert.ok(["track", "auto-key", "ease-out"].includes(scenario));
 const dependencyRoot = process.env.STUDIO_DEPENDENCY_ROOT ?? root;
 const require = createRequire(dependencyRoot + "/studio/engine/package.json");
 const { chromium } = require("playwright");
-const { expect } = require("playwright/test");
 const sharp = require("sharp");
 const base = process.env.HOST_ORIGIN;
 assert.ok(base);
+assert.equal(new URL(base).protocol, "http:", "admitted-host project-only evidence requires an observable HTTP origin");
 assert.ok(process.env.STUDIO_HOST_EVIDENCE);
 const evidence = path.resolve(process.env.STUDIO_HOST_EVIDENCE);
 await mkdir(evidence, { recursive: true });
@@ -35,7 +36,7 @@ assert.ok(
   Date.now() - Date.parse(gpu.finishedAt) >= 0 && Date.now() - Date.parse(gpu.finishedAt) < 3600000,
   "fresh actual current-engine GPU report required",
 );
-let auth, worker, browser, page;
+let auth, worker, driver, page, harness;
 const requests = [],
   errors = [];
 const api = async (
@@ -251,46 +252,6 @@ try {
     if (expectedInteriorId) assert.equal(keys[1].id, expectedInteriorId);
     return keys[1].id;
   }
-  async function nativeFrame15(frame) {
-    await frame.getByRole("button", { name: "Go To Start", exact: true }).click();
-    await expect(
-      frame.getByRole("button", { name: "00:00:00 / 00:01:29", exact: true }),
-    ).toBeVisible();
-    for (let i = 1; i <= 15; i++) {
-      await frame.getByRole("button", { name: "Next Frame", exact: true }).click();
-      await expect(
-        frame.getByRole("button", {
-          name: `00:00:${String(i).padStart(2, "0")} / 00:01:29`,
-          exact: true,
-        }),
-      ).toBeVisible();
-    }
-  }
-  async function deselectPreview(frame, viewport) {
-    const background = frame.getByLabel("Video Preview", { exact: true });
-    await expect(background).toHaveCount(1);
-    await expect(background).toBeVisible();
-    const backgroundBounds = await background.boundingBox();
-    const viewportBounds = await viewport.boundingBox();
-    assert.ok(backgroundBounds && viewportBounds);
-    const point = { x: backgroundBounds.x + 5, y: backgroundBounds.y + 5 };
-    assert.ok(
-      point.x < viewportBounds.x ||
-        point.x >= viewportBounds.x + viewportBounds.width ||
-        point.y < viewportBounds.y ||
-        point.y >= viewportBounds.y + viewportBounds.height,
-      "native background click must be outside the rendered viewport",
-    );
-    await background.click({ position: { x: 5, y: 5 } });
-    await expect(
-      frame.getByRole("button", { name: "Move selected element", exact: true }),
-    ).toHaveCount(0);
-    await expect(frame.getByTestId("motion-path-overlay")).toHaveCount(0);
-    await expect(
-      frame.getByRole("button", { name: "00:00:15 / 00:01:29", exact: true }),
-    ).toBeVisible();
-    return { backgroundBounds, viewportBounds, point };
-  }
   const project = await api("/studio/projects", {
     body: {
       name: "Actual Svelte editor acceptance",
@@ -309,184 +270,90 @@ try {
   if (scenario === "ease-out") {
     await runEaseOutHost(project, graph);
   } else {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.addInitScript(() => {
-      window.__hostWitness = [];
-      const post = MessagePort.prototype.postMessage;
-      MessagePort.prototype.postMessage = function (message, ...args) {
-        if (message && typeof message === "object" && message.name === "stageDraft")
-          window.__hostWitness.push({
-            type: message.type,
-            name: message.name,
-            args: message.args,
-          });
-        return post.call(this, message, ...args);
+    const browserName = process.env.BROWSER ?? "chromium";
+    const browserCapabilities = admittedHostCapabilities(browserName);
+    harness = createHarness({ upstream: base });
+    const harnessOrigin = await harness.listen();
+    driver = browserName === "chromium"
+      ? await createChromiumDriver({ harnessOrigin, chromium, contextOptions: { viewport: { width: 1440, height: 1000 } } })
+      : await createWebDriverClassicDriver({ endpoint: process.env.WEBDRIVER_ENDPOINT, harnessOrigin, capabilities: browserCapabilities });
+    page = await driver.newPage();
+    const requests = harness.observations;
+    await loginHost(page);
+    await page.goto(base + "/studio?project=" + project.id);
+    await page.waitForFunction(() => !!document.querySelector('[data-testid="studio-editor-frame"]'));
+    await new Promise(resolve => setTimeout(resolve, 6000));
+    await page.evaluate(() => {
+      window.__fl112Responses = [];
+      const original = window.fetch;
+      window.fetch = async function (...args) {
+        const response = await original.apply(this, args);
+        window.__fl112Responses.push({ url: response.url, status: response.status });
+        return response;
       };
     });
-    await context.addCookies([
-      {
-        name: "immich_access_token",
-        value: auth.accessToken,
-        url: base,
-        httpOnly: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "immich_auth_type",
-        value: "password",
-        url: base,
-        httpOnly: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "immich_is_authenticated",
-        value: "true",
-        url: base,
-        sameSite: "Lax",
-      },
-    ]);
-    page = await context.newPage();
-    page.on("pageerror", (e) => errors.push(e.message));
-    page.on("response", (r) => {
-      const u = new URL(r.url());
-      requests.push({
-        path: u.pathname,
-        status: r.status(),
-        method: r.request().method(),
-      });
-    });
-    await page.goto(base + "/studio?project=" + project.id);
-    await page.getByTestId("studio-editor-frame").waitFor({ timeout: 30000 });
-    await page.waitForTimeout(6000);
     if (process.env.EXPECT_PROJECT_ONLY_MISSING === "1") {
-      const f = page.frames().find((f) => f !== page.mainFrame());
-      const body = await f.locator("body").innerText();
+      const body = await page.inFrame('[data-testid="studio-editor-frame"]', frame => frame.evaluate(() => document.body.innerText));
       assert.ok(body.includes("Missing media"));
       const check = await fetch(base + "/api/assets/" + asset.id, {
         headers: { authorization: "Bearer " + auth.accessToken },
       });
       assert.equal(check.status, 200);
-      await page.screenshot({
-        path: new URL("project-only-red.png", dir).pathname,
-        fullPage: true,
-      });
-      await writeFile(
-        new URL("project-only-red.json", dir),
-        JSON.stringify(
-          {
-            projectId: project.id,
-            assetId: asset.id,
-            capabilities,
-            body,
-            requests,
-            errors,
-            originalAssetReadable: true,
-            responseOverrides: 0,
-          },
-          null,
-          2,
-        ),
-      );
-      console.log(
-        "PASS counterfactual actual project-only missing source with caller-readable asset",
-      );
+      await writeHostScreenshot("project-only-red.png");
+      await writeFile(new URL("project-only-red.json", dir), JSON.stringify({
+        browser: browserName, projectId: project.id, assetId: asset.id, capabilities, body,
+        requests, errors, originalAssetReadable: true, responseOverrides: 0,
+      }, null, 2));
+      console.log("PASS counterfactual actual project-only missing source with caller-readable asset");
       throw new Error("EXPECTED_PROJECT_ONLY_RED");
     }
-    await page.screenshot({
-      path: new URL("mounted.png", dir).pathname,
-      fullPage: true,
+    await writeHostScreenshot("mounted.png");
+    await writeFile(new URL("mounted.json", dir), JSON.stringify({
+      browser: browserName, projectId: project.id, capabilities, requests,
+      body: await page.evaluate(() => document.body.innerText),
+    }, null, 2));
+    await page.inFrame('[data-testid="studio-editor-frame"]', async frame => {
+      await frame.evaluate(() => {
+        window.__hostWitness = [];
+        window.__fl112Errors = [];
+        addEventListener("error", event => window.__fl112Errors.push(event.message));
+        addEventListener("unhandledrejection", event => window.__fl112Errors.push(String(event.reason)));
+        const post = MessagePort.prototype.postMessage;
+        MessagePort.prototype.postMessage = function (message, ...args) {
+          if (message && typeof message === "object" && message.name === "stageDraft")
+            window.__hostWitness.push({ type: message.type, name: message.name, args: message.args });
+          return post.call(this, message, ...args);
+        };
+      });
+      await writeFile(new URL("frame-controls.json", dir), JSON.stringify(await frame.evaluate(() => ({
+        body: document.body.innerText,
+        buttons: [...document.querySelectorAll("button")].map(e => ({text: e.innerText, label: e.getAttribute("aria-label"), title: e.getAttribute("title")})),
+      })), null, 2));
+      await editHostScenario(frame, scenario);
     });
-    await writeFile(
-      new URL("mounted.json", dir),
-      JSON.stringify(
-        {
-          projectId: project.id,
-          capabilities,
-          requests,
-          errors,
-          frames: page.frames().map((f) => ({ url: f.url() })),
-          body: await page.locator("body").innerText(),
-        },
-        null,
-        2,
-      ),
-    );
-    for (const f of page.frames()) {
-      if (f === page.mainFrame()) continue;
-      await writeFile(
-        new URL("frame-controls.json", dir),
-        JSON.stringify(
-          {
-            body: await f.locator("body").innerText(),
-            buttons: await f.locator("button").evaluateAll((es) =>
-              es.map((e) => ({
-                text: e.innerText,
-                label: e.getAttribute("aria-label"),
-                title: e.getAttribute("title"),
-              })),
-            ),
-          },
-          null,
-          2,
-        ),
-      );
+    let saved;
+    const saveDeadline = Date.now() + 30000;
+    for (;;) {
+      saved = await api(`/studio/projects/${project.id}`);
+      try {
+        assert.ok(saved.revision >= 2);
+        const stored = saved.envelope?.graph ?? saved.document?.graph ?? saved.graph;
+        if (scenario === "auto-key") assertAutoKey(stored);
+        else {
+          assert.equal(stored.timeline.tracks[0].visible, true);
+          assert.equal(stored.timeline.tracks[0].locked, true);
+        }
+        break;
+      } catch (error) {
+        if (Date.now() >= saveDeadline) throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    const frame = page.frameLocator("[data-testid=studio-editor-frame]");
-    if (scenario === "auto-key") {
-      await frame.locator('[data-item-id="still"]').click();
-      await frame
-        .getByRole("toolbar", { name: "Controls", exact: true })
-        .getByRole("button", { name: "Show keyframe panel", exact: true })
-        .click();
-      await nativeFrame15(frame);
-      const sheet = frame.getByTestId("dopesheet-scroll-area");
-      await sheet
-        .getByRole("button", {
-          name: "Enable auto-key for Position",
-          exact: true,
-        })
-        .click();
-      const revisionResponse = page.waitForResponse(
-        (r) =>
-          r.request().method() === "POST" &&
-          new URL(r.url()).pathname === `/api/studio/projects/${project.id}/revisions` &&
-          r.status() === 201,
-      );
-      await sheet.getByLabel("Position X", { exact: true }).fill("12");
-      await sheet
-        .getByRole("button", {
-          name: "Auto-key enabled for Position",
-          exact: true,
-        })
-        .click();
-      await frame.getByRole("button", { name: "Save project", exact: true }).click();
-      await revisionResponse;
-    } else {
-      console.log("EDIT disable");
-      await frame
-        .getByRole("button", { name: "Disable track", exact: true })
-        .click({ timeout: 10000 });
-      console.log("WAIT enabled");
-      await frame
-        .getByRole("button", { name: "Enable track", exact: true })
-        .waitFor({ timeout: 10000 });
-      await page.waitForTimeout(4000);
-      console.log("UNDO");
-      await frame.getByRole("button", { name: /^Undo(?: |$)/ }).click({ timeout: 10000 });
-      console.log("WAIT restored");
-      await frame
-        .getByRole("button", { name: "Disable track", exact: true })
-        .waitFor({ timeout: 10000 });
-      await page.waitForTimeout(4000);
-      await frame.getByRole("button", { name: "Lock Track", exact: true }).click();
-      await frame.getByRole("button", { name: "Unlock Track", exact: true }).waitFor();
-      await frame.getByRole("button", { name: "Save project", exact: true }).click();
-      await page.waitForTimeout(4000);
-    }
-    const saved = await api(`/studio/projects/${project.id}`);
+    await page.waitForFunction(() => window.__fl112Responses?.some(r => r.status === 201 &&
+      /\/api\/studio\/projects\/[^/]+\/revisions$/.test(new URL(r.url).pathname)));
+    const statuses = await page.evaluate(() => window.__fl112Responses);
+    assert.ok(statuses.some(r => new URL(r.url).pathname === `/api/studio/projects/${project.id}/revisions` && r.status === 201),
+      "actual browser revision201");
     await writeFile(new URL("saved.json", dir), JSON.stringify(saved, null, 2));
     assert.ok(saved.revision >= 2);
     const stored = saved.envelope?.graph ?? saved.document?.graph ?? saved.graph;
@@ -505,10 +372,8 @@ try {
       assert.equal(stored.timeline.tracks[0].visible, true);
       assert.equal(stored.timeline.tracks[0].locked, true);
     }
-    const draftWitness = await page
-      .frames()
-      .find((f) => f !== page.mainFrame())
-      .evaluate(() => window.__hostWitness ?? []);
+    const draftWitness = await page.inFrame('[data-testid="studio-editor-frame"]', frame => frame.evaluate(() => window.__hostWitness ?? []));
+    errors.push(...await page.inFrame('[data-testid="studio-editor-frame"]', frame => frame.evaluate(() => window.__fl112Errors ?? [])));
     if (scenario === "auto-key") {
       const candidates = draftWitness.filter((w) =>
         w.args?.[0]?.timeline?.keyframes?.some(
@@ -530,119 +395,39 @@ try {
       );
     }
     await writeFile(new URL("stage-drafts.json", dir), JSON.stringify(draftWitness, null, 2));
-    await page.screenshot({
-      path: new URL("edited.png", dir).pathname,
-      fullPage: true,
-    });
-    const renderFrame = page.frames().find((f) => f !== page.mainFrame());
-    const canvases = await renderFrame.locator("canvas,img,video").evaluateAll((es) =>
-      es.map((e, i) => ({
-        index: i,
-        width: e.width,
-        height: e.height,
-        visible: e.checkVisibility({
-          checkOpacity: true,
-          checkVisibilityCSS: true,
-        }),
-        tag: e.tagName,
-        rect: {
-          width: e.getBoundingClientRect().width,
-          height: e.getBoundingClientRect().height,
-        },
-      })),
-    );
+    await writeHostScreenshot("edited.png");
+    const canvases = await page.inFrame('[data-testid="studio-editor-frame"]', frame => frame.evaluate(() =>
+      [...document.querySelectorAll("canvas,img,video")].map((e, index) => ({
+        index, width: e.width, height: e.height, tag: e.tagName,
+        visible: e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}),
+        rect: {width: e.getBoundingClientRect().width, height: e.getBoundingClientRect().height},
+      }))));
     await writeFile(new URL("canvases.json", dir), JSON.stringify(canvases, null, 2));
-    const preview = renderFrame.locator("[data-player-container]:has([data-player-container])");
-    await expect(preview).toHaveCount(1);
-    await expect(preview).toBeVisible();
-    const deselectionBefore =
-      scenario === "auto-key" ? await deselectPreview(renderFrame, preview) : null;
-    await writeFile(
-      new URL("viewport-before.json", dir),
-      JSON.stringify(
-        {
-          deselection: deselectionBefore,
-          bounds: await preview.boundingBox(),
-          children: await preview.locator("canvas,img,video").evaluateAll((es) =>
-            es.map((e) => ({
-              tag: e.tagName,
-              width: e.width,
-              height: e.height,
-              visible: e.checkVisibility({
-                checkOpacity: true,
-                checkVisibilityCSS: true,
-              }),
-            })),
-          ),
-        },
-        null,
-        2,
-      ),
-    );
-    await preview.screenshot({
-      path: new URL("render-before.png", dir).pathname,
-    });
-    console.log(
-      scenario === "auto-key"
-        ? "PASS native auto-key stored in real revision"
-        : "PASS edit undo real revision",
-    );
+    const deselectionBefore = scenario === "auto-key"
+      ? await page.inFrame('[data-testid="studio-editor-frame"]', deselectPreview) : null;
+    const {screenshotPng: beforeScreen, ...beforeViewport} = await captureHostPreview(page);
+    await writeFile(new URL("viewport-before.json", dir), JSON.stringify({deselection: deselectionBefore, ...beforeViewport}, null, 2));
+    await writeFile(new URL("render-before.png", dir), await sharp(beforeScreen).extract(beforeViewport.screenshotCrop).png().toBuffer());
     await page.goto(base + "/photos");
     const reopenRequestOffset = requests.length;
     await page.goto(base + "/studio?project=" + project.id);
-    assert.equal(new URL(page.url()).searchParams.has("assets"), false);
-    if (scenario === "auto-key") {
-      const f = page.frameLocator("[data-testid=studio-editor-frame]");
-      await f.locator("[data-item-id=still]").waitFor({ timeout: 30000 });
-      await f.locator("[data-item-id=still]").click();
-      await f
-        .getByRole("toolbar", { name: "Controls", exact: true })
-        .getByRole("button", { name: "Show keyframe panel", exact: true })
-        .click();
-      await nativeFrame15(f);
-      await expect(
-        f.getByTestId("dopesheet-scroll-area").getByLabel("Position X", { exact: true }),
-      ).toHaveValue("12");
-    } else {
-      await page
-        .frameLocator("[data-testid=studio-editor-frame]")
-        .getByRole("button", { name: "Unlock Track", exact: true })
-        .waitFor({ timeout: 30000 });
-    }
-    await page.waitForTimeout(2500);
-    const reloadFrame = page.frames().find((f) => f !== page.mainFrame());
-    const reopenedPreview = reloadFrame.locator(
-      "[data-player-container]:has([data-player-container])",
-    );
-    await expect(reopenedPreview).toHaveCount(1);
-    await expect(reopenedPreview).toBeVisible();
-    const deselectionAfter =
-      scenario === "auto-key" ? await deselectPreview(reloadFrame, reopenedPreview) : null;
-    await writeFile(
-      new URL("viewport-after.json", dir),
-      JSON.stringify(
-        {
-          deselection: deselectionAfter,
-          bounds: await reopenedPreview.boundingBox(),
-          children: await reopenedPreview.locator("canvas,img,video").evaluateAll((es) =>
-            es.map((e) => ({
-              tag: e.tagName,
-              width: e.width,
-              height: e.height,
-              visible: e.checkVisibility({
-                checkOpacity: true,
-                checkVisibilityCSS: true,
-              }),
-            })),
-          ),
-        },
-        null,
-        2,
-      ),
-    );
-    await reopenedPreview.screenshot({
-      path: new URL("render-after.png", dir).pathname,
+    await page.waitForFunction(() => !!document.querySelector('[data-testid="studio-editor-frame"]'));
+    assert.equal(await page.evaluate(() => new URL(location.href).searchParams.has("assets")), false);
+    await page.inFrame('[data-testid="studio-editor-frame"]', async frame => {
+      if (scenario === "auto-key") {
+        await openAutoKeyControls(frame);
+        await frame.waitForFunction(() => document.querySelector('[data-testid="dopesheet-scroll-area"] input[aria-label="Position X"]')?.value === "12");
+      } else {
+        await frame.waitForFunction(() => !!document.querySelector('button[aria-label="Unlock Track"]'));
+      }
     });
+    // Let the displayed media settle, then compare actual screenshot pixels, never a fixture render.
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    const deselectionAfter = scenario === "auto-key"
+      ? await page.inFrame('[data-testid="studio-editor-frame"]', deselectPreview) : null;
+    const {screenshotPng: afterScreen, ...afterViewport} = await captureHostPreview(page);
+    await writeFile(new URL("viewport-after.json", dir), JSON.stringify({deselection: deselectionAfter, ...afterViewport}, null, 2));
+    await writeFile(new URL("render-after.png", dir), await sharp(afterScreen).extract(afterViewport.screenshotCrop).png().toBuffer());
     const beforePixels = await sharp(new URL("render-before.png", dir).pathname)
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -678,29 +463,20 @@ try {
     const reopenedGraph = reloaded.envelope?.graph ?? reloaded.document?.graph ?? reloaded.graph;
     assert.deepEqual(reopenedGraph, stored);
     if (scenario === "auto-key") assertAutoKey(reopenedGraph, interiorId);
-    const reopenRequests = requests.slice(reopenRequestOffset);
-    assert.deepEqual(
-      reopenRequests.filter(
-        (r) =>
-          r.method === "GET" &&
-          (r.path === "/api/assets" ||
-            r.path === "/api/assets/search" ||
-            r.path === "/api/search" ||
-            r.path.startsWith("/api/search/")),
-      ),
-      [],
-      "project-only reopen must not search or list assets",
-    );
-    await page.screenshot({
-      path: new URL("reloaded.png", dir).pathname,
-      fullPage: true,
-    });
+    const reopenRequests = assertProjectOnlyReopen(requests.slice(reopenRequestOffset), base, project.id);
+    await writeHostScreenshot("reloaded.png");
+    assert.equal(requests.filter(r => r.kind === "override").length, 0);
     await writeFile(
       new URL("host-result.json", dir),
       JSON.stringify(
         {
           source: process.env.SOURCE_SHA,
           scenario,
+          browser: browserName,
+          userAgent: await page.evaluate(() => navigator.userAgent),
+          statuses,
+          export: "not-tested",
+          runtimeErrorObservation: "initial-frame edits only, after mount",
           interiorId,
           projectId: project.id,
           revision: saved.revision,
@@ -736,45 +512,22 @@ try {
   if (error.message !== "EXPECTED_PROJECT_ONLY_RED") throw error;
 } finally {
   if (page) {
-    await page
-      .screenshot({
-        path: new URL("terminal.png", dir).pathname,
-        fullPage: true,
-      })
-      .catch(() => {});
-    await writeFile(
-      new URL("terminal-ui.json", dir),
-      JSON.stringify(
-        {
-          url: page.url(),
-          body: await page.locator("body").innerText(),
-          frames: await Promise.all(
-            page.frames().map(async (f) => ({
-              url: f.url(),
-              body: await f
-                .locator("body")
-                .innerText()
-                .catch(() => ""),
-              draftWitness: await f.evaluate(() => window.__hostWitness ?? []).catch(() => []),
-              buttons: await f
-                .locator("button")
-                .evaluateAll((es) =>
-                  es.map((e) => ({
-                    label: e.getAttribute("aria-label"),
-                    text: e.innerText,
-                    disabled: e.disabled,
-                  })),
-                )
-                .catch(() => []),
-            })),
-          ),
-        },
-        null,
-        2,
-      ),
-    );
+    await writeHostScreenshot("terminal.png").catch(() => {});
+    await writeFile(new URL("terminal-ui.json", dir), JSON.stringify({
+      main: await page.evaluate(() => ({url: location.href, body: document.body.innerText})).catch(error => ({error: String(error)})),
+      frame: await page.inFrame('[data-testid="studio-editor-frame"]', frame => frame.evaluate(() => ({
+        body: document.body.innerText, draftWitness: window.__hostWitness ?? [],
+        buttons: [...document.querySelectorAll("button")].map(e => ({label: e.getAttribute("aria-label"), text: e.innerText, disabled: e.disabled})),
+      }))).catch(error => ({error: String(error)})),
+    }, null, 2)).catch(() => {});
   }
-  if (browser) await browser.close();
+  try { if (driver) await driver.close(); }
+  finally {
+    if (harness) {
+      requests.push(...harness.observations);
+      await harness.close();
+    }
+  }
   if (worker && auth) await api("/admin/render-workers/" + worker.id, { method: "DELETE" });
   await writeFile(new URL("partial.json", dir), JSON.stringify({ requests, errors }, null, 2));
 }
@@ -1200,27 +953,7 @@ async function runEaseOutHost(project, graph) {
             capabilities,
           });
     host = await driver.newPage();
-    await host.goto(base + "/auth/login");
-    await host.waitForFunction(() => !!document.querySelector("#auth-email"));
-    await host.fill("#auth-email", "admitted-host@example.test");
-    await host.fill("#auth-password", "Fixture-host-only-password-24!");
-    await host.click('button.auth-submit[type="submit"]');
-    await host.waitForFunction(() => location.pathname !== "/auth/login");
-    if (await host.evaluate(() => location.pathname === "/auth/onboarding")) {
-      await host.waitForFunction(() => {
-        const buttons = [
-          ...document.querySelectorAll(".frs-tool-root .frs-tool-foot button.primary"),
-        ];
-        return (
-          buttons.length === 1 &&
-          buttons[0].checkVisibility() &&
-          !buttons[0].disabled &&
-          buttons[0].textContent.trim() === "Done"
-        );
-      });
-      await host.click(".frs-tool-root .frs-tool-foot button.primary");
-    }
-    await host.waitForFunction(() => !location.pathname.startsWith("/auth/"));
+    await loginHost(host);
     await host.goto(base + "/studio?project=" + project.id);
     await host.waitForFunction(
       () => !!document.querySelector('[data-testid="studio-editor-frame"]'),
@@ -1298,15 +1031,7 @@ async function runEaseOutHost(project, graph) {
     });
     const reopened = await api(`/studio/projects/${project.id}`);
     assert.deepEqual(graphOf(reopened), graphOf(saved));
-    const reopenRequests = harness.observations.slice(offset);
-    assert.deepEqual(
-      reopenRequests.filter(
-        (r) =>
-          r.method === "GET" &&
-          /^\/api\/(?:assets(?:\/search)?|search(?:\/.*)?)$/.test(new URL(r.url).pathname),
-      ),
-      [],
-    );
+    const reopenRequests = assertProjectOnlyReopen(harness.observations.slice(offset), base, project.id);
     assert.equal(harness.observations.filter((r) => r.kind === "override").length, 0);
     await writeFile(
       new URL(`${browserName}-ease-out-host.json`, dir),
@@ -1380,4 +1105,32 @@ async function runEaseOutHost(project, graph) {
       JSON.stringify(harness.observations, null, 2),
     );
   }
+}
+
+async function loginHost(host) {
+  await host.goto(base + "/auth/login");
+  await host.waitForFunction(() => !!document.querySelector("#auth-email"));
+  await host.fill("#auth-email", "admitted-host@example.test");
+  await host.fill("#auth-password", "Fixture-host-only-password-24!");
+  await host.click('button.auth-submit[type="submit"]');
+  await host.waitForFunction(() => location.pathname !== "/auth/login");
+  if (await host.evaluate(() => location.pathname === "/auth/onboarding")) {
+    await host.waitForFunction(() => {
+      const buttons = [
+        ...document.querySelectorAll(".frs-tool-root .frs-tool-foot button.primary"),
+      ];
+      return (
+        buttons.length === 1 &&
+        buttons[0].checkVisibility() &&
+        !buttons[0].disabled &&
+        buttons[0].textContent.trim() === "Done"
+      );
+    });
+    await host.click(".frs-tool-root .frs-tool-foot button.primary");
+  }
+  await host.waitForFunction(() => !location.pathname.startsWith("/auth/"));
+}
+
+async function writeHostScreenshot(name) {
+  await writeFile(new URL(name, dir), Buffer.from(await page.screenshot(), "base64"));
 }

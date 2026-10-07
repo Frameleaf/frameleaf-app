@@ -210,7 +210,7 @@ const wallet = (balanceUsd: number) => ({
   settingsUrl: null,
 });
 
-describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked; not disclosure qualification)`, () => {
+describe(CloudMlJobService.name, () => {
   let sut: CloudMlJobService;
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
@@ -290,7 +290,6 @@ describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     mocks = getMocks();
     metadata = new Map();
     rows = new Map();
@@ -492,19 +491,16 @@ describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked
   });
 
   describe('estimate', () => {
-    it('refuses restoration with disclosure-pending before preparation or a Cloud estimate (FL-201)', async () => {
+    it('estimates approved restoration through the real disclosure policy and current consent (FL-286)', async () => {
       vi.restoreAllMocks();
       expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
-      const error = await sut.estimate(owner, preview(), now).catch((error_: unknown) => error_);
-      expect(error).toBeInstanceOf(BadRequestException);
-      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'disclosure-pending' });
-      expect(mocks.media.transcode).not.toHaveBeenCalled();
-      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
-      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ estimateId: ESTIMATE_ID, consent: { version: '2026-09-26.1' } });
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledOnce();
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
-      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(false);
+      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(true);
     });
 
     it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {
@@ -923,13 +919,12 @@ describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked
     });
   });
 
-  describe('FL-201 real pending disclosure at historical job boundaries', () => {
-    // Arrange historical persisted jobs using the explicitly isolated downstream mechanics seam.
-    // The security action itself always runs the original policy and shared admission.
+  describe('FL-201 pending disclosure at historical job boundaries', () => {
+    // A future unapproved workload must still stop before confirmation, new input or start.
     it('refuses confirmation of a kept estimate without creating an operation', async () => {
       const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
       vi.restoreAllMocks();
-      expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+      vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(true);
       const error = await sut
         .create(
           owner,
@@ -948,7 +943,7 @@ describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked
       async (boundary) => {
         await estimateAndConfirm();
         vi.restoreAllMocks();
-        expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+        vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(true);
         const operation =
           boundary === 'queued'
             ? claimed()

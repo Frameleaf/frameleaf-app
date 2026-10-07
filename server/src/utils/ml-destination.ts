@@ -678,9 +678,8 @@ export const evaluateAdmission = ({
       `${destination.name} sends media off this network and has no recorded consent`,
     );
   }
-  // FL-201: the shipped 2026-09-26.1 generic ML text does not approve these workloads.
-  // A newer generic version is not legal approval either; only a reviewed workload disclosure
-  // may replace this gate. Local/LAN work and approved Cloud descriptions/transcription are unchanged.
+  // Only workloads covered by the reviewed public disclosure can reach Cloud admission.
+  // Cloud still requires its current consent version below, alongside administrator opt-in.
   if (isCloud && hasPendingCloudDisclosure(workload)) {
     return refuse(
       MlAdmissionRefusal.DisclosurePending,
