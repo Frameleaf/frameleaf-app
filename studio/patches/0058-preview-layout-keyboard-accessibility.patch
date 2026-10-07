@@ -696,3 +696,388 @@ diff --git a/src/features/effects/components/panels/gpu-wheels-panel.tsx b/src/f
          onClick={onReset}
          disabled={disabled}
          title={resetLabel}
+diff --git a/src/features/preview/components/mask-editor-overlay.test.tsx b/src/features/preview/components/mask-editor-overlay.test.tsx
+--- a/src/features/preview/components/mask-editor-overlay.test.tsx
++++ b/src/features/preview/components/mask-editor-overlay.test.tsx
+@@ -1,5 +1,5 @@
+ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+-import { act, fireEvent, render, waitFor } from '@testing-library/react'
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import {
+   useItemsStore,
+   useTimelineSettingsStore,
+@@ -9,6 +9,8 @@
+ import { useMaskEditorStore } from '../stores/mask-editor-store'
+ import { useGizmoStore } from '../stores/gizmo-store'
+ import { MaskEditorOverlay } from './mask-editor-overlay'
++import { MaskEditorContainer } from './mask-editor-container'
++import { resolveAnimatedShapeItem } from '../deps/keyframes'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import type { CoordinateParams, Transform } from '../types/gizmo'
+@@ -653,6 +655,183 @@
+       },
+     ])
+     useMaskEditorStore.getState().startEditing('path-1')
++  }
++
++  it('selects and nudges a mask point with keyboard controls through undoable commands', () => {
++    seedEditablePath()
++    useTimelineStore.temporal.getState().clear()
++    usePlaybackStore.setState({ isPlaying: false })
++    const before = structuredClone(useItemsStore.getState().items)
++    renderMaskEditorOverlay(PATH_ITEM_TRANSFORM)
++
++    const chooser = screen.getByRole('combobox', { name: 'Path point' })
++    chooser.focus()
++    fireEvent.change(chooser, { target: { value: '1' } })
++    expect(useMaskEditorStore.getState().selectedVertexIndices).toEqual([1])
++    const right = screen.getByRole('button', { name: 'Nudge selected path points right' })
++    right.focus()
++    expect(fireEvent.keyDown(right, { key: ' ', code: 'Space' })).toBe(true)
++    fireEvent.keyUp(right, { key: ' ', code: 'Space' })
++    // JSDOM does not synthesize a native button's uncancelled Space default.
++    fireEvent.click(right)
++    fireEvent.click(right)
++    expect(right).toHaveFocus()
++    fireEvent.click(screen.getByRole('button', { name: 'Nudge selected path points down' }))
++    const item = useItemsStore.getState().items[0] as ShapeItem
++    expect(item.transform?.width).toBeCloseTo(102)
++    expect(item.transform?.x).toBeCloseTo(1)
++    expect(item.pathVertices?.[1]?.position[1]).toBeCloseTo(1 / 60)
++    expect(item.pathVertices?.[0]).toEqual((before[0] as ShapeItem).pathVertices?.[0])
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    expect(useTimelineStore.temporal.getState().pastStates.length).toBeGreaterThan(0)
++    act(() => {
++      useTimelineStore.temporal.getState().undo()
++      useTimelineStore.temporal.getState().undo()
++      useTimelineStore.temporal.getState().undo()
++    })
++    expect(useItemsStore.getState().items).toEqual(before)
++  })
++
++  it('nudges an animated point at the playhead without rewriting its base path', () => {
++    seedEditablePath()
++    useTimelineStore.setState({
++      keyframes: [
++        {
++          itemId: 'path-1',
++          properties: [
++            {
++              property: 'pathVertex:1:positionX',
++              keyframes: [{ id: 'start', frame: 0, value: 1, easing: 'linear' }],
++            },
++          ],
++        },
++      ],
++    })
++    useTimelineStore.temporal.getState().clear()
++    usePlaybackStore.getState().setCurrentFrame(15)
++    const before = structuredClone(useTimelineStore.getState().keyframes)
++    const path = structuredClone((useItemsStore.getState().items[0] as ShapeItem).pathVertices)
++    renderMaskEditorOverlay(PATH_ITEM_TRANSFORM)
++    fireEvent.change(screen.getByRole('combobox', { name: 'Path point' }), {
++      target: { value: '1' },
++    })
++    fireEvent.click(screen.getByRole('button', { name: 'Nudge selected path points right' }))
++    expect((useItemsStore.getState().items[0] as ShapeItem).pathVertices).toEqual(path)
++    const keyframes = useTimelineStore.getState().keyframes[0]?.properties[0]?.keyframes
++    expect(keyframes).toEqual(
++      expect.arrayContaining([expect.objectContaining({ frame: 15, value: 1.01 })]),
++    )
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useTimelineStore.getState().keyframes).toEqual(before)
++  })
++
++  for (const animated of [false, true]) {
++    it.each([
++      {
++        name: 'horizontal flip',
++        flipHorizontal: true,
++        flipVertical: false,
++        rotation: 0,
++        direction: 'right',
++        dx: 1,
++        dy: 0,
++      },
++      {
++        name: 'vertical flip',
++        flipHorizontal: false,
++        flipVertical: true,
++        rotation: 0,
++        direction: 'down',
++        dx: 0,
++        dy: 1,
++      },
++      {
++        name: 'rotated double flip',
++        flipHorizontal: true,
++        flipVertical: true,
++        rotation: 35,
++        direction: 'right',
++        dx: 1,
++        dy: 0,
++      },
++    ])(
++      `nudges a ${animated ? 'keyframed' : 'static'} $name in project space without moving other points`,
++      ({ flipHorizontal, flipVertical, rotation, direction, dx, dy }) => {
++        seedEditablePath()
++        const transform = { ...PATH_ITEM_TRANSFORM, flipHorizontal, flipVertical, rotation }
++        useItemsStore.getState().setItems([{ ...useItemsStore.getState().items[0]!, transform }])
++        if (animated) {
++          useTimelineStore.setState({
++            keyframes: [
++              {
++                itemId: 'path-1',
++                properties: [
++                  {
++                    property: 'pathVertex:0:positionX',
++                    keyframes: [{ id: 'start', frame: 0, value: 0, easing: 'linear' }],
++                  },
++                ],
++              },
++            ],
++          })
++        }
++        usePlaybackStore.getState().setCurrentFrame(15)
++        useTimelineStore.temporal.getState().clear()
++        const beforeItems = structuredClone(useItemsStore.getState().items)
++        const beforeKeys = structuredClone(useTimelineStore.getState().keyframes)
++        // Renderer order: normalized point -> size -> mirror -> rotation -> project center.
++        const projectPoints = (item: ShapeItem) => {
++          const t = item.transform!
++          const radians = (t.rotation! * Math.PI) / 180
++          return item.pathVertices!.map(({ position }) => {
++            const x = (position[0] - 0.5) * t.width! * (t.flipHorizontal ? -1 : 1)
++            const y = (position[1] - 0.5) * t.height! * (t.flipVertical ? -1 : 1)
++            return [
++              PROJECT_SIZE.width / 2 + t.x! + x * Math.cos(radians) - y * Math.sin(radians),
++              PROJECT_SIZE.height / 2 + t.y! + x * Math.sin(radians) + y * Math.cos(radians),
++            ]
++          })
++        }
++        const beforePoints = projectPoints(beforeItems[0] as ShapeItem)
++        render(
++          <MaskEditorContainer
++            containerRect={createRect()}
++            playerSize={PLAYER_SIZE}
++            projectSize={PROJECT_SIZE}
++            zoom={1}
++          />,
++        )
++        fireEvent.change(screen.getByRole('combobox', { name: 'Path point' }), {
++          target: { value: '0' },
++        })
++        for (let step = 1; step <= 2; step++) {
++          fireEvent.click(
++            screen.getByRole('button', { name: `Nudge selected path points ${direction}` }),
++          )
++          const item = useItemsStore.getState().items[0] as ShapeItem
++          const shown = resolveAnimatedShapeItem(item, useTimelineStore.getState().keyframes[0], 15)
++          const afterPoints = projectPoints(shown)
++          for (let index = 0; index < beforePoints.length; index++) {
++            expect(afterPoints[index]![0]).toBeCloseTo(
++              beforePoints[index]![0]! + (index === 0 ? step * dx : 0),
++            )
++            expect(afterPoints[index]![1]).toBeCloseTo(
++              beforePoints[index]![1]! + (index === 0 ? step * dy : 0),
++            )
++          }
++          expect(item.transform?.flipHorizontal).toBe(flipHorizontal)
++          expect(item.transform?.flipVertical).toBe(flipVertical)
++          if (animated)
++            expect(item.pathVertices).toEqual((beforeItems[0] as ShapeItem).pathVertices)
++        }
++        act(() => {
++          useTimelineStore.temporal.getState().undo()
++          useTimelineStore.temporal.getState().undo()
++        })
++        expect(useItemsStore.getState().items).toEqual(beforeItems)
++        expect(useTimelineStore.getState().keyframes).toEqual(beforeKeys)
++      },
++    )
+   }
+ 
+   it('shows a crosshair cursor when hovering a path point', async () => {
+diff --git a/src/features/preview/components/mask-editor-container.tsx b/src/features/preview/components/mask-editor-container.tsx
+--- a/src/features/preview/components/mask-editor-container.tsx
++++ b/src/features/preview/components/mask-editor-container.tsx
+@@ -66,6 +66,8 @@
+       width: resolved.width,
+       height: resolved.height,
+       rotation: resolved.rotation,
++      flipHorizontal: editingItem.transform?.flipHorizontal,
++      flipVertical: editingItem.transform?.flipVertical,
+       opacity: resolved.opacity,
+       cornerRadius: resolved.cornerRadius,
+     }
+diff --git a/src/features/preview/components/mask-editor-overlay-utils.ts b/src/features/preview/components/mask-editor-overlay-utils.ts
+--- a/src/features/preview/components/mask-editor-overlay-utils.ts
++++ b/src/features/preview/components/mask-editor-overlay-utils.ts
+@@ -119,6 +119,8 @@
+     width?: number
+     height?: number
+     rotation?: number
++    flipHorizontal?: boolean
++    flipVertical?: boolean
+     opacity?: number
+     cornerRadius?: number
+     aspectRatioLocked?: boolean
+@@ -131,6 +133,8 @@
+     width: transform.width ?? fallback.width,
+     height: transform.height ?? fallback.height,
+     rotation: transform.rotation ?? fallback.rotation,
++    flipHorizontal: transform.flipHorizontal ?? fallback.flipHorizontal,
++    flipVertical: transform.flipVertical ?? fallback.flipVertical,
+     opacity: transform.opacity ?? fallback.opacity,
+     cornerRadius: transform.cornerRadius ?? fallback.cornerRadius,
+     aspectRatioLocked: transform.aspectRatioLocked ?? fallback.aspectRatioLocked,
+diff --git a/src/features/preview/utils/path-fit.ts b/src/features/preview/utils/path-fit.ts
+--- a/src/features/preview/utils/path-fit.ts
++++ b/src/features/preview/utils/path-fit.ts
+@@ -118,8 +118,14 @@
+   const spanX = Math.max(bounds.maxX - bounds.minX, 2 / baseWidth)
+   const spanY = Math.max(bounds.maxY - bounds.minY, 2 / baseHeight)
+ 
+-  const localCenterX = ((bounds.minX + bounds.maxX) / 2 - 0.5) * baseTransform.width
+-  const localCenterY = ((bounds.minY + bounds.maxY) / 2 - 0.5) * baseTransform.height
++  const localCenterX =
++    ((bounds.minX + bounds.maxX) / 2 - 0.5) *
++    baseTransform.width *
++    (baseTransform.flipHorizontal ? -1 : 1)
++  const localCenterY =
++    ((bounds.minY + bounds.maxY) / 2 - 0.5) *
++    baseTransform.height *
++    (baseTransform.flipVertical ? -1 : 1)
+   const rotationRad = (baseTransform.rotation * Math.PI) / 180
+   const cos = Math.cos(rotationRad)
+   const sin = Math.sin(rotationRad)
+diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/features/preview/components/mask-editor-overlay.tsx
+--- a/src/features/preview/components/mask-editor-overlay.tsx
++++ b/src/features/preview/components/mask-editor-overlay.tsx
+@@ -1408,7 +1408,7 @@
+   // ============================================================
+ 
+   const commitVertices = useCallback(
+-    (vertices: MaskVertex[]) => {
++    (vertices: MaskVertex[], geometryTransform: Transform = itemTransform) => {
+       if (!editingItemId) return
+       const item = useItemsStore.getState().itemById[editingItemId]
+       if (item?.type === 'shape' && item.shapeType === 'path') {
+@@ -1421,7 +1421,7 @@
+         if (directPathPersistence.pathVertices === undefined) {
+           setCommittedEditSnapshot({
+             vertices: cloneVertices(vertices),
+-            transform: itemTransform,
++            transform: geometryTransform,
+           })
+           commitMaskEdit(editingItemId, {
+             autoKeyframeOperations: directPathPersistence.autoKeyframeOperations,
+@@ -1430,7 +1430,7 @@
+           return
+         }
+ 
+-        const fitted = fitShapePathToBounds(vertices, itemTransform, item.transform)
++        const fitted = fitShapePathToBounds(vertices, geometryTransform, item.transform)
+         const pathPersistence = buildPathGeometryPersistence(
+           item,
+           fitted.pathVertices,
+@@ -1449,7 +1449,7 @@
+         )
+         setCommittedEditSnapshot({
+           vertices: cloneVertices(fitted.pathVertices),
+-          transform: toOverlayTransform(fitted.transform, itemTransform),
++          transform: toOverlayTransform(fitted.transform, geometryTransform),
+         })
+         commitMaskEdit(editingItemId, {
+           pathVertices: pathPersistence.pathVertices,
+@@ -1966,6 +1966,40 @@
+   // ============================================================
+   // Render
+   // ============================================================
++
++  const nudgeSelectedVertices = (dx: number, dy: number) => {
++    const vertices = getVertices()
++    const { width, height, rotation, flipHorizontal, flipVertical } = effectiveItemTransform
++    if (
++      !vertices ||
++      editDraggingRef.current ||
++      !Number.isFinite(width) ||
++      width <= 0 ||
++      !Number.isFinite(height) ||
++      height <= 0 ||
++      !Number.isFinite(rotation)
++    )
++      return
++    const indices =
++      selectedVertexIndices.length > 0
++        ? selectedVertexIndices
++        : selectedVertexIndex !== null
++          ? [selectedVertexIndex]
++          : []
++    if (!indices.some((index) => vertices[index])) return
++    const next = cloneVertices(vertices)
++    const radians = (rotation * Math.PI) / 180
++    const localX =
++      (dx * Math.cos(radians) + dy * Math.sin(radians)) / (flipHorizontal ? -width : width)
++    const localY =
++      (dy * Math.cos(radians) - dx * Math.sin(radians)) / (flipVertical ? -height : height)
++    for (const index of indices) {
++      const vertex = next[index]
++      if (!vertex) continue
++      vertex.position = [vertex.position[0] + localX, vertex.position[1] + localY]
++    }
++    commitVertices(next, effectiveItemTransform)
++  }
+ 
+   if (!isEditing) return null
+ 
+@@ -1997,6 +2031,48 @@
+         onContextMenu={penMode ? handlePenContextMenu : handleEditContextMenu}
+         onDoubleClick={penMode ? undefined : handleEditDoubleClick}
+       />
++      {!penMode && (
++        <div className="absolute left-2 top-2 max-w-[calc(100%_-_1rem)] flex flex-wrap items-center gap-1 rounded border border-border bg-background p-1 pointer-events-auto">
++          <select
++            aria-label="Path point"
++            className="h-6 max-w-full rounded border border-border bg-background px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            value={selectedVertexIndex ?? ''}
++            disabled={draggingVertexIndex !== null || draggingHandle !== null}
++            onChange={(event) => selectVertex(Number(event.target.value))}
++          >
++            <option value="" disabled>
++              Choose point
++            </option>
++            {getVertices()?.map((_, index) => (
++              <option key={index} value={index}>
++                Point {index + 1}
++              </option>
++            ))}
++          </select>
++          {[
++            { direction: 'left', dx: -1, dy: 0, glyph: '←' },
++            { direction: 'right', dx: 1, dy: 0, glyph: '→' },
++            { direction: 'up', dx: 0, dy: -1, glyph: '↑' },
++            { direction: 'down', dx: 0, dy: 1, glyph: '↓' },
++          ].map(({ direction, dx, dy, glyph }) => (
++            <button
++              key={direction}
++              type="button"
++              aria-label={`Nudge selected path points ${direction}`}
++              title="Move 1 project pixel"
++              className="h-6 w-6 shrink-0 rounded hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
++              disabled={
++                (selectedVertexIndices.length === 0 && selectedVertexIndex === null) ||
++                draggingVertexIndex !== null ||
++                draggingHandle !== null
++              }
++              onClick={() => nudgeSelectedVertices(dx, dy)}
++            >
++              {glyph}
++            </button>
++          ))}
++        </div>
++      )}
+     </div>
+   )
+ })
