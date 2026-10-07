@@ -785,7 +785,7 @@ test('a refused batch leaves the graph it was given untouched', () => {
 
 /* Part 4 (FL-309): section 14, and the coverage of every graph-changing command */
 
-test('part 4 covers its 8 commands with applied and rejected cases', () => {
+test('part 4 covers its 9 commands with applied and rejected cases', () => {
   assert.deepEqual(part4, [
     'clip.group',
     'clip.ungroup',
@@ -793,6 +793,7 @@ test('part 4 covers its 8 commands with applied and rejected cases', () => {
     'composition.setControlOverrides',
     'composition.setPublishedControls',
     'project.applyTemplate',
+    'project.setMasterAudio',
     'sequence.setSettings',
     'title.add',
   ]);
@@ -928,6 +929,6 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 48, host: 2, 'bundle-import': 1, 'not-implemented': 22 });
+  assert.deepEqual(counts, { engine: 49, host: 2, 'bundle-import': 1, 'not-implemented': 21 });
   assert.equal(mutating.length, 73);
 });

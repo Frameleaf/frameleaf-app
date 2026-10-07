@@ -56,6 +56,7 @@ import {
 } from '@/features/timeline/utils/linked-items'
 import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
 import { useEditorStore } from '@/shared/state/editor'
+import { usePlaybackStore } from '@/shared/state/playback'
 import {
   buildDroppedMediaTimelineItems,
   getDroppedMediaDurationInFrames,
@@ -241,6 +242,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'track.set': ['readme.timeline-editing.5'],
   // FL-94: canvas and rate changes, with an explicit timing policy once a timeline has content.
   'project.applyTemplate': ['readme.timeline-editing.8'],
+  'project.setMasterAudio': ['readme.preview-playback.6'],
   'sequence.setSettings': ['readme.timeline-editing.8'],
   // FL-100: keyframe animation.
   'keyframe.update': ['readme.keyframe-animation.1'],
@@ -2337,6 +2339,23 @@ const handlers: Record<string, Handler> = {
       invalid(`markerId: marker "${markerId}" does not exist`)
     }
     removeMarker(markerId)
+  },
+
+  'project.setMasterAudio'(payload) {
+    for (const key of Object.keys(payload)) {
+      if (!['gainDb', 'muted', 'ducking'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`)
+    }
+    const gainDb = optionalNumber(payload, 'gainDb')
+    if (gainDb !== undefined && (gainDb < -60 || gainDb > 12)) invalid('gainDb must be between -60 and 12 dB')
+    if (payload.muted !== undefined && typeof payload.muted !== 'boolean') invalid('muted must be a boolean')
+    if (payload.ducking !== undefined) {
+      if (typeof payload.ducking !== 'boolean') invalid('ducking must be a boolean')
+      throw new CommandRejection('not-implemented', 'ducking: the engine has no project-wide ducking switch')
+    }
+    if (gainDb === undefined && payload.muted === undefined) invalid('project.setMasterAudio needs gainDb or muted')
+    const playback = usePlaybackStore.getState()
+    if (gainDb !== undefined) playback.setMasterBusDb(gainDb)
+    if (payload.muted !== undefined) playback.setMasterBusMuted(payload.muted as boolean)
   },
 
   async 'sequence.setSettings'(payload, context) {

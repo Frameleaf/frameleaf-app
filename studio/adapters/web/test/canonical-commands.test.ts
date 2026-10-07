@@ -3,6 +3,7 @@ import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TextItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
+import { usePlaybackStore } from '@/shared/state/playback'
 import {
   applyCanonicalCommands,
   canonicalJson,
@@ -136,6 +137,40 @@ const applied = async (graph: unknown, envelopes: CanonicalEnvelope[]) => {
 const itemsOf = (graph: Project) => graph.timeline?.items ?? []
 
 describe('canonical commands on the Freecut engine (FL-92)', () => {
+  it('initializes the master bus for mute-only edits on empty and absent timelines after another project', async () => {
+    const eq = { enabled: true, lowGainDb: 2 }
+    const empty = project({ tracks: [], items: [], masterBusDb: 3, masterBusMuted: false, busAudioEq: eq })
+    const absent = project()
+    delete absent.timeline
+    usePlaybackStore.setState({ volume: 0.25, muted: true })
+    for (const graph of [empty, absent]) {
+      await applied(project({ busAudioEq: { lowGainDb: -4 } }), [envelope('project.setMasterAudio', { gainDb: -6 })])
+      const outcome = await applied(graph, [envelope('project.setMasterAudio', { muted: true })])
+      expect(outcome.project.timeline).toMatchObject({ masterBusDb: graph.timeline?.masterBusDb ?? 0, masterBusMuted: true })
+      expect(outcome.project.timeline?.busAudioEq).toEqual(graph.timeline ? expect.objectContaining(eq) : undefined)
+      expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.25, muted: true })
+    }
+  })
+
+  it('edits the persisted master bus separately from monitor volume and refuses unsupported fields atomically', async () => {
+    const before = await applied(project({ busAudioEq: { enabled: true, lowGainDb: 2 } }), [])
+    usePlaybackStore.setState({ volume: 0.25, muted: true })
+    const changed = await applied(before.project, [envelope('project.setMasterAudio', { gainDb: -6, muted: true })])
+    expect(changed.project.timeline).toEqual({ ...before.project.timeline, masterBusDb: -6, masterBusMuted: true })
+    expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.25, muted: true })
+    const restored = await applied(changed.project, [envelope('project.setMasterAudio', { gainDb: 0, muted: false })])
+    expect(restored.project).toEqual(before.project)
+    for (const payload of [{}, { gainDb: -61 }, { gainDb: 13 }, { gainDb: NaN }, { muted: 1 }, { volume: 0.5 }, { ducking: 'off' }]) {
+      await expect(applyCanonicalCommands(before.project, [envelope('project.setMasterAudio', payload)], media))
+        .resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 0 })
+    }
+    await expect(applyCanonicalCommands(before.project, [
+      envelope('project.setMasterAudio', { gainDb: -12 }),
+      envelope('project.setMasterAudio', { gainDb: -3, ducking: false }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+    expect(before.project.timeline?.masterBusDb).toBe(0)
+  })
+
   it('covers every Freecut public command row', () => {
     const publicRows = (manifest as { features: Array<{ id: string }> }).features
       .map((feature) => feature.id)

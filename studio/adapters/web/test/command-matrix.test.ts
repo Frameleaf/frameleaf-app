@@ -354,6 +354,7 @@ const ENGINE_CASES: Record<
   'marker.update': (f) => ({ payload: { markerId: f.marker, patch: { name: 'Chorus' } } }),
   'music.add': () => ({ payload: { musicId: 'ambient-1', at: seconds(0) } }),
   'project.applyTemplate': () => ({ payload: { templateId: 'vertical-9-16' } }),
+  'project.setMasterAudio': () => ({ payload: { gainDb: -6, muted: true } }),
   'sequence.setSettings': () => ({ payload: { sequenceId: 'main', width: 1280, height: 720 } }),
   'title.add': () => ({ payload: { text: 'Second title', at: seconds(5) } }),
   'track.add': () => ({ payload: { kind: 'video', name: 'Added' } }),

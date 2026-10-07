@@ -2968,6 +2968,24 @@ Object.assign(commands, {
     state.items.push({ ...title, from: start });
   },
 
+  /* 14.7 */
+  'project.setMasterAudio'(state, payload) {
+    for (const key of Object.keys(payload)) {
+      if (!['gainDb', 'muted', 'ducking'].includes(key)) invalid(`project.setMasterAudio: unknown field "${key}"`);
+    }
+    const gainDb = payload.gainDb;
+    if (gainDb !== undefined && !finite(gainDb)) invalid('gainDb must be a number');
+    if (gainDb !== undefined && (gainDb < -60 || gainDb > 12)) invalid('gainDb must be between -60 and 12 dB');
+    if (payload.muted !== undefined && typeof payload.muted !== 'boolean') invalid('muted must be a boolean');
+    if (payload.ducking !== undefined) {
+      if (typeof payload.ducking !== 'boolean') invalid('ducking must be a boolean');
+      throw new Refusal('not-implemented', 'ducking: the engine has no project-wide ducking switch');
+    }
+    if (gainDb === undefined && payload.muted === undefined) invalid('project.setMasterAudio needs gainDb or muted');
+    if (gainDb !== undefined) state.timeline.masterBusDb = gainDb;
+    if (payload.muted !== undefined) state.timeline.masterBusMuted = payload.muted;
+  },
+
   /* 14.6.1 */
   'sequence.setSettings'(state, payload) {
     const sequenceId = text(payload, 'sequenceId');

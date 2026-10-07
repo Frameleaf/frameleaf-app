@@ -1,0 +1,66 @@
+Subject: Initialize project master gain and EQ before timeline hydration branches
+
+Freecut MIT adaptation. Empty or absent timelines keep their incoming master settings,
+with a default gain of 0 dB. Monitor volume and mute remain device scoped.
+
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -1137,6 +1137,8 @@
+   // that is what resolves each track's height. Heights are a local view
+   // preference and never come out of the project file.
+   loadTrackHeightOverrides(project.id)
++  usePlaybackStore.getState().setMasterBusDb(project.timeline?.masterBusDb ?? 0)
++  usePlaybackStore.getState().setBusAudioEq(project.timeline?.busAudioEq)
+   usePlaybackStore.getState().setMasterBusMuted(project.timeline?.masterBusMuted === true)
+
+   if (project.timeline && project.timeline.tracks?.length > 0) {
+@@ -1178,8 +1180,6 @@
+     useMarkersStore.getState().setInPoint(sanitizedInOutPoints.inPoint)
+     useMarkersStore.getState().setOutPoint(sanitizedInOutPoints.outPoint)
+     useTimelineSettingsStore.getState().setScrollPosition(t.scrollPosition || 0)
+-    usePlaybackStore.getState().setBusAudioEq(t.busAudioEq)
+-    usePlaybackStore.getState().setMasterBusDb(t.masterBusDb ?? 0)
+
+     // Restore sub-compositions
+     if (t.compositions && t.compositions.length > 0) {
+@@ -1253,7 +1253,6 @@
+     useTimelineSettingsStore.getState().setScrollPosition(0)
+     useZoomStore.getState().setZoomLevel(1)
+     usePlaybackStore.getState().setCurrentFrame(0)
+-    usePlaybackStore.getState().setBusAudioEq(undefined)
+   }
+
+   // Common setup for both cases
+--- a/src/features/timeline/stores/timeline-persistence.test.ts
++++ b/src/features/timeline/stores/timeline-persistence.test.ts
+@@ -10,6 +10,7 @@
+ import { useCompositionsStore } from './compositions-store'
+ import { useCompositionNavigationStore } from './composition-navigation-store'
+ import { useKeyframesStore } from './keyframes-store'
++import { usePlaybackStore } from '@/shared/state/playback'
+ import { buildTimelineFromStores, hydrateTimelineStoresFromProject } from './timeline-persistence'
+
+ const rootTrack = makeTimelineTrack({ id: 'root-track', name: 'Root', kind: 'video', order: 0 })
+@@ -23,6 +24,22 @@
+ describe('timeline project hydration', () => {
+   beforeEach(() => resetTimelineCompositionTestState())
+   afterEach(() => resetTimelineCompositionTestState())
++
++  it('loads each project master gain and EQ even without saved tracks', async () => {
++    const project: Project = {
++      id: 'project-master', name: 'Master', description: '', createdAt: 1, updatedAt: 1, duration: 0,
++      metadata: { width: 1920, height: 1080, fps: 30 },
++    }
++    const eq = { enabled: true, lowGainDb: 2 }
++    usePlaybackStore.setState({ volume: 0.25, muted: true })
++    for (const timeline of [{ tracks: [], items: [], masterBusDb: 3, busAudioEq: eq }, undefined]) {
++      await hydrateTimelineStoresFromProject({ ...project, timeline: { tracks: [rootTrack], items: [], masterBusDb: -6, busAudioEq: { lowGainDb: -4 } } })
++      await hydrateTimelineStoresFromProject({ ...project, timeline })
++      expect(buildTimelineFromStores()).toMatchObject({ masterBusDb: timeline?.masterBusDb ?? 0, masterBusMuted: false })
++      expect(buildTimelineFromStores().busAudioEq).toEqual(timeline?.busAudioEq)
++      expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.25, muted: true })
++    }
++  })
+
+   it('unwinds an active Motion composition before hydrating root stores', async () => {
+     useItemsStore.getState().setTracks([rootTrack])
