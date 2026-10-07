@@ -432,3 +432,74 @@ it('holds independently probed ST 2086 values to the declared profile, including
     /mastering display/,
   );
 });
+
+it('declares original-resolution HDR and explicit SDR stills without changing the stored document', () => {
+  const input = {
+    metadata: { width: 128, height: 64, fps: 24, colorManagement: { workingRange: 'hdr' } },
+    timeline: {
+      tracks: [{ id: 'v1' }],
+      items: [{ id: 'photo', type: 'image', trackId: 'v1', mediaId: 'photo', from: 0, durationInFrames: 24 }],
+      transitions: [],
+      keyframes: [],
+    },
+  };
+  const before = structuredClone(input);
+  for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
+    const contract = buildStudioExportContract({ format, color: 'preserve' }, input, []);
+    expect(contract).toMatchObject({
+      audio: null,
+      image: {
+        version: 1,
+        format,
+        width: 128,
+        height: 64,
+        frame: 0,
+        dynamicRange: format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+        outputIntent: 'hdr',
+        referenceWhite: 203,
+      },
+    });
+    expect(parseStudioExportContract(contract)).toEqual(contract);
+  }
+  expect(input).toEqual(before);
+  input.metadata.colorManagement.workingRange = 'sdr';
+  expect(() => buildStudioExportContract({ format: 'hdr-jpeg', color: 'preserve' }, input, [])).toThrow(/HDR document/);
+  expect(buildStudioExportContract({ format: 'sdr-jpeg', color: 'preserve' }, input, [])).toMatchObject({
+    image: { outputIntent: 'sdr' },
+  });
+});
+
+it('refuses malformed still contracts and a selection containing multiple frames', () => {
+  const input = {
+    metadata: { width: 128, height: 64, fps: 24, colorManagement: { workingRange: 'hdr' } },
+    timeline: {
+      tracks: [{ id: 'v1' }],
+      items: [{ id: 'photo', type: 'image', trackId: 'v1', mediaId: 'photo', from: 0, durationInFrames: 24 }],
+      transitions: [],
+      keyframes: [],
+    },
+  };
+  expect(() =>
+    buildStudioExportContract({ format: 'hdr-heic', color: 'preserve', range: { inPoint: 0, outPoint: 2 } }, input, []),
+  ).toThrow(/one frame/);
+  const contract = buildStudioExportContract(
+    { format: 'hdr-heic', color: 'preserve', range: { inPoint: 5, outPoint: 6 } },
+    input,
+    [],
+  );
+  expect(contract).toMatchObject({ image: { frame: 5 } });
+  for (const mutation of [
+    { width: 0 },
+    { version: 2 },
+    { dynamicRange: 'sdr' },
+    { referenceWhite: 0 },
+    { format: 'svg' },
+  ]) {
+    expect(
+      parseStudioExportContract({
+        ...contract,
+        image: { ...(contract as unknown as { image: Record<string, unknown> }).image, ...mutation },
+      }),
+    ).toBeNull();
+  }
+});

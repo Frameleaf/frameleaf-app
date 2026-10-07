@@ -102911,7 +102911,7 @@
             "type": "string"
           },
           "contentType": {
-            "description": "`video/mp4`, `video/webm` or `video/quicktime`",
+            "description": "Verified output MIME: `video/mp4`, `video/webm`, `video/quicktime`, `image/jpeg` or `image/heic`",
             "maxLength": 100,
             "minLength": 1,
             "type": "string"
@@ -109875,7 +109875,10 @@
           "mp4-hevc-main10",
           "mp4-h264",
           "webm-av1",
-          "prores-422-hq"
+          "prores-422-hq",
+          "sdr-jpeg",
+          "hdr-jpeg",
+          "hdr-heic"
         ],
         "type": "string"
       },
@@ -109979,7 +109982,8 @@
           "720p",
           "1080p",
           "1440p",
-          "2160p"
+          "2160p",
+          "original"
         ],
         "type": "string"
       },

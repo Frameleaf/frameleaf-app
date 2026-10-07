@@ -1,0 +1,30 @@
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -1020,14 +1020,14 @@
+   'project' | 'media' | 'frame' | 'atSeconds' | 'strict'
+ > {
+   hdrRasters?: Readonly<Record<string, HdrRasterInput>>
+-  target: 'pq' | 'hlg'
++  target: 'pq' | 'hlg' | 'sdr-display'
+   /** Browser-local cancellation; Node drivers also close their page when a lease is lost. */
+   signal?: AbortSignal
+ }
+ 
+ async function renderFrameSignal(input: HeadlessSignalFrameInput) {
+   input.signal?.throwIfAborted()
+-  if (input.target !== 'pq' && input.target !== 'hlg') throw new Error('Unsupported signal target')
++  if (input.target !== 'pq' && input.target !== 'hlg' && input.target !== 'sdr-display') throw new Error('Unsupported signal target')
+   const view = extractTimeline(input.project)
+   for (const id of Object.keys(input.hdrRasters ?? {})) {
+     validateHdrRaster(input.hdrRasters![id]!)
+--- a/src/headless/signal-frame.ts
++++ b/src/headless/signal-frame.ts
+@@ -6,7 +6,7 @@
+ export async function renderCompositionSignalFrame(
+   composition: CompositionInputProps & { width: number; height: number },
+   frame: number,
+-  target: 'pq' | 'hlg',
++  target: 'pq' | 'hlg' | 'sdr-display',
+   signal?: AbortSignal,
+   hdrRasters?: Readonly<Record<string, HdrRasterInput>>,
+ ) {

@@ -266,6 +266,10 @@ describe(StudioExportService.name, () => {
     probe: ReturnType<typeof vi.fn>;
     probeHdrMastering: ReturnType<typeof vi.fn<MediaRepository['probeHdrMastering']>>;
     probePackets: ReturnType<typeof vi.fn>;
+    inspectImageEncoding: ReturnType<typeof vi.fn>;
+    getImageMetadata: ReturnType<typeof vi.fn>;
+    generateHdrRenditions: ReturnType<typeof vi.fn>;
+    writeStrippedStill: ReturnType<typeof vi.fn>;
   };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
@@ -387,6 +391,16 @@ describe(StudioExportService.name, () => {
     };
     mockRenderSessions([liveSession()]);
     media = {
+      inspectImageEncoding: vi.fn(),
+      getImageMetadata: vi.fn(),
+      generateHdrRenditions: vi.fn((_input, outputs) => {
+        for (const output of outputs) files.set(output.path, 2048);
+        return Promise.resolve();
+      }),
+      writeStrippedStill: vi.fn((_input, output) => {
+        files.set(output, 2048);
+        return Promise.resolve();
+      }),
       probe: vi.fn().mockResolvedValue(renderedOutput()),
       probeHdrMastering: vi.fn<MediaRepository['probeHdrMastering']>().mockResolvedValue([]),
       probePackets: vi.fn().mockResolvedValue(null),
@@ -448,6 +462,23 @@ describe(StudioExportService.name, () => {
       color: 'preserve',
       resolution: '1080p',
     } as StudioExportCreateDto;
+
+    it.each([{ subtitleMode: 'burn' }, { subtitleMode: 'off' }, { audio: 'stereo' }])(
+      'refuses photo-only incompatible settings %j before creating work',
+      async (settings) => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        await expect(
+          sut.create(auth(), PROJECT, {
+            ...dto,
+            format: 'sdr-jpeg',
+            resolution: 'original',
+            ...settings,
+          } as StudioExportCreateDto),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+        expect(renderWorkers.getSessionCapabilities).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       ['decoder only', ['h264_cuvid'], ['mp4']],
@@ -1100,6 +1131,203 @@ describe(StudioExportService.name, () => {
 
     beforeEach(() => {
       repository.getById.mockResolvedValue(versionRow({ outputPath: staged }));
+    });
+
+    it.each(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])(
+      'publishes %s only after server sanitization and stores its new identity',
+      async (format) => {
+        const photo = {
+          version: 1,
+          format,
+          width: 128,
+          height: 64,
+          frame: 0,
+          dynamicRange: format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+          outputIntent: 'hdr',
+          referenceWhite: 203,
+          renderer: 'frameleaf-studio-image-v1',
+        };
+        const request = job();
+        request.operation.snapshot = {
+          ...(request.operation.snapshot as object),
+          contract: { image: photo, video: { minBitDepth: 8, transfer: null }, audio: null },
+        };
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: { format, color: 'preserve', resolution: 'original' },
+            outputContentType: format === 'hdr-heic' ? 'image/heic' : 'image/jpeg',
+          }),
+        );
+        media.inspectImageEncoding.mockResolvedValue({
+          width: 128,
+          height: 64,
+          dynamicRange: photo.dynamicRange,
+          container: format === 'hdr-heic' ? 'heif' : 'jpeg',
+          codec: format === 'hdr-heic' ? 'hevc' : 'jpeg',
+          bitDepth: format === 'hdr-heic' ? 10 : 8,
+          transfer: format === 'hdr-heic' ? 16 : 'adaptive',
+          reconstructionAvailable: true,
+        });
+        crypto.hashFile
+          .mockResolvedValueOnce(Buffer.from('ab'.repeat(32), 'hex'))
+          .mockResolvedValue(Buffer.from('cd'.repeat(32), 'hex'));
+        repository.publish.mockResolvedValue(published());
+        await sut.run(request);
+        const input = repository.publish.mock.calls[0]?.[0];
+        expect(input).toMatchObject({
+          assetType: AssetType.Image,
+          checksum: Buffer.from('cd'.repeat(32), 'hex'),
+          sizeInBytes: 2048,
+          originalFileName: `Lake trip_still.${format === 'hdr-heic' ? 'heic' : 'jpg'}`,
+        });
+        expect(input.path).toContain(VERSION + '-');
+        expect(storage.rename).not.toHaveBeenCalledWith(staged, expect.anything());
+        expect(await storage.checkFileExists(staged)).toBe(true);
+        expect(media.probe).not.toHaveBeenCalled();
+        if (format === 'sdr-jpeg') {
+          expect(media.writeStrippedStill).toHaveBeenCalledWith(
+            staged,
+            expect.stringContaining('canonical-'),
+            'jpeg',
+            'srgb',
+          );
+          expect(media.generateHdrRenditions).not.toHaveBeenCalled();
+        } else
+          expect(media.generateHdrRenditions).toHaveBeenCalledWith(staged, [
+            expect.objectContaining({ dynamicRange: 'hdr', format: format === 'hdr-heic' ? 'heic' : 'jpeg' }),
+          ]);
+        expect(operations.fail).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses unavailable HDR or a sanitization failure without publishing or moving its original artifact', async () => {
+      const photo = {
+        version: 1,
+        format: 'hdr-jpeg',
+        width: 128,
+        height: 64,
+        frame: 0,
+        dynamicRange: 'hdr',
+        outputIntent: 'hdr',
+        referenceWhite: 203,
+        renderer: 'frameleaf-studio-image-v1',
+      };
+      const request = job();
+      request.operation.snapshot = {
+        ...(request.operation.snapshot as object),
+        contract: { image: photo, video: { minBitDepth: 8, transfer: null }, audio: null },
+      };
+      repository.getById.mockResolvedValue(
+        versionRow({
+          outputPath: staged,
+          settings: { format: 'hdr-jpeg', color: 'preserve', resolution: 'original' },
+          outputContentType: 'image/jpeg',
+        }),
+      );
+      media.inspectImageEncoding.mockResolvedValue({
+        width: 128,
+        height: 64,
+        dynamicRange: 'hdr',
+        container: 'jpeg',
+        reconstructionAvailable: false,
+      });
+      await sut.run(request);
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(media.generateHdrRenditions).not.toHaveBeenCalled();
+      media.inspectImageEncoding.mockResolvedValue({
+        width: 128,
+        height: 64,
+        dynamicRange: 'hdr',
+        container: 'jpeg',
+        reconstructionAvailable: true,
+      });
+      media.generateHdrRenditions.mockRejectedValueOnce(new Error('privacy processing failed'));
+      await sut.run(request);
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(storage.rename).not.toHaveBeenCalled();
+      expect(await storage.checkFileExists(staged)).toBe(true);
+    });
+
+    it('removes only its canonical attempt when sanitized HDR validation fails', async () => {
+      const request = job();
+      request.operation.snapshot = {
+        ...(request.operation.snapshot as object),
+        contract: {
+          image: {
+            version: 1,
+            format: 'hdr-jpeg',
+            width: 128,
+            height: 64,
+            frame: 0,
+            dynamicRange: 'hdr',
+            outputIntent: 'hdr',
+            referenceWhite: 203,
+            renderer: 'frameleaf-studio-image-v1',
+          },
+          video: { minBitDepth: 8, transfer: null },
+          audio: null,
+        },
+      };
+      repository.getById.mockResolvedValue(
+        versionRow({
+          outputPath: staged,
+          settings: { format: 'hdr-jpeg', color: 'preserve', resolution: 'original' },
+          outputContentType: 'image/jpeg',
+        }),
+      );
+      media.inspectImageEncoding
+        .mockResolvedValueOnce({
+          width: 128,
+          height: 64,
+          dynamicRange: 'hdr',
+          container: 'jpeg',
+          reconstructionAvailable: true,
+        })
+        .mockResolvedValue({ width: 128, height: 64, dynamicRange: 'sdr', container: 'jpeg' });
+      await sut.run(request);
+      const attempt = media.generateHdrRenditions.mock.calls[0][1][0].path;
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(storage.unlink).toHaveBeenCalledWith(attempt);
+      expect(await storage.checkFileExists(staged)).toBe(true);
+      expect(storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('releases only its unique canonical file after losing a photo publication claim', async () => {
+      const request = job();
+      request.operation.snapshot = {
+        ...(request.operation.snapshot as object),
+        contract: {
+          image: {
+            version: 1,
+            format: 'sdr-jpeg',
+            width: 128,
+            height: 64,
+            frame: 0,
+            dynamicRange: 'sdr',
+            outputIntent: 'sdr',
+            referenceWhite: 203,
+            renderer: 'frameleaf-studio-image-v1',
+          },
+          video: { minBitDepth: 8, transfer: null },
+          audio: null,
+        },
+      };
+      repository.getById.mockResolvedValue(
+        versionRow({
+          outputPath: staged,
+          settings: { format: 'sdr-jpeg', color: 'preserve', resolution: 'original' },
+          outputContentType: 'image/jpeg',
+        }),
+      );
+      media.inspectImageEncoding.mockResolvedValue({ width: 128, height: 64, dynamicRange: 'sdr', container: 'jpeg' });
+      repository.publish.mockRejectedValue(new StudioExportRefusal('claim-lost', 'stale claim'));
+      await sut.run(request);
+      const finalPath = repository.publish.mock.calls[0][0].path;
+      expect(finalPath).toContain(VERSION + '-');
+      expect(storage.unlink).toHaveBeenCalledWith(finalPath);
+      expect(await storage.checkFileExists(staged)).toBe(true);
+      expect(operations.requestCancel).not.toHaveBeenCalled();
     });
 
     it('does not prepare or publish after losing the validation gate', async () => {
@@ -2118,6 +2346,20 @@ describe(StudioExportService.name, () => {
       });
       expect(result).toEqual(
         expect.objectContaining({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' }),
+      );
+    });
+
+    it('saves a retained still as an image with its still filename and canonical identity', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult({ outputContentType: 'image/jpeg' }));
+      repository.saveToLibrary.mockResolvedValue(saved());
+      await sut.saveToLibrary(auth(), VERSION);
+      expect(repository.saveToLibrary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assetType: AssetType.Image,
+          originalFileName: 'Lake trip_still.jpg',
+          checksum: Buffer.from('ab'.repeat(32), 'hex'),
+          sizeInBytes: 1024,
+        }),
       );
     });
 

@@ -316,6 +316,45 @@ describe(StudioExportRepository.name, () => {
       expect((await state(staged.publishId)).result).toBeNull();
     });
 
+    it('stores the canonical still identity atomically without changing source or Live Photo pairing', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const motion = await ownSource(context.ctx, user.id, { type: AssetType.Video });
+      const source = await ownSource(context.ctx, user.id, { livePhotoVideoId: motion.id });
+      const staged = await stagedExport(context, user.id, [source]);
+      const checksum = randomBytes(32);
+      const outputPath = `/data/upload/${user.id}/${staged.version.id}-${randomUUID()}.jpg`;
+      const accepted = await context.sut.publish(
+        publication(staged, [source], {
+          checksum,
+          sizeInBytes: 2048,
+          path: outputPath,
+          contentType: 'image/jpeg',
+          assetType: AssetType.Image,
+          originalFileName: 'Lake trip_still.jpg',
+        }),
+      );
+      const version = await context.sut.getById(staged.version.id);
+      expect(Buffer.from(version!.outputChecksum!)).toEqual(checksum);
+      expect(String(version!.outputSizeInBytes)).toBe('2048');
+      expect(version!.outputPath).toBe(outputPath);
+      const result = await defaultDatabase
+        .selectFrom('asset')
+        .select(['checksum', 'type', 'livePhotoVideoId'])
+        .where('id', '=', accepted.createdAssetId!)
+        .executeTakeFirstOrThrow();
+      expect(Buffer.from(result.checksum)).toEqual(checksum);
+      expect(result.type).toBe(AssetType.Image);
+      expect(result.livePhotoVideoId).toBeNull();
+      const original = await defaultDatabase
+        .selectFrom('asset')
+        .select(['checksum', 'livePhotoVideoId'])
+        .where('id', '=', source.id)
+        .executeTakeFirstOrThrow();
+      expect(Buffer.from(original.checksum)).toEqual(source.checksum);
+      expect(original.livePhotoVideoId).toBe(motion.id);
+    });
+
     it('commits both queue entries with publication and never re-admits them after acknowledgement loss', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();

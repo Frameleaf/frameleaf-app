@@ -541,6 +541,36 @@ describe('evaluateRenderOutput (FL-42)', () => {
   const hdr = { ...sdr, colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } };
   const request = { format: 'mp4-h264', color: 'preserve', resolution: '1080p' };
 
+  it.each([
+    ['sdr-jpeg', 'frameleaf-sdr-jpeg', 'jpeg', 8, false],
+    ['hdr-jpeg', 'frameleaf-ultrahdr-jpeg', 'jpeg', 10, true],
+    ['hdr-heic', 'frameleaf-heic-pq', 'heic', 10, true],
+  ] as const)(
+    'requires actual %s writer and range proof independently of video capabilities',
+    (format, codec, container, maxBitDepth, hdr10) => {
+      const settings = { format, color: 'preserve', resolution: 'original' };
+      expect(evaluateRenderOutput([hdr], settings)).toMatchObject({ supported: false, refusal: 'codec-unavailable' });
+      const candidate = {
+        gpuMemoryBytes: 8 * gib,
+        codecs: [codec],
+        formats: [container],
+        colorPrecision: { maxBitDepth, hdr10, dolbyVision: false },
+      };
+      expect(evaluateRenderOutput([candidate], settings)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([{ ...candidate, gpuMemoryBytes: 4 * gib }], settings)).toMatchObject({
+        supported: false,
+        refusal: 'insufficient-memory',
+      });
+      if (hdr10)
+        expect(
+          evaluateRenderOutput(
+            [{ ...candidate, colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false } }],
+            settings,
+          ),
+        ).toMatchObject({ supported: false, refusal: 'incompatible-color' });
+    },
+  );
+
   // These fixtures independently exercise submission and real claim admission. A decoder, or
   // encoder evidence without its muxer, must never leave an export queued with no eligible worker.
   it.each([

@@ -31,6 +31,7 @@ export type StudioRenderVerdict = { supported: true } | { supported: false; refu
 
 /** GPU memory each resolution needs (mirrors `RENDER_MEMORY_BY_RESOLUTION`). */
 const MEMORY_BY_RESOLUTION: Readonly<Record<StudioExportResolution, number>> = {
+  [StudioExportResolution.Original]: 8 * 1024 ** 3,
   [StudioExportResolution.$720P]: 2 * 1024 ** 3,
   [StudioExportResolution.$1080P]: 4 * 1024 ** 3,
   [StudioExportResolution.$1440P]: 6 * 1024 ** 3,
@@ -39,6 +40,9 @@ const MEMORY_BY_RESOLUTION: Readonly<Record<StudioExportResolution, number>> = {
 
 /** The bit depth each format writes (mirrors `FORMAT_BIT_DEPTH`). */
 const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
+  [StudioExportFormat.SdrJpeg]: 8,
+  [StudioExportFormat.HdrJpeg]: 10,
+  [StudioExportFormat.HdrHeic]: 10,
   [StudioExportFormat.Mp4HevcMain10]: 10,
   [StudioExportFormat.Mp4H264]: 8,
   [StudioExportFormat.WebmAv1]: 10,
@@ -49,6 +53,9 @@ const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderCa
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
   if (evidence.maxBitDepth < depth) {
     return false;
+  }
+  if (settings.format === StudioExportFormat.HdrJpeg || settings.format === StudioExportFormat.HdrHeic) {
+    return settings.color === StudioExportColor.Preserve && evidence.hdr10;
   }
   if (settings.color === StudioExportColor.Hdr10) {
     return evidence.hdr10;
@@ -108,7 +115,14 @@ export const studioRenderChoices = (
 ): StudioRenderChoices => ({
   formats: Object.values(StudioExportFormat).map((format) => ({
     value: format,
-    verdict: evaluateStudioRender(evidence, destination, { ...current, format }),
+    verdict: evaluateStudioRender(evidence, destination, {
+      ...current,
+      format,
+      ...([StudioExportFormat.SdrJpeg, StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(format) && {
+        resolution: StudioExportResolution.Original,
+        color: StudioExportColor.Preserve,
+      }),
+    }),
   })),
   colors: Object.values(StudioExportColor).map((color) => ({
     value: color,

@@ -42,7 +42,10 @@ test('quality presets reach the encoder, preserve the legacy default and refuse 
   assert.equal(stillRecipe(claim()).settings.quality, 'high');
   assert.equal(stillRecipe(claim()).settings.videoBitrate, 10_000_000);
   for (const [quality, bitrate] of Object.entries({
-    low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000,
+    low: 2_500_000,
+    medium: 5_000_000,
+    high: 10_000_000,
+    ultra: 20_000_000,
   })) {
     const input = claim();
     input.settings.quality = quality;
@@ -80,8 +83,14 @@ test('ranges retain source-frame bounds, render only the selected frames and req
   assert.equal(recipe.frames, 8);
   assert.deepEqual(recipe.range, { inPoint: 4, outPoint: 12 });
   assert.deepEqual(input, before);
-  for (const range of [{ inPoint: -1, outPoint: 12 }, { inPoint: 4.5, outPoint: 12 },
-    { inPoint: 12, outPoint: 12 }, { inPoint: 4, outPoint: 25 }, { inPoint: 4, outPoint: 12, extra: true }, null]) {
+  for (const range of [
+    { inPoint: -1, outPoint: 12 },
+    { inPoint: 4.5, outPoint: 12 },
+    { inPoint: 12, outPoint: 12 },
+    { inPoint: 4, outPoint: 25 },
+    { inPoint: 4, outPoint: 12, extra: true },
+    null,
+  ]) {
     const invalid = structuredClone(before);
     invalid.settings.range = range;
     assert.throws(() => stillRecipe(invalid));
@@ -161,4 +170,37 @@ test('expired lease refuses before loading engine/build or creating private outp
     renderStillImage({ claim: claim(), isLeaseActive: () => false }, () => assert.fail()),
     /LEASE_LOST/,
   );
+});
+
+test('still image recipes preserve explicit document intent and one frame without accepting video settings', () => {
+  for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
+    const input = claim();
+    input.settings = { format, color: 'preserve', resolution: 'original', audio: 'preserve' };
+    input.snapshot.studio.graph.metadata.colorManagement = { workingRange: 'hdr' };
+    input.snapshot.contract.image = {
+      version: 1,
+      format,
+      width: 1280,
+      height: 720,
+      frame: 0,
+      dynamicRange: format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+      outputIntent: 'hdr',
+      referenceWhite: 203,
+      renderer: 'frameleaf-studio-image-v1',
+    };
+    const previous = process.env.FRAMELEAF_HDR_IMAGES;
+    process.env.FRAMELEAF_HDR_IMAGES = 'experimental';
+    try {
+      const recipe = stillRecipe(input);
+      assert.equal(recipe.frames, 1);
+      assert.equal(recipe.photo.format, format);
+      assert.equal(recipe.photo.outputIntent, 'hdr');
+      assert.equal(recipe.settings.resolution.width, 1280);
+      input.settings.resolution = '720p';
+      assert.throws(() => stillRecipe(input), /UNSUPPORTED_STILL_EXPORT_SETTINGS/);
+    } finally {
+      if (previous === undefined) delete process.env.FRAMELEAF_HDR_IMAGES;
+      else process.env.FRAMELEAF_HDR_IMAGES = previous;
+    }
+  }
 });

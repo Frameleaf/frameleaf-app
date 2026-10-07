@@ -2,6 +2,7 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
   AssetTypeEnum,
+  DynamicRange,
   cancelAssetDevelopRender,
   getAssetDevelop,
   getAssetEdits,
@@ -167,7 +168,7 @@ describe('QuickEditor', () => {
       .mockReturnValue(new DOMRect(0, 0, 800, 600));
     const hdr = {
       ...photo,
-      imageEncoding: { dynamicRange: 'hdr' as const, gainMap: 'ultra-hdr', reconstructionAvailable: true },
+      imageEncoding: { dynamicRange: DynamicRange.Hdr, gainMap: 'ultra-hdr', reconstructionAvailable: true },
     };
     const view = render(QuickEditor, { asset: hdr, onClose: vi.fn() });
     await ready();

@@ -1270,6 +1270,9 @@ export class RenderWorkerService {
       await this.artifactContext(sessionToken, operation.id, dto.claimToken);
       const artifact = await this.verifyCompletedArtifact(sessionToken, operation);
       const contentTypes: Record<string, string> = {
+        'sdr-jpeg': 'image/jpeg',
+        'hdr-jpeg': 'image/jpeg',
+        'hdr-heic': 'image/heic',
         'mp4-hevc-main10': 'video/mp4',
         'mp4-h264': 'video/mp4',
         'webm-av1': 'video/webm',

@@ -318,7 +318,11 @@ const RenderWorkerOutputSchema = z
       .regex(/^[\da-f]{64}$/i, 'SHA-256 hex digest')
       .describe('SHA-256 of the whole file'),
     sizeInBytes: BigIntString,
-    contentType: z.string().min(1).max(100).describe('`video/mp4`, `video/webm` or `video/quicktime`'),
+    contentType: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe('Verified output MIME: `video/mp4`, `video/webm`, `video/quicktime`, `image/jpeg` or `image/heic`'),
     remoteRef: z
       .string()
       .min(1)

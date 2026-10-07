@@ -6,7 +6,7 @@
     resolution: StudioExportResolution;
     quality: StudioExportQuality;
     mastering?: StudioExportMastering;
-    subtitleMode: StudioExportSubtitleMode;
+    subtitleMode?: StudioExportSubtitleMode;
     range?: { inPoint: number; outPoint: number };
     destination: MediaOperationDestination;
     /**
@@ -66,10 +66,14 @@
     sequenceName,
     busy = false,
     renderEvidence = [],
+    outputIntent = 'sdr',
+    hdrEnabled = false,
     onExport,
   }: {
     open?: boolean;
     sequenceName: string;
+    outputIntent?: 'sdr' | 'hdr';
+    hdrEnabled?: boolean;
     busy?: boolean;
     /** What the qualified render workers verified, per destination (FL-42). */
     renderEvidence?: readonly StudioRenderEvidence[];
@@ -77,6 +81,9 @@
   } = $props();
 
   const formats: { value: StudioExportFormat; label: Translations }[] = [
+    { value: StudioExportFormat.SdrJpeg, label: 'frameleaf_studio_export_format_sdr_jpeg' },
+    { value: StudioExportFormat.HdrJpeg, label: 'frameleaf_studio_export_format_hdr_jpeg' },
+    { value: StudioExportFormat.HdrHeic, label: 'frameleaf_studio_export_format_hdr_heic' },
     { value: StudioExportFormat.Mp4HevcMain10, label: 'frameleaf_studio_export_format_hevc' },
     { value: StudioExportFormat.Mp4H264, label: 'frameleaf_studio_export_format_h264' },
     { value: StudioExportFormat.WebmAv1, label: 'frameleaf_studio_export_format_av1' },
@@ -89,6 +96,7 @@
   ];
   // Largest first, as in the prototype.
   const resolutions: { value: StudioExportResolution; label: Translations }[] = [
+    { value: StudioExportResolution.Original, label: 'original' },
     { value: StudioExportResolution.$2160P, label: 'frameleaf_studio_export_resolution_2160' },
     { value: StudioExportResolution.$1440P, label: 'frameleaf_studio_export_resolution_1440' },
     { value: StudioExportResolution.$1080P, label: 'frameleaf_studio_export_resolution_1080' },
@@ -106,6 +114,18 @@
   ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
+  const photo = $derived(
+    [StudioExportFormat.SdrJpeg, StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(format),
+  );
+  $effect(() => {
+    if (photo) {
+      color = StudioExportColor.Preserve;
+      resolution = StudioExportResolution.Original;
+      quality = StudioExportQuality.High;
+      declarePqMastering = false;
+      smoothFactor = null;
+    } else if (resolution === StudioExportResolution.Original) resolution = StudioExportResolution.$2160P;
+  });
   let color = $state<StudioExportColor>(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);
   let quality = $state(StudioExportQuality.High);
@@ -225,7 +245,7 @@
       Number.isSafeInteger(outPoint) &&
       inPoint >= 0 &&
       outPoint > inPoint
-      ? { inPoint, outPoint }
+      ? { inPoint, outPoint: photo ? inPoint + 1 : outPoint }
       : null,
   );
   const canExport = $derived(
@@ -246,7 +266,7 @@
         resolution,
         quality,
         ...(mastering && { mastering }),
-        subtitleMode,
+        ...(!photo && { subtitleMode }),
         ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
@@ -267,7 +287,11 @@
         <span>{$t('frameleaf_studio_export_format')}</span>
         <select id="{fieldId}-format" bind:value={format}>
           {#each formats as item (item.value)}
-            <option value={item.value} disabled={unsupported(availableChoices.formats, item.value)}
+            <option
+              value={item.value}
+              disabled={unsupported(availableChoices.formats, item.value) ||
+                ((!hdrEnabled || outputIntent !== 'hdr') &&
+                  [StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(item.value))}
               >{$t(item.label)}</option
             >
           {/each}
@@ -275,7 +299,7 @@
       </label>
       <label class="field" for="{fieldId}-color">
         <span>{$t('frameleaf_studio_export_color')}</span>
-        <select id="{fieldId}-color" bind:value={color}>
+        <select id="{fieldId}-color" bind:value={color} disabled={photo}>
           {#each colors as item (item.value)}
             <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
               >{$t(item.label)}</option
@@ -285,7 +309,7 @@
       </label>
       <label class="field" for="{fieldId}-resolution">
         <span>{$t('frameleaf_studio_export_resolution')}</span>
-        <select id="{fieldId}-resolution" bind:value={resolution}>
+        <select id="{fieldId}-resolution" bind:value={resolution} disabled={photo}>
           {#each resolutions as item (item.value)}
             <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}>{$t(item.label)}</option>
           {/each}
@@ -301,19 +325,21 @@
       </label>
       <label class="field" for="{fieldId}-quality">
         <span>{$t('frameleaf_studio_export_quality')}</span>
-        <select id="{fieldId}-quality" bind:value={quality}>
+        <select id="{fieldId}-quality" bind:value={quality} disabled={photo}>
           {#each qualities as item (item.value)}
             <option value={item.value}>{$t(item.label)}</option>
           {/each}
         </select>
       </label>
-      <label class="field" for="{fieldId}-subtitles">
-        <span>{$t('frameleaf_studio_export_subtitles')}</span>
-        <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
-          <option value={StudioExportSubtitleMode.Burn}>{$t('frameleaf_studio_export_subtitles_burn')}</option>
-          <option value={StudioExportSubtitleMode.Off}>{$t('frameleaf_studio_export_subtitles_off')}</option>
-        </select>
-      </label>
+      {#if !photo}
+        <label class="field" for="{fieldId}-subtitles">
+          <span>{$t('frameleaf_studio_export_subtitles')}</span>
+          <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
+            <option value={StudioExportSubtitleMode.Burn}>{$t('frameleaf_studio_export_subtitles_burn')}</option>
+            <option value={StudioExportSubtitleMode.Off}>{$t('frameleaf_studio_export_subtitles_off')}</option>
+          </select>
+        </label>
+      {/if}
       <label class="field" for="{fieldId}-range">
         <span>{$t('frameleaf_studio_export_range')}</span>
         <select id="{fieldId}-range" bind:value={rangeMode}>
@@ -326,23 +352,25 @@
           <span>{$t('frameleaf_studio_export_range_start')}</span>
           <input id="{fieldId}-in-point" type="number" min="0" step="1" bind:value={inPoint} />
         </label>
-        <label class="field" for="{fieldId}-out-point">
-          <span>{$t('frameleaf_studio_export_range_end')}</span>
-          <input id="{fieldId}-out-point" type="number" min="1" step="1" bind:value={outPoint} />
-        </label>
+        {#if !photo}
+          <label class="field" for="{fieldId}-out-point">
+            <span>{$t('frameleaf_studio_export_range_end')}</span>
+            <input id="{fieldId}-out-point" type="number" min="1" step="1" bind:value={outPoint} />
+          </label>
+        {/if}
       {/if}
     </div>
     {#if rangeMode === 'frames' && selectedRange === null}
       <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
     {/if}
 
-    {#if color === StudioExportColor.Preserve}
+    {#if !photo && color === StudioExportColor.Preserve}
       <label class="note">
         <input type="checkbox" bind:checked={declarePqMastering} />
         {$t('frameleaf_studio_export_mastering_preserve')}
       </label>
     {/if}
-    {#if needsMastering}
+    {#if !photo && needsMastering}
       <fieldset class="smooth">
         <legend>{$t('frameleaf_studio_export_mastering_title')}</legend>
         <p class="note">{$t('frameleaf_studio_export_mastering_hint')}</p>
@@ -394,54 +422,61 @@
     <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
 
     <!-- FL-162: Smooth motion is its own job on the exported video; the export itself renders at home. -->
-    <fieldset class="smooth" data-testid="studio-export-smooth-motion">
-      <legend>{$t('frameleaf_studio_export_smooth_motion')}</legend>
-      <div class="segmented" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_studio_export_smooth_motion')}>
-        <button type="button" role="radio" aria-checked={smoothFactor === null} onclick={() => (smoothFactor = null)}>
-          {$t('frameleaf_studio_export_smooth_motion_off')}
-        </button>
-        {#each SMOOTH_FACTORS as factor (factor)}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={smoothFactor === factor}
-            onclick={() => (smoothFactor = factor)}
-          >
-            {$t('frameleaf_restoration_smooth_motion_factor', { values: { factor } })}
+    {#if !photo}
+      <fieldset class="smooth" data-testid="studio-export-smooth-motion">
+        <legend>{$t('frameleaf_studio_export_smooth_motion')}</legend>
+        <div
+          class="segmented"
+          role="radiogroup"
+          use:rovingFocus
+          aria-label={$t('frameleaf_studio_export_smooth_motion')}
+        >
+          <button type="button" role="radio" aria-checked={smoothFactor === null} onclick={() => (smoothFactor = null)}>
+            {$t('frameleaf_studio_export_smooth_motion_off')}
           </button>
-        {/each}
-      </div>
-      {#if smoothFactor !== null}
-        {#if interpolationDestinations}
-          <ModelSlider
-            workload="interpolation"
-            value={smoothModelId}
-            gpu={smoothGpu}
-            route={smoothRoute}
-            label={$t('frameleaf_restoration_smooth_motion_model')}
-            hideLegend
-            localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
-            onChange={(id, state) => {
-              smoothModelId = id;
-              smoothRunsOn = state.runsOn;
-            }}
-          />
-          <p class="note" role="status">
-            {#if smoothRunsOn === 'cloud' && smoothCloud}
-              {$t('frameleaf_studio_export_smooth_motion_cloud')}
-            {:else if smoothRunsOn === 'local' && smoothLocal}
-              {$t('frameleaf_studio_export_smooth_motion_local', { values: { name: smoothLocal.name } })}
-            {:else}
-              {$t('frameleaf_studio_export_smooth_motion_unavailable')}
-            {/if}
-          </p>
-        {:else if capabilitiesFailed}
-          <p class="note warning" role="status">{$t('frameleaf_studio_export_smooth_motion_unavailable')}</p>
-        {:else}
-          <p class="note" aria-busy="true">{$t('loading')}</p>
+          {#each SMOOTH_FACTORS as factor (factor)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={smoothFactor === factor}
+              onclick={() => (smoothFactor = factor)}
+            >
+              {$t('frameleaf_restoration_smooth_motion_factor', { values: { factor } })}
+            </button>
+          {/each}
+        </div>
+        {#if smoothFactor !== null}
+          {#if interpolationDestinations}
+            <ModelSlider
+              workload="interpolation"
+              value={smoothModelId}
+              gpu={smoothGpu}
+              route={smoothRoute}
+              label={$t('frameleaf_restoration_smooth_motion_model')}
+              hideLegend
+              localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
+              onChange={(id, state) => {
+                smoothModelId = id;
+                smoothRunsOn = state.runsOn;
+              }}
+            />
+            <p class="note" role="status">
+              {#if smoothRunsOn === 'cloud' && smoothCloud}
+                {$t('frameleaf_studio_export_smooth_motion_cloud')}
+              {:else if smoothRunsOn === 'local' && smoothLocal}
+                {$t('frameleaf_studio_export_smooth_motion_local', { values: { name: smoothLocal.name } })}
+              {:else}
+                {$t('frameleaf_studio_export_smooth_motion_unavailable')}
+              {/if}
+            </p>
+          {:else if capabilitiesFailed}
+            <p class="note warning" role="status">{$t('frameleaf_studio_export_smooth_motion_unavailable')}</p>
+          {:else}
+            <p class="note" aria-busy="true">{$t('loading')}</p>
+          {/if}
         {/if}
-      {/if}
-    </fieldset>
+      </fieldset>
+    {/if}
 
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>

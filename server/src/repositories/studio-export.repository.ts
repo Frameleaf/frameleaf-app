@@ -654,6 +654,8 @@ export class StudioExportRepository {
           scope,
           resultAssetId: createdAssetId ?? reusedAssetId,
           outputPath: reusedAssetId ? null : input.path,
+          outputChecksum: input.checksum,
+          outputSizeInBytes: input.sizeInBytes,
           privacy: { ...privacy.union, scope } as unknown as Record<string, unknown>,
           publishedAt: sql<Date>`now()`,
           updatedAt: sql<Date>`now()`,

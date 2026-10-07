@@ -1981,6 +1981,26 @@ describe(RenderWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['sdr-jpeg', 'image/jpeg'],
+      ['hdr-jpeg', 'image/jpeg'],
+      ['hdr-heic', 'image/heic'],
+    ])('binds %s completion to its server-verified artifact and canonical MIME', async (format, contentType) => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...validating, settings: { format } } as never);
+      const result = await sut.complete(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        artifactSequence: 0,
+        resultAssetId: null,
+      });
+      expect(result.accepted).toBe(true);
+      expect(studioExports.onRenderCompleted).toHaveBeenCalledWith(
+        expect.anything(),
+        workerA.id,
+        expect.objectContaining({ path: output.path, checksum: output.checksum, contentType }),
+        true,
+      );
+    });
+
     it('stages the output for publication and completes the render without a result asset', async () => {
       const result = await sut.complete(SESSION_A, validating.id, {
         claimToken: 'claim-1',

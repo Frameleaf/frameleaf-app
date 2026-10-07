@@ -78,7 +78,32 @@ export type StudioExportTiming = {
   sources: StudioSourceTiming[];
 };
 
+/** Still output identity is independent of the legacy video contract. */
+export const StudioExportImageContractSchema = z
+  .object({
+    version: z.literal(1),
+    format: z.enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']),
+    width: z.int().positive().max(16_384),
+    height: z.int().positive().max(16_384),
+    frame: z.int().nonnegative(),
+    dynamicRange: z.enum(['sdr', 'hdr']),
+    outputIntent: z.enum(['sdr', 'hdr']),
+    referenceWhite: z.literal(203),
+    renderer: z.literal('frameleaf-studio-image-v1'),
+  })
+  .strict()
+  .refine(
+    (image) =>
+      image.width * image.height <= 16_777_216 &&
+      image.dynamicRange === (image.format === 'sdr-jpeg' ? 'sdr' : 'hdr') &&
+      (image.dynamicRange === 'sdr' || image.outputIntent === 'hdr'),
+    'Invalid still output contract',
+  );
+export type StudioExportImageContract = z.infer<typeof StudioExportImageContractSchema>;
+export class StudioExportImageError extends Error {}
+
 export type StudioExportContract = {
+  image?: StudioExportImageContract;
   /** Main-timeline frame selection; the output is rebased to zero at this exact cadence. */
   range?: StudioExportRange & { cadence: string };
   video: {
@@ -365,6 +390,31 @@ export const buildStudioExportContract = (
   sources: readonly StudioSourceMediaFacts[],
 ): StudioExportContract => {
   const range = settings.range ? resolveStudioExportRange(graph, settings.range) : undefined;
+  if (['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(settings.format)) {
+    const metadata = asRecord(asRecord(graph).metadata);
+    const outputIntent = asRecord(metadata.colorManagement).workingRange === 'hdr' ? 'hdr' : 'sdr';
+    if (settings.color !== 'preserve' || settings.mastering !== undefined)
+      throw new StudioExportImageError('Still exports use their explicit SDR/HDR format and document color intent');
+    if (range && range.outPoint - range.inPoint !== 1)
+      throw new StudioExportImageError('A still export must select exactly one frame');
+    if (settings.format !== 'sdr-jpeg' && outputIntent !== 'hdr')
+      throw new StudioExportImageError('HDR still export requires an HDR document');
+    const image = StudioExportImageContractSchema.safeParse({
+      version: 1,
+      format: settings.format,
+      width: metadata.width,
+      height: metadata.height,
+      frame: range?.inPoint ?? 0,
+      dynamicRange: settings.format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+      outputIntent,
+      referenceWhite: 203,
+      renderer: 'frameleaf-studio-image-v1',
+    });
+    if (!image.success) throw new StudioExportImageError('This document exceeds the supported still-image dimensions');
+    // Older contracts remain unchanged. Still-aware workers must consume the image contract;
+    // these neutral legacy fields cannot be interpreted as a video rendering request.
+    return { image: image.data, video: { minBitDepth: 8, transfer: null }, audio: null, ...(range && { range }) };
+  }
   const hdrRequested = settings.color === 'hdr10' || settings.color === 'dolby-vision';
   const videoTransfers = new Set(
     sources.filter((facts) => facts.video).map((facts) => HDR_TRANSFERS[facts.video!.colorTransfer] ?? null),
@@ -451,6 +501,7 @@ export const findStudioExportRangeMismatch = (
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
   const record = asRecord(value);
   const video = asRecord(record.video);
+  if (record.image !== undefined && !StudioExportImageContractSchema.safeParse(record.image).success) return null;
   if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {
     return null;
   }

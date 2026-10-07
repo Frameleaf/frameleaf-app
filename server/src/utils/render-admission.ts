@@ -437,6 +437,9 @@ const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; contai
     codec: ['libsvtav1', 'libaom-av1', 'librav1e', 'av1_nvenc', 'av1_qsv', 'av1_vaapi', 'av1_amf'],
     container: 'webm',
   },
+  'sdr-jpeg': { codec: ['frameleaf-sdr-jpeg'], container: 'jpeg' },
+  'hdr-jpeg': { codec: ['frameleaf-ultrahdr-jpeg'], container: 'jpeg' },
+  'hdr-heic': { codec: ['frameleaf-heic-pq'], container: 'heic' },
   'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
 };
 
@@ -604,6 +607,7 @@ export const RENDER_MEMORY_BY_RESOLUTION: Readonly<Record<string, number>> = Obj
   '1080p': 4 * 1024 ** 3,
   '1440p': 6 * 1024 ** 3,
   '2160p': 8 * 1024 ** 3,
+  original: 8 * 1024 ** 3,
 });
 
 /** Bit depth a format writes: Main10 and ProRes 422 HQ are 10-bit. */
@@ -625,6 +629,7 @@ export type RenderOutputCandidate = {
 };
 
 const colorSupported = (color: string, format: string, precision: RenderColorPrecision) => {
+  if (format === 'hdr-jpeg' || format === 'hdr-heic') return precision.maxBitDepth >= 10 && precision.hdr10;
   const depth = Math.max(FORMAT_BIT_DEPTH[format] ?? 8, color === 'preserve' ? 8 : 10);
   if (precision.maxBitDepth < depth) {
     return false;

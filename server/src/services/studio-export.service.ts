@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DB } from 'src/schema/index.js';
@@ -82,6 +82,8 @@ import { settleOperationStop, withOperationExecution } from 'src/utils/operation
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
   StudioExportContract,
+  StudioExportImageContractSchema,
+  StudioExportImageError,
   StudioExportMastering,
   StudioExportMasteringError,
   StudioExportRange,
@@ -103,6 +105,7 @@ import {
   StudioExportSmoothMotion,
   isInsideFolder,
   isStudioExportContentType,
+  isStudioPhotoFormat,
   parseStudioExportPublishSnapshot,
   parseStudioExportSmoothMotion,
   studioExportFileName,
@@ -345,6 +348,19 @@ export class StudioExportService {
       audio: dto.audio ?? 'preserve',
       ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),
     };
+    if (isStudioPhotoFormat(dto.format)) {
+      if (dto.subtitleMode !== undefined || (dto.audio !== undefined && dto.audio !== 'preserve'))
+        throw new BadRequestException('Still exports do not support subtitle or audio settings');
+      if (dto.resolution !== 'original' || dto.smoothMotion || (dto.quality !== undefined && dto.quality !== 'high'))
+        throw new BadRequestException('Still exports use original document dimensions, high quality and no motion');
+      if (dto.format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
+        throw new ConflictException({
+          code: 'studio_export_hdr_unavailable',
+          message: 'HDR still export is unavailable',
+        });
+    } else if (dto.resolution === 'original') {
+      throw new BadRequestException('Original document dimensions are available for still exports');
+    }
     const smoothMotion = await this.requireSmoothMotion(dto.smoothMotion);
     await this.requireRenderableOutput(dto.destination, settings);
     const { timing, contract } = await this.declareOutput(
@@ -434,6 +450,9 @@ export class StudioExportService {
     } catch (error) {
       if (error instanceof StudioTimingError) {
         throw new ConflictException({ message: error.message, code: 'studio_export_timing_unknown' });
+      }
+      if (error instanceof StudioExportImageError) {
+        throw new ConflictException({ message: error.message, code: 'studio_export_image_unsupported' });
       }
       if (error instanceof StudioExportMasteringError) {
         throw new ConflictException({ message: error.message, code: 'studio_export_mastering_unknown' });
@@ -622,7 +641,10 @@ export class StudioExportService {
         sizeInBytes: Number(version.outputSizeInBytes),
         contentType: version.outputContentType!,
         assetType: container.assetType,
-        originalFileName: studioExportFileName(project?.name ?? '', container.extension),
+        originalFileName: studioExportFileName(
+          `${project?.name ?? ''}${container.assetType === AssetType.Image ? '_still' : ''}`,
+          container.extension,
+        ),
       });
     } catch (error) {
       await this.storage.rename(finalPath, keptPath).catch((restoreError) => {
@@ -935,7 +957,10 @@ export class StudioExportService {
         })`,
       );
     } catch (error) {
-      if (await settleOperationStop(this.operations, operation, claimToken)) return;
+      if (await settleOperationStop(this.operations, operation, claimToken)) {
+        if (prepared?.sanitized && !published) await this.storage.unlink(prepared.finalPath).catch(() => {});
+        return;
+      }
       if (published) {
         // The operation owns the sole retry budget. Its durable intents survive this failure.
         if (!(error instanceof StudioExportRefusal && error.code === 'claim-lost')) {
@@ -944,7 +969,8 @@ export class StudioExportService {
         return;
       }
       if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
-        // A replacement claim may already be using the prepared file. Leave it in place.
+        // Photo attempts own unique paths; a replacement claim cannot be using this one.
+        if (prepared?.sanitized) await this.storage.unlink(prepared.finalPath).catch(() => {});
         return;
       }
       if (prepared) {
@@ -1025,35 +1051,72 @@ export class StudioExportService {
       throw new PublishError('studio_export_output_invalid', 'The render this export came from is gone');
     }
     const staging = this.stagingFolder({ ownerId: version.ownerId, id: version.renderOperationId });
+    const photo = isStudioPhotoFormat((version.settings as { format?: unknown }).format);
+    if (photo && !contract?.image)
+      throw new StudioExportRefusal('output-rejected', 'The still export has no matching image contract');
+    const outputId = photo ? `${version.id}-${randomUUID()}` : version.id;
     const finalPath =
       expectedScope === StudioExportScope.Library
-        ? studioExportLibraryPath(version.ownerId, version.id, container.extension)
-        : studioExportProjectPath(version.ownerId, version.id, container.extension);
+        ? studioExportLibraryPath(version.ownerId, outputId, container.extension)
+        : studioExportProjectPath(version.ownerId, outputId, container.extension);
 
     // An earlier attempt may have moved the file already and then stopped; accept it there too.
-    const stagedPath = version.outputPath;
+    let stagedPath = version.outputPath;
     const current = (await this.storage.checkFileExists(stagedPath)) ? stagedPath : finalPath;
     await this.verifyOutput(current, current === stagedPath ? staging : dirname(finalPath), version);
     await this.verifyContract(current, version, contract);
+    const nsfwHiding = await this.nsfwHiding();
+    let sanitized: { checksum: Buffer; sizeInBytes: number } | undefined;
+    if (photo && contract?.image) {
+      // A worker's file is never published without server-side privacy processing. Keep its
+      // immutable artifact for retry; each server attempt owns a distinct canonical still.
+      stagedPath = join(staging, `canonical-${randomUUID()}${container.extension}`);
+      this.storage.mkdirSync(staging);
+      assertExecutionActive();
+      try {
+        if (contract.image.dynamicRange === 'hdr') {
+          await this.media.generateHdrRenditions(current, [
+            { path: stagedPath, dynamicRange: 'hdr', format: contract.image.format === 'hdr-heic' ? 'heic' : 'jpeg' },
+          ]);
+        } else {
+          await this.media.writeStrippedStill(current, stagedPath, 'jpeg', 'srgb');
+        }
+        await this.verifyContract(stagedPath, version, contract);
+        const stat = await this.storage.stat(stagedPath);
+        if (!stat.isFile() || Number(stat.size) <= 0 || Number(stat.size) > 32 * 1024 * 1024)
+          throw new StudioExportRefusal('output-rejected', 'The sanitized still exceeds the publication size limit');
+        sanitized = { checksum: await this.crypto.hashFile(stagedPath, 'sha256'), sizeInBytes: Number(stat.size) };
+        assertExecutionActive();
+      } catch (error) {
+        await this.storage.unlink(stagedPath).catch(() => {});
+        throw error;
+      }
+    }
 
     if (current !== finalPath) {
       this.storage.mkdirSync(dirname(finalPath));
       assertExecutionActive();
-      await this.storage.rename(stagedPath, finalPath);
+      try {
+        await this.storage.rename(stagedPath, finalPath);
+      } catch (error) {
+        if (sanitized) await this.storage.unlink(stagedPath).catch(() => {});
+        throw error;
+      }
     }
 
     return {
       versionId: version.id,
+      ...(sanitized && { sanitized }),
       stagedPath,
       finalPath,
       stagingFolder: staging,
       expectedScope,
       retainInProject,
-      nsfwHiding: await this.nsfwHiding(),
+      nsfwHiding,
       sources: recorded.filter((source) => isLibrarySource(source)),
       contentType,
       assetType: container.assetType,
-      originalFileName: studioExportFileName(project.name, container.extension),
+      originalFileName: studioExportFileName(`${project.name}${photo ? '_still' : ''}`, container.extension),
     };
   }
 
@@ -1122,6 +1185,35 @@ export class StudioExportService {
     ) {
       throw new StudioExportRefusal('output-rejected', 'The render has no matching frame range contract');
     }
+    if (isStudioPhotoFormat(settings.format)) {
+      const parsed = StudioExportImageContractSchema.safeParse(contract?.image);
+      const image = parsed.success ? parsed.data : null;
+      if (
+        !image ||
+        image.format !== settings.format ||
+        version.outputContentType !== (image.format === 'hdr-heic' ? 'image/heic' : 'image/jpeg')
+      )
+        throw new StudioExportRefusal('output-rejected', 'The still file has no matching output contract');
+      const encoding = await this.media.inspectImageEncoding(path);
+      const dimensions = encoding.width && encoding.height ? encoding : await this.media.getImageMetadata(path);
+      if (
+        dimensions.width !== image.width ||
+        dimensions.height !== image.height ||
+        encoding.dynamicRange !== image.dynamicRange ||
+        (image.dynamicRange === 'hdr' && !encoding.reconstructionAvailable) ||
+        (image.format === 'hdr-heic'
+          ? encoding.container !== 'heif' ||
+            encoding.codec !== 'hevc' ||
+            (encoding.bitDepth ?? 0) < 10 ||
+            encoding.transfer !== 16
+          : encoding.container !== 'jpeg')
+      )
+        throw new StudioExportRefusal(
+          'output-rejected',
+          'The encoded still does not preserve its declared dimensions, format and dynamic range',
+        );
+      return;
+    }
     const expected = contract ?? buildStudioExportContract(settings, null, []);
     const probe = await this.media.probe(path).catch(() => null);
     if (!probe) {
@@ -1167,8 +1259,8 @@ export class StudioExportService {
           retainInProject: prepared.retainInProject,
           nsfwHiding: prepared.nsfwHiding,
           path: prepared.finalPath,
-          checksum: Buffer.from(version.outputChecksum!),
-          sizeInBytes: Number(version.outputSizeInBytes),
+          checksum: prepared.sanitized?.checksum ?? Buffer.from(version.outputChecksum!),
+          sizeInBytes: prepared.sanitized?.sizeInBytes ?? Number(version.outputSizeInBytes),
           contentType: prepared.contentType,
           assetType: prepared.assetType,
           originalFileName: prepared.originalFileName,
@@ -1606,6 +1698,7 @@ export class StudioExportService {
 }
 
 type PreparedPublication = {
+  sanitized?: { checksum: Buffer; sizeInBytes: number };
   versionId: string;
   stagedPath: string;
   finalPath: string;
