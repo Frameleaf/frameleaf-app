@@ -1,16 +1,5 @@
-import {
-  ASSET_DEVELOP_BITMAP_MASK_KINDS,
-  ASSET_DEVELOP_MAX_MASKS,
-  ASSET_DEVELOP_MAX_RECIPE_POINTS,
-  ASSET_DEVELOP_RECIPE_VERSION,
-  type AssetDevelopCleanup,
-  type AssetDevelopCrop,
-  type AssetDevelopMask,
-  type AssetDevelopMaskAdjustments,
-  AssetDevelopMaskKind,
-  AssetDevelopPreset,
-  type KnownAssetDevelopRecipe as AssetDevelopRecipe,
-} from 'src/dtos/asset-develop.dto.js';
+/* Relative imports are required by the standalone image worker. */
+/* eslint-disable no-restricted-imports */
 import {
   ARTIFACT_ID,
   type DevelopBitmap,
@@ -23,7 +12,22 @@ import {
   rasterizeStrokes,
   sampleBitmap,
   sampleCoverage,
-} from 'src/utils/develop-cleanup.js';
+} from './develop-cleanup.js';
+import {
+  ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_MAX_MASKS,
+  ASSET_DEVELOP_MAX_RECIPE_POINTS,
+  ASSET_DEVELOP_RECIPE_VERSION,
+  AssetDevelopMaskKind,
+  AssetDevelopPreset,
+} from '../queue/develop-values.js';
+import type {
+  AssetDevelopCleanup,
+  AssetDevelopCrop,
+  AssetDevelopMask,
+  AssetDevelopMaskAdjustments,
+  KnownAssetDevelopRecipe as AssetDevelopRecipe,
+} from 'src/dtos/asset-develop.dto.js';
 
 /**
  * Pure still-image develop maths shared by the recipe renderer (FL-113).

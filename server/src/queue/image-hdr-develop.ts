@@ -1,0 +1,232 @@
+/* Relative imports are required by the standalone image worker. */
+/* eslint-disable no-restricted-imports */
+import { ASSET_DEVELOP_BITMAP_MASK_KINDS, AssetDevelopMaskKind } from './develop-values.js';
+import type { LinearHdrImage } from './image-hdr.js';
+import { SharpResourceLimitError } from './sharp-protocol.js';
+import { type DevelopBitmap, orientedToOriginal } from '../utils/develop-cleanup.js';
+import {
+  type DevelopGeometryPlan,
+  createNoise,
+  defaultDevelopRecipe,
+  effectiveDevelop,
+  isActiveMask,
+  maskWeight,
+  originalMaskWeight,
+  straightenScale,
+} from '../utils/develop-recipe.js';
+import type { AssetDevelopMask, KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
+
+/** One inverse transform in linear light, without integer surfaces or SDR clipping. */
+export function transformHdrGeometry(
+  image: LinearHdrImage,
+  plan: DevelopGeometryPlan,
+  maxBytes: number,
+): LinearHdrImage {
+  const { width, height } = plan.output;
+  const bytes = width * height * 16;
+  if (
+    !Number.isSafeInteger(bytes) ||
+    width < 1 ||
+    height < 1 ||
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    image.data.length !== image.width * image.height * 16 ||
+    !Number.isSafeInteger(maxBytes) ||
+    image.data.length + bytes > maxBytes
+  ) {
+    throw new SharpResourceLimitError('HDR geometry exceeds the float surface budget');
+  }
+  const source = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+  const output = new Float32Array(width * height * 4);
+  const angle = (plan.straighten * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const scale = straightenScale(plan.oriented.width, plan.oriented.height, plan.straighten);
+  const cx = plan.oriented.width / 2;
+  const cy = plan.oriented.height / 2;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = plan.extract.left + x + 0.5 - cx;
+      const dy = plan.extract.top + y + 0.5 - cy;
+      const point = orientedToOriginal((dx * cos + dy * sin) / scale + cx, (-dx * sin + dy * cos) / scale + cy, plan);
+      const sx = Math.max(0, Math.min(image.width - 1, point.x - 0.5));
+      const sy = Math.max(0, Math.min(image.height - 1, point.y - 0.5));
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(x0 + 1, image.width - 1);
+      const y1 = Math.min(y0 + 1, image.height - 1);
+      const fx = sx - x0;
+      const fy = sy - y0;
+      const destination = (y * width + x) * 4;
+      let alpha = 0;
+      for (let sampleY = 0; sampleY < 2; sampleY++) {
+        for (let sampleX = 0; sampleX < 2; sampleX++) {
+          const index = ((sampleY === 0 ? y0 : y1) * image.width + (sampleX === 0 ? x0 : x1)) * 4;
+          const weight = (sampleX === 0 ? 1 - fx : fx) * (sampleY === 0 ? 1 - fy : fy) * source[index + 3];
+          alpha += weight;
+          for (let channel = 0; channel < 3; channel++) {
+            output[destination + channel] += source[index + channel] * weight;
+          }
+        }
+      }
+      if (alpha > 0) {
+        for (let channel = 0; channel < 3; channel++) output[destination + channel] /= alpha;
+      }
+      output[destination + 3] = alpha;
+    }
+  }
+  return { ...image, width, height, data: Buffer.from(output.buffer, output.byteOffset, output.byteLength) };
+}
+
+/** HDR renderer v1: linear exposure, luminance-weighted stops and unbounded chroma. */
+export function applyHdrDevelopTone(image: LinearHdrImage, recipe: KnownAssetDevelopRecipe, seed = 1): LinearHdrImage {
+  const { params, look } = effectiveDevelop(recipe);
+  const data = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+  // UHD gamut ids: BT.709, Display P3, BT.2020.
+  const weights =
+    image.gamut === 2
+      ? [0.2627, 0.678, 0.0593]
+      : image.gamut === 1
+        ? [0.2289746, 0.6917385, 0.0792869]
+        : [0.2126, 0.7152, 0.0722];
+  const exposure = 2 ** params.exposure;
+  const warm = params.temperature / 100;
+  const tint = params.tint / 100;
+  const gains = [(1 + 0.18 * warm) * (1 + 0.06 * tint), 1 - 0.12 * tint, (1 - 0.18 * warm) * (1 + 0.06 * tint)];
+  const contrast = 1 + params.contrast * 0.006 + Math.max(0, params.dehaze) * 0.003;
+  const noise = createNoise(seed);
+  const halfWidth = image.width / 2;
+  const halfHeight = image.height / 2;
+  const cornerDistance = Math.hypot(halfWidth, halfHeight);
+  const smooth = (low: number, high: number, value: number) => {
+    const t = Math.max(0, Math.min(1, (value - low) / (high - low)));
+    return t * t * (3 - 2 * t);
+  };
+  for (let i = 0; i < data.length; i += 4) {
+    let r = data[i] * exposure * gains[0];
+    let g = data[i + 1] * exposure * gains[1];
+    let b = data[i + 2] * exposure * gains[2];
+    let luma = Math.max(0, r * weights[0] + g * weights[1] + b * weights[2]);
+    const brightness = luma / (1 + luma);
+    const highlightMask = smooth(0.3, 0.8, brightness);
+    const shadowMask = 1 - smooth(0, 0.35, brightness);
+    const midtoneMask = 4 * brightness * (1 - brightness);
+    const stops =
+      (params.highlights / 100) * highlightMask +
+      (params.shadows / 100) * shadowMask +
+      (params.whites / 100) * brightness +
+      (params.brilliance / 100) * midtoneMask * (1 - 2 * brightness);
+    let factor = 2 ** stops;
+    if (contrast !== 1 && luma > 0) factor *= (luma / 0.18) ** (contrast - 1);
+    r *= factor;
+    g *= factor;
+    b *= factor;
+    const blackLift = ((params.blacks / 100) * 0.04 - (params.dehaze / 100) * 0.02) * shadowMask;
+    r += blackLift;
+    g += blackLift;
+    b += blackLift;
+    luma = r * weights[0] + g * weights[1] + b * weights[2];
+    const maximum = Math.max(r, g, b);
+    const saturation = maximum > 0 ? (maximum - Math.min(r, g, b)) / maximum : 0;
+    const chroma = (1 + params.saturation / 100) * (1 + (params.vibrance / 100) * 0.9 * (1 - saturation));
+    r = luma + (r - luma) * chroma;
+    g = luma + (g - luma) * chroma;
+    b = luma + (b - luma) * chroma;
+    if (look.grayscale) {
+      const grey = look.grayscale / 100;
+      r += (luma - r) * grey;
+      g += (luma - g) * grey;
+      b += (luma - b) * grey;
+    }
+    if (look.sepia) {
+      const amount = look.sepia / 100;
+      const sr = 0.393 * r + 0.769 * g + 0.189 * b;
+      const sg = 0.349 * r + 0.686 * g + 0.168 * b;
+      const sb = 0.272 * r + 0.534 * g + 0.131 * b;
+      r += (sr - r) * amount;
+      g += (sg - g) * amount;
+      b += (sb - b) * amount;
+    }
+    if (params.vignette) {
+      const pixel = i / 4;
+      const distance =
+        Math.hypot((pixel % image.width) + 0.5 - halfWidth, Math.floor(pixel / image.width) + 0.5 - halfHeight) /
+        cornerDistance;
+      factor = 2 ** ((-params.vignette / 100) * 2 * smooth(0.35, 1, distance));
+      r *= factor;
+      g *= factor;
+      b *= factor;
+    }
+    if (params.grain) {
+      const grain = (((noise() - 0.5) * params.grain) / 100) * 0.04 * Math.sqrt(Math.max(0, luma));
+      r += grain;
+      g += grain;
+      b += grain;
+    }
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+  }
+  return image;
+}
+
+/** Selective tone uses the same float math; mask coordinates retain the existing recipe semantics. */
+export function applyHdrDevelopMasks(
+  image: LinearHdrImage,
+  masks: AssetDevelopMask[],
+  plan: DevelopGeometryPlan,
+  maxBytes: number,
+  bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
+): LinearHdrImage {
+  const active = masks.filter((mask) => isActiveMask(mask));
+  if (active.length === 0) return image;
+  const original = orientedToOriginal(0, 0, plan).original;
+  const coverageCount = active.filter(
+    (mask) => mask.kind === AssetDevelopMaskKind.Brush || !!mask.strokes?.length,
+  ).length;
+  // Caches retain one surface per mask; refinement also holds initial and per-stroke surfaces.
+  const coverageBytes = original.width * original.height * 4 * (coverageCount ? coverageCount + 2 : 0);
+  let artifactBytes = 0;
+  for (const bitmap of bitmaps.values()) artifactBytes += bitmap.data.byteLength;
+  if (!Number.isSafeInteger(maxBytes) || image.data.length * 2 + coverageBytes + artifactBytes > maxBytes) {
+    throw new SharpResourceLimitError('HDR masks exceed the float surface budget');
+  }
+  for (const mask of active) {
+    if (ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) && (!mask.artifact || !bitmaps.has(mask.artifact))) {
+      throw new Error('HDR selective adjustment requires its verified mask artifact');
+    }
+  }
+  const scratch = Buffer.alloc(image.data.length);
+  const data = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+  const adjusted = new Float32Array(scratch.buffer, scratch.byteOffset, scratch.length / 4);
+  const { width: ow, height: oh } = plan.oriented;
+  const angle = (plan.straighten * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const scale = straightenScale(ow, oh, plan.straighten);
+  for (const mask of active) {
+    image.data.copy(scratch);
+    applyHdrDevelopTone({ ...image, data: scratch }, { ...defaultDevelopRecipe(), ...mask.adjustments });
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        const dx = plan.extract.left + x + 0.5 - ow / 2;
+        const dy = plan.extract.top + y + 0.5 - oh / 2;
+        const ox = (dx * cos + dy * sin) / scale + ow / 2;
+        const oy = (-dx * sin + dy * cos) / scale + oh / 2;
+        let weight: number;
+        if (mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear) {
+          weight = maskWeight(mask, ox / ow, oy / oh, ow / oh);
+        } else {
+          const point = orientedToOriginal(ox, oy, plan);
+          weight = originalMaskWeight(mask, point.x, point.y, original, bitmaps);
+        }
+        weight *= mask.amount / 100;
+        const index = (y * image.width + x) * 4;
+        for (let channel = 0; channel < 3; channel++) {
+          data[index + channel] += (adjusted[index + channel] - data[index + channel]) * weight;
+        }
+      }
+    }
+  }
+  return image;
+}
