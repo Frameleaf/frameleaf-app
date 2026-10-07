@@ -1,6 +1,7 @@
 // Loaded only inside the existing isolated image worker. No codec runs in the API process.
 #include <node_api.h>
 #include <libheif/heif.h>
+#include <libheif/heif_items.h>
 #include <ultrahdr_api.h>
 #include <algorithm>
 #include <cmath>
@@ -248,6 +249,44 @@ napi_value decodeHeif(napi_env env, Input& input) {
   return result;
 }
 
+bool jpegIsoGainMap(const uhdr_mem_block_t* image) {
+  if (!image || image->data_sz < 2) return false;
+  const auto* bytes = static_cast<const uint8_t*>(image->data);
+  if (bytes[0] != 255 || bytes[1] != 216) return false;
+  constexpr char tag[] = "urn:iso:std:iso:ts:21496:-1";
+  for (size_t offset = 2; offset + 4 <= image->data_sz;) {
+    if (bytes[offset++] != 255) return false;
+    while (offset < image->data_sz && bytes[offset] == 255) ++offset;
+    if (offset >= image->data_sz) return false;
+    const unsigned marker = bytes[offset++];
+    if (marker == 218 || marker == 217) return false;
+    if (marker == 1 || (marker >= 208 && marker <= 215)) continue;
+    if (offset + 2 > image->data_sz) return false;
+    const size_t length = size_t(bytes[offset]) * 256 + bytes[offset + 1];
+    if (length < 2 || length > image->data_sz - offset) return false;
+    if (marker == 226 && length >= sizeof(tag) + 2
+        && std::memcmp(bytes + offset + 2, tag, sizeof(tag)) == 0) return true;
+    offset += length;
+  }
+  return false;
+}
+
+void describeHeif(napi_env env, napi_value result, const Input& input, heif_context* ctx,
+                  const heif_image_handle* primary) {
+  const auto* bytes = static_cast<const uint8_t*>(input.data);
+  field(env, result, "container", heif_has_compatible_brand(bytes, int(input.size), "avif") == 1
+    || heif_has_compatible_brand(bytes, int(input.size), "avis") == 1 ? "avif" : "heif");
+  heif_item_id id; check(heif_context_get_primary_image_ID(ctx, &id));
+  const auto type = heif_item_get_item_type(ctx, id);
+  if (type == heif_item_type_hvc1) field(env, result, "codec", "hevc");
+  else if (type == heif_item_type_av01) field(env, result, "codec", "av1");
+  // A derived grid is not a codec: leave unknown until its tile codecs are verified.
+  field(env, result, "width", double(heif_image_handle_get_width(primary)));
+  field(env, result, "height", double(heif_image_handle_get_height(primary)));
+  const int depth = heif_image_handle_get_luma_bits_per_pixel(primary);
+  if (depth > 0) field(env, result, "bitDepth", double(depth));
+}
+
 napi_value inspect(napi_env env, napi_callback_info info) {
   return invoke(env, info, 3, [&](napi_value* args) {
     Input input(env, args); auto result = object(env);
@@ -255,8 +294,22 @@ napi_value inspect(napi_env env, napi_callback_info info) {
     field(env, result, "referenceWhite", 203.0); field(env, result, "reconstructionAvailable", false);
     if (is_uhdr_image(input.data, int(input.size))) {
       auto dec = decoder(input);
-      field(env, result, "dynamicRange", "hdr"); field(env, result, "gainMap", "iso-or-ultra-hdr");
-      field(env, result, "container", "adaptive-image"); field(env, result, "bitDepth", 8.0);
+      field(env, result, "dynamicRange", "hdr");
+      const auto* bytes = static_cast<const uint8_t*>(input.data);
+      const bool jpeg = input.size >= 2 && bytes[0] == 255 && bytes[1] == 216;
+      if (jpeg) {
+        field(env, result, "container", "jpeg"); field(env, result, "codec", "jpeg");
+        field(env, result, "bitDepth", 8.0);
+        field(env, result, "gainMap", jpegIsoGainMap(uhdr_dec_get_gainmap_image(dec.get())) ? "iso-21496" : "ultra-hdr");
+      } else {
+        Context ctx(heif_context_alloc(), heif_context_free);
+        if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
+        check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+        heif_image_handle* raw; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
+        Handle primary(raw, heif_image_handle_release);
+        describeHeif(env, result, input, ctx.get(), raw);
+        field(env, result, "gainMap", "iso-21496");
+      }
       field(env, result, "transfer", "adaptive");
       const auto* gain = uhdr_dec_get_gainmap_metadata(dec.get());
       field(env, result, "contentHeadroom", double(*std::max_element(gain->max_content_boost, gain->max_content_boost + 3)));
@@ -273,10 +326,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
       heif_image_handle* raw; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
       Handle primary(raw, heif_image_handle_release);
       input.dimensions(heif_image_handle_get_width(raw), heif_image_handle_get_height(raw));
-      field(env, result, "container", "heif");
-      field(env, result, "width", double(heif_image_handle_get_width(raw)));
-      field(env, result, "height", double(heif_image_handle_get_height(raw)));
-      field(env, result, "bitDepth", double(heif_image_handle_get_luma_bits_per_pixel(raw)));
+      describeHeif(env, result, input, ctx.get(), raw);
       heif_color_profile_nclx* profileRaw = nullptr;
       if (heif_image_handle_get_nclx_color_profile(raw, &profileRaw).code == heif_error_Ok) {
         Profile profile(profileRaw, heif_nclx_color_profile_free);
@@ -322,6 +372,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
         field(env, result, "fallbackReason", "invalid-gain-map"); return result;
       }
       field(env, result, "container", "jpeg"); field(env, result, "dynamicRange", "sdr");
+      field(env, result, "codec", "jpeg");
       field(env, result, "bitDepth", 8.0);
     }
     return result;
