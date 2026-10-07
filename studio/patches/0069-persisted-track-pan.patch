@@ -893,3 +893,539 @@ diff --git a/src/types/timeline.ts b/src/types/timeline.ts
    audioEq?: AudioEqSettings // Per-track EQ (separate from per-clip EQ)
    color?: string // Optional - tracks are generic containers, items have colors
    order: number
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -1,6 +1,7 @@
+ import type { AudioItem, CompositionItem, TimelineItem, TimelineTrack } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import { getAudioClipFadeMultiplier, getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
++import { applyAudioPanStages, getAudioPanStages } from '@/shared/utils/audio-pan'
+ import {
+   getManagedLinkedAudioTransitions,
+   hasLinkedAudioCompanion,
+@@ -38,6 +39,7 @@
+
+ export interface AudioMeterGraphNode {
+   fps: number
++  trackPanStages: ReadonlyMap<string, readonly number[]>
+   directSegments: Array<{
+     segment: AudioSegment | VideoAudioSegment
+     trackId: string
+@@ -83,6 +85,8 @@
+   sourceTimeSeconds: number
+   windowSeconds: number
+   trackId?: string
++  /** Leaf track first, then owned composition wrappers from inside out. */
++  panStages?: readonly number[]
+ }
+
+ export interface AudioMeterWaveform {
+@@ -266,6 +270,7 @@
+   segments: Array<AudioSegment | VideoAudioSegment>
+   sources: AudioMeterSource[]
+   trackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const { frame, fps, gainMultiplier, trackVolumeGain, segments, sources } = params
+
+@@ -294,6 +299,7 @@
+       }),
+       windowSeconds: Math.max(DEFAULT_WINDOW_SECONDS, 1 / Math.max(1, fps)),
+       trackId: params.trackId ?? '',
++      ...(params.panStages?.length ? { panStages: params.panStages } : {}),
+     })
+   }
+ }
+@@ -308,6 +314,7 @@
+   wrapper: EnrichedCompositionAudioItem | EnrichedCompositionItem
+   wrapperGain: number
+   ownerTrackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const {
+     frame,
+@@ -349,6 +356,7 @@
+     depth: depth + 1,
+     compositionsById,
+     ownerTrackId: ownerTrackId ?? wrapper.trackId,
++    panStages: params.panStages,
+     sources,
+   })
+ }
+@@ -360,6 +368,7 @@
+   depth: number
+   compositionsById: AudioMeterCompositionLookup
+   ownerTrackId?: string
++  panStages?: readonly number[]
+   sources: AudioMeterSource[]
+   segment: CompoundAudioSegment
+   wrapper: EnrichedCompositionAudioItem
+@@ -410,6 +419,7 @@
+     depth: depth + 1,
+     compositionsById,
+     ownerTrackId: ownerTrackId ?? wrapper.trackId,
++    panStages: params.panStages,
+     sources,
+   })
+ }
+@@ -423,6 +433,7 @@
+   depth: number
+   compositionsById: AudioMeterCompositionLookup
+   ownerTrackId?: string
++  panStages?: readonly number[]
+   sources: AudioMeterSource[]
+ }): void {
+   const {
+@@ -442,6 +453,9 @@
+   }
+
+   const effectiveTracks = resolveEffectiveTrackStates(tracks)
++  const trackPanStages = new Map(
++    effectiveTracks.map((track) => [track.id, getAudioPanStages(track.pan)]),
++  )
+   const items = effectiveTracks.flatMap((track) => track.items)
+   const renderPlan = resolveCompositionRenderPlan({ tracks: effectiveTracks, transitions })
+   const audioItems = renderPlan.audioItems
+@@ -527,6 +541,7 @@
+       segments: [segment],
+       sources,
+       trackId,
++      panStages: [...(trackPanStages.get(sourceTrackId) ?? []), ...(params.panStages ?? [])],
+     })
+   }
+
+@@ -576,6 +591,7 @@
+       sources,
+       segment,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+     })
+   }
+
+@@ -592,6 +608,7 @@
+       ownerTrackId,
+       sources,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+       wrapperGain:
+         toLinearGain((wrapper.volume ?? 0) + (wrapper.trackVolumeDb ?? 0)) *
+         getTrackGainCorrection(wrapper.trackId, toLinearGain(wrapper.trackVolumeDb ?? 0)),
+@@ -622,6 +639,7 @@
+       ownerTrackId,
+       sources,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+       wrapperGain: getTrackGainCorrection(
+         wrapper.trackId,
+         committedTrackVolumeByTrackId.get(wrapper.trackId) ?? 1,
+@@ -810,6 +828,7 @@
+
+   return {
+     fps,
++    trackPanStages: new Map(tracks.map((track) => [track.id, getAudioPanStages(track.pan)])),
+     directSegments,
+     compoundSegments,
+     compositionWrappers,
+@@ -824,6 +843,7 @@
+   depth: number
+   sources: AudioMeterSource[]
+   ownerTrackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const { graph, graphNode, frame, gainMultiplier, depth, sources, ownerTrackId } = params
+
+@@ -843,6 +863,10 @@
+       segments: [directEntry.segment],
+       sources,
+       trackId: ownerTrackId ?? directEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(directEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+
+@@ -885,6 +909,10 @@
+       depth: depth + 1,
+       sources,
+       ownerTrackId: ownerTrackId ?? compoundEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(compoundEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+
+@@ -930,6 +958,10 @@
+       depth: depth + 1,
+       sources,
+       ownerTrackId: ownerTrackId ?? compositionEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(compositionEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+ }
+@@ -1126,11 +1158,25 @@
+       continue
+     }
+
+-    const stereoLevel = estimateWaveformStereoLevelAtTime({
++    const panStages = source.panStages ?? []
++    const hasPan = panStages.some((pan) => pan !== 0)
++    // Independent absolute stereo peaks have no phase/coherence information for cross-channel pan.
++    // ponytail: admit mono envelopes only; stereo pan needs coherent channel samples.
++    if (hasPan && waveform.channels !== 1) {
++      unresolvedSourceCount += 1
++      continue
++    }
++
++    let stereoLevel = estimateWaveformStereoLevelAtTime({
+       waveform,
+       sourceTimeSeconds: source.sourceTimeSeconds,
+       windowSeconds: source.windowSeconds,
+     })
++    if (hasPan) {
++      // All channels originate from the same mono envelope, including nested panner stages.
++      const [left, right] = applyAudioPanStages([Float32Array.of(stereoLevel.left)], panStages)
++      stereoLevel = { left: left![0]!, right: right![0]! }
++    }
+     if (stereoLevel.left <= 0 && stereoLevel.right <= 0) {
+       resolvedSourceCount += 1
+       continue
+diff --git a/src/features/editor/components/audio-meter-utils.test.ts b/src/features/editor/components/audio-meter-utils.test.ts
+--- a/src/features/editor/components/audio-meter-utils.test.ts
++++ b/src/features/editor/components/audio-meter-utils.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from 'vite-plus/test'
+-import type { AudioItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import {
+   clearLiveTrackVolumeOverride,
+   compileAudioMeterGraph,
+@@ -576,4 +576,323 @@
+     expect(estimate.resolvedSourceCount).toBe(1)
+     expect(estimate.left).toBeGreaterThan(estimate.right)
+   })
++
++  for (const compiled of [false, true]) {
++    describe(compiled ? 'compiled pan meters' : 'live pan meters', () => {
++      function resolve(params: Parameters<typeof resolveAudioMeterSources>[0]) {
++        return compiled
++          ? resolveCompiledAudioMeterSources({
++              graph: compileAudioMeterGraph(params),
++              frame: params.frame,
++              masterGain: params.masterGain,
++            })
++          : resolveAudioMeterSources(params)
++      }
++
++      const monoWaveforms = new Map([
++        ['media-audio', { peaks: Float32Array.of(1), sampleRate: 1, channels: 1 }],
++      ])
++
++      it.each([undefined, 0, -1, -0.5, 0.5, 1])('meters mono track pan %s', (pan) => {
++        const params = {
++          tracks: [makeTrack({ pan, volume: -6, items: [makeAudioItem({ volume: -3 })] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          masterGain: 0.25,
++        }
++        const sources = resolve(params)
++        const neutralSources = resolve({
++          ...params,
++          tracks: params.tracks.map((t) => ({ ...t, pan: 0 })),
++        })
++        const neutral = estimateAudioMeterLevel({
++          sources: neutralSources,
++          waveformsByMediaId: monoWaveforms,
++        })
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        const angle = (((pan ?? 0) + 1) * Math.PI) / 4
++        expect(estimate.left).toBeCloseTo(neutral.left * (pan ? Math.cos(angle) : 1), 6)
++        expect(estimate.right).toBeCloseTo(neutral.right * (pan ? Math.sin(angle) : 1), 6)
++        expect(estimate.resolvedSourceCount).toBe(1)
++        expect(estimate.unresolvedSourceCount).toBe(0)
++        expect(sources[0]?.panStages).toEqual(pan ? [pan] : undefined)
++
++        const preBusSources = resolve({ ...params, masterGain: 1 })
++        const trackLevel = estimatePerTrackLevels({
++          tracks: params.tracks,
++          sources: preBusSources,
++          waveformsByMediaId: monoWaveforms,
++        }).get('track-1')!
++        expect(estimate.left).toBeCloseTo(trackLevel.left * 0.25, 6)
++        expect(estimate.right).toBeCloseTo(trackLevel.right * 0.25, 6)
++      })
++
++      it('orders leaf and owned wrapper pan from inside out without the visual companion pan', () => {
++        const outer = makeAudioItem({
++          id: 'outer',
++          compositionId: 'first',
++          linkedGroupId: 'owned',
++          src: '',
++          mediaId: undefined,
++        })
++        const visual: CompositionItem = {
++          id: 'visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'visual-track',
++          compositionId: 'first',
++          linkedGroupId: 'owned',
++          from: 0,
++          durationInFrames: 30,
++          label: 'Visual',
++        }
++        const inner = makeAudioItem({
++          id: 'inner',
++          trackId: 'inner-track',
++          compositionId: 'second',
++          src: '',
++          mediaId: undefined,
++        })
++        const params = {
++          tracks: [
++            makeTrack({ pan: 1, items: [outer] }),
++            makeTrack({ id: 'visual-track', kind: 'video', pan: -1, items: [visual] }),
++          ],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          compositionsById: {
++            first: {
++              id: 'first',
++              fps: 30,
++              transitions: [],
++              tracks: [makeTrack({ id: 'inner-track', pan: -0.5, items: [inner] })],
++            },
++            second: {
++              id: 'second',
++              fps: 30,
++              transitions: [],
++              tracks: [
++                makeTrack({ id: 'leaf', pan: 0.5, items: [makeAudioItem({ trackId: 'leaf' })] }),
++              ],
++            },
++          },
++        }
++        const sources = resolve(params)
++        expect(sources).toHaveLength(1)
++        expect(sources[0]).toMatchObject({ trackId: 'track-1', panStages: [0.5, -0.5, 1] })
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        const neutral = estimateAudioMeterLevel({
++          sources: sources.map((source) => ({ ...source, panStages: [] })),
++          waveformsByMediaId: monoWaveforms,
++        })
++        expect(estimate.left).toBeCloseTo(0, 6)
++        expect(estimate.right).toBeCloseTo(
++          neutral.right * (Math.cos((3 * Math.PI) / 8) + Math.sin((3 * Math.PI) / 8) * Math.SQRT2),
++          6,
++        )
++
++        expect(
++          resolve({
++            ...params,
++            tracks: params.tracks.map((track) =>
++              track.id === 'track-1' ? { ...track, items: [{ ...outer, muted: true }] } : track,
++            ),
++          }),
++        ).toEqual([])
++        expect(
++          resolve({
++            ...params,
++            tracks: params.tracks.map((track) =>
++              track.id === 'track-1' ? { ...track, muted: true } : track,
++            ),
++          }),
++        ).toEqual([])
++        expect(resolve({ ...params, masterGain: 0 })).toEqual([])
++      })
++
++      it('keeps pan independent of live fader correction', () => {
++        const params = {
++          tracks: [makeTrack({ pan: -0.5, volume: -12, items: [makeAudioItem()] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++        }
++        const before = estimateAudioMeterLevel({
++          sources: resolve(params),
++          waveformsByMediaId: monoWaveforms,
++        })
++        setLiveTrackVolumeOverride('track-1', 0)
++        try {
++          const sources = resolve(params)
++          const after = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++          expect(sources[0]?.panStages).toEqual([-0.5])
++          expect(after.left).toBeCloseTo(before.left * Math.pow(10, 12 / 20), 6)
++          expect(after.right).toBeCloseTo(before.right * Math.pow(10, 12 / 20), 6)
++        } finally {
++          clearLiveTrackVolumeOverride('track-1')
++        }
++      })
++
++      it('retains leaf then wrapper pan through managed compound transitions', () => {
++        const left = makeAudioItem({
++          id: 'left-audio',
++          compositionId: 'nested',
++          linkedGroupId: 'left',
++          src: '',
++          mediaId: undefined,
++          sourceDuration: 90,
++        })
++        const right = makeAudioItem({
++          ...left,
++          id: 'right-audio',
++          linkedGroupId: 'right',
++          from: 30,
++          sourceStart: 15,
++        })
++        const visual = (audio: AudioItem): CompositionItem => ({
++          id: audio.id + '-visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'visual',
++          compositionId: 'nested',
++          linkedGroupId: audio.linkedGroupId,
++          from: audio.from,
++          durationInFrames: 30,
++          label: 'Visual',
++          sourceDuration: 90,
++          sourceStart: 0,
++          sourceFps: 30,
++        })
++        const params = {
++          tracks: [
++            makeTrack({ pan: -1, items: [left, right] }),
++            makeTrack({
++              id: 'visual',
++              kind: 'video',
++              pan: 1,
++              items: [visual(left), visual(right)],
++            }),
++          ],
++          transitions: [
++            {
++              id: 'transition',
++              type: 'crossfade' as const,
++              presentation: 'fade' as const,
++              timing: 'linear' as const,
++              leftClipId: left.id + '-visual',
++              rightClipId: right.id + '-visual',
++              trackId: 'visual',
++              durationInFrames: 10,
++            },
++          ],
++          frame: 29,
++          fps: 30,
++          compositionsById: {
++            nested: {
++              id: 'nested',
++              fps: 30,
++              transitions: [],
++              tracks: [
++                makeTrack({
++                  id: 'leaf',
++                  pan: 0.5,
++                  items: [makeAudioItem({ trackId: 'leaf', durationInFrames: 90 })],
++                }),
++              ],
++            },
++          },
++        }
++        const sources = resolve(params)
++        expect(sources).toHaveLength(2)
++        for (const source of sources) expect(source.panStages).toEqual([0.5, -1])
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        expect(estimate.left).toBeGreaterThan(0)
++        expect(estimate.right).toBeCloseTo(0, 6)
++      })
++
++      it('uses an unowned visual wrapper pan without changing neutral stereo handling', () => {
++        const wrapper: CompositionItem = {
++          id: 'visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'track-1',
++          compositionId: 'nested',
++          from: 0,
++          durationInFrames: 30,
++          label: 'Visual',
++        }
++        const sources = resolve({
++          tracks: [makeTrack({ kind: 'video', pan: -1, items: [wrapper] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          compositionsById: {
++            nested: {
++              id: 'nested',
++              fps: 30,
++              transitions: [],
++              tracks: [makeTrack({ items: [makeAudioItem()] })],
++            },
++          },
++        })
++        expect(sources[0]?.panStages).toEqual([-1])
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        expect(estimate.left).toBeGreaterThan(0)
++        expect(estimate.right).toBeCloseTo(0, 6)
++        const waveformsByMediaId = new Map([
++          ['media-audio', { peaks: Float32Array.of(1, 0.25), sampleRate: 1, channels: 2 }],
++        ])
++        const neutral = estimateAudioMeterLevel({
++          sources: sources.map((source) => ({ ...source, panStages: [0] })),
++          waveformsByMediaId,
++        })
++        expect(neutral.resolvedSourceCount).toBe(1)
++        expect(neutral.unresolvedSourceCount).toBe(0)
++        expect(neutral.left).toBeGreaterThan(neutral.right)
++      })
++
++      it.each([2, 6, 0])(
++        'refuses active pan on phase-free or unknown channel layout %s',
++        (channels) => {
++          const sources = resolve({
++            tracks: [makeTrack({ pan: 1, items: [makeAudioItem()] })],
++            transitions: [],
++            frame: 0,
++            fps: 30,
++          })
++          const waveformsByMediaId = new Map([
++            ['media-audio', { peaks: Float32Array.of(1, 1), sampleRate: 1, channels }],
++          ])
++          expect(estimateAudioMeterLevel({ sources, waveformsByMediaId })).toEqual({
++            left: 0,
++            right: 0,
++            resolvedSourceCount: 0,
++            unresolvedSourceCount: 1,
++          })
++          const neutral = estimateAudioMeterLevel({
++            sources: sources.map((source) => ({ ...source, panStages: [] })),
++            waveformsByMediaId,
++          })
++          expect(neutral.resolvedSourceCount).toBe(1)
++          expect(neutral.left).toBeGreaterThan(0)
++        },
++      )
++
++      it('rejects invalid persisted pan before estimating sources', () => {
++        expect(() =>
++          resolve({
++            tracks: [makeTrack({ pan: Number.NaN, items: [makeAudioItem()] })],
++            transitions: [],
++            frame: 0,
++            fps: 30,
++          }),
++        ).toThrow('Invalid audio pan')
++      })
++    })
++  }
+ })
