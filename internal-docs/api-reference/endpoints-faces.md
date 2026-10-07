@@ -1,12 +1,12 @@
 # Server API — Faces
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getFaces
 
 `GET /api/faces`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L49).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L49).
 
 Retrieve faces for asset
 
@@ -115,7 +115,7 @@ Complete operation contract:
 
 `POST /api/faces`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L25).
 
 Create a face
 
@@ -205,7 +205,7 @@ Complete operation contract:
 
 `GET /api/faces/source`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L37).
 
 Retrieve the face source revision for an asset
 
@@ -288,7 +288,7 @@ Complete operation contract:
 
 `DELETE /api/faces/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L91).
 
 Delete a face
 
@@ -382,7 +382,7 @@ Complete operation contract:
 
 `PATCH /api/faces/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L75).
 
 Correct a face
 
@@ -474,7 +474,7 @@ Complete operation contract:
 
 `PUT /api/faces/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/face.controller.ts#L60).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/face.controller.ts#L60).
 
 Re-assign a face to another person
 

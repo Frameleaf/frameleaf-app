@@ -1,6 +1,97 @@
 # Server API models 7
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## BuddyAcceptDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "instanceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "quotaBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 10737418240,
+      "type": "integer"
+    },
+    "retention": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "enum": [
+            30
+          ],
+          "format": "double",
+          "type": "number"
+        },
+        "monthly": {
+          "enum": [
+            12
+          ],
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "days",
+        "monthly"
+      ],
+      "type": "object"
+    },
+    "token": {
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "type": "string"
+    },
+    "version": {
+      "enum": [
+        1
+      ],
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "instanceId",
+    "quotaBytes",
+    "retention",
+    "token",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## BuddyApplyDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "enum": [
+        true
+      ],
+      "type": "boolean"
+    },
+    "operationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "confirm",
+    "operationId"
+  ],
+  "type": "object"
+}
+```
 
 ## BuddyApplyResponseDto
 

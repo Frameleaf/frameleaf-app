@@ -1,12 +1,12 @@
 # Server API — Assets 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getArchiveOperations
 
 `GET /api/archive-operations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L59).
 
 List recent archive operations
 
@@ -79,7 +79,7 @@ Complete operation contract:
 
 `POST /api/archive-operations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L27).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L27).
 
 Archive a selection in the background
 
@@ -166,7 +166,7 @@ Complete operation contract:
 
 `POST /api/archive-operations/prepare`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L43).
 
 Count and freeze every matching Timeline asset
 
@@ -253,7 +253,7 @@ Complete operation contract:
 
 `GET /api/archive-operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L66).
 
 Retrieve an archive operation
 
@@ -334,7 +334,7 @@ Complete operation contract:
 
 `POST /api/archive-operations/{id}/confirm`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L73).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L73).
 
 Confirm a prepared archive selection
 
@@ -426,7 +426,7 @@ Complete operation contract:
 
 `POST /api/archive-operations/{id}/undo`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/archive-operation.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/archive-operation.controller.ts#L85).
 
 Undo an archive operation
 
@@ -524,7 +524,7 @@ Complete operation contract:
 
 `DELETE /api/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L94).
 
 Delete assets
 
@@ -607,7 +607,7 @@ Complete operation contract:
 
 `POST /api/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L81).
 
 Upload asset
 
@@ -752,7 +752,7 @@ Complete operation contract:
 
 `PUT /api/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L70).
 
 Update assets
 
@@ -846,7 +846,7 @@ Complete operation contract:
 
 `POST /api/assets/bulk-upload-check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L276).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L276).
 
 Check bulk upload
 
@@ -936,7 +936,7 @@ Complete operation contract:
 
 `PUT /api/assets/copy`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L172).
 
 Copy asset
 
@@ -1019,7 +1019,7 @@ Complete operation contract:
 
 `POST /api/assets/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L58).
 
 Run an asset job
 
@@ -1102,7 +1102,7 @@ Complete operation contract:
 
 `POST /api/assets/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L106).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L106).
 
 Lock assets
 
@@ -1177,7 +1177,7 @@ Complete operation contract:
 
 `DELETE /api/assets/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L198).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L198).
 
 Delete asset metadata
 
@@ -1256,7 +1256,7 @@ Complete operation contract:
 
 `PUT /api/assets/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L184).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L184).
 
 Upsert asset metadata
 
@@ -1344,13 +1344,13 @@ Complete operation contract:
 
 `POST /api/assets/safety/lookup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/safety.controller.ts#L15).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/safety.controller.ts#L15).
 
 Look up own asset safety by SHA-256
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SafetyLookupDto](models-28.md#safetylookupdto), [SafetyLookupResponseDto](models-28.md#safetylookupresponsedto).
+Models: [SafetyLookupDto](models-29.md#safetylookupdto), [SafetyLookupResponseDto](models-29.md#safetylookupresponsedto).
 
 Controller access declarations:
 
@@ -1426,13 +1426,13 @@ Complete operation contract:
 
 `GET /api/assets/safety/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/safety.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/safety.controller.ts#L28).
 
 Summarize own library safety
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SafetySummaryDto](models-28.md#safetysummarydto).
+Models: [SafetySummaryDto](models-29.md#safetysummarydto).
 
 Controller access declarations:
 
@@ -1497,7 +1497,7 @@ Complete operation contract:
 
 `GET /api/assets/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L47).
 
 Get asset statistics
 
@@ -1603,7 +1603,7 @@ Complete operation contract:
 
 `POST /api/assets/unlock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L119).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L119).
 
 Unlock assets
 
@@ -1678,7 +1678,7 @@ Complete operation contract:
 
 `OPTIONS /api/assets/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L80).
 
 Get resumable asset upload limits
 
@@ -1743,7 +1743,7 @@ Complete operation contract:
 
 `POST /api/assets/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L92).
 
 Create resumable asset upload
 
@@ -1930,7 +1930,7 @@ Complete operation contract:
 
 `POST /api/assets/uploads/live-photo/commit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L161).
 
 Commit two verified Live Photo upload resources atomically
 
@@ -2022,7 +2022,7 @@ Complete operation contract:
 
 `DELETE /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L262).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L262).
 
 Cancel an unpublished upload
 

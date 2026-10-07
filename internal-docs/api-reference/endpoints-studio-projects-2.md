@@ -1,16 +1,16 @@
 # Server API — Studio projects 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## photographyList
 
 `GET /api/photography/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L152).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowListDto](models-25.md#photographyworkflowlistdto).
+Models: [PhotographyWorkflowListDto](models-26.md#photographyworkflowlistdto).
 
 Controller access declarations:
 
@@ -62,11 +62,11 @@ Complete operation contract:
 
 `GET /api/photography/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L159).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L159).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -127,11 +127,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/approvals`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L256).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L256).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyApprovalDto](models-18.md#photographyapprovaldto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyApprovalDto](models-19.md#photographyapprovaldto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -202,11 +202,11 @@ Complete operation contract:
 
 `PUT /api/photography/workflows/{id}/assembly`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L211).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L211).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyAssemblyDto](models-18.md#photographyassemblydto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyAssemblyDto](models-19.md#photographyassemblydto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -277,11 +277,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/captures/{captureId}/retry-processing`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L199).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L199).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-24.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-25.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -360,11 +360,11 @@ Complete operation contract:
 
 `PUT /api/photography/workflows/{id}/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L166).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowConfigDto](models-23.md#photographyworkflowconfigdto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyWorkflowConfigDto](models-24.md#photographyworkflowconfigdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -435,11 +435,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/intake`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L192).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L192).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyIntakeDto](models-19.md#photographyintakedto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyIntakeDto](models-20.md#photographyintakedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -510,11 +510,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/orders`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L237).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L237).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyOrderCreateDto](models-21.md#photographyordercreatedto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyOrderCreateDto](models-22.md#photographyordercreatedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -585,11 +585,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/orders/{orderId}/payment`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L244).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L244).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPaymentDto](models-21.md#photographypaymentdto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyPaymentDto](models-22.md#photographypaymentdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -668,11 +668,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L173).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L173).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPresetSaveDto](models-21.md#photographypresetsavedto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyPresetSaveDto](models-22.md#photographypresetsavedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -743,11 +743,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/presets/{presetId}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L180).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L180).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-24.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-25.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -826,11 +826,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/publish`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L263).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L263).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPublicationDto](models-21.md#photographypublicationdto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyPublicationDto](models-22.md#photographypublicationdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -901,11 +901,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/recipients`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L218).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L218).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyInvitationDto](models-20.md#photographyinvitationdto), [PhotographyRecipientCreateDto](models-21.md#photographyrecipientcreatedto).
+Models: [PhotographyInvitationDto](models-21.md#photographyinvitationdto), [PhotographyRecipientCreateDto](models-22.md#photographyrecipientcreatedto).
 
 Controller access declarations:
 
@@ -976,11 +976,11 @@ Complete operation contract:
 
 `PATCH /api/photography/workflows/{id}/recipients/{recipientId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L225).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L225).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyRecipientUpdateDto](models-21.md#photographyrecipientupdatedto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyRecipientUpdateDto](models-22.md#photographyrecipientupdatedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -1059,11 +1059,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L270).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L270).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-24.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-25.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -1134,11 +1134,11 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/studio-presets/{presetId}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photography-workflow.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L79).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyStudioPresetApplyDto](models-22.md#photographystudiopresetapplydto), [PhotographyWorkflowDto](models-24.md#photographyworkflowdto).
+Models: [PhotographyStudioPresetApplyDto](models-23.md#photographystudiopresetapplydto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -1217,7 +1217,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L137).
 
 Download a Studio bundle
 
@@ -1304,13 +1304,13 @@ Complete operation contract:
 
 `POST /api/studio/bundles/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L113).
 
 Import a Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioBundleImportCreateDto](models-31.md#studiobundleimportcreatedto).
+Models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioBundleImportCreateDto](models-32.md#studiobundleimportcreatedto).
 
 Controller access declarations:
 
@@ -1390,13 +1390,13 @@ Complete operation contract:
 
 `GET /api/studio/bundles/operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L126).
 
 Get a Studio bundle job
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleOperationDto](models-32.md#studiobundleoperationdto).
+Models: [StudioBundleOperationDto](models-33.md#studiobundleoperationdto).
 
 Controller access declarations:
 
@@ -1475,13 +1475,13 @@ Complete operation contract:
 
 `POST /api/studio/bundles/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L69).
 
 Upload a Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleUploadCreateDto](models-32.md#studiobundleuploadcreatedto), [StudioBundleUploadDto](models-32.md#studiobundleuploaddto).
+Models: [StudioBundleUploadCreateDto](models-33.md#studiobundleuploadcreatedto), [StudioBundleUploadDto](models-33.md#studiobundleuploaddto).
 
 Controller access declarations:
 
@@ -1567,7 +1567,7 @@ Complete operation contract:
 
 `DELETE /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L101).
 
 Discard an uploaded Studio bundle
 
@@ -1644,13 +1644,13 @@ Complete operation contract:
 
 `GET /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-bundle.controller.ts#L90).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-bundle.controller.ts#L90).
 
 Get an uploaded Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleUploadDto](models-32.md#studiobundleuploaddto).
+Models: [StudioBundleUploadDto](models-33.md#studiobundleuploaddto).
 
 Controller access declarations:
 
@@ -1729,13 +1729,13 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-export.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L68).
 
 Get a Studio export
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportVersionDto](models-32.md#studioexportversiondto).
+Models: [StudioExportVersionDto](models-33.md#studioexportversiondto).
 
 Controller access declarations:
 
@@ -1814,7 +1814,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-export.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L79).
 
 Download a Studio export kept with its project
 
@@ -1901,13 +1901,13 @@ Complete operation contract:
 
 `GET /api/studio/projects`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L66).
 
 List Studio projects
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectListResponseDto](models-33.md#studioprojectlistresponsedto), [StudioProjectShelf](models-33.md#studioprojectshelf), [StudioProjectSort](models-33.md#studioprojectsort).
+Models: [StudioProjectListResponseDto](models-34.md#studioprojectlistresponsedto), [StudioProjectShelf](models-34.md#studioprojectshelf), [StudioProjectSort](models-34.md#studioprojectsort).
 
 Controller access declarations:
 
@@ -2026,13 +2026,13 @@ Complete operation contract:
 
 `POST /api/studio/projects`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L94).
 
 Create a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectCreateDto](models-32.md#studioprojectcreatedto), [StudioProjectDetailDto](models-32.md#studioprojectdetaildto).
+Models: [StudioProjectCreateDto](models-33.md#studioprojectcreatedto), [StudioProjectDetailDto](models-33.md#studioprojectdetaildto).
 
 Controller access declarations:
 
@@ -2112,13 +2112,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/trash/empty`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L81).
 
 Empty the Studio trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectTrashEmptyResponseDto](models-33.md#studioprojecttrashemptyresponsedto).
+Models: [StudioProjectTrashEmptyResponseDto](models-34.md#studioprojecttrashemptyresponsedto).
 
 Controller access declarations:
 

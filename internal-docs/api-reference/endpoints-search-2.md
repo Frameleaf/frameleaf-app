@@ -1,18 +1,18 @@
 # Server API — Search 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchAssetStatistics
 
 `POST /api/search/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/search.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/search.controller.ts#L50).
 
 Search asset statistics
 
 Permission: `asset.statistics`. Admin only: `false`.
 
-Models: [SearchStatisticsResponseDto](models-29.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-31.md#statisticssearchdto).
+Models: [SearchStatisticsResponseDto](models-30.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-32.md#statisticssearchdto).
 
 Controller access declarations:
 
@@ -96,13 +96,13 @@ Complete operation contract:
 
 `GET /api/search/suggestions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/search.controller.ts#L206).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/search.controller.ts#L206).
 
 Retrieve search suggestions
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchSuggestionType](models-29.md#searchsuggestiontype).
+Models: [SearchSuggestionType](models-30.md#searchsuggestiontype).
 
 Controller access declarations:
 

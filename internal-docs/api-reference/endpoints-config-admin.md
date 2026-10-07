@@ -1,12 +1,12 @@
 # Server API — Config (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAdminConfig
 
 `GET /api/admin/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L25).
 
 Get the admin configuration
 
@@ -82,7 +82,7 @@ Complete operation contract:
 
 `PUT /api/admin/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L47).
 
 Update the system configuration
 
@@ -168,7 +168,7 @@ Complete operation contract:
 
 `GET /api/admin/config/credentials`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L58).
 
 List the server credentials
 
@@ -247,7 +247,7 @@ Complete operation contract:
 
 `DELETE /api/admin/config/credentials/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L85).
 
 Clear a server credential
 
@@ -332,7 +332,7 @@ Complete operation contract:
 
 `PUT /api/admin/config/credentials/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L69).
 
 Replace a server credential
 
@@ -428,7 +428,7 @@ Complete operation contract:
 
 `GET /api/admin/config/defaults`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L36).
 
 Get the system configuration defaults
 
@@ -504,13 +504,13 @@ Complete operation contract:
 
 `GET /api/admin/config/history`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L99).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L99).
 
 Get the settings change history
 
 Permission: `adminConfig.read`. Admin only: `true`.
 
-Models: [SystemConfigHistoryResponseDto](models-35.md#systemconfighistoryresponsedto).
+Models: [SystemConfigHistoryResponseDto](models-36.md#systemconfighistoryresponsedto).
 
 Controller access declarations:
 
@@ -581,7 +581,7 @@ Complete operation contract:
 
 `GET /api/admin/config/revision`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L111).
 
 Get the admin configuration with its revision
 
@@ -658,7 +658,7 @@ Complete operation contract:
 
 `PUT /api/admin/config/revision`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-admin.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-admin.controller.ts#L123).
 
 Update the system configuration if it is unchanged
 

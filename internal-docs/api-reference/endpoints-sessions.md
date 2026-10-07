@@ -1,12 +1,12 @@
 # Server API — Sessions
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteAllSessions
 
 `DELETE /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L43).
 
 Delete all sessions
 
@@ -77,13 +77,13 @@ Complete operation contract:
 
 `GET /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L32).
 
 Retrieve sessions
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [SessionResponseDto](models-30.md#sessionresponsedto).
+Models: [SessionResponseDto](models-31.md#sessionresponsedto).
 
 Controller access declarations:
 
@@ -159,13 +159,13 @@ Complete operation contract:
 
 `POST /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L21).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L21).
 
 Create a session
 
 Permission: `session.create`. Admin only: `false`.
 
-Models: [SessionCreateDto](models-30.md#sessioncreatedto), [SessionCreateResponseDto](models-30.md#sessioncreateresponsedto).
+Models: [SessionCreateDto](models-31.md#sessioncreatedto), [SessionCreateResponseDto](models-31.md#sessioncreateresponsedto).
 
 Controller access declarations:
 
@@ -248,7 +248,7 @@ Complete operation contract:
 
 `DELETE /api/sessions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L85).
 
 Delete a session
 
@@ -330,13 +330,13 @@ Complete operation contract:
 
 `PUT /api/sessions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L55).
 
 Update a session
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [SessionResponseDto](models-30.md#sessionresponsedto), [SessionUpdateDto](models-30.md#sessionupdatedto).
+Models: [SessionResponseDto](models-31.md#sessionresponsedto), [SessionUpdateDto](models-31.md#sessionupdatedto).
 
 Controller access declarations:
 
@@ -441,7 +441,7 @@ Complete operation contract:
 
 `POST /api/sessions/{id}/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/session.controller.ts#L97).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L97).
 
 Lock a session
 

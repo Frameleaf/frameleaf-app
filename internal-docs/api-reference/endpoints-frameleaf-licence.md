@@ -1,12 +1,12 @@
 # Server API — Frameleaf licence
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## removeLicenseKey
 
 `DELETE /api/admin/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L68).
 
 Remove the licence key
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `GET /api/admin/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L27).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L27).
 
 Get the licence status
 
@@ -162,7 +162,7 @@ Complete operation contract:
 
 `PUT /api/admin/license/activate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L40).
 
 Activate a server licence key
 
@@ -251,7 +251,7 @@ Complete operation contract:
 
 `PUT /api/admin/license/certificate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L54).
 
 Install a licence file
 
@@ -340,7 +340,7 @@ Complete operation contract:
 
 `DELETE /api/admin/license/plan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L81).
 
 Remove the plan from this server
 
@@ -418,7 +418,7 @@ Complete operation contract:
 
 `POST /api/admin/license/refresh`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L94).
 
 Refresh the licence now
 
@@ -496,7 +496,7 @@ Complete operation contract:
 
 `POST /api/license/link-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L127).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L127).
 
 Redeem a Frameleaf account link code
 
@@ -585,7 +585,7 @@ Complete operation contract:
 
 `GET /api/license/products`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/license-admin.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L114).
 
 Get Support Frameleaf prices
 

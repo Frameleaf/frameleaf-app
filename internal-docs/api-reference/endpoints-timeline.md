@@ -1,18 +1,18 @@
 # Server API — Timeline
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getTimeBucket
 
 `GET /api/timeline/bucket`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/timeline.controller.ts#L33).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/timeline.controller.ts#L33).
 
 Get time bucket
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-36.md#timebucketassetresponsedto), [TimeBucketDateType](models-36.md#timebucketdatetype).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-37.md#timebucketassetresponsedto), [TimeBucketDateType](models-37.md#timebucketdatetype).
 
 Controller access declarations:
 
@@ -274,13 +274,13 @@ Complete operation contract:
 
 `GET /api/timeline/buckets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/timeline.controller.ts#L22).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/timeline.controller.ts#L22).
 
 Get time buckets
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-36.md#timebucketdatetype), [TimeBucketsResponseDto](models-36.md#timebucketsresponsedto).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimeBucketsResponseDto](models-37.md#timebucketsresponsedto).
 
 Controller access declarations:
 
@@ -533,13 +533,13 @@ Complete operation contract:
 
 `GET /api/timeline/highlights`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/timeline.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/timeline.controller.ts#L62).
 
 Get timeline highlights
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-36.md#timebucketdatetype), [TimelineHighlightGrouping](models-36.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-36.md#timelinehighlightresponsedto).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimelineHighlightGrouping](models-37.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-37.md#timelinehighlightresponsedto).
 
 Controller access declarations:
 
@@ -813,13 +813,13 @@ Complete operation contract:
 
 `GET /api/timeline/ordered`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/timeline.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/timeline.controller.ts#L48).
 
 Get the timeline in a flat order
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-36.md#timebucketassetresponsedto), [TimeBucketDateType](models-36.md#timebucketdatetype), [TimelineOrderedSort](models-36.md#timelineorderedsort).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-05.md#assetorder), [AssetOrderBy](models-05.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-37.md#timebucketassetresponsedto), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimelineOrderedSort](models-37.md#timelineorderedsort).
 
 Controller access declarations:
 

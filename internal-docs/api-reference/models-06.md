@@ -1,10 +1,10 @@
 # Server API models 6
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-17.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-35.md#tagresponsedto), [UserResponseDto](models-37.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -65,6 +65,30 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "imageEncoding": {
       "$ref": "#/components/schemas/ImageEncodingInfo",
       "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+    },
+    "imageRenditions": {
+      "description": "Available current still renditions; omitted when file evidence was not loaded",
+      "properties": {
+        "hdrFullsize": {
+          "type": "boolean"
+        },
+        "hdrPreview": {
+          "type": "boolean"
+        },
+        "sdrFullsize": {
+          "type": "boolean"
+        },
+        "sdrPreview": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sdrPreview",
+        "sdrFullsize",
+        "hdrPreview",
+        "hdrFullsize"
+      ],
+      "type": "object"
     },
     "isArchived": {
       "description": "Is archived",
@@ -239,7 +263,7 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
 
 ## AssetRestorationDestinationDto
 
-Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-16.md#mladmissionrefusal), [MlDestinationHealth](models-17.md#mldestinationhealth), [MlDestinationKind](models-17.md#mldestinationkind).
+Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlDestinationHealth](models-17.md#mldestinationhealth), [MlDestinationKind](models-17.md#mldestinationkind).
 
 ```json
 {
@@ -1293,7 +1317,7 @@ Related models: [AssetMediaStatus](models-05.md#assetmediastatus).
 
 ## AvatarUpdate
 
-Related models: [UserAvatarColor](models-36.md#useravatarcolor).
+Related models: [UserAvatarColor](models-37.md#useravatarcolor).
 
 ```json
 {
@@ -1555,7 +1579,7 @@ Related models: [BackupDeviceDto](models-06.md#backupdevicedto).
 
 ## BestPhotoAssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-17.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-35.md#tagresponsedto), [UserResponseDto](models-37.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -1619,6 +1643,30 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "imageEncoding": {
       "$ref": "#/components/schemas/ImageEncodingInfo",
       "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+    },
+    "imageRenditions": {
+      "description": "Available current still renditions; omitted when file evidence was not loaded",
+      "properties": {
+        "hdrFullsize": {
+          "type": "boolean"
+        },
+        "hdrPreview": {
+          "type": "boolean"
+        },
+        "sdrFullsize": {
+          "type": "boolean"
+        },
+        "sdrPreview": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sdrPreview",
+        "sdrFullsize",
+        "hdrPreview",
+        "hdrFullsize"
+      ],
+      "type": "object"
     },
     "isArchived": {
       "description": "Is archived",
@@ -1994,97 +2042,6 @@ Related models: [BestPhotoAssetResponseDto](models-06.md#bestphotoassetresponsed
   },
   "required": [
     "eq"
-  ],
-  "type": "object"
-}
-```
-
-## BuddyAcceptDto
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "instanceId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "quotaBytes": {
-      "maximum": 9007199254740991,
-      "minimum": 10737418240,
-      "type": "integer"
-    },
-    "retention": {
-      "additionalProperties": false,
-      "properties": {
-        "days": {
-          "enum": [
-            30
-          ],
-          "format": "double",
-          "type": "number"
-        },
-        "monthly": {
-          "enum": [
-            12
-          ],
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "required": [
-        "days",
-        "monthly"
-      ],
-      "type": "object"
-    },
-    "token": {
-      "pattern": "^[A-Za-z0-9_-]{43}$",
-      "type": "string"
-    },
-    "version": {
-      "enum": [
-        1
-      ],
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "required": [
-    "instanceId",
-    "quotaBytes",
-    "retention",
-    "token",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## BuddyApplyDto
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "confirm": {
-      "enum": [
-        true
-      ],
-      "type": "boolean"
-    },
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "confirm",
-    "operationId"
   ],
   "type": "object"
 }

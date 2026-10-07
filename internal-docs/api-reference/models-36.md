@@ -1,1064 +1,1097 @@
 # Server API models 36
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
-## TakeoutResponseDto
+## SyncPinnedCollectionDeleteV1
 
-Related models: [TakeoutAction](models-35.md#takeoutaction), [TakeoutAlbumDto](models-35.md#takeoutalbumdto), [TakeoutCountsDto](models-35.md#takeoutcountsdto), [TakeoutOptionsResponseDto](models-35.md#takeoutoptionsresponsedto), [TakeoutPhase](models-35.md#takeoutphase), [TakeoutSourceResponseDto](models-36.md#takeoutsourceresponsedto), [TakeoutState](models-36.md#takeoutstate).
 
 ```json
 {
+  "description": "Remove available mirror hydration only. The opaque stored pin may remain as an unavailable V1 snapshot placeholder.",
   "properties": {
-    "action": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/TakeoutAction"
-        }
-      ],
-      "description": "What the latest job did or is doing",
-      "nullable": true
-    },
-    "albums": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutAlbumDto"
-      },
-      "type": "array"
-    },
-    "counts": {
-      "$ref": "#/components/schemas/TakeoutCountsDto"
-    },
-    "createdAt": {
-      "type": "string"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
+    "pinId": {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
-    },
-    "name": {
-      "type": "string"
-    },
-    "operationId": {
-      "description": "The latest job, as Activity lists it",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "options": {
-      "$ref": "#/components/schemas/TakeoutOptionsResponseDto"
-    },
-    "phase": {
-      "$ref": "#/components/schemas/TakeoutPhase"
-    },
-    "processed": {
-      "description": "Units the latest job has finished",
+    }
+  },
+  "required": [
+    "pinId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPinnedCollectionV1
+
+
+```json
+{
+  "description": "Current authorized pin hydration at its complete-list position. Unavailable pins retain their V1 snapshot placeholder but have no event hydration.",
+  "properties": {
+    "count": {
+      "description": "Current access-filtered item count; null when unavailable",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "sources": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutSourceResponseDto"
-      },
-      "type": "array"
-    },
-    "state": {
-      "$ref": "#/components/schemas/TakeoutState"
-    },
-    "total": {
-      "description": "Units the latest job knows of so far; grows while a scan reads its sources",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "nullable": true,
       "type": "integer"
     },
-    "updatedAt": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "albums",
-    "counts",
-    "createdAt",
-    "error",
-    "errorCode",
-    "id",
-    "name",
-    "operationId",
-    "options",
-    "phase",
-    "processed",
-    "sources",
-    "state",
-    "total",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutRootDto
-
-
-```json
-{
-  "properties": {
-    "id": {
-      "type": "string"
+    "countCapped": {
+      "description": "Whether a semantic saved-search count reached the existing smart-search cap",
+      "type": "boolean"
     },
-    "path": {
-      "description": "The directory the administrator permitted",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "path"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutRootsResponseDto
-
-Related models: [TakeoutRootDto](models-36.md#takeoutrootdto).
-
-```json
-{
-  "properties": {
-    "roots": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutRootDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "roots"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutSidecarCandidateDto
-
-Related models: [TakeoutMetadataDto](models-35.md#takeoutmetadatadto).
-
-```json
-{
-  "properties": {
-    "id": {
+    "coverAssetId": {
+      "description": "Current readable cover asset; null when unavailable or empty",
       "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "metadata": {
-      "$ref": "#/components/schemas/TakeoutMetadataDto"
-    },
-    "path": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "metadata",
-    "path"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutSourceKind
-
-
-```json
-{
-  "description": "An uploaded archive or a server directory",
-  "enum": [
-    "zip",
-    "directory"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutSourceResponseDto
-
-Related models: [TakeoutSourceKind](models-36.md#takeoutsourcekind).
-
-```json
-{
-  "properties": {
     "id": {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
     "kind": {
-      "$ref": "#/components/schemas/TakeoutSourceKind"
-    },
-    "name": {
-      "description": "The archive’s file name, or the directory’s name",
+      "enum": [
+        "album",
+        "smart-album",
+        "saved-search",
+        "person",
+        "pet",
+        "memory",
+        "builtin"
+      ],
       "type": "string"
     },
-    "received": {
-      "description": "Bytes staged so far; an upload resumes here",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+    "position": {
+      "maximum": 49,
+      "minimum": 0,
       "type": "integer"
     },
-    "rejected": {
-      "description": "Entries refused: unsafe names, links or encryption",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "targetId": {
+      "type": "string"
     },
-    "scanned": {
-      "description": "Every entry has been read",
+    "title": {
+      "description": "Current access-filtered title; null when unavailable",
+      "nullable": true,
+      "type": "string"
+    },
+    "unavailable": {
+      "enum": [
+        false
+      ],
       "type": "boolean"
-    },
-    "size": {
-      "description": "Declared archive size in bytes; zero for a directory",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
     }
   },
   "required": [
+    "count",
+    "countCapped",
+    "coverAssetId",
     "id",
     "kind",
-    "name",
-    "received",
-    "rejected",
-    "scanned",
-    "size"
+    "position",
+    "targetId",
+    "title",
+    "unavailable"
   ],
   "type": "object"
 }
 ```
 
-## TakeoutState
+## SyncPinnedCollectionsV1
+
+Related models: [PinnedCollection](models-26.md#pinnedcollection).
+
+```json
+{
+  "properties": {
+    "pins": {
+      "description": "Complete replacement snapshot in user order, including unavailable pins",
+      "items": {
+        "$ref": "#/components/schemas/PinnedCollection"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "userId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pins",
+    "revision",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncRequestType
 
 
 ```json
 {
-  "description": "Where the import is: staging sources, a scan or import job at work, awaiting review, or done",
+  "description": "Sync request type",
   "enum": [
-    "sources",
-    "queued",
-    "scanning",
-    "review",
-    "importing",
-    "paused",
-    "cancelling",
-    "cancelled",
-    "failed",
-    "completed"
+    "AlbumAssetAccessV1",
+    "PartnerAssetAccessV1",
+    "PinnedCollectionEventsV1",
+    "AssetTrashStatesV1",
+    "DuplicateGroupsV1",
+    "SharedSpacesV1",
+    "SharedSpaceMembersV1",
+    "SharedSpaceAlbumsV1",
+    "SharedSpacePeopleV1",
+    "PetsV1",
+    "PetObservationsV1",
+    "TagsV1",
+    "AssetTagsV1",
+    "AlbumsV1",
+    "AlbumsV2",
+    "AlbumsV3",
+    "AlbumUsersV1",
+    "AlbumToAssetsV1",
+    "AlbumAssetsV1",
+    "AlbumAssetsV2",
+    "AlbumAssetExifsV1",
+    "AssetsV1",
+    "AssetsV2",
+    "AssetsV3",
+    "AssetExifsV1",
+    "AssetEditsV1",
+    "AssetMetadataV1",
+    "AssetOcrV1",
+    "AuthUsersV1",
+    "AuthUsersV2",
+    "MemoriesV1",
+    "MemoryToAssetsV1",
+    "PartnersV1",
+    "PartnerAssetsV1",
+    "PartnerAssetsV2",
+    "PartnerAssetExifsV1",
+    "PartnerStacksV1",
+    "StacksV1",
+    "UsersV1",
+    "PeopleV1",
+    "AssetFacesV1",
+    "AssetFacesV2",
+    "AssetFacesV3",
+    "UserMetadataV1",
+    "PinnedCollectionsV1",
+    "AlbumSourceLinksV1"
   ],
   "type": "string"
 }
 ```
 
-## TakeoutVerifyChunkDto
+## SyncResetV1
+
+
+```json
+{
+  "properties": {},
+  "type": "object"
+}
+```
+
+## SyncSharedSpaceAlbumDeleteV1
 
 
 ```json
 {
   "properties": {
-    "offset": {
-      "description": "Byte offset of the range",
+    "albumId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "spaceId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncSharedSpaceAlbumV1
+
+
+```json
+{
+  "description": "Published album reference only; does not grant target AlbumRead access",
+  "properties": {
+    "albumId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "assetCount": {
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
-    "sha256": {
-      "description": "SHA-256 of the range, hex",
-      "pattern": "^[a-f0-9]{64}$",
+    "icon": {
+      "nullable": true,
       "type": "string"
     },
-    "size": {
-      "description": "Length of the range",
-      "maximum": 8388608,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "offset",
-    "sha256",
-    "size"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutWarning
-
-
-```json
-{
-  "description": "Why an item needs attention",
-  "enum": [
-    "ambiguous_sidecar",
-    "no_sidecar",
-    "invalid_sidecar",
-    "trashed",
-    "locked"
-  ],
-  "type": "string"
-}
-```
-
-## TemplateDto
-
-
-```json
-{
-  "properties": {
-    "template": {
-      "description": "Template name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "template"
-  ],
-  "type": "object"
-}
-```
-
-## TemplateResponseDto
-
-
-```json
-{
-  "properties": {
-    "html": {
-      "description": "Template HTML content",
+    "linkedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
       "type": "string"
     },
     "name": {
-      "description": "Template name",
+      "type": "string"
+    },
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "thumbnailAssetId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     }
   },
   "required": [
-    "html",
-    "name"
+    "albumId",
+    "assetCount",
+    "icon",
+    "linkedAt",
+    "name",
+    "spaceId",
+    "thumbnailAssetId"
   ],
   "type": "object"
 }
 ```
 
-## TestEmailResponseDto
+## SyncSharedSpaceDeleteV1
 
 
 ```json
 {
   "properties": {
-    "messageId": {
-      "description": "Email message ID",
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     }
   },
   "required": [
-    "messageId"
+    "spaceId"
   ],
   "type": "object"
 }
 ```
 
-## TextOverlayParameters
+## SyncSharedSpaceMemberDeleteV1
 
-Related models: [TextOverlayPosition](models-36.md#textoverlayposition).
+
+```json
+{
+  "properties": {
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "userId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "spaceId",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncSharedSpaceMemberV1
+
+Related models: [AlbumUserRole](models-02.md#albumuserrole).
+
+```json
+{
+  "description": "Accepted membership only; pending invitations confer no sync access",
+  "properties": {
+    "createdAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/components/schemas/AlbumUserRole"
+    },
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "userId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "role",
+    "spaceId",
+    "updatedAt",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncSharedSpacePersonDeleteV1
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "spaceId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncSharedSpacePersonV1
+
+
+```json
+{
+  "description": "Published link identity only; excludes the underlying private person",
+  "properties": {
+    "assetCount": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "coverAssetId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "linkedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "spaceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetCount",
+    "coverAssetId",
+    "id",
+    "linkedAt",
+    "name",
+    "spaceId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncSharedSpaceV1
+
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "description": {
+      "nullable": true,
+      "type": "string"
+    },
+    "icon": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "space"
+      ],
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "description",
+    "icon",
+    "id",
+    "kind",
+    "name",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncStackDeleteV1
+
+
+```json
+{
+  "properties": {
+    "stackId": {
+      "description": "Stack ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "stackId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncStackV1
+
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stack ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "primaryAssetId": {
+      "description": "Primary asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "id",
+    "ownerId",
+    "primaryAssetId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncStreamDto
+
+Related models: [SyncRequestType](models-36.md#syncrequesttype).
+
+```json
+{
+  "properties": {
+    "reset": {
+      "description": "Reset sync state",
+      "type": "boolean"
+    },
+    "types": {
+      "description": "Sync request types",
+      "items": {
+        "$ref": "#/components/schemas/SyncRequestType"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "types"
+  ],
+  "type": "object"
+}
+```
+
+## SyncTagDeleteV1
+
+
+```json
+{
+  "properties": {
+    "tagId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tagId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncTagV1
+
 
 ```json
 {
   "properties": {
     "color": {
-      "default": "#ffffff",
-      "description": "Text color in hex format",
-      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+      "nullable": true,
       "type": "string"
     },
-    "endMs": {
-      "description": "Overlay end time in milliseconds",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "position": {
-      "$ref": "#/components/schemas/TextOverlayPosition"
-    },
-    "shadow": {
-      "description": "Draw a soft drop shadow behind the text",
-      "type": "boolean"
-    },
-    "size": {
-      "default": 0.06,
-      "description": "Font size as a percentage of video height",
-      "format": "double",
-      "maximum": 0.2,
-      "minimum": 0.01,
-      "type": "number"
-    },
-    "startMs": {
-      "description": "Overlay start time in milliseconds",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "text": {
-      "maxLength": 200,
-      "minLength": 1,
+    "createdAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
       "type": "string"
     },
-    "x": {
-      "description": "Horizontal position as a percentage of video width",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
     },
-    "y": {
-      "description": "Vertical position as a percentage of video height",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
+    "parentId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "userId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "value": {
+      "type": "string"
     }
   },
   "required": [
-    "text",
-    "x",
-    "y"
+    "color",
+    "createdAt",
+    "id",
+    "parentId",
+    "updatedAt",
+    "userId",
+    "value"
   ],
   "type": "object"
 }
 ```
 
-## TextOverlayPosition
+## SyncUserDeleteV1
 
 
 ```json
 {
-  "description": "Anchor on a 3 × 3 grid; when set, the text is aligned to it and x/y are ignored",
+  "properties": {
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserMetadataDeleteV1
+
+Related models: [UserMetadataKey](models-38.md#usermetadatakey).
+
+```json
+{
+  "properties": {
+    "key": {
+      "$ref": "#/components/schemas/UserMetadataKey"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserMetadataV1
+
+Related models: [UserMetadataKey](models-38.md#usermetadatakey).
+
+```json
+{
+  "properties": {
+    "key": {
+      "$ref": "#/components/schemas/UserMetadataKey"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "value": {
+      "additionalProperties": {},
+      "description": "User metadata value",
+      "type": "object"
+    }
+  },
+  "required": [
+    "key",
+    "userId",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserV1
+
+Related models: [UserAvatarColor](models-37.md#useravatarcolor).
+
+```json
+{
+  "properties": {
+    "avatarColor": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserAvatarColor"
+        }
+      ],
+      "nullable": true
+    },
+    "deletedAt": {
+      "description": "User deleted at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "email": {
+      "description": "User email",
+      "type": "string"
+    },
+    "hasProfileImage": {
+      "description": "User has profile image",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "profileChangedAt": {
+      "description": "User profile changed at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "deletedAt",
+    "email",
+    "hasProfileImage",
+    "id",
+    "name",
+    "profileChangedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SystemConfigHistoryChangeDto
+
+Related models: [SystemConfigHistoryCredentialChange](models-36.md#systemconfighistorycredentialchange).
+
+```json
+{
+  "properties": {
+    "after": {
+      "description": "The value after the change, JSON encoded; null for a credential",
+      "nullable": true,
+      "type": "string"
+    },
+    "before": {
+      "description": "The value before the change, JSON encoded; null for a credential",
+      "nullable": true,
+      "type": "string"
+    },
+    "credential": {
+      "$ref": "#/components/schemas/SystemConfigHistoryCredentialChange"
+    },
+    "path": {
+      "description": "The changed setting, as a dotted path such as trash.days",
+      "type": "string"
+    }
+  },
+  "required": [
+    "after",
+    "before",
+    "path"
+  ],
+  "type": "object"
+}
+```
+
+## SystemConfigHistoryCredentialChange
+
+
+```json
+{
+  "description": "Set for a write-only credential: whether it was replaced or cleared. Its value is never recorded",
   "enum": [
-    "top-left",
-    "top",
-    "top-right",
-    "left",
-    "center",
-    "right",
-    "bottom-left",
-    "bottom",
-    "bottom-right"
+    "replaced",
+    "cleared"
   ],
   "type": "string"
 }
 ```
 
-## TimeBucketAssetResponseDto
+## SystemConfigHistoryEntryDto
 
-Related models: [AssetLockReason](models-05.md#assetlockreason), [AssetVisibility](models-06.md#assetvisibility).
+Related models: [SystemConfigHistoryChangeDto](models-36.md#systemconfighistorychangedto), [SystemConfigHistoryKind](models-36.md#systemconfighistorykind), [SystemConfigHistorySource](models-36.md#systemconfighistorysource).
 
 ```json
 {
   "properties": {
-    "city": {
-      "description": "Array of city names extracted from EXIF GPS data",
-      "items": {
-        "nullable": true,
-        "type": "string"
-      },
-      "type": "array"
+    "actorId": {
+      "description": "The administrator who saved the change",
+      "nullable": true,
+      "type": "string"
     },
-    "country": {
-      "description": "Array of country names extracted from EXIF GPS data",
+    "actorName": {
+      "description": "The administrator's name when the change was saved",
+      "nullable": true,
+      "type": "string"
+    },
+    "changes": {
+      "description": "Every changed setting",
       "items": {
-        "nullable": true,
-        "type": "string"
+        "$ref": "#/components/schemas/SystemConfigHistoryChangeDto"
       },
       "type": "array"
     },
     "createdAt": {
-      "description": "Array of UTC timestamps when each asset was originally uploaded to Frameleaf",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "duration": {
-      "description": "Array of video/gif durations in milliseconds (null for static images)",
-      "items": {
-        "maximum": 2147483647,
-        "minimum": 0,
-        "nullable": true,
-        "type": "integer"
-      },
-      "type": "array"
-    },
-    "endCursor": {
-      "description": "Last ordered item cursor; absent for time buckets",
-      "nullable": true,
+      "description": "When the change was saved (ISO 8601)",
       "type": "string"
-    },
-    "fileCreatedAt": {
-      "description": "Array of file creation timestamps in UTC",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "fileSizeInByte": {
-      "description": "Array of file sizes in bytes (null when unknown). Omitted for shared links that hide EXIF",
-      "items": {
-        "maximum": 9007199254740991,
-        "minimum": -9007199254740991,
-        "nullable": true,
-        "type": "integer"
-      },
-      "type": "array"
-    },
-    "height": {
-      "description": "Array of heights in pixels (null when unknown). Omitted for shared links that hide EXIF",
-      "items": {
-        "maximum": 2147483647,
-        "minimum": -2147483648,
-        "nullable": true,
-        "type": "integer"
-      },
-      "type": "array"
     },
     "id": {
-      "description": "Array of asset IDs in the time bucket",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "isFavorite": {
-      "description": "Array indicating whether each asset is favorited",
-      "items": {
-        "type": "boolean"
-      },
-      "type": "array"
-    },
-    "isImage": {
-      "description": "Array indicating whether each asset is an image (false for videos)",
-      "items": {
-        "type": "boolean"
-      },
-      "type": "array"
-    },
-    "isOffline": {
-      "description": "Array indicating whether each asset is offline (its file is missing from an external library)",
-      "items": {
-        "type": "boolean"
-      },
-      "type": "array"
-    },
-    "isTrashed": {
-      "description": "Array indicating whether each asset is in the trash",
-      "items": {
-        "type": "boolean"
-      },
-      "type": "array"
-    },
-    "latitude": {
-      "description": "Array of latitude coordinates extracted from EXIF GPS data",
-      "items": {
-        "format": "double",
-        "nullable": true,
-        "type": "number"
-      },
-      "type": "array"
-    },
-    "livePhotoVideoId": {
-      "description": "Array of live photo video asset IDs (null for non-live photos)",
-      "items": {
-        "nullable": true,
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "localOffsetHours": {
-      "description": "Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective.",
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "type": "array"
-    },
-    "lockReason": {
-      "description": "Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items",
-      "items": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/AssetLockReason"
-          }
-        ],
-        "nullable": true
-      },
-      "type": "array"
-    },
-    "longitude": {
-      "description": "Array of longitude coordinates extracted from EXIF GPS data",
-      "items": {
-        "format": "double",
-        "nullable": true,
-        "type": "number"
-      },
-      "type": "array"
-    },
-    "originalFileName": {
-      "description": "Array of original file names. Omitted for shared links that hide EXIF",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "ownerId": {
-      "description": "Array of owner IDs for each asset",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "projectionType": {
-      "description": "Array of projection types for 360° content (e.g., \"EQUIRECTANGULAR\", \"CUBEFACE\", \"CYLINDRICAL\")",
-      "items": {
-        "nullable": true,
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "rating": {
-      "description": "Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF",
-      "items": {
-        "maximum": 5,
-        "minimum": -1,
-        "nullable": true,
-        "type": "integer"
-      },
-      "type": "array"
-    },
-    "ratio": {
-      "description": "Array of aspect ratios (width/height) for each asset",
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "type": "array"
-    },
-    "stack": {
-      "description": "Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets)",
-      "items": {
-        "items": {
-          "type": "string"
-        },
-        "maxItems": 2,
-        "minItems": 2,
-        "nullable": true,
-        "type": "array"
-      },
-      "type": "array"
-    },
-    "startCursor": {
-      "description": "First ordered item cursor; absent for time buckets",
-      "nullable": true,
+      "description": "Entry ID",
       "type": "string"
     },
-    "thumbhash": {
-      "description": "Array of BlurHash strings for generating asset previews (base64 encoded)",
-      "items": {
-        "nullable": true,
-        "type": "string"
-      },
-      "type": "array"
+    "kind": {
+      "$ref": "#/components/schemas/SystemConfigHistoryKind"
     },
-    "visibility": {
-      "description": "Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
-      "items": {
-        "$ref": "#/components/schemas/AssetVisibility"
-      },
-      "type": "array"
-    },
-    "width": {
-      "description": "Array of widths in pixels (null when unknown). Omitted for shared links that hide EXIF",
-      "items": {
-        "maximum": 2147483647,
-        "minimum": -2147483648,
-        "nullable": true,
-        "type": "integer"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "createdAt",
-    "duration",
-    "fileCreatedAt",
-    "id",
-    "isFavorite",
-    "isImage",
-    "isTrashed",
-    "livePhotoVideoId",
-    "localOffsetHours",
-    "ownerId",
-    "projectionType",
-    "ratio",
-    "thumbhash",
-    "visibility"
-  ],
-  "type": "object"
-}
-```
-
-## TimeBucketDateType
-
-
-```json
-{
-  "description": "Date source for timeline bucket grouping",
-  "enum": [
-    "added",
-    "taken"
-  ],
-  "type": "string"
-}
-```
-
-## TimeBucketsResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Number of assets in this time bucket",
-      "example": 42,
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "timeBucket": {
-      "description": "Time bucket identifier in YYYY-MM-DD format representing the start of the time period",
-      "example": "2024-01-01",
-      "type": "string"
-    }
-  },
-  "required": [
-    "count",
-    "timeBucket"
-  ],
-  "type": "object"
-}
-```
-
-## TimelineHighlightGrouping
-
-
-```json
-{
-  "default": "month",
-  "description": "One card per year or per month",
-  "enum": [
-    "year",
-    "month"
-  ],
-  "type": "string"
-}
-```
-
-## TimelineHighlightResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Number of assets in this year or month, the same as the time buckets report",
+    "omittedChanges": {
+      "description": "Changed settings left out because the entry reached its limit",
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
-    "highlightAssetIds": {
-      "description": "The next best assets in capture order (month cards only), never including the key photo",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+    "source": {
+      "$ref": "#/components/schemas/SystemConfigHistorySource"
     },
-    "keyAssetId": {
-      "description": "Key photo: highest Best Photos score, then highest star rating, then most recent capture",
+    "title": {
+      "description": "The entry title, such as \"Updated email server password\"; absent for a settings save",
       "nullable": true,
-      "type": "string"
-    },
-    "places": {
-      "description": "Up to three most frequent places (city, else state, else country), busiest first. Empty when the viewer may not see locations",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "timeBucket": {
-      "description": "First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets",
-      "example": "2024-01-01",
       "type": "string"
     }
   },
   "required": [
-    "count",
-    "highlightAssetIds",
-    "keyAssetId",
-    "places",
-    "timeBucket"
+    "actorId",
+    "actorName",
+    "changes",
+    "createdAt",
+    "id",
+    "omittedChanges"
   ],
   "type": "object"
 }
 ```
 
-## TimelineOrderedSort
+## SystemConfigHistoryKind
 
 
 ```json
 {
-  "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture",
+  "description": "What the entry records; absent for entries saved before it was recorded",
   "enum": [
-    "filename",
-    "rating"
+    "settings",
+    "credential",
+    "review"
   ],
   "type": "string"
 }
 ```
 
-## ToggleParameters
+## SystemConfigHistoryResponseDto
 
+Related models: [SystemConfigHistoryEntryDto](models-36.md#systemconfighistoryentrydto).
 
 ```json
 {
   "properties": {
-    "enabled": {
-      "default": true,
-      "type": "boolean"
+    "entries": {
+      "description": "The newest settings changes first",
+      "items": {
+        "$ref": "#/components/schemas/SystemConfigHistoryEntryDto"
+      },
+      "type": "array"
     }
   },
+  "required": [
+    "entries"
+  ],
   "type": "object"
 }
 ```
 
-## ToneMapping
+## SystemConfigHistorySource
 
 
 ```json
 {
-  "description": "Tone mapping",
+  "description": "Where a change came from when it was not an ordinary settings save: the server command line, or the Frameleaf Cloud settings and actions (with the administrator, when one made it)",
   "enum": [
-    "hable",
-    "mobius",
-    "reinhard",
-    "disabled"
+    "server-cli",
+    "frameleaf-cloud"
   ],
-  "type": "string"
+  "type": "string",
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    }
+  ]
 }
 ```
 
-## TranscodeHWAccel
+## SystemConfigTemplateStorageOptionDto
 
-
-```json
-{
-  "description": "Transcode hardware acceleration",
-  "enum": [
-    "nvenc",
-    "qsv",
-    "vaapi",
-    "rkmpp",
-    "disabled"
-  ],
-  "type": "string"
-}
-```
-
-## TranscodePolicy
-
-
-```json
-{
-  "description": "Transcode policy",
-  "enum": [
-    "all",
-    "optimal",
-    "bitrate",
-    "required",
-    "disabled"
-  ],
-  "type": "string"
-}
-```
-
-## TrashApplyDto
-
-Related models: [TrashReviewAction](models-36.md#trashreviewaction), [UtilityActivityTool](models-37.md#utilityactivitytool).
 
 ```json
 {
   "properties": {
-    "action": {
-      "$ref": "#/components/schemas/TrashReviewAction"
+    "dayOptions": {
+      "description": "Available day format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
-    "ids": {
-      "description": "The chosen items, for trash, restore and delete. Ignored by restore-all and empty.",
+    "hourOptions": {
+      "description": "Available hour format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "minuteOptions": {
+      "description": "Available minute format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "monthOptions": {
+      "description": "Available month format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "presetOptions": {
+      "description": "Available preset template options",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "secondOptions": {
+      "description": "Available second format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "weekOptions": {
+      "description": "Available week format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "yearOptions": {
+      "description": "Available year format options for storage template",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dayOptions",
+    "hourOptions",
+    "minuteOptions",
+    "monthOptions",
+    "presetOptions",
+    "secondOptions",
+    "weekOptions",
+    "yearOptions"
+  ],
+  "type": "object"
+}
+```
+
+## TagBulkAssetsDto
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "Asset IDs",
       "items": {
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
         "type": "string"
       },
-      "maxItems": 50000,
       "type": "array"
     },
-    "source": {
-      "$ref": "#/components/schemas/UtilityActivityTool",
-      "description": "The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history."
-    },
-    "token": {
-      "description": "The token returned by the review",
-      "maxLength": 128,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "token"
-  ],
-  "type": "object"
-}
-```
-
-## TrashItemResponseDto
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum).
-
-```json
-{
-  "properties": {
-    "fileSizeInByte": {
-      "description": "Size of the original, in bytes, when known",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isLocked": {
-      "description": "Locked media; only listed for its owner in an unlocked session",
-      "type": "boolean"
-    },
-    "isOffline": {
-      "description": "The library scan found this external original missing and manages it; trash actions do not change it",
-      "type": "boolean"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "trashedAt": {
-      "description": "When the item was moved to the trash",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    }
-  },
-  "required": [
-    "fileSizeInByte",
-    "id",
-    "isLocked",
-    "isOffline",
-    "originalFileName",
-    "trashedAt",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## TrashItemSort
-
-
-```json
-{
-  "description": "Trash order: most recently deleted, largest original, or file name",
-  "enum": [
-    "recent",
-    "size",
-    "name"
-  ],
-  "type": "string"
-}
-```
-
-## TrashItemsResponseDto
-
-Related models: [TrashItemResponseDto](models-36.md#trashitemresponsedto).
-
-```json
-{
-  "properties": {
-    "items": {
+    "tagIds": {
+      "description": "Tag IDs",
       "items": {
-        "$ref": "#/components/schemas/TrashItemResponseDto"
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
       },
       "type": "array"
-    },
-    "nextPage": {
-      "description": "The next page number, or null on the last page",
-      "nullable": true,
-      "type": "string"
-    },
-    "total": {
-      "description": "Items matching the filters",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
     }
   },
   "required": [
-    "items",
-    "nextPage",
-    "total"
+    "assetIds",
+    "tagIds"
   ],
   "type": "object"
 }
 ```
 
-## TrashResponseDto
+## TagBulkAssetsResponseDto
 
 
 ```json
 {
   "properties": {
     "count": {
-      "description": "Number of items in trash",
+      "description": "Number of assets tagged",
       "maximum": 9007199254740991,
       "minimum": -9007199254740991,
       "type": "integer"
@@ -1071,42 +1104,319 @@ Related models: [TrashItemResponseDto](models-36.md#trashitemresponsedto).
 }
 ```
 
-## TrashReviewAction
+## TagCreateDto
 
 
 ```json
 {
-  "description": "A reviewed change to items in, or into, the trash",
+  "properties": {
+    "color": {
+      "description": "Tag color (hex)",
+      "nullable": true,
+      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tag name",
+      "pattern": "^[^/]*$",
+      "type": "string"
+    },
+    "parentId": {
+      "description": "Parent tag ID",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## TagResponseDto
+
+
+```json
+{
+  "properties": {
+    "color": {
+      "description": "Tag color (hex)",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Tag ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tag name",
+      "type": "string"
+    },
+    "parentId": {
+      "description": "Parent tag ID",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "format": "date-time",
+      "type": "string"
+    },
+    "value": {
+      "description": "Tag value (full path)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "id",
+    "name",
+    "updatedAt",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## TagStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "Timeline items tagged with exactly this tag",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "id": {
+      "description": "Tag ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "total": {
+      "description": "Timeline items tagged with this tag or any tag nested under it",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "count",
+    "id",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## TagUpdateDto
+
+
+```json
+{
+  "properties": {
+    "color": {
+      "description": "Tag color (hex)",
+      "nullable": true,
+      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tag name",
+      "pattern": "^[^/]*$",
+      "type": "string"
+    },
+    "parentId": {
+      "description": "Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## TagUpsertDto
+
+
+```json
+{
+  "properties": {
+    "tags": {
+      "description": "Tag names to upsert",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "tags"
+  ],
+  "type": "object"
+}
+```
+
+## TagsResponse
+
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Whether tags are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether tags appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled",
+    "sidebarWeb"
+  ],
+  "type": "object"
+}
+```
+
+## TagsUpdate
+
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Whether tags are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether tags appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## TakeoutAction
+
+
+```json
+{
+  "description": "The step a job carries out",
   "enum": [
-    "trash",
-    "restore",
-    "restore-all",
-    "delete",
-    "empty"
+    "scan",
+    "import"
   ],
   "type": "string"
 }
 ```
 
-## TrashReviewDto
+## TakeoutAlbumDto
 
-Related models: [TrashReviewAction](models-36.md#trashreviewaction).
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "Items in the folder",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "folder": {
+      "description": "The export folder",
+      "type": "string"
+    },
+    "name": {
+      "description": "The album name it becomes",
+      "type": "string"
+    },
+    "selected": {
+      "description": "Recreated by the next import",
+      "type": "boolean"
+    },
+    "year": {
+      "description": "One of Google’s automatic year folders",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "count",
+    "folder",
+    "name",
+    "selected",
+    "year"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutArchiveCreateDto
+
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "The archive’s file name",
+      "maxLength": 255,
+      "minLength": 1,
+      "type": "string"
+    },
+    "size": {
+      "description": "The archive’s size in bytes",
+      "maximum": 1099511627776,
+      "minimum": 22,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "name",
+    "size"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutControlAction
+
+
+```json
+{
+  "description": "What to do with the running job",
+  "enum": [
+    "pause",
+    "resume",
+    "cancel"
+  ],
+  "type": "string"
+}
+```
+
+## TakeoutControlDto
+
+Related models: [TakeoutControlAction](models-36.md#takeoutcontrolaction).
 
 ```json
 {
   "properties": {
     "action": {
-      "$ref": "#/components/schemas/TrashReviewAction"
-    },
-    "ids": {
-      "description": "The chosen items, for trash, restore and delete. Ignored by restore-all and empty.",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "type": "array"
+      "$ref": "#/components/schemas/TakeoutControlAction"
     }
   },
   "required": [
@@ -1116,1137 +1426,631 @@ Related models: [TrashReviewAction](models-36.md#trashreviewaction).
 }
 ```
 
-## TrashReviewResponseDto
+## TakeoutCountsDto
 
-Related models: [TrashReviewAction](models-36.md#trashreviewaction).
 
 ```json
 {
   "properties": {
-    "action": {
-      "$ref": "#/components/schemas/TrashReviewAction"
-    },
-    "bytes": {
-      "description": "Combined size of their originals, in bytes",
+    "failed": {
       "maximum": 9007199254740991,
-      "minimum": 0,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "count": {
-      "description": "Items the action will change",
+    "files": {
+      "description": "Files found in the sources",
       "maximum": 9007199254740991,
-      "minimum": 0,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "names": {
-      "description": "The first file names, alphabetically",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "retainedBytes": {
-      "description": "Size of those shared originals, in bytes",
+    "hiddenLocked": {
+      "description": "Items going into Locked, not listed until Locked is unlocked",
       "maximum": 9007199254740991,
-      "minimum": 0,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "retainedOriginals": {
-      "description": "Items whose original another item still uses; deleting them does not free that file",
+    "imported": {
       "maximum": 9007199254740991,
-      "minimum": 0,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "token": {
-      "description": "Fingerprint of the reviewed set; apply refuses when the set has changed",
-      "type": "string"
+    "importing": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "items": {
+      "description": "Photos and videos",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "matched": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "matchedOriginals": {
+      "description": "Items already in the library, whose album memberships are restored",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "newAssets": {
+      "description": "Items still to import that are not in the library yet",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "ready": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "rejected": {
+      "description": "Archive entries refused",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "review": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "skipped": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "suggestedPairs": {
+      "description": "Possible Live Photo pairs awaiting a decision",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "unresolvedPairs": {
+      "description": "Live Photo pairs that could not be linked",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
     }
   },
   "required": [
-    "action",
-    "bytes",
-    "count",
-    "names",
-    "retainedBytes",
-    "retainedOriginals",
-    "token"
+    "failed",
+    "files",
+    "hiddenLocked",
+    "imported",
+    "importing",
+    "items",
+    "matched",
+    "matchedOriginals",
+    "newAssets",
+    "ready",
+    "rejected",
+    "review",
+    "skipped",
+    "suggestedPairs",
+    "unresolvedPairs"
   ],
   "type": "object"
 }
 ```
 
-## TrashSummaryResponseDto
+## TakeoutCreateDto
 
 
 ```json
 {
   "properties": {
-    "bytes": {
-      "description": "Combined size of their originals, in bytes. Not the space deleting them frees.",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "count": {
-      "description": "Items in your trash this session can see",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "offline": {
-      "description": "Of those, external-library originals that went missing; the library scan manages them",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "pendingDeletion": {
-      "description": "Items already permanently deleted whose files are still being removed from storage",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "bytes",
-    "count",
-    "offline",
-    "pendingDeletion"
-  ],
-  "type": "object"
-}
-```
-
-## TrimParameters
-
-Related models: [VideoTrimMode](models-37.md#videotrimmode).
-
-```json
-{
-  "properties": {
-    "endMs": {
-      "description": "Trim end time in milliseconds",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "mode": {
-      "$ref": "#/components/schemas/VideoTrimMode"
-    },
-    "startMs": {
-      "description": "Trim start time in milliseconds",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "endMs",
-    "startMs"
-  ],
-  "type": "object"
-}
-```
-
-## UpdateAlbumDto
-
-Related models: [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "albumName": {
-      "description": "Album name",
+    "directory": {
+      "description": "Administrators only: the directory inside the root, relative to it; empty for the root itself",
+      "maxLength": 4096,
       "type": "string"
-    },
-    "albumThumbnailAssetId": {
-      "description": "Album thumbnail asset ID. Picking an item stops the cover following the newest item.",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "coverFollowsNewest": {
-      "description": "Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId.",
-      "type": "boolean"
-    },
-    "description": {
-      "description": "Album description",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v3",
-          "state": "Updated",
-          "description": "Sending an empty string is deprecated; send null instead. Empty strings will no longer be coerced to null in v4."
-        }
-      ]
-    },
-    "icon": {
-      "description": "Icon: any Material Design Icons name (null = clear / use default icon)",
-      "maxLength": 80,
-      "nullable": true,
-      "type": "string"
-    },
-    "isActivityEnabled": {
-      "description": "Enable activity feed",
-      "type": "boolean"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
-    "parentId": {
-      "description": "Collection to move the album into (null = move to top-level, omit = no change)",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "sortOrder": {
-      "description": "Sibling display position. Lower values appear first. Computed by the client as a midpoint.",
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "type": "object"
-}
-```
-
-## UpdateAlbumUserDto
-
-Related models: [AlbumUserRole](models-02.md#albumuserrole).
-
-```json
-{
-  "properties": {
-    "role": {
-      "$ref": "#/components/schemas/AlbumUserRole"
-    }
-  },
-  "required": [
-    "role"
-  ],
-  "type": "object"
-}
-```
-
-## UpdateAssetDto
-
-Related models: [AssetVisibility](models-06.md#assetvisibility).
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City name; kept over reverse geocoding until the item is moved again",
-      "maxLength": 255,
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country name; kept over reverse geocoding until the item is moved again",
-      "maxLength": 255,
-      "nullable": true,
-      "type": "string"
-    },
-    "dateTimeOriginal": {
-      "description": "Original date and time",
-      "type": "string"
-    },
-    "description": {
-      "description": "Asset description",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "latitude": {
-      "description": "Latitude coordinate; null together with a null longitude removes the location",
-      "format": "double",
-      "maximum": 90,
-      "minimum": -90,
-      "nullable": true,
-      "type": "number"
-    },
-    "livePhotoVideoId": {
-      "description": "Live photo video ID",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "longitude": {
-      "description": "Longitude coordinate; null together with a null latitude removes the location",
-      "format": "double",
-      "maximum": 180,
-      "minimum": -180,
-      "nullable": true,
-      "type": "number"
-    },
-    "rating": {
-      "description": "Rating in range [1-5] (starred), -1 (rejected), or null (unrated)",
-      "maximum": 5,
-      "minimum": -1,
-      "nullable": true,
-      "type": "integer",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3",
-          "state": "Updated",
-          "description": "Using 0 as a rating is no longer valid."
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "state": {
-      "description": "State or region name; kept over reverse geocoding until the item is moved again",
-      "maxLength": 255,
-      "nullable": true,
-      "type": "string"
-    },
-    "visibility": {
-      "$ref": "#/components/schemas/AssetVisibility"
-    }
-  },
-  "type": "object"
-}
-```
-
-## UpdateLibraryDto
-
-
-```json
-{
-  "properties": {
-    "exclusionPatterns": {
-      "description": "Exclusion patterns (max 128)",
-      "items": {
-        "maxLength": 1024,
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
-    },
-    "importPaths": {
-      "description": "Import paths (max 128)",
-      "items": {
-        "maxLength": 1024,
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
     },
     "name": {
-      "description": "Library name",
-      "maxLength": 160,
+      "description": "A name for this import",
+      "maxLength": 200,
       "minLength": 1,
       "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## UsageByUserDto
-
-
-```json
-{
-  "properties": {
-    "photos": {
-      "description": "Number of photos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
     },
-    "quotaSizeInBytes": {
-      "description": "User quota size in bytes (null if unlimited)",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "usage": {
-      "description": "Total storage usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usagePhotos": {
-      "description": "Storage usage for photos in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usageVideos": {
-      "description": "Storage usage for videos in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+    "rootId": {
+      "description": "Administrators only: the permitted import root to read a server directory from",
+      "maxLength": 32,
       "type": "string"
-    },
-    "userName": {
-      "description": "User name",
-      "type": "string"
-    },
-    "videos": {
-      "description": "Number of videos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
     }
   },
   "required": [
-    "photos",
-    "quotaSizeInBytes",
-    "usage",
-    "usagePhotos",
-    "usageVideos",
-    "userId",
-    "userName",
-    "videos"
+    "name"
   ],
   "type": "object"
 }
 ```
 
-## UserAdminCreateDto
-
-Related models: [UserAvatarColor](models-36.md#useravatarcolor).
-
-```json
-{
-  "properties": {
-    "avatarColor": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/UserAvatarColor"
-        }
-      ],
-      "nullable": true
-    },
-    "email": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "Grant admin privileges",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "notify": {
-      "description": "Send notification email",
-      "type": "boolean"
-    },
-    "password": {
-      "description": "User password",
-      "type": "string"
-    },
-    "pinCode": {
-      "description": "PIN code",
-      "example": "123456",
-      "nullable": true,
-      "pattern": "^\\d{6}$",
-      "type": "string"
-    },
-    "quotaSizeInBytes": {
-      "description": "Storage quota in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "shouldChangePassword": {
-      "description": "Require password change on next login",
-      "type": "boolean"
-    },
-    "storageLabel": {
-      "description": "Storage label",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "email",
-    "name",
-    "password"
-  ],
-  "type": "object"
-}
-```
-
-## UserAdminDeleteDto
+## TakeoutItemKind
 
 
 ```json
 {
-  "properties": {
-    "confirmEmail": {
-      "description": "The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive)",
-      "maxLength": 320,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "force": {
-      "description": "Force delete even if user has assets",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## UserAdminHistoryEventResponseDto
-
-Related models: [AdminAuditAction](models-01.md#adminauditaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/AdminAuditAction"
-    },
-    "actorId": {
-      "description": "The administrator who did it; null once that account is gone",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "actorName": {
-      "description": "That administrator's name; null once that account is gone",
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When it happened",
-      "format": "date-time",
-      "type": "string"
-    },
-    "detail": {
-      "description": "What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Event ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "libraryId": {
-      "description": "The library a library event is about; null for account events and once the library is gone",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "subject": {
-      "description": "The account's or library's name at the time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "actorId",
-    "actorName",
-    "createdAt",
-    "detail",
-    "id",
-    "libraryId",
-    "subject"
-  ],
-  "type": "object"
-}
-```
-
-## UserAdminHistoryResponseDto
-
-Related models: [UserAdminHistoryEventResponseDto](models-36.md#useradminhistoryeventresponsedto).
-
-```json
-{
-  "properties": {
-    "events": {
-      "description": "Newest first",
-      "items": {
-        "$ref": "#/components/schemas/UserAdminHistoryEventResponseDto"
-      },
-      "type": "array"
-    },
-    "hasMore": {
-      "description": "True when older events exist beyond this page",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "events",
-    "hasMore"
-  ],
-  "type": "object"
-}
-```
-
-## UserAdminPinCodeStateResponseDto
-
-
-```json
-{
-  "properties": {
-    "pinCode": {
-      "description": "Whether the account has a PIN set",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "pinCode"
-  ],
-  "type": "object"
-}
-```
-
-## UserAdminResponseDto
-
-Related models: [UserAvatarColor](models-36.md#useravatarcolor), [UserLicense](models-37.md#userlicense), [UserStatus](models-37.md#userstatus).
-
-```json
-{
-  "properties": {
-    "avatarColor": {
-      "$ref": "#/components/schemas/UserAvatarColor"
-    },
-    "clusterGroupId": {
-      "description": "Cluster group the user is a member of",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "createdAt": {
-      "description": "Creation date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "deletedAt": {
-      "description": "Deletion date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "email": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "id": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "Is admin user",
-      "type": "boolean"
-    },
-    "license": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/UserLicense"
-        }
-      ],
-      "nullable": true
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "oauthId": {
-      "description": "OAuth ID",
-      "type": "string"
-    },
-    "profileChangedAt": {
-      "description": "Profile change date",
-      "format": "date-time",
-      "type": "string"
-    },
-    "profileImagePath": {
-      "description": "Profile image path",
-      "type": "string"
-    },
-    "quotaSizeInBytes": {
-      "description": "Storage quota in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "quotaUsageInBytes": {
-      "description": "Storage usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "shouldChangePassword": {
-      "description": "Require password change on next login",
-      "type": "boolean"
-    },
-    "status": {
-      "$ref": "#/components/schemas/UserStatus"
-    },
-    "storageLabel": {
-      "description": "Storage label",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Last update date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "avatarColor",
-    "clusterGroupId",
-    "createdAt",
-    "deletedAt",
-    "email",
-    "id",
-    "isAdmin",
-    "license",
-    "name",
-    "oauthId",
-    "profileChangedAt",
-    "profileImagePath",
-    "quotaSizeInBytes",
-    "quotaUsageInBytes",
-    "shouldChangePassword",
-    "status",
-    "storageLabel",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## UserAdminUpdateDto
-
-Related models: [UserAvatarColor](models-36.md#useravatarcolor).
-
-```json
-{
-  "properties": {
-    "avatarColor": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/UserAvatarColor"
-        }
-      ],
-      "nullable": true
-    },
-    "email": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "Grant admin privileges",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "password": {
-      "description": "User password",
-      "type": "string"
-    },
-    "pinCode": {
-      "description": "PIN code",
-      "example": "123456",
-      "nullable": true,
-      "pattern": "^\\d{6}$",
-      "type": "string"
-    },
-    "quotaSizeInBytes": {
-      "description": "Storage quota in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "shouldChangePassword": {
-      "description": "Require password change on next login",
-      "type": "boolean"
-    },
-    "storageLabel": {
-      "description": "Storage label",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## UserAvatarColor
-
-
-```json
-{
-  "description": "User avatar color",
+  "description": "Photo or video",
   "enum": [
-    "primary",
-    "pink",
-    "red",
-    "yellow",
-    "blue",
-    "green",
-    "purple",
-    "orange",
-    "gray",
-    "amber"
+    "image",
+    "video"
   ],
   "type": "string"
 }
 ```
 
-## UserConfigClipDto
+## TakeoutItemResponseDto
 
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether the task is enabled",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigDto
-
-Related models: [UserConfigFFmpegDto](models-36.md#userconfigffmpegdto), [UserConfigFrameleafCloudDto](models-36.md#userconfigframeleafclouddto), [UserConfigImageDto](models-36.md#userconfigimagedto), [UserConfigMachineLearningDto](models-37.md#userconfigmachinelearningdto), [UserConfigMapDto](models-37.md#userconfigmapdto), [UserConfigOAuthDto](models-37.md#userconfigoauthdto), [UserConfigPasswordLoginDto](models-37.md#userconfigpasswordlogindto), [UserConfigReverseGeocodingDto](models-37.md#userconfigreversegeocodingdto), [UserConfigServerDto](models-37.md#userconfigserverdto), [UserConfigThemeDto](models-37.md#userconfigthemedto), [UserConfigTrashDto](models-37.md#userconfigtrashdto), [UserConfigUserDto](models-37.md#userconfiguserdto).
-
-```json
-{
-  "description": "Configuration properties that are visible to a logged user",
-  "properties": {
-    "ffmpeg": {
-      "$ref": "#/components/schemas/UserConfigFFmpegDto"
-    },
-    "frameleafCloud": {
-      "$ref": "#/components/schemas/UserConfigFrameleafCloudDto"
-    },
-    "image": {
-      "$ref": "#/components/schemas/UserConfigImageDto"
-    },
-    "machineLearning": {
-      "$ref": "#/components/schemas/UserConfigMachineLearningDto"
-    },
-    "map": {
-      "$ref": "#/components/schemas/UserConfigMapDto"
-    },
-    "oauth": {
-      "$ref": "#/components/schemas/UserConfigOAuthDto"
-    },
-    "passwordLogin": {
-      "$ref": "#/components/schemas/UserConfigPasswordLoginDto"
-    },
-    "reverseGeocoding": {
-      "$ref": "#/components/schemas/UserConfigReverseGeocodingDto"
-    },
-    "server": {
-      "$ref": "#/components/schemas/UserConfigServerDto"
-    },
-    "theme": {
-      "$ref": "#/components/schemas/UserConfigThemeDto"
-    },
-    "trash": {
-      "$ref": "#/components/schemas/UserConfigTrashDto"
-    },
-    "user": {
-      "$ref": "#/components/schemas/UserConfigUserDto"
-    }
-  },
-  "required": [
-    "ffmpeg",
-    "frameleafCloud",
-    "image",
-    "machineLearning",
-    "map",
-    "oauth",
-    "passwordLogin",
-    "reverseGeocoding",
-    "server",
-    "theme",
-    "trash",
-    "user"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigDuplicateDetectionDto
-
+Related models: [TakeoutItemKind](models-36.md#takeoutitemkind), [TakeoutItemState](models-36.md#takeoutitemstate), [TakeoutMetadataDto](models-36.md#takeoutmetadatadto), [TakeoutSidecarCandidateDto](models-37.md#takeoutsidecarcandidatedto), [TakeoutWarning](models-37.md#takeoutwarning).
 
 ```json
 {
   "properties": {
-    "enabled": {
-      "description": "Whether the task is enabled",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigFFmpegDto
-
-Related models: [UserConfigFFmpegRealtimeDto](models-36.md#userconfigffmpegrealtimedto).
-
-```json
-{
-  "properties": {
-    "realtime": {
-      "$ref": "#/components/schemas/UserConfigFFmpegRealtimeDto"
-    }
-  },
-  "required": [
-    "realtime"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigFFmpegRealtimeDto
-
-Related models: [HlsVideoResolution](models-12.md#hlsvideoresolution), [VideoCodec](models-37.md#videocodec).
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Enable real-time HLS transcoding (alpha)",
-      "type": "boolean"
-    },
-    "resolutions": {
-      "description": "Resolutions to use for real-time HLS transcoding",
+    "albums": {
       "items": {
-        "$ref": "#/components/schemas/HlsVideoResolution"
+        "type": "string"
       },
       "type": "array"
     },
-    "videoCodecs": {
-      "description": "Video codecs to use for real-time HLS transcoding",
-      "items": {
-        "$ref": "#/components/schemas/VideoCodec"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "enabled",
-    "resolutions",
-    "videoCodecs"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigFacialRecognitionDto
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether the task is enabled",
-      "type": "boolean"
-    },
-    "minFaces": {
-      "description": "Minimum number of faces required for recognition",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "enabled",
-    "minFaces"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigFrameleafCloudDto
-
-Related models: [UserConfigFrameleafSignInDto](models-36.md#userconfigframeleafsignindto).
-
-```json
-{
-  "properties": {
-    "signIn": {
-      "$ref": "#/components/schemas/UserConfigFrameleafSignInDto"
-    }
-  },
-  "required": [
-    "signIn"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigFrameleafSignInDto
-
-
-```json
-{
-  "properties": {
-    "buttonText": {
-      "description": "Sign in with Frameleaf button text",
-      "maxLength": 100,
+    "assetId": {
+      "description": "The library item it became or matched, when this session may open it",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
-    "showOnLocalLogin": {
-      "description": "Show Sign in with Frameleaf on the local sign-in page too",
+    "candidates": {
+      "items": {
+        "$ref": "#/components/schemas/TakeoutSidecarCandidateDto"
+      },
+      "type": "array"
+    },
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/TakeoutItemKind"
+    },
+    "locked": {
       "type": "boolean"
-    }
-  },
-  "required": [
-    "buttonText",
-    "showOnLocalLogin"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigGeneratedFullsizeImageDto
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Enabled",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled"
-  ],
-  "type": "object"
-}
-```
-
-## UserConfigGeneratedImageDto
-
-
-```json
-{
-  "properties": {
+    },
+    "metadata": {
+      "$ref": "#/components/schemas/TakeoutMetadataDto"
+    },
+    "path": {
+      "description": "Path inside the export",
+      "type": "string"
+    },
+    "sidecarId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
     "size": {
-      "description": "Size",
       "maximum": 9007199254740991,
-      "minimum": 1,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "source": {
+      "description": "The archive or directory the file came from",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/TakeoutItemState"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/components/schemas/TakeoutWarning"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "albums",
+    "assetId",
+    "candidates",
+    "error",
+    "folder",
+    "id",
+    "kind",
+    "locked",
+    "metadata",
+    "path",
+    "sidecarId",
+    "size",
+    "source",
+    "state",
+    "warnings"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutItemState
+
+
+```json
+{
+  "description": "What happened to one photo or video",
+  "enum": [
+    "ready",
+    "review",
+    "importing",
+    "imported",
+    "matched",
+    "skipped",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## TakeoutItemsResponseDto
+
+Related models: [TakeoutItemResponseDto](models-36.md#takeoutitemresponsedto).
+
+```json
+{
+  "properties": {
+    "hiddenLocked": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/TakeoutItemResponseDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
       "type": "integer"
     }
   },
   "required": [
-    "size"
+    "hiddenLocked",
+    "items",
+    "total"
   ],
   "type": "object"
 }
 ```
 
-## UserConfigImageDescriptionDto
+## TakeoutMetadataDto
 
 
 ```json
 {
   "properties": {
-    "enabled": {
-      "description": "Whether the task is enabled",
+    "archived": {
+      "description": "Archived in Google Photos",
+      "type": "boolean"
+    },
+    "createdAt": {
+      "description": "When Google Photos received the photo (ISO 8601)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Description",
+      "type": "string"
+    },
+    "favorite": {
+      "description": "Favorite in Google Photos",
+      "type": "boolean"
+    },
+    "latitude": {
+      "description": "Latitude",
+      "format": "double",
+      "type": "number"
+    },
+    "locked": {
+      "description": "In the Google Photos Locked Folder; imported into Locked",
+      "type": "boolean"
+    },
+    "longitude": {
+      "description": "Longitude",
+      "format": "double",
+      "type": "number"
+    },
+    "takenAt": {
+      "description": "When the photo was taken (ISO 8601)",
+      "type": "string"
+    },
+    "title": {
+      "description": "File name Google Photos recorded",
+      "type": "string"
+    },
+    "trashed": {
+      "description": "In the Google Photos trash; not imported",
       "type": "boolean"
     }
   },
   "required": [
-    "enabled"
+    "title"
   ],
   "type": "object"
 }
 ```
 
-## UserConfigImageDto
+## TakeoutOptionsDto
 
-Related models: [UserConfigGeneratedFullsizeImageDto](models-36.md#userconfiggeneratedfullsizeimagedto), [UserConfigGeneratedImageDto](models-36.md#userconfiggeneratedimagedto).
 
 ```json
 {
   "properties": {
-    "fullsize": {
-      "$ref": "#/components/schemas/UserConfigGeneratedFullsizeImageDto"
+    "albums": {
+      "default": true,
+      "description": "Recreate album memberships, including for photos already in the library",
+      "type": "boolean"
     },
-    "preview": {
-      "$ref": "#/components/schemas/UserConfigGeneratedImageDto"
+    "archive": {
+      "default": true,
+      "description": "Bring over archived photos as archived",
+      "type": "boolean"
     },
-    "thumbnail": {
-      "$ref": "#/components/schemas/UserConfigGeneratedImageDto"
+    "dates": {
+      "default": true,
+      "description": "Bring over the dates photos were taken",
+      "type": "boolean"
+    },
+    "descriptions": {
+      "default": true,
+      "description": "Bring over descriptions",
+      "type": "boolean"
+    },
+    "favorites": {
+      "default": true,
+      "description": "Bring over favorites",
+      "type": "boolean"
+    },
+    "locations": {
+      "default": true,
+      "description": "Bring over locations",
+      "type": "boolean"
+    },
+    "selectedAlbums": {
+      "description": "Album folders to recreate; omitted means every folder that is not a year folder",
+      "items": {
+        "maxLength": 4096,
+        "type": "string"
+      },
+      "maxItems": 20000,
+      "type": "array"
+    },
+    "sidecarReview": {
+      "default": true,
+      "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
+      "type": "boolean"
+    },
+    "updateMatchedMetadata": {
+      "default": false,
+      "description": "Fill metadata missing from photos already in the library; values already there are never replaced",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## TakeoutOptionsResponseDto
+
+
+```json
+{
+  "properties": {
+    "albums": {
+      "type": "boolean"
+    },
+    "archive": {
+      "type": "boolean"
+    },
+    "dates": {
+      "type": "boolean"
+    },
+    "descriptions": {
+      "type": "boolean"
+    },
+    "favorites": {
+      "type": "boolean"
+    },
+    "locations": {
+      "type": "boolean"
+    },
+    "selectedAlbums": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sidecarReview": {
+      "type": "boolean"
+    },
+    "updateMatchedMetadata": {
+      "type": "boolean"
     }
   },
   "required": [
-    "fullsize",
-    "preview",
-    "thumbnail"
+    "albums",
+    "archive",
+    "dates",
+    "descriptions",
+    "favorites",
+    "locations",
+    "sidecarReview",
+    "updateMatchedMetadata"
   ],
+  "type": "object"
+}
+```
+
+## TakeoutPairDecisionDto
+
+
+```json
+{
+  "properties": {
+    "approve": {
+      "description": "True links them as one Live Photo; false keeps them separate",
+      "type": "boolean"
+    },
+    "photoItemId": {
+      "description": "The still photo",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "videoItemId": {
+      "description": "The motion video",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approve",
+    "photoItemId",
+    "videoItemId"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutPairResponseDto
+
+Related models: [TakeoutPairState](models-36.md#takeoutpairstate).
+
+```json
+{
+  "properties": {
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "photoItemId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "photoPath": {
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/TakeoutPairState"
+    },
+    "videoItemId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "videoPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "error",
+    "photoItemId",
+    "photoPath",
+    "state",
+    "videoItemId",
+    "videoPath"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutPairState
+
+
+```json
+{
+  "description": "A possible Live Photo pair and the owner’s decision",
+  "enum": [
+    "suggested",
+    "approved",
+    "skipped",
+    "linked",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## TakeoutPairsResponseDto
+
+Related models: [TakeoutPairResponseDto](models-36.md#takeoutpairresponsedto).
+
+```json
+{
+  "properties": {
+    "pairs": {
+      "items": {
+        "$ref": "#/components/schemas/TakeoutPairResponseDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "pairs",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## TakeoutPhase
+
+
+```json
+{
+  "description": "The step the import has reached",
+  "enum": [
+    "sources",
+    "scanning",
+    "review",
+    "importing",
+    "completed"
+  ],
+  "type": "string"
+}
+```
+
+## TakeoutResolveDto
+
+
+```json
+{
+  "properties": {
+    "sidecarId": {
+      "description": "The sidecar to use; null imports without one",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "skip": {
+      "description": "True leaves the item out of the import; false brings it back",
+      "type": "boolean"
+    }
+  },
   "type": "object"
 }
 ```

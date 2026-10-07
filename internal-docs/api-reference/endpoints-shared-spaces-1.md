@@ -1,18 +1,18 @@
 # Server API — Shared spaces 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getSharedSpaceInvitations
 
 `GET /api/shared-spaces/invitations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L99).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L99).
 
 List shared space invitations
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePreviewResponseDto](models-30.md#sharedspacepreviewresponsedto).
+Models: [SharedSpacePreviewResponseDto](models-31.md#sharedspacepreviewresponsedto).
 
 Controller access declarations:
 
@@ -80,13 +80,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/recipient-groups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L44).
 
 List recipient groups
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [RecipientGroupResponseDto](models-27.md#recipientgroupresponsedto).
+Models: [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto).
 
 Controller access declarations:
 
@@ -159,13 +159,13 @@ Complete operation contract:
 
 `POST /api/shared-spaces/recipient-groups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L56).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L56).
 
 Create a recipient group
 
 Permission: `album.share`. Admin only: `false`.
 
-Models: [RecipientGroupCreateDto](models-27.md#recipientgroupcreatedto), [RecipientGroupResponseDto](models-27.md#recipientgroupresponsedto).
+Models: [RecipientGroupCreateDto](models-28.md#recipientgroupcreatedto), [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto).
 
 Controller access declarations:
 
@@ -245,7 +245,7 @@ Complete operation contract:
 
 `DELETE /api/shared-spaces/recipient-groups/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L87).
 
 Delete a recipient group
 
@@ -323,13 +323,13 @@ Complete operation contract:
 
 `PUT /api/shared-spaces/recipient-groups/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L71).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L71).
 
 Update a recipient group
 
 Permission: `album.share`. Admin only: `false`.
 
-Models: [RecipientGroupResponseDto](models-27.md#recipientgroupresponsedto), [RecipientGroupUpdateDto](models-27.md#recipientgroupupdatedto).
+Models: [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto), [RecipientGroupUpdateDto](models-28.md#recipientgroupupdatedto).
 
 Controller access declarations:
 
@@ -420,7 +420,7 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L135).
 
 Accept a shared space invitation
 
@@ -502,13 +502,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/activity`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L283).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L283).
 
 What happened in a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceActivityResponseDto](models-30.md#sharedspaceactivityresponsedto).
+Models: [SharedSpaceActivityResponseDto](models-31.md#sharedspaceactivityresponsedto).
 
 Controller access declarations:
 
@@ -605,13 +605,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/albums`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L176).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L176).
 
 List albums linked into a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceAlbumsResponseDto](models-30.md#sharedspacealbumsresponsedto).
+Models: [SharedSpaceAlbumsResponseDto](models-31.md#sharedspacealbumsresponsedto).
 
 Controller access declarations:
 
@@ -687,7 +687,7 @@ Complete operation contract:
 
 `DELETE /api/shared-spaces/{id}/albums/{albumId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L203).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L203).
 
 Unlink an album from a shared space
 
@@ -773,13 +773,13 @@ Complete operation contract:
 
 `PUT /api/shared-spaces/{id}/albums/{albumId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L188).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L188).
 
 Link an album into a shared space
 
 Permission: `album.update`. Admin only: `false`.
 
-Models: [SharedSpaceAlbumsResponseDto](models-30.md#sharedspacealbumsresponsedto).
+Models: [SharedSpaceAlbumsResponseDto](models-31.md#sharedspacealbumsresponsedto).
 
 Controller access declarations:
 
@@ -867,13 +867,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L299).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L299).
 
 List comments in a shared space
 
 Permission: `activity.read`. Admin only: `false`.
 
-Models: [SharedSpaceCommentsResponseDto](models-30.md#sharedspacecommentsresponsedto).
+Models: [SharedSpaceCommentsResponseDto](models-31.md#sharedspacecommentsresponsedto).
 
 Controller access declarations:
 
@@ -960,13 +960,13 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L315).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L315).
 
 Comment in a shared space
 
 Permission: `activity.create`. Admin only: `false`.
 
-Models: [SharedSpaceCommentCreateDto](models-30.md#sharedspacecommentcreatedto), [SharedSpaceCommentResponseDto](models-30.md#sharedspacecommentresponsedto).
+Models: [SharedSpaceCommentCreateDto](models-31.md#sharedspacecommentcreatedto), [SharedSpaceCommentResponseDto](models-31.md#sharedspacecommentresponsedto).
 
 Controller access declarations:
 
@@ -1052,7 +1052,7 @@ Complete operation contract:
 
 `DELETE /api/shared-spaces/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L347).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L347).
 
 Remove a shared space comment
 
@@ -1138,13 +1138,13 @@ Complete operation contract:
 
 `PUT /api/shared-spaces/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L331).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L331).
 
 Edit a shared space comment
 
 Permission: `activity.update`. Admin only: `false`.
 
-Models: [SharedSpaceCommentResponseDto](models-30.md#sharedspacecommentresponsedto), [SharedSpaceCommentUpdateDto](models-30.md#sharedspacecommentupdatedto).
+Models: [SharedSpaceCommentResponseDto](models-31.md#sharedspacecommentresponsedto), [SharedSpaceCommentUpdateDto](models-31.md#sharedspacecommentupdatedto).
 
 Controller access declarations:
 
@@ -1242,7 +1242,7 @@ Complete operation contract:
 
 `DELETE /api/shared-spaces/{id}/invitation`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L147).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L147).
 
 Decline a shared space invitation
 
@@ -1316,7 +1316,7 @@ Complete operation contract:
 
 `DELETE /api/shared-spaces/{id}/invitations/{userId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L160).
 
 Withdraw a shared space invitation
 
@@ -1402,13 +1402,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/members`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L123).
 
 List shared space members
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceMembersResponseDto](models-30.md#sharedspacemembersresponsedto).
+Models: [SharedSpaceMembersResponseDto](models-31.md#sharedspacemembersresponsedto).
 
 Controller access declarations:
 
@@ -1484,13 +1484,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/new`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L216).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L216).
 
 What is new in a shared space since your last visit
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceNewResponseDto](models-30.md#sharedspacenewresponsedto).
+Models: [SharedSpaceNewResponseDto](models-31.md#sharedspacenewresponsedto).
 
 Controller access declarations:
 
@@ -1566,13 +1566,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L228).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L228).
 
 People in a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePeopleResponseDto](models-30.md#sharedspacepeopleresponsedto).
+Models: [SharedSpacePeopleResponseDto](models-31.md#sharedspacepeopleresponsedto).
 
 Controller access declarations:
 
@@ -1648,13 +1648,13 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L240).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L240).
 
 Link a person into a shared space
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [SharedSpacePeopleResponseDto](models-30.md#sharedspacepeopleresponsedto), [SharedSpacePersonLinkDto](models-30.md#sharedspacepersonlinkdto).
+Models: [SharedSpacePeopleResponseDto](models-31.md#sharedspacepeopleresponsedto), [SharedSpacePersonLinkDto](models-31.md#sharedspacepersonlinkdto).
 
 Controller access declarations:
 

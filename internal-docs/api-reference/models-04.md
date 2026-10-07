@@ -1,10 +1,10 @@
 # Server API models 4
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AskSearchPlanDto
 
-Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchAskMode](models-28.md#searchaskmode), [SearchFilter](models-29.md#searchfilter), [SearchOrder](models-29.md#searchorder).
+Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchAskMode](models-29.md#searchaskmode), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
 
 ```json
 {
@@ -933,7 +933,7 @@ Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06
 
 ## AskSearchResponseDto
 
-Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-29.md#searchresponsedto).
+Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-30.md#searchresponsedto).
 
 ```json
 {
@@ -1815,6 +1815,15 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto).
 ```json
 {
   "properties": {
+    "dynamicRange": {
+      "description": "Omitted requests retain SDR-compatible previews",
+      "enum": [
+        "auto",
+        "sdr",
+        "hdr"
+      ],
+      "type": "string"
+    },
     "recipe": {
       "$ref": "#/components/schemas/AssetDevelopRecipeDto"
     },

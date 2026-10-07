@@ -1,18 +1,18 @@
 # Server API — Media operations
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchMediaOperations
 
 `GET /api/media-operations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L48).
 
 List your media operations
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationKind](models-15.md#mediaoperationkind), [MediaOperationListResponseDto](models-15.md#mediaoperationlistresponsedto), [MediaOperationStatus](models-15.md#mediaoperationstatus).
+Models: [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationListResponseDto](models-16.md#mediaoperationlistresponsedto), [MediaOperationStatus](models-16.md#mediaoperationstatus).
 
 Controller access declarations:
 
@@ -130,7 +130,7 @@ Complete operation contract:
 
 `POST /api/media-operations/bulk`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L75).
 
 Queue a bulk operation
 
@@ -216,13 +216,13 @@ Complete operation contract:
 
 `GET /api/media-operations/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L63).
 
 Get media operation statistics
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [MediaOperationStatisticsDto](models-15.md#mediaoperationstatisticsdto).
+Models: [MediaOperationStatisticsDto](models-16.md#mediaoperationstatisticsdto).
 
 Controller access declarations:
 
@@ -292,7 +292,7 @@ Complete operation contract:
 
 `DELETE /api/media-operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L187).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L187).
 
 Clear a finished media operation
 
@@ -369,7 +369,7 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L91).
 
 Get a media operation
 
@@ -454,7 +454,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/cancel`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L135).
 
 Cancel a media operation
 
@@ -541,7 +541,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/pause`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L148).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L148).
 
 Pause a media operation
 
@@ -628,7 +628,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/resume`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L161).
 
 Resume a media operation
 
@@ -715,7 +715,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L174).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L174).
 
 Retry a media operation
 
@@ -802,7 +802,7 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}/reverse-preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L118).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L118).
 
 View a source reversal preview
 
@@ -889,13 +889,13 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}/reverse-result`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/media-operation.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-operation.controller.ts#L102).
 
 Get a completed source reversal result
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioReverseConformResultDto](models-33.md#studioreverseconformresultdto).
+Models: [StudioReverseConformResultDto](models-34.md#studioreverseconformresultdto).
 
 Controller access declarations:
 

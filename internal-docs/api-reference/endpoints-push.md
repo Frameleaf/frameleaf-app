@@ -1,18 +1,18 @@
 # Server API — Push
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## listPushDevices
 
 `GET /api/push/devices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L40).
 
 List own push devices
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [PushDeviceListResponseDto](models-26.md#pushdevicelistresponsedto).
+Models: [PushDeviceListResponseDto](models-27.md#pushdevicelistresponsedto).
 
 Controller access declarations:
 
@@ -76,7 +76,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L75).
 
 Unregister this device from push
 
@@ -138,13 +138,13 @@ Complete operation contract:
 
 `PATCH /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L63).
 
 Update this device’s push registration
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushDeviceResponseDto](models-26.md#pushdeviceresponsedto), [PushDeviceUpdateDto](models-26.md#pushdeviceupdatedto).
+Models: [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto), [PushDeviceUpdateDto](models-27.md#pushdeviceupdatedto).
 
 Controller access declarations:
 
@@ -219,13 +219,13 @@ Complete operation contract:
 
 `PUT /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L51).
 
 Register this device for push
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushDeviceRegisterDto](models-26.md#pushdeviceregisterdto), [PushDeviceResponseDto](models-26.md#pushdeviceresponsedto).
+Models: [PushDeviceRegisterDto](models-27.md#pushdeviceregisterdto), [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto).
 
 Controller access declarations:
 
@@ -300,7 +300,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/current/activities/{activityId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L114).
 
 Remove a Live Activity push token
 
@@ -375,13 +375,13 @@ Complete operation contract:
 
 `PUT /api/push/devices/current/activities/{activityId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L98).
 
 Set a Live Activity push token
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushActivityTokenDto](models-26.md#pushactivitytokendto), [PushDeviceResponseDto](models-26.md#pushdeviceresponsedto).
+Models: [PushActivityTokenDto](models-27.md#pushactivitytokendto), [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto).
 
 Controller access declarations:
 
@@ -469,7 +469,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L87).
 
 Remove an own push device
 
@@ -540,13 +540,13 @@ Complete operation contract:
 
 `GET /api/push/status`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/push.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L28).
 
 Push availability
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [PushStatusResponseDto](models-26.md#pushstatusresponsedto).
+Models: [PushStatusResponseDto](models-27.md#pushstatusresponsedto).
 
 Controller access declarations:
 

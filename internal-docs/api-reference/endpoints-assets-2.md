@@ -1,12 +1,12 @@
 # Server API — Assets 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAssetUploadResourceOffset
 
 `HEAD /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L180).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L180).
 
 Get durable upload offset
 
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `PATCH /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L197).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L197).
 
 Append immutable upload bytes
 
@@ -272,7 +272,7 @@ Complete operation contract:
 
 `GET /api/assets/uploads/{id}/result`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-upload-resource.controller.ts#L243).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L243).
 
 Recover a completed upload result
 
@@ -361,7 +361,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L132).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L132).
 
 Retrieve an asset
 
@@ -467,13 +467,13 @@ Complete operation contract:
 
 `PUT /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L210).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L210).
 
 Update an asset
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [AssetResponseDto](models-06.md#assetresponsedto), [UpdateAssetDto](models-36.md#updateassetdto).
+Models: [AssetResponseDto](models-06.md#assetresponsedto), [UpdateAssetDto](models-37.md#updateassetdto).
 
 Controller access declarations:
 
@@ -578,7 +578,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L51).
 
 List develop versions of an asset
 
@@ -665,7 +665,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L63).
 
 Save a develop recipe as a new version
 
@@ -762,7 +762,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/artifacts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L178).
 
 Upload a develop artifact
 
@@ -865,7 +865,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L133).
 
 List exports of an original for editing elsewhere
 
@@ -954,7 +954,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L144).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L144).
 
 Export an original for editing elsewhere
 
@@ -1041,7 +1041,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L156).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L156).
 
 Bring back a file developed elsewhere
 
@@ -1144,7 +1144,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/masks/propose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L126).
 
 Suggest a subject or sky mask locally
 
@@ -1235,7 +1235,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L79).
 
 Render a develop preview
 
@@ -1250,7 +1250,16 @@ Controller access declarations:
 @Controller(RouteKey.Asset)
 @Post(':id/develop/preview')
 @HttpCode(HttpStatus.OK)
-@FileResponse()
+@ApiOkResponse({
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    headers: {
+      'X-Frameleaf-HDR-Histogram': {
+        description:
+          'Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.',
+        schema: { type: 'string' },
+      },
+    },
+  })
 @Authenticated({ permission: Permission.AssetEditGet })
 @Endpoint({
     summary: 'Render a develop preview',
@@ -1297,7 +1306,15 @@ Complete operation contract:
           }
         }
       },
-      "description": ""
+      "description": "",
+      "headers": {
+        "X-Frameleaf-HDR-Histogram": {
+          "description": "Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "security": [
@@ -1334,7 +1351,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revert`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L146).
 
 Revert to the original or an earlier develop version
 
@@ -1432,7 +1449,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/revisions/{revisionId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L181).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L194).
 
 View a rendered develop file
 
@@ -1463,6 +1480,33 @@ Complete operation contract:
   "description": "Streams the edited master or the preview rendered for the version.",
   "operationId": "viewAssetDevelopFile",
   "parameters": [
+    {
+      "name": "dynamicRange",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "sdr",
+          "hdr"
+        ]
+      }
+    },
+    {
+      "name": "format",
+      "required": false,
+      "in": "query",
+      "description": "Explicit full-resolution still export. Overrides dynamicRange and requires download permission. Original downloads use the existing original endpoint; motion is never included in a still export.",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "sdr-jpeg",
+          "hdr-jpeg",
+          "hdr-heic"
+        ]
+      }
+    },
     {
       "name": "id",
       "required": true,
@@ -1542,7 +1586,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/develop/revisions/{revisionId}/render`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L165).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L178).
 
 Cancel a develop render
 
@@ -1642,7 +1686,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revisions/{revisionId}/render`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-develop.controller.ts#L150).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L163).
 
 Render a develop version
 
@@ -1741,13 +1785,13 @@ Complete operation contract:
 
 `GET /api/assets/{id}/edit-versions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L341).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L341).
 
 List saved video versions
 
 Permission: `asset.edit.get`. Admin only: `false`.
 
-Models: [VideoEditVersionResponseDto](models-37.md#videoeditversionresponsedto).
+Models: [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
 
 Controller access declarations:
 
@@ -1825,13 +1869,13 @@ Complete operation contract:
 
 `POST /api/assets/{id}/edit-versions/export`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L348).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L348).
 
 Export the current video version
 
 Permission: `asset.edit.create`. Admin only: `false`.
 
-Models: [VideoEditExportDto](models-37.md#videoeditexportdto), [VideoEditVersionResponseDto](models-37.md#videoeditversionresponsedto).
+Models: [VideoEditExportDto](models-38.md#videoeditexportdto), [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
 
 Controller access declarations:
 
@@ -1911,92 +1955,6 @@ Complete operation contract:
     }
   ],
   "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Beta"
-}
-```
-
-## pruneVideoEditVersion
-
-`DELETE /api/assets/{id}/edit-versions/{versionId}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L370).
-
-Prune an unselected video version
-
-Permission: `asset.edit.delete`. Admin only: `false`.
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Delete(':id/edit-versions/:versionId')
-@Authenticated({ permission: Permission.AssetEditDelete })
-@HttpCode(HttpStatus.NO_CONTENT)
-@Endpoint({
-    summary: 'Prune an unselected video version',
-    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "pruneVideoEditVersion",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "versionId",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "204": {
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Prune an unselected video version",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Beta"
-    }
-  ],
-  "x-immich-permission": "asset.edit.delete",
   "x-immich-state": "Beta"
 }
 ```

@@ -1,18 +1,18 @@
 # Server API — Plugins
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchPlugins
 
 `GET /api/plugins`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/plugin.controller.ts#L21).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/plugin.controller.ts#L21).
 
 List all plugins
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginResponseDto](models-25.md#pluginresponsedto).
+Models: [PluginResponseDto](models-26.md#pluginresponsedto).
 
 Controller access declarations:
 
@@ -132,13 +132,13 @@ Complete operation contract:
 
 `GET /api/plugins/methods`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/plugin.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/plugin.controller.ts#L32).
 
 Retrieve plugin methods
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginMethodResponseDto](models-25.md#pluginmethodresponsedto), [WorkflowTrigger](models-38.md#workflowtrigger), [WorkflowType](models-38.md#workflowtype).
+Models: [PluginMethodResponseDto](models-26.md#pluginmethodresponsedto), [WorkflowTrigger](models-39.md#workflowtrigger), [WorkflowType](models-39.md#workflowtype).
 
 Controller access declarations:
 
@@ -286,13 +286,13 @@ Complete operation contract:
 
 `GET /api/plugins/templates`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/plugin.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/plugin.controller.ts#L43).
 
 Retrieve workflow templates
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginTemplateResponseDto](models-25.md#plugintemplateresponsedto).
+Models: [PluginTemplateResponseDto](models-26.md#plugintemplateresponsedto).
 
 Controller access declarations:
 
@@ -359,13 +359,13 @@ Complete operation contract:
 
 `GET /api/plugins/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/plugin.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/plugin.controller.ts#L54).
 
 Retrieve a plugin
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginResponseDto](models-25.md#pluginresponsedto).
+Models: [PluginResponseDto](models-26.md#pluginresponsedto).
 
 Controller access declarations:
 

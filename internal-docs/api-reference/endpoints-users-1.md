@@ -1,18 +1,18 @@
 # Server API — Users 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchUsers
 
 `GET /api/users`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L85).
 
 Get all users
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserResponseDto](models-37.md#userresponsedto).
+Models: [UserResponseDto](models-38.md#userresponsedto).
 
 Controller access declarations:
 
@@ -88,13 +88,13 @@ Complete operation contract:
 
 `GET /api/users/me`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L96).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L96).
 
 Get current user
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserMeResponseDto](models-37.md#usermeresponsedto).
+Models: [UserMeResponseDto](models-38.md#usermeresponsedto).
 
 Controller access declarations:
 
@@ -168,13 +168,13 @@ Complete operation contract:
 
 `PUT /api/users/me`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L119).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L119).
 
 Update current user
 
 Permission: `user.update`. Admin only: `false`.
 
-Models: [UserAdminResponseDto](models-36.md#useradminresponsedto), [UserUpdateMeDto](models-37.md#userupdatemedto).
+Models: [UserAdminResponseDto](models-37.md#useradminresponsedto), [UserUpdateMeDto](models-38.md#userupdatemedto).
 
 Controller access declarations:
 
@@ -268,7 +268,7 @@ Complete operation contract:
 
 `GET /api/users/me/backup-devices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L41).
 
 List own backup devices
 
@@ -356,7 +356,7 @@ Complete operation contract:
 
 `POST /api/users/me/backup-devices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L28).
 
 Register or report an own backup device
 
@@ -438,7 +438,7 @@ Complete operation contract:
 
 `DELETE /api/users/me/backup-devices/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L48).
 
 Remove an own backup device without deleting assets
 
@@ -509,13 +509,13 @@ Complete operation contract:
 
 `GET /api/users/me/backup-devices/{id}/reconciliations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L93).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L93).
 
 List own device reconciliation history
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationHistoryDto](models-27.md#reconciliationhistorydto).
+Models: [ReconciliationHistoryDto](models-28.md#reconciliationhistorydto).
 
 Controller access declarations:
 
@@ -613,13 +613,13 @@ Complete operation contract:
 
 `POST /api/users/me/backup-devices/{id}/reconciliations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L59).
 
 Start own device inventory reconciliation
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationResultDto](models-27.md#reconciliationresultdto), [ReconciliationStartDto](models-27.md#reconciliationstartdto).
+Models: [ReconciliationResultDto](models-28.md#reconciliationresultdto), [ReconciliationStartDto](models-28.md#reconciliationstartdto).
 
 Controller access declarations:
 
@@ -706,13 +706,13 @@ Complete operation contract:
 
 `POST /api/users/me/backup-devices/{id}/reconciliations/{runId}/buckets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/backup-device.controller.ts#L76).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/backup-device.controller.ts#L76).
 
 Reconcile one complete differing bucket
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationBucketDto](models-27.md#reconciliationbucketdto), [ReconciliationResultDto](models-27.md#reconciliationresultdto).
+Models: [ReconciliationBucketDto](models-28.md#reconciliationbucketdto), [ReconciliationResultDto](models-28.md#reconciliationresultdto).
 
 Controller access declarations:
 
@@ -809,7 +809,7 @@ Complete operation contract:
 
 `GET /api/users/me/calendar-heatmap`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L108).
 
 Retrieve calendar heatmap activity
 
@@ -918,7 +918,7 @@ Complete operation contract:
 
 `DELETE /api/users/me/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L217).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L217).
 
 Remove your supporter key
 
@@ -989,7 +989,7 @@ Complete operation contract:
 
 `GET /api/users/me/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L192).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L192).
 
 Get your supporter key
 
@@ -1069,7 +1069,7 @@ Complete operation contract:
 
 `PUT /api/users/me/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L204).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L204).
 
 Activate your supporter key
 
@@ -1160,7 +1160,7 @@ Complete operation contract:
 
 `DELETE /api/users/me/onboarding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L251).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L251).
 
 Delete user onboarding
 
@@ -1231,13 +1231,13 @@ Complete operation contract:
 
 `GET /api/users/me/onboarding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L229).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L229).
 
 Retrieve user onboarding
 
 Permission: `userOnboarding.read`. Admin only: `false`.
 
-Models: [OnboardingResponseDto](models-17.md#onboardingresponsedto).
+Models: [OnboardingResponseDto](models-18.md#onboardingresponsedto).
 
 Controller access declarations:
 
@@ -1310,13 +1310,13 @@ Complete operation contract:
 
 `PUT /api/users/me/onboarding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L240).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L240).
 
 Update user onboarding
 
 Permission: `userOnboarding.update`. Admin only: `false`.
 
-Models: [OnboardingDto](models-17.md#onboardingdto), [OnboardingResponseDto](models-17.md#onboardingresponsedto).
+Models: [OnboardingDto](models-18.md#onboardingdto), [OnboardingResponseDto](models-18.md#onboardingresponsedto).
 
 Controller access declarations:
 
@@ -1399,13 +1399,13 @@ Complete operation contract:
 
 `GET /api/users/me/pins`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L52).
 
 Get my pinned collections
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [PinnedCollectionsResponseDto](models-25.md#pinnedcollectionsresponsedto).
+Models: [PinnedCollectionsResponseDto](models-26.md#pinnedcollectionsresponsedto).
 
 Controller access declarations:
 
@@ -1470,13 +1470,13 @@ Complete operation contract:
 
 `PUT /api/users/me/pins`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L64).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L64).
 
 Replace my pinned collections
 
 Permission: `userPreference.update`. Admin only: `false`.
 
-Models: [PinnedCollectionsResponseDto](models-25.md#pinnedcollectionsresponsedto), [PinnedCollectionsUpdateDto](models-25.md#pinnedcollectionsupdatedto).
+Models: [PinnedCollectionsResponseDto](models-26.md#pinnedcollectionsresponsedto), [PinnedCollectionsUpdateDto](models-26.md#pinnedcollectionsupdatedto).
 
 Controller access declarations:
 
@@ -1551,13 +1551,13 @@ Complete operation contract:
 
 `GET /api/users/me/preferences`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L141).
 
 Get my preferences
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [UserPreferencesResponseDto](models-37.md#userpreferencesresponsedto).
+Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto).
 
 Controller access declarations:
 
@@ -1630,13 +1630,13 @@ Complete operation contract:
 
 `PUT /api/users/me/preferences`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L164).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L164).
 
 Update my preferences
 
 Permission: `userPreference.update`. Admin only: `false`.
 
-Models: [UserPreferencesResponseDto](models-37.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-37.md#userpreferencesupdatedto).
+Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-38.md#userpreferencesupdatedto).
 
 Controller access declarations:
 
@@ -1730,13 +1730,13 @@ Complete operation contract:
 
 `GET /api/users/me/preferences/history`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L152).
 
 Get my preference history
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [UserPreferenceHistoryResponseDto](models-37.md#userpreferencehistoryresponsedto).
+Models: [UserPreferenceHistoryResponseDto](models-38.md#userpreferencehistoryresponsedto).
 
 Controller access declarations:
 
@@ -1806,7 +1806,7 @@ Complete operation contract:
 
 `DELETE /api/users/profile-image`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L292).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L292).
 
 Delete user profile image
 
@@ -1877,7 +1877,7 @@ Complete operation contract:
 
 `POST /api/users/profile-image`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L274).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L274).
 
 Create user profile image
 
@@ -1970,13 +1970,13 @@ Complete operation contract:
 
 `GET /api/users/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/user.controller.ts#L263).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L263).
 
 Retrieve a user
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserResponseDto](models-37.md#userresponsedto).
+Models: [UserResponseDto](models-38.md#userresponsedto).
 
 Controller access declarations:
 

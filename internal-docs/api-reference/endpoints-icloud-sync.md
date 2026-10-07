@@ -1,12 +1,12 @@
 # Server API — ICloud Sync
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## claimICloudItems
 
 `POST /api/icloud-sync/claims`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L87).
 
 Claim iCloud items for this device to fetch and upload
 
@@ -93,7 +93,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/claims/release`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L113).
 
 Release iCloud claims this device holds
 
@@ -179,7 +179,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/claims/renew`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L100).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L100).
 
 Renew iCloud claims this device holds
 
@@ -266,11 +266,11 @@ Complete operation contract:
 
 `GET /api/icloud-sync/connections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L37).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudConnectionsResponseDto](models-12.md#icloudconnectionsresponsedto).
+Models: [ICloudConnectionsResponseDto](models-13.md#icloudconnectionsresponsedto).
 
 Controller access declarations:
 
@@ -332,7 +332,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L44).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -408,7 +408,7 @@ Complete operation contract:
 
 `DELETE /api/icloud-sync/connections/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L95).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -477,7 +477,7 @@ Complete operation contract:
 
 `PATCH /api/icloud-sync/connections/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L54).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -564,7 +564,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/auth`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L65).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -651,11 +651,11 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/control`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L77).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L77).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto), [ICloudControlDto](models-12.md#icloudcontroldto).
+Models: [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto), [ICloudControlDto](models-13.md#icloudcontroldto).
 
 Controller access declarations:
 
@@ -738,11 +738,11 @@ Complete operation contract:
 
 `PATCH /api/icloud-sync/connections/{id}/identity-reuse-authority`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L26).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudIdentityReuseAuthorityDto](models-12.md#icloudidentityreuseauthoritydto), [ICloudIdentityReuseAuthorityStatusDto](models-13.md#icloudidentityreuseauthoritystatusdto).
+Models: [ICloudIdentityReuseAuthorityDto](models-13.md#icloudidentityreuseauthoritydto), [ICloudIdentityReuseAuthorityStatusDto](models-13.md#icloudidentityreuseauthoritystatusdto).
 
 Controller access declarations:
 
@@ -825,7 +825,7 @@ Complete operation contract:
 
 `GET /api/icloud-sync/connections/{id}/inventory`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L88).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L88).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -902,7 +902,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/remove`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-sync.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L105).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -971,13 +971,13 @@ Complete operation contract:
 
 `POST /api/icloud-sync/coverage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L48).
 
 Does a sync connection cover this device library?
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ICloudCoverageDto](models-12.md#icloudcoveragedto), [ICloudCoverageResponseDto](models-12.md#icloudcoverageresponsedto).
+Models: [ICloudCoverageDto](models-13.md#icloudcoveragedto), [ICloudCoverageResponseDto](models-13.md#icloudcoverageresponsedto).
 
 Controller access declarations:
 
@@ -1058,7 +1058,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/identities/attach`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L74).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L74).
 
 Attach iCloud identities to originals already uploaded by this device
 
@@ -1145,7 +1145,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/identities/lookup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L61).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L61).
 
 Is this iCloud item on the server, or coming from the sync?
 
@@ -1232,7 +1232,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/identities/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/icloud-identity.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L35).
 
 Download and verify named iCloud originals
 

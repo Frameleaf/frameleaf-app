@@ -1,12 +1,12 @@
 # Server API — Frameleaf Cloud jobs
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## createCloudMlJob
 
 `POST /api/cloud/ml/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml.controller.ts#L45).
 
 Confirm a Frameleaf Cloud job
 
@@ -93,7 +93,7 @@ Complete operation contract:
 
 `POST /api/cloud/ml/jobs/estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml.controller.ts#L28).
 
 Estimate a Frameleaf Cloud job
 
@@ -181,7 +181,7 @@ Complete operation contract:
 
 `GET /api/cloud/ml/jobs/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml.controller.ts#L58).
 
 Get a Frameleaf Cloud job
 

@@ -1,6 +1,326 @@
 # Server API models 13
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## ICloudConnectionsResponseDto
+
+Related models: [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto).
+
+```json
+{
+  "properties": {
+    "connections": {
+      "items": {
+        "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+      },
+      "type": "array"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "connections",
+    "enabled"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudControlAction
+
+
+```json
+{
+  "enum": [
+    "run",
+    "pause",
+    "resume",
+    "cancel",
+    "rescan",
+    "retry"
+  ],
+  "type": "string"
+}
+```
+
+## ICloudControlDto
+
+Related models: [ICloudControlAction](models-13.md#icloudcontrolaction).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/ICloudControlAction"
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageConnectionDto
+
+Related models: [ICloudConnectionHealth](models-12.md#icloudconnectionhealth), [ICloudCoverageScopeKind](models-13.md#icloudcoveragescopekind).
+
+```json
+{
+  "properties": {
+    "account": {
+      "description": "The Apple Account, masked (a•••@icloud.com); null until it signs in again",
+      "nullable": true,
+      "type": "string"
+    },
+    "connectionId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "covers": {
+      "description": "At least 20 samples and 95 % of them matched: this connection covers the device library",
+      "type": "boolean"
+    },
+    "includeEdits": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "lastCompleteInventoryAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "matched": {
+      "description": "Of those, matched in the inventory as corroborated or better",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "nextRunAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "sampled": {
+      "description": "Samples that existed before the last complete inventory",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "scope": {
+      "properties": {
+        "albums": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/components/schemas/ICloudCoverageScopeKind"
+        },
+        "libraries": {
+          "description": "Library zones; empty means every supported library",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "libraries",
+        "albums"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "$ref": "#/components/schemas/ICloudConnectionHealth"
+    },
+    "unhealthySince": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "connectionId",
+    "covers",
+    "includeEdits",
+    "label",
+    "lastCompleteInventoryAt",
+    "matched",
+    "nextRunAt",
+    "sampled",
+    "scope",
+    "state",
+    "unhealthySince"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageDto
+
+Related models: [ICloudCoverageSampleDto](models-13.md#icloudcoveragesampledto).
+
+```json
+{
+  "properties": {
+    "deviceKey": {
+      "description": "This device's backup identity (the backup device registry's deviceKey)",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "samples": {
+      "description": "Sampled items: some old, some recent, some in albums",
+      "items": {
+        "$ref": "#/components/schemas/ICloudCoverageSampleDto"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "deviceKey",
+    "samples"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageResponseDto
+
+Related models: [ICloudCoverageConnectionDto](models-13.md#icloudcoverageconnectiondto).
+
+```json
+{
+  "properties": {
+    "connections": {
+      "items": {
+        "$ref": "#/components/schemas/ICloudCoverageConnectionDto"
+      },
+      "type": "array"
+    },
+    "identityMatching": {
+      "description": "False when identity matching is switched off: no connection can then be shown to cover the library",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "connections",
+    "identityMatching"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageSampleDto
+
+
+```json
+{
+  "properties": {
+    "cloudIdentifier": {
+      "description": "PHCloudIdentifier.stringValue, as the device reports it",
+      "maxLength": 512,
+      "minLength": 1,
+      "type": "string"
+    },
+    "creationDate": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "originalFilename": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "type": "string"
+    },
+    "pixelHeight": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "pixelWidth": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "uti": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "cloudIdentifier"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageScopeKind
+
+
+```json
+{
+  "description": "Whole libraries, or only some albums",
+  "enum": [
+    "libraries",
+    "albums"
+  ],
+  "type": "string"
+}
+```
+
+## ICloudEditOwnerKind
+
+
+```json
+{
+  "enum": [
+    "icloud-sync",
+    "device"
+  ],
+  "type": "string"
+}
+```
+
+## ICloudIdentityReuseAuthorityDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "includeProtected": {
+      "type": "boolean"
+    },
+    "requestKey": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "enabled",
+    "includeProtected",
+    "requestKey"
+  ],
+  "type": "object"
+}
+```
 
 ## ICloudIdentityReuseAuthorityStatusDto
 
@@ -232,7 +552,7 @@ Related models: [ICloudLibraryArea](models-13.md#icloudlibraryarea), [ICloudRevi
 
 ## ICloudLookupAnswerDto
 
-Related models: [ICloudEditOwnerKind](models-12.md#icloudeditownerkind), [ICloudLookupRoleDto](models-13.md#icloudlookuproledto).
+Related models: [ICloudEditOwnerKind](models-13.md#icloudeditownerkind), [ICloudLookupRoleDto](models-13.md#icloudlookuproledto).
 
 ```json
 {
@@ -536,7 +856,7 @@ Related models: [ICloudClaimHolder](models-12.md#icloudclaimholder), [ICloudIden
 
 ## ICloudSyncRunDto
 
-Related models: [MediaOperationStatus](models-15.md#mediaoperationstatus).
+Related models: [MediaOperationStatus](models-16.md#mediaoperationstatus).
 
 ```json
 {
@@ -802,6 +1122,75 @@ Related models: [ICloudIdentityRole](models-13.md#icloudidentityrole).
       "type": "array"
     }
   },
+  "type": "object"
+}
+```
+
+## ImageCapabilitiesDto
+
+
+```json
+{
+  "properties": {
+    "codecs": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Versions reported by the installed isolated codec",
+      "type": "object"
+    },
+    "decode": {
+      "description": "Available source decoders; availability alone does not establish qualification",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "experimentalEnabled": {
+      "description": "Whether the administrator enabled experimental HDR processing and delivery",
+      "type": "boolean"
+    },
+    "export": {
+      "description": "Available encoded still output formats, independently of input formats",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "qualified": {
+      "description": "Whether the exact build passed the real-media and physical-display acceptance gates",
+      "type": "boolean"
+    },
+    "render": {
+      "description": "Available still-image render operations",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "renderer": {
+      "description": "HDR renderer identity, or null when the isolated codec is unavailable",
+      "nullable": true,
+      "type": "string"
+    },
+    "unavailable": {
+      "description": "Known unsupported capabilities; never infer support from the container extension",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "codecs",
+    "decode",
+    "experimentalEnabled",
+    "export",
+    "qualified",
+    "render",
+    "renderer",
+    "unavailable"
+  ],
   "type": "object"
 }
 ```
@@ -1420,7 +1809,7 @@ Related models: [ItemShareResponseDto](models-13.md#itemshareresponsedto).
 
 ## ItemShareReceivedDto
 
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [UserResponseDto](models-37.md#userresponsedto).
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -1485,7 +1874,7 @@ Related models: [ItemShareReceivedDto](models-13.md#itemsharereceiveddto).
 
 ## ItemShareResponseDto
 
-Related models: [UserResponseDto](models-37.md#userresponsedto).
+Related models: [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -1524,7 +1913,7 @@ Related models: [UserResponseDto](models-37.md#userresponsedto).
 
 ## JobCreateDto
 
-Related models: [ManualJobName](models-14.md#manualjobname).
+Related models: [ManualJobName](models-15.md#manualjobname).
 
 ```json
 {
@@ -1555,6 +1944,7 @@ Related models: [ManualJobName](models-14.md#manualjobname).
     "AssetDetectFaces",
     "AssetDetectDuplicatesQueueAll",
     "AssetDetectDuplicates",
+    "DuplicateResolutionLifecycle",
     "AssetGenerateVideoDuplicateFramesQueueAll",
     "AssetGenerateVideoDuplicateFrames",
     "AssetEditThumbnailGeneration",
@@ -1835,7 +2225,7 @@ Related models: [JobRunItemResponseDto](models-13.md#jobrunitemresponsedto).
 
 ## JobRunPageDto
 
-Related models: [JobRunResponseDto](models-13.md#jobrunresponsedto).
+Related models: [JobRunResponseDto](models-14.md#jobrunresponsedto).
 
 ```json
 {
@@ -1853,292 +2243,6 @@ Related models: [JobRunResponseDto](models-13.md#jobrunresponsedto).
   "required": [
     "hasNextPage",
     "items"
-  ],
-  "type": "object"
-}
-```
-
-## JobRunResponseDto
-
-
-```json
-{
-  "properties": {
-    "active": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "blocked": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "cancelled": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "completed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-      "type": "string"
-    },
-    "delayed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "enumerationDone": {
-      "type": "boolean"
-    },
-    "failed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "kind": {
-      "type": "string"
-    },
-    "lastProgressAt": {
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-      "type": "string"
-    },
-    "lastStage": {
-      "nullable": true,
-      "type": "string"
-    },
-    "needsAttention": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "noDispatchBacklog": {
-      "type": "boolean"
-    },
-    "paused": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "reasons": {
-      "items": {
-        "enum": [
-          "worker_unavailable",
-          "no_dispatch_backlog",
-          "first_setup_pending",
-          "dependency_unavailable",
-          "dependency_wait",
-          "dependency_failed",
-          "retry_backoff",
-          "scheduled_delay",
-          "queue_paused",
-          "needs_attention",
-          "stage_failed",
-          "enumerating",
-          "workload-disabled",
-          "destination-unavailable",
-          "destination-configuration",
-          "destination-consent",
-          "destination-budget",
-          "source-unavailable",
-          "local-capacity"
-        ],
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "retrying": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "stageTotals": {
-      "properties": {
-        "active": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "blocked": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "cancelled": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "completed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "delayed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "failed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "needsAttention": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "paused": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "retrying": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "waiting": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "total",
-        "completed",
-        "failed",
-        "needsAttention",
-        "cancelled",
-        "active",
-        "retrying",
-        "delayed",
-        "paused",
-        "waiting",
-        "blocked"
-      ],
-      "type": "object"
-    },
-    "state": {
-      "enum": [
-        "running",
-        "retrying",
-        "delayed",
-        "paused",
-        "waiting",
-        "blocked",
-        "unavailable",
-        "needs_attention",
-        "completed",
-        "completed_with_errors",
-        "cancelled"
-      ],
-      "type": "string"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "waiting": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "active",
-    "blocked",
-    "cancelled",
-    "completed",
-    "createdAt",
-    "delayed",
-    "enumerationDone",
-    "failed",
-    "finishedAt",
-    "id",
-    "kind",
-    "lastProgressAt",
-    "lastStage",
-    "needsAttention",
-    "noDispatchBacklog",
-    "paused",
-    "reasons",
-    "retrying",
-    "stageTotals",
-    "state",
-    "total",
-    "waiting"
-  ],
-  "type": "object"
-}
-```
-
-## KnownAssetDevelopCrop
-
-
-```json
-{
-  "properties": {
-    "h": {
-      "description": "Crop height as a fraction of the frame",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0.05,
-      "type": "number"
-    },
-    "w": {
-      "description": "Crop width as a fraction of the frame",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0.05,
-      "type": "number"
-    },
-    "x": {
-      "description": "Left edge of the crop as a fraction of the oriented frame width",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
-    },
-    "y": {
-      "description": "Top edge of the crop as a fraction of the oriented frame height",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
-    }
-  },
-  "required": [
-    "h",
-    "w",
-    "x",
-    "y"
   ],
   "type": "object"
 }

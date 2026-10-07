@@ -1,12 +1,12 @@
 # Server API — Albums 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllAlbums
 
 `GET /api/albums`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L35).
 
 List all albums
 
@@ -147,7 +147,7 @@ Complete operation contract:
 
 `POST /api/albums`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L46).
 
 Create an album
 
@@ -236,7 +236,7 @@ Complete operation contract:
 
 `PUT /api/albums/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L210).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L210).
 
 Add assets to albums
 
@@ -325,7 +325,7 @@ Complete operation contract:
 
 `GET /api/albums/icons`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L80).
 
 Retrieve the album icon catalogue
 
@@ -396,7 +396,7 @@ Complete operation contract:
 
 `PUT /api/albums/order`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L92).
 
 Arrange a group of the album directory
 
@@ -476,7 +476,7 @@ Complete operation contract:
 
 `GET /api/albums/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L57).
 
 Retrieve album statistics
 
@@ -555,7 +555,7 @@ Complete operation contract:
 
 `GET /api/albums/tree`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L68).
 
 Retrieve the album directory
 
@@ -626,7 +626,7 @@ Complete operation contract:
 
 `DELETE /api/albums/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L136).
 
 Delete an album
 
@@ -709,7 +709,7 @@ Complete operation contract:
 
 `GET /api/albums/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L105).
 
 Retrieve an album
 
@@ -824,13 +824,13 @@ Complete operation contract:
 
 `PATCH /api/albums/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L120).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L120).
 
 Update an album
 
 Permission: `album.update`. Admin only: `false`.
 
-Models: [AlbumResponseDto](models-02.md#albumresponsedto), [UpdateAlbumDto](models-36.md#updatealbumdto).
+Models: [AlbumResponseDto](models-02.md#albumresponsedto), [UpdateAlbumDto](models-37.md#updatealbumdto).
 
 Controller access declarations:
 
@@ -925,7 +925,7 @@ Complete operation contract:
 
 `DELETE /api/albums/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L221).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L221).
 
 Remove assets from an album
 
@@ -1028,7 +1028,7 @@ Complete operation contract:
 
 `PUT /api/albums/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L195).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L195).
 
 Add assets to an album
 
@@ -1131,7 +1131,7 @@ Complete operation contract:
 
 `PUT /api/albums/{id}/collection`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L179).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L179).
 
 Move an album into or out of a collection
 
@@ -1223,7 +1223,7 @@ Complete operation contract:
 
 `GET /api/albums/{id}/descendant-count`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L164).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L164).
 
 Count descendant albums
 
@@ -1305,13 +1305,13 @@ Complete operation contract:
 
 `GET /api/albums/{id}/map-markers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L149).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L149).
 
 Retrieve album map markers
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [MapMarkerResponseDto](models-14.md#mapmarkerresponsedto).
+Models: [MapMarkerResponseDto](models-15.md#mapmarkerresponsedto).
 
 Controller access declarations:
 
@@ -1465,7 +1465,7 @@ Complete operation contract:
 
 `DELETE /api/albums/{id}/user/{userId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L267).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L267).
 
 Remove user from album
 
@@ -1564,13 +1564,13 @@ Complete operation contract:
 
 `PUT /api/albums/{id}/user/{userId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L251).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L251).
 
 Update user role
 
 Permission: `albumUser.update`. Admin only: `false`.
 
-Models: [UpdateAlbumUserDto](models-36.md#updatealbumuserdto).
+Models: [UpdateAlbumUserDto](models-37.md#updatealbumuserdto).
 
 Controller access declarations:
 
@@ -1675,7 +1675,7 @@ Complete operation contract:
 
 `PUT /api/albums/{id}/users`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album.controller.ts#L236).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album.controller.ts#L236).
 
 Share album with users
 
@@ -1775,7 +1775,7 @@ Complete operation contract:
 
 `GET /api/classification/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L201).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L201).
 
 Retrieve classification contributions for an asset
 
@@ -1864,7 +1864,7 @@ Complete operation contract:
 
 `POST /api/classification/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L78).
 
 Preview a classification rule
 
@@ -1951,7 +1951,7 @@ Complete operation contract:
 
 `GET /api/classification/rules`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L49).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L49).
 
 List classification rules
 

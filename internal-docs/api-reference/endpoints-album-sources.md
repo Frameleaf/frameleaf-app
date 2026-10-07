@@ -1,12 +1,12 @@
 # Server API — Album sources
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAlbumSourceLinks
 
 `GET /api/album-sources`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L26).
 
 List album source links
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `POST /api/album-sources/resolve`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L37).
 
 Resolve album sources
 
@@ -171,7 +171,7 @@ Complete operation contract:
 
 `DELETE /api/album-sources/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L102).
 
 Delete an album source link
 
@@ -249,7 +249,7 @@ Complete operation contract:
 
 `PATCH /api/album-sources/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L86).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L86).
 
 Update an album source link
 
@@ -346,7 +346,7 @@ Complete operation contract:
 
 `DELETE /api/album-sources/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L70).
 
 Remove assets through an album source link
 
@@ -446,7 +446,7 @@ Complete operation contract:
 
 `POST /api/album-sources/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/album-source.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/album-source.controller.ts#L53).
 
 Add assets through an album source link
 

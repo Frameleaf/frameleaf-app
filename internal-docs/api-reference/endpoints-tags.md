@@ -1,18 +1,18 @@
 # Server API — Tags
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllTags
 
 `GET /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L36).
 
 Retrieve tags
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagResponseDto](models-35.md#tagresponsedto).
+Models: [TagResponseDto](models-36.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -88,13 +88,13 @@ Complete operation contract:
 
 `POST /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L25).
 
 Create a tag
 
 Permission: `tag.create`. Admin only: `false`.
 
-Models: [TagCreateDto](models-35.md#tagcreatedto), [TagResponseDto](models-35.md#tagresponsedto).
+Models: [TagCreateDto](models-36.md#tagcreatedto), [TagResponseDto](models-36.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -177,13 +177,13 @@ Complete operation contract:
 
 `PUT /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L59).
 
 Upsert tags
 
 Permission: `tag.create`. Admin only: `false`.
 
-Models: [TagResponseDto](models-35.md#tagresponsedto), [TagUpsertDto](models-35.md#tagupsertdto).
+Models: [TagResponseDto](models-36.md#tagresponsedto), [TagUpsertDto](models-36.md#tagupsertdto).
 
 Controller access declarations:
 
@@ -269,13 +269,13 @@ Complete operation contract:
 
 `PUT /api/tags/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L70).
 
 Tag assets
 
 Permission: `tag.asset`. Admin only: `false`.
 
-Models: [TagBulkAssetsDto](models-35.md#tagbulkassetsdto), [TagBulkAssetsResponseDto](models-35.md#tagbulkassetsresponsedto).
+Models: [TagBulkAssetsDto](models-36.md#tagbulkassetsdto), [TagBulkAssetsResponseDto](models-36.md#tagbulkassetsresponsedto).
 
 Controller access declarations:
 
@@ -358,13 +358,13 @@ Complete operation contract:
 
 `GET /api/tags/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L47).
 
 Retrieve tag statistics
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagStatisticsResponseDto](models-35.md#tagstatisticsresponsedto).
+Models: [TagStatisticsResponseDto](models-36.md#tagstatisticsresponsedto).
 
 Controller access declarations:
 
@@ -437,7 +437,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L114).
 
 Delete a tag
 
@@ -519,13 +519,13 @@ Complete operation contract:
 
 `GET /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L81).
 
 Retrieve a tag
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagResponseDto](models-35.md#tagresponsedto).
+Models: [TagResponseDto](models-36.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -609,13 +609,13 @@ Complete operation contract:
 
 `PUT /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L92).
 
 Update a tag
 
 Permission: `tag.update`. Admin only: `false`.
 
-Models: [TagResponseDto](models-35.md#tagresponsedto), [TagUpdateDto](models-35.md#tagupdatedto).
+Models: [TagResponseDto](models-36.md#tagresponsedto), [TagUpdateDto](models-36.md#tagupdatedto).
 
 Controller access declarations:
 
@@ -716,7 +716,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L141).
 
 Untag assets
 
@@ -819,7 +819,7 @@ Complete operation contract:
 
 `PUT /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/tag.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L126).
 
 Tag assets
 

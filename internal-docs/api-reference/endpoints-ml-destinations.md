@@ -1,18 +1,18 @@
 # Server API — ML destinations
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getWorkerInventory
 
 `GET /api/admin/workers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/worker-inventory.controller.ts#L18).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/worker-inventory.controller.ts#L18).
 
 Get the worker inventory
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [WorkerInventoryResponseDto](models-37.md#workerinventoryresponsedto).
+Models: [WorkerInventoryResponseDto](models-38.md#workerinventoryresponsedto).
 
 Controller access declarations:
 
@@ -83,7 +83,7 @@ Complete operation contract:
 
 `GET /api/ml-destinations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L79).
 
 List machine-learning destinations
 
@@ -163,7 +163,7 @@ Complete operation contract:
 
 `POST /api/ml-destinations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L91).
 
 Create a machine-learning destination
 
@@ -250,13 +250,13 @@ Complete operation contract:
 
 `GET /api/ml-destinations/capabilities`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L37).
 
 Get machine-learning capabilities
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MlCapabilitiesResponseDto](models-16.md#mlcapabilitiesresponsedto).
+Models: [MlCapabilitiesResponseDto](models-17.md#mlcapabilitiesresponsedto).
 
 Controller access declarations:
 
@@ -326,7 +326,7 @@ Complete operation contract:
 
 `GET /api/ml-destinations/routes`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L50).
 
 List workload routes
 
@@ -404,7 +404,7 @@ Complete operation contract:
 
 `PUT /api/ml-destinations/routes/{workload}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L63).
 
 Route a workload
 
@@ -501,7 +501,7 @@ Complete operation contract:
 
 `DELETE /api/ml-destinations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L125).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L125).
 
 Delete a machine-learning destination
 
@@ -581,7 +581,7 @@ Complete operation contract:
 
 `GET /api/ml-destinations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L103).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L103).
 
 Get a machine-learning destination
 
@@ -667,7 +667,7 @@ Complete operation contract:
 
 `PUT /api/ml-destinations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L114).
 
 Update a machine-learning destination
 
@@ -763,13 +763,13 @@ Complete operation contract:
 
 `POST /api/ml-destinations/{id}/admission`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L191).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L191).
 
 Admit a workload on a destination
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MlAdmissionRequestDto](models-16.md#mladmissionrequestdto), [MlAdmissionResponseDto](models-16.md#mladmissionresponsedto).
+Models: [MlAdmissionRequestDto](models-17.md#mladmissionrequestdto), [MlAdmissionResponseDto](models-17.md#mladmissionresponsedto).
 
 Controller access declarations:
 
@@ -861,7 +861,7 @@ Complete operation contract:
 
 `DELETE /api/ml-destinations/{id}/consent`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L179).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L179).
 
 Revoke consent for a cloud destination
 
@@ -949,7 +949,7 @@ Complete operation contract:
 
 `PUT /api/ml-destinations/{id}/consent`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L163).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L163).
 
 Record consent for a cloud destination
 
@@ -1047,7 +1047,7 @@ Complete operation contract:
 
 `POST /api/ml-destinations/{id}/probe`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L138).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L138).
 
 Probe a machine-learning destination
 
@@ -1136,7 +1136,7 @@ Complete operation contract:
 
 `GET /api/ml-destinations/{id}/restoration-models`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/ml-destination.controller.ts#L151).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/ml-destination.controller.ts#L151).
 
 Get restoration models of a destination
 

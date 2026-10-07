@@ -1,18 +1,18 @@
 # Server API — Authentication 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## linkOAuthAccount
 
 `POST /api/oauth/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/oauth.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L111).
 
 Link OAuth account
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [OAuthCallbackDto](models-17.md#oauthcallbackdto), [UserAdminResponseDto](models-36.md#useradminresponsedto).
+Models: [OAuthCallbackDto](models-18.md#oauthcallbackdto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -96,7 +96,7 @@ Complete operation contract:
 
 `GET /api/oauth/mobile-redirect`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/oauth.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L25).
 
 Redirect OAuth to mobile
 
@@ -156,13 +156,13 @@ Complete operation contract:
 
 `POST /api/oauth/unlink`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/oauth.controller.ts#L128).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L128).
 
 Unlink OAuth account
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [UserAdminResponseDto](models-36.md#useradminresponsedto).
+Models: [UserAdminResponseDto](models-37.md#useradminresponsedto).
 
 Controller access declarations:
 

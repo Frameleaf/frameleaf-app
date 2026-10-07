@@ -1,6 +1,6 @@
 # Server API models 5
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AssetDevelopRecipeDto
 
@@ -340,6 +340,12 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto), [As
       "nullable": true,
       "type": "string"
     },
+    "hasHdrMaster": {
+      "type": "boolean"
+    },
+    "hasHdrPreview": {
+      "type": "boolean"
+    },
     "hasMaster": {
       "description": "True once the edited master file exists",
       "type": "boolean"
@@ -347,6 +353,16 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto), [As
     "hasPreview": {
       "description": "True once the preview file exists",
       "type": "boolean"
+    },
+    "hdrRenderStatus": {
+      "enum": [
+        "not-requested",
+        "pending",
+        "rendered",
+        "failed",
+        "disabled"
+      ],
+      "type": "string"
     },
     "height": {
       "description": "Height of the edited master in pixels",
@@ -371,6 +387,14 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto), [As
     "label": {
       "description": "Name given when the version was saved",
       "nullable": true,
+      "type": "string"
+    },
+    "outputDynamicRange": {
+      "enum": [
+        "hdr",
+        "sdr",
+        "unknown"
+      ],
       "type": "string"
     },
     "progress": {
@@ -608,7 +632,7 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto).
 
 ## AssetEditActionItemDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-14.md#lookparameters), [MirrorParameters](models-16.md#mirrorparameters), [RotateParameters](models-28.md#rotateparameters), [SpeedParameters](models-31.md#speedparameters), [StabilizeParameters](models-31.md#stabilizeparameters), [StraightenParameters](models-31.md#straightenparameters), [TextOverlayParameters](models-36.md#textoverlayparameters), [ToggleParameters](models-36.md#toggleparameters), [TrimParameters](models-36.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-14.md#lookparameters), [MirrorParameters](models-17.md#mirrorparameters), [RotateParameters](models-29.md#rotateparameters), [SpeedParameters](models-32.md#speedparameters), [StabilizeParameters](models-32.md#stabilizeparameters), [StraightenParameters](models-32.md#straightenparameters), [TextOverlayParameters](models-37.md#textoverlayparameters), [ToggleParameters](models-37.md#toggleparameters), [TrimParameters](models-37.md#trimparameters).
 
 ```json
 {
@@ -668,7 +692,7 @@ Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAct
 
 ## AssetEditActionItemResponseDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-14.md#lookparameters), [MirrorParameters](models-16.md#mirrorparameters), [RotateParameters](models-28.md#rotateparameters), [SpeedParameters](models-31.md#speedparameters), [StabilizeParameters](models-31.md#stabilizeparameters), [StraightenParameters](models-31.md#straightenparameters), [TextOverlayParameters](models-36.md#textoverlayparameters), [ToggleParameters](models-36.md#toggleparameters), [TrimParameters](models-36.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-14.md#lookparameters), [MirrorParameters](models-17.md#mirrorparameters), [RotateParameters](models-29.md#rotateparameters), [SpeedParameters](models-32.md#speedparameters), [StabilizeParameters](models-32.md#stabilizeparameters), [StraightenParameters](models-32.md#straightenparameters), [TextOverlayParameters](models-37.md#textoverlayparameters), [ToggleParameters](models-37.md#toggleparameters), [TrimParameters](models-37.md#trimparameters).
 
 ```json
 {
@@ -1091,7 +1115,7 @@ Related models: [AssetFaceBoxDto](models-05.md#assetfaceboxdto).
 
 ## AssetFaceResponseDto
 
-Related models: [PersonResponseDto](models-18.md#personresponsedto), [SourceType](models-31.md#sourcetype).
+Related models: [PersonResponseDto](models-18.md#personresponsedto), [SourceType](models-32.md#sourcetype).
 
 ```json
 {
@@ -1346,6 +1370,8 @@ Related models: [AssetFileType](models-05.md#assetfiletype).
   "enum": [
     "fullsize",
     "preview",
+    "hdr_preview",
+    "hdr_fullsize",
     "thumbnail",
     "sidecar",
     "encoded_video"
@@ -1460,7 +1486,7 @@ Related models: [AssetImageEnrichmentAction](models-05.md#assetimageenrichmentac
 
 ## AssetImageEnrichmentResponseDto
 
-Related models: [ImageDescriptionEnrichmentResponseDto](models-13.md#imagedescriptionenrichmentresponsedto), [NsfwDetectionEnrichmentResponseDto](models-17.md#nsfwdetectionenrichmentresponsedto).
+Related models: [ImageDescriptionEnrichmentResponseDto](models-13.md#imagedescriptionenrichmentresponsedto), [NsfwDetectionEnrichmentResponseDto](models-18.md#nsfwdetectionenrichmentresponsedto).
 
 ```json
 {
