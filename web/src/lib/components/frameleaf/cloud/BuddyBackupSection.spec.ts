@@ -87,7 +87,9 @@ it('preserves declared deployment settings and secrets when hosting settings are
 it('submits only selected variable names and allows declaration capture to be removed', async () => {
   const dialog = await settings();
   const select = dialog.getByRole('listbox', { name: 'Deployment settings and secrets' }) as HTMLSelectElement;
-  for (const option of select.options) option.selected = option.value === 'FRAMELEAF_HOST';
+  for (const option of select.options) {
+    option.selected = option.value === 'FRAMELEAF_HOST';
+  }
   await fireEvent.change(select);
   await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_save_hosting_settings }));
   await waitFor(() =>
@@ -100,7 +102,9 @@ it('submits only selected variable names and allows declaration capture to be re
   await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_buddy_hosting_transfer_settings }));
   const reopened = within(screen.getByRole('dialog', { name: en.frameleaf_buddy_hosting_transfer_settings }));
   const empty = reopened.getByRole('listbox', { name: 'Deployment settings and secrets' }) as HTMLSelectElement;
-  for (const option of empty.options) option.selected = false;
+  for (const option of empty.options) {
+    option.selected = false;
+  }
   await fireEvent.change(empty);
   await fireEvent.click(reopened.getByRole('button', { name: en.frameleaf_buddy_save_hosting_settings }));
   await waitFor(() => expect(sdkMock.configureBuddyBackup).toHaveBeenCalledTimes(2));

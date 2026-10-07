@@ -160,7 +160,7 @@
         includeDerived,
         pausedSending: status?.settings?.pausedSending ?? false,
         pausedReceiving: status?.settings?.pausedReceiving ?? false,
-        ...(environmentKeys.length && { bootConfiguration: { version: Version.$1, environmentKeys } }),
+        ...(environmentKeys.length > 0 && { bootConfiguration: { version: Version.$1, environmentKeys } }),
       };
       status = await configureBuddyBackup({ buddySettingsDto });
       settingsOpen = false;
