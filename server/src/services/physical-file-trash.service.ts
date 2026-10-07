@@ -86,7 +86,7 @@ export class PhysicalFileTrashService extends BaseService {
         ownerId: owner.id,
         libraryId: null,
         checksum: entry.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        checksumAlgorithm: entry.checksum.length === 32 ? ChecksumAlgorithm.sha256File : ChecksumAlgorithm.sha1File,
         originalPath: target,
         fileCreatedAt: stat.mtime,
         fileModifiedAt: stat.mtime,

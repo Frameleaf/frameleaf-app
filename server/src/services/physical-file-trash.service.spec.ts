@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { JobName } from 'src/enum.js';
+import { ChecksumAlgorithm, JobName } from 'src/enum.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -59,7 +59,12 @@ describe(PhysicalFileTrashService.name, () => {
       mocks.asset.create.mockResolvedValue({ id: 'new-asset-id', ownerId: 'owner-id' } as never);
     });
 
-    it('re-imports the file as a new asset for its last owner and re-reads its metadata', async () => {
+    it.each([
+      [checksum, ChecksumAlgorithm.sha256File],
+      [Buffer.from('c'.repeat(40), 'hex'), ChecksumAlgorithm.sha1File],
+    ])('re-imports the file with its retained checksum algorithm (%s, %s)', async (checksum, checksumAlgorithm) => {
+      mocks.physicalFileTrash.getById.mockResolvedValue({ ...entry, checksum });
+      mocks.physicalFileTrash.untrash.mockResolvedValue({ ...entry, checksum });
       mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
         physicalFile: { id: 'new-physical' },
         linked: false,
@@ -73,6 +78,7 @@ describe(PhysicalFileTrashService.name, () => {
         expect.objectContaining({
           ownerId: 'owner-id',
           checksum,
+          checksumAlgorithm,
           originalPath: target,
           originalFileName: 'IMG_0001.jpg',
         }),
