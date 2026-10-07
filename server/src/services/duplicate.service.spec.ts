@@ -37,6 +37,7 @@ describe(DuplicateService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DuplicateService));
     mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set());
+    mocks.duplicateRepository.withResolutionLock.mockImplementation((_id, callback) => callback(undefined as never));
   });
 
   it('should work', () => {
@@ -557,7 +558,9 @@ describe(DuplicateService.name, () => {
   describe('resolve', () => {
     it('should handle mixed success and failure', async () => {
       const asset = AssetFactory.create();
-      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1', 'group-2']));
+      mocks.access.duplicate.checkOwnerAccess.mockImplementation((_owner, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => ['group-1', 'group-2'].includes(id)))),
+      );
       mocks.duplicateRepository.get.mockResolvedValueOnce(void 0);
       mocks.duplicateRepository.get.mockResolvedValueOnce({
         duplicateId: 'group-2',
@@ -590,6 +593,38 @@ describe(DuplicateService.name, () => {
   });
 
   describe('resolveGroup (via resolve)', () => {
+    it('retains committed success and a durable receipt when sidecar work fails, while attempting disposal events', async () => {
+      const keeper = AssetFactory.create();
+      const disposable = AssetFactory.create();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [
+          { ...keeper, tags: [] },
+          { ...disposable, tags: [{ id: 'tag-1', value: 'Travel' }] },
+        ] as unknown as MapAsset[],
+      });
+      mocks.job.queueAll.mockRejectedValue(new Error('queue unavailable'));
+      const [result] = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+      });
+      expect(result.success).toBe(true);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', {
+        assetIds: [disposable.id],
+        userId: authStub.admin.user.id,
+      });
+      expect(mocks.job.removeJob).not.toHaveBeenCalled();
+      const [, receipt] = mocks.job.queueInTransaction.mock.calls[0];
+      expect(receipt).toMatchObject({
+        name: JobName.DuplicateResolutionLifecycle,
+        data: { sidecarIds: [keeper.id], trashIds: [disposable.id] },
+      });
+      mocks.job.queueAll.mockResolvedValue(undefined);
+      await expect(sut.handleResolutionLifecycle(receipt.data as never)).resolves.toBe(JobStatus.Success);
+    });
+
     it.each([{ isEdited: true }, { livePhotoVideoId: 'unique-motion' }])(
       'refuses disposal of protected content %j before mutating anything',
       async (protectedFields) => {

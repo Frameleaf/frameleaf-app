@@ -286,6 +286,16 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/** Retried independently after a duplicate decision commits; no original media is carried. */
+export type IDuplicateResolutionLifecycleJob = {
+  id: string;
+  userId: string;
+  sidecarIds: string[];
+  lockedIds: string[];
+  trashIds: string[];
+  force: boolean;
+};
+
 /** FL-79: `attempt` is 1 for the one automatic retry a failed collection gets. */
 export interface IAnalyticsCollectJob {
   attempt?: number;
@@ -574,6 +584,7 @@ export type JobItem =
   | { name: JobName.SidecarQueueAll; data: IBaseJob }
   | { name: JobName.SidecarCheck; data: IEntityJob }
   | { name: JobName.SidecarWrite; data: IEntityJob }
+  | { name: JobName.DuplicateResolutionLifecycle; data: IDuplicateResolutionLifecycleJob }
 
   // Facial Recognition
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }

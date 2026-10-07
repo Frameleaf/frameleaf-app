@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
@@ -65,7 +65,14 @@ export class AssetEditRepository {
   ): Promise<AssetEditActionItemResponseDto[]> {
     const execute = async (trx: Transaction<DB>) => {
       // Only video edits are versioned; a photo edit never waits on the fork schema's write phase.
-      const target = await trx.selectFrom('asset').select('type').where('id', '=', assetId).executeTakeFirst();
+      const target = await trx
+        .selectFrom('asset')
+        .select('type')
+        .where('id', '=', assetId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!target) throw new BadRequestException('Edit source asset is no longer available');
       if (target?.type === AssetType.Video) {
         await this.recordVideoVersion(trx, assetId, edits, purpose);
       }

@@ -71,6 +71,7 @@ const PUBLICATION_FAILURE_REASONS = new Map([
 ]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
   JobName.AssetGenerateThumbnailsQueueAll,
@@ -719,8 +720,22 @@ export class JobRepository {
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
   async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
     if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
-    if (queueExecution.getStore()) throw new Error('Queue-owned producers must use their completion transaction');
-    const intent = runId ? runSubmission.run(runId, () => this.intent(item)) : this.intent(item);
+    const context = queueExecution.getStore();
+    const committedEffect = item.name === JobName.DuplicateResolutionLifecycle;
+    if (context && !committedEffect) throw new Error('Queue-owned producers must use their completion transaction');
+    if (context) {
+      context.signal.throwIfAborted();
+      const { rows } =
+        await sql`select id from job where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+          tx,
+        );
+      if (rows.length === 0) throw new Error('Duplicate decision lost its claim');
+    }
+    const intent = committedEffect
+      ? queueExecution.exit(() => runSubmission.exit(() => this.intent(item)))
+      : runId
+        ? runSubmission.run(runId, () => this.intent(item))
+        : this.intent(item);
     await this.store.enqueue([intent], tx);
   }
 
