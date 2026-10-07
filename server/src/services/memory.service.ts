@@ -216,6 +216,10 @@ export class MemoryService extends BaseService {
           userIds: [ownerId],
           title: 'Memories',
           body: count === 1 ? 'A new memory is ready' : `${count} new memories are ready`,
+          systemTemplate:
+            count === 1
+              ? { version: 1, key: 'memories-one', args: {} }
+              : { version: 1, key: 'memories-many', args: { count } },
           data: { count },
           assetIds,
           dedupeKey: `memories/${ownerId}/${now.toISOString().slice(0, 10)}`,

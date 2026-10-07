@@ -950,6 +950,7 @@ export class AlbumService extends BaseService {
       userIds: [userId],
       title: 'Access changed',
       body: `Your role in ${album.albumName} is now ${dto.role}`,
+      systemTemplate: { version: 1, key: `album-role-${dto.role}`, args: { albumName: album.albumName } },
       data: { albumId: id, change: 'role', role: dto.role },
     });
 

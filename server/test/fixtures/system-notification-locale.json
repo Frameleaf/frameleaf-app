@@ -3,67 +3,695 @@
     "en-XA": {
       "version": 1,
       "messages": {
-        "item-share-one": { "title": "[Fixture shared]", "body": "[Fixture {senderName} shared one item]" },
-        "access-removed-unknown": { "title": "[Fixture access]", "body": "[Fixture album access ended]" }
+        "item-share-one": {
+          "title": "[Fixture shared]",
+          "body": "[Fixture {senderName} shared one item]"
+        },
+        "access-removed-unknown": {
+          "title": "[Fixture access]",
+          "body": "[Fixture album access ended]"
+        },
+        "reconciliation-missing-one": {
+          "title": "[Fixture Backup needs attention]",
+          "body": "[Fixture One item on this device is not on your server yet]"
+        },
+        "reconciliation-missing-many": {
+          "title": "[Fixture Backup needs attention]",
+          "body": "[Fixture {count} items on this device are not on your server yet]"
+        },
+        "memories-one": {
+          "title": "[Fixture Memories]",
+          "body": "[Fixture A new memory is ready]"
+        },
+        "memories-many": {
+          "title": "[Fixture Memories]",
+          "body": "[Fixture {count} new memories are ready]"
+        },
+        "partner-added": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture {senderName} shared their library with you]"
+        },
+        "partner-removed": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture {senderName} stopped sharing their library with you]"
+        },
+        "studio-export-ready": {
+          "title": "[Fixture Render finished]",
+          "body": "[Fixture Your Studio export is ready]"
+        },
+        "studio-export-ready-named": {
+          "title": "[Fixture Render finished]",
+          "body": "[Fixture {label} is ready]"
+        },
+        "studio-export-failed": {
+          "title": "[Fixture Render failed]",
+          "body": "[Fixture Your Studio export could not be finished]"
+        },
+        "studio-export-failed-named": {
+          "title": "[Fixture Render failed]",
+          "body": "[Fixture {label} could not be finished]"
+        },
+        "backup-stale-one": {
+          "title": "[Fixture Backup is out of date]",
+          "body": "[Fixture {deviceName} has not backed up for 1 day]"
+        },
+        "backup-stale-many": {
+          "title": "[Fixture Backup is out of date]",
+          "body": "[Fixture {deviceName} has not backed up for {count} days]"
+        },
+        "activation-plan-active": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Activating your plan]"
+        },
+        "activation-server-notified": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Notifying your server]"
+        },
+        "activation-preparing-storage": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Preparing storage]"
+        },
+        "activation-first-backup-complete": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup complete]"
+        },
+        "activation-first-backup-failed": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup needs attention]"
+        },
+        "activation-first-backup-running": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup running]"
+        },
+        "activation-first-backup-scheduled": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup scheduled]"
+        },
+        "album-invite-anonymous": {
+          "title": "[Fixture Shared Album Invitation]",
+          "body": "[Fixture An album ({albumName}) was shared with you]"
+        },
+        "album-role-editor": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now editor]"
+        },
+        "album-role-owner": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now owner]"
+        },
+        "album-role-viewer": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now viewer]"
+        }
       }
     },
-    "en-XB": { "version": 0, "messages": { "item-share-one": { "title": "STALE", "body": "STALE {senderName}" } } }
+    "en-XB": {
+      "version": 0,
+      "messages": {
+        "item-share-one": {
+          "title": "STALE",
+          "body": "STALE {senderName}"
+        }
+      }
+    }
   },
   "cases": [
     {
       "name": "known template renders only system text",
       "locale": "en-XA",
-      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë <img src=x> $& {count}" } },
-      "fallback": { "title": "Shared with you", "body": "Zoë <img src=x> $& {count} shared an item with you" },
-      "expected": { "title": "[Fixture shared]", "body": "[Fixture Zoë <img src=x> $& {count} shared one item]" }
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë <img src=x> $& {count} shared an item with you"
+      },
+      "expected": {
+        "title": "[Fixture shared]",
+        "body": "[Fixture Zoë <img src=x> $& {count} shared one item]"
+      }
     },
     {
       "name": "new known template needs no consumer mapping",
       "locale": "en-XA",
-      "template": { "version": 1, "key": "access-removed-unknown", "args": {} },
-      "fallback": { "title": "Access changed", "body": "You no longer have access to an album" },
-      "expected": { "title": "[Fixture access]", "body": "[Fixture album access ended]" }
+      "template": {
+        "version": 1,
+        "key": "access-removed-unknown",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      },
+      "expected": {
+        "title": "[Fixture access]",
+        "body": "[Fixture album access ended]"
+      }
     },
     {
       "name": "unknown template version keeps supplied English",
       "locale": "en-XA",
-      "template": { "version": 2, "key": "access-removed-unknown", "args": {} },
-      "fallback": { "title": "Access changed", "body": "You no longer have access to an album" },
-      "expected": { "title": "Access changed", "body": "You no longer have access to an album" }
+      "template": {
+        "version": 2,
+        "key": "access-removed-unknown",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      },
+      "expected": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      }
     },
     {
       "name": "unknown template key keeps supplied English",
       "locale": "en-XA",
-      "template": { "version": 1, "key": "future-template", "args": {} },
-      "fallback": { "title": "Future notice", "body": "Future English text" },
-      "expected": { "title": "Future notice", "body": "Future English text" }
+      "template": {
+        "version": 1,
+        "key": "future-template",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Future notice",
+        "body": "Future English text"
+      },
+      "expected": {
+        "title": "Future notice",
+        "body": "Future English text"
+      }
     },
     {
       "name": "legacy English has no template",
       "locale": "en-XA",
-      "fallback": { "title": "Custom <b>title</b>", "body": "A caption or message {senderName} $& stays verbatim" },
-      "expected": { "title": "Custom <b>title</b>", "body": "A caption or message {senderName} $& stays verbatim" }
+      "fallback": {
+        "title": "Custom <b>title</b>",
+        "body": "A caption or message {senderName} $& stays verbatim"
+      },
+      "expected": {
+        "title": "Custom <b>title</b>",
+        "body": "A caption or message {senderName} $& stays verbatim"
+      }
     },
     {
       "name": "unsupported locale keeps supplied English",
       "locale": "fr-CA",
-      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë" } },
-      "fallback": { "title": "Shared with you", "body": "Zoë shared an item with you" },
-      "expected": { "title": "Shared with you", "body": "Zoë shared an item with you" }
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      }
     },
     {
       "name": "stale catalog keeps supplied English",
       "locale": "en-XB",
-      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë" } },
-      "fallback": { "title": "Shared with you", "body": "Zoë shared an item with you" },
-      "expected": { "title": "Shared with you", "body": "Zoë shared an item with you" }
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      }
     },
     {
       "name": "incorrect argument type keeps supplied English",
       "locale": "en-XA",
-      "template": { "version": 1, "key": "item-share-many", "args": { "senderName": "Zoë", "count": "2" } },
-      "fallback": { "title": "Shared with you", "body": "Zoë shared 2 items with you" },
-      "expected": { "title": "Shared with you", "body": "Zoë shared 2 items with you" }
+      "template": {
+        "version": 1,
+        "key": "item-share-many",
+        "args": {
+          "senderName": "Zoë",
+          "count": "2"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared 2 items with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared 2 items with you"
+      }
+    },
+    {
+      "name": "producer reconciliation-missing-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "reconciliation-missing-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Backup needs attention",
+        "body": "One item on this device is not on your server yet"
+      },
+      "expected": {
+        "title": "[Fixture Backup needs attention]",
+        "body": "[Fixture One item on this device is not on your server yet]"
+      }
+    },
+    {
+      "name": "producer reconciliation-missing-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "reconciliation-missing-many",
+        "args": {
+          "count": 2
+        }
+      },
+      "fallback": {
+        "title": "Backup needs attention",
+        "body": "2 items on this device are not on your server yet"
+      },
+      "expected": {
+        "title": "[Fixture Backup needs attention]",
+        "body": "[Fixture 2 items on this device are not on your server yet]"
+      }
+    },
+    {
+      "name": "producer memories-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "memories-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Memories",
+        "body": "A new memory is ready"
+      },
+      "expected": {
+        "title": "[Fixture Memories]",
+        "body": "[Fixture A new memory is ready]"
+      }
+    },
+    {
+      "name": "producer memories-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "memories-many",
+        "args": {
+          "count": 2
+        }
+      },
+      "fallback": {
+        "title": "Memories",
+        "body": "2 new memories are ready"
+      },
+      "expected": {
+        "title": "[Fixture Memories]",
+        "body": "[Fixture 2 new memories are ready]"
+      }
+    },
+    {
+      "name": "producer partner-added preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "partner-added",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Zoë <img src=x> $& {count} shared their library with you"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Zoë <img src=x> $& {count} shared their library with you]"
+      }
+    },
+    {
+      "name": "producer partner-removed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "partner-removed",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Zoë <img src=x> $& {count} stopped sharing their library with you"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Zoë <img src=x> $& {count} stopped sharing their library with you]"
+      }
+    },
+    {
+      "name": "producer album-role-editor preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-editor",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now editor"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now editor]"
+      }
+    },
+    {
+      "name": "producer album-role-owner preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-owner",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now owner"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now owner]"
+      }
+    },
+    {
+      "name": "producer album-role-viewer preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-viewer",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now viewer"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now viewer]"
+      }
+    },
+    {
+      "name": "producer studio-export-ready preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-ready",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Render finished",
+        "body": "Your Studio export is ready"
+      },
+      "expected": {
+        "title": "[Fixture Render finished]",
+        "body": "[Fixture Your Studio export is ready]"
+      }
+    },
+    {
+      "name": "producer studio-export-ready-named preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-ready-named",
+        "args": {
+          "label": "Lake <b>trip</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Render finished",
+        "body": "Lake <b>trip</b> $& {count} is ready"
+      },
+      "expected": {
+        "title": "[Fixture Render finished]",
+        "body": "[Fixture Lake <b>trip</b> $& {count} is ready]"
+      }
+    },
+    {
+      "name": "producer studio-export-failed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-failed",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Render failed",
+        "body": "Your Studio export could not be finished"
+      },
+      "expected": {
+        "title": "[Fixture Render failed]",
+        "body": "[Fixture Your Studio export could not be finished]"
+      }
+    },
+    {
+      "name": "producer studio-export-failed-named preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-failed-named",
+        "args": {
+          "label": "Lake <b>trip</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Render failed",
+        "body": "Lake <b>trip</b> $& {count} could not be finished"
+      },
+      "expected": {
+        "title": "[Fixture Render failed]",
+        "body": "[Fixture Lake <b>trip</b> $& {count} could not be finished]"
+      }
+    },
+    {
+      "name": "producer backup-stale-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "backup-stale-one",
+        "args": {
+          "deviceName": "Phone <b>one</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Backup is out of date",
+        "body": "Phone <b>one</b> $& {count} has not backed up for 1 day"
+      },
+      "expected": {
+        "title": "[Fixture Backup is out of date]",
+        "body": "[Fixture Phone <b>one</b> $& {count} has not backed up for 1 day]"
+      }
+    },
+    {
+      "name": "producer backup-stale-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "backup-stale-many",
+        "args": {
+          "deviceName": "Phone <b>one</b> $& {count}",
+          "count": 4
+        }
+      },
+      "fallback": {
+        "title": "Backup is out of date",
+        "body": "Phone <b>one</b> $& {count} has not backed up for 4 days"
+      },
+      "expected": {
+        "title": "[Fixture Backup is out of date]",
+        "body": "[Fixture Phone <b>one</b> $& {count} has not backed up for 4 days]"
+      }
+    },
+    {
+      "name": "producer activation-plan-active preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-plan-active",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · Activating your plan"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · Activating your plan]"
+      }
+    },
+    {
+      "name": "producer activation-server-notified preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-server-notified",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · Notifying your server"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · Notifying your server]"
+      }
+    },
+    {
+      "name": "producer activation-preparing-storage preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-preparing-storage",
+        "args": {
+          "step": 3,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "3 of 4 · Preparing storage"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 3 of 4 · Preparing storage]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-complete preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-complete",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup complete"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup complete]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-failed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-failed",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup needs attention"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup needs attention]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-running preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-running",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup running"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup running]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-scheduled preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-scheduled",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup scheduled"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup scheduled]"
+      }
+    },
+    {
+      "name": "anonymous album invite never invents a sender",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-invite-anonymous",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {senderName}"
+        }
+      },
+      "fallback": {
+        "title": "Shared Album Invitation",
+        "body": "An album (Lake <b>trip</b> $& {senderName}) was shared with you"
+      },
+      "expected": {
+        "title": "[Fixture Shared Album Invitation]",
+        "body": "[Fixture An album (Lake <b>trip</b> $& {senderName}) was shared with you]"
+      }
     }
   ]
 }

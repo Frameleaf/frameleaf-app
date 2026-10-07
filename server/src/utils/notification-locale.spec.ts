@@ -20,6 +20,7 @@ describe('origin-only system notification contract (FL-329)', () => {
   it.each(fixtures.cases)('$name', ({ template, locale, fallback, expected }) => {
     const text = renderSystemNotification(template, locale, fallback, catalogs);
     expect(text).toEqual(expected);
+    expect(renderSystemNotification(template, 'en', fallback)).toEqual(fallback);
     // Native consumers display these supplied fields; no template/version/arguments go over the wire.
     const { publicKey, privateKey } = generateKeyPairSync('x25519');
     const payload = buildPushPayload(

@@ -1089,6 +1089,7 @@ describe(StudioExportService.name, () => {
             userIds: [OWNER],
             assetIds: ['asset-new'],
             data: expect.objectContaining({ versionId: VERSION, status: 'published' }),
+            systemTemplate: { version: 1, key: 'studio-export-ready-named', args: { label: 'Lake trip' } },
           }),
         },
       });
@@ -1110,6 +1111,7 @@ describe(StudioExportService.name, () => {
           type: PushEventType.RenderFinished,
           userIds: [OWNER],
           data: expect.objectContaining({ versionId: VERSION, status: 'failed' }),
+          systemTemplate: { version: 1, key: 'studio-export-failed-named', args: { label: 'Lake trip' } },
         }),
       );
     });
