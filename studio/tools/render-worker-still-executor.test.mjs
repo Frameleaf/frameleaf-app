@@ -56,6 +56,21 @@ test('quality presets reach the encoder, preserve the legacy default and refuse 
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_EXPORT_QUALITY/);
   }
 });
+test('native subtitle modes preserve legacy settings, reject unsupported modes and keep caption graphs refused', () => {
+  assert.equal(Object.hasOwn(stillRecipe(claim()).settings, 'subtitleMode'), false);
+  for (const subtitleMode of ['burn', 'off']) {
+    const input = claim();
+    input.settings.subtitleMode = subtitleMode;
+    assert.equal(stillRecipe(input).settings.subtitleMode, subtitleMode);
+    input.snapshot.studio.graph.timeline.items.push({ type: 'subtitle', text: 'Caption' });
+    assert.throws(() => stillRecipe(input), /SINGLE_STILL_REQUIRED/);
+  }
+  for (const subtitleMode of ['sidecar', 'embedded', null, 10, {}]) {
+    const input = claim();
+    input.settings.subtitleMode = subtitleMode;
+    assert.throws(() => stillRecipe(input), /UNSUPPORTED_SUBTITLE_MODE/);
+  }
+});
 test('ranges retain source-frame bounds, render only the selected frames and require the bound contract', () => {
   const input = claim();
   input.settings.range = { inPoint: 4, outPoint: 12 };

@@ -109367,6 +109367,10 @@
           },
           "smoothMotion": {
             "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
+          },
+          "subtitleMode": {
+            "$ref": "#/components/schemas/StudioExportSubtitleMode",
+            "description": "Defaults to `burn`"
           }
         },
         "required": [
@@ -109541,6 +109545,10 @@
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "subtitleMode": {
+            "$ref": "#/components/schemas/StudioExportSubtitleMode",
+            "description": "Absent uses the native `burn` default"
           }
         },
         "required": [
@@ -109591,6 +109599,14 @@
           "factor"
         ],
         "type": "object"
+      },
+      "StudioExportSubtitleMode": {
+        "description": "Burn subtitle captions into the picture or omit them; ordinary titles are preserved",
+        "enum": [
+          "burn",
+          "off"
+        ],
+        "type": "string"
       },
       "StudioExportVersionDto": {
         "properties": {

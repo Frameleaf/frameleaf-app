@@ -6,6 +6,7 @@ import {
   StudioExportFormat,
   StudioExportResolution,
   StudioExportQuality,
+  StudioExportSubtitleMode,
   getMlCapabilities,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -60,6 +61,7 @@ describe('Studio export dialog', () => {
       color: StudioExportColor.Preserve,
       resolution: StudioExportResolution.$2160P,
       quality: StudioExportQuality.High,
+      subtitleMode: StudioExportSubtitleMode.Burn,
       destination: MediaOperationDestination.Local,
     });
   });
@@ -131,6 +133,22 @@ describe('Studio export dialog', () => {
       await fireEvent.change(control, { target: { value: quality } });
       await fireEvent.click(exportButton());
       expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ quality }));
+    }
+  });
+
+  it('submits only native Burn-in and Off subtitle choices', async () => {
+    const onExport = vi.fn();
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+    const control = screen.getByLabelText('frameleaf_studio_export_subtitles');
+    expect(
+      within(control)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual([StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off]);
+    for (const subtitleMode of Object.values(StudioExportSubtitleMode)) {
+      await fireEvent.change(control, { target: { value: subtitleMode } });
+      await fireEvent.click(exportButton());
+      expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ subtitleMode }));
     }
   });
 
@@ -274,6 +292,7 @@ describe('Studio export dialog', () => {
       color: StudioExportColor.Preserve,
       resolution: StudioExportResolution.$720P,
       quality: StudioExportQuality.High,
+      subtitleMode: StudioExportSubtitleMode.Burn,
       destination: MediaOperationDestination.Local,
     });
   });

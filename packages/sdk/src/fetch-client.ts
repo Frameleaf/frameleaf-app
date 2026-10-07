@@ -12928,6 +12928,8 @@ export type StudioExportSettingsDto = {
     /** Absent renders the whole main timeline */
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
+    /** Absent uses the native `burn` default */
+    subtitleMode?: StudioExportSubtitleMode;
 };
 export type StudioExportVersionDto = {
     cancelledAt: string | null;
@@ -13283,6 +13285,8 @@ export type StudioExportCreateDto = {
     requestKey?: string;
     resolution: StudioExportResolution;
     smoothMotion?: StudioExportSmoothMotionDto;
+    /** Defaults to `burn` */
+    subtitleMode?: StudioExportSubtitleMode;
 };
 export type StudioExportCreateResponseDto = {
     /** The render job; follow it in Activity */
@@ -30337,6 +30341,10 @@ export enum StudioExportQuality {
     Medium = "medium",
     High = "high",
     Ultra = "ultra"
+}
+export enum StudioExportSubtitleMode {
+    Burn = "burn",
+    Off = "off"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",
