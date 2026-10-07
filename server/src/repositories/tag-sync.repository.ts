@@ -17,6 +17,7 @@ import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   getHiddenContentFilter,
+  memoryHasNoHiddenItem,
   tagHasVisibleAssetOrNoAssets,
   tagIsSuppressed,
   withHiddenContentFilter,
@@ -26,7 +27,17 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
+export const MEMORY_SYNC_ACK_VERSION = 'memory-journal-v1';
+export const MEMORY_SYNC_TYPES = [
+  SyncEntityType.MemoryV1,
+  SyncEntityType.MemoryDeleteV1,
+  SyncEntityType.MemoryToAssetV1,
+  SyncEntityType.MemoryToAssetDeleteV1,
+];
+
 type Kind =
+  | 'memory'
+  | 'memoryAsset'
   | 'tag'
   | 'assetTag'
   | 'pet'
@@ -43,6 +54,8 @@ type Kind =
   | 'albumSourceLink';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
 const orderedKinds = new Set<Kind>([
+  'memory',
+  'memoryAsset',
   'tag',
   'assetTag',
   'pet',
@@ -74,6 +87,8 @@ type Visible = {
 const sequenced = (kind: Kind) =>
   ['space', 'spaceAlbum', 'spacePerson', 'tag', 'assetTag', 'pet', 'petObservation', 'spaceMember'].includes(kind);
 const types = {
+  memory: { upsert: SyncEntityType.MemoryV1, delete: SyncEntityType.MemoryDeleteV1 },
+  memoryAsset: { upsert: SyncEntityType.MemoryToAssetV1, delete: SyncEntityType.MemoryToAssetDeleteV1 },
   albumAsset: { upsert: SyncEntityType.AlbumAssetAccessV1, delete: SyncEntityType.AlbumAssetAccessDeleteV1 },
   partnerAsset: { upsert: SyncEntityType.PartnerAssetAccessV1, delete: SyncEntityType.PartnerAssetAccessDeleteV1 },
   pin: { upsert: SyncEntityType.PinnedCollectionV1, delete: SyncEntityType.PinnedCollectionDeleteV1 },
@@ -89,7 +104,7 @@ const types = {
   petObservation: { upsert: SyncEntityType.PetObservationV1, delete: SyncEntityType.PetObservationDeleteV1 },
   albumSourceLink: { upsert: SyncEntityType.AlbumSourceLinkV1, delete: SyncEntityType.AlbumSourceLinkDeleteV1 },
 } as const;
-/** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
+/** Session delivery generations keep visibility revocations and regrants replay-safe. */
 export class TagSync {
   constructor(
     private db: Kysely<DB>,
@@ -109,6 +124,40 @@ export class TagSync {
     readPins?: ReadPins,
   ): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'memory' || kind === 'memoryAsset') {
+      if (auth.sharedLink) return [];
+      const memories = db
+        .selectFrom('memory')
+        .where('memory.ownerId', '=', auth.user.id)
+        .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options));
+      if (kind === 'memory') {
+        const rows = await memories
+          .selectAll('memory')
+          .$if(!!key, (qb) => qb.where('memory.id', '=', key!))
+          .execute();
+        return rows.map(({ updateId, ...data }) => ({
+          key: data.id,
+          entityId: data.id,
+          assetId: null,
+          sourceId: updateId,
+          data,
+        }));
+      }
+      const rows = await memories
+        .innerJoin('memory_asset', 'memory_asset.memoriesId', 'memory.id')
+        .select(['memory.id as memoryId', 'memory_asset.assetId', 'memory_asset.updateId'])
+        .$if(!!key, (qb) =>
+          qb.where('memory.id', '=', key!.split(':', 2)[0]).where('memory_asset.assetId', '=', key!.split(':', 2)[1]),
+        )
+        .execute();
+      return rows.map(({ memoryId, assetId, updateId }) => ({
+        key: `${memoryId}:${assetId}`,
+        entityId: memoryId,
+        assetId,
+        sourceId: updateId,
+        data: { memoryId, assetId },
+      }));
+    }
     if (kind === 'albumAsset' || kind === 'partnerAsset') {
       if (auth.sharedLink) return [];
       if (!this.readSharedAssets) throw new Error('Shared asset sync requires current authorized projection');
@@ -530,33 +579,41 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'albumAsset'
-              ? { albumId: state.entityId, assetId: state.assetId! }
-              : kind === 'partnerAsset'
-                ? { sharedById: state.entityId, assetId: state.assetId! }
-                : kind === 'pin'
-                  ? { pinId: state.entityId }
-                  : kind === 'trash'
-                    ? { assetId: state.entityId }
-                    : kind === 'duplicate'
-                      ? { groupId: state.entityId }
-                      : kind === 'spaceAlbum'
-                        ? { spaceId: state.entityId, albumId: state.key.split(':', 2)[1] }
-                        : kind === 'spacePerson'
-                          ? { spaceId: state.entityId, id: state.key }
-                          : kind === 'space'
-                            ? { spaceId: state.entityId }
-                            : kind === 'spaceMember'
-                              ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                              : kind === 'tag'
-                                ? { tagId: state.entityId }
-                                : kind === 'assetTag'
-                                  ? { tagId: state.entityId, assetId: state.assetId! }
-                                  : kind === 'pet'
-                                    ? { petId: state.entityId }
-                                    : kind === 'albumSourceLink'
-                                      ? { linkId: state.entityId }
-                                      : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'memory'
+              ? { memoryId: state.entityId }
+              : kind === 'memoryAsset'
+                ? { memoryId: state.entityId, assetId: state.assetId! }
+                : kind === 'albumAsset'
+                  ? { albumId: state.entityId, assetId: state.assetId! }
+                  : kind === 'partnerAsset'
+                    ? { sharedById: state.entityId, assetId: state.assetId! }
+                    : kind === 'pin'
+                      ? { pinId: state.entityId }
+                      : kind === 'trash'
+                        ? { assetId: state.entityId }
+                        : kind === 'duplicate'
+                          ? { groupId: state.entityId }
+                          : kind === 'spaceAlbum'
+                            ? { spaceId: state.entityId, albumId: state.key.split(':', 2)[1] }
+                            : kind === 'spacePerson'
+                              ? { spaceId: state.entityId, id: state.key }
+                              : kind === 'space'
+                                ? { spaceId: state.entityId }
+                                : kind === 'spaceMember'
+                                  ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                                  : kind === 'tag'
+                                    ? { tagId: state.entityId }
+                                    : kind === 'assetTag'
+                                      ? { tagId: state.entityId, assetId: state.assetId! }
+                                      : kind === 'pet'
+                                        ? { petId: state.entityId }
+                                        : kind === 'albumSourceLink'
+                                          ? { linkId: state.entityId }
+                                          : {
+                                              observationId: state.key,
+                                              petId: state.entityId,
+                                              assetId: state.assetId!,
+                                            },
       };
     });
   }
@@ -565,6 +622,8 @@ export class TagSync {
       (Object.values(types[k as Kind]) as SyncEntityType[]).includes(ack.type),
     ) as Kind | undefined;
     if (!kind) return false;
+    // Old in-flight cursors cannot re-establish a legacy memory checkpoint after reset.
+    if (MEMORY_SYNC_TYPES.includes(ack.type) && ack.extraId !== MEMORY_SYNC_ACK_VERSION) return true;
     const action = ack.type === types[kind].upsert ? 'upsert' : 'delete';
     await this.locked(sessionId, async (tx) => {
       // Stale/forged ACKs cannot confirm a different action or a later regrant with the same key.
