@@ -1098,6 +1098,7 @@ where
 -- AssetRepository.getForThumbnail
 select
   "asset"."ownerId",
+  "asset"."isEdited",
   "asset"."originalPath",
   "asset"."originalFileName",
   "asset_file"."path" as "path",

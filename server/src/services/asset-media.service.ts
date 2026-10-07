@@ -416,11 +416,8 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { ownerId, originalPath, originalFileName, path, imageEncoding } = await this.assetRepository.getForThumbnail(
-      id,
-      size,
-      dto.edited ?? false,
-    );
+    const { ownerId, originalPath, originalFileName, path, imageEncoding, isEdited } =
+      await this.assetRepository.getForThumbnail(id, size, dto.edited ?? false);
 
     // Develop revisions keep their own files; legacy asset_file edits do not point at them.
     // Only the owner sees this working version. The face-source request remains on legacy pixels,
@@ -490,13 +487,23 @@ export class AssetMediaService extends BaseService {
     if (
       size === AssetFileType.FullSize &&
       mimeTypes.isWebSupportedImage(originalPath) &&
-      !dto.edited &&
+      // Missing edit evidence must not permit a redirect to unedited pixels.
+      // eslint-disable-next-line unicorn/no-unnecessary-boolean-comparison
+      (!dto.edited || (dto.dynamicRange && dto.dynamicRange !== 'hdr' && isEdited === false && !dto.faceSource)) &&
       imageEncoding?.dynamicRange === 'sdr'
     ) {
       // FL-161: through the relay the original is refused unless an administrator allowed it, so the
       // viewer gets the preview instead of a redirect it cannot follow
       if (!(await this.fullSizeAllowed(via))) {
         return { targetSize: AssetMediaSize.PREVIEW };
+      }
+      if (dto.edited) {
+        // Focused viewers ask for current pixels; an unedited SDR source is already full resolution.
+        // Follow the original route's permissions and EXIF policy before redirecting.
+        const downloads = await this.checkAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+        if (!downloads.has(id) || (auth.sharedLink && !auth.sharedLink.showExif)) {
+          return { targetSize: AssetMediaSize.PREVIEW };
+        }
       }
       // use original file for web supported images
       return { targetSize: 'original' };

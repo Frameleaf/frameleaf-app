@@ -9,3 +9,6 @@
 import { persisted } from 'svelte-persisted-store';
 
 export const showFilmstrip = persisted<boolean>('frameleaf-viewer-filmstrip', false);
+
+/** Auto uses the browser's native adaptive-image display; SDR requests its compatible baseline. */
+export const imageViewingPreference = persisted<'auto' | 'sdr'>('frameleaf-image-viewing', 'auto');

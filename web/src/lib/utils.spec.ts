@@ -51,6 +51,23 @@ describe('utils', () => {
         thumbhash: 'hash',
       });
 
+    it('focused Auto/SDR uses derivatives without changing grids or original downloads', () => {
+      const asset = photo();
+      const original = getAssetUrls(asset);
+      const auto = getAssetUrls(asset, undefined, 'auto');
+      const sdr = getAssetUrls(asset, undefined, 'sdr');
+      expect(auto.thumbnail).toBe(original.thumbnail);
+      expect(new URL(auto.preview, 'http://x').searchParams.get('dynamicRange')).toBe('auto');
+      const full = new URL(auto.original, 'http://x');
+      expect(full.pathname).toContain('/thumbnail');
+      expect(full.searchParams.get('size')).toBe('fullsize');
+      expect(full.searchParams.get('edited')).toBe('true');
+      expect(new URL(sdr.original, 'http://x').searchParams.get('dynamicRange')).toBe('sdr');
+      expect(getAssetUrls(asset)).toEqual(original);
+      const animated = { ...asset, originalMimeType: 'image/gif', duration: 1 };
+      expect(getAssetUrls(animated, undefined, 'auto')).toEqual(getAssetUrls(animated));
+    });
+
     it('keys photo preview and full-size URLs on the thumbhash until the playback choice changes', () => {
       const asset = photo();
       const urls = getAssetUrls(asset);
