@@ -340,6 +340,7 @@ export class StudioExportService {
       color: dto.color,
       resolution: dto.resolution,
       quality: dto.quality ?? 'high',
+      ...(dto.subtitleMode !== undefined && { subtitleMode: dto.subtitleMode }),
       ...(dto.range && { range: dto.range }),
       audio: dto.audio ?? 'preserve',
       ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),

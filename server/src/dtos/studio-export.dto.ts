@@ -8,6 +8,7 @@ import {
   STUDIO_EXPORT_FORMATS,
   STUDIO_EXPORT_QUALITIES,
   STUDIO_EXPORT_RESOLUTIONS,
+  STUDIO_EXPORT_SUBTITLE_MODES,
 } from 'src/utils/studio-export.js';
 
 /**
@@ -45,6 +46,11 @@ const StudioExportQualitySchema = z
   .describe('Encoder quality preset')
   .meta({ id: 'StudioExportQuality' });
 
+const StudioExportSubtitleModeSchema = z
+  .enum(STUDIO_EXPORT_SUBTITLE_MODES)
+  .describe('Burn subtitle captions into the picture or omit them; ordinary titles are preserved')
+  .meta({ id: 'StudioExportSubtitleMode' });
+
 const StudioExportRangeSchema = z
   .object({
     inPoint: z.int().min(0).describe('First included frame on the main timeline'),
@@ -72,6 +78,7 @@ const StudioExportCreateSchema = z
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
     quality: StudioExportQualitySchema.optional().describe('Defaults to `high`'),
+    subtitleMode: StudioExportSubtitleModeSchema.optional().describe('Defaults to `burn`'),
     range: StudioExportRangeSchema.optional().describe('Absent renders the whole main timeline'),
     audio: StudioExportAudioSchema.optional().describe(
       'Defaults to `preserve`; a stereo downmix happens only when asked for',
@@ -107,6 +114,7 @@ const StudioExportSettingsSchema = z
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
     quality: StudioExportQualitySchema.optional().describe('Absent on exports made before quality was a choice'),
+    subtitleMode: StudioExportSubtitleModeSchema.optional().describe('Absent uses the native `burn` default'),
     range: StudioExportRangeSchema.optional().describe('Absent renders the whole main timeline'),
     audio: StudioExportAudioSchema.optional().describe('Absent on exports made before audio was a choice'),
     mastering: StudioExportMasteringSchema.optional().describe(

@@ -551,6 +551,28 @@ describe(StudioExportService.name, () => {
       }
     });
 
+    it('validates subtitle modes and preserves explicit choices in both durable records without changing legacy settings', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+      for (const subtitleMode of ['burn', 'off'] as const) {
+        const request = StudioExportCreateDto.schema.parse({ ...(dto as object), subtitleMode });
+        await sut.create(auth(), PROJECT, request);
+        const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+        expect(job.settings).toEqual(expect.objectContaining({ subtitleMode }));
+        expect(version.settings).toEqual(job.settings);
+      }
+      await sut.create(auth(), PROJECT, dto);
+      const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+      expect(job.settings).not.toHaveProperty('subtitleMode');
+      expect(version.settings).toEqual(job.settings);
+      for (const subtitleMode of ['sidecar', 'embedded', null, 10, {}]) {
+        expect(StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode }).success).toBe(false);
+      }
+    });
+
     it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {
       studio.requireOwnedProject.mockRejectedValue(
         new ForbiddenException('Only the owner can export a Studio project'),

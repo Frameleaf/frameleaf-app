@@ -6,6 +6,7 @@
     resolution: StudioExportResolution;
     quality: StudioExportQuality;
     mastering?: StudioExportMastering;
+    subtitleMode: StudioExportSubtitleMode;
     range?: { inPoint: number; outPoint: number };
     destination: MediaOperationDestination;
     /**
@@ -40,6 +41,7 @@
     StudioExportFormat,
     StudioExportResolution,
     StudioExportQuality,
+    StudioExportSubtitleMode,
     getMlCapabilities,
     type MlCapabilityDestinationDto,
     type StudioExportMastering,
@@ -110,6 +112,7 @@
   let declarePqMastering = $state(false);
   let maxNits = $state<number | undefined>();
   let minNits = $state<number | undefined>();
+  let subtitleMode = $state(StudioExportSubtitleMode.Burn);
   let rangeMode = $state('all');
   let inPoint = $state<number | undefined>(0);
   let outPoint = $state<number | undefined>(1);
@@ -183,6 +186,7 @@
     declarePqMastering = false;
     maxNits = undefined;
     minNits = undefined;
+    subtitleMode = StudioExportSubtitleMode.Burn;
     rangeMode = 'all';
     inPoint = 0;
     outPoint = 1;
@@ -242,6 +246,7 @@
         resolution,
         quality,
         ...(mastering && { mastering }),
+        subtitleMode,
         ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
@@ -300,6 +305,13 @@
           {#each qualities as item (item.value)}
             <option value={item.value}>{$t(item.label)}</option>
           {/each}
+        </select>
+      </label>
+      <label class="field" for="{fieldId}-subtitles">
+        <span>{$t('frameleaf_studio_export_subtitles')}</span>
+        <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
+          <option value={StudioExportSubtitleMode.Burn}>{$t('frameleaf_studio_export_subtitles_burn')}</option>
+          <option value={StudioExportSubtitleMode.Off}>{$t('frameleaf_studio_export_subtitles_off')}</option>
         </select>
       </label>
       <label class="field" for="{fieldId}-range">

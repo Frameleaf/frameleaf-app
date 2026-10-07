@@ -61,6 +61,7 @@ export const STUDIO_EXPORT_FORMATS = ['mp4-hevc-main10', 'mp4-h264', 'webm-av1',
 export const STUDIO_EXPORT_COLORS = ['preserve', 'hdr10', 'dolby-vision'] as const;
 export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p'] as const;
 export const STUDIO_EXPORT_QUALITIES = ['low', 'medium', 'high', 'ultra'] as const;
+export const STUDIO_EXPORT_SUBTITLE_MODES = ['burn', 'off'] as const;
 
 /** A readable file name for a result: the project's name, without anything a path could use. */
 export const studioExportFileName = (projectName: string, extension: string): string => {
