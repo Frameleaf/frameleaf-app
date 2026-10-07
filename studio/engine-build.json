@@ -374,7 +374,12 @@
       "path": "patches/0076-master-gain-envelope.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "5dc9a273be7fbe4e97c31228ca9327a37f3edd1234ef1237181038977ba3e582"
+    },
+    {
+      "path": "patches/0078-moss-byte-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "77bdea35464fef84567fb18b4c8aefc0394506a0944d176203a00a2c6267b058"
     }
   ],
-  "sourceSha256": "83574d62bd32aa8394b5f7454d0b193d46073fe2a07db5c356cc046e84c80bca"
+  "sourceSha256": "0279c534d9424f56c495e778d8e0f4b2f935e9f4722d62fee22b7588ac28e210"
 }

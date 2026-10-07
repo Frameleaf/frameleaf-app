@@ -405,7 +405,12 @@ export interface StudioCommandPayloads {
   'project.exportBundle': { sequenceIds?: string[]; includeMedia?: boolean };
   'project.importBundle': { bundleUploadId: string };
   'project.rename': { name: string };
-  'project.setMasterAudio': { gainDb?: number; muted?: boolean; ducking?: boolean; gainEnvelope?: Array<{ id: string; at: Rational; gainDb: number }> };
+  'project.setMasterAudio': {
+    gainDb?: number;
+    muted?: boolean;
+    ducking?: boolean;
+    gainEnvelope?: Array<{ id: string; at: Rational; gainDb: number }>;
+  };
   'project.setSettings': {
     patch: { mode?: 'basic' | 'advanced'; guides?: boolean; loop?: boolean; ducking?: boolean };
   };
