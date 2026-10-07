@@ -150,3 +150,23 @@ flattening it. Its `develop_hdr_render_unavailable` response retains the origina
 previous working version, and Live Photo motion. Native clients retain their
 unsaved recipe and show the server explanation. HDR-preserving recipe rendering
 and delivery require the separately qualified renderer/rendition capability.
+
+## HDR-preserving Develop revisions (experimental)
+
+Recipe version 3 names renderer `frameleaf-develop-hdr/1` and policy
+`hdr: {version: 1, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2"}`.
+Omitted policy fields receive those defaults. Historical v1 and native RAW v2
+revisions keep their renderer identity. Clients must preserve unknown envelope
+fields and must not rewrite a v3 recipe as v1. Unsupported fields fail rendering.
+
+Preview requests and revision-file requests accept `dynamicRange=auto|sdr|hdr`.
+Omission retains SDR-compatible output; explicit HDR fails when unavailable.
+Version 3 renders HDR master/preview and SDR master/preview together using the
+isolated worker. The server validates the set before publication. Regeneration
+keeps the last accepted set available during failure or cancellation.
+
+Revision responses add `outputDynamicRange`, `hdrRenderStatus`, `hasHdrMaster`,
+and `hasHdrPreview`. Availability remains capability-gated; saved HDR pixels
+do not prove the current display can show HDR. The experimental gate is not
+camera-media or physical-display qualification. Still-only Live Photo saves
+retain original motion and pairing.
