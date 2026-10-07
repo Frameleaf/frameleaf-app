@@ -447,7 +447,7 @@ describe(StudioExportService.name, () => {
       format: 'mp4-h264',
       color: 'preserve',
       resolution: '1080p',
-    } as never;
+    } as StudioExportCreateDto;
 
     it.each([
       ['decoder only', ['h264_cuvid'], ['mp4']],
