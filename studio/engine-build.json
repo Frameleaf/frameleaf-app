@@ -314,7 +314,12 @@
       "path": "patches/0066-timeline-toolbar-scrollport.patch",
       "sha256": "13428c4fc8f0c4ae4b8c61d64e2b17f1b65a7a7f6bdc469e3a52ccc63df2a2cf",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0065-linear-display-hdr-subtree.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "beddeae556f10a6bcd8123e829ec556f0ff841a22e27f27fb417d4c1160b37dd"
     }
   ],
-  "sourceSha256": "90f9b32bd2f6cee27040f978a02cfe734e6659e9ee83f86dd88e65dd213987dc"
+  "sourceSha256": "82de2fd1f2d4e1773269bd688722b5534fddd506901ccdfefd59775b19da8d15"
 }

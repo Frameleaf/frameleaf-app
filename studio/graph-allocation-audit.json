@@ -416,6 +416,18 @@
       "count": 1,
       "class": "sdr-graphics",
       "reason": "Canvas2D paints only the SDR text source at reference white; upload precedes all float node effects."
+    },
+    {
+      "file": "infrastructure/gpu-effects/effects-pipeline.ts",
+      "code": "this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',",
+      "class": "format-dispatch",
+      "reason": "Checks the SDR source format to select pre-interpolation linear decoding; allocates no texture."
+    },
+    {
+      "file": "infrastructure/gpu-media/media-render-pipeline.ts",
+      "code": "this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',",
+      "class": "format-dispatch",
+      "reason": "Checks the SDR source format to select pre-interpolation linear decoding; allocates no texture."
     }
   ]
 }

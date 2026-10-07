@@ -1,4 +1,4 @@
-// FL-97: SDR text/Lottie ingress must precede float effects, including inside Compose.
+// FL-97: SDR text/Lottie enters linear display-light before filtering, including inside Compose.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
@@ -38,6 +38,11 @@ window.__vite_plugin_react_preamble_installed__ = true
     if (!effects) throw new Error('Effects pipeline unavailable');
     effects.setWorkingRange('hdr');
     const media = new MediaRenderPipeline(device);
+    media.setWorkingRange('hdr');
+    const decode = v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+    // ImageData rounds straight RGB to bytes; recover the Canvas bitmap's
+    // premultiplied byte before independently decoding its straight colour.
+    const canvasLinear = (rgb, alpha) => alpha ? decode(Math.round(rgb * alpha / 255) / alpha) : 0;
     const blend = new MediaBlendPipeline(device);
     blend.setWorkingRange('hdr');
     const canvasPool = new CanvasPool(64, 64);
@@ -55,10 +60,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       // Exercise the production Canvas text ingress when its optional glyph atlas is unavailable.
       gpuTextPipeline: null };
     const transform = { x: 0, y: 0, width: 64, height: 64, rotation: 0, opacity: 1, cornerRadius: 0 };
-    const grade = [
-      { id: 'signed-offset', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: -0.2 } } },
-      { id: 'highlight', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 2, offset: 0, gamma: 1 } } },
-    ];
+    const grade = []; // Effect operators are gated separately by linear-hdr-subtree.browser.mjs.
     const text = { id: 'text', type: 'text', trackId: 'graphics', from: 0, durationInFrames: 60,
       text: 'H', color: '#e64000', fontSize: 32, fontFamily: 'Arial', textAlign: 'left',
       verticalAlign: 'top', transform: { ...transform, height: 80 }, effects: grade };
@@ -115,7 +117,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             const px = Math.max(0, Math.min(source.width - 1, ix + dx)), py = Math.max(0, Math.min(source.height - 1, iy + dy));
             const index = (py * source.width + px) * 4, alpha = pixels[index + 3] / 255 * weight;
             sum[3] += alpha;
-            for (let c = 0; c < 3; c++) sum[c] += pixels[index + c] / 255 * alpha;
+            for (let c = 0; c < 3; c++) sum[c] += canvasLinear(pixels[index + c], pixels[index + 3]) * alpha;
           }
           return [...sum.slice(0, 3).map((v) => sum[3] > 0 ? v / sum[3] : 0), sum[3]];
         };
@@ -135,7 +137,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               texturePool.release(output);
             }
             const opacity = nested ? 0.42 : 1;
-            let maxError = 0, comparisons = 0, highlights = 0, signed = 0, alphaEdges = 0, worst;
+            let maxError = 0, comparisons = 0, linearDifferences = 0, alphaEdges = 0, worst;
             for (let i = 0; i < actual.length; i += 4) {
               const input = sample(i / 4 % 64, Math.floor(i / 256));
               const alpha = input[3] * opacity;
@@ -143,19 +145,17 @@ window.__vite_plugin_react_preamble_installed__ = true
               comparisons++;
               if (alpha <= 0.001) continue;
               if (input[3] > 0 && input[3] < 1) alphaEdges++;
-              // Independent CPU reference: encoded-space brightness followed by 2 EV,
-              // exactly the declared HDR semantics; no production color/shader helper.
+              // Independent CPU reference: decode each authored pixel before alpha-weighted filtering.
               for (let c = 0; c < 3; c++) {
-                const want = (input[c] - 0.2) * 4;
+                const want = input[c];
                 const error = Math.abs(actual[i + c] - want);
                 if (error > maxError) worst = { x: i / 4 % 64, y: Math.floor(i / 256), c, want, actual: actual.slice(i, i + 4), source: input };
                 maxError = Math.max(maxError, error);
-                highlights += want > 1 ? 1 : 0;
-                signed += want < 0 ? 1 : 0;
+                linearDifferences += want > .01 && want < .8 ? 1 : 0;
                 comparisons++;
               }
             }
-            cases.push({ kind: item.type, nested, attempt, maxError, comparisons, highlights, signed, alphaEdges,
+            cases.push({ kind: item.type, nested, attempt, maxError, comparisons, linearDifferences, alphaEdges,
               canvasInUse: canvasPool.getStats().inUse, textureInUse: texturePool.getStats().inUse,
               textCacheEntries: gpuTextTextureCache.size, worst, textCacheSize: Array.from(gpuTextTextureCache.values(), ({width, height}) => [width, height]) });
           }
@@ -235,13 +235,14 @@ window.__vite_plugin_react_preamble_installed__ = true
               for (const canvas of canvases) canvasPool.release(canvas);
               texturePool.release(output);
             }
-            let maxError = 0, comparisons = 0;
+            let maxError = 0, comparisons = 0, worst;
             for (let i = 0; i < actual.length; i += 4) {
               maxError = Math.max(maxError, Math.abs(actual[i + 3] - pixels[i + 3] / 255)); comparisons++;
               if (pixels[i + 3] <= 1) continue;
-              for (let c = 0; c < 3; c++) { maxError = Math.max(maxError, Math.abs(actual[i + c] - pixels[i + c] / 255)); comparisons++; }
+              // Keep the existing strict straight-RGB and alpha tolerances.
+              for (let c = 0; c < 3; c++) { const error=Math.abs(actual[i+c]-canvasLinear(pixels[i+c],pixels[i+3]));if(error>maxError)worst={i,c,source:pixels.slice(i,i+4),actual:actual.slice(i,i+4)};maxError=Math.max(maxError,error);comparisons++; }
             }
-            layouts.push({ spanLayout, nested, maxError, comparisons, cacheEntries: layoutCache.size,
+            layouts.push({ spanLayout, nested, maxError, comparisons, worst, cacheEntries: layoutCache.size,
               canvasInUse: canvasPool.getStats().inUse, textureInUse: texturePool.getStats().inUse });
           }
         }
@@ -292,7 +293,19 @@ window.__vite_plugin_react_preamble_installed__ = true
           afterFirstClose, afterSecondClose, retainedBytes: finalRetainedBytes, afterCleanup: tracked.map((row) => row.destroyed),
           canvasInUse: canvasPool.getStats().inUse, textureInUse: texturePool.getStats().inUse });
       }
-      return { cases, concurrent, failures, layouts, layoutSourceDifference, cacheOwnership };
+      const domainCache=new Map(),domainTextures=[],domainRows=[];
+      try {
+        for(const range of ['hdr','sdr','hdr']) {
+          effects.setWorkingRange(range);
+          const participant=await prepareGpuMediaParticipant({item:text,transform:text.transform,effects:[],renderSpan:{from:0,durationInFrames:60}},10,{...rctx,gpuTextTextureCache:domainCache});
+          if(!participant)throw new Error('Text domain-cache route declined');
+          domainTextures.push(participant.media.texture);
+          domainRows.push({range,format:participant.media.texture.format,keys:[...domainCache.keys()],entries:domainCache.size});
+          participant.media.close?.();
+        }
+        if(domainTextures[0]===domainTextures[1]||domainTextures[0]!==domainTextures[2])throw new Error('Text cache reused another working domain');
+      }finally{for(const entry of domainCache.values())entry.texture.destroy();effects.setWorkingRange('hdr');}
+      return { cases, concurrent, failures, layouts, layoutSourceDifference, cacheOwnership, domainRows };
     } finally {
       for (const entry of gpuTextTextureCache.values()) entry.texture.destroy();
       lottieProvider.destroy(); canvasPool.dispose(); texturePool.destroy();
@@ -303,7 +316,7 @@ window.__vite_plugin_react_preamble_installed__ = true
   assert.equal(result.cases.length, 12);
   for (const row of result.cases) {
     assert.ok(row.maxError < 0.02, `${row.kind} nested=${row.nested} clipped/changed working values: ${row.maxError}`);
-    assert.ok(row.highlights > 0 && row.signed > 0 && row.alphaEdges > 0, 'fixture must distinguish clipping and alpha-edge damage');
+    assert.ok(row.linearDifferences > 0 && row.alphaEdges > 0, 'fixture must distinguish encoded RGB and alpha-edge damage');
     assert.equal(row.canvasInUse, 0); assert.equal(row.textureInUse, 0);
     assert.ok(row.textCacheEntries <= 1, 'static raster ingress cache must not grow per frame');
   }
@@ -323,6 +336,8 @@ window.__vite_plugin_react_preamble_installed__ = true
     assert.equal(row.canvasInUse, 0); assert.equal(row.textureInUse, 0);
     assert.equal(row.cacheEntries, row.spanLayout === 'inline' ? 1 : 2);
   }
+  assert.deepEqual(result.domainRows.map(r=>[r.range,r.format,r.entries]),[['hdr','rgba16float',1],['sdr','rgba8unorm',2],['hdr','rgba16float',2]]);
+  assert(result.domainRows[0].keys[0].startsWith('linear-display-bt709-v1:'));
   for (const row of result.cacheOwnership) {
     assert.ok(row.closePresent.every(Boolean), `${row.scenario} needs participant close`);
     assert.ok(row.validBeforeClose.every(Boolean), `${row.scenario} returned a destroyed texture`);
@@ -334,6 +349,6 @@ window.__vite_plugin_react_preamble_installed__ = true
     assert.ok(row.afterCleanup.every((v) => v === 1));
     assert.equal(row.canvasInUse, 0); assert.equal(row.textureInUse, 0);
   }
-  console.log(JSON.stringify({ check: 'Production text/Lottie float ingress and nested effects', cases: result.cases.length, failedIngressOwnership: result.failures.length, concurrentFrameComparisons: result.concurrent.comparisons, layoutCases: result.layouts.length, layoutComparisons: result.layouts.reduce((sum, row) => sum + row.comparisons, 0), cacheOwnershipCases: result.cacheOwnership.length,
+  console.log(JSON.stringify({ check: 'Production text/Lottie linear ingress and nested source-over', cases: result.cases.length, failedIngressOwnership: result.failures.length, concurrentFrameComparisons: result.concurrent.comparisons, layoutCases: result.layouts.length, layoutComparisons: result.layouts.reduce((sum, row) => sum + row.comparisons, 0), cacheOwnershipCases: result.cacheOwnership.length,
     comparisons: result.cases.reduce((sum, row) => sum + row.comparisons, 0), maxError: Math.max(...result.cases.map((row) => row.maxError)) }));
 } finally { await browser.close(); }
