@@ -50,6 +50,11 @@ The `editor-controls`, `auto-key-control` and `easing-control` probes also use t
 three-browser session opener and retain its observed browser provenance. Their native component,
 history and independent pixel checks remain separate from API persistence and worker qualification.
 
+`boundary-hit` and `linked-edit-axis` use the same opener for their native geometry and selection
+checks. Source dispatch still requires the deny-all proxy: Safari 26.5.2 rejects its manual-proxy
+capability before session creation. There is no unproxied fallback or existing classic network
+interception lane; Safari execution needs a supported transport that preserves admission first.
+
 ## Studio graph protocol (native apps)
 
 `docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
