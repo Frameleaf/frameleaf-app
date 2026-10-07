@@ -615,6 +615,27 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('preview', () => {
+    it.each([true, false])(
+      'refuses silent HDR flattening even when reconstruction is available: %s',
+      async (available) => {
+        mocks.media.inspectImageEncoding.mockResolvedValue({
+          dynamicRange: 'hdr',
+          gainMap: 'apple-legacy',
+          referenceWhite: 203,
+          reconstructionAvailable: available,
+        });
+        await expect(
+          sut.preview(authStub.user1, asset.id, {
+            recipe: defaultDevelopRecipe(),
+            size: 640,
+          }),
+        ).rejects.toThrow('HDR-preserving Develop rendering is not available');
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(mocks.media.encodeDevelopOutput).not.toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      },
+    );
+
     it('uses the full native sRGB pipeline for an explicit version 2 RAW recipe', async () => {
       const raw = { ...getForGenerateThumbnail(asset), originalFileName: 'image.CR2' };
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(raw);

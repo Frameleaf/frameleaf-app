@@ -2,7 +2,10 @@ import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
 // Standalone Node child has no application alias loader.
 // eslint-disable-next-line no-restricted-imports
+import { type LinearHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
+// eslint-disable-next-line no-restricted-imports
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
+
 import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import type { ImageFormat } from 'src/enum.js';
 import type {
@@ -38,6 +41,22 @@ export class SharpOperations {
     private readonly progress: () => void = () => {},
     private readonly maxBytes = 1024 ** 3,
   ) {}
+
+  async inspectImageEncoding(input: string | Buffer) {
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    return imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
+  }
+
+  async decodeHdrImage(input: string | Buffer) {
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    return imageHdrOperation((codec) => codec.decode(bytes, this.maxPixels, this.maxBytes));
+  }
+
+  encodeHdrImage(image: LinearHdrImage) {
+    return imageHdrOperation((codec) =>
+      codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
+    );
+  }
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
     return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
