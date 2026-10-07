@@ -206,10 +206,8 @@ export class StudioProjectRepository {
   /**
    * Create a project and its optional initial document and lease in one transaction.
    *
-   * The lease is left free: nobody is editing a project that was just duplicated or imported, and
-   * the first editor to open it takes the lease as usual. An import carries its job id; when a
-   * retried job finds that id already taken, the first attempt's project is returned instead of a
-   * second one being made.
+   * Without a supplied lease, duplicated and imported projects stay free for the first editor.
+   * An import carries its job id; a retry returns that job's existing project.
    */
   async createWithRevision(seed: StudioProjectSeed): Promise<{
     project: StudioProject;
