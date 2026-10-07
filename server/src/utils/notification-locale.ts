@@ -4,6 +4,7 @@ import type { UserPreferences } from 'src/types.js';
 /** Origin-only descriptors. These never enter NotificationDto or the encrypted push wire payload. */
 const name = z.string();
 const count = z.int().nonnegative();
+const activationArguments = z.object({ step: z.int().positive(), total: z.int().positive() }).strict();
 const argumentsOf = {
   'job-failed': z.object({ jobName: name, error: name }).strict(),
   'item-share-one': z.object({ senderName: name }).strict(),
@@ -18,6 +19,29 @@ const argumentsOf = {
   'push-space-reply': z.object({ senderName: name, albumName: name }).strict(),
   'access-removed': z.object({ albumName: name }).strict(),
   'access-removed-unknown': z.object({}).strict(),
+  'reconciliation-missing-one': z.object({}).strict(),
+  'reconciliation-missing-many': z.object({ count }).strict(),
+  'memories-one': z.object({}).strict(),
+  'memories-many': z.object({ count }).strict(),
+  'partner-added': z.object({ senderName: name }).strict(),
+  'partner-removed': z.object({ senderName: name }).strict(),
+  'album-role-editor': z.object({ albumName: name }).strict(),
+  'album-role-owner': z.object({ albumName: name }).strict(),
+  'album-role-viewer': z.object({ albumName: name }).strict(),
+  'studio-export-ready': z.object({}).strict(),
+  'studio-export-ready-named': z.object({ label: name }).strict(),
+  'studio-export-failed': z.object({}).strict(),
+  'studio-export-failed-named': z.object({ label: name }).strict(),
+  'backup-stale-one': z.object({ deviceName: name }).strict(),
+  'backup-stale-many': z.object({ deviceName: name, count }).strict(),
+  'activation-plan-active': activationArguments,
+  'activation-server-notified': activationArguments,
+  'activation-preparing-storage': activationArguments,
+  'activation-first-backup-complete': activationArguments,
+  'activation-first-backup-failed': activationArguments,
+  'activation-first-backup-running': activationArguments,
+  'activation-first-backup-scheduled': activationArguments,
+  'album-invite-anonymous': z.object({ albumName: name }).strict(),
 } as const;
 
 type TemplateKey = keyof typeof argumentsOf;
@@ -48,6 +72,50 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       'push-space-reply': { title: 'New reply', body: '{senderName} replied to your comment in {albumName}' },
       'access-removed': { title: 'Access changed', body: 'You no longer have access to {albumName}' },
       'access-removed-unknown': { title: 'Access changed', body: 'You no longer have access to an album' },
+      'reconciliation-missing-one': {
+        title: 'Backup needs attention',
+        body: 'One item on this device is not on your server yet',
+      },
+      'reconciliation-missing-many': {
+        title: 'Backup needs attention',
+        body: '{count} items on this device are not on your server yet',
+      },
+      'memories-one': { title: 'Memories', body: 'A new memory is ready' },
+      'memories-many': { title: 'Memories', body: '{count} new memories are ready' },
+      'partner-added': { title: 'Access changed', body: '{senderName} shared their library with you' },
+      'partner-removed': { title: 'Access changed', body: '{senderName} stopped sharing their library with you' },
+      'album-role-editor': { title: 'Access changed', body: 'Your role in {albumName} is now editor' },
+      'album-role-owner': { title: 'Access changed', body: 'Your role in {albumName} is now owner' },
+      'album-role-viewer': { title: 'Access changed', body: 'Your role in {albumName} is now viewer' },
+      'studio-export-ready': { title: 'Render finished', body: 'Your Studio export is ready' },
+      'studio-export-ready-named': { title: 'Render finished', body: '{label} is ready' },
+      'studio-export-failed': { title: 'Render failed', body: 'Your Studio export could not be finished' },
+      'studio-export-failed-named': { title: 'Render failed', body: '{label} could not be finished' },
+      'backup-stale-one': { title: 'Backup is out of date', body: '{deviceName} has not backed up for 1 day' },
+      'backup-stale-many': { title: 'Backup is out of date', body: '{deviceName} has not backed up for {count} days' },
+      'activation-plan-active': { title: 'Cloud Backup setup', body: '{step} of {total} · Activating your plan' },
+      'activation-server-notified': { title: 'Cloud Backup setup', body: '{step} of {total} · Notifying your server' },
+      'activation-preparing-storage': { title: 'Cloud Backup setup', body: '{step} of {total} · Preparing storage' },
+      'activation-first-backup-complete': {
+        title: 'Cloud Backup setup',
+        body: '{step} of {total} · First backup complete',
+      },
+      'activation-first-backup-failed': {
+        title: 'Cloud Backup setup',
+        body: '{step} of {total} · First backup needs attention',
+      },
+      'activation-first-backup-running': {
+        title: 'Cloud Backup setup',
+        body: '{step} of {total} · First backup running',
+      },
+      'activation-first-backup-scheduled': {
+        title: 'Cloud Backup setup',
+        body: '{step} of {total} · First backup scheduled',
+      },
+      'album-invite-anonymous': {
+        title: 'Shared Album Invitation',
+        body: 'An album ({albumName}) was shared with you',
+      },
     },
   },
 };

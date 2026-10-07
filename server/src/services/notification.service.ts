@@ -760,12 +760,16 @@ export class NotificationService extends BaseService {
       ...(await this.localText(
         userId,
         isInvite
-          ? { version: 1, key: 'album-invite', args: { senderName, albumName: album.albumName } }
+          ? senderName === undefined
+            ? { version: 1, key: 'album-invite-anonymous', args: { albumName: album.albumName } }
+            : { version: 1, key: 'album-invite', args: { senderName, albumName: album.albumName } }
           : { version: 1, key: 'album-update', args: { albumName: album.albumName } },
         {
           title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
           body: isInvite
-            ? `${senderName} shared an album (${album.albumName}) with you`
+            ? senderName === undefined
+              ? `An album (${album.albumName}) was shared with you`
+              : `${senderName} shared an album (${album.albumName}) with you`
             : `New media has been added to the album (${album.albumName})`,
         },
       )),

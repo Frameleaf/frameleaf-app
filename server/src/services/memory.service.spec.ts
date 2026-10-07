@@ -310,6 +310,7 @@ describe(MemoryService.name, () => {
           type: PushEventType.Memories,
           userIds: [userId],
           assetIds: ['asset-1', 'asset-2'],
+          systemTemplate: { version: 1, key: 'memories-many', args: { count: 2 } },
           data: { count: 2 },
           dedupeKey: expect.stringContaining(`memories/${userId}/`),
         }),

@@ -1023,6 +1023,11 @@ describe(AlbumService.name, () => {
           type: PushEventType.AccessChanged,
           userIds: [user.id],
           data: { albumId: album.id, change: 'role', role: AlbumUserRole.Viewer },
+          systemTemplate: {
+            version: 1,
+            key: 'album-role-viewer',
+            args: { albumName: album.albumName },
+          },
         }),
       );
     });

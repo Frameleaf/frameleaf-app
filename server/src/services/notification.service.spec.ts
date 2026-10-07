@@ -1,5 +1,14 @@
+import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, JobName, JobStatus, NotificationLevel, NotificationType, UserMetadataKey } from 'src/enum.js';
+import {
+  AssetFileType,
+  JobName,
+  JobStatus,
+  NotificationLevel,
+  NotificationType,
+  PushEventType,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -259,14 +268,14 @@ describe(NotificationService.name, () => {
         name: JobName.PushDeliver,
         data: {
           notice: {
-            type: 'shared-activity',
+            type: PushEventType.SharedActivity,
             title: 'private title',
             body: 'hunter2-secret',
             systemTemplate: { version: 1, key: 'item-share-one', args: { senderName: 'hunter2-secret' } },
           },
         },
       },
-    ] as const)('never logs the data of a $name job, which carries a password', async (job) => {
+    ] satisfies JobItem[])('never logs the data of a $name job, which carries a password', async (job) => {
       await sut.onJobError({ job, error: new Error('smtp down') });
 
       expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
@@ -279,6 +288,28 @@ describe(NotificationService.name, () => {
 
       expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), JSON.stringify(job.data));
     });
+  });
+
+  it.each([undefined, 'Zoë'])('renders an album invitation with sender %s (FL-329)', async (senderName) => {
+    const album = AlbumFactory.create({ albumName: 'Lake <b>trip</b> $& {senderName}' });
+    mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+    await sut['sendAlbumLocalNotification'](
+      { ...album, assets: [], albumUsers: [], sharedLinks: [] },
+      userStub.user1.id,
+      NotificationType.AlbumInvite,
+      senderName,
+    );
+
+    expect(mocks.notification.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Shared Album Invitation',
+        description:
+          senderName === undefined
+            ? `An album (${album.albumName}) was shared with you`
+            : `${senderName} shared an album (${album.albumName}) with you`,
+      }),
+    );
   });
 
   describe('onAssetHide', () => {

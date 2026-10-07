@@ -105,6 +105,10 @@ export class BackupDeviceService {
         run.itemsMissing === 1
           ? 'One item on this device is not on your server yet'
           : `${run.itemsMissing} items on this device are not on your server yet`,
+      systemTemplate:
+        run.itemsMissing === 1
+          ? { version: 1, key: 'reconciliation-missing-one', args: {} }
+          : { version: 1, key: 'reconciliation-missing-many', args: { count: run.itemsMissing } },
       data: { deviceId: run.deviceId, itemsMissing: run.itemsMissing, reason: 'reconciliation-missing' },
       dedupeKey: `backup-attention/${run.id}`,
       delayMs: 30_000,

@@ -595,6 +595,10 @@ export class PushService {
         userIds: [target.userId],
         title: 'Backup is out of date',
         body: `${target.displayName} has not backed up for ${days} day${days === 1 ? '' : 's'}`,
+        systemTemplate:
+          days === 1
+            ? { version: 1, key: 'backup-stale-one', args: { deviceName: target.displayName } }
+            : { version: 1, key: 'backup-stale-many', args: { deviceName: target.displayName, count: days } },
         data: {
           backupDeviceKey: target.backupDeviceKey,
           pendingCount: target.pendingCount,

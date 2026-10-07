@@ -36,6 +36,7 @@ export class PartnerService extends BaseService {
       userIds: [sharedWithId],
       title: 'Access changed',
       body: `${auth.user.name} shared their library with you`,
+      systemTemplate: { version: 1, key: 'partner-added', args: { senderName: auth.user.name } },
       data: { partnerId: auth.user.id, change: 'partner-added' },
     });
     return this.mapPartner(partner, PartnerDirection.SharedBy);
@@ -64,6 +65,7 @@ export class PartnerService extends BaseService {
       userIds: [sharedWithId],
       title: 'Access changed',
       body: `${auth.user.name} stopped sharing their library with you`,
+      systemTemplate: { version: 1, key: 'partner-removed', args: { senderName: auth.user.name } },
       data: { partnerId: auth.user.id, change: 'partner-removed' },
     });
   }

@@ -111,7 +111,8 @@ describe(PartnerService.name, () => {
       mocks.user.get.mockResolvedValue(user2);
       mocks.partner.create.mockResolvedValue(getForPartner(partner));
 
-      await sut.create(AuthFactory.create({ id: user1.id }), { sharedWithId: user2.id });
+      const auth = AuthFactory.create({ id: user1.id });
+      await sut.create(auth, { sharedWithId: user2.id });
 
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'PushNotify',
@@ -119,6 +120,7 @@ describe(PartnerService.name, () => {
           type: PushEventType.AccessChanged,
           userIds: [user2.id],
           data: { partnerId: user1.id, change: 'partner-added' },
+          systemTemplate: { version: 1, key: 'partner-added', args: { senderName: auth.user.name } },
         }),
       );
     });
@@ -183,7 +185,8 @@ describe(PartnerService.name, () => {
       const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
       mocks.partner.get.mockResolvedValue(getForPartner(partner));
 
-      await sut.remove(AuthFactory.create({ id: user1.id }), user2.id);
+      const auth = AuthFactory.create({ id: user1.id });
+      await sut.remove(auth, user2.id);
 
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'PushNotify',
@@ -191,6 +194,7 @@ describe(PartnerService.name, () => {
           type: PushEventType.AccessChanged,
           userIds: [user2.id],
           data: { partnerId: user1.id, change: 'partner-removed' },
+          systemTemplate: { version: 1, key: 'partner-removed', args: { senderName: auth.user.name } },
         }),
       );
     });

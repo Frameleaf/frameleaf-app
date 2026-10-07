@@ -801,6 +801,7 @@ describe(PushService.name, () => {
             userIds: ['user-1'],
             backupDeviceKey: 'backup-1',
             background: true,
+            systemTemplate: { version: 1, key: 'backup-stale-many', args: { deviceName: 'Phone', count: 4 } },
           }),
         },
       });

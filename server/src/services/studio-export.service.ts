@@ -1160,6 +1160,9 @@ export class StudioExportService {
           userIds: [version.ownerId],
           title: 'Render finished',
           body: `${label.trim() || 'Your Studio export'} is ready`,
+          systemTemplate: label.trim()
+            ? { version: 1, key: 'studio-export-ready-named', args: { label: label.trim() } }
+            : { version: 1, key: 'studio-export-ready', args: {} },
           data: { versionId: version.id, projectId: version.projectId, status: 'published' },
           assetIds: version.resultAssetId ? [version.resultAssetId] : [],
         },
@@ -1329,6 +1332,13 @@ export class StudioExportService {
         userIds: [version.ownerId],
         title: status === 'published' ? 'Render finished' : 'Render failed',
         body: status === 'published' ? `${name} is ready` : `${name} could not be finished`,
+        systemTemplate: label?.trim()
+          ? {
+              version: 1,
+              key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
+              args: { label: name },
+            }
+          : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
         data: { versionId: version.id, projectId: version.projectId, status },
         assetIds: resultAssetId ? [resultAssetId] : [],
       });

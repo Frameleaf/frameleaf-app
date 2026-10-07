@@ -90,6 +90,7 @@ describe(BackupDeviceService.name, () => {
       expect.objectContaining({
         type: PushEventType.BackupNeedsAttention,
         userIds: [auth.user.id],
+        systemTemplate: { version: 1, key: 'reconciliation-missing-many', args: { count: 2 } },
         data: { deviceId: auth.user.id, itemsMissing: 2, reason: 'reconciliation-missing' },
       }),
     );

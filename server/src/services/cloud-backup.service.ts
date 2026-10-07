@@ -834,6 +834,26 @@ export class CloudBackupService {
         admins: true,
         title: 'Cloud Backup setup',
         body: activationLine(progress),
+        systemTemplate: {
+          version: 1,
+          key:
+            progress.stage === 'first-backup'
+              ? progress.state === 'complete'
+                ? 'activation-first-backup-complete'
+                : progress.state === 'failed'
+                  ? 'activation-first-backup-failed'
+                  : progress.firstRun === 'running'
+                    ? 'activation-first-backup-running'
+                    : 'activation-first-backup-scheduled'
+              : (
+                  {
+                    'plan-active': 'activation-plan-active',
+                    'server-notified': 'activation-server-notified',
+                    'preparing-storage': 'activation-preparing-storage',
+                  } as const
+                )[progress.stage],
+          args: { step: progress.step, total: progress.total },
+        },
         data: { step: progress.step, total: progress.total, stage: progress.stage, state: progress.state },
         activation: progress,
       });

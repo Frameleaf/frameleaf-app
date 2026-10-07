@@ -1613,6 +1613,7 @@ describe(CloudBackupService.name, () => {
       expect(activation.at(-1)).toMatchObject({
         admins: true,
         body: '4 of 4 · First backup complete',
+        systemTemplate: { version: 1, key: 'activation-first-backup-complete', args: { step: 4, total: 4 } },
         activation: { step: 4, stage: 'first-backup', state: 'complete', firstRun: 'done' },
       });
     });
@@ -1631,6 +1632,7 @@ describe(CloudBackupService.name, () => {
           type: PushEventType.CloudBackupActivation,
           admins: true,
           body: '3 of 4 · Preparing storage',
+          systemTemplate: { version: 1, key: 'activation-preparing-storage', args: { step: 3, total: 4 } },
           activation: expect.objectContaining({ step: 3, stage: 'preparing-storage', state: 'active' }),
         }),
       );
