@@ -11,6 +11,7 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  DuplicateGroupKind,
   JobName,
   JobStatus,
   MlWorkload,
@@ -24,6 +25,7 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { classifyDuplicateGroup, duplicateDisposalReasons } from 'src/utils/duplicate-review.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
@@ -123,16 +125,29 @@ export class DuplicateService extends BaseService {
     // Clean up singleton groups (assets that are the only member of their duplicate group)
     await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
 
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    const { preferOriginalFormat } = machineLearning.duplicateDetection;
-
     const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
+    let history: Set<string> | undefined;
+    try {
+      history = await this.assetDevelopRepository.getAssetIdsWithHistory(
+        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
+      );
+    } catch {
+      // Recommendations stay visible, but missing evidence never permits unattended disposal.
+    }
     return duplicates.map(({ duplicateId, assets }) => {
       const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
+      const suggestedKeepAssetIds =
+        classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
+          ? []
+          : suggestDuplicateKeepAssetIds(mappedAssets);
+      const reviewRequiredReasons = history
+        ? duplicateDisposalReasons(mappedAssets, suggestedKeepAssetIds, history)
+        : ['evidence-unavailable'];
       return {
         duplicateId,
         assets: mappedAssets,
-        suggestedKeepAssetIds: suggestDuplicateKeepAssetIds(mappedAssets, { preferOriginalFormat }),
+        suggestedKeepAssetIds,
+        ...(reviewRequiredReasons.length > 0 && { reviewRequiredReasons }),
       };
     });
   }
@@ -224,6 +239,17 @@ export class DuplicateService extends BaseService {
           errorMessage: 'No permission to delete assets',
         };
       }
+    }
+
+    const history = await this.assetDevelopRepository.getAssetIdsWithHistory(idsToTrash);
+    const reviewRequiredReasons = duplicateDisposalReasons(duplicateGroup.assets, idsToKeep, history);
+    if (reviewRequiredReasons.length > 0) {
+      return {
+        id: duplicateId,
+        success: false,
+        error: BulkIdErrorReason.VALIDATION,
+        errorMessage: 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
+      };
     }
 
     // Only merge metadata into the keeper when exactly one asset can absorb trashed duplicates.

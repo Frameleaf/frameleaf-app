@@ -29,13 +29,6 @@
       disabled={disabled || !workingConfig.enabled || !workingConfig.clip.enabled}
     />
 
-    <SettingToggle
-      title={$t('admin.machine_learning_duplicate_detection_prefer_original_format')}
-      subtitle={$t('admin.machine_learning_duplicate_detection_prefer_original_format_description')}
-      bind:checked={workingConfig.duplicateDetection.preferOriginalFormat}
-      disabled={disabled || !featureFlagsManager.value.duplicateDetection}
-    />
-
     <hr />
 
     <SettingField

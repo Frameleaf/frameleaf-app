@@ -102,6 +102,7 @@ describe(AssetDevelopService.name, () => {
     mocks = getMocks();
     mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     developRepository = {
+      getAssetIdsWithHistory: vi.fn().mockResolvedValue(new Set()),
       listByAsset: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       getCurrent: vi.fn(),
@@ -514,7 +515,7 @@ describe(AssetDevelopService.name, () => {
       expect(response.status).toBe(AssetDevelopRevisionStatus.Saved);
     });
 
-    it('refuses videos, offline originals and live photos', async () => {
+    it('refuses videos and offline originals', async () => {
       const video = AssetFactory.from({ ownerId: asset.ownerId, type: AssetType.Video }).build();
       mocks.asset.getById.mockResolvedValue(video as never);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([video.id]));
@@ -527,12 +528,19 @@ describe(AssetDevelopService.name, () => {
         sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      mocks.asset.getById.mockResolvedValue({ ...asset, livePhotoVideoId: 'motion' } as never);
-      await expect(
-        sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
       expect(developRepository.create).not.toHaveBeenCalled();
     });
+  });
+
+  it('saves a Live Photo still revision without altering its motion link', async () => {
+    const pair = { ...asset, livePhotoVideoId: 'original-motion' };
+    mocks.asset.getById.mockResolvedValue(pair as never);
+    developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
+    await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: false });
+    expect(developRepository.create).toHaveBeenCalledWith(expect.objectContaining({ assetId: asset.id }));
+    expect(pair.livePhotoVideoId).toBe('original-motion');
+    expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    expect(mocks.job.queue).not.toHaveBeenCalled();
   });
 
   describe('cancel', () => {
@@ -714,40 +722,48 @@ describe(AssetDevelopService.name, () => {
         expect.objectContaining({ status: AssetDevelopRevisionStatus.Cancelled }),
       );
     });
-    it('renders into new files, publishes them atomically and makes the version current', async () => {
-      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued, revision: 3 });
-      developRepository.get.mockResolvedValue(revision);
+    it.each([null, 'original-motion'])(
+      'renders the still atomically with motion link %s intact',
+      async (livePhotoVideoId) => {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          livePhotoVideoId,
+        });
+        const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued, revision: 3 });
+        developRepository.get.mockResolvedValue(revision);
 
-      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
 
-      // The original is only ever an input.
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
-      const writtenPaths = mocks.media.encodeDevelopOutput.mock.calls.map((call) => call[3]);
-      expect(writtenPaths).toHaveLength(2);
-      for (const written of writtenPaths) {
-        expect(written).toContain(`${asset.id}_develop_${revision.id}_`);
-        expect(written).toMatch(/\.tmp$/);
-        expect(written).not.toBe(asset.originalPath);
-      }
-      expect(mocks.storage.rename).toHaveBeenCalledTimes(2);
-      const renames = mocks.storage.rename.mock.calls;
-      expect(renames[0][1]).toMatch(/_master\.jpeg$/);
-      expect(renames[1][1]).toMatch(/_preview\.jpeg$/);
-      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        // The original is only ever an input.
+        expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
+        const writtenPaths = mocks.media.encodeDevelopOutput.mock.calls.map((call) => call[3]);
+        expect(writtenPaths).toHaveLength(2);
+        for (const written of writtenPaths) {
+          expect(written).toContain(`${asset.id}_develop_${revision.id}_`);
+          expect(written).toMatch(/\.tmp$/);
+          expect(written).not.toBe(asset.originalPath);
+        }
+        expect(mocks.storage.rename).toHaveBeenCalledTimes(2);
+        const renames = mocks.storage.rename.mock.calls;
+        expect(renames[0][1]).toMatch(/_master\.jpeg$/);
+        expect(renames[1][1]).toMatch(/_preview\.jpeg$/);
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
 
-      expect(developRepository.update).toHaveBeenCalledWith(
-        revision.id,
-        expect.objectContaining({
-          status: AssetDevelopRevisionStatus.Rendered,
-          progress: 100,
-          masterPath: renames[0][1],
-          previewPath: renames[1][1],
-          width: 4,
-          height: 4,
-        }),
-      );
-      expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, revision.id);
-    });
+        expect(developRepository.update).toHaveBeenCalledWith(
+          revision.id,
+          expect.objectContaining({
+            status: AssetDevelopRevisionStatus.Rendered,
+            progress: 100,
+            masterPath: renames[0][1],
+            previewPath: renames[1][1],
+            width: 4,
+            height: 4,
+          }),
+        );
+        expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, revision.id);
+        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      },
+    );
 
     it('stops between stages when a cancel is requested and discards partial output', async () => {
       const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });

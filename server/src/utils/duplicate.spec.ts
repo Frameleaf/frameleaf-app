@@ -191,13 +191,28 @@ describe('duplicate utils', () => {
       expect(suggestDuplicate([smallHeic, largeHeic, jpgAsset], { preferOriginalFormat: true })?.id).toBe('large-heic');
     });
 
-    it('should keep the largest file regardless of format when disabled', () => {
+    it('should retain HEIC even when the legacy setting is disabled', () => {
       const largeJpg = jpg('large-jpg', 9000);
       const smallHeic = heic('small-heic', 1000);
 
-      expect(suggestDuplicate([largeJpg, smallHeic], { preferOriginalFormat: false })?.id).toBe('large-jpg');
-      // disabled is the default
-      expect(suggestDuplicate([largeJpg, smallHeic])?.id).toBe('large-jpg');
+      expect(suggestDuplicate([largeJpg, smallHeic], { preferOriginalFormat: false })?.id).toBe('small-heic');
+      expect(suggestDuplicate([largeJpg, smallHeic])?.id).toBe('small-heic');
+    });
+
+    it.each(['HEIC', 'heif', 'HIF'])('prefers %s with missing file size over a larger JPEG', (extension) => {
+      const original = createAsset('original', null, {}, `IMG_1.${extension}`);
+      expect(suggestDuplicate([jpg('large-jpg', 9000), original])?.id).toBe('original');
+    });
+
+    it('retains RAW before HEIC without caller options', () => {
+      expect(suggestDuplicate([heic('large-heic', 9000), raw('small-raw', 1000)])?.id).toBe('small-raw');
+    });
+
+    it('has a stable tie-breaker independent of group order', () => {
+      const a = jpg('a', 1000);
+      const b = jpg('b', 1000);
+      expect(suggestDuplicate([a, b])?.id).toBe('a');
+      expect(suggestDuplicate([b, a])?.id).toBe('a');
     });
 
     it('should pass options through suggestDuplicateKeepAssetIds', () => {

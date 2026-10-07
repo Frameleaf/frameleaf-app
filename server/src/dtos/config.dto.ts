@@ -346,8 +346,9 @@ export const DuplicateDetectionConfigSchema = AdminConfigMachineLearningTaskSche
   preferOriginalFormat: z
     .boolean()
     .describe(
-      'When suggesting which duplicate to keep, prefer native camera originals (RAW, then HEIC/HEIF) over re-encoded formats such as JPG, regardless of file size',
-    ),
+      'Deprecated compatibility setting. RAW, then HEIC/HEIF/HIF, are always preferred over other formats regardless of size',
+    )
+    .meta({ deprecated: true }),
   enhancedVideo: z
     .object({
       enabled: z.boolean().describe('Whether enhanced video duplicate detection is enabled'),

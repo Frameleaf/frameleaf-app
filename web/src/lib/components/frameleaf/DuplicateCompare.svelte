@@ -160,7 +160,7 @@
         {#if reasons.length > 0}
           <ul class="fl-dr-reasons" aria-label={$t('frameleaf_duplicates_quality_label')}>
             {#each reasons as reason (reason)}
-              <li>{$t(qualityReasonKey(reason))}</li>
+              <li>{$t(qualityReasonKey(reason, asset.originalFileName))}</li>
             {/each}
           </ul>
         {/if}
