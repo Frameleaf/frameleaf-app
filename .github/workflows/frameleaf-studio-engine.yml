@@ -88,6 +88,8 @@ jobs:
           STUDIO_SOURCE_RECOVERY: '1'
           REVIEWED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node studio/tools/engine.mjs prepare
+      - name: Verify microphone finalization lifecycle
+        run: node --test studio/tools/mic-recorder-lifecycle.test.mjs
       - name: Check for the genuine source recovery receipt
         id: source_recovery_receipt
         if: ${{ always() && steps.prepare_source.outcome != 'skipped' }}
@@ -147,6 +149,7 @@ jobs:
       - name: Compositor float range and alpha regression (software WebGPU)
         env:
           FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan
+          HDR_MASTER_REPORT: ${{ runner.temp }}/hdr-master-browser-report.json
         run: |
           setsid npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort > "$RUNNER_TEMP/studio-float-vite.log" 2>&1 &
           server_pid=$!
@@ -169,7 +172,7 @@ jobs:
           node studio/tools/scopes.browser.mjs
           node studio/tools/scope-hdr-capture.browser.mjs
           node studio/tools/preview-padding.browser.mjs
-          # FL-100: the linked Edit-axis keyframe fixture runs on the adapter's fixture pages, served
+          # FL-100: animation/render/control and linked Edit-axis fixtures use the adapter's pages, served
           # by the engine's own toolchain on the fixture's default port.
           (cd studio/adapters/web && exec setsid ../../engine/node_modules/.bin/vp dev --config test/keyframe-browser.config.mjs --host 127.0.0.1 --port 5199 --strictPort) > "$RUNNER_TEMP/studio-keyframe-vite.log" 2>&1 &
           keyframe_server_pid=$!
@@ -178,6 +181,7 @@ jobs:
             if curl --fail --silent http://127.0.0.1:5199/studio-engine/test/linked-edit-axis.browser.html > /dev/null; then break; fi
             sleep 1
           done
+          STUDIO_TEST_ORIGIN=http://127.0.0.1:5199 STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/keyframe-animation" node studio/tools/keyframe-animation.browser.mjs
           STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/linked-edit-axis" node studio/tools/linked-edit-axis.browser.mjs
       # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
       # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
@@ -280,5 +284,9 @@ jobs:
             ${{ runner.temp }}/frameleaf-build-first.json
             studio/engine/frameleaf-source.json
             ${{ runner.temp }}/hdr-master-timing-report.json
+            ${{ runner.temp }}/keyframe-animation
+            ${{ runner.temp }}/hdr-master-timing-report.json.artifacts-*/
+            ${{ runner.temp }}/hdr-master-browser-report.json
+            ${{ runner.temp }}/hdr-master-browser-report.json.artifacts-*/
             studio/engine/frameleaf-build.json
           if-no-files-found: error

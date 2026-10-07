@@ -161,34 +161,53 @@ async function runKeyframeBrowserFixtures(mutation?: string) {
       },
     },
   };
-  const partial = await draw(
-      mutation === "no-character-motion" ? { ...text, textMotion: undefined } : text,
-      8,
-    ),
-    settled = await draw(text, 30);
-  const plain = await draw({ ...text, textMotion: undefined }, 30);
-  const alpha = (pixels: Uint8ClampedArray, left: boolean) => {
+  const alpha = (pixels: Uint8ClampedArray, first: boolean, axis: "x" | "y") => {
     let sum = 0;
     for (let y = 0; y < height; y++)
-      for (let x = left ? 0 : width / 2; x < (left ? width / 2 : width); x++)
-        sum += pixels[(y * width + x) * 4 + 3]!;
+      for (let x = 0; x < width; x++)
+        if ((axis === "x" ? x < width / 2 : y < height / 2) === first)
+          sum += pixels[(y * width + x) * 4 + 3]!;
     return sum;
   };
-  const left = alpha(partial.pixels, true),
-    right = alpha(partial.pixels, false);
-  check(left > 0 && right === 0, `character stagger must show first glyph only: ${left}/${right}`);
-  check(
-    alpha(settled.pixels, true) > 0 && alpha(settled.pixels, false) > 0,
-    "settled text contains both glyphs",
-  );
-  check(
-    difference(settled.pixels, plain.pixels).max === 0,
-    "settled character motion matches static text pixels",
-  );
-  results.push(
-    record("character-motion", 8, partial, { leftAlpha: left, rightAlpha: right }),
-    record("character-motion-settled", 30, settled),
-  );
+  for (const unit of ["character", "word", "line"] as const) {
+    const animated: TimelineItem = {
+      ...text,
+      text: unit === "word" ? "II II" : unit === "line" ? "II\nII" : "II",
+      fontSize: unit === "word" ? 18 : unit === "line" ? 20 : text.fontSize,
+      letterSpacing: unit === "word" ? 4 : text.letterSpacing,
+      textMotion: { in: { ...text.textMotion!.in!, unit } },
+    };
+    if (mutation === `${unit}-as-character`) animated.textMotion!.in!.unit = "character";
+    const partial = await draw(
+        mutation === `no-${unit}-motion` ? { ...animated, textMotion: undefined } : animated,
+        8,
+      ),
+      settled = await draw(animated, 30),
+      plain = await draw({ ...animated, textMotion: undefined }, 30);
+    const axis = unit === "line" ? "y" : "x";
+    const first = alpha(partial.pixels, true, axis),
+      second = alpha(partial.pixels, false, axis);
+    check(
+      first > 0 && second === 0,
+      `${unit} stagger must show first unit only: ${first}/${second}`,
+    );
+    check(
+      first === alpha(plain.pixels, true, axis),
+      `${unit} stagger must reveal every glyph in the first unit`,
+    );
+    check(
+      alpha(settled.pixels, true, axis) > 0 && alpha(settled.pixels, false, axis) > 0,
+      `settled ${unit} motion contains both units`,
+    );
+    check(
+      difference(settled.pixels, plain.pixels).max === 0,
+      `settled ${unit} motion matches static text pixels`,
+    );
+    results.push(
+      record(`${unit}-motion`, 8, partial, { firstAlpha: first, secondAlpha: second, axis }),
+      record(`${unit}-motion-settled`, 30, settled),
+    );
+  }
 
   const inner = shape("inner");
   const wrap = (id: string, compositionId: string): TimelineItem => ({

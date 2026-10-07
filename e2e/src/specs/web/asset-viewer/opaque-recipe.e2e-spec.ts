@@ -166,6 +166,11 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
     await expect(image).toBeVisible();
     const imageUrl = await image.getAttribute('src');
     expect(imageUrl).toBeTruthy();
+    const imageSource = (value: string) => {
+      const url = new URL(value, page.url());
+      url.searchParams.delete('c');
+      return url.href;
+    };
     const refusedPromise = observeSave(true);
     const savedPromise = observeSave(false);
     await editor.getByRole('button', { name: 'Save version', exact: true }).click();
@@ -209,7 +214,10 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
     expect(await digest(originalUrl)).toBe(originalHash);
     await page.keyboard.press('e');
     await expect(editor).toBeVisible();
-    await expect(editor.locator('.ed-stage img').last()).toHaveAttribute('src', imageUrl!);
+    // Asset metadata may acquire a thumbhash while rendering; only its cache token can change.
+    await expect
+      .poll(async () => imageSource((await editor.locator('.ed-stage img').last().getAttribute('src')) ?? ''))
+      .toBe(imageSource(imageUrl!));
     await page.keyboard.press('Escape');
   });
 
@@ -243,6 +251,23 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
       hasPreview: true,
     });
     expect(await digest(originalUrl)).toBe(originalHash);
+    await testInfo.attach('rendered-artifact-hashes', {
+      body: JSON.stringify(
+        {
+          assetId: asset.id,
+          originalSha256: originalHash,
+          before: { revisionId: current.id, masterSha256: masterHash, previewSha256: previewHash },
+          after: {
+            revisionId: revision.id,
+            masterSha256: await digest(`${endpoint}/revisions/${revision.id}/file?kind=master`),
+            previewSha256: await digest(`${endpoint}/revisions/${revision.id}/file?kind=preview`),
+          },
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
     expect(requests.map(({ render, status }) => ({ render, status }))).toEqual([
       { render: true, status: 400 },
       { render: false, status: 200 },

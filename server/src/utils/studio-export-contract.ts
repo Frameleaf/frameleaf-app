@@ -18,12 +18,12 @@
 import type { StudioSourceMediaFacts } from 'src/repositories/studio-export.repository.js';
 import type { AudioStreamInfo, VideoStreamInfo } from 'src/types.js';
 import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
+import { parseSourcePixelLayout } from 'src/utils/media-decode.js';
 import {
   AudioChannelPolicy,
   findAudioLayoutMismatch,
   findAvAlignmentMismatch,
   isHdrTransfer,
-  isHighBitDepth,
 } from 'src/utils/media-policy.js';
 import {
   type Rational,
@@ -262,7 +262,13 @@ export const declareStudioTiming = (
 /* Contract                                                             */
 /* ------------------------------------------------------------------ */
 
-const TEN_BIT_FORMATS = new Set(['mp4-hevc-main10', 'prores-422-hq']);
+const TEN_BIT_FORMATS = new Set(['mp4-hevc-main10', 'webm-av1', 'prores-422-hq']);
+const FORMAT_CODECS: Readonly<Record<string, string>> = {
+  'mp4-hevc-main10': 'hevc',
+  'mp4-h264': 'h264',
+  'webm-av1': 'av1',
+  'prores-422-hq': 'prores',
+};
 const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
   [ColorTransfer.Smpte2084]: 'smpte2084',
   [ColorTransfer.AribStdB67]: 'arib-std-b67',
@@ -271,7 +277,7 @@ const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
 /**
  * The precision and audio an export promises.
  *
- * - An HEVC Main10 or ProRes export is 10-bit; HDR10 and Dolby Vision are 10-bit PQ. `preserve`
+ * - An HEVC Main10, AV1 or ProRes export is 10-bit; HDR10 and Dolby Vision are 10-bit PQ. `preserve`
  *   keeps an HDR transfer when every video source shares it.
  * - The audio carries the widest layout any audible source has, at the highest rate any states,
  *   unless a stereo downmix was chosen. With no audible source nothing is promised.
@@ -328,13 +334,22 @@ export const parseStudioExportContract = (value: unknown): StudioExportContract 
 export const findStudioExportOutputMismatch = (
   contract: StudioExportContract,
   probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[] },
+  format: string,
 ): string | null => {
   const [video] = probe.videoStreams;
   if (!video) {
     return 'The result has no video stream';
   }
-  if (contract.video.minBitDepth > 8 && !isHighBitDepth(video)) {
-    return `The result is ${video.pixelFormat}, below the ${contract.video.minBitDepth}-bit this export promises`;
+  const codec = Object.hasOwn(FORMAT_CODECS, format) ? FORMAT_CODECS[format] : null;
+  if (!codec) {
+    return 'The export names an unsupported video format';
+  }
+  if (video.codecName !== codec) {
+    return `The result's video codec is ${video.codecName ?? 'unknown'}, instead of the ${codec} this export promises`;
+  }
+  const minBitDepth = Math.max(contract.video.minBitDepth, TEN_BIT_FORMATS.has(format) ? 10 : 8);
+  if (minBitDepth > 8 && (parseSourcePixelLayout(video.pixelFormat)?.bitDepth ?? 0) < minBitDepth) {
+    return `The result is ${video.pixelFormat}, below the ${minBitDepth}-bit this export promises`;
   }
   if (
     contract.video.transfer &&

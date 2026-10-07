@@ -10,6 +10,20 @@ The provenance ledger was cross-checked against a temporary clean checkout of `w
 
 The engine tooling rejects duplicate keys in its contract JSON and verifies the pinned source identity.
 
+## Browser evidence records (FL-112)
+
+`scripts/frameleaf-studio-evidence.mjs --meta <run-meta.json>` requires the measured run's
+`startedAt` and `finishedAt`, in order. Command evidence also supplies `operation`;
+preview, export and timing/color evidence supply `frameTimeIdentity`, `inputProfiles`,
+`outputProfiles`, `alpha`, `audio` and `temporalRecovery`. The generator retains these
+measurements without substituting its own clock or a default media policy. The Test workflow
+checks generated records against `tools/conformance.mjs` with synthetic schema fixtures.
+
+This repairs the record contract only. Full-manifest control/reopen/preview/export evidence,
+pointer/keyboard/touch coverage, measured performance budgets and long-timeline reconnection
+remain required on each browser against an admitted worker. Real Safari/iPad evidence remains
+separate from Playwright WebKit; the committed conformance statuses are unchanged.
+
 ## Studio graph protocol (native apps)
 
 `docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
@@ -343,10 +357,22 @@ Tests:
   partial MP4 and only publishes it with a rename after successful encoding.
   An `AbortSignal` cleans up the interrupted attempt.
 
+The helper validates the private candidate's Main10 picture count/size, BT.2020
+signalling, measured content-light and declared mastering metadata, and complete
+decode before atomic publication. The browser and timing diagnostics run their
+independent numerical/PTS/audio QC before that rename too. A rejected candidate
+cannot replace a previous complete master.
+
 The engine workflow installs FFmpeg with libx265 for these tests and retains
 `hdr-master-timing-report.json` with tool versions, commands, input/output SHA-256
 and raw PTS/audio probe results. Run the focused packet with
 `HDR_TIMING_REPORT=/absolute/path/report.json node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs`.
+When `HDR_TIMING_REPORT` or `HDR_MASTER_REPORT` is set, the corresponding diagnostic
+retains its exact media in a unique sibling `.artifacts-*` directory. Reports bind
+relative output paths to SHA-256; the timing report also retains source video/audio,
+and the browser report binds its rendered input signals and encoder commands/tool
+versions. The engine workflow uploads both reports and their media for later QC.
+Retaining diagnostic media does not establish monitor or deployment qualification.
 
 This is diagnostic helper evidence only. The timestamp expression is deliberately
 limited to 256 frames and is not a streaming production export implementation.
@@ -356,9 +382,16 @@ multichannel audio, and use the existing `media_operation_checkpoint` identities
 checksums and restart planning. No checkpoint adapter is implemented here;
 helper abort/restart does not prove durable operation recovery.
 
-Not yet covered:
+Production publication independently probes HDR exports and refuses incorrect or
+unknown BT.2020 primaries/matrix before moving or publishing the output
+(`server/src/utils/studio-export-contract.ts`). This signalling check does not
+qualify the encoded pictures or static mastering/content-light metadata.
 
-- HDR source decode in the browser graph;
+Remaining acceptance:
+
+- complete HDR source/edit coverage and physical-backend qualification; existing
+  decoded PQ/HLG browser fixtures and their remaining gates are recorded in
+  [the managed-color qualification ledger](managed-color-qualification.md);
 - 4K throughput and device loss;
 - reference monitor review;
 - a render worker that streams frames to the encoder and maps edited/source PTS;

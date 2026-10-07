@@ -22,9 +22,16 @@ const evidence = process.env.STUDIO_TEST_EVIDENCE;
 const mutation = process.env.STUDIO_TEST_MUTATION;
 assert.ok(
   !mutation ||
-    ["no-expression", "no-character-motion", "no-instance-override", "no-baked-keys"].includes(
-      mutation,
-    ),
+    [
+      "no-expression",
+      "no-character-motion",
+      "no-word-motion",
+      "no-line-motion",
+      "word-as-character",
+      "line-as-character",
+      "no-instance-override",
+      "no-baked-keys",
+    ].includes(mutation),
 );
 const harness = createHarness({ upstream: origin });
 const harnessOrigin = await harness.listen();
@@ -58,7 +65,7 @@ try {
     async (mutation) => window.fl100Fixtures.run(mutation),
     mutation,
   );
-  assert.equal(frames.length, 67);
+  assert.equal(frames.length, 71);
   const controls = [];
   for (const mode of ["dopesheet", "graph", "split"]) {
     await page.evaluate((mode) => window.fl100Fixtures.mountControls(mode), mode);

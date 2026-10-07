@@ -279,7 +279,12 @@
       "path": "patches/0055-channel-preserving-gain-mix.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8c177c21b6e3cb41aa2420e39988ea71ff914ce042a597226838eb90b5146143"
+    },
+    {
+      "path": "patches/0061-microphone-terminal-events.patch",
+      "sha256": "68d479169647bfd597224f7f10914d250616dd73a83cad69de04511fafbbee6f",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "aaf508828b8881a3314e5b364da5326c6706dffe191fa6a63abe2dff67e4468c"
+  "sourceSha256": "eb29c09678f7575f6f0d2a44f5a6aea9ba3df4399a0384d571f8d738f6996d74"
 }

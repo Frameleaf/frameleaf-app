@@ -219,6 +219,7 @@ const renderedOutput = (overrides: { video?: Record<string, unknown>; audio?: Re
       index: 0,
       width: 1920,
       height: 1080,
+      codecName: 'h264',
       pixelFormat: 'yuv420p',
       colorTransfer: 1,
       duration: 10,
@@ -1214,6 +1215,11 @@ describe(StudioExportService.name, () => {
 
       it.each([
         ['an 8-bit result for a Main10 export', { audio: [surroundTrack] }, 'below the 10-bit'],
+        [
+          'a 9-bit result for a ten-bit export',
+          { video: { pixelFormat: 'yuv420p9le' }, audio: [surroundTrack] },
+          'below the 10-bit',
+        ],
         ['a stereo downmix nobody chose', { video: { pixelFormat: 'yuv420p10le' } }, 'audio channels instead of 6'],
         [
           'audio that stops early',
@@ -1234,6 +1240,32 @@ describe(StudioExportService.name, () => {
           }),
         );
         expect(storage.rename).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['mp4-h264', 'av1'],
+        ['mp4-hevc-main10', 'h264'],
+        ['webm-av1', 'vp9'],
+        ['prores-422-hq', 'hevc'],
+        ['mp4-h264', null],
+      ])('refuses %s rendered with codec %s before moving or publishing it', async (format, codecName) => {
+        repository.getById.mockResolvedValue(
+          versionRow({ outputPath: staged, settings: { format, color: 'preserve', resolution: '1080p' } }),
+        );
+        media.probe.mockResolvedValue(renderedOutput({ video: { codecName, pixelFormat: 'yuv420p10le' } }));
+
+        await sut.run(contracted({ video: { minBitDepth: 8, transfer: null }, audio: null }));
+
+        expect(storage.rename).not.toHaveBeenCalled();
+        expect(repository.publish).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({
+            errorCode: 'studio_export_output_rejected',
+            error: expect.stringContaining('video codec'),
+          }),
+        );
       });
 
       it('refuses a missing HDR transfer', async () => {

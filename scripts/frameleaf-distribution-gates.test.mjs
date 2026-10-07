@@ -120,6 +120,32 @@ test("passes when the blocked embedded component is named in a gate", () => {
   assert.doesNotThrow(() => validateCoverage(gates, attribution));
 });
 
+test("blocked components require an open gate with their exact identifier", () => {
+  const attribution = {
+    embeddedComponents: [
+      {
+        id: "lame",
+        package: "@mediabunny/mp3-encoder",
+        rightsStatus: "blocked",
+      },
+    ],
+    dolbyTools: { included: false },
+  };
+  for (const gate of [
+    { ...baseGate(), component: "lame", status: "cleared", owner: "Owner" },
+    { ...baseGate(), component: "not-lame" },
+  ]) {
+    assert.throws(
+      () =>
+        validateCoverage(
+          [{ ...baseGate(), id: "dolby-tool-admission" }, gate],
+          attribution,
+        ),
+      /blocked embedded component\(s\) with no open gate: lame/,
+    );
+  }
+});
+
 test("ignores an embedded component whose rights are allowed", () => {
   const gates = [{ ...baseGate(), id: "dolby-tool-admission" }];
   const attribution = {

@@ -77,7 +77,7 @@ jobs:
       - name: Validate independent Studio conformance evidence
         run: |
           node studio/tools/conformance.mjs
-          node --test studio/tools/conformance.test.mjs
+          node --test studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Validate the Studio graph protocol fixtures (FL-306)
         run: node --test studio/tools/graph-protocol.test.mjs
     timeout-minutes: 60

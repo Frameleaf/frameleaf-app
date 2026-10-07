@@ -30,9 +30,12 @@
  *
  * `--meta` supplies what only the person running it can attest to (browser/OS version, the actual
  * command, hardware, reviewer): schema `{ version, hardware, tool, commit, command, controlPaths,
- * parameterDomain, tolerances, reviewer, artifacts }`, where `artifacts` is a list of real file
+ * parameterDomain, tolerances, reviewer, artifacts, startedAt, finishedAt }`, where `artifacts` is a list of real file
  * paths (this script hashes them itself) - typically the raw `*_REPORT` dump(s) the coverage claim
- * is based on. `engineRevision`, `sourceSha256` and `patches` come from the repo's own
+ * is based on. Times must come from the measured run, never the generator's clock. The command
+ * axis also requires `operation`; preview/export/timingColor require `frameTimeIdentity`,
+ * `inputProfiles`, `outputProfiles`, `alpha`, `audio` and `temporalRecovery`.
+ * `engineRevision`, `sourceSha256` and `patches` come from the repo's own
  * `studio/conformance.json` / `studio/engine-build.json`, never from `--meta`, so they can't drift
  * from what's actually checked out.
  *
@@ -95,7 +98,13 @@ export const FAMILY_CASE_COVERAGE = {
   chromium: {
     blend: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
     effect: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
-    transition: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
+    transition: new Set([
+      "normal",
+      "extreme",
+      "animated",
+      "composed",
+      "invalid",
+    ]),
   },
 };
 
@@ -157,6 +166,19 @@ export async function buildPassedEntry({
   meta,
   artifactPath,
 }) {
+  const axisFields =
+    axis === "command"
+      ? ["operation"]
+      : ["preview", "export", "timingColor"].includes(axis)
+        ? [
+            "frameTimeIdentity",
+            "inputProfiles",
+            "outputProfiles",
+            "alpha",
+            "audio",
+            "temporalRecovery",
+          ]
+        : [];
   for (const field of [
     "version",
     "hardware",
@@ -168,10 +190,25 @@ export async function buildPassedEntry({
     "tolerances",
     "reviewer",
     "artifacts",
+    "startedAt",
+    "finishedAt",
+    ...axisFields,
   ]) {
     if (meta[field] === undefined)
       throw new Error(
         `meta.${field} is required to mark ${row.id}/${axis} passed`,
+      );
+  }
+  const start = Date.parse(meta.startedAt),
+    end = Date.parse(meta.finishedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start)
+    throw new Error(
+      "meta.startedAt/finishedAt must contain valid ordered run times",
+    );
+  for (const field of axisFields) {
+    if (typeof meta[field] !== "string" || !meta[field].trim())
+      throw new Error(
+        `meta.${field} requires measured text for ${row.id}/${axis}`,
       );
   }
   const artifacts = await Promise.all(
@@ -202,6 +239,9 @@ export async function buildPassedEntry({
     parameterDomain: meta.parameterDomain,
     tolerances: meta.tolerances,
     controlPaths: meta.controlPaths,
+    startedAt: meta.startedAt,
+    finishedAt: meta.finishedAt,
+    ...Object.fromEntries(axisFields.map((field) => [field, meta[field]])),
     sourceReview: {
       paths: sourcePaths,
       actions: fixture.actions,

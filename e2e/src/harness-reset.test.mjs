@@ -1,6 +1,96 @@
 import assert from 'node:assert/strict';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
 import { test } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { assertResetExecutionsStopped, drainAfterExecutorStop } from './harness-reset-executions.mjs';
 import { resetWhilePaused } from './harness-reset.ts';
+import { waitUntil, withDeadline } from './harness-wait.ts';
+
+test('fixture mutation uses the overall reset budget after quiescence, and still joins cleanup', async () => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  drainQueues: async');
+  const end = source.indexOf('\n\n  resetDatabase:', start);
+  assert.ok(start >= 0 && end > start);
+  const expression = source
+    .slice(start, end)
+    .trim()
+    .replace(/^drainQueues: /, '')
+    .replace(/,$/, '');
+  const order = [];
+  let operation;
+  let cancellationReason;
+  const bindings = {
+    pg: {
+      Client: class {
+        on() {
+          return this;
+        }
+        async connect() {}
+        async query(text) {
+          if (text.includes('FROM media_operation')) {
+            return { rows: operation ? [operation] : [] };
+          }
+          return { rows: text.startsWith('SELECT id FROM "user"') ? [{ id: 'owner' }] : [] };
+        }
+        async end() {
+          order.push('closed');
+        }
+      },
+    },
+    dbUrl: 'owned-disposable-fixture',
+    createHash,
+    randomBytes,
+    randomUUID,
+    asBearerAuth: () => ({}),
+    cancelMediaOperation: async (_, { signal }) => {
+      try {
+        await sleep(5000, undefined, { signal });
+      } catch (error) {
+        cancellationReason = signal.reason;
+        throw error;
+      }
+    },
+    readQueues: async () => [],
+    ownedWait: (description, _timeout, operation, signal) => withDeadline(description, 1000, operation, signal),
+    withDeadline: (description, timeout, operation, signal) =>
+      withDeadline(description, description === 'Quiescing test database' ? 100 : timeout, operation, signal),
+    resetWhilePaused,
+    waitUntil,
+    drainAfterExecutorStop,
+    assertResetExecutionsStopped,
+  };
+  const bind = new Function(
+    'bindings',
+    `
+    const { ${Object.keys(bindings).join(', ')} } = bindings;
+    let resetting = false; let resetFailure;
+    return (${stripTypeScriptTypes(expression)});
+  `,
+  );
+  const drain = bind(bindings);
+  await drain(async (_db, context) => {
+    await sleep(150);
+    context.remaining();
+    order.push('mutated');
+  });
+  assert.deepEqual(order, ['mutated', 'closed']);
+  const owner = new AbortController();
+  const pending = drain(async (_db, context) => {
+    owner.abort(new Error('reset owner cancelled'));
+    context.remaining();
+  }, owner.signal);
+  await assert.rejects(pending, /Reset failed/, 'owner cancellation must still fail the overall reset');
+  assert.deepEqual(order, ['mutated', 'closed', 'closed']);
+  operation = { id: 'operation', ownerId: 'owner', status: 'running', cancelRequestedAt: null };
+  await assert.rejects(
+    bind(bindings)(async () => assert.fail('unsettled work must not mutate')),
+    /Reset failed/,
+  );
+  assert.match(cancellationReason.message, /Quiescing test database timed out/);
+  assert.deepEqual(order, ['mutated', 'closed', 'closed', 'closed']);
+});
 
 test('reset cannot mutate or resume until the last execution has settled', async () => {
   const order = [];

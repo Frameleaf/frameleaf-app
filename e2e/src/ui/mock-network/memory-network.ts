@@ -1,4 +1,4 @@
-import type { MemoryResponseDto } from '@frameleaf/sdk';
+import { StudioExportFormat, type MemoryResponseDto } from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 
 export type MemoryChanges = {
@@ -162,6 +162,15 @@ export const setupMemoryMockApiRoutes = async (
               maxBitDepth: 10,
               hdr10: true,
               dolbyVision: false,
+              candidates: [
+                {
+                  gpuMemoryBytes: 16 * 1024 ** 3,
+                  outputFormats: [StudioExportFormat.Mp4HevcMain10, StudioExportFormat.Mp4H264],
+                  maxBitDepth: 10,
+                  hdr10: true,
+                  dolbyVision: false,
+                },
+              ],
             },
           ],
         },

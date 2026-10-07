@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  AXES,
+  loadConformance,
+  validateConformance,
+} from "../studio/tools/conformance.mjs";
+import {
   FAMILY_CASE_COVERAGE,
   applyCommandMatrixCoverage,
   applyFamilyCoverage,
@@ -41,6 +46,92 @@ const build = () => ({
   patches: [{ path: "patches/0001.patch" }],
 });
 
+test("generated passed records satisfy the independent validator without inventing measurements", async () => {
+  const dir = await mkdtemp(path.join(ROOT, "studio", ".evidence-test-"));
+  try {
+    const reportPath = path.relative(ROOT, path.join(dir, "output.txt"));
+    await writeFile(
+      path.join(ROOT, reportPath),
+      "Synthetic schema test; not browser qualification.",
+    );
+    const original = await loadConformance(ROOT);
+    const meta = {
+      version: "synthetic-test",
+      hardware: "synthetic schema-test environment",
+      tool: "node test",
+      commit: "a".repeat(40),
+      command: ["node", "synthetic-schema-test.mjs"],
+      controlPaths: ["synthetic schema test only"],
+      parameterDomain: "synthetic inputs",
+      tolerances: "exact",
+      reviewer: "synthetic schema test",
+      artifacts: [reportPath],
+      startedAt: "2026-09-29T00:00:00Z",
+      finishedAt: "2026-09-29T00:00:01Z",
+      operation: "timeline.trim",
+      frameTimeIdentity: "synthetic frame 0 at 0/1",
+      inputProfiles: "synthetic SDR",
+      outputProfiles: "synthetic SDR",
+      alpha: "synthetic opaque",
+      audio: "synthetic silence",
+      temporalRecovery: "synthetic recovery case",
+    };
+    for (const axis of AXES.filter((axis) => axis !== "native")) {
+      const data = structuredClone(original);
+      const row = data.overlay.rows[0];
+      const args = {
+        row,
+        feature: data.manifest.features[0],
+        fixture: data.catalog.rows[0],
+        axis,
+        engineRevision: data.overlay.engineRevision,
+        build: data.build,
+        manifest: data.manifest,
+        meta,
+        artifactPath: path.relative(ROOT, path.join(dir, `${axis}.json`)),
+      };
+      row.axes[axis] = await buildPassedEntry(args);
+      const summary = await validateConformance(data, ROOT);
+      assert.equal(summary.passedAxes, 1);
+      assert.equal(summary.qualifiedRows, 0);
+      assert.equal(summary.releaseQualified, false);
+      const record = JSON.parse(
+        await readFile(path.join(ROOT, args.artifactPath), "utf8"),
+      );
+      assert.equal(record.startedAt, meta.startedAt);
+      assert.equal(record.finishedAt, meta.finishedAt);
+      const missing = { ...meta };
+      delete missing[
+        axis === "command"
+          ? "operation"
+          : ["preview", "export", "timingColor"].includes(axis)
+            ? "frameTimeIdentity"
+            : "startedAt"
+      ];
+      await assert.rejects(
+        buildPassedEntry({ ...args, meta: missing }),
+        /meta\./,
+      );
+      await assert.rejects(
+        buildPassedEntry({
+          ...args,
+          meta: { ...meta, finishedAt: "2026-09-28T00:00:00Z" },
+        }),
+        /run times/,
+      );
+      await assert.rejects(
+        buildPassedEntry({
+          ...args,
+          meta: { ...meta, startedAt: "not-a-date" },
+        }),
+        /run times/,
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("missingCases lists every required case not in the covered set", () => {
   assert.deepEqual(
     missingCases(
@@ -60,10 +151,13 @@ test("missingCases is empty once every required case is covered", () => {
 test("the transition family claims all five chromium cases its matrix measures, and the overlay says so", async () => {
   // transition-matrix.browser.mjs measures animated, composed and invalid for every transition
   // through the production renderer; engine patch 0048 gives the invalid inputs their meaning.
-  assert.deepEqual(
-    [...FAMILY_CASE_COVERAGE.chromium.transition].sort(),
-    ["animated", "composed", "extreme", "invalid", "normal"],
-  );
+  assert.deepEqual([...FAMILY_CASE_COVERAGE.chromium.transition].sort(), [
+    "animated",
+    "composed",
+    "extreme",
+    "invalid",
+    "normal",
+  ]);
   const overlay = JSON.parse(
     await readFile(path.join(ROOT, "studio/conformance.json"), "utf8"),
   );
@@ -619,6 +713,8 @@ test("applyFamilyCoverage writes a real schema-shaped artifact and marks the row
       tolerances: "same pixel/float tolerances as blend-matrix.browser.mjs",
       reviewer: "library-qa",
       artifacts: [path.relative(ROOT, reportPath)],
+      startedAt: "2026-09-29T00:00:00Z",
+      finishedAt: "2026-09-29T00:00:01Z",
     };
     const summary = await applyFamilyCoverage(
       overlay,
