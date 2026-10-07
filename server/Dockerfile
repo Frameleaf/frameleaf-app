@@ -102,7 +102,11 @@ COPY server/base-image/sources/jpegli.json server/base-image/sources/jpegli.sh .
 COPY server/base-image/sources/jpegli-patches/ ./jpegli-patches/
 RUN ./jpegli.sh
 
-FROM base-server-build AS base-server-libheif
+FROM base-server-build AS base-server-x265
+COPY server/base-image/sources/x265.json server/base-image/sources/x265.sh ./
+RUN ./x265.sh
+
+FROM base-server-x265 AS base-server-libheif
 
 COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh ./
 RUN ./libheif.sh
@@ -140,7 +144,7 @@ COPY --from=base-server-jpegli /usr/local/lib/ /usr/local/lib/jpegli/
 COPY --from=base-server-jpegli /usr/local/include/jconfig.h /usr/local/include/jmorecfg.h /usr/local/include/jpeglib.h /usr/local/include/
 
 # COPY resolves symlinks unless copying the enclosing folder, so this is a workaround to get the correct result.
-RUN cp -r /usr/local/lib/libheif/libheif* /usr/local/lib/libjxl/libjxl* /usr/local/lib/jpegli/libjpeg.so* /usr/local/lib && \
+RUN cp -r /usr/local/lib/libheif/libheif* /usr/local/lib/libheif/libx265.so* /usr/local/lib/libjxl/libjxl* /usr/local/lib/jpegli/libjpeg.so* /usr/local/lib && \
   mv /usr/local/lib/libheif/pkgconfig/* /usr/local/lib/libjxl/pkgconfig/* /usr/local/lib/pkgconfig && \
   rm -r /usr/local/lib/libheif /usr/local/lib/libjxl /usr/local/lib/jpegli
 

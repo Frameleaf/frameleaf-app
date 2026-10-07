@@ -221,6 +221,10 @@ export class ServerService extends BaseService {
       ];
       result.render = ['linear-hdr-develop'];
       result.export = ['sdr-jpeg', 'hdr-jpeg'];
+      if (codec.heicPqEncoder) {
+        result.export.push('hdr-heic');
+        result.unavailable = result.unavailable.filter((format) => format !== 'hdr-heic');
+      }
     } catch {
       this.logger.warn('HDR codec capability probe unavailable');
     }

@@ -48,6 +48,7 @@ export type HdrRenditionOutput = {
   path: string;
   size?: number;
   dynamicRange?: 'hdr' | 'sdr';
+  format?: 'jpeg' | 'heic';
   histogram?: boolean;
 };
 
@@ -77,7 +78,25 @@ export class SharpOperations {
   ) {}
 
   getHdrCodecCapabilities() {
-    return imageHdrOperation((codec) => codec.capabilities());
+    return imageHdrOperation((codec) => {
+      const capabilities = codec.capabilities();
+      try {
+        const pixels = new Float32Array(16 * 16 * 4).fill(1);
+        const encoded = codec.encodeHeic(
+          Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+          16,
+          16,
+          0,
+          this.maxPixels,
+          this.maxBytes,
+        );
+        const result = codec.inspect(encoded, this.maxPixels, this.maxBytes);
+        capabilities.heicPqEncoder = result.bitDepth === 10 && result.transfer === 16 && result.codec === 'hevc';
+      } catch {
+        capabilities.heicPqEncoder = false;
+      }
+      return capabilities;
+    });
   }
 
   async inspectImageEncoding(input: string | Buffer) {
@@ -94,20 +113,22 @@ export class SharpOperations {
     );
   }
 
-  encodeHdrImage(image: LinearHdrImage | PairedHdrImage) {
+  encodeHdrImage(image: LinearHdrImage | PairedHdrImage, format: 'jpeg' | 'heic' = 'jpeg') {
     return imageHdrOperation((codec) =>
-      'sdr' in image
-        ? codec.encodePaired(
-            image.data,
-            image.width,
-            image.height,
-            image.gamut,
-            this.maxPixels,
-            this.maxBytes,
-            image.sdr,
-            image.sdrGamut,
-          )
-        : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
+      format === 'heic'
+        ? codec.encodeHeic(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes)
+        : 'sdr' in image
+          ? codec.encodePaired(
+              image.data,
+              image.width,
+              image.height,
+              image.gamut,
+              this.maxPixels,
+              this.maxBytes,
+              image.sdr,
+              image.sdrGamut,
+            )
+          : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
     );
   }
 
@@ -119,12 +140,17 @@ export class SharpOperations {
     ) {
       throw new Error('INVALID_HDR_OUTPUTS');
     }
-    for (const { path, size, dynamicRange } of outputs) {
+    for (const { path, size, dynamicRange, format } of outputs) {
       if (typeof input === 'string' && resolve(path) === resolve(input))
         throw new Error('Cannot overwrite original media');
       if (size !== undefined && (!Number.isSafeInteger(size) || size < 1)) throw new Error('INVALID_HDR_OUTPUT_SIZE');
       if (dynamicRange !== undefined && dynamicRange !== 'hdr' && dynamicRange !== 'sdr')
         throw new Error('INVALID_HDR_DYNAMIC_RANGE');
+      if (
+        (format !== undefined && format !== 'jpeg' && format !== 'heic') ||
+        (format === 'heic' && dynamicRange === 'sdr')
+      )
+        throw new Error('INVALID_HDR_OUTPUT_FORMAT');
     }
     const bytes = await imageHdrInput(input, this.maxBytes);
     const encoding = imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
@@ -138,7 +164,11 @@ export class SharpOperations {
       : 0;
     const decodeBudget = this.maxBytes - artifactBytes - bytes.length;
     if (decodeBudget <= 0) throw new SharpResourceLimitError('HDR artifacts exceed the combined surface budget');
-    const authored = !develop && encoding.container === 'jpeg' && encoding.gainMap !== 'none';
+    const authored =
+      !develop &&
+      encoding.container === 'jpeg' &&
+      encoding.gainMap !== 'none' &&
+      outputs.some(({ format }) => format !== 'heic');
     let source = imageHdrOperation<LinearHdrImage | PairedHdrImage>((codec) =>
       authored
         ? codec.decodePaired(bytes, this.maxPixels, decodeBudget)
@@ -201,7 +231,7 @@ export class SharpOperations {
     const written: string[] = [];
     const results = [];
     try {
-      for (const { path, size, dynamicRange = 'hdr', histogram } of outputs) {
+      for (const { path, size, dynamicRange = 'hdr', histogram, format = 'jpeg' } of outputs) {
         const scale = Math.min(
           1,
           (size ?? Math.max(source.width, source.height)) / Math.max(source.width, source.height),
@@ -214,7 +244,7 @@ export class SharpOperations {
           throw new SharpResourceLimitError('HDR rendition exceeds the combined surface budget');
         }
         const image = resizeHdrImage(source, size ?? Math.max(source.width, source.height), this.maxBytes);
-        let encoded = this.encodeHdrImage(image);
+        let encoded = this.encodeHdrImage(image, format);
         if (dynamicRange === 'sdr') {
           // The qualified encoder's paired tone mapper owns the SDR baseline. Re-encode its base
           // to remove gain-map metadata and embed an explicit compatible sRGB profile.
@@ -230,6 +260,7 @@ export class SharpOperations {
         if (
           (dynamicRange === 'hdr' && (!metadata.reconstructionAvailable || metadata.dynamicRange !== 'hdr')) ||
           (dynamicRange === 'sdr' && metadata.dynamicRange !== 'sdr') ||
+          (format === 'heic' && (metadata.bitDepth !== 10 || metadata.transfer !== 16 || metadata.codec !== 'hevc')) ||
           metadata.width !== image.width ||
           metadata.height !== image.height
         )

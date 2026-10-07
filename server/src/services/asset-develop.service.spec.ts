@@ -730,6 +730,70 @@ describe(AssetDevelopService.name, () => {
         sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'hdr-heic'),
       ).rejects.toThrow('HDR HEIC export is unavailable');
     });
+    it('exports an independently encoded HDR HEIC still through the admitted worker and releases its copy', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      developRepository.get.mockResolvedValue(published());
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({ heicPqEncoder: true } as never);
+      mocks.media.generateHdrRenditions.mockImplementation(async (_input, outputs) => {
+        await writeFile(outputs[0].path, 'heic');
+        return [];
+      });
+      const signal = new AbortController().signal;
+      const file = await sut.getFile(
+        authStub.user1,
+        asset.id,
+        'rev',
+        AssetDevelopFileKind.Master,
+        'sdr',
+        'hdr-heic',
+        signal,
+      );
+      expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+        '/data/hdr.jpg',
+        [{ path: file.path, format: 'heic' }],
+        undefined,
+        signal,
+      );
+      expect(file.contentType).toBe('image/heic');
+      expect(file.fileName).toContain('_still_hdr.heic');
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
+      file.release?.();
+      await vi.waitFor(async () => expect(await stat(file.path).catch(() => null)).toBeNull());
+      vi.unstubAllEnvs();
+    });
+    it.each(['cancel', 'changed', 'revoked'])('removes the HEIC attempt when %s prevents delivery', async (failure) => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      developRepository.get.mockResolvedValue(published());
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({ heicPqEncoder: true } as never);
+      const controller = new AbortController();
+      let output = '';
+      mocks.media.generateHdrRenditions.mockImplementation(async (_input, outputs) => {
+        output = outputs[0].path;
+        await writeFile(output, 'heic');
+        switch (failure) {
+          case 'cancel': {
+            controller.abort();
+            break;
+          }
+          case 'changed': {
+            developRepository.get.mockResolvedValue({ ...published(), hdrRenditionChecksum: renditionSha });
+            break;
+          }
+          case 'revoked': {
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+            break;
+          }
+        }
+        return [];
+      });
+      await expect(
+        sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'sdr', 'hdr-heic', controller.signal),
+      ).rejects.toThrow();
+      expect(output).not.toBe('');
+      await expect(stat(output)).rejects.toMatchObject({ code: 'ENOENT' });
+      vi.unstubAllEnvs();
+    });
     it('requires a master and refuses disabled HDR output', async () => {
       developRepository.get.mockResolvedValue(published());
       await expect(

@@ -17,7 +17,7 @@ cmake --preset=release-noplugins \
     -DWITH_LIBDE265=ON \
     -DWITH_AOM_DECODER=OFF \
     -DWITH_AOM_ENCODER=ON \
-    -DWITH_X265=OFF \
+    -DWITH_X265=ON \
     -DWITH_EXAMPLES=OFF \
     ..
 make -j"$(nproc)" install

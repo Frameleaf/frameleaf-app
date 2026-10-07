@@ -348,12 +348,12 @@ export class AssetDevelopService {
       await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
       if (kind !== AssetDevelopFileKind.Master)
         throw new BadRequestException('Still exports require the full-resolution master');
-      if (format === 'hdr-heic')
+      if (format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
         throw new BadRequestException({
           code: 'hdr_heic_export_unavailable',
           message: 'HDR HEIC export is unavailable',
         });
-      dynamicRange = format === 'hdr-jpeg' ? 'hdr' : 'sdr';
+      dynamicRange = format === 'sdr-jpeg' ? 'sdr' : 'hdr';
     }
     const revision = await this.requireRevision(assetId, revisionId);
     const hdrEnabled = process.env.FRAMELEAF_HDR_IMAGES === 'experimental';
@@ -369,39 +369,49 @@ export class AssetDevelopService {
     if (!filePath || !hasPublishedDevelopRendition(revision)) {
       throw new NotFoundException('This version has not been rendered yet');
     }
-    if (format === 'sdr-jpeg' && revision.recipeVersion !== 3) {
-      if (revision.kind === AssetDevelopRevisionKind.External) {
+    if (format === 'hdr-heic' || (format === 'sdr-jpeg' && revision.recipeVersion !== 3)) {
+      const heic = format === 'hdr-heic';
+      if (!heic && revision.kind === AssetDevelopRevisionKind.External) {
         const encoding = await this.mediaRepository.inspectImageEncoding(filePath);
         if (encoding.dynamicRange !== 'sdr') throw new BadRequestException('This version has no verified SDR master');
       }
-      // Historical renders retain their pixels and renderer identity. Only the explicit export
-      // copy is converted to sRGB JPEG; HDR revisions already publish their paired SDR JPEG.
+      // Export copies retain the saved rendition and renderer identity. Historical SDR converts
+      // to sRGB JPEG; HDR HEIC reconstructs the published gain-map master in the same worker.
       const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
-      const output = path.join(folder, 'still_sdr.jpg');
+      const output = path.join(folder, heic ? 'still_hdr.heic' : 'still_sdr.jpg');
       const release = () =>
         void rm(folder, { recursive: true, force: true }).catch(() => {
           this.logger.warn('Unable to remove a temporary still export');
         });
       try {
-        await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
+        if (heic) {
+          await this.mediaRepository.generateHdrRenditions(
+            filePath,
+            [{ path: output, format: 'heic' }],
+            undefined,
+            signal,
+          );
+        } else {
+          await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
+        }
         signal?.throwIfAborted();
         await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
         const current = await this.requireRevision(assetId, revisionId);
-        const sameChecksum = revision.renditionChecksum
-          ? current.renditionChecksum?.equals(revision.renditionChecksum)
-          : current.renditionChecksum === null;
+        const checksum = heic ? revision.hdrRenditionChecksum : revision.renditionChecksum;
+        const currentChecksum = heic ? current.hdrRenditionChecksum : current.renditionChecksum;
+        const sameChecksum = checksum ? currentChecksum?.equals(checksum) : currentChecksum === null;
         if (
           !hasPublishedDevelopRendition(current) ||
-          current.masterPath !== filePath ||
+          (heic ? current.hdrMasterPath : current.masterPath) !== filePath ||
           current.updatedAt.getTime() !== revision.updatedAt.getTime() ||
           !sameChecksum
         )
           throw new ConflictException('This version changed during export; try again');
         return new ImmichFileResponse({
           path: output,
-          contentType: 'image/jpeg',
+          contentType: heic ? 'image/heic' : 'image/jpeg',
           release,
-          fileName: `${assetId}_${revisionId}_still_sdr.jpg`,
+          fileName: `${assetId}_${revisionId}_${heic ? 'still_hdr.heic' : 'still_sdr.jpg'}`,
           cacheControl: CacheControl.PrivateWithoutCache,
         });
       } catch (error) {

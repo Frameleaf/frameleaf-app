@@ -14,6 +14,7 @@ export type HdrCodecCapabilities = {
   libultrahdr: string;
   heicDecoder: boolean;
   avifDecoder: boolean;
+  heicPqEncoder?: boolean;
 };
 type NativeCodec = {
   capabilities(): HdrCodecCapabilities;
@@ -31,6 +32,14 @@ type NativeCodec = {
     sdrGamut: 0 | 1 | 2,
   ): Buffer;
   encode(input: Buffer, width: number, height: number, gamut: 0 | 1 | 2, maxPixels: number, maxBytes: number): Buffer;
+  encodeHeic(
+    input: Buffer,
+    width: number,
+    height: number,
+    gamut: 0 | 1 | 2,
+    maxPixels: number,
+    maxBytes: number,
+  ): Buffer;
 };
 let codec: NativeCodec | undefined;
 function binding(): NativeCodec {

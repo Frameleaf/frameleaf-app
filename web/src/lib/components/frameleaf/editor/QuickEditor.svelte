@@ -22,6 +22,7 @@
    * edited master on the server; the original file is never changed.
    */
   import { goto } from '$app/navigation';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import '$lib/frameleaf/tokens.css';
   import './editor.css';
   import { focusTrap } from '$lib/actions/focus-trap';
@@ -1669,6 +1670,21 @@
                           >
                             {$t('frameleaf_editor_export_hdr_jpeg')}
                           </a>
+                          {#if featureFlagsManager.value.imageCapabilities?.experimentalEnabled && featureFlagsManager.value.imageCapabilities.export.includes('hdr-heic')}
+                            <a
+                              class="ed-chip"
+                              href={developFileUrl(
+                                asset.id,
+                                revision.id,
+                                AssetDevelopFileKind.Master,
+                                revision.renderedAt,
+                                'hdr-heic',
+                              )}
+                              download
+                            >
+                              {$t('frameleaf_editor_export_hdr_heic')}
+                            </a>
+                          {/if}
                         {/if}
                       {/if}
                       {#if isRevisionBusy(revision.status)}
