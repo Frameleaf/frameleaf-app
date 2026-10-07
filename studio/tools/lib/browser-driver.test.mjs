@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './browser-driver.mjs';
 import { assertNoProxyErrors, openPage } from '../resource-admission.browser.mjs';
@@ -434,4 +435,16 @@ test('resource admission requires a transparent proxied entry GET before absence
     [{...request, url: origin + '/'}], [{...request, url: 'http://127.0.0.1:5187/headless.html'}]])
     assert.throws(() => assertNoProxyErrors({observations}, origin, '/headless.html'), /no transparent browser GET|opaque CONNECT/);
   assert.throws(() => assertNoProxyErrors({observations: [request, {kind: 'error'}]}, origin, '/headless.html'), /could not reach/);
+});
+
+test('native control runners admit Safari dispatch and refuse unsupported or incomplete input before launch', () => {
+  for (const name of ['editor-controls', 'auto-key-control', 'easing-control']) {
+    for (const browser of ['safari', 'firefox', 'webkit']) {
+      const result = spawnSync(process.execPath, [new URL(`../${name}.browser.mjs`, import.meta.url).pathname], {
+        env: {...process.env, BROWSER: browser, WEBDRIVER_ENDPOINT: ''}, encoding: 'utf8', timeout: 5000,
+      });
+      assert.equal(result.status, 1, name);
+      assert.match(result.stderr, browser === 'webkit' ? /unsupported admitted-host browser/ : /requires WEBDRIVER_ENDPOINT/, name);
+    }
+  }
 });

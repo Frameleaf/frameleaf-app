@@ -2,19 +2,17 @@
  * This fixture does not claim Svelte/API persistence or whole-row/browser acceptance.
  */
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHarness } from "./lib/cross-browser-harness.mjs";
-import {
-  createChromiumDriver,
-  createWebDriverClassicDriver,
-} from "./lib/browser-driver.mjs";
+import { admittedHostCapabilities } from "./lib/browser-driver.mjs";
+import { openPage } from "./resource-admission.browser.mjs";
 
 const origin = process.env.STUDIO_TEST_ORIGIN ?? "http://127.0.0.1:5194";
 const browser = process.env.BROWSER ?? "chromium";
 const evidence = process.env.STUDIO_TEST_EVIDENCE;
-assert.ok(["chromium", "firefox"].includes(browser));
+admittedHostCapabilities(browser);
+if (browser !== "chromium") assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
 // Independent CSS Ease In cubic curve: solve x(t)=0.5, then y(t), without engine easing code.
 const cubic = (t, a, b) =>
   3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t ** 2 * b + t ** 3;
@@ -27,31 +25,12 @@ for (let i = 0; i < 60; i++) {
 }
 const expectedX = -24 + 48 * cubic((lo + hi) / 2, 0, 1);
 const harness = createHarness({ upstream: origin });
-const harnessOrigin = await harness.listen();
 let driver;
 try {
-  const require = createRequire(
-    new URL("../engine/package.json", import.meta.url),
-  );
-  driver =
-    browser === "chromium"
-      ? await createChromiumDriver({
-          harnessOrigin,
-          chromium: require("playwright").chromium,
-        })
-      : await createWebDriverClassicDriver({
-          endpoint: process.env.WEBDRIVER_ENDPOINT,
-          harnessOrigin,
-          capabilities: {
-            browserName: "firefox",
-            "moz:firefoxOptions": {
-              binary: "/Applications/Firefox.app/Contents/MacOS/firefox",
-              args: ["-headless"],
-              prefs: { "network.proxy.allow_hijacking_localhost": true },
-            },
-          },
-        });
-  const page = await driver.newPage();
+  const harnessOrigin = await harness.listen();
+  driver = await openPage(harnessOrigin, undefined, {browser, endpoint: process.env.WEBDRIVER_ENDPOINT});
+  const page = driver.page;
+  const browserProvenance = driver.browser;
   await page.goto(`${origin}/studio-engine/test/editor-controls.browser.html`);
   await page.waitForFunction(() => !!window.fl100Editor);
   await page.evaluate(() => window.fl100Editor.seedEasing());
@@ -138,6 +117,7 @@ try {
   );
   const result = {
     browser,
+    browserProvenance,
     userAgent: await page.evaluate(() => navigator.userAgent),
     measuredAt: new Date().toISOString(),
     passed: true,
@@ -177,6 +157,7 @@ try {
   console.log(
     JSON.stringify({
       browser,
+      browserProvenance,
       passed: true,
       expectedX,
       actualX: rendered.pose.x,

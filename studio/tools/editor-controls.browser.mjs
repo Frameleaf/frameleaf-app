@@ -1,47 +1,26 @@
 /** Real component/store/history/browser-preference checks. No backend persistence claim. */
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHarness } from "./lib/cross-browser-harness.mjs";
-import {
-  createChromiumDriver,
-  createWebDriverClassicDriver,
-} from "./lib/browser-driver.mjs";
+import { admittedHostCapabilities } from "./lib/browser-driver.mjs";
+import { openPage } from "./resource-admission.browser.mjs";
 const origin = process.env.STUDIO_TEST_ORIGIN ?? "http://127.0.0.1:5191";
 const browser = process.env.BROWSER ?? "chromium";
 const evidence = process.env.STUDIO_TEST_EVIDENCE;
 // Deliberately wrong fixture input verifies the independent expected-pose assertion.
 const parentDx =
   process.env.FL100_ORACLE_COUNTERFACTUAL === "stationary-parent" ? 0 : 16;
-assert.ok(["chromium", "firefox"].includes(browser));
-const harness = createHarness({ upstream: origin }),
-  harnessOrigin = await harness.listen();
+admittedHostCapabilities(browser);
+if (browser !== "chromium") assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
+const harness = createHarness({ upstream: origin });
 let driver;
 const witnesses = [];
 try {
-  const require = createRequire(
-    new URL("../engine/package.json", import.meta.url),
-  );
-  driver =
-    browser === "chromium"
-      ? await createChromiumDriver({
-          harnessOrigin,
-          chromium: require("playwright").chromium,
-        })
-      : await createWebDriverClassicDriver({
-          endpoint: process.env.WEBDRIVER_ENDPOINT,
-          harnessOrigin,
-          capabilities: {
-            browserName: "firefox",
-            "moz:firefoxOptions": {
-              binary: "/Applications/Firefox.app/Contents/MacOS/firefox",
-              args: ["-headless"],
-              prefs: { "network.proxy.allow_hijacking_localhost": true },
-            },
-          },
-        });
-  const page = await driver.newPage();
+  const harnessOrigin = await harness.listen();
+  driver = await openPage(harnessOrigin, undefined, {browser, endpoint: process.env.WEBDRIVER_ENDPOINT});
+  const page = driver.page;
+  const browserProvenance = driver.browser;
   const url = `${origin}/studio-engine/test/editor-controls.browser.html`;
   await page.goto(url);
   await page.waitForFunction(() => !!window.fl100Editor);
@@ -180,12 +159,13 @@ try {
     await mkdir(evidence, { recursive: true });
     await writeFile(
       path.join(evidence, `${browser}-editor.json`),
-      JSON.stringify({ witnesses, requests: harness.observations }, null, 2),
+      JSON.stringify({ browserProvenance, witnesses, requests: harness.observations }, null, 2),
     );
   }
   console.log(
     JSON.stringify({
       browser,
+      browserProvenance,
       passed: true,
       parentTargets: ["null", "composition-group"],
       nativeUndoRedo: true,
