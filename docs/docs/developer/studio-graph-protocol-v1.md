@@ -346,7 +346,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.push`                        | Engine          | 12.5.1  |                                                                                                                        |
 | `clip.reorder`                     | Engine          | 12.5.2  |                                                                                                                        |
 | `clip.roll`                        | Engine          | 12.4.2  |                                                                                                                        |
-| `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch and EQ; clip mute is refused as `not-implemented`.                                              |
+| `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch and EQ; clip mute is refused as `not-implemented`.                                                  |
 | `clip.setBlendMode`                | Not implemented | 13.8.4  | Do not record it. Edit `blendMode` as 13.8.4 says; set opacity with `clip.setTransform` (12.6.3).                      |
 | `clip.setCrop`                     | Not implemented | 8.2     | Do not record it. Do not change `crop` or `cornerPin`.                                                                 |
 | `clip.setGrade`                    | Not implemented | 8.2     | Do not record it. Do not change a clip's colour grade.                                                                 |
@@ -2057,13 +2057,13 @@ This command edits the named audio or video clip through the same `updateItem` a
 EQ setting names are stored with `audioEq` prefixed and the first letter capitalized. `enabled` is a boolean; omission clears `audioEqEnabled` so the engine's enabled-by-default behavior applies. Other `*Enabled` settings are booleans. All numeric settings must be finite. Gain (`outputGainDb`, every band's `*GainDb`, and legacy `midGainDb`) is in −20..20 dB, Q in 0.3..10.3, and cut slope is 6, 12, 18 or 24 dB/octave. Unknown settings, wrong types, out-of-range values and contradictory cut aliases are invalid, rather than silently clamped.
 
 | Band prefix | Default enabled/type | Frequency domain and default (Hz) | Default Q |
-| --- | --- | --- | --- |
-| `band1` | false / high-pass | 20..399; 30 | 1.1 |
-| `low` | true / low-shelf | 20..22000; 120 | 2.3 |
-| `lowMid` | true / peaking | 20..22000; 400 | 1.1 |
-| `highMid` | true / peaking | 20..22000; 1600 | 1.1 |
-| `high` | true / high-shelf | 20..22000; 2800 | 2.3 |
-| `band6` | false / low-pass | 1400..22000; 22000 | 1.1 |
+| ----------- | -------------------- | --------------------------------- | --------- |
+| `band1`     | false / high-pass    | 20..399; 30                       | 1.1       |
+| `low`       | true / low-shelf     | 20..22000; 120                    | 2.3       |
+| `lowMid`    | true / peaking       | 20..22000; 400                    | 1.1       |
+| `highMid`   | true / peaking       | 20..22000; 1600                   | 1.1       |
+| `high`      | true / high-shelf    | 20..22000; 2800                   | 2.3       |
+| `band6`     | false / low-pass     | 1400..22000; 22000                | 1.1       |
 
 Each band has `Enabled`, `Type`, `FrequencyHz`, `GainDb` (default 0) and `Q`. Band 1 and band 6 also have `SlopeDbPerOct` (default 12). Types for band 1 are low-shelf, peaking, high-shelf and high-pass; for band 6, low-pass, low-shelf, peaking and high-shelf; for the inner bands, low-shelf, peaking, high-shelf and notch. `outputGainDb` and legacy `midGainDb` default to 0.
 
