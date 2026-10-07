@@ -148,7 +148,7 @@ jobs:
       - name: Render-worker hardware probe refuses software GPU evidence
         env:
           STUDIO_WORKER_PROBE_BROWSER_TEST: '1'
-        run: node --test studio/tools/render-worker-probe.test.mjs studio/tools/render-worker-claim.test.mjs studio/tools/render-worker-image-inputs.test.mjs studio/tools/render-worker-still-executor.test.mjs
+        run: node --test studio/tools/render-worker-probe.test.mjs studio/tools/render-worker-claim.test.mjs studio/tools/render-worker-image-inputs.test.mjs studio/tools/render-worker-still-executor.test.mjs studio/tools/render-worker-hdr-executor.test.mjs
       - name: Compositor float range and alpha regression (software WebGPU)
         env:
           FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan

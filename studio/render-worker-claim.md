@@ -6,8 +6,8 @@ does not supply a qualifying session.
 
 Prepare the pinned engine first (`node studio/tools/engine.mjs prepare`) and install its locked
 dependencies (`npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund`). This slice
-uses its actual headless media resolver/server and pinned Sharp/tsx dependencies. Only direct
-still-image timelines made from library assets are adapted; unsupported graphs fail closed.
+uses its actual headless media resolver/server and pinned Sharp/tsx dependencies. Direct
+library still images and intrinsic rectangles are adapted; other resources fail closed.
 
 ```sh
 FRAMELEAF_URL=https://your-home-network-server.example \
@@ -61,7 +61,8 @@ The server service regression asserts that the authorized stored revision is han
 mutating the job; existing access-revocation coverage still refuses to read or claim that graph.
 
 Remaining work: video/audio probing and metadata, generated media, nested compositions and
-the other resource adapters; real render execution and output/checkpoint limits; use the server-owned artifact transport below for encoded output and validation/completion. Hardware and codec/container
+the other resource adapters; general render execution and recovery beyond the bounded recipes;
+use the server-owned artifact transport below for encoded output and validation/completion. Hardware and codec/container
 measurements, admission, real-server hosted claim/render evidence and FL-144 editor/lost-ack
 browser acceptance remain open. No capability flags are set by this slice.
 
@@ -107,8 +108,8 @@ server-selected export format. Existing publication still verifies encoded media
 privacy and source provenance before adopting a result. Preview and other operation kinds retain
 their established output protocol. No engine patch or capability flag is changed.
 
-This is transport/recovery infrastructure. Edited float PQ/HLG rendering, native Main10 encoding,
-independently measured output PTS, multichannel order/layout, complete HDR metadata, real executor
+This is transport/recovery infrastructure. General edited float PQ/HLG rendering and encoding,
+multichannel order/layout, complete HDR metadata, real executor
 restart, reference-monitor and deployment/hardware qualification still need genuine evidence.
 
 ## Explicit PQ mastering display
@@ -134,6 +135,41 @@ validated, and verifies all eight chromaticity coordinates and both luminance va
 the output into the library. Missing, unreadable or different mastering metadata refuses publication. Contracts saved before explicit mastering retain their existing
 checks; new PQ submission without a valid profile returns `studio_export_mastering_unknown`.
 
-This binds declared mastering authority and encoded output. The production HDR renderer,
-measured edited MaxCLL/MaxFALL and device qualification still need
-implementation or evidence; this protocol does not enable HDR capabilities.
+This binds declared mastering authority and encoded output. General HDR rendering and device
+qualification still need implementation or evidence; this protocol does not enable HDR capabilities.
+
+## Bounded HDR10 rectangle cut
+
+`render-worker-hdr-executor.mjs` consumes an already admitted session through the same claim and
+artifact transport. Its only recipe is a silent, full-canvas cut between intrinsic rectangles:
+one visible video track, contiguous integer frames starting at zero, one to eight total frames,
+1280×720 at 24 fps. The stored graph must explicitly declare
+`colorManagement: { workingRange: "hdr", referenceWhiteNits: 203 }`; choosing HDR10 does not
+rewrite an SDR graph. Each rectangle has an opaque, unrotated full-canvas transform, no stroke,
+and a six-digit hex or percentage `rgb(...)` fill. Effects, animation, transitions, nested
+compositions, media inputs, ranges, audio, HLG, Smooth motion and checkpoint recovery remain refused.
+
+The immutable settings must be `mp4-hevc-main10`, `hdr10`, `720p`, audio `preserve` with no audible
+source, omitted or `high` quality, and an explicit valid mastering profile identical to the
+saved PQ contract. Build and attest the pinned engine first. The retained source/build inventory,
+Node and npm versions must match. The host also needs a hardware WebGPU adapter and an existing
+FFmpeg with `libx265` and `zscale`:
+
+```sh
+FRAMELEAF_URL=https://your-home-network-server.example \
+FRAMELEAF_WORKER_SESSION="$YOUR_EXISTING_WORKER_SESSION" \
+node studio/tools/render-worker-hdr-executor.mjs
+```
+
+Every frame uses the managed float `renderFrameSignal` route. Before any upload, the native encoder
+measures edited MaxCLL/MaxFALL, checks the declared mastering ceiling, and verifies the encoded
+Main10/PQ/BT.2020 metadata. Independent native decoding checks 10-bit Y/Cb/Cr samples, every packet's
+presentation time and duration, the exact whole-export span, and the absence of extra streams.
+Lease loss, wall-clock/output limits or QC failure closes the browser and removes the private output.
+Passing output uses the existing server-owned staging, validation and completion protocol.
+
+The native regression is opt-in: after build/attestation, run
+`STUDIO_HDR_GRAPH_NATIVE=1 node --test studio/tools/render-worker-hdr-executor.test.mjs` on a
+hardware GPU host. The normal hosted lane runs refusals and protocol checks, with native rendering
+skipped. The authored HDR input and independent colour oracle prove this bounded graph output;
+they do not prove live worker admission, physical display certification, or completion of FL-107.

@@ -149,15 +149,8 @@ export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
   return result;
 }
 
-/** Leaves the output private and alive only while the caller consumes it under the lease. */
-export async function renderStillImage(context, consume) {
-  const { claim, engineInputs, isLeaseActive, heartbeat, elapsedMs, registerRelease } = context;
-  const recipe = stillRecipe(claim);
-  const assertLive = () => {
-    assert.ok(isLeaseActive(), 'LEASE_LOST');
-    assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
-  };
-  assertLive();
+/** Verify the retained build before either bounded worker recipe uses it. */
+export async function loadClaimEngine(engineInputs) {
   const build = JSON.parse(
     await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'),
   );
@@ -173,6 +166,19 @@ export async function renderStillImage(context, consume) {
   const files = await inventory(await realpath(path.join(engine, 'dist')));
   assert.equal(digest(JSON.stringify(files)), report.artifactSha256, 'BUILT_ARTIFACT_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
+  return { build, report, require };
+}
+
+/** Leaves the output private and alive only while the caller consumes it under the lease. */
+export async function renderStillImage(context, consume) {
+  const { claim, engineInputs, isLeaseActive, heartbeat, elapsedMs, registerRelease } = context;
+  const recipe = stillRecipe(claim);
+  const assertLive = () => {
+    assert.ok(isLeaseActive(), 'LEASE_LOST');
+    assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
+  };
+  assertLive();
+  const { build, report, require } = await loadClaimEngine(engineInputs);
   assert.deepEqual(
     engineInputs.input.project,
     claim.snapshot.studio.graph,
@@ -374,62 +380,63 @@ export async function renderStillImage(context, consume) {
   }
 }
 
+export async function publishClaimArtifact(context, { outputPath, checksum, sizeInBytes, signal, recipe }, recipeName) {
+  const { claim, request, heartbeat, upload, isLeaseActive } = context;
+  const post = (pathname, body) =>
+    request(
+      pathname,
+      body,
+      Math.max(1, Math.min(10_000, recipe.maxMs - context.elapsedMs())),
+      signal,
+    );
+  const root = `/api/render-workers/operations/${claim.operationId}`;
+  const binding = { claimToken: claim.claimToken };
+  const configDigest = digest(
+    JSON.stringify({ recipe: recipeName, settings: recipe.settings,
+      ...(recipe.range && { range: recipe.range }) }),
+  );
+  const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
+  assert.ok(
+    typeof claim.artifactInputDigest === 'string' && claim.artifactInputDigest,
+    'INPUT_DIGEST_REQUIRED',
+  );
+  const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
+  await heartbeat();
+  const planned = await post(`${root}/checkpoints`, {
+    ...binding,
+    sequence: 0,
+    chunkKey,
+    inputDigest: claim.artifactInputDigest,
+    historyDigest,
+    configDigest,
+    seed: null,
+    timebase: '1/24',
+    startTicks: '0',
+    endTicks: String(recipe.frames),
+    requiresSequentialContext: false,
+  });
+  assert.equal(planned?.accepted, true, 'CHECKPOINT_PLAN_REFUSED');
+  await heartbeat();
+  assert.equal(
+    (await upload(outputPath, { chunkKey, checksum, sizeInBytes }, signal))?.accepted,
+    true,
+    'ARTIFACT_REFUSED',
+  );
+  await heartbeat();
+  const complete = { ...binding, artifactSequence: 0, resultAssetId: null };
+  assert.equal(
+    (await post(`${root}/validate`, complete))?.accepted,
+    true,
+    'VALIDATION_REFUSED',
+  );
+  await heartbeat();
+  assert.ok(isLeaseActive(), 'LEASE_LOST');
+  return post(`${root}/complete`, complete);
+}
+
 export async function executeStillClaim(context) {
-  return renderStillImage(
-    context,
-    async ({ outputPath, checksum, sizeInBytes, signal, recipe }) => {
-      const { claim, request, heartbeat, upload, isLeaseActive } = context;
-      const post = (pathname, body) =>
-        request(
-          pathname,
-          body,
-          Math.max(1, Math.min(10_000, recipe.maxMs - context.elapsedMs())),
-          signal,
-        );
-      const root = `/api/render-workers/operations/${claim.operationId}`;
-      const binding = { claimToken: claim.claimToken };
-      const configDigest = digest(
-        JSON.stringify({ recipe: 'single-still-sdr-v1', settings: recipe.settings,
-          ...(recipe.range && { range: recipe.range }) }),
-      );
-      const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
-      assert.ok(
-        typeof claim.artifactInputDigest === 'string' && claim.artifactInputDigest,
-        'INPUT_DIGEST_REQUIRED',
-      );
-      const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
-      await heartbeat();
-      const planned = await post(`${root}/checkpoints`, {
-        ...binding,
-        sequence: 0,
-        chunkKey,
-        inputDigest: claim.artifactInputDigest,
-        historyDigest,
-        configDigest,
-        seed: null,
-        timebase: '1/24',
-        startTicks: '0',
-        endTicks: String(recipe.frames),
-        requiresSequentialContext: false,
-      });
-      assert.equal(planned?.accepted, true, 'CHECKPOINT_PLAN_REFUSED');
-      await heartbeat();
-      assert.equal(
-        (await upload(outputPath, { chunkKey, checksum, sizeInBytes }, signal))?.accepted,
-        true,
-        'ARTIFACT_REFUSED',
-      );
-      await heartbeat();
-      const complete = { ...binding, artifactSequence: 0, resultAssetId: null };
-      assert.equal(
-        (await post(`${root}/validate`, complete))?.accepted,
-        true,
-        'VALIDATION_REFUSED',
-      );
-      await heartbeat();
-      assert.ok(isLeaseActive(), 'LEASE_LOST');
-      return post(`${root}/complete`, complete);
-    },
+  return renderStillImage(context, (artifact) =>
+    publishClaimArtifact(context, artifact, 'single-still-sdr-v1'),
   );
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

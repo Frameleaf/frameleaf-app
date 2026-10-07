@@ -1,4 +1,4 @@
-// FL-145: the still-image subset of Freecut's HeadlessProjectInput/HeadlessFrameInput.
+// FL-145: verified images and intrinsic rectangles in Freecut's headless input contract.
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -62,7 +62,8 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   // fonts, models, LUTs and nested compositions need their own resource adapters; never ignore them.
   assert.ok(!project.timeline.compositions?.length, 'NESTED_COMPOSITION_ADAPTER_UNAVAILABLE');
   for (const item of project.timeline.items) {
-    assert.ok(item.type === 'image' && typeof item.mediaId === 'string' &&
+    assert.ok(((item.type === 'image' && typeof item.mediaId === 'string') ||
+      (item.type === 'shape' && item.shapeType === 'rectangle' && !item.mediaId)) &&
       !item.generatedId && !item.src && !item.audioSrc, 'IMAGE_SOURCE_ADAPTER_ONLY');
   }
 

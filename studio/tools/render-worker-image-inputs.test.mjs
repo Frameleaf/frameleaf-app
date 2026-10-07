@@ -106,3 +106,33 @@ test('matching grant hashes do not admit text, video, malformed or incomplete im
     await assert.rejects(createClaimImageInputs(claim, () => true));
   }
 });
+
+test("intrinsic rectangle cuts preserve the immutable HDR graph without inventing media", async () => {
+  const claim = prepared();
+  claim.inputs.clear();
+  claim.snapshot.studio.graph.metadata.colorManagement = {
+    workingRange: "hdr",
+    referenceWhiteNits: 203,
+  };
+  claim.snapshot.studio.graph.timeline.items = [0, 1].map((from) => ({
+    id: `shape-${from}`,
+    type: "shape",
+    shapeType: "rectangle",
+    trackId: "v1",
+    from,
+    durationInFrames: 1,
+    fillColor: from ? "#336699" : "rgb(250%, 120%, 60%)",
+    strokeEnabled: false,
+    strokeWidth: 0,
+    transform: { x: 0, y: 0, width: 32, height: 32, rotation: 0, opacity: 1 },
+  }));
+  const original = structuredClone(claim.snapshot.studio.graph);
+  const adapted = await createClaimImageInputs(claim, () => true);
+  try {
+    assert.deepEqual(adapted.input.project, original);
+    assert.deepEqual(adapted.input.media, []);
+    assert.deepEqual(claim.snapshot.studio.graph, original);
+  } finally {
+    await adapted.dispose();
+  }
+});

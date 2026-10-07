@@ -198,7 +198,7 @@ export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', 
 /** Probes the master: codec, 10-bit, colour tags and HDR10 side data. */
 export function probeMaster(ffprobe, file) {
   const run = (args) => {
-    const result = spawnSync(ffprobe, args, { encoding: 'utf8' });
+    const result = spawnSync(ffprobe, args, { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 });
     if (result.status !== 0) throw new Error(`ffprobe failed: ${result.stderr}`);
     return JSON.parse(result.stdout);
   };
@@ -228,7 +228,7 @@ export function decodeMaster(ffmpeg, file, width, height, format = 'rgb48le') {
     ...(planar ? ['-pix_fmt', format] : [
       '-vf', 'zscale=rangein=limited:range=full:matrixin=bt2020nc:matrix=gbr:dither=error_diffusion,format=gbrp16le,format=rgb48le',
     ]),
-    '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
+    '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { timeout: 10_000, maxBuffer: 1 << 30 });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${result.stderr}`);
   const frameSize = width * height * (planar ? 1.5 : 3);
   assert.ok(Number.isSafeInteger(frameSize) && result.stdout.byteLength > 0 &&
