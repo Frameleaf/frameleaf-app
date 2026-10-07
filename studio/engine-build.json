@@ -379,7 +379,12 @@
       "path": "patches/0078-moss-byte-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "77bdea35464fef84567fb18b4c8aefc0394506a0944d176203a00a2c6267b058"
+    },
+    {
+      "path": "patches/0080-upstream-audio-contract-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6d70a73fc70c3f68441540a6ca8e59b20f61ebfda2ec472389c624f13ffaf49a"
     }
   ],
-  "sourceSha256": "0279c534d9424f56c495e778d8e0f4b2f935e9f4722d62fee22b7588ac28e210"
+  "sourceSha256": "2b637d5dbad817076cb0aa2fdff7c9df255e4dcd3054f430f3fd50e8c2e80b44"
 }
