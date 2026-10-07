@@ -242,14 +242,16 @@ test('existing worker generates validated PQ HEIC without rewriting the source o
   const folder = await mkdtemp(join(tmpdir(), 'frameleaf-heic-export-'));
   const pool = new SharpProcessPool({ workers: 1, pending: 0 });
   try {
-    const source = join(folder, 'source.jpg'), output = join(folder, 'still.heic');
+    const source = join(folder, 'source.jpg'),
+      output = join(folder, 'still.heic');
     const pixels = new Float32Array(64 * 64 * 4);
     for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 8, 8, 1], i);
     const original = codec.encode(Buffer.from(pixels.buffer), 64, 64, 1, ...limits);
     await writeFile(source, original);
     const results = await pool.run('generateHdrRenditions', [source, [{ path: output, format: 'heic' }]]);
     assert.equal(results[0].encoding.bitDepth, 10);
-    const encoded = await readFile(output), metadata = codec.inspect(encoded, ...limits);
+    const encoded = await readFile(output),
+      metadata = codec.inspect(encoded, ...limits);
     assert.equal(metadata.transfer, 16);
     assert.equal(metadata.colorPrimaries, 12);
     const decoded = codec.decode(encoded, ...limits);
@@ -258,7 +260,10 @@ test('existing worker generates validated PQ HEIC without rewriting the source o
     const sharp = createRequire(import.meta.url)('sharp');
     assert.equal((await sharp(encoded).metadata()).exif, undefined);
     assert.deepEqual(await readFile(source), original);
-    await assert.rejects(pool.run('generateHdrRenditions', [source, [{ path: output, format: 'heic', dynamicRange: 'sdr' }]]), /INVALID_HDR_OUTPUT_FORMAT/);
+    await assert.rejects(
+      pool.run('generateHdrRenditions', [source, [{ path: output, format: 'heic', dynamicRange: 'sdr' }]]),
+      /INVALID_HDR_OUTPUT_FORMAT/,
+    );
   } finally {
     await pool.close();
     await rm(folder, { recursive: true, force: true });

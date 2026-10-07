@@ -165,6 +165,15 @@ export class AssetDevelopRepository {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${input.assetId}`}, 0))`.execute(
         trx,
       );
+      const asset = await trx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', input.assetId)
+        .where('ownerId', '=', input.ownerId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!asset) throw new BadRequestException('Develop source asset is no longer available');
       let recipe = developEnvelope(input.recipe);
       if (input.sourceRevisionId) {
         const source =

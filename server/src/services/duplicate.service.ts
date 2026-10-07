@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
@@ -20,7 +21,7 @@ import {
   StorageFolder,
   TranscodeTarget,
 } from 'src/enum.js';
-import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult } from 'src/queue/context.js';
+import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
@@ -182,7 +183,72 @@ export class DuplicateService extends BaseService {
   }
 
   private async resolveGroup(auth: AuthDto, group: DuplicateResolveGroupDto): Promise<BulkIdResponseDto> {
+    const effects: JobOf<JobName.DuplicateResolutionLifecycle> = {
+      id: randomUUID(),
+      userId: auth.user.id,
+      sidecarIds: [],
+      lockedIds: [],
+      trashIds: [],
+      force: false,
+    };
+    const result = await this.duplicateRepository.withResolutionLock(group.duplicateId, async (tx) => {
+      const result = await this.resolveLockedGroup(auth, group, effects);
+      if (
+        result.success &&
+        (effects.sidecarIds.length > 0 || effects.lockedIds.length > 0 || effects.trashIds.length > 0)
+      ) {
+        await this.jobRepository.queueInTransaction(tx, { name: JobName.DuplicateResolutionLifecycle, data: effects });
+      }
+      return result;
+    });
+    if (
+      result.success &&
+      (effects.sidecarIds.length > 0 || effects.lockedIds.length > 0 || effects.trashIds.length > 0)
+    ) {
+      try {
+        await queueExecution.exit(() => this.handleResolutionLifecycle(effects));
+        await this.jobRepository.removeJob(JobName.DuplicateResolutionLifecycle, effects.id);
+      } catch {
+        this.logger.warn('Duplicate resolution committed; lifecycle work retained for retry');
+      }
+    }
+    return result;
+  }
+
+  @OnJob({ name: JobName.DuplicateResolutionLifecycle, queue: QueueName.BackgroundTask })
+  async handleResolutionLifecycle(effects: JobOf<JobName.DuplicateResolutionLifecycle>): Promise<JobStatus> {
+    const work: (() => Promise<unknown>)[] = [];
+    if (effects.sidecarIds.length > 0)
+      work.push(() =>
+        this.jobRepository.queueAll(effects.sidecarIds.map((id) => ({ name: JobName.SidecarWrite, data: { id } }))),
+      );
+    if (effects.lockedIds.length > 0)
+      work.push(async () => {
+        await this.afterAssetsLocked(effects.lockedIds);
+        const siblingIds = (await this.assetRepository.getStackSiblingIds(effects.lockedIds)) ?? [];
+        await this.notifyAssetsUpdated([...effects.lockedIds, ...siblingIds], effects.userId);
+      });
+    if (effects.trashIds.length > 0)
+      work.push(() =>
+        this.eventRepository.emit(effects.force ? 'AssetDeleteAll' : 'AssetTrashAll', {
+          assetIds: effects.trashIds,
+          userId: effects.userId,
+        }),
+      );
+    const results = await Promise.allSettled(work.map((run) => run()));
+    if (results.some((result) => result.status === 'rejected'))
+      throw new Error('Duplicate lifecycle work requires retry');
+    return JobStatus.Success;
+  }
+
+  private async resolveLockedGroup(
+    auth: AuthDto,
+    group: DuplicateResolveGroupDto,
+    effects: JobOf<JobName.DuplicateResolutionLifecycle>,
+  ): Promise<BulkIdResponseDto> {
     const { duplicateId, keepAssetIds, trashAssetIds } = group;
+
+    await this.requireAccess({ auth, permission: Permission.DuplicateDelete, ids: [duplicateId] });
 
     const duplicateGroup = await this.duplicateRepository.get(duplicateId, this.nsfwOptions(auth));
     if (!duplicateGroup) {
@@ -305,17 +371,15 @@ export class DuplicateService extends BaseService {
       }
 
       if (hasExifUpdate || hasTagUpdate) {
-        await this.jobRepository.queueAll(idsToKeep.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+        effects.sidecarIds = idsToKeep;
       }
 
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null, ...assetUpdate });
       if (assetUpdate.visibility === AssetVisibility.Locked) {
         // a kept copy that became Locked is no longer a face thumbnail or profile picture (FL-53)
-        await this.afterAssetsLocked(idsToKeep);
         // give every stack sibling the cascade also locked the same real-time update the kept copies
         // get, so an open web client reflects the whole stack at once (FL-53, `locked-stacks.ts`)
-        const siblingIds = (await this.assetRepository.getStackSiblingIds(idsToKeep)) ?? [];
-        await this.notifyAssetsUpdated([...idsToKeep, ...siblingIds], auth.user.id);
+        effects.lockedIds = idsToKeep;
       }
     } else if (idsToKeep.length > 0) {
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null });
@@ -332,10 +396,8 @@ export class DuplicateService extends BaseService {
         duplicateId: null,
       });
 
-      await this.eventRepository.emit(isForce ? 'AssetDeleteAll' : 'AssetTrashAll', {
-        assetIds: idsToTrash,
-        userId: auth.user.id,
-      });
+      effects.trashIds = idsToTrash;
+      effects.force = isForce;
     }
 
     return { id: duplicateId, success: true };

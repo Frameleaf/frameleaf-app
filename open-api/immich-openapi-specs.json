@@ -74088,6 +74088,7 @@
           "AssetDetectFaces",
           "AssetDetectDuplicatesQueueAll",
           "AssetDetectDuplicates",
+          "DuplicateResolutionLifecycle",
           "AssetGenerateVideoDuplicateFramesQueueAll",
           "AssetGenerateVideoDuplicateFrames",
           "AssetEditThumbnailGeneration",

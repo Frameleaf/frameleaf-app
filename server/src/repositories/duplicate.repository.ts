@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, NotNull, Selectable, ShallowDehydrateObject, sql } from 'kysely';
+import { Insertable, Kysely, NotNull, Selectable, ShallowDehydrateObject, Transaction, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType } from 'src/enum.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { AssetType, QueueName } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
@@ -46,6 +47,45 @@ export class DuplicateRepository {
     private db: Kysely<DB>,
   ) {
     this.db = publicationDatabase(db);
+  }
+  /** One atomic decision; concurrent membership changes abort rather than partially dispose. */
+  async withResolutionLock<T>(duplicateId: string, callback: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+    return this.db
+      .transaction()
+      .setIsolationLevel('serializable')
+      .execute(async (tx) => {
+        await sql`SET LOCAL lock_timeout = '5s'`.execute(tx);
+        const context = queueExecution.getStore();
+        context?.signal.throwIfAborted();
+        const queues = [...new Set([QueueName.BackgroundTask, ...(context ? [context.claim.queue] : [])])].toSorted();
+        // Queue fences precede domain locks, as they do during normal worker publication.
+        await sql`select name from job_queue where name = any(${queues}::text[]) order by name for no key update`.execute(
+          tx,
+        );
+        if (context) {
+          const { rows } =
+            await sql`select id from job where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+              tx,
+            );
+          if (rows.length === 0) throw new Error('Duplicate decision lost its claim');
+        }
+        const members = await tx
+          .selectFrom('asset')
+          .select(['id', 'livePhotoVideoId'])
+          .where('duplicateId', '=', asUuid(duplicateId))
+          .execute();
+        if (members.length > 512) throw new Error('Duplicate group exceeds atomic resolution limit');
+        const ids = [
+          ...new Set(members.flatMap(({ id, livePhotoVideoId }) => (livePhotoVideoId ? [id, livePhotoVideoId] : [id]))),
+        ].toSorted();
+        for (const id of ids) await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        for (const { id } of members.toSorted((a, b) => a.id.localeCompare(b.id))) {
+          await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${id}`}, 0))`.execute(tx);
+        }
+        if (ids.length > 0)
+          await tx.selectFrom('asset').select('id').where('id', '=', anyUuid(ids)).orderBy('id').forUpdate().execute();
+        return publicationTransaction.run(tx, () => callback(tx));
+      });
   }
   /** Read-only owner projection using the same eligibility predicates as getAll. */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
