@@ -4123,6 +4123,26 @@ export type ExifResponseDto = {
     /** Time zone */
     timeZone?: string | null;
 };
+export type ImageEncodingInfo = {
+    bitDepth?: number;
+    codec?: string;
+    colorPrimaries?: number;
+    container?: string;
+    contentHeadroom?: number;
+    dynamicRange: DynamicRange;
+    fallbackReason?: string;
+    /** Gain-map interpretation; unknown values do not imply reconstruction support */
+    gainMap: string;
+    height?: number;
+    inspectionStatus?: InspectionStatus;
+    /** Decoder can reconstruct this source; does not imply a published HDR rendition or qualified display */
+    reconstructionAvailable: boolean;
+    /** Processing reference white in cd/m²; not measured display brightness */
+    referenceWhite?: number;
+    renderingPolicy?: string;
+    transfer?: number | "adaptive";
+    width?: number;
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -4187,6 +4207,8 @@ export type AssetResponseDto = {
     height: number | null;
     /** Asset ID */
     id: string;
+    /** Source image color encoding; unprocessed or unavailable evidence remains unknown */
+    imageEncoding?: ImageEncodingInfo;
     /** Is archived */
     isArchived: boolean;
     /** Is edited */
@@ -4960,6 +4982,8 @@ export type BestPhotoAssetResponseDto = {
     height: number | null;
     /** Asset ID */
     id: string;
+    /** Source image color encoding; unprocessed or unavailable evidence remains unknown */
+    imageEncoding?: ImageEncodingInfo;
     /** Is archived */
     isArchived: boolean;
     /** Is edited */
@@ -14808,6 +14832,7 @@ export type SyncAssetExifV1 = {
     focalLength: number | null;
     /** FPS */
     fps: number | null;
+    imageEncoding?: (ImageEncodingInfo) | null;
     /** ISO */
     iso: number | null;
     /** Latitude */
@@ -28637,6 +28662,15 @@ export enum CloudAvailability {
     NotConfigured = "not-configured",
     PausedKeyUnloaded = "paused-key-unloaded",
     Ready = "ready"
+}
+export enum DynamicRange {
+    Unknown = "unknown",
+    Sdr = "sdr",
+    Hdr = "hdr"
+}
+export enum InspectionStatus {
+    Identified = "identified",
+    Failed = "failed"
 }
 export enum AssetDevelopRevisionKind {
     Recipe = "recipe",
