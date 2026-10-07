@@ -466,7 +466,10 @@ The playback shortcut yields to buttons and dialog controls so Space can activat
 The mask toolbar selects points or incoming/outgoing handles and nudges them one project
 pixel in the displayed direction, including mirrored and rotated paths. Independent
 handle movement follows the existing tangent behavior. Static edits and playhead path
-keyframes use the existing mask edit commands and undo history.
+keyframes use the existing mask edit commands and undo history. Native buttons insert
+a point on the selected segment or delete selected points, respecting open endpoints,
+minimum path sizes and inherited track locks. Paths with geometry keyframes retain
+their point count; point and handle nudges remain available on unlocked tracks.
 
 ## Web integration boundary
 

@@ -715,7 +715,7 @@ diff --git a/src/features/preview/components/mask-editor-overlay.test.tsx b/src/
  import { useSelectionStore } from '@/shared/state/selection'
  import { usePlaybackStore } from '@/shared/state/playback'
  import type { CoordinateParams, Transform } from '../types/gizmo'
-@@ -654,6 +656,371 @@
+@@ -654,6 +656,493 @@
      ])
      useMaskEditorStore.getState().startEditing('path-1')
    }
@@ -753,6 +753,128 @@ diff --git a/src/features/preview/components/mask-editor-overlay.test.tsx b/src/
 +      useTimelineStore.temporal.getState().undo()
 +    })
 +    expect(useItemsStore.getState().items).toEqual(before)
++  })
++
++  it('inserts and deletes a curved mirrored point through native controls and undo/redo', () => {
++    seedEditablePath()
++    const item = structuredClone(useItemsStore.getState().items[0] as ShapeItem)
++    item.transform = { ...PATH_ITEM_TRANSFORM, rotation: 35, flipHorizontal: true }
++    item.pathVertices![0]!.outHandle = [0.3, 0.2]
++    item.pathVertices![1]!.inHandle = [-0.2, 0.3]
++    useItemsStore.getState().setItems([item])
++    useTimelineStore.temporal.getState().clear()
++    const before = structuredClone(useItemsStore.getState().items)
++    renderMaskEditorOverlay(item.transform as Transform)
++    const chooser = screen.getByRole('combobox', { name: 'Path point' })
++    fireEvent.change(chooser, { target: { value: '0' } })
++    fireEvent.change(screen.getByRole('combobox', { name: 'Path control' }), {
++      target: { value: 'out' },
++    })
++    const insert = screen.getByRole('button', { name: 'Insert point after selected point' })
++    insert.focus()
++    expect(fireEvent.keyDown(insert, { key: ' ', code: 'Space' })).toBe(true)
++    fireEvent.keyUp(insert, { key: ' ', code: 'Space' })
++    // JSDOM does not synthesize the native button's uncancelled Space click.
++    fireEvent.click(insert)
++    const inserted = structuredClone(useItemsStore.getState().items)
++    const shape = inserted[0] as ShapeItem
++    expect(shape.pathVertices).toHaveLength(5)
++    expect(shape.pathVertices![1]!.position[0]).toBeCloseTo(0.5375)
++    expect(shape.pathVertices![1]!.position[1]).toBeCloseTo(0.1875)
++    expect(shape.pathVertices![0]!.outHandle).toEqual([0.15, 0.1])
++    expect(shape.pathVertices![2]!.inHandle[0]).toBeCloseTo(-0.1)
++    expect(shape.pathVertices![2]!.inHandle[1]).toBeCloseTo(0.15)
++    expect(shape.transform).toEqual(item.transform)
++    expect(useMaskEditorStore.getState().selectedVertexIndex).toBe(1)
++    expect(screen.getByRole('combobox', { name: 'Path control' })).toHaveValue('out')
++    expect(insert).toHaveFocus()
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(before)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(inserted)
++
++    const remove = screen.getByRole('button', { name: 'Delete selected points' })
++    remove.focus()
++    fireEvent.click(remove)
++    const deleted = structuredClone(useItemsStore.getState().items)
++    expect((deleted[0] as ShapeItem).pathVertices).toHaveLength(4)
++    expect(useMaskEditorStore.getState().selectedVertexIndex).toBeNull()
++    expect(chooser).toHaveFocus()
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(inserted)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(deleted)
++  })
++
++  it.each(['animated', 'locked group'])(
++    'refuses %s topology without changing selection or history',
++    (reason) => {
++      seedEditablePath()
++      if (reason === 'animated') {
++        useTimelineStore.setState({
++          keyframes: [
++            {
++              itemId: 'path-1',
++              properties: [
++                {
++                  property: 'pathVertex:0:positionX',
++                  keyframes: [{ id: 'start', frame: 0, value: 0, easing: 'linear' }],
++                },
++              ],
++            },
++          ],
++        })
++      } else {
++        const track = useItemsStore.getState().tracks[0]!
++        useItemsStore.getState().setTracks([
++          { ...track, id: 'group-1', isGroup: true, locked: true },
++          { ...track, parentTrackId: 'group-1' },
++        ])
++      }
++      usePlaybackStore.getState().setCurrentFrame(15)
++      useTimelineStore.temporal.getState().clear()
++      const beforeItems = structuredClone(useItemsStore.getState().items)
++      const beforeKeys = structuredClone(useTimelineStore.getState().keyframes)
++      renderMaskEditorOverlay(PATH_ITEM_TRANSFORM)
++      fireEvent.change(screen.getByRole('combobox', { name: 'Path point' }), {
++        target: { value: '1' },
++      })
++      const insert = screen.getByRole('button', { name: 'Insert point after selected point' })
++      const remove = screen.getByRole('button', { name: 'Delete selected points' })
++      expect(insert).toBeDisabled()
++      expect(remove).toBeDisabled()
++      fireEvent.click(insert)
++      fireEvent.click(remove)
++      fireEvent.keyDown(window, { key: 'Delete' })
++      expect(useItemsStore.getState().items).toEqual(beforeItems)
++      expect(useTimelineStore.getState().keyframes).toEqual(beforeKeys)
++      expect(useMaskEditorStore.getState().selectedVertexIndices).toEqual([1])
++      expect(useMaskEditorStore.getState().selectedVertexIndex).toBe(1)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      expect(
++        screen.getByRole('button', { name: 'Nudge selected path points right' }),
++      ).toHaveProperty('disabled', reason === 'locked group')
++    },
++  )
++
++  it('keeps open endpoints and minimum point counts while Delete yields to the point chooser', () => {
++    seedEditablePath()
++    const item = structuredClone(useItemsStore.getState().items[0] as ShapeItem)
++    item.isMask = false
++    item.pathClosed = false
++    item.pathVertices = item.pathVertices!.slice(0, 2)
++    useItemsStore.getState().setItems([item])
++    renderMaskEditorOverlay(PATH_ITEM_TRANSFORM)
++    const chooser = screen.getByRole('combobox', { name: 'Path point' })
++    fireEvent.change(chooser, { target: { value: '1' } })
++    expect(screen.getByRole('button', { name: 'Insert point after selected point' })).toBeDisabled()
++    expect(screen.getByRole('button', { name: 'Delete selected points' })).toBeDisabled()
++    chooser.focus()
++    expect(fireEvent.keyDown(chooser, { key: 'Delete' })).toBe(true)
++    expect((useItemsStore.getState().items[0] as ShapeItem).pathVertices).toHaveLength(2)
++    expect(useMaskEditorStore.getState().selectedVertexIndex).toBe(1)
++    fireEvent.change(chooser, { target: { value: '0' } })
++    expect(screen.getByRole('button', { name: 'Insert point after selected point' })).toBeEnabled()
 +  })
 +
 +  it('nudges an animated point at the playhead without rewriting its base path', () => {
@@ -1143,25 +1265,70 @@ diff --git a/src/features/preview/utils/path-fit.ts b/src/features/preview/utils
 diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/features/preview/components/mask-editor-overlay.tsx
 --- a/src/features/preview/components/mask-editor-overlay.tsx
 +++ b/src/features/preview/components/mask-editor-overlay.tsx
-@@ -177,6 +177,8 @@
+@@ -69,6 +69,7 @@
+ } from '../deps/timeline-utils'
+ import {
+   getAutoKeyframeOperation,
++  hasPathVertexKeyframes,
+   isFrameInTransitionRegion,
+   resolveAnimatedShapeItem,
+   type AutoKeyframeOperation,
+@@ -177,6 +178,9 @@
    itemTransform,
  }: MaskEditorOverlayProps) {
    const canvasRef = useRef<HTMLCanvasElement>(null)
++  const pointSelectorRef = useRef<HTMLSelectElement>(null)
 +  const [pathControl, setPathControl] = useState<'point' | 'in' | 'out'>('point')
 +  const [independentHandles, setIndependentHandles] = useState(false)
    const [hoveredShapeBody, setHoveredShapeBody] = useState(false)
    const [hoveredSegmentIndex, setHoveredSegmentIndex] = useState<number | null>(null)
    const [committedEditSnapshot, setCommittedEditSnapshot] = useState<CommittedEditSnapshot | null>(
-@@ -1408,7 +1410,7 @@
+@@ -199,6 +203,18 @@
+     ),
+   )
+   const draggingVertexIndex = useMaskEditorStore((s) => s.draggingVertexIndex)
++  const editingTrackLocked = useItemsStore(
++    useCallback(
++      (state) =>
++        resolveEffectiveTrackStates(state.tracks).some(
++          (track) => track.id === state.itemById[editingItemId ?? '']?.trackId && track.locked,
++        ),
++      [editingItemId],
++    ),
++  )
++  const pathIsAnimated = useKeyframesStore((state) =>
++    hasPathVertexKeyframes(state.keyframesByItemId[editingItemId ?? '']),
++  )
+   const draggingHandle = useMaskEditorStore((s) => s.draggingHandle)
+   const previewVertices = useMaskEditorStore((s) => s.previewVertices)
+   const selectedVertexIndices = useMaskEditorStore((s) => s.selectedVertexIndices)
+@@ -1408,35 +1424,44 @@
    // ============================================================
  
    const commitVertices = useCallback(
 -    (vertices: MaskVertex[]) => {
+-      if (!editingItemId) return
+-      const item = useItemsStore.getState().itemById[editingItemId]
 +    (vertices: MaskVertex[], geometryTransform: Transform = itemTransform) => {
-       if (!editingItemId) return
-       const item = useItemsStore.getState().itemById[editingItemId]
++      if (!editingItemId) return false
++      const { itemById, tracks } = useItemsStore.getState()
++      const item = itemById[editingItemId]
++      if (
++        resolveEffectiveTrackStates(tracks).some(
++          (track) => track.id === item?.trackId && track.locked,
++        )
++      ) {
++        scheduleEditCommitCleanup()
++        return false
++      }
        if (item?.type === 'shape' && item.shapeType === 'path') {
-@@ -1421,7 +1423,7 @@
+         const currentFrame = usePlaybackStore.getState().currentFrame
+         const directPathPersistence = buildPathGeometryPersistence(item, vertices, currentFrame)
+         if (directPathPersistence.blocked) {
+           scheduleEditCommitCleanup()
+-          return
++          return false
+         }
          if (directPathPersistence.pathVertices === undefined) {
            setCommittedEditSnapshot({
              vertices: cloneVertices(vertices),
@@ -1170,16 +1337,27 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
            })
            commitMaskEdit(editingItemId, {
              autoKeyframeOperations: directPathPersistence.autoKeyframeOperations,
-@@ -1430,7 +1432,7 @@
-           return
-         }
- 
+           })
+           scheduleEditCommitCleanup()
+-          return
+-        }
+-
 -        const fitted = fitShapePathToBounds(vertices, itemTransform, item.transform)
++          return true
++        }
++
 +        const fitted = fitShapePathToBounds(vertices, geometryTransform, item.transform)
          const pathPersistence = buildPathGeometryPersistence(
            item,
            fitted.pathVertices,
-@@ -1449,7 +1451,7 @@
+           currentFrame,
+         )
+-        if (pathPersistence.blocked) return
++        if (pathPersistence.blocked) return false
+         const { baseTransform, autoKeyframeOperations } = buildMaskTransformPersistence(
+           item,
+           {
+@@ -1449,7 +1474,7 @@
          )
          setCommittedEditSnapshot({
            vertices: cloneVertices(fitted.pathVertices),
@@ -1188,11 +1366,138 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
          })
          commitMaskEdit(editingItemId, {
            pathVertices: pathPersistence.pathVertices,
-@@ -1966,6 +1968,50 @@
+@@ -1460,7 +1485,9 @@
+           ],
+         })
+         scheduleEditCommitCleanup()
+-      }
++        return true
++      }
++      return false
+     },
+     [
+       buildMaskTransformPersistence,
+@@ -1474,7 +1501,7 @@
+ 
+   const removeSelectedVertices = useCallback(() => {
+     const vertices = getVertices()
+-    if (!vertices) return
++    if (!vertices || editDraggingRef.current) return false
+ 
+     const targetIndices =
+       selectedVertexIndices.length > 0
+@@ -1485,16 +1512,16 @@
+           ? [selectedVertexIndex]
+           : []
+ 
+-    if (targetIndices.length === 0) return
++    if (targetIndices.length === 0) return false
+     const minimumVertices = editingPathClosed ? 3 : 2
+-    if (vertices.length - targetIndices.length < minimumVertices) return
++    if (vertices.length - targetIndices.length < minimumVertices) return false
+ 
+     const sortedIndices = [...targetIndices].sort((a, b) => b - a)
+     let nextVertices: MaskVertex[] | null = vertices
+     for (const index of sortedIndices) {
+       nextVertices = nextVertices ? removeVertex(nextVertices, index, minimumVertices) : null
+     }
+-    if (!nextVertices) return
++    if (!nextVertices || !commitVertices(nextVertices, effectiveItemTransform)) return false
+ 
+     const removedSet = new Set(targetIndices)
+     const nextSelectedVertices = selectedVertexIndices
+@@ -1511,10 +1538,11 @@
+         : (nextSelectedVertices[nextSelectedVertices.length - 1] ?? null)
+ 
+     selectVertices(nextSelectedVertices, nextSelectedIndex)
+-    commitVertices(nextVertices)
++    return true
+   }, [
+     commitVertices,
+     editingPathClosed,
++    effectiveItemTransform,
+     getVertices,
+     selectVertices,
+     selectedVertexIndex,
+@@ -1534,6 +1562,11 @@
+       if (e.key !== 'Backspace' && e.key !== 'Delete') {
+         return
+       }
++      if (
++        e.target instanceof Element &&
++        e.target.closest('input, textarea, select, [contenteditable="true"]')
++      )
++        return
+ 
+       e.preventDefault()
+       e.stopPropagation()
+@@ -1910,7 +1943,7 @@
+         const vertices = getVertices()
+         if (!vertices) return
+         const newVertices = removeVertex(vertices, hit.index, editingPathClosed ? 3 : 2)
+-        if (newVertices) {
++        if (newVertices && commitVertices(newVertices, effectiveItemTransform)) {
+           const nextSelectedVertices = selectedVertexIndices
+             .filter((index) => index !== hit.index)
+             .map((index) => (index > hit.index ? index - 1 : index))
+@@ -1927,7 +1960,6 @@
+               ? nextPrimaryCandidate
+               : (nextSelectedVertices[nextSelectedVertices.length - 1] ?? null)
+           selectVertices(nextSelectedVertices, nextSelectedIndex)
+-          commitVertices(newVertices)
+         }
+       }
+     },
+@@ -1939,7 +1971,26 @@
+       selectVertices,
+       commitVertices,
+       editingPathClosed,
++      effectiveItemTransform,
+     ],
++  )
++
++  const insertPointAfter = useCallback(
++    (index: number) => {
++      const vertices = getVertices()
++      if (
++        !vertices ||
++        editDraggingRef.current ||
++        !vertices[index] ||
++        (!editingPathClosed && index === vertices.length - 1)
++      )
++        return
++      if (!commitVertices(insertVertexBetween(vertices, index), effectiveItemTransform)) return
++      selectVertex(index + 1)
++      setHoveredShapeBody(false)
++      setHoveredSegmentIndex(null)
++    },
++    [getVertices, editingPathClosed, effectiveItemTransform, commitVertices, selectVertex],
+   )
+ 
+   const handleEditDoubleClick = useCallback(
+@@ -1951,25 +2002,66 @@
+       e.preventDefault()
+       e.stopPropagation()
+ 
+-      const vertices = getVertices()
+-      if (!vertices) return
+-
+-      const newVertices = insertVertexBetween(vertices, hit.index)
+-      selectVertex(hit.index + 1)
+-      commitVertices(newVertices)
+-      setHoveredShapeBody(false)
+-      setHoveredSegmentIndex(null)
+-    },
+-    [hitTestEditEvent, getVertices, selectVertex, commitVertices],
++      insertPointAfter(hit.index)
++    },
++    [hitTestEditEvent, insertPointAfter],
+   )
+ 
    // ============================================================
    // Render
    // ============================================================
-+
+ 
 +  const nudgeSelectedVertices = (dx: number, dy: number) => {
 +    const vertices = getVertices()
 +    const { width, height, rotation, flipHorizontal, flipVertical } = effectiveItemTransform
@@ -1236,16 +1541,25 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
 +    }
 +    commitVertices(next, effectiveItemTransform)
 +  }
- 
++
    if (!isEditing) return null
  
-@@ -1997,6 +2043,71 @@
+   const cursor = hoveredShapeBody ? 'move' : 'crosshair'
++  const vertices = getVertices()
++  const selectedPointCount = selectedVertexIndices.length || (selectedVertexIndex !== null ? 1 : 0)
++  const topologyDisabled =
++    editingTrackLocked || pathIsAnimated || draggingVertexIndex !== null || draggingHandle !== null
+ 
+   return (
+     <div
+@@ -1997,6 +2089,102 @@
          onContextMenu={penMode ? handlePenContextMenu : handleEditContextMenu}
          onDoubleClick={penMode ? undefined : handleEditDoubleClick}
        />
 +      {!penMode && (
 +        <div className="absolute left-2 top-2 max-w-[calc(100%_-_1rem)] flex flex-wrap items-center gap-1 rounded border border-border bg-background p-1 pointer-events-auto">
 +          <select
++            ref={pointSelectorRef}
 +            aria-label="Path point"
 +            className="h-6 max-w-full rounded border border-border bg-background px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
 +            value={selectedVertexIndex ?? ''}
@@ -1284,6 +1598,35 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
 +              Independent handles
 +            </label>
 +          )}
++          <button
++            type="button"
++            aria-label="Insert point after selected point"
++            className="h-6 shrink-0 rounded px-1 text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
++            disabled={
++              topologyDisabled ||
++              selectedVertexIndex === null ||
++              !vertices?.[selectedVertexIndex] ||
++              (!editingPathClosed && selectedVertexIndex === vertices.length - 1)
++            }
++            onClick={() => selectedVertexIndex !== null && insertPointAfter(selectedVertexIndex)}
++          >
++            Insert point
++          </button>
++          <button
++            type="button"
++            aria-label="Delete selected points"
++            className="h-6 shrink-0 rounded px-1 text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
++            disabled={
++              topologyDisabled ||
++              selectedPointCount === 0 ||
++              (vertices?.length ?? 0) - selectedPointCount < (editingPathClosed ? 3 : 2)
++            }
++            onClick={() => {
++              if (removeSelectedVertices()) pointSelectorRef.current?.focus()
++            }}
++          >
++            Delete points
++          </button>
 +          {[
 +            { direction: 'left', dx: -1, dy: 0, glyph: '←' },
 +            { direction: 'right', dx: 1, dy: 0, glyph: '→' },
@@ -1299,7 +1642,8 @@ diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/featu
 +              disabled={
 +                (selectedVertexIndices.length === 0 && selectedVertexIndex === null) ||
 +                draggingVertexIndex !== null ||
-+                draggingHandle !== null
++                draggingHandle !== null ||
++                editingTrackLocked
 +              }
 +              onClick={() => nudgeSelectedVertices(dx, dy)}
 +            >
