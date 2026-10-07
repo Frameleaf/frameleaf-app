@@ -42,3 +42,14 @@ Translations live in the `i18n` folder. Corrections and new translations are wel
 ### Community support
 
 If you like helping others, answering questions in GitHub Discussions is always appreciated.
+
+## Commit hygiene
+
+Keep agent skills, plugins, local state, plans, reports, handoffs, private exports,
+credentials, and customer data out of Git. Store work products outside the repo
+or in ignored local directories; never force-add them. Product docs, tests, and
+required license/provenance records remain reviewable source files.
+
+Before committing, review `git diff --cached --name-status` and run
+`bash .github/check-repository-hygiene.sh`. CI rejects tracked ignored files,
+including files added with `git add -f`. See `AGENTS.md` for repository rules.
