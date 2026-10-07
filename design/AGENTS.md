@@ -14,5 +14,5 @@
 
   Add new styling to that layer or to the owning component's CSS, never as one-off overrides.
 - Prototype restoration, jobs, accounts, security and analytics use fictional local data. A working demo is not backend, media-quality, privacy, native or Freecut parity evidence.
-- Keep this committed template as the portable agent reference. The earlier `prototypes/frameleaf` working copy is historical input; reconcile deliberate updates with `source-manifest.json` instead of letting the copies diverge silently.
+- Keep prototypes and visual previews local, excluded from Git and published artifacts. Production source and tests must not depend on these local files. Preserve the local template as an agent reference and reconcile deliberate updates with `source-manifest.json`.
 - Do not commit dependencies, build outputs, hosting bindings, credentials, cache directories or personal library media. The existing generated sample media is safe to retain as demonstration content.

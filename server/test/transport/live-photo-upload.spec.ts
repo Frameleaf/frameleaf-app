@@ -132,7 +132,7 @@ describe('FL-225 normal HTTP atomic Live Photo publication', () => {
     expect(Number(base.port)).toBeGreaterThan(0);
     expect(process.env.FL225_PG_URL).toBeTruthy();
     db = postgres(process.env.FL225_PG_URL!, { max: 2 });
-    video = await readFile(new URL('../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url));
+    video = await readFile(new URL('../fixtures/live-photo-motion.mp4', import.meta.url));
     const password = 'FL225-pair-fixture-password-24!';
     const email = 'pair-owner@example.test';
     // FL-292: the e2e server pins its setup code

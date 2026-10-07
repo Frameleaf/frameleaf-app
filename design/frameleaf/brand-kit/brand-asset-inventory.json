@@ -8,30 +8,9 @@
       "sha256": "818fce6202ca27e7a8a1a4e888e5e55fab51e5964c14bf98932b0a8cd9f49961"
     },
     {
-      "bytes": 10052,
-      "id": "reference:design/frameleaf/template/README.md",
-      "path": "design/frameleaf/template/README.md",
-      "role": "approved-prototype-usage-contract",
-      "sha256": "da94333d613fe7aa70259474d8d41fb06b5886e5ac2f9397a469f1da092286e6"
-    },
-    {
-      "bytes": 1777,
-      "id": "reference:design/frameleaf/references/README.md",
-      "path": "design/frameleaf/references/README.md",
-      "role": "approved-visual-reference-contract",
-      "sha256": "e6636839cae8e01f277f758243c2504ab64a0aafa53043b87c053023362c5169"
-    },
-    {
       "bytes": 988033,
       "id": "reference:design/frameleaf/mark.png",
       "path": "design/frameleaf/mark.png",
-      "role": "historical-raster-reference-not-authority",
-      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db"
-    },
-    {
-      "bytes": 988033,
-      "id": "reference:design/frameleaf/template/public/media/brand.png",
-      "path": "design/frameleaf/template/public/media/brand.png",
       "role": "historical-raster-reference-not-authority",
       "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db"
     }
@@ -64,26 +43,17 @@
     }
   ],
   "counts": {
-    "approvedReferenceDocuments": 3,
+    "approvedReferenceDocuments": 1,
     "generatedDerivatives": 0,
-    "historicalRasterReferences": 2,
+    "historicalRasterReferences": 1,
     "suppliedFiles": 8,
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "3b2756955bae72cc372567e708c353af4a19465e7ce4cea6b2d8cc070114936c",
+    "approvedReferenceLedgerSha256": "099343692a01b8a7875fb4d3ae6ebc2457490faee3f53844ac8ca3caf3a82e98",
     "suppliedSourceLedgerSha256": "59f073d84b24756562e8047f7db74a098c049c3f2ed817d479d08e399d4aaced"
   },
-  "expectedDuplicateContent": [
-    {
-      "paths": [
-        "design/frameleaf/mark.png",
-        "design/frameleaf/template/public/media/brand.png"
-      ],
-      "reason": "The portable template retained the historical generated prototype raster byte-for-byte.",
-      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db"
-    }
-  ],
+  "expectedDuplicateContent": [],
   "manifest": {
     "bytes": 11927,
     "path": "design/frameleaf/brand-kit/manifest.json",
