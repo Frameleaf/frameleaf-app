@@ -225,17 +225,13 @@ test.describe('Duplicate review', () => {
         utils.createAsset(admin.accessToken, {
           assetData: {
             filename: 'duplicate-kayak.mp4',
-            bytes: await readFile(
-              new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
-            ),
+            bytes: await readFile(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
           },
         }),
         utils.createAsset(admin.accessToken, {
           assetData: {
             filename: 'duplicate-forest.mp4',
-            bytes: await readFile(
-              new URL('../../../../design/frameleaf/template/public/media/forest-demo.mp4', import.meta.url),
-            ),
+            bytes: await readFile(new URL('../../fixtures/frameleaf-media/forest-demo.mp4', import.meta.url)),
           },
         }),
       ]);

@@ -12,7 +12,7 @@ test.beforeEach(async ({ context, page }) => {
   await context.route('**/api/assets/*/thumbnail*', (route) =>
     route.fulfill({
       contentType: 'image/png',
-      body: readFileSync(new URL('../../../../../design/frameleaf/template/public/media/hiking.png', import.meta.url)),
+      body: readFileSync(new URL('../../../fixtures/frameleaf-media/hiking.png', import.meta.url)),
     }),
   );
   await context.route('**/api/users/*/profile-image*', (route) =>
@@ -20,7 +20,7 @@ test.beforeEach(async ({ context, page }) => {
       contentType: 'image/png',
       body: readFileSync(
         new URL(
-          `../../../../../design/frameleaf/template/public/media/avatar-${route.request().url().includes('jamie') ? 'jamie' : 'emma'}.png`,
+          `../../../fixtures/frameleaf-media/avatar-${route.request().url().includes('jamie') ? 'jamie' : 'emma'}.png`,
           import.meta.url,
         ),
       ),

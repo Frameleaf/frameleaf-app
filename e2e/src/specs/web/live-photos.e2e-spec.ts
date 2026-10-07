@@ -51,9 +51,7 @@ test('reviews a separated Live Photo, confirms its link and plays motion after r
     const video = await utils.createAsset(admin.accessToken, {
       assetData: {
         filename: 'separated-motion.mp4',
-        bytes: await readFile(
-          new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
-        ),
+        bytes: await readFile(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
       },
     });
     await utils.waitForAssetReady(admin.accessToken, photo.id, { signal: assetReady.signal });
