@@ -21,9 +21,11 @@
 namespace {
 void check(napi_status status) { if (status != napi_ok) throw std::runtime_error("INVALID_ARGUMENT"); }
 void check(uhdr_error_info_t error) {
+  if (error.error_code == UHDR_CODEC_MEM_ERROR) throw std::runtime_error("RESOURCE_LIMIT");
   if (error.error_code != UHDR_CODEC_OK) throw std::runtime_error("INVALID_GAIN_MAP");
 }
 void check(heif_error error) {
+  if (error.subcode == heif_suberror_Security_limit_exceeded) throw std::runtime_error("RESOURCE_LIMIT");
   switch (error.code) {
     case heif_error_Ok: return;
     case heif_error_Memory_allocation_error: throw std::runtime_error("RESOURCE_LIMIT");
@@ -83,7 +85,7 @@ struct Input {
     const auto available = uint64_t(maxBytes - double(size) * 2);
     if (!available) throw std::runtime_error("RESOURCE_LIMIT");
     limits->max_image_size_pixels = std::max(uint64_t(1), uint64_t(maxPixels));
-    limits->max_color_profile_size = std::min(limits->max_color_profile_size, uint32_t(1048576));
+    limits->max_color_profile_size = std::min(limits->max_color_profile_size, uint32_t(std::min(available, uint64_t(1048576))));
     limits->max_memory_block_size = std::min(limits->max_memory_block_size, available);
     limits->max_total_memory = std::min(limits->max_total_memory, available);
     check(heif_context_read_from_memory_without_copy(ctx.get(), data, size, nullptr));
@@ -137,12 +139,27 @@ int jpegOrientation(const Input& input) {
   return orientation ? orientation : 1;
 }
 
-Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
+Decoder preparedDecoder(Input& input) {
   Decoder dec(uhdr_create_decoder(), uhdr_release_decoder);
   if (!dec) throw std::runtime_error("RESOURCE_LIMIT");
+#ifdef UHDR_FRAMELEAF_RESOURCE_LIMITS_API
+  if (double(input.size) * 2 + 1 > input.maxBytes) throw std::runtime_error("RESOURCE_LIMIT");
+  check(uhdr_dec_set_resource_limits(dec.get(), std::max(uint64_t(1), uint64_t(input.maxPixels)),
+    uint64_t(input.maxBytes - double(input.size) * 2)));
+#endif
   uhdr_compressed_image_t image{input.data, input.size, input.size,
     UHDR_CG_UNSPECIFIED, UHDR_CT_UNSPECIFIED, UHDR_CR_UNSPECIFIED};
   check(uhdr_dec_set_image(dec.get(), &image));
+  return dec;
+}
+bool hasGainMap(Input& input) {
+  auto dec = preparedDecoder(input);
+  const auto status = uhdr_dec_probe(dec.get());
+  if (status.error_code == UHDR_CODEC_MEM_ERROR) check(status);
+  return status.error_code == UHDR_CODEC_OK;
+}
+Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
+  auto dec = preparedDecoder(input);
   if (linear || sdr) {
     check(uhdr_dec_set_out_img_format(dec.get(), sdr ? UHDR_IMG_FMT_32bppRGBA8888 : UHDR_IMG_FMT_64bppRGBAHalfFloat));
     check(uhdr_dec_set_out_color_transfer(dec.get(), sdr ? UHDR_CT_SRGB : UHDR_CT_LINEAR));
@@ -697,7 +714,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
     Input input(env, args); auto result = object(env);
     field(env, result, "dynamicRange", "unknown"); field(env, result, "gainMap", "none");
     field(env, result, "referenceWhite", 203.0); field(env, result, "reconstructionAvailable", false);
-    if (is_uhdr_image(input.data, int(input.size))) {
+    if (hasGainMap(input)) {
       auto dec = decoder(input);
       field(env, result, "dynamicRange", "hdr");
       const auto* bytes = static_cast<const uint8_t*>(input.data);
@@ -793,7 +810,7 @@ napi_value inspect(napi_env env, napi_callback_info info) {
 
 napi_value decodeLinear(napi_env env, Input& input) {
     const auto type = heif_check_filetype(static_cast<uint8_t*>(input.data), int(input.size));
-    if (!is_uhdr_image(input.data, int(input.size))
+    if (!hasGainMap(input)
         && (type == heif_filetype_yes_supported || type == heif_filetype_yes_unsupported))
       return decodeHeif(env, input);
     auto dec = decoder(input, true);
@@ -823,7 +840,7 @@ napi_value decode(napi_env env, napi_callback_info info) {
 napi_value decodePaired(napi_env env, napi_callback_info info) {
   return invoke(env, info, 3, [&](napi_value* args) {
     Input input(env, args);
-    if (!is_uhdr_image(input.data, int(input.size))) return decodeHeif(env, input, true);
+    if (!hasGainMap(input)) return decodeHeif(env, input, true);
     // The previous decoder is destroyed before this one starts. Include retained float RGB in its budget.
     auto result = decodeLinear(env, input);
     auto dec = decoder(input, false, true);
