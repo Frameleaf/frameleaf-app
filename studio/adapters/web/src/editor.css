@@ -1,3 +1,6 @@
 @import "../../../engine/src/index.css";
 /* The prepared engine is generated/ignored, so Tailwind's automatic scan excludes it. */
 @source '../../../engine/src';
+
+/* Keep touch clip edits on the timeline; scrolling remains available outside clips. */
+[data-timeline-item] { touch-action: none; }

@@ -87,6 +87,7 @@ import {
 } from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
+import { installTimelineTouchEditing } from './timeline-touch'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
 import { timelineEditContent } from './shims/timeline-persistence'
 
@@ -302,6 +303,7 @@ async function seedProject(state: Session, mount: EditorMount): Promise<void> {
 }
 
 function EditorApp({ state, projectId }: { state: Session; projectId: string }) {
+  useEffect(installTimelineTouchEditing, [])
   const [router] = useState(() => {
     const history = createMemoryHistory({ initialEntries: [`/editor/${projectId}`] })
     // Anything but this project's editor route belongs to the host: projects list, landing page,
