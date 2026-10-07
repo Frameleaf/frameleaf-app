@@ -191,10 +191,10 @@ export class AssetDevelopController {
   async viewAssetDevelopFile(
     @Auth() auth: AuthDto,
     @Param() { id, revisionId }: AssetDevelopRevisionParamDto,
-    @Query() { kind }: AssetDevelopFileQueryDto,
+    @Query() { kind, dynamicRange }: AssetDevelopFileQueryDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.getFile(auth, id, revisionId, kind), this.logger);
+    await sendFile(res, next, () => this.service.getFile(auth, id, revisionId, kind, dynamicRange), this.logger);
   }
 }

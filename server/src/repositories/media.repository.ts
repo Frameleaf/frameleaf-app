@@ -116,8 +116,17 @@ export class MediaRepository {
     return sharpProcessPool.run('decodeHdrImage', [input, preserveSdrBaseline]);
   }
 
-  generateHdrRenditions(input: string | Buffer, outputs: SharpArguments<'generateHdrRenditions'>[1]) {
-    return sharpProcessPool.run('generateHdrRenditions', [input, outputs]);
+  generateHdrRenditions(
+    input: string | Buffer,
+    outputs: SharpArguments<'generateHdrRenditions'>[1],
+    develop?: SharpArguments<'generateHdrRenditions'>[2],
+    signal?: AbortSignal,
+  ) {
+    return sharpProcessPool.run(
+      'generateHdrRenditions',
+      develop ? [input, outputs, develop] : [input, outputs],
+      signal,
+    );
   }
 
   encodeHdrImage(image: SharpArguments<'encodeHdrImage'>[0]) {

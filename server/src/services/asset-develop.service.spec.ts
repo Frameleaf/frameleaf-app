@@ -687,6 +687,186 @@ describe(AssetDevelopService.name, () => {
     );
   });
 
+  describe('HDR version 3', () => {
+    const recipe = { version: 3, exposure: 1 };
+    it('refuses rendering while disabled before creating history or media', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+      try {
+        await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(developRepository.create).not.toHaveBeenCalled();
+        await expect(sut.preview(authStub.user1, asset.id, { recipe, size: 256 })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it('publishes HDR and compatible SDR together without legacy pixel decoding or motion changes', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const revision = revisionStub({
+          assetId: asset.id,
+          recipe,
+          recipeVersion: 3,
+          status: AssetDevelopRevisionStatus.Queued,
+        });
+        developRepository.get.mockResolvedValue({
+          ...revision,
+          masterPath: '/old-sdr.jpg',
+          previewPath: '/old-preview.jpg',
+          hdrMasterPath: '/old-hdr.jpg',
+          hdrPreviewPath: '/old-hdr-preview.jpg',
+        });
+        mocks.asset.getById.mockResolvedValue({ ...asset, livePhotoVideoId: 'original-motion' } as never);
+        mocks.media.generateHdrRenditions.mockImplementation((_input, outputs) =>
+          Promise.resolve(
+            outputs.map(({ path, dynamicRange }) => ({
+              path,
+              width: 64,
+              height: 32,
+              gamut: 1 as const,
+              encoding: {
+                dynamicRange: dynamicRange ?? 'hdr',
+                gainMap: dynamicRange === 'sdr' ? 'none' : 'iso',
+                reconstructionAvailable: dynamicRange !== 'sdr',
+              },
+            })),
+          ),
+        );
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+        const call = mocks.media.generateHdrRenditions.mock.calls[0];
+        expect(call[0]).toBe(asset.originalPath);
+        expect(call[1]).toHaveLength(4);
+        expect(call[1].map((x) => x.dynamicRange ?? 'hdr')).toEqual(['hdr', 'hdr', 'sdr', 'sdr']);
+        expect(call[2]).toMatchObject({ recipe: { version: 1, exposure: 1 }, seed: 2 });
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(mocks.storage.rename).toHaveBeenCalledTimes(4);
+        expect(developRepository.beginAttempt).toHaveBeenCalledWith(
+          revision.id,
+          'frameleaf-develop-hdr/1',
+          DEVELOP_RENDER_LEASE_MS / 1000,
+        );
+        expect(developRepository.update).toHaveBeenCalledWith(
+          revision.id,
+          expect.objectContaining({
+            hdrMasterPath: expect.stringContaining('_master_hdr.jpg'),
+            hdrPreviewPath: expect.stringContaining('_preview_hdr.jpg'),
+            hdrRenditionChecksum: originalSha,
+            sourceChecksum: originalSha,
+            status: AssetDevelopRevisionStatus.Rendered,
+          }),
+        );
+        expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, revision.id);
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: ['/old-sdr.jpg', '/old-preview.jpg', '/old-hdr.jpg', '/old-hdr-preview.jpg'] },
+        });
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it('never adopts a failed four-output set or deletes previous working files', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const revision = revisionStub({
+          assetId: asset.id,
+          recipe,
+          recipeVersion: 3,
+          status: AssetDevelopRevisionStatus.Queued,
+          masterPath: '/prior-sdr.jpg',
+          previewPath: '/prior-preview.jpg',
+          hdrMasterPath: '/prior-hdr.jpg',
+          hdrPreviewPath: '/prior-hdr-preview.jpg',
+          hdrRenditionChecksum: originalSha,
+          renderedAt: new Date(),
+        });
+        developRepository.get.mockResolvedValue(revision);
+        mocks.media.generateHdrRenditions.mockRejectedValue(new Error('INVALID_HDR_RENDITION'));
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Failed);
+        expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+        for (const path of ['/prior-sdr.jpg', '/prior-preview.jpg', '/prior-hdr.jpg', '/prior-hdr-preview.jpg'])
+          expect(mocks.storage.unlink).not.toHaveBeenCalledWith(path);
+        await expect(
+          sut.getFile(authStub.user1, asset.id, revision.id, AssetDevelopFileKind.Preview, 'sdr'),
+        ).resolves.toMatchObject({ path: '/prior-preview.jpg' });
+        await expect(
+          sut.getFile(authStub.user1, asset.id, revision.id, AssetDevelopFileKind.Master, 'hdr'),
+        ).resolves.toMatchObject({ path: '/prior-hdr.jpg' });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it('aborts the isolated HDR call on a shared-row cancellation without publication', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const revision = revisionStub({
+          assetId: asset.id,
+          recipe,
+          recipeVersion: 3,
+          status: AssetDevelopRevisionStatus.Queued,
+        });
+        developRepository.get.mockResolvedValue(revision);
+        developRepository.isCancelRequested.mockResolvedValue(true);
+        mocks.media.generateHdrRenditions.mockImplementation(
+          (_input, _outputs, _develop, signal) =>
+            new Promise((_resolve, reject) => {
+              signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+            }),
+        );
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Skipped);
+        expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it('rejects a changed normalized fill before the worker consumes it', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const fill = 'e'.repeat(64);
+        developRepository.getArtifacts.mockResolvedValue([
+          { id: fill, assetId: asset.id, ownerId: asset.ownerId, kind: 'fill', path: '/artifact.png' },
+        ]);
+        await expect(
+          sut.preview(authStub.user1, asset.id, {
+            recipe: {
+              version: 3,
+              cleanup: [{ id: 'fill', method: 'remove', region: { x: 0, y: 0, w: 1, h: 1 }, fill }],
+            },
+            size: 256,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.media.decodeDevelopArtifact).not.toHaveBeenCalled();
+        expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it('retains HDR preview bytes only until the response has been read and defaults to SDR', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        mocks.media.generateHdrRenditions.mockResolvedValue([]);
+        mocks.storage.readFile.mockResolvedValue(Buffer.from('server-authoritative-preview'));
+        for (const dynamicRange of [undefined, 'hdr'] as const) {
+          const result = await sut.preview(authStub.user1, asset.id, { recipe, size: 256, dynamicRange });
+          expect(result.buffer.toString()).toBe('server-authoritative-preview');
+          expect(mocks.media.generateHdrRenditions.mock.lastCall?.[1][0]).toMatchObject({
+            size: 256,
+            dynamicRange: dynamicRange ?? 'sdr',
+          });
+        }
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  });
+
   describe('handleRender', () => {
     it('records native provenance and derives master and preview from the same native pixels', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({

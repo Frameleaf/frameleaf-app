@@ -1879,20 +1879,28 @@ export class AssetRepository {
     const { rows } = await sql<{
       masterPath: string | null;
       previewPath: string | null;
+      hdrMasterPath: string | null;
+      hdrPreviewPath: string | null;
     }>`
-      SELECT "masterPath", "previewPath" FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
+      SELECT "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath" FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
     `.execute(db);
-    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+    return rows
+      .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
+      .filter((path): path is string => !!path);
   }
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
     const { rows } = await sql<{
       masterPath: string | null;
       previewPath: string | null;
+      hdrMasterPath: string | null;
+      hdrPreviewPath: string | null;
     }>`
       DELETE FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
-      RETURNING "masterPath", "previewPath"
+      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath"
     `.execute(db);
-    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+    return rows
+      .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
+      .filter((path): path is string => !!path);
   }
   /**
    * The files referenced by the assets' saved video versions, read for release during asset deletion.
@@ -2788,8 +2796,12 @@ export class AssetRepository {
       status: AssetDevelopRevisionStatus;
       previewPath: string | null;
       masterPath: string | null;
+      hdrMasterPath?: string | null;
+      hdrPreviewPath?: string | null;
+      hdrRenditionChecksum?: Buffer | null;
+      renderedAt?: Date | null;
     }>`
-      SELECT id, "ownerId", status, "previewPath", "masterPath"
+      SELECT id, "ownerId", status, "previewPath", "masterPath", "hdrMasterPath", "hdrPreviewPath", "hdrRenditionChecksum", "renderedAt"
       FROM public.asset_develop_revision
       WHERE "assetId" = ${id}::uuid AND "isCurrent"
       LIMIT 1

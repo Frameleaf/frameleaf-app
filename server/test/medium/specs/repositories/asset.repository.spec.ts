@@ -715,3 +715,46 @@ describe(AssetRepository.name, () => {
     });
   });
 });
+
+describe('HDR Develop deletion', () => {
+  it('queues the complete rendition set atomically and retains it if release fails', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const paths = [
+      '/hdr-delete/master.jpg',
+      '/hdr-delete/preview.jpg',
+      '/hdr-delete/master-hdr.jpg',
+      '/hdr-delete/preview-hdr.jpg',
+    ];
+    await sql`INSERT INTO public.asset_develop_revision ("assetId", "ownerId", revision, recipe,
+      "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath", "hdrRenditionChecksum")
+      VALUES (${asset.id}::uuid, ${user.id}::uuid, 1, ${{ version: 3 }}::jsonb,
+        ${paths[0]}, ${paths[1]}, ${paths[2]}, ${paths[3]}, ${Buffer.alloc(32, 1)})`.execute(defaultDatabase);
+    const files = ({ originalPath, derivedPaths }: { originalPath: string; derivedPaths: string[] }) => [
+      originalPath,
+      ...derivedPaths,
+    ];
+    await expect(
+      sut.remove({ id: asset.id }, { files, queue: () => Promise.reject(new Error('queue unavailable')) }),
+    ).rejects.toThrow('queue unavailable');
+    expect(
+      (
+        await sql`SELECT 1 FROM public.asset_develop_revision WHERE "assetId"=${asset.id}::uuid`.execute(
+          defaultDatabase,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    expect(await sut.getById(asset.id)).toBeDefined();
+    const queue = vi.fn().mockResolvedValue(undefined);
+    await sut.remove({ id: asset.id }, { files, queue });
+    expect(queue).toHaveBeenCalledWith(expect.arrayContaining(paths));
+    expect(
+      (
+        await sql`SELECT 1 FROM public.asset_develop_revision WHERE "assetId"=${asset.id}::uuid`.execute(
+          defaultDatabase,
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+});

@@ -26,6 +26,7 @@ import {
   AssetDevelopSaveDto,
   AssetDevelopSemanticMaskDto,
   type DarktableDevelopRecipe,
+  type HdrAssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
 import { AssetDevelopImportDto, DevelopExportResponseDto } from 'src/dtos/photo-tools.dto.js';
 import {
@@ -45,7 +46,11 @@ import {
 import { attemptOutputPath, jobSignal, publishJobResult } from 'src/queue/context.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
-import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
+import {
+  AssetDevelopRepository,
+  type AssetDevelopRevision,
+  type AssetDevelopRevisionUpdate,
+} from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -72,7 +77,12 @@ import {
   applyDevelopCleanup,
   developCleanupArtifacts,
 } from 'src/utils/develop-cleanup.js';
-import { assertRenderableDevelopRecipe, developEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
+import {
+  assertRenderableDevelopRecipe,
+  developEnvelope,
+  hasPublishedDevelopRendition,
+  renderDevelopProjection,
+} from 'src/utils/develop-envelope.js';
 import {
   DEVELOP_RENDERER_VERSION,
   applyDevelopMasks,
@@ -295,6 +305,8 @@ export class AssetDevelopService {
     }
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
+    if (recipe.version === 3) return this.renderHdrPreview(source, recipe, dto, signal);
+    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3');
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
@@ -317,11 +329,21 @@ export class AssetDevelopService {
     assetId: string,
     revisionId: string,
     kind: AssetDevelopFileKind,
+    dynamicRange: 'auto' | 'sdr' | 'hdr' = 'sdr',
   ): Promise<ImmichFileResponse> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const revision = await this.requireRevision(assetId, revisionId);
-    const filePath = kind === AssetDevelopFileKind.Master ? revision.masterPath : revision.previewPath;
-    if (!filePath || revision.status !== AssetDevelopRevisionStatus.Rendered) {
+    const hdrEnabled = process.env.FRAMELEAF_HDR_IMAGES === 'experimental';
+    const hdrPath = kind === AssetDevelopFileKind.Master ? revision.hdrMasterPath : revision.hdrPreviewPath;
+    if (dynamicRange === 'hdr' && (!hdrEnabled || !hdrPath))
+      throw new NotFoundException('HDR rendition is unavailable');
+    const filePath =
+      hdrEnabled && dynamicRange !== 'sdr' && hdrPath
+        ? hdrPath
+        : kind === AssetDevelopFileKind.Master
+          ? revision.masterPath
+          : revision.previewPath;
+    if (!filePath || !hasPublishedDevelopRendition(revision)) {
       throw new NotFoundException('This version has not been rendered yet');
     }
     return new ImmichFileResponse({
@@ -402,7 +424,9 @@ export class AssetDevelopService {
       id,
       existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
         ? DARKTABLE_RENDERER_VERSION
-        : DEVELOP_RENDERER_VERSION,
+        : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 3
+          ? 'frameleaf-develop-hdr/1'
+          : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
@@ -414,15 +438,21 @@ export class AssetDevelopService {
     const { image } = await this.getConfig();
     const outputs = this.getOutputPaths(source, revision, image);
     const external = revision.kind === AssetDevelopRevisionKind.External;
-    const tmp = { master: `${outputs.master}.tmp`, preview: `${outputs.preview}.tmp` };
+    const tmp = {
+      master: `${outputs.master}.tmp`,
+      preview: `${outputs.preview}.tmp`,
+      hdrMaster: `${outputs.hdrMaster}.tmp`,
+      hdrPreview: `${outputs.hdrPreview}.tmp`,
+    };
     try {
       const sourceChecksum = await this.currentSourceChecksum(revision.assetId);
-      const publication = external
+      const publication: AssetDevelopRevisionUpdate = external
         ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
         : await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
       if (run && !(await run.validate())) {
+        if (revision.recipeVersion === 3) await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
         return JobStatus.Skipped;
       }
       // Rendering a version makes it the working version; Revert walks back through history.
@@ -431,10 +461,28 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         await this.assetDevelopRepository.update(revision.id, publication);
         await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+        if (revision.recipeVersion === 3) {
+          const accepted = new Set([
+            publication.masterPath,
+            publication.previewPath,
+            publication.hdrMasterPath,
+            publication.hdrPreviewPath,
+          ]);
+          const replaced = [
+            ...new Set([revision.masterPath, revision.previewPath, revision.hdrMasterPath, revision.hdrPreviewPath]),
+          ].filter((path): path is string => !!path && !accepted.has(path));
+          if (replaced.length > 0) await this.queueFileDelete(replaced);
+        }
       });
       return JobStatus.Success;
     } catch (error) {
-      await this.discard(external ? [tmp.preview] : [tmp.master, tmp.preview]);
+      await this.discard(
+        external
+          ? [tmp.preview]
+          : revision.recipeVersion === 3
+            ? [...Object.values(tmp), ...Object.values(outputs)]
+            : [tmp.master, tmp.preview],
+      );
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
       if (error instanceof DevelopRenderCancelled) {
@@ -867,6 +915,7 @@ export class AssetDevelopService {
    */
   private async requireArtifacts(asset: { id: string; ownerId: string }, recipe: unknown) {
     const parsed = assertRenderableDevelopRecipe(recipe);
+    if (parsed.version === 3) this.requireHdrRenderer();
     const needed =
       parsed.version === 2
         ? {
@@ -890,6 +939,7 @@ export class AssetDevelopService {
     asset: { id: string; ownerId: string },
     ids: string[],
     kind: AssetDevelopArtifactKind,
+    verify = false,
   ): Promise<Map<string, DevelopBitmap>> {
     const bitmaps = new Map<string, DevelopBitmap>();
     const wanted = [...new Set(ids)];
@@ -898,6 +948,16 @@ export class AssetDevelopService {
       throw missingArtifact();
     }
     for (const artifact of stored) {
+      if (
+        verify &&
+        (artifact.ownerId !== asset.ownerId ||
+          (await this.cryptoRepository.hashFile(artifact.path, 'sha256')).toString('hex') !== artifact.id)
+      ) {
+        throw new BadRequestException({
+          message: 'The develop artifact changed or is not owned by this photo',
+          code: 'develop_artifact_changed',
+        });
+      }
       bitmaps.set(artifact.id, await this.mediaRepository.decodeDevelopArtifact(artifact.path, kind));
     }
     return bitmaps;
@@ -993,14 +1053,20 @@ export class AssetDevelopService {
    */
   private getOutputPaths(
     source: Pick<DevelopSource, 'id' | 'ownerId'>,
-    revision: Pick<AssetDevelopRevision, 'id'>,
+    revision: Pick<AssetDevelopRevision, 'id' | 'recipeVersion'>,
     image: SystemConfig['image'],
   ) {
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id);
+    const hdr = revision.recipeVersion === 3;
+    const renditionId = hdr ? `${revision.id}_${randomUUID()}` : revision.id;
     return {
-      master: attemptOutputPath(path.join(base, `${source.id}_develop_${revision.id}_master.${image.fullsize.format}`)),
+      hdrMaster: attemptOutputPath(path.join(base, `${source.id}_develop_${renditionId}_master_hdr.jpg`)),
+      hdrPreview: attemptOutputPath(path.join(base, `${source.id}_develop_${renditionId}_preview_hdr.jpg`)),
+      master: attemptOutputPath(
+        path.join(base, `${source.id}_develop_${renditionId}_master.${hdr ? 'jpeg' : image.fullsize.format}`),
+      ),
       preview: attemptOutputPath(
-        path.join(base, `${source.id}_develop_${revision.id}_preview.${image.preview.format}`),
+        path.join(base, `${source.id}_develop_${renditionId}_preview.${hdr ? 'jpeg' : image.preview.format}`),
       ),
     };
   }
@@ -1063,25 +1129,7 @@ export class AssetDevelopService {
     if (revisionId) {
       await this.progress(revisionId, 10);
     }
-    const controller = new AbortController();
-    const signals = [controller.signal, ...(signal ? [signal] : []), ...(jobSignal() ? [jobSignal()!] : [])];
-    const abort = AbortSignal.any(signals);
-    // Cancellation may arrive through another API worker; the shared row is authoritative.
-    const watching = (async () => {
-      if (!revisionId) {
-        return;
-      }
-      try {
-        for await (const _ of setInterval(1000, undefined, { signal: controller.signal })) {
-          await this.progress(revisionId, 10);
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          controller.abort(error);
-        }
-      }
-    })();
-    try {
+    return this.withRenderCancellation(revisionId, signal, async (abort) => {
       const artifacts = (recipe.masks ?? [])
         .filter((mask) => mask.enabled && mask.artifact)
         .map((mask) => mask.artifact!);
@@ -1096,15 +1144,148 @@ export class AssetDevelopService {
         colorspace: Colorspace.Srgb,
         detail: { median: 0 as const },
       };
-    } catch (error) {
-      if (abort.aborted) {
-        throw abort.reason;
+    });
+  }
+
+  private async withRenderCancellation<T>(
+    revisionId: string | undefined,
+    signal: AbortSignal | undefined,
+    operation: (signal: AbortSignal) => Promise<T>,
+  ) {
+    const controller = new AbortController();
+    const abort = AbortSignal.any([
+      controller.signal,
+      ...(signal ? [signal] : []),
+      ...(jobSignal() ? [jobSignal()!] : []),
+    ]);
+    const watching = (async () => {
+      if (!revisionId) return;
+      try {
+        for await (const _ of setInterval(1000, undefined, { signal: controller.signal }))
+          await this.progress(revisionId, 10);
+      } catch (error) {
+        if (!controller.signal.aborted) controller.abort(error);
       }
+    })();
+    try {
+      abort.throwIfAborted();
+      return await operation(abort);
+    } catch (error) {
+      if (abort.aborted) throw abort.reason;
       throw error;
     } finally {
       controller.abort();
       await watching;
     }
+  }
+
+  private requireHdrRenderer() {
+    if (process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
+      throw new BadRequestException({
+        message: 'HDR-preserving editing is not enabled on this server',
+        code: 'develop_hdr_render_unavailable',
+      });
+  }
+
+  private async hdrRender(
+    source: DevelopSource,
+    recipe: HdrAssetDevelopRecipe,
+    outputs: Parameters<MediaRepository['generateHdrRenditions']>[1],
+    revisionId?: string,
+    seed = 1,
+    signal?: AbortSignal,
+  ) {
+    this.requireHdrRenderer();
+    if (mimeTypes.isRaw(source.originalFileName))
+      throw new BadRequestException('HDR quick edits require a reconstructed still; RAW uses native development');
+    const needed = developRenderArtifacts(recipe);
+    const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, true);
+    const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, true);
+    const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = recipe;
+    return this.withRenderCancellation(revisionId, signal, (abort) =>
+      this.mediaRepository.generateHdrRenditions(
+        source.originalPath,
+        outputs,
+        { recipe: { ...fields, version: 1 }, seed, masks: Object.fromEntries(masks), fills: Object.fromEntries(fills) },
+        abort,
+      ),
+    );
+  }
+
+  private async renderHdrPreview(
+    source: DevelopSource,
+    recipe: HdrAssetDevelopRecipe,
+    dto: AssetDevelopPreviewDto,
+    signal?: AbortSignal,
+  ) {
+    this.requireHdrRenderer();
+    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
+    const output = path.join(folder, 'preview.jpg');
+    try {
+      await this.hdrRender(
+        source,
+        recipe,
+        [
+          {
+            path: output,
+            size: dto.size,
+            dynamicRange: dto.dynamicRange === 'sdr' || !dto.dynamicRange ? 'sdr' : 'hdr',
+          },
+        ],
+        undefined,
+        1,
+        signal,
+      );
+      signal?.throwIfAborted();
+      return { buffer: await this.storageRepository.readFile(output), contentType: 'image/jpeg' };
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
+
+  private async renderHdrRecipeRevision(
+    revision: AssetDevelopRevision,
+    source: DevelopSource,
+    sourceChecksum: Buffer,
+    outputs: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
+    tmp: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
+    image: SystemConfig['image'],
+  ) {
+    const recipe = assertRenderableDevelopRecipe(revision.recipe);
+    if (recipe.version !== 3) throw new BadRequestException('HDR revisions require recipe version 3');
+    this.storageRepository.mkdirSync(path.dirname(outputs.master));
+    const result = await this.hdrRender(
+      source,
+      recipe,
+      [
+        { path: tmp.hdrMaster },
+        { path: tmp.hdrPreview, size: image.preview.size },
+        { path: tmp.master, dynamicRange: 'sdr' },
+        { path: tmp.preview, size: image.preview.size, dynamicRange: 'sdr' },
+      ],
+      revision.id,
+      revision.revision + 1,
+    );
+    await this.progress(revision.id, 95);
+    const renditionChecksum = await this.cryptoRepository.hashFile(tmp.master, 'sha256');
+    const hdrRenditionChecksum = await this.cryptoRepository.hashFile(tmp.hdrMaster, 'sha256');
+    for (const key of ['master', 'preview', 'hdrMaster', 'hdrPreview'] as const)
+      await this.storageRepository.rename(tmp[key], outputs[key]);
+    return {
+      status: AssetDevelopRevisionStatus.Rendered,
+      progress: 100,
+      error: null,
+      masterPath: outputs.master,
+      previewPath: outputs.preview,
+      hdrMasterPath: outputs.hdrMaster,
+      hdrPreviewPath: outputs.hdrPreview,
+      hdrRenditionChecksum,
+      width: result[0].width,
+      height: result[0].height,
+      renderedAt: new Date(),
+      sourceChecksum,
+      renditionChecksum,
+    };
   }
 
   /** Queued, or rendering under a lease that has lapsed. */
@@ -1137,11 +1318,13 @@ export class AssetDevelopService {
     revision: AssetDevelopRevision,
     source: DevelopSource,
     sourceChecksum: Buffer,
-    outputs: { master: string; preview: string },
-    tmp: { master: string; preview: string },
+    outputs: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
+    tmp: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
     image: SystemConfig['image'],
   ) {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
+    if (recipe.version === 3)
+      return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
     const decoded = native ?? (await this.decodeSource(source, image));
     await this.progress(revision.id, 25);
@@ -1345,8 +1528,33 @@ export class AssetDevelopService {
       width: revision.width,
       height: revision.height,
       isCurrent: revision.isCurrent,
-      hasMaster: revision.status === AssetDevelopRevisionStatus.Rendered && !!revision.masterPath,
-      hasPreview: revision.status === AssetDevelopRevisionStatus.Rendered && !!revision.previewPath,
+      outputDynamicRange:
+        hasPublishedDevelopRendition(revision) && revision.hdrMasterPath
+          ? 'hdr'
+          : revision.kind !== AssetDevelopRevisionKind.External &&
+              revision.status === AssetDevelopRevisionStatus.Rendered
+            ? 'sdr'
+            : 'unknown',
+      hdrRenderStatus:
+        revision.recipeVersion === 3
+          ? hasPublishedDevelopRendition(revision) && revision.hdrMasterPath
+            ? 'rendered'
+            : process.env.FRAMELEAF_HDR_IMAGES === 'experimental'
+              ? revision.status === AssetDevelopRevisionStatus.Failed
+                ? 'failed'
+                : 'pending'
+              : 'disabled'
+          : 'not-requested',
+      hasHdrMaster:
+        process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+        hasPublishedDevelopRendition(revision) &&
+        !!revision.hdrMasterPath,
+      hasHdrPreview:
+        process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+        hasPublishedDevelopRendition(revision) &&
+        !!revision.hdrPreviewPath,
+      hasMaster: hasPublishedDevelopRendition(revision) && !!revision.masterPath,
+      hasPreview: hasPublishedDevelopRendition(revision) && !!revision.previewPath,
       createdAt: asDateTimeString(revision.createdAt),
       updatedAt: asDateTimeString(revision.updatedAt),
       renderedAt: revision.renderedAt ? asDateTimeString(revision.renderedAt) : null,

@@ -11,7 +11,6 @@ import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
-import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -42,6 +41,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
+import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -434,16 +434,24 @@ export class AssetMediaService extends BaseService {
     ) {
       const current = await this.assetRepository.getCurrentDevelop(id);
       if (current && current.ownerId === ownerId) {
-        if (current.status !== AssetDevelopRevisionStatus.Rendered) {
+        if (!hasPublishedDevelopRendition(current)) {
           throw new NotFoundException('Current developed preview is unavailable');
         }
         const fullSizeAllowed = size !== AssetFileType.FullSize || (await this.fullSizeAllowed(via));
+        const hdrPath =
+          size === AssetFileType.FullSize && fullSizeAllowed ? current.hdrMasterPath : current.hdrPreviewPath;
+        const hdrEnabled = process.env.FRAMELEAF_HDR_IMAGES === 'experimental';
+        if (dto.dynamicRange === 'hdr' && (!hdrEnabled || !hdrPath))
+          throw new NotFoundException('Current developed HDR rendition is unavailable');
         const developedPath =
-          size === AssetFileType.FullSize && fullSizeAllowed ? current.masterPath : current.previewPath;
+          hdrEnabled && dto.dynamicRange && dto.dynamicRange !== 'sdr' && hdrPath
+            ? hdrPath
+            : size === AssetFileType.FullSize && fullSizeAllowed
+              ? current.masterPath
+              : current.previewPath;
         if (!developedPath) {
           throw new NotFoundException('Current developed preview is unavailable');
         }
-        if (dto.dynamicRange === 'hdr') throw new NotFoundException('Current developed HDR rendition is unavailable');
         return new ImmichFileResponse({
           fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
           path: developedPath,

@@ -502,6 +502,26 @@ export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refin
   { error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all` },
 ).meta({ id: 'KnownAssetDevelopRecipe' });
 
+/** HDR revisions use a separate identity; historical v1 and darktable v2 are unchanged. */
+export const HdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
+  version: z.literal(3).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/1').default('frameleaf-develop-hdr/1'),
+  hdr: z
+    .strictObject({
+      version: z.literal(1).meta({ type: 'integer', format: 'int32' }).default(1),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2').default('libultrahdr/2.0.2'),
+    })
+    .prefault({}),
+})
+  .strict()
+  .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
+  })
+  .meta({ id: 'HdrAssetDevelopRecipe' });
+export type HdrAssetDevelopRecipe = z.infer<typeof HdrAssetDevelopRecipeSchema>;
+
 /** Stored/wire envelope. Opaque JSON is retained; it is never a render instruction. */
 const VersionOneEnvelopeSchema = z
   .object({
@@ -628,6 +648,7 @@ const AssetDevelopSaveSchema = z
 const AssetDevelopPreviewSchema = z
   .object({
     recipe: AssetDevelopRecipeSchema,
+    dynamicRange: z.enum(['auto', 'sdr', 'hdr']).optional().describe('Omitted requests retain SDR-compatible previews'),
     size: z
       .int()
       .min(256)
@@ -649,6 +670,7 @@ const AssetDevelopRevertSchema = z
 const AssetDevelopFileQuerySchema = z
   .object({
     kind: AssetDevelopFileKindSchema.default(AssetDevelopFileKind.Preview),
+    dynamicRange: z.enum(['auto', 'sdr', 'hdr']).optional(),
   })
   .meta({ id: 'AssetDevelopFileQueryDto' });
 
@@ -683,6 +705,10 @@ const AssetDevelopRevisionResponseSchema = z
     software: z.string().nullable().describe('Application an imported version was developed with, when known'),
     attempts: z.int().min(0).describe('Render attempts so far; one automatic retry follows a first failure'),
     isCurrent: z.boolean().describe('True for the version the asset currently shows'),
+    outputDynamicRange: z.enum(['hdr', 'sdr', 'unknown']).optional(),
+    hdrRenderStatus: z.enum(['not-requested', 'pending', 'rendered', 'failed', 'disabled']).optional(),
+    hasHdrMaster: z.boolean().optional(),
+    hasHdrPreview: z.boolean().optional(),
     hasMaster: z.boolean().describe('True once the edited master file exists'),
     hasPreview: z.boolean().describe('True once the preview file exists'),
     createdAt: z.string().meta({ format: 'date-time' }).describe('When the version was saved'),
@@ -746,6 +772,8 @@ export class AssetDevelopRecipeDto extends createZodDto(AssetDevelopRecipeSchema
  * FL-233: the renderable version 1 recipe, field by field, published in the OpenAPI document for the
  * native apps (routes take and return the opaque envelope, `AssetDevelopRecipeDto`).
  */
+@ExtraModel()
+export class HdrAssetDevelopRecipeDto extends createZodDto(HdrAssetDevelopRecipeSchema) {}
 @ExtraModel()
 export class KnownAssetDevelopRecipeDto extends createZodDto(KnownAssetDevelopRecipeSchema) {}
 export class AssetDevelopSaveDto extends createZodDto(AssetDevelopSaveSchema) {}

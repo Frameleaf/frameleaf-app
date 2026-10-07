@@ -84,7 +84,7 @@ export const countPathReferences = async (
       OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
 
     UNION ALL SELECT 1 FROM public.asset_develop_revision r
-    WHERE r."masterPath"=${path} OR r."previewPath"=${path}
+    WHERE r."masterPath"=${path} OR r."previewPath"=${path} OR r."hdrMasterPath"=${path} OR r."hdrPreviewPath"=${path}
     UNION ALL SELECT 1 FROM public.asset_file f
     WHERE f."isEdited" AND f.type='encoded_video' AND f.path || '.lineage.json'=${path}
   ) retained`.execute(trx);

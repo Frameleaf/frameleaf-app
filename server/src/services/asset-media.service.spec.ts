@@ -929,6 +929,60 @@ describe(AssetMediaService.name, () => {
       }
     });
 
+    it('serves the last accepted HDR edit through regeneration and keeps default delivery SDR', async () => {
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.from({ ownerId: authStub.admin.user.id })
+          .file({ type: AssetFileType.Preview })
+          .build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForThumbnail.mockResolvedValue({
+          ...asset,
+          path: asset.files[0].path,
+          renditionIdentity: null,
+          imageEncoding: { dynamicRange: 'hdr', gainMap: 'ultra-hdr', reconstructionAvailable: true },
+        });
+        mocks.asset.getCurrentDevelop.mockResolvedValue({
+          id: 'revision',
+          ownerId: asset.ownerId,
+          status: AssetDevelopRevisionStatus.Rendering,
+          masterPath: '/old-sdr-master.jpg',
+          previewPath: '/old-sdr-preview.jpg',
+          hdrMasterPath: '/old-hdr-master.jpg',
+          hdrPreviewPath: '/old-hdr-preview.jpg',
+          hdrRenditionChecksum: Buffer.alloc(32),
+          renderedAt: new Date(),
+        });
+        for (const [dynamicRange, path] of [
+          [undefined, '/old-sdr-preview.jpg'],
+          ['sdr', '/old-sdr-preview.jpg'],
+          ['auto', '/old-hdr-preview.jpg'],
+          ['hdr', '/old-hdr-preview.jpg'],
+        ] as const) {
+          await expect(
+            sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true, dynamicRange }),
+          ).resolves.toMatchObject({ path, cacheControl: CacheControl.PrivateWithoutCache });
+        }
+        vitest.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.PREVIEW,
+            edited: true,
+            dynamicRange: 'hdr',
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.PREVIEW,
+            edited: true,
+            dynamicRange: 'auto',
+          }),
+        ).resolves.toMatchObject({ path: '/old-sdr-preview.jpg' });
+      } finally {
+        vitest.unstubAllEnvs();
+      }
+    });
+
     it('does not redirect an HDR or unknown source to the original for default SDR viewing', async () => {
       const asset = AssetFactory.from({ originalPath: '/data/original.jpg' }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
