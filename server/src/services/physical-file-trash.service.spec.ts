@@ -120,13 +120,17 @@ describe(PhysicalFileTrashService.name, () => {
       let trashed = true;
       mocks.physicalFileTrash.getById.mockImplementation(() => Promise.resolve(trashed ? entry : undefined));
       mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move) => {
-        if (!trashed) return;
+        if (!trashed) {
+          return;
+        }
         await move(entry.path, target);
         trashed = false;
         return entry;
       });
       mocks.storage.rename.mockImplementation((from, to) => {
-        if (!files.delete(from)) throw new Error('source missing');
+        if (!files.delete(from)) {
+          throw new Error('source missing');
+        }
         files.add(to);
         return Promise.resolve();
       });
