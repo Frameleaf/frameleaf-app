@@ -1530,9 +1530,11 @@ const handlers: Record<string, Handler> = {
         Object.assign(updates, buildTimelineEqPatchFromResolvedSettings(eq), { audioEqEnabled: eq.enabled })
       }
     }
-    if (payload.muted !== undefined)
-      throw new CommandRejection('not-implemented', 'clip.setAudio.muted is not implemented')
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch or eq')
+    if (payload.muted !== undefined) {
+      if (typeof payload.muted !== 'boolean') invalid('muted must be a boolean')
+      updates.muted = payload.muted
+    }
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq or muted')
     assertUnlocked([item.id], 'clip.setAudio')
     updateItem(item.id, updates)
   },
@@ -1573,11 +1575,10 @@ const handlers: Record<string, Handler> = {
       updates.volume = optionalNumber(fields, 'volume')
     }
     if (fields.muted !== undefined) {
-      // Freecut mutes tracks, not clips (`TimelineTrack.muted`); a clip has only its gain.
-      throw new CommandRejection(
-        'not-implemented',
-        'patch.muted: Freecut clips have no mute; mute the track or set the volume',
-      )
+      if (item.type !== 'video' && item.type !== 'audio') invalid('patch.muted applies to video and audio clips')
+      if (typeof fields.muted !== 'boolean') invalid('patch.muted must be a boolean')
+      assertUnlocked([item.id], 'clip.update')
+      updates.muted = fields.muted
     }
     if (Object.keys(updates).length > 0) updateItem(item.id, updates as Partial<TimelineItem>)
     if (fields.transform !== undefined) {

@@ -133,6 +133,7 @@
         "fadeOut": { "type": "number", "minimum": 0 },
         "audioFadeIn": { "type": "number", "minimum": 0 },
         "audioFadeOut": { "type": "number", "minimum": 0 },
+        "muted": { "type": "boolean" },
         "audioPitchSemitones": { "type": "integer", "minimum": -12, "maximum": 12 },
         "audioPitchCents": { "type": "integer", "minimum": -100, "maximum": 100 },
         "effects": { "type": "array", "items": { "$ref": "#/$defs/itemEffect" } },

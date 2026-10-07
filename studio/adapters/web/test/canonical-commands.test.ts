@@ -4,9 +4,13 @@ import type { MediaMetadata } from '@/types/storage'
 import type { TextItem, TimelineItem } from '@/types/timeline'
 import { getAudioEqSettings, resolveAudioEqSettings } from '@/shared/utils/audio-eq'
 import { getAudioPitchShiftSemitones, resolvePreviewAudioPitchShiftSemitones } from '@/shared/utils/audio-pitch'
-import { extractAudioSegments } from '@/features/export/utils/canvas-audio'
-import { collectAudioTrackItems } from '@/runtime/composition-runtime/utils/scene-assembly'
-import { buildStandaloneAudioSegments } from '@/runtime/composition-runtime/utils/audio-scene'
+import { collectDuckingSources, extractAudioSegments } from '@/features/export/utils/canvas-audio'
+import { collectAudioTrackItems, collectVisualTrackItems } from '@/runtime/composition-runtime/utils/scene-assembly'
+import { buildStandaloneAudioSegments, buildTransitionVideoAudioSegments } from '@/runtime/composition-runtime/utils/audio-scene'
+import { selectTimelineSkimSourceAtFrame } from '@/features/timeline/utils/timeline-audio-skim'
+import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
+import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+import { compileAudioMeterGraph, resolveAudioMeterSources, resolveCompiledAudioMeterSources } from '@/features/editor/components/audio-meter-utils'
 import { useEditorStore } from '@/shared/state/editor'
 import { usePlaybackStore } from '@/shared/state/playback'
 import {
@@ -168,11 +172,11 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     locked.timeline!.tracks.find((track) => track.id === audio.trackId)!.locked = true
     await expect(applyCanonicalCommands(locked, [envelope('clip.setAudio', { clipId: audio.id, volume: 0 })], media))
       .resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
-    for (const fields of [{ muted: false }]) {
+    for (const fields of [{ muted: 'yes' }]) {
       await expect(applyCanonicalCommands(before.project, [
         envelope('clip.setAudio', { clipId: audio.id, volume: -12 }),
         envelope('clip.setAudio', { clipId: audio.id, fadeIn: seconds(1), ...fields }),
-      ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+      ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 1 })
     }
     expect(before.project).toEqual(keyed.project)
   })
@@ -208,8 +212,8 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     }
     await expect(applyCanonicalCommands(before.project, [
       envelope('clip.setAudio', { clipId: audio.id, pitchCents: 50, eq }),
-      envelope('clip.setAudio', { clipId: audio.id, muted: true }),
-    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+      envelope('clip.setAudio', { clipId: audio.id, muted: 'yes' }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 1 })
   })
 
   it('routes canonical track gain and EQ through preview and export without changing clip audio or ownership', async () => {
@@ -253,6 +257,108 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       envelope('track.setAudio', { trackId: 'a1', gainDb: -3, eq, pan: 0 }),
     ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
     expect(before.project).toEqual(snapshot)
+  })
+
+  it('mutes and resets clip audio through real preview, meters, scrub and export without reviving separated video audio', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const audio = itemsOf(start.project).find((item) => item.type === 'audio')!
+    const video = itemsOf(start.project).find((item) => item.type === 'video')!
+    const before = await applied(start.project, [
+      envelope('clip.setAudio', { clipId: audio.id, volume: -4, fadeIn: seconds(1, 100), pitchSemitones: -3, eq: { lowGainDb: 3 } }),
+      envelope('keyframe.add', { clipId: audio.id, property: 'volume', at: seconds(1), value: { value: -3 } }),
+    ])
+    const muted = await applied(before.project, [envelope('clip.setAudio', { clipId: audio.id, muted: true })])
+    expect(itemsOf(muted.project)).toEqual(itemsOf(before.project).map((item) => item.id === audio.id ? { ...item, muted: true } : item))
+    expect({ ...muted.project.timeline, items: [] }).toEqual({ ...before.project.timeline, items: [] })
+    const tracks = muted.project.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(muted.project).filter((item) => item.trackId === track.id).map((item) => ({ ...item, src: 'blob:resolved-mute-source' })) }))
+    const visibleTrackIds = new Set(tracks.map((track) => track.id))
+    const preview = buildStandaloneAudioSegments(collectAudioTrackItems({ tracks, visibleTrackIds }), 30)
+    expect(preview.find((item) => item.itemId === audio.id)).toMatchObject({ muted: true, volumeDb: -4, audioFadeIn: 0.01, audioPitchSemitones: -3 })
+    const exported = extractAudioSegments({ ...muted.project.timeline, fps: 30, tracks } as never, 30)
+    expect(exported.filter((segment) => !segment.muted)).toEqual([])
+    expect(resolveAudioMeterSources({ tracks, transitions: [], frame: 0, fps: 30, compositionsById: {} })).toEqual([])
+    expect(resolveCompiledAudioMeterSources({ graph: compileAudioMeterGraph({ tracks, transitions: [], fps: 30 }), frame: 0 })).toEqual([])
+    expect(selectTimelineSkimSourceAtFrame(0, tracks.flatMap((track) => track.items), tracks, 30, () => 8)).toBeNull()
+    expect((await applied(JSON.parse(JSON.stringify(muted.project)), [])).digest).toBe(muted.digest)
+    const reset = await applied(muted.project, [envelope('clip.update', { clipId: audio.id, patch: { muted: false } })])
+    expect(itemsOf(reset.project)).toEqual(itemsOf(before.project).map((item) => item.id === audio.id ? { ...item, muted: false } : item))
+    expect((await applied(JSON.parse(JSON.stringify(reset.project)), [])).digest).toBe(reset.digest)
+    // Owning-video suppression is independent of this new clip mute/reset control.
+    const separated = structuredClone(before.project)
+    Object.assign(itemsOf(separated).find((item) => item.id === video.id)!, { embeddedAudioMuted: true })
+    const videoReset = await applied(separated, [envelope('clip.setAudio', { clipId: video.id, muted: false })])
+    expect(itemsOf(videoReset.project).find((item) => item.id === video.id)).toMatchObject({ embeddedAudioMuted: true, muted: false })
+    const standalone = { ...video, src: 'blob:standalone-video', linkedGroupId: undefined, embeddedAudioMuted: false, muted: true }
+    const videoPreview = collectVisualTrackItems({ tracks: [{ ...tracks[0]!, items: [standalone] }], visibleTrackIds, maxOrder: 1 })
+    expect(videoPreview[0]).toMatchObject({ muted: true })
+    expect(buildTransitionVideoAudioSegments(videoPreview as never, [], 30)[0]).toMatchObject({ muted: true })
+    expect(extractAudioSegments({ tracks: [{ ...tracks[0]!, items: [standalone] }], fps: 30 } as never, 30)[0]).toMatchObject({ muted: true })
+    expect(collectDuckingSources({ tracks: [{ ...tracks[1]!, items: [{ ...audio, muted: true, audioDucking: { duckOthersDb: -6 } }] }] } as never, 30)).toEqual([])
+    for (const fields of [{ muted: 'yes' }, { muted: null }]) {
+      await expect(applyCanonicalCommands(before.project, [envelope('clip.setAudio', { clipId: audio.id, ...fields })], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+    const snapshot = structuredClone(before.project)
+    await expect(applyCanonicalCommands(before.project, [envelope('clip.setAudio', { clipId: audio.id, muted: true }), envelope('clip.setAudio', { clipId: video.id, muted: false, volume: 13 })], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 1 })
+    expect(before.project).toEqual(snapshot)
+  })
+
+  it('preserves clip mute through compound audio export and nested leaf ownership', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const video = itemsOf(start.project).find((item) => item.type === 'video')!
+    const composed = await applied(start.project, [envelope('composition.add', { name: 'Nested sound', clipIds: [video.id] })])
+    const wrapper = itemsOf(composed.project).find((item) => item.type === 'audio' && 'compositionId' in item)!
+    expect(wrapper).toBeDefined()
+    const muted = await applied(composed.project, [envelope('clip.setAudio', { clipId: wrapper.id, muted: true })])
+    const resolvedTracks = (graph: Project) => graph.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(graph).filter((item) => item.trackId === track.id).map((item) => ({ ...item, src: 'blob:compound-source' })) }))
+    expect(extractAudioSegments({ tracks: resolvedTracks(muted.project), fps: 30 } as never, 30).filter((segment) => !segment.muted)).toEqual([])
+    const reset = await applied(muted.project, [envelope('clip.setAudio', { clipId: wrapper.id, muted: false })])
+    const nested = structuredClone(reset.project)
+    for (const item of nested.timeline!.compositions![0]!.items) {
+      if (item.type === 'audio') Object.assign(item, { muted: true, src: 'blob:nested-source', audioDucking: { duckOthersDb: -6 } })
+    }
+    const loaded = await applied(nested, [])
+    const output = extractAudioSegments({ tracks: resolvedTracks(loaded.project), fps: 30 } as never, 30)
+    expect(output.length).toBeGreaterThan(0)
+    expect(output.every((segment) => segment.muted)).toBe(true)
+    expect(collectDuckingSources({ tracks: resolvedTracks(loaded.project), fps: 30 } as never, 30)).toEqual([])
+  })
+
+  it('keeps compound audio ownership during muted-wrapper skim and root/nested ducking, then restores sound on reset', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const video = itemsOf(start.project).find((item) => item.type === 'video')!
+    const composed = await applied(start.project, [envelope('composition.add', { name: 'Owned sound', clipIds: [video.id] })])
+    const flagged = structuredClone(composed.project)
+    const child = flagged.timeline!.compositions![0]!.items.find((item) => item.type === 'audio')!
+    Object.assign(child, { audioDucking: { duckOthersDb: -6 } })
+    const wrapper = itemsOf(flagged).find((item) => item.type === 'audio' && 'compositionId' in item)!
+    const visual = itemsOf(flagged).find((item) => item.type === 'composition')!
+    const muted = await applied(flagged, [envelope('clip.setAudio', { clipId: wrapper.id, muted: true })])
+    const reset = await applied(muted.project, [envelope('clip.setAudio', { clipId: wrapper.id, muted: false })])
+    expect(itemsOf(muted.project).find((item) => item.id === visual.id)).toEqual(itemsOf(flagged).find((item) => item.id === visual.id))
+    for (const nested of [false, true]) {
+      for (const [graph, audible] of [[muted.project, false], [reset.project, true]] as const) {
+        const loaded = await applied(graph, nested ? [envelope('composition.add', { name: 'Outer sound', clipIds: [visual.id] })] : [])
+        const tracks = loaded.project.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(loaded.project).filter((item) => item.trackId === track.id) }))
+        blobUrlManager.registerUrl(ASSET, 'blob:owned-compound-source')
+        try {
+          const skim = selectTimelineSkimSourceAtFrame(30, itemsOf(loaded.project), tracks, 30, () => 8, (id) => useCompositionsStore.getState().getComposition(id))
+          const ducking = collectDuckingSources({ tracks, fps: 30 } as never, 30)
+          const output = extractAudioSegments({ tracks, fps: 30 } as never, 30)
+          if (audible) {
+            expect(skim?.item.id).toBe(child.id)
+            expect(ducking.map((source) => source.itemId)).toEqual([child.id])
+            expect(output.filter((segment) => !segment.muted).map((segment) => segment.itemId)).toEqual([child.id])
+          } else {
+            expect(skim).toBeNull()
+            expect(ducking).toEqual([])
+            expect(output.length).toBeGreaterThan(0)
+            expect(output.every((segment) => segment.muted)).toBe(true)
+          }
+        } finally {
+          blobUrlManager.release(ASSET)
+        }
+      }
+    }
   })
 
   it('sets editable captions at exact NTSC times without shifting overlapping cues', async () => {
@@ -1002,7 +1108,7 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     }
   })
 
-  it('answers music from the rights-blocked catalogue and clip mute honestly', async () => {
+  it('answers music from the rights-blocked catalogue and applies the persisted clip mute', async () => {
     await expect(
       applyCanonicalCommands(
         project(),
@@ -1020,7 +1126,7 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
         [envelope('clip.update', { clipId: video.id, patch: { muted: true } })],
         media,
       ),
-    ).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented' })
+    ).resolves.toMatchObject({ status: 'applied' })
   })
 
   it('refuses a graph that is not a Freecut project', async () => {
