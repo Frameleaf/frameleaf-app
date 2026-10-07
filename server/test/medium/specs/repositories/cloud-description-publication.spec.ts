@@ -181,9 +181,8 @@ describe('cloud description adoption and remote release', () => {
         );
       const fail = async () => {
         await recordStoppedAttempt(db, claim.id, claim.token);
-        return queueExecution.run(context, () =>
-          store.fail(claim, 'parent stopped', undefined, { settlements: context.failureSettlements }),
-        );
+        // JobRepository settles after leaving the stopped executor's context.
+        return store.fail(claim, 'parent stopped', undefined, { settlements: context.failureSettlements });
       };
       return { context, claim, abort, commit, fail };
     };
