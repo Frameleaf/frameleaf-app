@@ -31,7 +31,10 @@ test('explicit larger surface budgets work without weakening pixel or encoded-in
 });
 
 test('narrow HEIF images reserve padded decoder surfaces in both orientations', () => {
-  for (const [w, h] of [[16, 1024], [1024, 16]]) {
+  for (const [w, h] of [
+    [16, 1024],
+    [1024, 16],
+  ]) {
     const data = new Float32Array(w * h * 4).fill(1);
     const image = codec.encodeHeic(Buffer.from(data.buffer), w, h, 2, ...limits);
     // Two MiB covers the unpadded estimate but not the actual padded surfaces.
@@ -566,3 +569,19 @@ for (const [extension, format, maximum, rms] of [
     }
   });
 }
+
+// Install the experimental ISO codec port before opting into its pre-parse limit checks.
+test(
+  'ISO codec budgets remain resource failures during probing and decoding',
+  {
+    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+  },
+  () => {
+    const input = readFileSync(new URL('./fixtures/apple-iso-gain-map.heic', import.meta.url));
+    for (const operation of [codec.inspect, codec.decode, codec.decodePaired]) {
+      assert.throws(() => operation(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+      assert.throws(() => operation(input, limits[0], input.length * 2 + 128), { code: 'RESOURCE_LIMIT' });
+    }
+    assert.equal(codec.inspect(input, ...limits).reconstructionAvailable, true);
+  },
+);

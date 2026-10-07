@@ -25,9 +25,9 @@ test(
     const source = Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength);
     const digest = () => createHash('sha256').update(source).digest('hex');
     const original = digest();
-    assert.throws(() => codec.encode(source, width, height, 0, 200_000_000, 1024 ** 3), { code: 'RESOURCE_LIMIT' });
+    assert.throws(() => codec.encode(source, width, height, 1, 200_000_000, 1024 ** 3), { code: 'RESOURCE_LIMIT' });
     const budget = 4 * 1024 ** 3;
-    const encoded = codec.encode(source, width, height, 0, 200_000_000, budget);
+    const encoded = codec.encode(source, width, height, 1, 200_000_000, budget);
     const metadata = codec.inspect(encoded, 200_000_000, budget);
     assert.equal(metadata.dynamicRange, 'hdr');
     assert.equal(metadata.reconstructionAvailable, true);
@@ -35,6 +35,8 @@ test(
     assert.deepEqual([decoded.width, decoded.height], [width, height]);
     const values = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
     const center = (3000 * width + 4000) * 4;
+    // Use Display P3 for both input and output; RGB values cannot be compared across gamuts.
+    assert.equal(decoded.gamut, 1);
     for (const [channel, expected] of [8, 4, 2, 1].entries())
       assert.ok(Math.abs(values[center + channel] - expected) < 0.5);
     assert.equal(digest(), original);
