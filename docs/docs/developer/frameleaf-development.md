@@ -14,7 +14,7 @@ Use the active task's branch convention and commit as `AJ Taylor <aj@ajtaylor.ne
 
 Read the assigned issue and acceptance criteria, claim it, and verify its In Progress state before implementation. Keep one owner for issue state, PR delivery and each external operation. Give implementation and review agents bounded ownership, an exact baseline, acceptance criteria and the applicable repository constraints. Agents do not duplicate the parent's CI monitoring.
 
-Use the [delivery skill](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/.agents/skills/frameleaf-deploy-release/SKILL.md) for Smart Commit commands and verify their actual issue activity after push. An issue key alone establishes a link, not a transition or completed delivery. Keep the issue In Progress while acceptance or the authorized integration remains outstanding. A source review, generated artifact or passing subset of tests does not close a larger architecture change.
+Follow the repository instructions in `AGENTS.md` for delivery hygiene and use the assigned Jira issue for Smart Commit commands and verify their actual issue activity after push. An issue key alone establishes a link, not a transition or completed delivery. Keep the issue In Progress while acceptance or the authorized integration remains outstanding. A source review, generated artifact or passing subset of tests does not close a larger architecture change.
 
 Review data integrity, privacy, migration, concurrency, replay and release-authority changes independently. Resolve actionable findings before integrating. Preserve clear distinctions between tests authored, tests executed, runtime behavior observed and platform acceptance.
 
