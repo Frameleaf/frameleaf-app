@@ -1964,3 +1964,924 @@ new file mode 100644
 +    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
 +  })
 +})
+diff --git a/src/features/preview/components/group-gizmo.tsx b/src/features/preview/components/group-gizmo.tsx
+--- a/src/features/preview/components/group-gizmo.tsx
++++ b/src/features/preview/components/group-gizmo.tsx
+@@ -1,10 +1,13 @@
+-import { useMemo, useCallback, useState, useRef } from 'react'
++import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
+ import { flushSync } from 'react-dom'
++import { Button } from '@/components/ui/button'
+ import { resolveAnimatedTextItem } from '@/features/preview/deps/keyframes'
+ import {
+   useKeyframesStore,
+   useTimelineSettingsStore,
++  useItemsStore,
+ } from '@/features/preview/deps/timeline-store'
++import { resolveEffectiveTrackStates } from '@/features/preview/deps/timeline-utils'
+ import { useResolvedPlaybackFrame } from '@/shared/state/playback/use-resolved-playback-frame'
+ import type { TimelineItem } from '@/types/timeline'
+ import type {
+@@ -34,6 +37,7 @@
+ } from '../utils/canvas-snap-utils'
+ import { useGizmoStore, type ItemPreview } from '../stores/gizmo-store'
+ import { notifyOnBlockedMouseDragIntent } from '../utils/mouse-drag-intent'
++import { getPositionLinkOwner } from '../utils/position-link-ownership'
+ import {
+   buildGroupScaledTextProperties,
+   type GroupScaledTextProperties,
+@@ -81,6 +85,11 @@
+   const groupStateRef = useRef<GroupTransformState | null>(null)
+   const startPointRef = useRef<Point | null>(null)
+   const startTransformsRef = useRef<Map<string, Transform>>(new Map())
++  const removeWindowListenersRef = useRef<(() => void) | null>(null)
++  const locked = useItemsStore((state) => {
++    const tracks = resolveEffectiveTrackStates(state.tracks)
++    return items.some((item) => !tracks.some((track) => track.id === item.trackId && !track.locked))
++  })
+
+   // Ref to track latest preview transforms for mouseup handler (avoids closure issues)
+   const previewTransformsRef = useRef<Map<string, Transform> | null>(null)
+@@ -105,12 +114,11 @@
+     () =>
+       items.map((item) =>
+         item.type === 'text'
+-          ? resolveAnimatedTextItem(
+-              item,
+-              keyframesByItemId[item.id],
+-              animationFrame - item.from,
+-              { width: projectSize.width, height: projectSize.height, fps },
+-            )
++          ? resolveAnimatedTextItem(item, keyframesByItemId[item.id], animationFrame - item.from, {
++              width: projectSize.width,
++              height: projectSize.height,
++              fps,
++            })
+           : item,
+       ),
+     [animationFrame, fps, items, keyframesByItemId, projectSize.height, projectSize.width],
+@@ -243,14 +251,64 @@
+   )
+
+   const resetInteractionState = useCallback(() => {
++    removeWindowListenersRef.current?.()
++    removeWindowListenersRef.current = null
++    document.body.style.cursor = ''
++    snapLinesRef.current = []
++    setSnapLines([])
+     setInteractionMode('idle')
+     setPreviewTransforms(null)
+     groupStateRef.current = null
+     startPointRef.current = null
+-  }, [setPreviewTransforms])
++  }, [setPreviewTransforms, setSnapLines])
++
++  useEffect(() => {
++    const cancelInvalidGesture = () => {
++      const gesture = groupStateRef.current
++      if (!gesture) return
++      const current = useItemsStore.getState()
++      const tracks = resolveEffectiveTrackStates(current.tracks)
++      const keyframes = useKeyframesStore.getState().keyframesByItemId
++      if (
++        gesture.itemIds.length !== items.length ||
++        gesture.itemIds.some((id) => {
++          const item = current.itemById[id]
++          return (
++            !items.some((member) => member.id === id) ||
++            !item ||
++            !tracks.some((track) => track.id === item.trackId && !track.locked) ||
++            getPositionLinkOwner(keyframes[id])
++          )
++        })
++      )
++        resetInteractionState()
++    }
++    cancelInvalidGesture()
++    // Observe original members even after the overlay filters them out. A
++    // temporary lock/link cancels synchronously and cannot revive on unlock.
++    const stopItems = useItemsStore.subscribe(cancelInvalidGesture)
++    const stopKeyframes = useKeyframesStore.subscribe(cancelInvalidGesture)
++    return () => {
++      stopItems()
++      stopKeyframes()
++    }
++  }, [items, resetInteractionState])
++
++  useEffect(
++    () => () => {
++      if (removeWindowListenersRef.current) {
++        removeWindowListenersRef.current()
++        clearPreview()
++        setSnapLines([])
++        document.body.style.cursor = ''
++      }
++    },
++    [clearPreview, setSnapLines],
++  )
+
+   const finishTransformInteraction = useCallback(
+     (operation: 'move' | 'resize' | 'rotate', options: { clearSnapLines?: boolean } = {}) => {
++      if (!groupStateRef.current) return
+       document.body.style.cursor = ''
+       if (options.clearSnapLines) {
+         snapLinesRef.current = []
+@@ -312,6 +370,7 @@
+     (e: React.MouseEvent) => {
+       e.stopPropagation()
+       e.preventDefault()
++      if (locked) return
+       if (translateBlocked) {
+         if (onTranslateBlocked) {
+           notifyOnBlockedMouseDragIntent(e, onTranslateBlocked)
+@@ -332,6 +391,7 @@
+       startTransformsRef.current = new Map(itemTransforms)
+       setInteractionMode('translate')
+       onTransformStart()
++      if (groupStateRef.current !== groupState) return
+       document.body.style.cursor = 'move'
+
+       // Track if actual dragging happened (movement beyond threshold in screen space)
+@@ -341,6 +401,7 @@
+       const startScreenY = e.clientY
+
+       const handleMouseMove = (moveEvent: MouseEvent) => {
++        if (groupStateRef.current !== groupState) return
+         // Check if we've exceeded drag threshold (in screen space for consistency)
+         if (!hasDragged) {
+           const screenDeltaX = Math.abs(moveEvent.clientX - startScreenX)
+@@ -386,6 +447,7 @@
+       }
+
+       const handleMouseUp = () => {
++        if (groupStateRef.current !== groupState) return
+         window.removeEventListener('mousemove', handleMouseMove)
+         window.removeEventListener('mouseup', handleMouseUp)
+         document.body.style.cursor = ''
+@@ -407,6 +469,10 @@
+         finishTransformInteraction('move', { clearSnapLines: true })
+       }
+
++      removeWindowListenersRef.current = () => {
++        window.removeEventListener('mousemove', handleMouseMove)
++        window.removeEventListener('mouseup', handleMouseUp)
++      }
+       window.addEventListener('mousemove', handleMouseMove)
+       window.addEventListener('mouseup', handleMouseUp)
+     },
+@@ -424,6 +490,7 @@
+       findItemAtPoint,
+       scale,
+       translateBlocked,
++      locked,
+       onTranslateBlocked,
+     ],
+   )
+@@ -433,6 +500,7 @@
+     (handle: GizmoHandle, e: React.MouseEvent) => {
+       e.stopPropagation()
+       e.preventDefault()
++      if (locked || translateBlocked) return
+
+       const point = toCanvasPoint(e)
+       const groupState = initializeGroupState(
+@@ -447,9 +515,11 @@
+       startTransformsRef.current = new Map(itemTransforms)
+       setInteractionMode('scale')
+       onTransformStart()
++      if (groupStateRef.current !== groupState) return
+       document.body.style.cursor = getScaleCursor(handle, groupRotation)
+
+       const handleMouseMove = (moveEvent: MouseEvent) => {
++        if (groupStateRef.current !== groupState) return
+         const movePoint = toCanvasPoint(moveEvent)
+         let scaleFactor = calculateGroupScaleFactor(groupState, point, movePoint)
+         const maintainAspectRatio = !moveEvent.shiftKey
+@@ -504,11 +574,16 @@
+       }
+
+       const handleMouseUp = () => {
++        if (groupStateRef.current !== groupState) return
+         window.removeEventListener('mousemove', handleMouseMove)
+         window.removeEventListener('mouseup', handleMouseUp)
+         finishTransformInteraction('resize', { clearSnapLines: true })
+       }
+
++      removeWindowListenersRef.current = () => {
++        window.removeEventListener('mousemove', handleMouseMove)
++        window.removeEventListener('mouseup', handleMouseUp)
++      }
+       window.addEventListener('mousemove', handleMouseMove)
+       window.addEventListener('mouseup', handleMouseUp)
+     },
+@@ -524,6 +599,8 @@
+       setPreviewTransforms,
+       setSnapLines,
+       scale,
++      locked,
++      translateBlocked,
+     ],
+   )
+
+@@ -532,6 +609,7 @@
+     (e: React.MouseEvent) => {
+       e.stopPropagation()
+       e.preventDefault()
++      if (locked || translateBlocked) return
+
+       const point = toCanvasPoint(e)
+       const groupState = initializeGroupState(
+@@ -546,9 +624,11 @@
+       startTransformsRef.current = new Map(itemTransforms)
+       setInteractionMode('rotate')
+       onTransformStart()
++      if (groupStateRef.current !== groupState) return
+       document.body.style.cursor = 'crosshair'
+
+       const handleMouseMove = (moveEvent: MouseEvent) => {
++        if (groupStateRef.current !== groupState) return
+         const movePoint = toCanvasPoint(moveEvent)
+         let rotationDelta = calculateGroupRotationDelta(groupState, point, movePoint)
+
+@@ -569,11 +649,16 @@
+       }
+
+       const handleMouseUp = () => {
++        if (groupStateRef.current !== groupState) return
+         window.removeEventListener('mousemove', handleMouseMove)
+         window.removeEventListener('mouseup', handleMouseUp)
+         finishTransformInteraction('rotate')
+       }
+
++      removeWindowListenersRef.current = () => {
++        window.removeEventListener('mousemove', handleMouseMove)
++        window.removeEventListener('mouseup', handleMouseUp)
++      }
+       window.addEventListener('mousemove', handleMouseMove)
+       window.addEventListener('mouseup', handleMouseUp)
+     },
+@@ -585,53 +670,141 @@
+       onTransformStart,
+       finishTransformInteraction,
+       setPreviewTransforms,
++      locked,
++      translateBlocked,
+     ],
+   )
+
+   // Handle escape key to cancel interaction
+-  useEscapeCancel(
+-    interactionMode !== 'idle',
+-    useCallback(() => {
+-      setInteractionMode('idle')
+-      setPreviewTransforms(null)
+-      snapLinesRef.current = []
+-      setSnapLines([])
+-      groupStateRef.current = null
+-      startPointRef.current = null
+-      document.body.style.cursor = ''
+-    }, [setPreviewTransforms, setSnapLines]),
+-  )
++  useEscapeCancel(interactionMode !== 'idle', resetInteractionState)
+
+   const isInteracting = interactionMode !== 'idle'
+
++  const handleRelativeTransform = (
++    event: React.FormEvent<HTMLFormElement>,
++    operation: 'resize' | 'rotate',
++  ) => {
++    event.preventDefault()
++    event.stopPropagation()
++    if (locked || translateBlocked || isInteracting || isPlaying) return
++    const form = event.currentTarget
++    const input = form.elements.namedItem('amount') as HTMLInputElement
++    const amount = input.valueAsNumber
++    if (!Number.isFinite(amount) || (operation === 'resize' && amount <= 0)) return
++    if ((operation === 'resize' && amount === 100) || (operation === 'rotate' && amount % 360 === 0)) {
++      form.reset()
++      return
++    }
++    const state = initializeGroupState(
++      items.map((item) => item.id),
++      itemTransforms,
++      projectSize.width,
++      projectSize.height,
++    )
++    const transforms =
++      operation === 'resize'
++        ? applyGroupScale(state, amount / 100, amount / 100, projectSize.width, projectSize.height)
++        : applyGroupRotation(state, amount % 360, projectSize.width, projectSize.height)
++    const bounds = calculateGroupBounds(transforms, projectSize.width, projectSize.height)
++    if (
++      Object.values(bounds).some((value) => !Number.isFinite(value)) ||
++      [...transforms.values()].some((transform) =>
++        [transform.x, transform.y, transform.width, transform.height, transform.rotation].some(
++          (value) => !Number.isFinite(value),
++        ),
++      )
++    )
++      return
++    if (transformsChanged(itemTransforms, transforms)) {
++      onTransformStart()
++      onTransformEnd(
++        transforms,
++        operation,
++        operation === 'resize'
++          ? buildGroupScaledTextProperties(resolvedItems, state.itemTransforms, transforms)
++          : undefined,
++      )
++    }
++    form.reset()
++  }
++
+   return (
+-    <div
+-      className="absolute transition-opacity duration-150"
+-      style={{
+-        left: screenBounds.left,
+-        top: screenBounds.top,
+-        width: screenBounds.width,
+-        height: screenBounds.height,
+-        opacity: isPlaying ? 0 : 1,
+-        // High z-index to ensure gizmo is always above SelectableItems
+-        zIndex: 100,
+-        // Container captures events to block SelectableItems below
+-        pointerEvents: 'auto',
+-      }}
+-      // Prevent events from propagating to elements below
+-      onMouseDown={(e) => e.stopPropagation()}
+-      onDoubleClick={(e) => e.stopPropagation()}
+-    >
+-      <GizmoHandles
+-        bounds={screenBounds}
+-        rotation={groupRotation}
+-        isInteracting={isInteracting}
+-        onTranslateStart={handleTranslateStart}
+-        translateBlocked={translateBlocked}
+-        translateBlockedLabel={translateBlockedLabel}
+-        onScaleStart={handleScaleStart}
+-        onRotateStart={handleRotateStart}
+-      />
+-    </div>
++    <>
++      <fieldset
++        aria-label="Group relative transforms"
++        disabled={locked || translateBlocked || isInteracting || isPlaying}
++        className="absolute left-2 top-2 z-[110] flex flex-wrap gap-2 rounded-md border border-border bg-background p-2 text-xs"
++        onMouseDown={(event) => event.stopPropagation()}
++        onClick={(event) => event.stopPropagation()}
++        onKeyDown={(event) => {
++          if (event.key === 'Escape') {
++            event.preventDefault()
++            event.stopPropagation()
++            const form = (event.target as HTMLElement).closest('form')
++            form?.reset()
++          }
++        }}
++      >
++        {(['resize', 'rotate'] as const).map((operation) => (
++          <form
++            key={operation}
++            className="flex items-center gap-2"
++            onSubmit={(event) => handleRelativeTransform(event, operation)}
++          >
++            <label
++              className="flex items-center gap-2"
++              aria-label={operation === 'resize' ? 'Group scale (%)' : 'Group rotation (degrees)'}
++            >
++              {operation === 'resize' ? 'Scale (%)' : 'Rotation (°)'}
++              <input
++                name="amount"
++                type="number"
++                required
++                step="any"
++                min={operation === 'resize' ? 0.01 : undefined}
++                defaultValue={operation === 'resize' ? 100 : 0}
++                className="h-7 w-20 rounded-md border border-input bg-secondary px-2"
++              />
++            </label>
++            <Button
++              type="submit"
++              variant="secondary"
++              className="h-7 px-2"
++              aria-label={operation === 'resize' ? 'Apply group scale' : 'Apply group rotation'}
++            >
++              Apply
++            </Button>
++          </form>
++        ))}
++      </fieldset>
++      <div
++        className="absolute transition-opacity duration-150"
++        style={{
++          left: screenBounds.left,
++          top: screenBounds.top,
++          width: screenBounds.width,
++          height: screenBounds.height,
++          opacity: isPlaying ? 0 : 1,
++          // High z-index to ensure gizmo is always above SelectableItems
++          zIndex: 100,
++          // Container captures events to block SelectableItems below
++          pointerEvents: 'auto',
++        }}
++        // Prevent events from propagating to elements below
++        onMouseDown={(e) => e.stopPropagation()}
++        onDoubleClick={(e) => e.stopPropagation()}
++      >
++        <GizmoHandles
++          bounds={screenBounds}
++          rotation={groupRotation}
++          isInteracting={isInteracting}
++          onTranslateStart={handleTranslateStart}
++          translateBlocked={translateBlocked}
++          translateBlockedLabel={translateBlockedLabel}
++          onScaleStart={handleScaleStart}
++          onRotateStart={handleRotateStart}
++        />
++      </div>
++    </>
+   )
+ }
+diff --git a/src/features/preview/components/gizmo-overlay.tsx b/src/features/preview/components/gizmo-overlay.tsx
+--- a/src/features/preview/components/gizmo-overlay.tsx
++++ b/src/features/preview/components/gizmo-overlay.tsx
+@@ -74,6 +74,7 @@
+   updateMarqueeCandidateElements,
+ } from '../utils/marquee-candidate-preview'
+ import { getPositionLinkOwner } from '../utils/position-link-ownership'
++import { resolveEffectiveTrackStates } from '@/features/preview/deps/timeline-utils'
+
+ interface GizmoOverlayProps {
+   itemsSnapshot: TimelineItem[]
+@@ -1073,13 +1074,29 @@
+       textUpdates?: ReadonlyMap<string, GroupScaledTextProperties>,
+     ) => {
+       const currentFrame = usePlaybackStore.getState().currentFrame
++      const current = useItemsStore.getState()
++      const itemsById = new Map(current.items.map((item) => [item.id, item]))
++      const tracks = resolveEffectiveTrackStates(current.tracks)
++      const keyframes = useKeyframesStore.getState().keyframesByItemId
++      // A group commit is atomic: do not move the remaining members after a
++      // selected item disappears, locks, or gains a link-owned Position.
++      if (
++        [...transforms.keys()].some((id) => {
++          const item = itemsById.get(id)
++          return (
++            !item ||
++            !tracks.some((track) => track.id === item.trackId && !track.locked) ||
++            getPositionLinkOwner(keyframes[id])
++          )
++        })
++      )
++        return
+       // Convert Transform to TransformProperties for the batch update
+       const transformsMap = new Map<string, Partial<TransformProperties>>()
+       const autoKeyframeOperations: AutoKeyframeOperation[] = []
+       const itemUpdates = new Map<string, Partial<TimelineItem>>()
+-      const itemsById = new Map(visualItems.map((candidate) => [candidate.id, candidate]))
+       for (const [itemId, transform] of transforms) {
+-        const item = visualItems.find((candidate) => candidate.id === itemId)
++        const item = itemsById.get(itemId)
+         if (!item) continue
+         const parentId = item.transformParent?.parentItemId
+         const parentTransform = parentId ? transforms.get(parentId) : undefined
+@@ -1090,7 +1107,7 @@
+               canvas: { width: projectSize.width, height: projectSize.height, fps },
+               frame: currentFrame,
+               getItem: (candidateId) => itemsById.get(candidateId),
+-              getKeyframes: (candidateId) => keyframesByItemId[candidateId],
++              getKeyframes: (candidateId) => keyframes[candidateId],
+             })
+         const editableTransform = resolveEditableGizmoTransform({
+           item,
+@@ -1152,15 +1169,7 @@
+       }, 100)
+       setOtherItemBounds([])
+     },
+-    [
+-      visualItems,
+-      keyframesByItemId,
+-      updateItemsTransformMap,
+-      setOtherItemBounds,
+-      fps,
+-      projectSize.width,
+-      projectSize.height,
+-    ],
++    [updateItemsTransformMap, setOtherItemBounds, fps, projectSize.width, projectSize.height],
+   )
+
+   // Handle click on overlay background to deselect
+diff --git a/src/features/preview/components/group-gizmo.test.tsx b/src/features/preview/components/group-gizmo.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/preview/components/group-gizmo.test.tsx
+@@ -0,0 +1,409 @@
++import { act, fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { useItemsStore, useTimelineStore, useKeyframesStore } from '../deps/timeline-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { useGizmoStore } from '../stores/gizmo-store'
++import type { ShapeItem, TextItem } from '@/types/timeline'
++import { GizmoOverlay } from './gizmo-overlay'
++
++const SIZE = { width: 1000, height: 600 }
++const ITEMS: ShapeItem[] = [-100, 100].map((x, index) => ({
++  id: `shape-${index}`,
++  type: 'shape',
++  shapeType: 'rectangle',
++  fillColor: '#ffffff',
++  trackId: 'track',
++  from: 0,
++  durationInFrames: 90,
++  label: `Shape ${index}`,
++  transform: { x, y: 0, width: 100, height: 60, rotation: 0, opacity: 1 },
++}))
++
++function Preview() {
++  const items = useItemsStore((state) => state.items)
++  return (
++    <GizmoOverlay
++      itemsSnapshot={items}
++      containerRect={new DOMRect(0, 0, SIZE.width, SIZE.height)}
++      playerSize={SIZE}
++      projectSize={SIZE}
++      zoom={1}
++      overlayPadding={0}
++    />
++  )
++}
++
++function submit(name: string, amount: string) {
++  const input = screen.getByRole('spinbutton', { name })
++  input.focus()
++  fireEvent.change(input, { target: { value: amount } })
++  fireEvent.submit(input.closest('form')!)
++  return input
++}
++
++describe('group relative transform keyboard controls', () => {
++  beforeEach(() => {
++    useGizmoStore.getState().clearInteraction()
++    useGizmoStore.getState().clearPreview()
++    useGizmoStore.getState().setSnappingEnabled(false)
++    useTimelineStore.setState({ keyframes: [] })
++    useItemsStore.getState().setTracks([
++      {
++        id: 'track',
++        name: 'Track',
++        order: 0,
++        height: 72,
++        items: [],
++        visible: true,
++        locked: false,
++        muted: false,
++        solo: false,
++      },
++    ])
++    useItemsStore.getState().setItems(structuredClone(ITEMS))
++    usePlaybackStore.getState().setCurrentFrame(0)
++    usePreviewBridgeStore.getState().setDisplayedFrame(0)
++    useSelectionStore.getState().selectItems(ITEMS.map((item) => item.id))
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  it.each(['scale', 'rotate'] as const)(
++    'commits relative %s around the group pivot in one undo step',
++    (operation) => {
++      const before = structuredClone(useItemsStore.getState().items)
++      render(<Preview />)
++      const input = submit(
++        operation === 'scale' ? 'Group scale (%)' : 'Group rotation (degrees)',
++        operation === 'scale' ? '200' : '90',
++      )
++      const after = structuredClone(useItemsStore.getState().items)
++      for (const [index, item] of after.entries()) {
++        if (operation === 'scale') {
++          expect(item.transform).toMatchObject({
++            x: index === 0 ? -200 : 200,
++            y: 0,
++            width: 200,
++            height: 120,
++            rotation: 0,
++          })
++        } else {
++          expect(item.transform?.x).toBeCloseTo(0)
++          expect(item.transform?.y).toBeCloseTo(index === 0 ? -100 : 100)
++          expect(item.transform).toMatchObject({ width: 100, height: 60, rotation: 90 })
++        }
++      }
++      expect(input).toHaveFocus()
++      expect(useGizmoStore.getState().preview).toBeNull()
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(before)
++      act(() => useTimelineStore.temporal.getState().redo())
++      expect(useItemsStore.getState().items).toEqual(after)
++    },
++  )
++
++  it('cancels typed amounts with Escape without changing geometry or history', () => {
++    render(<Preview />)
++    const before = structuredClone(useItemsStore.getState().items)
++    const input = screen.getByRole('spinbutton', { name: 'Group scale (%)' })
++    input.focus()
++    fireEvent.change(input, { target: { value: '200' } })
++    fireEvent.keyDown(input, { key: 'Escape' })
++    expect(input).toHaveValue(100)
++    expect(input).toHaveFocus()
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it('treats 100 percent as no change even for items smaller than the drag minimum', () => {
++    const items = structuredClone(ITEMS)
++    for (const item of items) item.transform!.width = 10
++    useItemsStore.getState().setItems(items)
++    render(<Preview />)
++    submit('Group scale (%)', '100')
++    expect(useItemsStore.getState().items).toEqual(items)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it('preserves an asymmetric group pivot and individual anchors while rotating', () => {
++    const items = structuredClone(ITEMS)
++    items[0]!.transform!.anchorX = 20
++    items[1]!.transform!.width = 200
++    items[1]!.transform!.anchorX = 30
++    useItemsStore.getState().setItems(items)
++    render(<Preview />)
++    submit('Group rotation (degrees)', '90')
++    const after = useItemsStore.getState().items
++    expect(after[0]?.transform?.x).toBeCloseTo(25)
++    expect(after[1]?.transform?.x).toBeCloseTo(25)
++    expect(after[0]?.transform?.y).toBeCloseTo(-125)
++    expect(after[1]?.transform?.y).toBeCloseTo(75)
++    expect(after[0]?.transform?.anchorX).toBe(20)
++    expect(after[1]?.transform?.anchorX).toBe(30)
++  })
++
++  it('disables inherited locked groups and rejects a captured submission after locking', () => {
++    render(<Preview />)
++    const input = screen.getByRole('spinbutton', { name: 'Group scale (%)' })
++    fireEvent.change(input, { target: { value: '200' } })
++    const before = structuredClone(useItemsStore.getState().items)
++    act(() => {
++      const track = useItemsStore.getState().tracks[0]!
++      useItemsStore.getState().setTracks([
++        { ...track, id: 'group', isGroup: true, locked: true },
++        { ...track, parentTrackId: 'group' },
++      ])
++    })
++    expect(input).toBeDisabled()
++    fireEvent.submit(input.closest('form')!)
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.getState().keyframes).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it.each(['Resize from top-left corner', 'Rotate selected element', 'Move selected element'])(
++    'cancels %s and ignores later move/release events',
++    (name) => {
++      render(<Preview />)
++      const before = structuredClone(useItemsStore.getState().items)
++      fireEvent.mouseDown(screen.getByRole('button', { name }), { clientX: 350, clientY: 270 })
++      fireEvent.mouseMove(window, { clientX: 200, clientY: 200 })
++      expect(useGizmoStore.getState().preview).not.toBeNull()
++      fireEvent.keyDown(window, { key: 'Escape' })
++      expect(useGizmoStore.getState().preview).toBeNull()
++      fireEvent.mouseMove(window, { clientX: 100, clientY: 100 })
++      fireEvent.mouseUp(window, { clientX: 100, clientY: 100 })
++      expect(useGizmoStore.getState().preview).toBeNull()
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it('cleans up an active gesture on unmount', () => {
++    const view = render(<Preview />)
++    fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize from top-left corner' }), {
++      clientX: 350,
++      clientY: 270,
++    })
++    fireEvent.mouseMove(window, { clientX: 200, clientY: 200 })
++    view.unmount()
++    fireEvent.mouseMove(window, { clientX: 100, clientY: 100 })
++    fireEvent.mouseUp(window, { clientX: 100, clientY: 100 })
++    expect(useGizmoStore.getState().preview).toBeNull()
++    expect(useItemsStore.getState().items).toEqual(ITEMS)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it.each(
++    ['Resize from top-left corner', 'Rotate selected element', 'Move selected element'].flatMap(
++      (handle) => ['lock', 'remove', 'unlock-before-release'].map((change) => ({ handle, change })),
++    ),
++  )('finally cancels $handle when three members become two: $change', ({ handle, change }) => {
++    const items = [
++      ...structuredClone(ITEMS),
++      {
++        ...structuredClone(ITEMS[0]!),
++        id: 'shape-2',
++        transform: { ...ITEMS[0]!.transform, x: 250, y: 80 },
++      },
++    ].map((item, index) => ({ ...item, trackId: `track-${index}` }))
++    const track = useItemsStore.getState().tracks[0]!
++    const tracks = items.map((item, index) => ({ ...track, id: item.trackId, order: index }))
++    useItemsStore.getState().setTracks(tracks)
++    useItemsStore.getState().setItems(items)
++    useSelectionStore.getState().selectItems(items.map((item) => item.id))
++    render(<Preview />)
++    const controls = screen.getByRole('group', { name: 'Group relative transforms' })
++    fireEvent.mouseDown(screen.getByRole('button', { name: handle }), {
++      clientX: 350,
++      clientY: 270,
++    })
++    fireEvent.mouseMove(window, { clientX: 200, clientY: 200 })
++    expect(Object.keys(useGizmoStore.getState().preview!)).toHaveLength(3)
++    act(() => {
++      if (change === 'remove')
++        useItemsStore.getState().setItems(items.filter((item) => item.id !== 'shape-1'))
++      else
++        useItemsStore
++          .getState()
++          .setTracks(tracks.map((entry) => ({ ...entry, locked: entry.id === 'track-1' })))
++    })
++    // Both surviving members retain the same GroupGizmo, rather than unmounting it.
++    expect(screen.getByRole('group', { name: 'Group relative transforms' })).toBe(controls)
++    expect(useGizmoStore.getState().preview).toBeNull()
++    fireEvent.mouseMove(window, { clientX: 150, clientY: 150 })
++    expect(useGizmoStore.getState().preview).toBeNull()
++    if (change === 'unlock-before-release') act(() => useItemsStore.getState().setTracks(tracks))
++    fireEvent.mouseMove(window, { clientX: 100, clientY: 100 })
++    fireEvent.mouseUp(window, { clientX: 100, clientY: 100 })
++    expect(useGizmoStore.getState().preview).toBeNull()
++    expect(useItemsStore.getState().items).toEqual(
++      change === 'remove' ? items.filter((item) => item.id !== 'shape-1') : items,
++    )
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    if (change === 'unlock-before-release') {
++      submit('Group scale (%)', '200')
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useItemsStore.getState().items).toEqual(items)
++    }
++  })
++
++  it.each(['selection', 'lock-unlock', 'link-unlink'] as const)(
++    'invalidates the original gesture membership/policy permanently: %s',
++    (change) => {
++      const items = [
++        ...structuredClone(ITEMS),
++        {
++          ...structuredClone(ITEMS[0]!),
++          id: 'shape-2',
++          transform: { ...ITEMS[0]!.transform, x: 250, y: 80 },
++        },
++      ]
++      useItemsStore.getState().setItems(items)
++      useSelectionStore.getState().selectItems(items.map((item) => item.id))
++      render(<Preview />)
++      const controls = screen.getByRole('group', { name: 'Group relative transforms' })
++      fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize from top-left corner' }), {
++        clientX: 350,
++        clientY: 270,
++      })
++      fireEvent.mouseMove(window, { clientX: 200, clientY: 200 })
++      act(() => {
++        if (change === 'selection') useSelectionStore.getState().selectItems(['shape-0', 'shape-2'])
++        else if (change === 'lock-unlock') {
++          const tracks = useItemsStore.getState().tracks
++          useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++          useItemsStore.getState().setTracks(tracks)
++        } else {
++          useKeyframesStore.getState().setKeyframes([
++            {
++              itemId: 'shape-1',
++              properties: [],
++              propertyLinks: [
++                {
++                  type: 'link',
++                  targetProperty: 'position',
++                  sourceItemId: 'shape-0',
++                  sourceProperty: 'position',
++                  enabled: true,
++                  timeOffsetFrames: 0,
++                },
++              ],
++            },
++          ])
++          useKeyframesStore.getState().setKeyframes([])
++        }
++      })
++      expect(screen.getByRole('group', { name: 'Group relative transforms' })).toBe(controls)
++      expect(useGizmoStore.getState().preview).toBeNull()
++      fireEvent.mouseMove(window, { clientX: 100, clientY: 100 })
++      fireEvent.mouseUp(window, { clientX: 100, clientY: 100 })
++      expect(useItemsStore.getState().items).toEqual(items)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it.each(['lock', 'remove', 'link'] as const)(
++    'refuses the entire commit when an item changes at start: %s',
++    (change) => {
++      render(<Preview />)
++      act(() => usePlaybackStore.getState().setPreviewFrame(5))
++      const unsubscribe = usePlaybackStore.subscribe((state) => {
++        if (state.currentFrame !== 5) return
++        if (change === 'lock') {
++          const track = useItemsStore.getState().tracks[0]!
++          useItemsStore.getState().setTracks([{ ...track, locked: true }])
++        } else if (change === 'remove') {
++          useItemsStore.getState().setItems([structuredClone(ITEMS[0]!)])
++        } else {
++          useKeyframesStore.getState().setKeyframes([
++            {
++              itemId: ITEMS[0]!.id,
++              properties: [],
++              propertyLinks: [
++                {
++                  type: 'link',
++                  targetProperty: 'position',
++                  sourceItemId: ITEMS[1]!.id,
++                  sourceProperty: 'position',
++                  enabled: true,
++                  timeOffsetFrames: 0,
++                },
++              ],
++            },
++          ])
++        }
++      })
++      submit('Group scale (%)', '200')
++      unsubscribe()
++      expect(useItemsStore.getState().items).toEqual(change === 'remove' ? [ITEMS[0]] : ITEMS)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++
++  it('scales text style through the existing batch and restores it with undo', () => {
++    const text: TextItem = {
++      ...ITEMS[1]!,
++      type: 'text',
++      text: 'Title',
++      color: '#ffffff',
++      fontSize: 20,
++      letterSpacing: 2,
++      textPadding: 4,
++      backgroundRadius: 3,
++    }
++    useItemsStore.getState().setItems([structuredClone(ITEMS[0]!), text])
++    const before = structuredClone(useItemsStore.getState().items)
++    render(<Preview />)
++    submit('Group scale (%)', '200')
++    const after = structuredClone(useItemsStore.getState().items)
++    expect(after[1]).toMatchObject({
++      fontSize: 40,
++      letterSpacing: 4,
++      textPadding: 8,
++      backgroundRadius: 6,
++    })
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(before)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(after)
++  })
++
++  it('commits keyed rotation and unkeyed geometry together in one history entry', () => {
++    useKeyframesStore.getState().setKeyframes([
++      {
++        itemId: ITEMS[0]!.id,
++        properties: [
++          {
++            property: 'rotation',
++            keyframes: [{ id: 'rotation', frame: 0, value: 0, easing: 'linear' }],
++          },
++        ],
++      },
++    ])
++    useTimelineStore.temporal.getState().clear()
++    const before = structuredClone(useTimelineStore.getState().keyframes)
++    render(<Preview />)
++    submit('Group rotation (degrees)', '90')
++    const after = structuredClone(useTimelineStore.getState().keyframes)
++    expect(after[0]?.properties[0]?.keyframes[0]?.value).toBe(90)
++    expect(useItemsStore.getState().items[1]?.transform?.rotation).toBe(90)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useTimelineStore.getState().keyframes).toEqual(before)
++    expect(useItemsStore.getState().items).toEqual(ITEMS)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useTimelineStore.getState().keyframes).toEqual(after)
++  })
++
++  it.each(['', '0', '-1', '1e308'])('rejects invalid or overflowing scale %s', (amount) => {
++    render(<Preview />)
++    submit('Group scale (%)', amount)
++    expect(useItemsStore.getState().items).toEqual(ITEMS)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++})

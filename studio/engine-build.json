@@ -288,7 +288,7 @@
     {
       "path": "patches/0058-preview-layout-keyboard-accessibility.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a43792b810b8c4fb0157b9e2851acc76e00c3ca66786d3fa264ab49069ba4529"
+      "sha256": "443486ca704e18317bfa76bdccdf483e94436f7016af579cd9ceea4fb6b6a7e3"
     },
     {
       "path": "patches/0059-mask-path-keyframes.patch",
@@ -326,5 +326,5 @@
       "sha256": "b2d7cae5041561c510ed7bda6036592ee72bfe9a056371ad03051b6806892538"
     }
   ],
-  "sourceSha256": "03ceeef8d27196ad66d00f7b1500d286f22318fbe1a00821b164d742105d5229"
+  "sourceSha256": "881a0c661deb3c30a2202d59c9fccf6cc979e7ff1507b1de661f7a8492142aeb"
 }
