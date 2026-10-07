@@ -6,6 +6,7 @@ import {
   ASSET_DEVELOP_MAX_STROKE_POINTS,
   AssetDevelopCleanupMethod,
 } from '../queue/develop-values.js';
+import { SharpResourceLimitError } from '../queue/sharp-protocol.js';
 import type { AssetDevelopCleanup } from 'src/dtos/asset-develop.dto.js';
 
 /**
@@ -25,6 +26,8 @@ export const ARTIFACT_ID = /^[0-9a-f]{64}$/;
 
 /** A decoded artifact: greyscale (1 channel) for a mask, RGBA (4 channels) for a fill. */
 export type DevelopBitmap = { data: Uint8Array; width: number; height: number; channels: 1 | 4 };
+/** Linear source-gamut RGB premultiplied by alpha, relative to reference white. */
+export type DevelopLinearFill = { data: Float32Array; width: number; height: number; channels: 4 };
 
 export type DevelopStroke = { points: [number, number][]; radius: number; erase: boolean };
 
@@ -317,7 +320,7 @@ export const brushGrid = (original: Size, strokes: DevelopStroke[] = []): { boun
  * Bilinear sample of one channel of a bitmap stretched over the whole original, at fractions `u`,
  * `v` (pixel centres at (i + 0.5) / width). Edges clamp.
  */
-export function sampleBitmap(bitmap: DevelopBitmap, u: number, v: number, channel: number): number {
+export function sampleBitmap(bitmap: DevelopBitmap | DevelopLinearFill, u: number, v: number, channel: number): number {
   const x = clamp(u * bitmap.width - 0.5, 0, bitmap.width - 1);
   const y = clamp(v * bitmap.height - 0.5, 0, bitmap.height - 1);
   const x0 = Math.floor(x);
@@ -451,15 +454,19 @@ const colourChannels = (channels: number) => (channels >= 3 ? 3 : 1);
  *
  * Every result is blended into the pixel by the area's coverage.
  */
-export function applyDevelopCleanup(
-  data: Uint8Array,
+export function applyDevelopCleanup<T extends Uint8Array | Float32Array>(
+  data: T,
   info: DevelopCleanupImage,
   operations: AssetDevelopCleanup[],
-  fills: ReadonlyMap<string, DevelopBitmap> = new Map(),
-): Uint8Array {
+  fills: ReadonlyMap<string, DevelopBitmap | DevelopLinearFill> = new Map(),
+  maxBytes?: number,
+): T {
   const size = { width: info.width, height: info.height };
   const channels = info.channels;
   const colours = colourChannels(channels);
+  const linear = data instanceof Float32Array;
+  let fillBytes = 0;
+  for (const fill of fills.values()) fillBytes += fill.data.byteLength;
   for (const op of operations) {
     if (!op.enabled) {
       continue;
@@ -473,6 +480,18 @@ export function applyDevelopCleanup(
     // as a JavaScript array): the area, its clone/heal source, or the whole blocks it pixelates.
     const stride = info.width * channels;
     const block = Math.max(1, Math.round(op.blockSize * Math.min(info.width, info.height)));
+    const blockCount = Math.ceil(info.width / block) * Math.ceil(info.height / block);
+    if (
+      linear &&
+      (!Number.isSafeInteger(maxBytes) ||
+        data.byteLength * 2 +
+          fillBytes +
+          (op.strokes ? info.width * info.height * 8 : 0) +
+          (op.method === AssetDevelopCleanupMethod.Pixelate ? blockCount * (colours * 4 + 1) : 0) >
+          maxBytes!)
+    ) {
+      throw new SharpResourceLimitError('HDR cleanup exceeds the float surface budget');
+    }
     const dy = Math.round((op.source?.dy ?? 0) * info.height);
     let rowStart = box.top;
     let rowEnd = box.bottom;
@@ -483,7 +502,9 @@ export function applyDevelopCleanup(
       rowStart = Math.min(rowStart, clamp(box.top + dy, 0, info.height - 1));
       rowEnd = Math.max(rowEnd, clamp(box.bottom - 1 + dy, 0, info.height - 1) + 1);
     }
-    const before = new Uint8Array(data.subarray(rowStart * stride, rowEnd * stride));
+    const before = linear
+      ? new Float32Array(data.subarray(rowStart * stride, rowEnd * stride))
+      : new Uint8Array(data.subarray(rowStart * stride, rowEnd * stride));
     const prior = (index: number) => before[index - rowStart * stride];
     // strokes are drawn once over the area at full resolution; a region is measured directly
     const drawn = op.strokes
@@ -497,22 +518,31 @@ export function applyDevelopCleanup(
     switch (op.method) {
       case AssetDevelopCleanupMethod.Pixelate: {
         const means = new Map<number, number[]>();
+        const floatMeans = linear ? new Float32Array(blockCount * colours) : undefined;
+        const ready = linear ? new Uint8Array(blockCount) : undefined;
         const blockMean = (bx: number, by: number) => {
           const key = by * Math.ceil(info.width / block) + bx;
+          if (floatMeans && ready?.[key]) return floatMeans.subarray(key * colours, (key + 1) * colours);
           let mean = means.get(key);
           if (!mean) {
             const sums = Array.from({ length: colours }, () => 0);
             let count = 0;
             for (let y = by * block; y < Math.min(info.height, (by + 1) * block); y += 1) {
               for (let x = bx * block; x < Math.min(info.width, (bx + 1) * block); x += 1) {
+                const alpha = linear && channels === 4 ? prior(at(x, y) + 3) : 1;
                 for (let c = 0; c < colours; c += 1) {
-                  sums[c] += prior(at(x, y) + c);
+                  sums[c] += prior(at(x, y) + c) * alpha;
                 }
-                count += 1;
+                count += alpha;
               }
             }
-            mean = sums.map((sum) => sum / Math.max(1, count));
-            means.set(key, mean);
+            mean = sums.map((sum) => sum / (linear ? count || 1 : Math.max(1, count)));
+            if (floatMeans && ready) {
+              floatMeans.set(mean, key * colours);
+              ready[key] = 1;
+            } else {
+              means.set(key, mean);
+            }
           }
           return mean;
         };
@@ -531,7 +561,8 @@ export function applyDevelopCleanup(
           let total = 0;
           for (let y = box.top; y < box.bottom; y += 1) {
             for (let x = box.left; x < box.right; x += 1) {
-              const weight = coverage(x, y);
+              const weight =
+                coverage(x, y) * (linear && channels === 4 ? prior(sourceAt(x, y) + 3) * prior(at(x, y) + 3) : 1);
               if (weight <= 0) {
                 continue;
               }
@@ -544,7 +575,12 @@ export function applyDevelopCleanup(
           }
           shift = area.map((sum, c) => (total > 0 ? (sum - source[c]) / total : 0));
         }
-        produce = (x, y, c) => prior(sourceAt(x, y) + c) + shift[c];
+        produce = (x, y, c) => {
+          const value = prior(sourceAt(x, y) + c) + shift[c];
+          return linear && channels === 4
+            ? prior(at(x, y) + c) + (value - prior(at(x, y) + c)) * prior(sourceAt(x, y) + 3)
+            : value;
+        };
         break;
       }
       case AssetDevelopCleanupMethod.Remove: {
@@ -552,19 +588,24 @@ export function applyDevelopCleanup(
         if (!fill) {
           throw new Error(`Clean Up ${op.id} needs its generated fill`);
         }
+        if (linear !== fill.data instanceof Float32Array) {
+          throw new TypeError('Clean Up fill must match the renderer color space');
+        }
         const width = box.right - box.left;
         const height = box.bottom - box.top;
         produce = (x, y, c) => {
           const u = (x + 0.5 - box.left) / width;
           const v = (y + 0.5 - box.top) / height;
-          const alpha = sampleBitmap(fill, u, v, 3) / 255;
+          const alpha = sampleBitmap(fill, u, v, 3) / (linear ? 1 : 255);
           const value =
             colours === 3
               ? sampleBitmap(fill, u, v, c)
               : 0.2126 * sampleBitmap(fill, u, v, 0) +
                 0.7152 * sampleBitmap(fill, u, v, 1) +
                 0.0722 * sampleBitmap(fill, u, v, 2);
-          return prior(at(x, y) + c) + (value - prior(at(x, y) + c)) * alpha;
+          return linear
+            ? prior(at(x, y) + c) * (1 - alpha) + value
+            : prior(at(x, y) + c) + (value - prior(at(x, y) + c)) * alpha;
         };
         break;
       }
@@ -582,7 +623,8 @@ export function applyDevelopCleanup(
         const index = at(x, y);
         for (let c = 0; c < colours; c += 1) {
           const value = produce(x, y, c);
-          data[index + c] = Math.round(clamp(prior(index + c) + (value - prior(index + c)) * weight, 0, 255));
+          const blended = prior(index + c) + (value - prior(index + c)) * weight;
+          data[index + c] = linear ? blended : Math.round(clamp(blended, 0, 255));
         }
       }
     }
