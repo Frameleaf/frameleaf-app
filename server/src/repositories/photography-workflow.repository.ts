@@ -4,8 +4,9 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photography-workflow.dto.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
-import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 export type WorkflowRow = {
   id: string;
@@ -132,7 +133,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.ownerId', '=', ownerId)
       .where('album_asset.albumId', '=', albumId)
       .where('asset.type', '=', AssetType.Image)
-      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .where(isNotLocked())
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .orderBy('asset.fileCreatedAt')
@@ -156,7 +157,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.ownerId', '=', ownerId)
       .where('asset.type', '=', AssetType.Image)
       .where('asset.isOffline', '=', false)
-      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .where(isNotLocked())
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .where('asset_exif.fileSizeInByte', '<=', 512_000)
@@ -171,7 +172,7 @@ export class PhotographyWorkflowRepository {
       JOIN public.album_asset membership ON membership."assetId"=asset.id
       WHERE revision.id=ANY(${ids}::uuid[]) AND revision."ownerId"=${row.ownerId}::uuid
       AND asset."ownerId"=${row.ownerId}::uuid AND membership."albumId"=${row.albumId}::uuid
-      AND asset.visibility <> 'locked' AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
+      AND ${isNotLocked()} AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
       AND revision.status='rendered' AND revision."masterPath" IS NOT NULL
       AND (revision."sourceChecksum" IS NULL OR revision."sourceChecksum"=asset.checksum)`.execute(this.db);
     return new Set(rows.map((r) => r.id));
@@ -183,6 +184,7 @@ export class PhotographyWorkflowRepository {
       .where('assetId', '=', assetId)
       .where('type', '=', AssetFileType.Preview)
       .where('isEdited', '=', false)
+      .where(sql<boolean>`not ${lockedAssetIdExists(sql.ref('asset_file.assetId'))}`)
       .executeTakeFirst();
   }
   async live(row: WorkflowRow) {
