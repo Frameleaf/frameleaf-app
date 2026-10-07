@@ -1563,6 +1563,148 @@
         "zoomLevel": 1,
         "scrollPosition": 0
       }
+    },
+    "lottie-template": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      },
+      "timeline": {
+        "tracks": [
+          {
+            "id": "v1",
+            "name": "V1",
+            "kind": "video",
+            "height": 80,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 0
+          },
+          {
+            "id": "a1",
+            "name": "A1",
+            "kind": "audio",
+            "height": 80,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 1
+          }
+        ],
+        "items": [
+          {
+            "id": "lottie-template",
+            "trackId": "v1",
+            "from": 30,
+            "durationInFrames": 90,
+            "label": "Template",
+            "type": "lottie",
+            "src": "",
+            "width": 320,
+            "height": 180,
+            "lottieFps": 30,
+            "lottieDuration": 3,
+            "themeId": "existing-theme",
+            "animationId": "existing-animation",
+            "colorOverrides": {
+              "c1": "#123456"
+            },
+            "textOverrides": {
+              "1": "Before"
+            },
+            "slotOverrides": {
+              "original": 1
+            }
+          }
+        ],
+        "transitions": [],
+        "keyframes": [],
+        "currentFrame": 0,
+        "zoomLevel": 1,
+        "scrollPosition": 0
+      }
+    },
+    "lottie-locked": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      },
+      "timeline": {
+        "tracks": [
+          {
+            "id": "v1",
+            "name": "V1",
+            "kind": "video",
+            "height": 80,
+            "locked": true,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 0
+          },
+          {
+            "id": "a1",
+            "name": "A1",
+            "kind": "audio",
+            "height": 80,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 1
+          }
+        ],
+        "items": [
+          {
+            "id": "lottie-template",
+            "trackId": "v1",
+            "from": 30,
+            "durationInFrames": 90,
+            "label": "Template",
+            "type": "lottie",
+            "src": "",
+            "width": 320,
+            "height": 180,
+            "lottieFps": 30,
+            "lottieDuration": 3,
+            "themeId": "existing-theme",
+            "animationId": "existing-animation",
+            "colorOverrides": {
+              "c1": "#123456"
+            },
+            "textOverrides": {
+              "1": "Before"
+            },
+            "slotOverrides": {
+              "original": 1
+            }
+          }
+        ],
+        "transitions": [],
+        "keyframes": [],
+        "currentFrame": 0,
+        "zoomLevel": 1,
+        "scrollPosition": 0
+      }
     }
   },
   "bases": {
@@ -9213,6 +9355,180 @@
         }
       },
       "digest": "9266827b1bdd5ae6a3b8aeb238b801e4a5758f3b9ff464e63342b5b714998106"
+    },
+    "lottie-template": {
+      "seed": "lottie-template",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            }
+          ],
+          "items": [
+            {
+              "id": "lottie-template",
+              "trackId": "v1",
+              "from": 30,
+              "durationInFrames": 90,
+              "label": "Template",
+              "type": "lottie",
+              "src": "",
+              "width": 320,
+              "height": 180,
+              "lottieFps": 30,
+              "lottieDuration": 3,
+              "themeId": "existing-theme",
+              "animationId": "existing-animation",
+              "colorOverrides": {
+                "c1": "#123456"
+              },
+              "textOverrides": {
+                "1": "Before"
+              },
+              "slotOverrides": {
+                "original": 1
+              }
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "42f35d43d90f14ad44bb3213c41fc3f4bdb3f44f5d30bf69ecef0b21240d497e"
+    },
+    "lottie-locked": {
+      "seed": "lottie-locked",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            }
+          ],
+          "items": [
+            {
+              "id": "lottie-template",
+              "trackId": "v1",
+              "from": 30,
+              "durationInFrames": 90,
+              "label": "Template",
+              "type": "lottie",
+              "src": "",
+              "width": 320,
+              "height": 180,
+              "lottieFps": 30,
+              "lottieDuration": 3,
+              "themeId": "existing-theme",
+              "animationId": "existing-animation",
+              "colorOverrides": {
+                "c1": "#123456"
+              },
+              "textOverrides": {
+                "1": "Before"
+              },
+              "slotOverrides": {
+                "original": 1
+              }
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "584e67c2c5e94241a1e7c4373a3541a818229e75e2b6f724f2860ffcc34617c9"
     }
   },
   "vectors": {
@@ -140745,32 +141061,6 @@
       }
     },
     {
-      "id": "not-implemented/lottie.update",
-      "story": "FL-309",
-      "covers": [
-        "lottie.update"
-      ],
-      "summary": "The engine refuses lottie.update as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "lottie.update",
-          "payload": {
-            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606"
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/lottie.update",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "lottie.update is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/media.import",
       "story": "FL-309",
       "covers": [
@@ -153810,6 +154100,694 @@
         "reason": "invalid",
         "detail": "Invalid gainEnvelope"
       }
+    },
+    {
+      "id": "lottie.update/replace-all",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "replace-all",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {
+              "c0": "#FF8000",
+              "s:accent": "#00ff00"
+            },
+            "text": {
+              "0": "Hello",
+              "s:title": ""
+            },
+            "slots": {
+              "opacity": 25,
+              "position": [
+                10,
+                -20
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:replace-all",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "8837f452682964ea0956186990bf7262e28bd28d672e0182073573071a83add6",
+        "envelopeDigest": "9aa819b03458d1b5c2379edad68c7d70aab2f650ff533731eb2100954ecfbff6",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "lottie-template",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 90,
+                "label": "Template",
+                "type": "lottie",
+                "src": "",
+                "width": 320,
+                "height": 180,
+                "lottieFps": 30,
+                "lottieDuration": 3,
+                "themeId": "existing-theme",
+                "animationId": "existing-animation",
+                "colorOverrides": {
+                  "c0": "#FF8000",
+                  "s:accent": "#00ff00"
+                },
+                "textOverrides": {
+                  "0": "Hello",
+                  "s:title": ""
+                },
+                "slotOverrides": {
+                  "opacity": 25,
+                  "position": [
+                    10,
+                    -20
+                  ]
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "lottie.update/omitted-keeps",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "omitted-keeps",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "text": {
+              "0": "Next"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:omitted-keeps",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "7522bb17f8304b499a7dc2fd7bb29dac86a91fcb93ecf25cc4f1f8291b74f21f",
+        "envelopeDigest": "0a9b422bcdc3915d88585025df9df03af1ef52bded53d78d5749b16bef7b6c87",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "lottie-template",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 90,
+                "label": "Template",
+                "type": "lottie",
+                "src": "",
+                "width": 320,
+                "height": 180,
+                "lottieFps": 30,
+                "lottieDuration": 3,
+                "themeId": "existing-theme",
+                "animationId": "existing-animation",
+                "colorOverrides": {
+                  "c1": "#123456"
+                },
+                "textOverrides": {
+                  "0": "Next"
+                },
+                "slotOverrides": {
+                  "original": 1
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "lottie.update/clear",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "clear",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {},
+            "text": {},
+            "slots": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "a26a8b0b54723c301a6d0ddfb5cdca7d8104ae8ed2056cb6e695a106e09a8355",
+        "envelopeDigest": "f0a76d0d6e79a46f05896857806b3a3c0aca2b4a3cdfd9c3934fe54059e6577d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "lottie-template",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 90,
+                "label": "Template",
+                "type": "lottie",
+                "src": "",
+                "width": 320,
+                "height": 180,
+                "lottieFps": 30,
+                "lottieDuration": 3,
+                "themeId": "existing-theme",
+                "animationId": "existing-animation"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "lottie.update/invalid-color",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "invalid-color",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {
+              "c0": "#12345"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:invalid-color",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update: colors must be #rrggbb strings"
+      }
+    },
+    {
+      "id": "lottie.update/invalid-vector",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "invalid-vector",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "slots": {
+              "xy": [
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:invalid-vector",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update: slots must be finite numbers or [x, y] pairs"
+      }
+    },
+    {
+      "id": "lottie.update/invalid-map",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "invalid-map",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "text": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:invalid-map",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update: text must be a map"
+      }
+    },
+    {
+      "id": "lottie.update/missing-clip",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "missing-clip",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "missing",
+            "text": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:missing-clip",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clipId: clip \"missing\" does not exist"
+      }
+    },
+    {
+      "id": "lottie.update/wrong-type",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "wrong-type",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "text": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:wrong-type",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update requires a Lottie clip"
+      }
+    },
+    {
+      "id": "lottie.update/locked",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "locked",
+      "base": "lottie-locked",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {
+              "c0": "#FF8000",
+              "s:accent": "#00ff00"
+            },
+            "text": {
+              "0": "Hello",
+              "s:title": ""
+            },
+            "slots": {
+              "opacity": 25,
+              "position": [
+                10,
+                -20
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:locked",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "lottie.update: a clip it would change is on a locked track"
+      }
+    },
+    {
+      "id": "lottie.update/empty-payload",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "empty-payload",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:empty-payload",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update needs colors, text or slots"
+      }
+    },
+    {
+      "id": "lottie.update/unknown-field",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "unknown-field",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {},
+            "themeId": "new"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:unknown-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "lottie.update: unknown field"
+      }
+    },
+    {
+      "id": "lottie.update/atomic-batch",
+      "story": "FL-105",
+      "covers": [
+        "lottie.update"
+      ],
+      "summary": "Later malformed map refuses the complete batch",
+      "base": "lottie-template",
+      "envelopes": [
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "colors": {
+              "c0": "#FF8000",
+              "s:accent": "#00ff00"
+            },
+            "text": {
+              "0": "Hello",
+              "s:title": ""
+            },
+            "slots": {
+              "opacity": 25,
+              "position": [
+                10,
+                -20
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:batch-valid",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "lottie.update",
+          "payload": {
+            "clipId": "lottie-template",
+            "text": {
+              "0": false
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:batch-invalid",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "invalid",
+        "detail": "lottie.update: text values must be strings"
+      }
     }
   ],
   "history": [
@@ -154735,6 +155713,110 @@
           }
         }
       ]
+    },
+    {
+      "id": "history/lottie-overrides",
+      "story": "FL-105",
+      "summary": "Whole-map replacement, undo/redo and clear retain exact Lottie state",
+      "base": "lottie-template",
+      "steps": [
+        {
+          "command": {
+            "id": "lottie.update",
+            "payload": {
+              "clipId": "lottie-template",
+              "colors": {
+                "c0": "#FF8000",
+                "s:accent": "#00ff00"
+              },
+              "text": {
+                "0": "Hello",
+                "s:title": ""
+              },
+              "slots": {
+                "opacity": 25,
+                "position": [
+                  10,
+                  -20
+                ]
+              }
+            },
+            "revision": 1,
+            "idempotencyKey": "fl105:history",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        },
+        {
+          "redo": {}
+        },
+        {
+          "command": {
+            "id": "lottie.update",
+            "payload": {
+              "clipId": "lottie-template",
+              "colors": {},
+              "text": {},
+              "slots": {}
+            },
+            "revision": 1,
+            "idempotencyKey": "fl105:history-clear",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        }
+      ],
+      "expect": [
+        {
+          "outcome": "accepted",
+          "digest": "8837f452682964ea0956186990bf7262e28bd28d672e0182073573071a83add6",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "42f35d43d90f14ad44bb3213c41fc3f4bdb3f44f5d30bf69ecef0b21240d497e",
+          "sameAs": 0,
+          "depth": {
+            "undo": 0,
+            "redo": 1
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "8837f452682964ea0956186990bf7262e28bd28d672e0182073573071a83add6",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "a26a8b0b54723c301a6d0ddfb5cdca7d8104ae8ed2056cb6e695a106e09a8355",
+          "sameAs": 4,
+          "depth": {
+            "undo": 2,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "8837f452682964ea0956186990bf7262e28bd28d672e0182073573071a83add6",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 1
+          }
+        }
+      ]
     }
   ],
   "commandStatus": {
@@ -154951,9 +156033,9 @@
       "section": "13.5.3"
     },
     "lottie.update": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-105",
+      "section": "16"
     },
     "marker.add": {
       "status": "engine",

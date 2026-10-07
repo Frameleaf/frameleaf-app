@@ -61,6 +61,7 @@ export const studioEngineCommandIds = [
   'keyframe.remove',
   'keyframe.setEasing',
   'keyframe.update',
+  'lottie.update',
   'marker.add',
   'marker.remove',
   'marker.update',

@@ -236,6 +236,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'keyframe.add': ['command.addKeyframe'],
   'keyframe.remove': ['command.removeKeyframes'],
   'music.add': ['command.addItem'],
+  'lottie.update': ['readme.media-import.2'],
   'title.add': ['command.addText'],
   'track.add': ['command.addTrack'],
   // FL-94: the linked edit tools, source edits, tracks and markers of readme.timeline-editing.
@@ -1597,6 +1598,60 @@ const handlers: Record<string, Handler> = {
         transformOf(requireItem(item.id), fields.transform as Record<string, unknown>),
       )
     }
+  },
+
+  'lottie.update'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'lottie') invalid('lottie.update requires a Lottie clip')
+    assertUnlocked([item.id], 'lottie.update')
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'colors', 'text', 'slots'].includes(key))
+        invalid('lottie.update: unknown field')
+    }
+    const updates: Partial<Extract<TimelineItem, { type: 'lottie' }>> = {}
+    for (const field of ['colors', 'text', 'slots'] as const) {
+      if (!Object.hasOwn(payload, field)) continue
+      const map = payload[field]
+      if (
+        !map ||
+        typeof map !== 'object' ||
+        Array.isArray(map) ||
+        (Object.getPrototypeOf(map) !== Object.prototype && Object.getPrototypeOf(map) !== null)
+      )
+        invalid(`lottie.update: ${field} must be a map`)
+      const entries = Object.entries(map as Record<string, unknown>)
+      for (const [key, value] of entries) {
+        if (!key.length) invalid(`lottie.update: ${field} keys must be nonempty`)
+        if (field === 'colors' && (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)))
+          invalid('lottie.update: colors must be #rrggbb strings')
+        if (field === 'text' && typeof value !== 'string')
+          invalid('lottie.update: text values must be strings')
+        if (
+          field === 'slots' &&
+          !(typeof value === 'number' && Number.isFinite(value)) &&
+          !(
+            Array.isArray(value) &&
+            value.length === 2 &&
+            [value[0], value[1]].every(
+              (entry) => typeof entry === 'number' && Number.isFinite(entry),
+            )
+          )
+        )
+          invalid('lottie.update: slots must be finite numbers or [x, y] pairs')
+      }
+      // Replace the supplied map, clear an empty one like the inspector, and own vector arrays.
+      const copied = entries.length
+        ? Object.fromEntries(
+            entries.map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]),
+          )
+        : undefined
+      if (field === 'colors') updates.colorOverrides = copied as Record<string, string> | undefined
+      if (field === 'text') updates.textOverrides = copied as Record<string, string> | undefined
+      if (field === 'slots')
+        updates.slotOverrides = copied as Record<string, number | [number, number]> | undefined
+    }
+    if (Object.keys(updates).length === 0) invalid('lottie.update needs colors, text or slots')
+    updateItem(item.id, updates)
   },
 
   'composition.add'(payload) {

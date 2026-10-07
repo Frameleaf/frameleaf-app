@@ -236,7 +236,15 @@ async function buildFixture() {
     engineEnvelope('clip.add', { trackId: spare, assetId: STILL, at: seconds(0), duration: seconds(2) }),
   ])
   const still = itemsOf(stillGraph).find((item) => item.type === 'image')!.id
+  const lottieGraph = structuredClone(graph)
+  const lottie = 'lottie-template'
+  lottieGraph.timeline!.items.push({ id: lottie, trackId: spare, type: 'lottie', from: 300,
+    durationInFrames: 90, label: 'Template', src: '', width: 320, height: 180, lottieFps: 30,
+    lottieDuration: 3, themeId: 'retained-theme', frameleafFuture: { keep: true },
+  } as TimelineItem)
   return {
+    lottieGraph,
+    lottie,
     compose: { graph: grouped, published, group: group.id, composition: composition.id, titleInside },
     stillGraph,
     still,
@@ -351,6 +359,7 @@ const ENGINE_CASES: Record<
       bezier: { x1: 0.2, y1: 0, x2: 0.3, y2: 1.2 },
     },
   }),
+  'lottie.update': (f) => ({ payload: { clipId: f.lottie, colors: { c0: '#ff8800' }, text: { '0': 'New title' }, slots: { scalar: 5, vector: [10, 20] } }, graph: async () => f.lottieGraph }),
   'marker.add': () => ({ payload: { at: seconds(5) } }),
   'marker.remove': (f) => ({ payload: { markerId: f.marker } }),
   'marker.update': (f) => ({ payload: { markerId: f.marker, patch: { name: 'Chorus' } } }),

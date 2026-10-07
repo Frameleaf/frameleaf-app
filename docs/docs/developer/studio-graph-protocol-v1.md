@@ -104,7 +104,7 @@ Every item has `id`, `trackId`, `from` (first frame, integer, at least 0), `dura
 | `composition`        | `compositionId`, `compositionWidth`, `compositionHeight` | An instance of a composition (14.2.1).                                                      |
 | `adjustment`         |                                                          | Applies its effects to the tracks above it.                                                 |
 | `controller`         | `controllerKind: "null"`, `transform`                    | A null object.                                                                              |
-| `lottie`, `subtitle` |                                                          | Produced only by editor features outside this protocol's commands. Preserve them unchanged. |
+| `lottie`, `subtitle` |                                                          | Produced by editor features; Lottie override maps may be updated by section 16. Preserve other fields. |
 
 Source fields of a media clip are integer frames counted at `sourceFps`, the source's own rate, not the project's (section 3.4): `sourceStart`, `sourceEnd` and `sourceDuration`. `trimStart` and `trimEnd` are legacy counters. They are written as `0` when a clip is placed and must be preserved as found.
 
@@ -302,10 +302,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (52):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 15.
+- **Engine (53):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 16.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (18):** the remaining 18 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (17):** the remaining 17 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
 
@@ -317,14 +317,15 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Host                                             | `history.undo`, `history.redo`                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Engine: track audio                              | `track.setAudio`                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Engine: Lottie maps                             | `lottie.update` |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                             |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                             |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 18 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 15 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 17 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 14 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -379,7 +380,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `keyframe.remove`                  | Engine          | 13.5.2  |                                                                                                                        |
 | `keyframe.setEasing`               | Engine          | 13.5.4  |                                                                                                                        |
 | `keyframe.update`                  | Engine          | 13.5.3  |                                                                                                                        |
-| `lottie.update`                    | Not implemented | 8.2     | Do not record it. Preserve `lottie` items unchanged (2.4).                                                             |
+| `lottie.update`                    | Engine          | 16      | Replace validated colors/text/value-slot maps (16).                                                             |
 | `marker.add`                       | Engine          | 12.8.1  |                                                                                                                        |
 | `marker.remove`                    | Engine          | 12.8.3  |                                                                                                                        |
 | `marker.update`                    | Engine          | 12.8.2  |                                                                                                                        |
@@ -2553,3 +2554,30 @@ caption without an id draws the next UUID, retrying a collision with an
 incoming explicit id or a preexisting item id anywhere in the graph. Other ids
 are unchanged. No timestamp or model provenance is written. Host history makes the replacement
 undoable (section 9); a refusal records no graph and applies none of the batch.
+
+## 16. `lottie.update` (FL-105)
+
+**Payload:** `{ clipId, colors?, text?, slots? }`. It updates an existing main
+Lottie item. Missing clips and other item types are refused as `invalid`; a
+locked owning track is refused as `failed`. No other payload fields are admitted.
+At least one map must be supplied. Each must be a non-null JSON object, not an
+array, with nonempty keys. Color values are exactly `#rrggbb` hex strings (either
+letter case); text values are strings, including empty strings. Value slots
+contain finite numbers or exactly two finite numbers `[x, y]`.
+
+Each supplied map replaces the corresponding `colorOverrides`, `textOverrides`
+or `slotOverrides` field. An empty map removes that field, matching the inspector
+reset. Omitted maps retain their previous contents. Validate all maps before one
+item update and one history entry. A rejected batch restores the original graph
+and history; the input graph is never mutated. Reopen, idempotent replay, undo
+and redo follow the existing rules in sections 7 and 9. There are no identity
+or timestamp draws.
+
+Keys address the existing renderer representation: ordinal colors (`c0`, etc.),
+text layer indices (`"0"`, etc.) or color/text slots (`s:<id>`), and native value
+slot ids. The command does not fetch animation data or infer which keys exist
+inside it. The existing renderer ignores unaddressed keys; this command preserves
+those supplied maps. It leaves source, animation/theme selection, timing,
+transforms, media ownership, linked clips and other graph fields unchanged.
+Theme selection is not part of this canonical payload. Actual animated pixels,
+native slot rendering and bundle round-trip output require separate qualification.
