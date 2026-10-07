@@ -121,6 +121,12 @@ minimum below that maximum, both at ST 2086's 0.0001-nit precision. Unknown fiel
 source MaxCLL/MaxFALL and preview defaults are not mastering authority. SDR and HLG exports do
 not accept this PQ profile.
 
+The Studio export dialog starts with blank display limits. HDR10 requires them; Preserve
+offers an explicit PQ declaration because HDR source flags alone cannot distinguish PQ from HLG.
+Turning that declaration off omits the profile, and reopening clears it. The host forwards the
+chosen profile through the existing export request; the server still decides whether the actual
+source transfer and qualified worker permit the export.
+
 The server copies the profile into the saved settings and immutable export contract handed to
 the worker. Its artifact input digest includes the profile. Publication independently probes the
 first decoded picture of the same selected video stream whose codec, depth and HDR tags were
@@ -129,5 +135,5 @@ the output into the library. Missing, unreadable or different mastering metadata
 checks; new PQ submission without a valid profile returns `studio_export_mastering_unknown`.
 
 This binds declared mastering authority and encoded output. The production HDR renderer,
-profile input in the editor, measured edited MaxCLL/MaxFALL and device qualification still need
+measured edited MaxCLL/MaxFALL and device qualification still need
 implementation or evidence; this protocol does not enable HDR capabilities.
