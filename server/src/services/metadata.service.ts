@@ -11,6 +11,7 @@ import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
 import {
   AssetFileType,
   AssetType,
@@ -25,7 +26,8 @@ import {
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
-import { afterJobCommit, attemptOutputPath, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
@@ -280,8 +282,30 @@ export class MetadataService extends BaseService {
 
     const tags = this.getTagList(exifTags);
 
+    let imageEncoding;
+    if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
+      try {
+        imageEncoding = ImageEncodingSchema.parse({
+          ...(await this.mediaRepository.inspectImageEncoding(asset.originalPath)),
+          inspectionStatus: 'identified',
+        });
+      } catch (error) {
+        jobSignal()?.throwIfAborted();
+        const code =
+          error instanceof SharpResourceLimitError
+            ? 'resource-limit'
+            : error instanceof Error &&
+                ['CORRUPT_IMAGE', 'INVALID_GAIN_MAP', 'UNSUPPORTED_IMAGE_CODEC'].includes(error.message)
+              ? error.message.toLowerCase().replaceAll('_', '-')
+              : 'inspection-unavailable';
+        imageEncoding = { ...unknownImageEncoding(), inspectionStatus: 'failed' as const, fallbackReason: code };
+        this.logger.warn(`Image encoding inspection unavailable: ${code}`);
+      }
+    }
+
     const exifData: Insertable<AssetExifTable> = {
       assetId: asset.id,
+      imageEncoding: imageEncoding ?? null,
 
       // dates
       dateTimeOriginal: dates.dateTimeOriginal,

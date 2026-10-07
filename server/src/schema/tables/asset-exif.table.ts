@@ -1,5 +1,6 @@
 import { Column, ForeignKeyColumn, Index, Int8, Table, UpdateDateColumn } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 import { LockableProperty } from 'src/database.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
@@ -100,6 +101,9 @@ export class AssetExifTable {
 
   @Column({ type: 'character varying', nullable: true })
   colorspace!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  imageEncoding!: ImageEncodingInfo | null;
 
   @Column({ type: 'integer', nullable: true })
   bitsPerSample!: number | null;

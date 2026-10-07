@@ -174,6 +174,47 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it('persists image encoding through existing source-checked metadata publication', async () => {
+      const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      const encoding = {
+        dynamicRange: 'hdr' as const,
+        gainMap: 'apple-legacy' as const,
+        referenceWhite: 203,
+        reconstructionAvailable: false,
+        fallbackReason: 'apple-gain-map-interpretation-unqualified',
+      };
+      mocks.media.inspectImageEncoding.mockResolvedValue(encoding);
+      await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ imageEncoding: { ...encoding, inspectionStatus: 'identified' } }),
+        }),
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('records a sanitized unknown result when HDR inspection fails instead of assuming SDR', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.media.inspectImageEncoding.mockRejectedValue(new Error('/private/source.heic GPSLatitude secret'));
+      await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({
+            imageEncoding: {
+              dynamicRange: 'unknown',
+              gainMap: 'none',
+              reconstructionAvailable: false,
+              inspectionStatus: 'failed',
+              fallbackReason: 'inspection-unavailable',
+            },
+          }),
+        }),
+      );
+      expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('/private/');
+    });
+
     it.each(['motion-photo', 'upload', 'copy'] as const)(
       'publishes the requested motion encode only after accepting metadata (%s)',
       async (source) => {
@@ -1433,6 +1474,13 @@ describe(MetadataService.name, () => {
           exif: {
             assetId: asset.id,
             bitsPerSample: expect.any(Number),
+            imageEncoding: {
+              dynamicRange: 'unknown',
+              gainMap: 'none',
+              referenceWhite: 203,
+              reconstructionAvailable: false,
+              inspectionStatus: 'identified',
+            },
             autoStackId: null,
             colorspace: tags.ColorSpace,
             dateTimeOriginal: dateForTest,

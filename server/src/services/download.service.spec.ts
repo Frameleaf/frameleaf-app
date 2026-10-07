@@ -32,6 +32,22 @@ describe(DownloadService.name, () => {
   });
 
   describe('downloadArchive', () => {
+    it.each([true, false])(
+      'uses the actual rendition extension for edited HEIC archive downloads: %s',
+      async (edited) => {
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC', originalPath: '/original.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([{ ...asset, editedPath: '/edited.jpeg' }]);
+        mocks.storage.createZipStream.mockReturnValue(archive);
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited });
+        expect(archive.addFile).toHaveBeenCalledWith(
+          edited ? '/edited.jpeg' : '/original.HEIC',
+          edited ? 'IMG_1.jpeg' : 'IMG_1.HEIC',
+        );
+      },
+    );
+
     it('should skip asset ids that could not be found', async () => {
       const archiveMock = {
         addFile: vitest.fn(),

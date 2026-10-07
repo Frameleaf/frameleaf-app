@@ -111,3 +111,24 @@ Duplicate suggestions always rank RAW first, HEIC/HEIF/HIF second, and other for
 Duplicate lists and review groups may include `reviewRequiredReasons`: `edited-copy`, `develop-history`, `distinct-motion`, or `evidence-unavailable`. Clients must not apply bulk suggested keepers to these groups. Historical Develop, external and video edit versions remain protected after reset (`develop-history` covers all retained edit history). Resolution rechecks disposal safety on the server before merging metadata or trashing copies. Keep the protected copies; a suggested HEIC is not permission to discard an edited JPEG or its motion. Burst groups never receive a single-keeper suggestion.
 
 Develop can save and render the visible still image of a Live Photo. Its asset identity, original, motion link and original motion are unchanged. Reset moves only the still's current revision. Native viewers must display the edited still while idle and the original motion only during playback. An edited still export must be identified separately from an original Live Photo pair.
+
+## Source image encoding
+
+Asset and sanitized shared-link responses may include `imageEncoding`. Older
+servers may omit it. `dynamicRange: unknown` means evidence is unprocessed or
+unavailable; clients must not translate it to SDR. The object carries technical
+container, transfer, primaries, bit depth, gain-map and reconstruction information
+when known, without exposing capture EXIF or location.
+
+`reconstructionAvailable` describes source decoder support. It does not imply an
+HDR rendition has been published, that the codec has passed camera-media
+qualification, or that the current display can show HDR. `referenceWhite` is the
+processing reference in cd/m², never a screen measurement. `fallbackReason` and
+`inspectionStatus` distinguish unsupported reconstruction from failed inspection.
+Existing media requests still return SDR-compatible renditions.
+
+The historical Develop renderer refuses detected HDR rather than silently
+flattening it. Its `develop_hdr_render_unavailable` response retains the original,
+previous working version, and Live Photo motion. Native clients retain their
+unsaved recipe and show the server explanation. HDR-preserving recipe rendering
+and delivery require the separately qualified renderer/rendition capability.

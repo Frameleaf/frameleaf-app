@@ -4,21 +4,9 @@ import { createRequire } from 'node:module';
 // eslint-disable-next-line no-restricted-imports
 import { SharpResourceLimitError } from './sharp-protocol.js';
 
-export type ImageEncodingInfo = {
-  dynamicRange: 'unknown' | 'sdr' | 'hdr';
-  container?: 'heif' | 'jpeg' | 'adaptive-image';
-  bitDepth?: number;
-  colorPrimaries?: number;
-  transfer?: number | 'adaptive';
-  referenceWhite: number;
-  contentHeadroom?: number;
-  gainMap: 'none' | 'apple-legacy' | 'iso-or-ultra-hdr' | 'invalid-or-unsupported';
-  reconstructionAvailable: boolean;
-  fallbackReason?: string;
-  renderingPolicy?: string;
-  width?: number;
-  height?: number;
-};
+export type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
+import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
+
 export type LinearHdrImage = { data: Buffer; width: number; height: number; gamut: 0 | 1 | 2; referenceWhite: 203 };
 type NativeCodec = {
   inspect(input: Buffer, maxPixels: number, maxBytes: number): ImageEncodingInfo;

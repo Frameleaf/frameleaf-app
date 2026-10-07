@@ -267,6 +267,23 @@ export const downloadAssetFile = ({
       holdOrStream(context, {
         // An edited file is not the size recorded for the original, so its headers decide.
         size: edited || !size ? undefined : size,
+        fetcher: async (input, init) => {
+          const response = await fetch(input, init);
+          if (edited && response.ok) {
+            const extension = (
+              {
+                'image/jpeg': 'jpeg',
+                'image/png': 'png',
+                'image/webp': 'webp',
+                'image/avif': 'avif',
+                'image/heic': 'heic',
+                'image/heif': 'heif',
+              } as Record<string, string>
+            )[response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ?? ''];
+            if (extension) context.describe({ name: `${filename.replace(/\.[^.]+$/, '')}.${extension}` });
+          }
+          return response;
+        },
         request: (fetch) => requestAsset({ ...authManager.params, id, edited }, { signal: context.signal, fetch }),
         stream: new StreamedDownload((name) =>
           downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), name),

@@ -491,10 +491,12 @@ export const holdOrStream = async (
     size,
     request,
     stream,
+    fetcher = fetch,
   }: {
     size?: number;
     request: (fetch: typeof globalThis.fetch) => Promise<Blob | undefined>;
     stream: StreamedDownload;
+    fetcher?: typeof globalThis.fetch;
   },
 ): Promise<Blob | StreamedDownload> => {
   // Reserved at once, so a download started in the same moment sees these bytes as taken.
@@ -511,7 +513,7 @@ export const holdOrStream = async (
     return stream;
   };
   try {
-    const file = await request(progressFetch(onProgress, fetch, limit));
+    const file = await request(progressFetch(onProgress, fetcher, limit));
     if (limit.tooLarge) {
       return streamInstead();
     }
