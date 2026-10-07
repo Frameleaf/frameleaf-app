@@ -7,6 +7,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import type { DB } from 'src/schema/index.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudMlDescriptionBatchCreateDto,
@@ -31,9 +32,8 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { CloudMlGateway, CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { afterJobCommit, deferJobAdoption, deferJobFailure, jobSignal, queueExecution } from 'src/queue/context.js';
-import type { DB } from 'src/schema/index.js';
+import { CloudMlGateway, CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import {
