@@ -4,6 +4,7 @@ import {
   developEnvelope,
   preserveDevelopEnvelope,
   renderDevelopProjection,
+  renderHdrDevelopProjection,
 } from 'src/utils/develop-envelope.js';
 import {
   applyDevelopMasks,
@@ -181,4 +182,34 @@ it('keeps Brilliance, brush strokes and Clean Up through a save from a client th
   });
   // and the renderer v3 projection renders all of it
   expect(renderDevelopProjection(saved)).toMatchObject({ brilliance: 35, cleanup: [{ id: 'p' }] });
+});
+
+it('defaults the HDR preservation policy without reinterpreting historical recipes', () => {
+  expect(renderHdrDevelopProjection({ version: 3, exposure: 1 })).toMatchObject({
+    version: 3,
+    renderer: 'frameleaf-develop-hdr/1',
+    exposure: 1,
+    hdr: { version: 1, intent: 'preserve', referenceWhite: 203, sdrToneMapper: 'libultrahdr/2.0.2' },
+  });
+  expect(() => renderHdrDevelopProjection({ version: 1 })).toThrow(BadRequestException);
+  expect(() => renderDevelopProjection({ version: 3 })).toThrow(BadRequestException);
+});
+
+it.each([
+  { hdr: { intent: 'flatten' } },
+  { hdr: { future: true } },
+  { renderer: 'frameleaf-develop-hdr/2' },
+  { crop: { x: 0, y: 0, w: 1, h: 1, future: true } },
+  { masks: [{ id: 'a', kind: 'radial', adjustments: { future: 1 } }] },
+  { future: 'operation' },
+])('keeps but refuses unsupported HDR semantics %j', (extension) => {
+  const value = { version: 3, ...extension };
+  expect(developEnvelope(value)).toEqual(value);
+  expect(() => renderHdrDevelopProjection(value)).toThrow(BadRequestException);
+});
+
+it('prevents older clients from replacing fields through a different recipe version', () => {
+  expect(() => preserveDevelopEnvelope(developEnvelope({ version: 3 }), developEnvelope({ version: 1 }))).toThrow(
+    'same contract version',
+  );
 });

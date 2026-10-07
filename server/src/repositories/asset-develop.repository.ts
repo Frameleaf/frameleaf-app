@@ -28,6 +28,9 @@ export type AssetDevelopRevision = {
   rendererVersion: string | null;
   masterPath: string | null;
   previewPath: string | null;
+  hdrMasterPath?: string | null;
+  hdrPreviewPath?: string | null;
+  hdrRenditionChecksum?: Buffer | null;
   width: number | null;
   height: number | null;
   isCurrent: boolean;
@@ -52,6 +55,9 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'rendererVersion'
     | 'masterPath'
     | 'previewPath'
+    | 'hdrMasterPath'
+    | 'hdrPreviewPath'
+    | 'hdrRenditionChecksum'
     | 'width'
     | 'height'
     | 'renderedAt'
@@ -185,7 +191,7 @@ export class AssetDevelopRepository {
               RETURNING id, kind
             `.execute(trx)
           : { rows: [] };
-      if (projection && projection.version === ASSET_DEVELOP_RECIPE_VERSION) {
+      if (projection && (projection.version === ASSET_DEVELOP_RECIPE_VERSION || projection.version === 3)) {
         const needed = developRenderArtifacts(projection);
         const kinds = new Map(touched.rows.map((row) => [row.id, row.kind]));
         if (needed.mask.some((id) => kinds.get(id) !== 'mask') || needed.fill.some((id) => kinds.get(id) !== 'fill')) {
@@ -318,14 +324,20 @@ export class AssetDevelopRepository {
       const { rows } = await sql<{
         masterPath: string | null;
         previewPath: string | null;
+        hdrMasterPath: string | null;
+        hdrPreviewPath: string | null;
       }>`
         DELETE FROM ${TABLE} revision
         WHERE NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = revision."assetId")
         ${assetId ? sql`AND revision."assetId" = ${assetId}::uuid` : sql``}
-        RETURNING revision."masterPath", revision."previewPath"
+        RETURNING revision."masterPath", revision."previewPath", revision."hdrMasterPath", revision."hdrPreviewPath"
       `.execute(tx);
       const files = [
-        ...new Set(rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path)),
+        ...new Set(
+          rows
+            .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
+            .filter((path): path is string => !!path),
+        ),
       ];
       if (files.length > 0) {
         for (const path of files.toSorted()) {

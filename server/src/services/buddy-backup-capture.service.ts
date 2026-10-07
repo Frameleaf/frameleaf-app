@@ -113,6 +113,8 @@ const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_pro
   UNION SELECT path FROM public.asset_develop_artifact
   UNION SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" IS NOT NULL
   UNION SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" IS NOT NULL
+  UNION SELECT "hdrMasterPath" AS path FROM public.asset_develop_revision WHERE "hdrMasterPath" IS NOT NULL
+  UNION SELECT "hdrPreviewPath" AS path FROM public.asset_develop_revision WHERE "hdrPreviewPath" IS NOT NULL
   UNION SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" IS NOT NULL
   UNION SELECT "proxyPath" AS path FROM public.video_edit_version WHERE "proxyPath" IS NOT NULL
   UNION SELECT f->>'path' AS path FROM public.video_edit_version, jsonb_array_elements(files) f

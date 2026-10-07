@@ -212,6 +212,8 @@ export class IntegrityRepository {
       SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" IN (${sql.join(paths)})
       UNION
       SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" IN (${sql.join(paths)})
+      UNION SELECT "hdrMasterPath" AS path FROM public.asset_develop_revision WHERE "hdrMasterPath" IN (${sql.join(paths)})
+      UNION SELECT "hdrPreviewPath" AS path FROM public.asset_develop_revision WHERE "hdrPreviewPath" IN (${sql.join(paths)})
       UNION
       SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" IN (${sql.join(paths)})
       UNION

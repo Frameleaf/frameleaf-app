@@ -3,7 +3,9 @@ import {
   AssetDevelopMaskKind,
   type AssetDevelopRecipe,
   AssetDevelopRecipeSchema,
+  AssetDevelopRevisionStatus,
   DarktableDevelopRecipeSchema,
+  HdrAssetDevelopRecipeSchema,
   type KnownAssetDevelopRecipe,
   KnownAssetDevelopRecipeSchema,
 } from 'src/dtos/asset-develop.dto.js';
@@ -11,6 +13,7 @@ import {
 /** Route only explicitly supported native recipes; opaque future/imported recipes remain saveable. */
 export function assertRenderableDevelopRecipe(value: unknown) {
   const envelope = developEnvelope(value);
+  if (envelope.version === 3) return renderHdrDevelopProjection(envelope);
   if (envelope.version !== 2) {
     return renderDevelopProjection(envelope);
   }
@@ -55,7 +58,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
   if (Array.isArray(incoming.masks) && Array.isArray(source.masks)) {
     const sourceMasks = source.masks as Record<string, unknown>[];
     const incomingMasks = incoming.masks as Record<string, unknown>[];
-    if (source.version === 1) {
+    if (source.version === 1 || source.version === 3) {
       for (const masks of [sourceMasks, incomingMasks]) {
         const ids = masks.map((mask) => (mask && typeof mask.id === 'string' ? mask.id.trim() : undefined));
         if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
@@ -79,7 +82,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
       );
       return merge(old, mask);
     });
-    if (source.version === 1) {
+    if (source.version === 1 || source.version === 3) {
       const ids = new Set(incomingMasks.map((mask) => (mask.id as string).trim()));
       for (const mask of sourceMasks) {
         if (
@@ -120,4 +123,41 @@ export function renderDevelopProjection(value: unknown): KnownAssetDevelopRecipe
       code: 'develop_renderer_unsupported',
     });
   return parsed.data;
+}
+
+/** Validate the HDR policy, then reuse the existing adjustment shape without accepting unknown semantics. */
+export function renderHdrDevelopProjection(value: unknown) {
+  const envelope = developEnvelope(value);
+  const parsed = HdrAssetDevelopRecipeSchema.safeParse(envelope);
+  if (!parsed.success)
+    throw new BadRequestException({
+      message: 'This HDR recipe requires a supported preservation policy and renderer',
+      code: 'develop_renderer_unsupported',
+    });
+  const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = envelope;
+  const adjustments = renderDevelopProjection({ ...fields, version: 1 });
+  return { ...adjustments, version: 3 as const, renderer: parsed.data.renderer, hdr: parsed.data.hdr };
+}
+
+/** A failed or cancelled HDR regeneration retains the previously accepted four-file set. */
+export function hasPublishedDevelopRendition(revision: {
+  status: AssetDevelopRevisionStatus;
+  masterPath: string | null;
+  previewPath: string | null;
+  hdrMasterPath?: string | null;
+  hdrPreviewPath?: string | null;
+  hdrRenditionChecksum?: Buffer | null;
+  renderedAt?: Date | null;
+}) {
+  return (
+    revision.status === AssetDevelopRevisionStatus.Rendered ||
+    !!(
+      revision.masterPath &&
+      revision.previewPath &&
+      revision.hdrMasterPath &&
+      revision.hdrPreviewPath &&
+      revision.hdrRenditionChecksum?.length === 32 &&
+      revision.renderedAt
+    )
+  );
 }
