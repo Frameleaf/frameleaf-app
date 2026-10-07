@@ -35,8 +35,15 @@ export type SharpRequest = {
 export type SharpResponse =
   | { type: 'ready' }
   | { type: 'progress'; id: number; completed: number }
-  | { type: 'result'; id: number; value: unknown }
-  | { type: 'failure'; id: number; message: string; resourceLimit: boolean; decodeFailure?: boolean };
+  | { type: 'result'; id: number; value: unknown; workerLifetimePeakRssBytes?: number }
+  | {
+      type: 'failure';
+      id: number;
+      message: string;
+      resourceLimit: boolean;
+      decodeFailure?: boolean;
+      workerLifetimePeakRssBytes?: number;
+    };
 
 /** Only the initial decode of a thumbnail batch may fall back to the RAW sensor renderer. */
 export class SharpDecodeError extends Error {}

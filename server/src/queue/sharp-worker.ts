@@ -82,11 +82,12 @@ async function execute(request: SharpRequest) {
     if (sharpPayloadBytes(value) > maxBytes) {
       throw new SharpResourceLimitError('output buffer is too large');
     }
-    send({ type: 'result', id, value });
+    send({ type: 'result', id, value, workerLifetimePeakRssBytes: process.resourceUsage().maxRSS * 1024 });
   } catch (error) {
     send({
       type: 'failure',
       id,
+      workerLifetimePeakRssBytes: process.resourceUsage().maxRSS * 1024,
       message: (error instanceof Error ? error.message : String(error)).slice(0, 4096),
       resourceLimit:
         error instanceof SharpResourceLimitError ||

@@ -33,7 +33,7 @@ completed operations report progress, in the submitting job/operation context.
 | ---------------------------------- | ----------: | ------------------------: |
 | `FRAMELEAF_SHARP_WORKERS`          |           2 |                       1–8 |
 | `FRAMELEAF_SHARP_PENDING`          |           8 |                      0–64 |
-| `FRAMELEAF_SHARP_MAX_BUFFER_BYTES` |       1 GiB | 64 MiB–2 GiB minus 1 byte |
+| `FRAMELEAF_SHARP_MAX_BUFFER_BYTES` |       1 GiB | 64 MiB–8 GiB |
 | `FRAMELEAF_SHARP_PENDING_BYTES`    |       1 GiB |              64 MiB–4 GiB |
 | `FRAMELEAF_SHARP_MAX_PIXELS`       | 200,000,000 |   1,000,000–1,000,000,000 |
 
@@ -52,6 +52,20 @@ code and IPC serialization can temporarily hold additional copies; use the
 container's memory controls when selecting higher limits. Maximum-size images
 and sustained-load throughput still require hosted qualification.
 
+HDR uses a combined surface budget, including the compressed source, decoded
+base and gain map, float working pixels, and encoder intermediates. The default
+remains 1 GiB; paired reconstruction of a 48 MP HDR photo may need an explicit
+6 GiB budget via `FRAMELEAF_SHARP_MAX_BUFFER_BYTES=6442450944`. The allowed ceiling is 8 GiB.
+Select worker count and container memory together: each active child owns its
+budget, and the API process or Studio browser can retain additional copies.
+Insufficient budgets refuse processing without flattening or shrinking HDR.
+Studio still rendering currently has a separate 16 MP ceiling.
+
+After building the server, run the optional real-allocation synthetic check with `FRAMELEAF_HDR_LARGE_TEST=1
+node --test server/test/native/image-hdr-large.test.mjs`, setting
+`FRAMELEAF_HDR_BINDING` to the built addon when it is not installed. This measures
+the codec path; it does not qualify camera media, Studio, or physical HDR display.
+
 Temporary admission saturation uses `local-capacity` only for safe canonical
 queue work. Existing dependency deferral refunds retry credit and retries
 admission after 30 seconds. It does not introduce a new retry owner. Unsafe or
@@ -63,3 +77,15 @@ Hosted source tests use the existing `tsx` development dependency; the child's
 two relative runtime imports are intentional so no application services,
 database decorators or aliases load in its process. The fault fixture is test
 only and is never exposed as a production operation.
+
+
+Worker diagnostics use the standard Node `frameleaf.image-worker` diagnostics
+channel and the existing MediaRepository debug logger. Enable server debug logs
+to collect operation, outcome, queue/render/total milliseconds, configured
+budgets, and known HDR inspection fallback reasons. Completed native operations
+include `workerLifetimePeakRssBytes`: the child's lifetime high-water RSS, not a
+per-operation allocation measurement or the parent's combined RSS. Cancelled or
+crashed children may have no memory sample. Each terminal operation emits once;
+active cancellation is recorded only after child close. The records exclude
+paths, asset IDs, checksums, EXIF, image buffers, and raw error messages. These
+logs are operational evidence, not codec or physical-display qualification.
