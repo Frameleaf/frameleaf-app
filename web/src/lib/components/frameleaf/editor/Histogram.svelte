@@ -159,6 +159,8 @@
 
 <style>
   .ed-hdr-stops {
+    /* Histogram stops increase with the plotted bins in either UI direction. */
+    direction: ltr;
     position: absolute;
     bottom: 18px;
     left: 3px;
@@ -175,6 +177,6 @@
   .ed-hdr-stops span:last-child {
     grid-column: 2;
     grid-row: 1;
-    text-align: right;
+    text-align: end;
   }
 </style>
