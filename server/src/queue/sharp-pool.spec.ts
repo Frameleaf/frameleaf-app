@@ -1,4 +1,5 @@
 import { type ChildProcess, fork } from 'node:child_process';
+import { channel } from 'node:diagnostics_channel';
 import { once } from 'node:events';
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
@@ -44,6 +45,64 @@ afterEach(async () => {
 });
 
 describe('bounded native image process pool', () => {
+  it('emits one sanitized terminal observation per success, admission refusal and cancellation', async () => {
+    const observations: unknown[] = [];
+    const diagnostics = channel('frameleaf.image-worker');
+    const collect = (message: unknown) => {
+      observations.push(message);
+    };
+    diagnostics.subscribe(collect);
+    try {
+      const value = pool({ maxBytes: 128 });
+      await value.run('getImageMetadata', ['/private/photo-secret.heic']);
+      await expect(value.run('getImageMetadata', [Buffer.alloc(129)])).rejects.toThrow('input buffer');
+      const abort = new AbortController();
+      const active = value.run('getImageMetadata', ['hang'], abort.signal);
+      const failed = expect(active).rejects.toThrow('secret cancellation reason');
+      abort.abort(new Error('secret cancellation reason'));
+      await failed;
+      expect(observations).toHaveLength(3);
+      expect(observations).toEqual([
+        expect.objectContaining({ operation: 'getImageMetadata', outcome: 'success', elapsedMs: expect.any(Number) }),
+        expect.objectContaining({ outcome: 'resource-limit' }),
+        expect.objectContaining({ outcome: 'cancelled' }),
+      ]);
+      expect(JSON.stringify(observations)).not.toMatch(/private|photo-secret|secret cancellation|args|message/);
+      await value.close();
+      expect(observations).toHaveLength(3);
+    } finally {
+      diagnostics.unsubscribe(collect);
+    }
+  });
+
+  it('records only known fallback classifications from inspection results', async () => {
+    const observations: unknown[] = [];
+    const diagnostics = channel('frameleaf.image-worker');
+    const collect = (message: unknown) => {
+      observations.push(message);
+    };
+    let fallbackReason = 'invalid-gain-map';
+    const value = pool({
+      createChild: () => {
+        const child = createChild();
+        child.prependListener('message', (message: { type: string; value?: unknown }) => {
+          if (message.type === 'result') message.value = { fallbackReason };
+        });
+        return child;
+      },
+    });
+    diagnostics.subscribe(collect);
+    try {
+      await value.run('inspectImageEncoding', ['fixture']);
+      fallbackReason = '/private/untrusted-photo.heic';
+      await value.run('inspectImageEncoding', ['fixture']);
+      expect(observations[0]).toEqual(expect.objectContaining({ fallbackReason: 'invalid-gain-map' }));
+      expect(JSON.stringify(observations[1])).not.toMatch(/private|untrusted-photo|fallbackReason/);
+    } finally {
+      diagnostics.unsubscribe(collect);
+    }
+  });
+
   it('kills an opaque nonqueue hang before releasing its slot and reuses the replacement', async () => {
     const value = pool({ deadlineMs: 1500 });
     await value.run('getImageMetadata', ['warm']);
@@ -165,6 +224,12 @@ describe('bounded native image process pool', () => {
         return child;
       },
     });
+    const observations: unknown[] = [];
+    const collect = (message: unknown) => {
+      observations.push(message);
+    };
+    const diagnostics = channel('frameleaf.image-worker');
+    diagnostics.subscribe(collect);
     const input = await sharp({ create: { width: 3, height: 2, channels: 4, background: '#abcdef80' } })
       .png()
       .toBuffer();
@@ -177,6 +242,12 @@ describe('bounded native image process pool', () => {
     expect(await value.run('getImageMetadata', [input])).toEqual({ width: 3, height: 2, isTransparent: true });
     expect(nativeChildren).toHaveLength(2);
     expect(nativeChildren[1].pid).not.toBe(original.pid);
+    diagnostics.unsubscribe(collect);
+    expect(observations).toHaveLength(3);
+    expect(observations[0]).toEqual(
+      expect.objectContaining({ workerLifetimePeakRssBytes: expect.any(Number), renderMs: expect.any(Number) }),
+    );
+    expect(observations[1]).toEqual(expect.objectContaining({ outcome: 'cancelled' }));
   }, 20_000);
 
   it('retires idle children and rejects rather than silently resizing over-limit input', async () => {
@@ -191,6 +262,13 @@ describe('bounded native image process pool', () => {
 });
 
 describe('Sharp resource configuration', () => {
+  it('permits an explicit combined HDR surface budget while preserving the default', () => {
+    expect(sharpConfiguration({}).maxBytes).toBe(1024 ** 3);
+    expect(sharpConfiguration({ FRAMELEAF_SHARP_MAX_BUFFER_BYTES: String(4 * 1024 ** 3) }).maxBytes).toBe(
+      4 * 1024 ** 3,
+    );
+    expect(() => sharpConfiguration({ FRAMELEAF_SHARP_MAX_BUFFER_BYTES: String(8 * 1024 ** 3 + 1) })).toThrow();
+  });
   it('allows 100MP 16-bit RGB and the existing 200MP artifact size by default', () => {
     const config = sharpConfiguration({});
     expect(config.maxBytes).toBeGreaterThan(100_000_000 * 3 * 2);

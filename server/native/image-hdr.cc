@@ -53,7 +53,7 @@ struct Input {
     if (!buffer) throw std::runtime_error("INVALID_ARGUMENT");
     check(napi_get_buffer_info(env, args[0], &data, &size));
     maxPixels = number(env, args[1]); maxBytes = number(env, args[2]);
-    if (!(maxPixels > 0 && maxPixels <= 200000000 && maxBytes > 0 && maxBytes <= 1073741824)
+    if (!(maxPixels > 0 && maxPixels <= 200000000 && maxBytes > 0 && maxBytes <= 8589934592)
         || size > maxBytes || size > 134217728) throw std::runtime_error("RESOURCE_LIMIT");
   }
   // Includes compressed input, decoded base/map, half-float codec storage and float working/output buffers.
@@ -467,7 +467,7 @@ napi_value encodeLinear(napi_env env, napi_value* args, bool paired) {
         || !std::isfinite(maxPixels) || !std::isfinite(maxBytes) || maxPixels < 1
         || reinterpret_cast<uintptr_t>(bytes) % alignof(float) != 0
         || wd < 1 || hd < 1 || wd != std::floor(wd) || hd != std::floor(hd) || wd * hd > maxPixels
-        || maxPixels > 200000000 || maxBytes > 1073741824 || maxBytes <= 0
+        || maxPixels > 200000000 || maxBytes > 8589934592 || maxBytes <= 0
         || wd * hd * (paired ? 68 : 64) > maxBytes || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
       throw std::runtime_error("RESOURCE_LIMIT");
     const auto w = unsigned(wd), h = unsigned(hd);
@@ -525,7 +525,7 @@ napi_value encodeHeic(napi_env env, napi_callback_info info) {
         || reinterpret_cast<uintptr_t>(bytes) % alignof(float) != 0
         || wd < 1 || hd < 1 || wd != std::floor(wd) || hd != std::floor(hd)
         || maxPixels < 1 || maxPixels > 200000000 || wd * hd > maxPixels
-        || maxBytes <= 0 || maxBytes > 1073741824 || wd * hd * 64 > maxBytes
+        || maxBytes <= 0 || maxBytes > 8589934592 || wd * hd * 64 > maxBytes
         || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
       throw std::runtime_error("RESOURCE_LIMIT");
     const auto* source = static_cast<const float*>(bytes);

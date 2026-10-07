@@ -18,6 +18,17 @@ for (let y = 0; y < height; y++)
   }
 const bytes = () => Buffer.from(pixels.buffer);
 
+test('explicit larger surface budgets work without weakening pixel or encoded-input limits', () => {
+  const budget = 4 * 1024 ** 3;
+  for (const encode of [codec.encode, codec.encodeHeic]) {
+    const image = encode(bytes(), width, height, 0, limits[0], budget);
+    const decoded = codec.decode(image, limits[0], budget);
+    assert.deepEqual([decoded.width, decoded.height], [width, height]);
+    assert.throws(() => codec.inspect(image, 1, budget), { code: 'RESOURCE_LIMIT' });
+    assert.throws(() => encode(bytes(), width, height, 0, limits[0], 8 * 1024 ** 3 + 1), { code: 'RESOURCE_LIMIT' });
+  }
+});
+
 test('HEIC export is ten-bit PQ, retains HDR headroom and rejects invalid input', () => {
   const encoded = codec.encodeHeic(bytes(), width, height, 2, ...limits);
   const metadata = codec.inspect(encoded, ...limits);

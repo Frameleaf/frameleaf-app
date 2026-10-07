@@ -38,7 +38,7 @@ import {
 } from 'src/enum.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
-import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
@@ -161,8 +161,15 @@ export class MediaRepository {
     this.logger.setContext(MediaRepository.name);
   }
 
+  private readonly logImageWorker = (record: unknown) => this.logger.debug(`Image worker ${JSON.stringify(record)}`);
+
+  onModuleInit() {
+    imageWorkerDiagnostics.subscribe(this.logImageWorker);
+  }
+
   async onModuleDestroy() {
     await sharpProcessPool.close();
+    imageWorkerDiagnostics.unsubscribe(this.logImageWorker);
   }
 
   /**

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type ChildProcess, fork } from 'node:child_process';
+import { channel } from 'node:diagnostics_channel';
 import { existsSync } from 'node:fs';
 import type { SharpArguments, SharpOperation, SharpResponse, SharpResult } from 'src/queue/sharp-protocol.js';
 import { trackQueueChild } from 'src/queue/child-process.js';
@@ -20,6 +21,8 @@ export class SharpOperationError extends Error {
     super(message);
   }
 }
+export const imageWorkerDiagnostics = channel('frameleaf.image-worker');
+
 type Lifetime = ReturnType<typeof superviseMediaProcess>;
 type Task = {
   id: number;
@@ -28,6 +31,9 @@ type Task = {
   bytes: number;
   signal?: AbortSignal;
   deadline: number;
+  startedAt?: number;
+  workerLifetimePeakRssBytes?: number;
+  fallbackReason?: string;
   timer?: ReturnType<typeof setTimeout>;
   abort: () => void;
   progress: (units: number) => void;
@@ -88,15 +94,55 @@ export class SharpProcessPool {
     args: SharpArguments<K>,
     signal = executionSignal(),
   ): Promise<SharpResult<K>> {
+    const admittedAt = performance.now();
+    let task: Task | undefined;
+    let observed = false;
+    const report = (error?: unknown) => {
+      if (observed) return;
+      observed = true;
+      imageWorkerDiagnostics.publish({
+        operation,
+        outcome: error
+          ? signal?.aborted
+            ? 'cancelled'
+            : error instanceof SharpResourceLimitError
+              ? 'resource-limit'
+              : error instanceof SharpOperationError && error.decodeFailure
+                ? 'decode-failure'
+                : this.stopped
+                  ? 'shutdown'
+                  : error instanceof Error &&
+                      /execution deadline|stopped making progress|admission deadline/.test(error.message)
+                    ? 'timeout'
+                    : 'worker-failure'
+          : 'success',
+        elapsedMs: performance.now() - admittedAt,
+        queueMs: (task?.startedAt ?? performance.now()) - admittedAt,
+        workerLifetimePeakRssBytes: task?.workerLifetimePeakRssBytes,
+        renderMs: task?.startedAt === undefined ? 0 : performance.now() - task.startedAt,
+        maxBytes: this.options.maxBytes,
+        maxPixels: this.options.maxPixels,
+        fallbackReason: task?.fallbackReason,
+      });
+    };
+    const refused = (error: unknown) => {
+      report(error);
+      return Promise.reject(error);
+    };
     if (this.stopped) {
-      return Promise.reject(new Error('Sharp pool is closed'));
+      return refused(new Error('Sharp pool is closed'));
     }
     if (signal?.aborted) {
-      return Promise.reject(signal.reason);
+      return refused(signal.reason);
     }
-    const bytes = sharpPayloadBytes(args);
+    let bytes: number;
+    try {
+      bytes = sharpPayloadBytes(args);
+    } catch (error) {
+      return refused(error);
+    }
     if (bytes > this.options.maxBytes) {
-      return Promise.reject(new SharpResourceLimitError('input buffer is too large'));
+      return refused(new SharpResourceLimitError('input buffer is too large'));
     }
     const available =
       [...this.slots].some((slot) => !slot.task && !slot.retiring) || this.slots.size < this.options.workers;
@@ -104,11 +150,11 @@ export class SharpProcessPool {
       !available &&
       (this.pending.length >= this.options.pending || this.pendingBytes + bytes > this.options.pendingBytes)
     ) {
-      return Promise.reject(this.admissionFailure('process pool admission is full'));
+      return refused(this.admissionFailure('process pool admission is full'));
     }
     const restore = AsyncLocalStorage.snapshot();
     return new Promise<SharpResult<K>>((resolve, reject) => {
-      const task: Task = {
+      const admittedTask: Task = {
         id: ++this.sequence,
         operation,
         args,
@@ -117,24 +163,45 @@ export class SharpProcessPool {
         deadline: Date.now() + this.options.deadlineMs,
         abort: () =>
           this.cancelPending(
-            task,
+            admittedTask,
             signal?.reason instanceof Error ? signal.reason : new Error('Sharp operation cancelled'),
           ),
         progress: (units) => restore(advanceExecutionProgress, units),
-        resolve: (value) => resolve(value as SharpResult<K>),
-        reject,
+        resolve: (value) => {
+          if (operation === 'inspectImageEncoding' && value && typeof value === 'object' && 'fallbackReason' in value) {
+            const reason = value.fallbackReason;
+            if (
+              typeof reason === 'string' &&
+              [
+                'iso-heif-gain-map-decoder-unavailable',
+                'hdr-profile-unsupported',
+                'apple-gain-map-interpretation-unqualified',
+                'invalid-gain-map',
+              ].includes(reason)
+            ) {
+              admittedTask.fallbackReason = reason;
+            }
+          }
+          report();
+          resolve(value as SharpResult<K>);
+        },
+        reject: (error) => {
+          report(error);
+          reject(error);
+        },
       };
-      task.timer = setTimeout(
+      task = admittedTask;
+      admittedTask.timer = setTimeout(
         () =>
           this.cancelPending(
-            task,
+            admittedTask,
             restore(() => this.admissionFailure('process admission deadline exceeded')),
           ),
         this.options.deadlineMs,
       );
-      task.timer.unref();
-      signal?.addEventListener('abort', task.abort, { once: true });
-      this.pending.push(task);
+      admittedTask.timer.unref();
+      signal?.addEventListener('abort', admittedTask.abort, { once: true });
+      this.pending.push(admittedTask);
       this.pendingBytes += bytes;
       this.dispatch();
     });
@@ -200,6 +267,7 @@ export class SharpProcessPool {
       const task = this.pending.shift()!;
       this.pendingBytes -= task.bytes;
       this.detachPending(task);
+      task.startedAt = performance.now();
       slot.task = task;
       slot.completed = 0;
       clearTimeout(slot.idle);
@@ -291,6 +359,9 @@ export class SharpProcessPool {
     }
     if (message.type !== 'result' && message.type !== 'failure') {
       return;
+    }
+    if (Number.isSafeInteger(message.workerLifetimePeakRssBytes) && message.workerLifetimePeakRssBytes! >= 0) {
+      task.workerLifetimePeakRssBytes = message.workerLifetimePeakRssBytes;
     }
     slot.lifetime?.release();
     slot.lifetime = undefined;
