@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, watch, writ
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { encodeHdrMaster } from './hdr-master.mjs';
+import { decodeMaster, encodeHdrMaster, validateHdrPlaneSamples } from './hdr-master.mjs';
 import { sourceTimeline } from './preflight-validators.mjs';
 
 const run = (tool, args) => {
@@ -43,6 +43,7 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
     // Independent fixture oracle: do not derive the expected output from output metadata.
     assert.deepEqual(timeline, { timeBase: '1/1000', pts: expectedPts });
     const frames = makeFrames(5);
+    const renderedInputSha256 = createHash('sha256').update(JSON.stringify(frames.map(({ rgba }) => Array.from(rgba)))).digest('hex');
     for (const transfer of ['pq', 'hlg']) {
       for (const layout of ['5.1', '7.1(wide)']) {
         const audio = path.join(dir, `${layout}.m4a`);
@@ -55,6 +56,7 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
         let outputProbe;
         let outputAudio;
         let inputPcm;
+        let planeSamples;
         options.validate = ({ probe: master, decoded, output }) => {
           outputProbe = probe(output, 'stream=time_base:frame=pts', 'v:0', ['-show_frames']);
           assert.equal(outputProbe.streams[0].time_base, '1/1000');
@@ -62,6 +64,10 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
           assert.equal(master.transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
           assert.equal(decoded.length, frames.length);
           decoded.forEach((pixels, n) => assert.ok(Math.abs(pixels[0] - frames[n].rgba[0]) <= 2 / 1023, `frame identity at PTS ${expectedPts[n]}`));
+          const planes = decodeMaster('ffmpeg', output, 64, 32, 'yuv420p10le');
+          assert.equal(planes.length, frames.length);
+          planeSamples = validateHdrPlaneSamples(planes, 64, 32, frames.map(({ rgba }, frame) =>
+            ({ frame, x: 8, y: 8, rgb: rgba.slice((8 * 64 + 8) * 4, (8 * 64 + 8) * 4 + 3) })));
           const audioEntries = 'stream=codec_name,channels,channel_layout,sample_rate:packet=data_hash';
           const inputAudio = probe(audio, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
           outputAudio = probe(output, audioEntries, 'a:0', ['-show_packets', '-show_data_hash', 'sha256']);
@@ -92,9 +98,10 @@ test('VFR output PTS, channel order and atomic interrupted restart', {
         assert.deepEqual(decodeAudio(output), inputPcm, 'restart preserves ordered audio');
         const retainedPath = (file) => process.env.HDR_TIMING_REPORT
           ? path.relative(path.dirname(path.resolve(process.env.HDR_TIMING_REPORT)), file) : null;
-        report.cases.push({ transfer, layout, axes: ['pts', 'audio', 'temporal-recovery'], sourceSha256: digest(source), audioSha256: digest(audio), outputSha256: digest(output),
+        report.cases.push({ transfer, layout, axes: ['luma-chroma', 'pts', 'audio', 'temporal-recovery'], renderedInputSha256, sourceSha256: digest(source), audioSha256: digest(audio), outputSha256: digest(output),
           sourcePath: retainedPath(source), audioPath: retainedPath(audio), outputPath: retainedPath(output),
-          timeline, outputTimeline: outputProbe, audio: outputAudio, frameIdentity: true, interruptedPriorOutputUnchanged: true, restartVerified: true,
+          timeline, outputTimeline: outputProbe, audio: outputAudio, planeSamples, frameIdentity: true, interruptedPriorOutputUnchanged: true, restartVerified: true,
+          planeDecodeArgs: ['-v', 'error', '-xerror', '-i', retainedPath(output) ?? output, '-pix_fmt', 'yuv420p10le', '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'],
           fixtureArgs: fixtureArgs.slice(0, -1), audioArgs: audioArgs.slice(0, -1), encoderArgs: encoded.args.map((arg) => arg === audio ? '<audio>' : arg.endsWith('.partial.mp4') ? '<unpublished-output>' : arg) });
       }
     }

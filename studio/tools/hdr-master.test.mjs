@@ -8,7 +8,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   decodeMaster, encodeHdrMaster, encoderArgs, masterDisplayParam, measureContentLight,
-  pqDecode, probeMaster, toRgb48, validateMastering,
+  pqDecode, probeMaster, toRgb48, validateHdrPlaneSamples, validateMastering,
 } from './hdr-master.mjs';
 
 const pqEncode = (nits) => {
@@ -52,7 +52,7 @@ test('encoder arguments state the conversion and HDR signalling explicitly', () 
   const pq = encoderArgs({ width: 64, height: 32, fps: 24, transfer: 'pq',
     light: { maxCll: 900, maxFall: 378 }, mastering: { maxNits: 1000, minNits: 0.005 }, output: 'o.mp4' }).join(' ');
   assert.match(pq, /-pix_fmt rgb48le/);
-  assert.match(pq, /out_color_matrix=bt2020:sws_dither=ed,format=yuv420p10le/);
+  assert.match(pq, /zscale=rangein=full:range=limited:matrixin=gbr:matrix=bt2020nc:dither=error_diffusion,format=yuv420p10le/);
   assert.match(pq, /profile=main10.*transfer=smpte2084.*hdr10=1.*max-cll=900,378/);
   assert.match(pq, /-color_trc smpte2084 -colorspace bt2020nc -color_range tv/);
   const hlg = encoderArgs({ width: 64, height: 32, fps: 24, transfer: 'hlg', light: null, mastering: null, output: 'o.mp4' }).join(' ');
@@ -63,6 +63,25 @@ test('encoder arguments state the conversion and HDR signalling explicitly', () 
 test('alpha is applied over black when packing rgb48', () => {
   const packed = new Uint16Array(toRgb48(frame(1, 1, () => [0.5, 1, 0, 0.5])).buffer.slice(0));
   assert.deepEqual(Array.from(packed), [16384, 32768, 0]);
+});
+
+test('native ten-bit luma/chroma QC uses independent BT.2020 codes and rejects bad evidence', () => {
+  // Limited-range BT.2020 pure red: Y=294.1252, Cb=386.891..., Cr=960.
+  const red = new Uint16Array([...Array(16).fill(294), ...Array(4).fill(387), ...Array(4).fill(960)]);
+  const samples = [{ frame: 0, x: 2, y: 2, rgb: [1, 0, 0] }];
+  const [result] = validateHdrPlaneSamples([red], 4, 4, samples);
+  assert.deepEqual(result.actual, [294, 387, 960]);
+  assert.ok(result.error.every((error) => error <= 2));
+  const swapped = red.slice();
+  swapped.set(red.subarray(20), 16); swapped.set(red.subarray(16, 20), 20);
+  assert.throws(() => validateHdrPlaneSamples([swapped], 4, 4, samples), /plane error/);
+  const wrongLuma = red.slice(); wrongLuma[10] += 3;
+  assert.throws(() => validateHdrPlaneSamples([wrongLuma], 4, 4, samples), /plane error/);
+  assert.throws(() => validateHdrPlaneSamples([red.subarray(1)], 4, 4, samples), /plane size/);
+  assert.throws(() => validateHdrPlaneSamples([red], 4, 4, []), /sample/);
+  assert.throws(() => validateHdrPlaneSamples([red], 4, 4, [{ ...samples[0], rgb: [NaN, 0, 0] }]), /signal/);
+  assert.throws(() => validateHdrPlaneSamples([red], 4, 4, [{ ...samples[0], rgb: 'red' }]), /signal/);
+  assert.throws(() => validateHdrPlaneSamples([red], 4, 4, [{ ...samples[0], x: 4 }]), /coordinate/);
 });
 
 const hasEncoder = (() => {
@@ -87,8 +106,9 @@ test('encoding and QC validation precede atomic publication', { skip: !hasEncode
       assert.equal(decoded.length, 1);
       assert.notEqual(partial, output);
       assert.deepEqual(readFileSync(output), previous);
-      throw new Error('independent picture QC refused');
-    } }), /independent picture QC refused/);
+      validateHdrPlaneSamples(decodeMaster('ffmpeg', partial, 16, 16, 'yuv420p10le'), 16, 16,
+        [{ frame: 0, x: 8, y: 8, rgb: [1, 0, 0] }]);
+    } }), /HDR plane error/);
     assert.deepEqual(readFileSync(output), previous);
     assert.ok(!readdirSync(dir).some((name) => name.endsWith('.partial.mp4')));
     await encodeHdrMaster(options);
@@ -134,10 +154,16 @@ test('HEVC Main10 HDR10 and HLG masters round-trip the signal', { skip: !hasEnco
       // 4:2:0 10-bit conversion (two codes per sample for RGB-YCbCr-RGB rounding, under one on average).
       const decoded = decodeMaster('ffmpeg', output, width, height);
       assert.equal(decoded.length, 3);
+      const points = [[8, 8], [24, 24], [40, 8], [56, 4], [56, 28]];
+      const planes = decodeMaster('ffmpeg', output, width, height, 'yuv420p10le');
+      assert.equal(planes.length, 3);
+      const planeSamples = validateHdrPlaneSamples(planes, width, height, signalFrames.flatMap(({ rgba }, frame) =>
+        points.map(([x, y]) => ({ frame, x, y, rgb: rgba.slice((y * width + x) * 4, (y * width + x) * 4 + 3) }))));
+      assert.equal(planeSamples.length, 15);
       let errorSum = 0;
       let samples = 0;
       for (const [n, pixels] of decoded.entries()) {
-        for (const [x, y] of [[8, 8], [24, 24], [40, 8], [56, 4], [56, 28]]) {
+        for (const [x, y] of points) {
           const i = (y * width + x);
           for (let c = 0; c < 3; c++) {
             const want = signalFrames[n].rgba[i * 4 + c];
