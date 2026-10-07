@@ -1,18 +1,18 @@
 # Server API — Config (user)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getUserConfig
 
 `GET /api/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-user.controller.ts#L14).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-user.controller.ts#L14).
 
 Get the configuration with user visibility
 
 Permission: `userConfig.read`. Admin only: `false`.
 
-Models: [UserConfigDto](models-36.md#userconfigdto).
+Models: [UserConfigDto](models-37.md#userconfigdto).
 
 Controller access declarations:
 
@@ -81,13 +81,13 @@ Complete operation contract:
 
 `GET /api/config/defaults`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-user.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-user.controller.ts#L25).
 
 Get the default configuration with user visibility
 
 Permission: `userConfig.read`. Admin only: `false`.
 
-Models: [UserConfigDto](models-36.md#userconfigdto).
+Models: [UserConfigDto](models-37.md#userconfigdto).
 
 Controller access declarations:
 

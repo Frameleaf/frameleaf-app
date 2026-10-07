@@ -1,12 +1,12 @@
 # Server API — Frameleaf Cloud processing (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getCloudMlStatus
 
 `GET /api/admin/cloud/ml`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L42).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L42).
 
 Get Frameleaf Cloud processing status
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/catalog`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L135).
 
 List Frameleaf Cloud models
 
@@ -161,7 +161,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/consent`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L176).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L176).
 
 List Frameleaf Cloud consent records
 
@@ -238,7 +238,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/consent/terms`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L55).
 
 Get the Frameleaf Cloud consent terms for chosen features
 
@@ -335,7 +335,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/ml/descriptions/batches`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L68).
 
 Describe photos with Frameleaf Cloud
 
@@ -423,7 +423,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/ml/descriptions/estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L83).
 
 Estimate describing photos with Frameleaf Cloud
 
@@ -502,7 +502,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/ml/destination`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L97).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L97).
 
 Add Frameleaf Cloud as a processing destination
 
@@ -590,7 +590,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/models`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L147).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L147).
 
 List the chosen Frameleaf Cloud models
 
@@ -668,7 +668,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/ml/models/{group}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L160).
 
 Choose the Frameleaf Cloud model of a model group
 
@@ -765,7 +765,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/settlements`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L188).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L188).
 
 List settled Frameleaf Cloud charges
 
@@ -843,7 +843,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/ml/usage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L201).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L201).
 
 Apply Frameleaf Cloud settlements
 
@@ -912,7 +912,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/ml/wallet`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L110).
 
 Get the AI Wallet
 
@@ -989,7 +989,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/ml/wallet`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/cloud-ml-admin.controller.ts#L122).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-ml-admin.controller.ts#L122).
 
 Change the AI Wallet daily cap or automatic top-up
 
@@ -1077,7 +1077,7 @@ Complete operation contract:
 
 `GET /api/admin/hardware`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/hardware-check.controller.ts#L15).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/hardware-check.controller.ts#L15).
 
 Get the Hardware & GPU check
 
@@ -1155,7 +1155,7 @@ Complete operation contract:
 
 `POST /api/admin/hardware/benchmark`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/hardware-check.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/hardware-check.controller.ts#L41).
 
 Run a short benchmark
 
@@ -1234,7 +1234,7 @@ Complete operation contract:
 
 `POST /api/admin/hardware/check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/hardware-check.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/hardware-check.controller.ts#L28).
 
 Check the GPU again
 

@@ -1,10 +1,10 @@
 # Server API models 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## ActivityCreateDto
 
-Related models: [ReactionType](models-27.md#reactiontype).
+Related models: [ReactionType](models-28.md#reactiontype).
 
 ```json
 {
@@ -40,7 +40,7 @@ Related models: [ReactionType](models-27.md#reactiontype).
 
 ## ActivityResponseDto
 
-Related models: [ReactionType](models-27.md#reactiontype), [UserResponseDto](models-37.md#userresponsedto).
+Related models: [ReactionType](models-28.md#reactiontype), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -140,7 +140,7 @@ Related models: [AlbumUserAddDto](models-02.md#albumuseradddto).
 
 ## AdjustParameters
 
-Related models: [VideoAdjustModel](models-37.md#videoadjustmodel), [VideoDevelopPreset](models-37.md#videodeveloppreset).
+Related models: [VideoAdjustModel](models-38.md#videoadjustmodel), [VideoDevelopPreset](models-38.md#videodeveloppreset).
 
 ```json
 {
@@ -705,7 +705,7 @@ Related models: [AdminConfigAnalyticsDto](models-01.md#adminconfiganalyticsdto),
 
 ## AdminConfigFFmpegDto
 
-Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-36.md#tonemapping), [TranscodeHWAccel](models-36.md#transcodehwaccel), [TranscodePolicy](models-36.md#transcodepolicy), [VideoCodec](models-37.md#videocodec), [VideoContainer](models-37.md#videocontainer).
+Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-37.md#tonemapping), [TranscodeHWAccel](models-37.md#transcodehwaccel), [TranscodePolicy](models-37.md#transcodepolicy), [VideoCodec](models-38.md#videocodec), [VideoContainer](models-38.md#videocontainer).
 
 ```json
 {
@@ -841,7 +841,7 @@ Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrea
 
 ## AdminConfigFFmpegRealtimeDto
 
-Related models: [HlsVideoResolution](models-12.md#hlsvideoresolution), [VideoCodec](models-37.md#videocodec).
+Related models: [HlsVideoResolution](models-12.md#hlsvideoresolution), [VideoCodec](models-38.md#videocodec).
 
 ```json
 {
@@ -1320,7 +1320,7 @@ Related models: [CloudRouteMode](models-09.md#cloudroutemode).
 
 ## AdminConfigFrameleafCustomHostnameDto
 
-Related models: [RemoteHostnameStatus](models-27.md#remotehostnamestatus).
+Related models: [RemoteHostnameStatus](models-28.md#remotehostnamestatus).
 
 ```json
 {
@@ -1351,7 +1351,7 @@ Related models: [RemoteHostnameStatus](models-27.md#remotehostnamestatus).
 
 ## AdminConfigFrameleafRemoteAccessDto
 
-Related models: [AdminConfigFrameleafCustomHostnameDto](models-01.md#adminconfigframeleafcustomhostnamedto), [RemoteAccessMode](models-27.md#remoteaccessmode), [RemoteAccessPublicUrl](models-27.md#remoteaccesspublicurl).
+Related models: [AdminConfigFrameleafCustomHostnameDto](models-01.md#adminconfigframeleafcustomhostnamedto), [RemoteAccessMode](models-28.md#remoteaccessmode), [RemoteAccessPublicUrl](models-28.md#remoteaccesspublicurl).
 
 ```json
 {

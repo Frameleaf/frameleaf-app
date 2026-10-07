@@ -1,18 +1,18 @@
 # Server API — Map
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getMapMarkers
 
 `GET /api/map/markers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/map.controller.ts#L21).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/map.controller.ts#L21).
 
 Retrieve map markers
 
 Permission: `map.read`. Admin only: `false`.
 
-Models: [MapMarkerResponseDto](models-14.md#mapmarkerresponsedto).
+Models: [MapMarkerResponseDto](models-15.md#mapmarkerresponsedto).
 
 Controller access declarations:
 
@@ -140,13 +140,13 @@ Complete operation contract:
 
 `GET /api/map/reverse-geocode`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/map.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/map.controller.ts#L44).
 
 Reverse geocode coordinates
 
 Permission: `map.search`. Admin only: `false`.
 
-Models: [MapReverseGeocodeResponseDto](models-14.md#mapreversegeocoderesponsedto).
+Models: [MapReverseGeocodeResponseDto](models-15.md#mapreversegeocoderesponsedto).
 
 Controller access declarations:
 
@@ -244,13 +244,13 @@ Complete operation contract:
 
 `GET /api/map/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/map.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/map.controller.ts#L32).
 
 Retrieve map statistics
 
 Permission: `map.read`. Admin only: `false`.
 
-Models: [MapStatisticsResponseDto](models-14.md#mapstatisticsresponsedto).
+Models: [MapStatisticsResponseDto](models-15.md#mapstatisticsresponsedto).
 
 Controller access declarations:
 

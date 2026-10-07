@@ -1,12 +1,122 @@
 # Server API — Assets 4
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## viewAssetRestorationFile
+
+`GET /api/assets/{id}/restorations/{restorationId}/file`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L161).
+
+View a restoration file
+
+Permission: `asset.edit.get`. Admin only: `false`.
+
+Models: [AssetRestorationFileKind](models-06.md#assetrestorationfilekind).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Get(':id/restorations/:restorationId/file')
+@FileResponse()
+@Authenticated({ permission: Permission.AssetEditGet })
+@OriginalTransfer()
+@Endpoint({
+    summary: 'View a restoration file',
+    description: 'Streams the preview input, the restored preview, the full result or its playback rendition.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Streams the preview input, the restored preview, the full result or its playback rendition.",
+  "operationId": "viewAssetRestorationFile",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "description": "Asset ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "kind",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "default": "after",
+        "$ref": "#/components/schemas/AssetRestorationFileKind"
+      }
+    },
+    {
+      "name": "restorationId",
+      "required": true,
+      "in": "path",
+      "description": "Restoration ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "View a restoration file",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.get",
+  "x-immich-state": "Alpha"
+}
+```
 
 ## rejectAssetRestoration
 
 `POST /api/assets/{id}/restorations/{restorationId}/reject`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L130).
 
 Reject a restoration preview
 
@@ -105,7 +215,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L160).
 
 View asset thumbnail
 
@@ -137,6 +247,20 @@ Complete operation contract:
   "description": "Retrieve the thumbnail image for the specified asset. Viewing the fullsize thumbnail might redirect to downloadAsset, which requires a different permission.",
   "operationId": "viewAsset",
   "parameters": [
+    {
+      "name": "dynamicRange",
+      "required": false,
+      "in": "query",
+      "description": "Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "sdr",
+          "hdr"
+        ]
+      }
+    },
     {
       "name": "edited",
       "required": false,
@@ -248,7 +372,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/playback`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L228).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L228).
 
 Play asset video
 
@@ -363,7 +487,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/main.m3u8`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/video-stream.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/video-stream.controller.ts#L30).
 
 Get HLS main playlist
 
@@ -466,7 +590,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/video/stream/{sessionId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/video-stream.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/video-stream.controller.ts#L95).
 
 End HLS streaming session
 
@@ -570,7 +694,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/{sessionId}/{variantIndex}/playlist.m3u8`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/video-stream.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/video-stream.controller.ts#L44).
 
 Get HLS media playlist
 
@@ -702,7 +826,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/{sessionId}/{variantIndex}/{filename}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/video-stream.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/video-stream.controller.ts#L67).
 
 Get HLS segment or init file
 
@@ -843,7 +967,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/studio-hdr`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L258).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L258).
 
 Play the Studio HDR intermediate
 
@@ -930,7 +1054,7 @@ Complete operation contract:
 
 `GET /api/develop-presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L83).
 
 List develop presets
 
@@ -1007,7 +1131,7 @@ Complete operation contract:
 
 `POST /api/develop-presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L94).
 
 Save a develop preset
 
@@ -1091,7 +1215,7 @@ Complete operation contract:
 
 `DELETE /api/develop-presets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L121).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L121).
 
 Delete a develop preset
 
@@ -1168,7 +1292,7 @@ Complete operation contract:
 
 `PUT /api/develop-presets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/photo-tools.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L105).
 
 Update a develop preset
 
@@ -1264,13 +1388,13 @@ Complete operation contract:
 
 `GET /api/takeout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L58).
 
 List Google Photos imports
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResponseDto](models-36.md#takeoutresponsedto).
+Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -1337,13 +1461,13 @@ Complete operation contract:
 
 `POST /api/takeout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L65).
 
 Start a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutCreateDto](models-35.md#takeoutcreatedto), [TakeoutResponseDto](models-36.md#takeoutresponsedto).
+Models: [TakeoutCreateDto](models-36.md#takeoutcreatedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -1424,13 +1548,13 @@ Complete operation contract:
 
 `GET /api/takeout/roots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L78).
 
 List the permitted import locations
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [TakeoutRootsResponseDto](models-36.md#takeoutrootsresponsedto).
+Models: [TakeoutRootsResponseDto](models-37.md#takeoutrootsresponsedto).
 
 Controller access declarations:
 
@@ -1494,7 +1618,7 @@ Complete operation contract:
 
 `DELETE /api/takeout/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L92).
 
 Delete a Google Photos import
 
@@ -1572,13 +1696,13 @@ Complete operation contract:
 
 `GET /api/takeout/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L85).
 
 Get a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResponseDto](models-36.md#takeoutresponsedto).
+Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -1653,13 +1777,13 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/archives`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L104).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L104).
 
 Stage a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutArchiveCreateDto](models-35.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-36.md#takeoutsourceresponsedto).
+Models: [TakeoutArchiveCreateDto](models-36.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
 
 Controller access declarations:
 
@@ -1745,7 +1869,7 @@ Complete operation contract:
 
 `DELETE /api/takeout/{id}/archives/{archiveId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L116).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L116).
 
 Remove a staged Takeout archive
 
@@ -1828,13 +1952,13 @@ Complete operation contract:
 
 `PUT /api/takeout/{id}/archives/{archiveId}/chunks`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L124).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L124).
 
 Upload part of a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutSourceResponseDto](models-36.md#takeoutsourceresponsedto).
+Models: [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
 
 Controller access declarations:
 
@@ -1948,13 +2072,13 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/archives/{archiveId}/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L158).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/takeout.controller.ts#L158).
 
 Check a staged part of a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutVerifyChunkDto](models-36.md#takeoutverifychunkdto).
+Models: [TakeoutVerifyChunkDto](models-37.md#takeoutverifychunkdto).
 
 Controller access declarations:
 
@@ -2026,98 +2150,6 @@ Complete operation contract:
     }
   ],
   "summary": "Check a staged part of a Takeout archive",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## controlTakeoutImport
-
-`POST /api/takeout/{id}/control`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/takeout.controller.ts#L203).
-
-Pause, resume or cancel a Google Photos import
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutControlDto](models-35.md#takeoutcontroldto), [TakeoutResponseDto](models-36.md#takeoutresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Post(':id/control')
-@HttpCode(HttpStatus.OK)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({ summary: 'Pause, resume or cancel a Google Photos import', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "controlTakeoutImport",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/TakeoutControlDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Pause, resume or cancel a Google Photos import",
   "tags": [
     "Assets"
   ],

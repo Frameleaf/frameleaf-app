@@ -1,12 +1,12 @@
 # Server API — Studio projects 3
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteStudioProject
 
 `DELETE /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L135).
 
 Delete a Studio project
 
@@ -93,13 +93,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L107).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L107).
 
 Get a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDetailDto](models-32.md#studioprojectdetaildto).
+Models: [StudioProjectDetailDto](models-33.md#studioprojectdetaildto).
 
 Controller access declarations:
 
@@ -179,13 +179,13 @@ Complete operation contract:
 
 `PUT /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L119).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L119).
 
 Update a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-32.md#studioprojectdto), [StudioProjectUpdateDto](models-33.md#studioprojectupdatedto).
+Models: [StudioProjectDto](models-33.md#studioprojectdto), [StudioProjectUpdateDto](models-34.md#studioprojectupdatedto).
 
 Controller access declarations:
 
@@ -275,13 +275,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/bundle`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L181).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L181).
 
 Export a Studio project as a bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioBundleExportCreateDto](models-31.md#studiobundleexportcreatedto).
+Models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioBundleExportCreateDto](models-32.md#studiobundleexportcreatedto).
 
 Controller access declarations:
 
@@ -372,13 +372,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L344).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L344).
 
 List Studio review comments
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentListResponseDto](models-32.md#studiocommentlistresponsedto).
+Models: [StudioCommentListResponseDto](models-33.md#studiocommentlistresponsedto).
 
 Controller access declarations:
 
@@ -479,13 +479,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L359).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L359).
 
 Add a Studio review comment
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentCreateDto](models-32.md#studiocommentcreatedto), [StudioCommentDto](models-32.md#studiocommentdto).
+Models: [StudioCommentCreateDto](models-33.md#studiocommentcreatedto), [StudioCommentDto](models-33.md#studiocommentdto).
 
 Controller access declarations:
 
@@ -575,7 +575,7 @@ Complete operation contract:
 
 `DELETE /api/studio/projects/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L390).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L390).
 
 Remove a Studio review comment
 
@@ -662,13 +662,13 @@ Complete operation contract:
 
 `PUT /api/studio/projects/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L375).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L375).
 
 Update a Studio review comment
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentDto](models-32.md#studiocommentdto), [StudioCommentUpdateDto](models-32.md#studiocommentupdatedto).
+Models: [StudioCommentDto](models-33.md#studiocommentdto), [StudioCommentUpdateDto](models-33.md#studiocommentupdatedto).
 
 Controller access declarations:
 
@@ -767,13 +767,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/duplicate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L164).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L164).
 
 Duplicate a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-32.md#studioprojectdto), [StudioProjectDuplicateDto](models-32.md#studioprojectduplicatedto).
+Models: [StudioProjectDto](models-33.md#studioprojectdto), [StudioProjectDuplicateDto](models-33.md#studioprojectduplicatedto).
 
 Controller access declarations:
 
@@ -864,13 +864,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-export.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L53).
 
 List a Studio project’s exports
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportListResponseDto](models-32.md#studioexportlistresponsedto).
+Models: [StudioExportListResponseDto](models-33.md#studioexportlistresponsedto).
 
 Controller access declarations:
 
@@ -971,13 +971,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-export.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L36).
 
 Export a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportCreateDto](models-32.md#studioexportcreatedto), [StudioExportCreateResponseDto](models-32.md#studioexportcreateresponsedto).
+Models: [StudioExportCreateDto](models-33.md#studioexportcreatedto), [StudioExportCreateResponseDto](models-33.md#studioexportcreateresponsedto).
 
 Controller access declarations:
 
@@ -1068,13 +1068,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project-import.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L94).
 
 List the files imported into a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectImportDto](models-33.md#studioprojectimportdto).
+Models: [StudioProjectImportDto](models-34.md#studioprojectimportdto).
 
 Controller access declarations:
 
@@ -1156,13 +1156,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project-import.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L69).
 
 Import a file into a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectImportCreateDto](models-32.md#studioprojectimportcreatedto), [StudioProjectImportDto](models-33.md#studioprojectimportdto).
+Models: [StudioProjectImportCreateDto](models-33.md#studioprojectimportcreatedto), [StudioProjectImportDto](models-34.md#studioprojectimportdto).
 
 Controller access declarations:
 
@@ -1257,7 +1257,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/imports/{importId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project-import.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L105).
 
 Read a file imported into a Studio project
 
@@ -1354,13 +1354,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/lease`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L232).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L232).
 
 Acquire or renew the write lease
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectLeaseDto](models-33.md#studioprojectleasedto), [StudioProjectLeaseRequestDto](models-33.md#studioprojectleaserequestdto).
+Models: [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectLeaseRequestDto](models-34.md#studioprojectleaserequestdto).
 
 Controller access declarations:
 
@@ -1451,13 +1451,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/lease/release`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L249).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L249).
 
 Release the write lease
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectLeaseRequestDto](models-33.md#studioprojectleaserequestdto).
+Models: [StudioProjectLeaseRequestDto](models-34.md#studioprojectleaserequestdto).
 
 Controller access declarations:
 
@@ -1540,13 +1540,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L282).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L282).
 
 Restore a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectRestoreDto](models-33.md#studioprojectrestoredto), [StudioProjectSaveResponseDto](models-33.md#studioprojectsaveresponsedto).
+Models: [StudioProjectRestoreDto](models-34.md#studioprojectrestoredto), [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto).
 
 Controller access declarations:
 
@@ -1637,13 +1637,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/reverse-conform`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L198).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L198).
 
 Queue a Studio clip source reversal
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioReverseConformEnqueueDto](models-33.md#studioreverseconformenqueuedto), [StudioReverseConformQueuedDto](models-33.md#studioreverseconformqueueddto).
+Models: [StudioReverseConformEnqueueDto](models-34.md#studioreverseconformenqueuedto), [StudioReverseConformQueuedDto](models-34.md#studioreverseconformqueueddto).
 
 Controller access declarations:
 
@@ -1733,13 +1733,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/reverse-conform/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L215).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L215).
 
 Apply a completed Studio clip source reversal
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectSaveResponseDto](models-33.md#studioprojectsaveresponsedto), [StudioReverseConformApplyDto](models-33.md#studioreverseconformapplydto).
+Models: [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto), [StudioReverseConformApplyDto](models-34.md#studioreverseconformapplydto).
 
 Controller access declarations:
 
@@ -1830,13 +1830,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L299).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L299).
 
 List Studio project history
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectHistoryResponseDto](models-32.md#studioprojecthistoryresponsedto).
+Models: [StudioProjectHistoryResponseDto](models-33.md#studioprojecthistoryresponsedto).
 
 Controller access declarations:
 

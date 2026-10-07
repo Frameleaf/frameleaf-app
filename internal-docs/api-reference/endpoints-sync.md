@@ -1,18 +1,18 @@
 # Server API — Sync
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteSyncAck
 
 `DELETE /api/sync/ack`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/sync.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/sync.controller.ts#L79).
 
 Delete acknowledgements
 
 Permission: `syncCheckpoint.delete`. Admin only: `false`.
 
-Models: [SyncAckDeleteDto](models-33.md#syncackdeletedto).
+Models: [SyncAckDeleteDto](models-34.md#syncackdeletedto).
 
 Controller access declarations:
 
@@ -89,13 +89,13 @@ Complete operation contract:
 
 `GET /api/sync/ack`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/sync.controller.ts#L38).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/sync.controller.ts#L38).
 
 Retrieve acknowledgements
 
 Permission: `syncCheckpoint.read`. Admin only: `false`.
 
-Models: [SyncAckDto](models-33.md#syncackdto).
+Models: [SyncAckDto](models-34.md#syncackdto).
 
 Controller access declarations:
 
@@ -172,13 +172,13 @@ Complete operation contract:
 
 `POST /api/sync/ack`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/sync.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/sync.controller.ts#L66).
 
 Acknowledge changes
 
 Permission: `syncCheckpoint.update`. Admin only: `false`.
 
-Models: [SyncAckSetDto](models-33.md#syncacksetdto).
+Models: [SyncAckSetDto](models-34.md#syncacksetdto).
 
 Controller access declarations:
 
@@ -256,13 +256,13 @@ Complete operation contract:
 
 `GET /api/sync/ack/v2`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/sync.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/sync.controller.ts#L54).
 
 Retrieve all acknowledgements
 
 Permission: `syncCheckpoint.read`. Admin only: `false`.
 
-Models: [SyncAckV2Dto](models-33.md#syncackv2dto).
+Models: [SyncAckV2Dto](models-34.md#syncackv2dto).
 
 Controller access declarations:
 
@@ -330,13 +330,13 @@ Complete operation contract:
 
 `POST /api/sync/stream`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/sync.controller.ts#L20).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/sync.controller.ts#L20).
 
 Stream sync changes
 
 Permission: `sync.stream`. Admin only: `false`.
 
-Models: [SyncStreamDto](models-35.md#syncstreamdto).
+Models: [SyncStreamDto](models-36.md#syncstreamdto).
 
 Controller access declarations:
 

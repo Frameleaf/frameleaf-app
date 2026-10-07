@@ -1,6 +1,6 @@
 # Server API models 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AdminConfigMachineLearningDto
 
@@ -191,7 +191,7 @@ Related models: [AdminConfigFacesDto](models-01.md#adminconfigfacesdto).
 
 ## AdminConfigNewVersionCheckDto
 
-Related models: [ReleaseChannel](models-27.md#releasechannel), [VersionCheckFrequency](models-37.md#versioncheckfrequency).
+Related models: [ReleaseChannel](models-28.md#releasechannel), [VersionCheckFrequency](models-38.md#versioncheckfrequency).
 
 ```json
 {
@@ -321,7 +321,7 @@ Related models: [AdminConfigSmtpDto](models-02.md#adminconfigsmtpdto).
 
 ## AdminConfigOAuthDto
 
-Related models: [OAuthTokenEndpointAuthMethod](models-17.md#oauthtokenendpointauthmethod).
+Related models: [OAuthTokenEndpointAuthMethod](models-18.md#oauthtokenendpointauthmethod).
 
 ```json
 {
@@ -1227,7 +1227,7 @@ Related models: [AlbumIconSuggestionResponseDto](models-02.md#albumiconsuggestio
 
 ## AlbumResponseDto
 
-Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-05.md#assetorder), [ContributorCountResponseDto](models-09.md#contributorcountresponsedto), [PartnerOriginDto](models-17.md#partnerorigindto), [SmartAlbumBuiltInKind](models-30.md#smartalbumbuiltinkind).
+Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-05.md#assetorder), [ContributorCountResponseDto](models-09.md#contributorcountresponsedto), [PartnerOriginDto](models-18.md#partnerorigindto), [SmartAlbumBuiltInKind](models-31.md#smartalbumbuiltinkind).
 
 ```json
 {
@@ -1860,7 +1860,7 @@ Related models: [AlbumUserRole](models-02.md#albumuserrole).
 
 ## AlbumUserResponseDto
 
-Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-37.md#userresponsedto).
+Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {

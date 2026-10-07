@@ -1,175 +1,525 @@
 # Server API models 33
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
-## StudioProjectImportDto
+## StudioBundleOperationDto
 
-Related models: [StudioProjectImportKind](models-33.md#studioprojectimportkind).
+Related models: [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus), [StudioBundleExportResultDto](models-32.md#studiobundleexportresultdto), [StudioBundleImportResultDto](models-32.md#studiobundleimportresultdto).
 
 ```json
 {
   "properties": {
-    "checksum": {
-      "description": "SHA-256 of the bytes, hex",
-      "type": "string"
-    },
-    "contentType": {
-      "description": "Content type read from the bytes, not the name",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When it was uploaded",
-      "format": "date-time",
-      "type": "string"
-    },
-    "externalReferences": {
-      "description": "External subresources an SVG or Lottie graphic names; a graphic with any cannot be rendered",
+    "attempt": {
       "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "fileName": {
-      "description": "The name the file was uploaded with",
+    "autoRetries": {
+      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "error": {
+      "nullable": true,
       "type": "string"
     },
-    "id": {
-      "description": "Import id; clips reference it as `importId`",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+    "errorCode": {
+      "nullable": true,
       "type": "string"
+    },
+    "export": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioBundleExportResultDto"
+        }
+      ],
+      "nullable": true
+    },
+    "import": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioBundleImportResultDto"
+        }
+      ],
+      "nullable": true
     },
     "kind": {
-      "$ref": "#/components/schemas/StudioProjectImportKind"
+      "$ref": "#/components/schemas/MediaOperationKind"
     },
-    "sizeBytes": {
-      "description": "Size in bytes",
+    "maxAttempts": {
       "maximum": 9007199254740991,
-      "minimum": 1,
+      "minimum": -9007199254740991,
       "type": "integer"
+    },
+    "operationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "progress": {
+      "format": "double",
+      "type": "number"
+    },
+    "projectId": {
+      "description": "The exported project, or the project an import created",
+      "nullable": true,
+      "type": "string"
+    },
+    "retryAt": {
+      "description": "When a job waiting for its automatic retry may run again",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
     }
   },
   "required": [
-    "checksum",
-    "contentType",
-    "createdAt",
-    "externalReferences",
-    "fileName",
-    "id",
+    "attempt",
+    "autoRetries",
+    "error",
+    "errorCode",
+    "export",
+    "import",
     "kind",
-    "sizeBytes"
+    "maxAttempts",
+    "operationId",
+    "progress",
+    "projectId",
+    "retryAt",
+    "status"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectImportKind
+## StudioBundleSourceDto
+
+Related models: [StudioBundleSourceMode](models-33.md#studiobundlesourcemode), [StudioBundleSourceResolution](models-33.md#studiobundlesourceresolution).
+
+```json
+{
+  "properties": {
+    "contentType": {
+      "nullable": true,
+      "type": "string"
+    },
+    "fileName": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Identifier on the exporting server",
+      "type": "string"
+    },
+    "key": {
+      "description": "Mapping key for the import request",
+      "type": "string"
+    },
+    "kind": {
+      "description": "`library-asset`, `edited-master` or `project-import` (a file kept with the project)",
+      "type": "string"
+    },
+    "mode": {
+      "$ref": "#/components/schemas/StudioBundleSourceMode"
+    },
+    "resolution": {
+      "$ref": "#/components/schemas/StudioBundleSourceResolution"
+    },
+    "sizeBytes": {
+      "description": "Size of the source file, when the exporting server knew it",
+      "nullable": true,
+      "type": "string"
+    },
+    "suggestedAssetId": {
+      "description": "An asset of yours with the same content",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contentType",
+    "fileName",
+    "id",
+    "key",
+    "kind",
+    "mode",
+    "resolution",
+    "sizeBytes",
+    "suggestedAssetId"
+  ],
+  "type": "object"
+}
+```
+
+## StudioBundleSourceMode
 
 
 ```json
 {
-  "description": "What the file is, read from its bytes",
+  "description": "`embedded` carries a verified copy; `reference` names media on the exporting server",
   "enum": [
-    "audio",
-    "image",
-    "video",
-    "vector",
-    "captions",
-    "lut"
+    "embedded",
+    "reference"
   ],
   "type": "string"
 }
 ```
 
-## StudioProjectLeaseDto
+## StudioBundleSourceResolution
+
+
+```json
+{
+  "description": "`kept`: the original is already available to you; `suggested`: an item of yours has the same content; `missing`: choose one or import without it",
+  "enum": [
+    "kept",
+    "suggested",
+    "missing"
+  ],
+  "type": "string"
+}
+```
+
+## StudioBundleUploadCreateDto
 
 
 ```json
 {
   "properties": {
-    "autosaveDebounceMs": {
-      "description": "Pause in editing after which the client saves",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "expiresAt": {
-      "description": "When the current lease lapses",
+    "file": {
+      "description": "A `.frameleaf-studio.zip` bundle",
+      "format": "binary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+}
+```
+
+## StudioBundleUploadDto
+
+Related models: [StudioBundleSourceDto](models-33.md#studiobundlesourcedto).
+
+```json
+{
+  "properties": {
+    "consumedAt": {
+      "description": "When an import first read it",
       "format": "date-time",
       "nullable": true,
       "type": "string"
     },
-    "heldByAnother": {
-      "description": "A live lease belongs to another editor instance",
-      "type": "boolean"
+    "digest": {
+      "description": "SHA-256 of the whole file",
+      "type": "string"
     },
-    "heldByYou": {
-      "description": "This client holds the write lease",
-      "type": "boolean"
+    "engineRevision": {
+      "type": "string"
     },
-    "leaseMs": {
-      "description": "Lease length the server grants",
+    "expiresAt": {
+      "description": "When the upload is discarded",
+      "format": "date-time",
+      "type": "string"
+    },
+    "exportedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "fileName": {
+      "description": "The file name as uploaded",
+      "type": "string"
+    },
+    "id": {
+      "description": "Upload ID, used to start an import",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "producerVersion": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "revision": {
+      "description": "The revision the bundle was made from",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 1,
       "type": "integer"
     },
-    "renewMs": {
-      "description": "How often the holder should renew",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "sizeBytes": {
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/components/schemas/StudioBundleSourceDto"
+      },
+      "type": "array"
     }
   },
   "required": [
-    "autosaveDebounceMs",
+    "consumedAt",
+    "digest",
+    "engineRevision",
     "expiresAt",
-    "heldByAnother",
-    "heldByYou",
-    "leaseMs",
-    "renewMs"
+    "exportedAt",
+    "fileName",
+    "id",
+    "producerVersion",
+    "projectName",
+    "revision",
+    "sizeBytes",
+    "sources"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectLeaseRequestDto
+## StudioCapabilitiesDto
+
+Related models: [StudioRenderEvidenceDto](models-34.md#studiorenderevidencedto).
+
+```json
+{
+  "properties": {
+    "gpuWorker": {
+      "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
+      "type": "boolean"
+    },
+    "render": {
+      "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
+      "items": {
+        "$ref": "#/components/schemas/StudioRenderEvidenceDto"
+      },
+      "type": "array"
+    },
+    "renderWorker": {
+      "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
+      "type": "boolean"
+    },
+    "restorationWorker": {
+      "description": "A destination can serve a restoration workload right now",
+      "type": "boolean"
+    },
+    "transcriptionWorker": {
+      "description": "A destination can serve the Studio AI workload right now",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "gpuWorker",
+    "render",
+    "renderWorker",
+    "restorationWorker",
+    "transcriptionWorker"
+  ],
+  "type": "object"
+}
+```
+
+## StudioCommandEnvelopeDto
 
 
 ```json
 {
   "properties": {
-    "clientId": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
-      "pattern": "^[\\w.:-]{1,128}$",
+    "id": {
+      "description": "Published command id (studio/frameleaf-studio-commands.json)",
+      "maxLength": 100,
+      "minLength": 1,
       "type": "string"
     },
-    "takeover": {
-      "description": "Take a live lease away from another of your editor instances; never implicit",
-      "type": "boolean"
+    "idempotencyKey": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "issuedAt": {
+      "description": "Epoch milliseconds",
+      "format": "double",
+      "type": "number"
+    },
+    "payload": {
+      "additionalProperties": {},
+      "description": "Command payload; graph-shaped values pass through unread",
+      "type": "object"
+    },
+    "revision": {
+      "description": "The head revision the command was issued against",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
     }
   },
   "required": [
-    "clientId"
+    "id",
+    "idempotencyKey",
+    "issuedAt",
+    "payload",
+    "revision"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectListResponseDto
+## StudioCommandSummaryDto
 
-Related models: [StudioProjectDto](models-32.md#studioprojectdto).
+
+```json
+{
+  "properties": {
+    "counts": {
+      "additionalProperties": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": "Command id to how many times it appeared",
+      "type": "object"
+    },
+    "total": {
+      "description": "Commands in the batch",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "counts",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## StudioCommentCreateDto
+
+Related models: [StudioTimeDto](models-34.md#studiotimedto).
+
+```json
+{
+  "properties": {
+    "requestKey": {
+      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+      "pattern": "^[\\w.:-]{1,128}$",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioTimeDto"
+    }
+  },
+  "required": [
+    "revision",
+    "text",
+    "time"
+  ],
+  "type": "object"
+}
+```
+
+## StudioCommentDto
+
+Related models: [StudioTimeDto](models-34.md#studiotimedto).
+
+```json
+{
+  "properties": {
+    "authorId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "resolvedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "resolvedById": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "revision": {
+      "description": "The revision the reviewer was looking at",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioTimeDto"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "authorId",
+    "createdAt",
+    "id",
+    "projectId",
+    "resolvedAt",
+    "resolvedById",
+    "revision",
+    "text",
+    "time",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## StudioCommentListResponseDto
+
+Related models: [StudioCommentDto](models-33.md#studiocommentdto).
 
 ```json
 {
   "properties": {
     "items": {
+      "description": "Oldest first",
       "items": {
-        "$ref": "#/components/schemas/StudioProjectDto"
+        "$ref": "#/components/schemas/StudioCommentDto"
       },
       "type": "array"
     },
     "total": {
-      "description": "Matching projects, before paging",
       "maximum": 9007199254740991,
       "minimum": -9007199254740991,
       "type": "integer"
@@ -183,135 +533,1232 @@ Related models: [StudioProjectDto](models-32.md#studioprojectdto).
 }
 ```
 
-## StudioProjectResourcesDto
+## StudioCommentUpdateDto
 
-Related models: [StudioUnsupportedSourceDto](models-33.md#studiounsupportedsourcedto).
 
 ```json
 {
   "properties": {
-    "checkedAt": {
-      "description": "When the resolution ran",
-      "format": "date-time",
-      "type": "string"
-    },
-    "complete": {
-      "description": "Every referenced source resolved for the acting account",
+    "resolved": {
       "type": "boolean"
     },
-    "hdrProxySources": {
-      "description": "FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
+    "text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## StudioExportAudio
+
+
+```json
+{
+  "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
+  "enum": [
+    "preserve",
+    "stereo"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportColor
+
+
+```json
+{
+  "description": "Colour handling; Dolby Vision needs a qualified worker",
+  "enum": [
+    "preserve",
+    "hdr10",
+    "dolby-vision"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportCreateDto
+
+Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSmoothMotionDto](models-33.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
+
+```json
+{
+  "properties": {
+    "audio": {
+      "$ref": "#/components/schemas/StudioExportAudio",
+      "description": "Defaults to `preserve`; a stereo downmix happens only when asked for"
     },
-    "hdrSources": {
-      "description": "FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
+    "cloudConsent": {
+      "description": "You agree to the media leaving your network for this export",
+      "type": "boolean"
     },
-    "hiddenSources": {
-      "description": "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
+    "color": {
+      "$ref": "#/components/schemas/StudioExportColor"
     },
-    "refusedCount": {
-      "description": "References that were refused for the acting account",
+    "destination": {
+      "$ref": "#/components/schemas/MediaOperationDestination",
+      "description": "Where it renders. A cloud destination needs `cloudConsent`"
+    },
+    "expectedRevision": {
+      "description": "The revision you are looking at; a newer head refuses the export with `409` instead of rendering it",
       "maximum": 9007199254740991,
-      "minimum": 0,
+      "minimum": 1,
       "type": "integer"
     },
-    "unsupportedSources": {
-      "description": "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
-      "items": {
-        "$ref": "#/components/schemas/StudioUnsupportedSourceDto"
-      },
-      "type": "array"
+    "format": {
+      "$ref": "#/components/schemas/StudioExportFormat"
+    },
+    "mastering": {
+      "$ref": "#/components/schemas/StudioExportMastering",
+      "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioExportQuality",
+      "description": "Defaults to `high`"
+    },
+    "range": {
+      "$ref": "#/components/schemas/StudioExportRangeDto",
+      "description": "Absent renders the whole main timeline"
+    },
+    "requestKey": {
+      "description": "Idempotency key; a repeated submit answers with the first export",
+      "pattern": "^[\\w.:-]{1,128}$",
+      "type": "string"
+    },
+    "resolution": {
+      "$ref": "#/components/schemas/StudioExportResolution"
+    },
+    "smoothMotion": {
+      "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
+    },
+    "subtitleMode": {
+      "$ref": "#/components/schemas/StudioExportSubtitleMode",
+      "description": "Defaults to `burn`"
     }
   },
   "required": [
-    "checkedAt",
-    "complete",
-    "hdrProxySources",
-    "hdrSources",
-    "hiddenSources",
-    "refusedCount",
-    "unsupportedSources"
+    "color",
+    "destination",
+    "format",
+    "resolution"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectRestoreDto
+## StudioExportCreateResponseDto
 
+Related models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioExportVersionDto](models-33.md#studioexportversiondto).
 
 ```json
 {
   "properties": {
-    "clientId": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
+    "operation": {
+      "$ref": "#/components/schemas/MediaOperationDto",
+      "description": "The render job; follow it in Activity"
     },
-    "expectedRevision": {
-      "description": "The current head; the restore appends after it",
+    "version": {
+      "$ref": "#/components/schemas/StudioExportVersionDto"
+    }
+  },
+  "required": [
+    "operation",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportFormat
+
+
+```json
+{
+  "description": "Container and codec",
+  "enum": [
+    "mp4-hevc-main10",
+    "mp4-h264",
+    "webm-av1",
+    "prores-422-hq"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportListResponseDto
+
+Related models: [StudioExportVersionDto](models-33.md#studioexportversiondto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/StudioExportVersionDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "description": "Matching versions, before paging",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportMastering
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "maxNits": {
+      "exclusiveMinimum": true,
+      "format": "double",
+      "maximum": 10000,
+      "minimum": 0,
+      "multipleOf": 0.0001,
+      "type": "number"
+    },
+    "minNits": {
+      "format": "double",
+      "maximum": 10000,
+      "minimum": 0,
+      "multipleOf": 0.0001,
+      "type": "number"
+    },
+    "primaries": {
+      "description": "Declared BT.2020 mastering display primaries and D65 white point",
+      "enum": [
+        "bt2020"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "maxNits",
+    "minNits",
+    "primaries"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportQuality
+
+
+```json
+{
+  "description": "Encoder quality preset",
+  "enum": [
+    "low",
+    "medium",
+    "high",
+    "ultra"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportRangeDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "inPoint": {
+      "description": "First included frame on the main timeline",
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
-    "requestKey": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "revision": {
-      "description": "The historical revision to bring back",
+    "outPoint": {
+      "description": "First excluded frame on the main timeline",
       "maximum": 9007199254740991,
       "minimum": 1,
       "type": "integer"
     }
   },
   "required": [
-    "clientId",
-    "expectedRevision",
-    "requestKey",
-    "revision"
+    "inPoint",
+    "outPoint"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectRevisionDetailDto
+## StudioExportRemoteReason
 
-Related models: [StudioCommandSummaryDto](models-32.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-32.md#studioprojectenvelopedto), [StudioProjectResourcesDto](models-33.md#studioprojectresourcesdto).
+
+```json
+{
+  "description": "Why a remote destination is asked to drop Studio export data",
+  "enum": [
+    "cancel",
+    "delete"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportResolution
+
+
+```json
+{
+  "description": "Output resolution",
+  "enum": [
+    "720p",
+    "1080p",
+    "1440p",
+    "2160p"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportScope
+
+
+```json
+{
+  "description": "Where a published Studio export lives",
+  "enum": [
+    "library",
+    "project"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportSettingsDto
+
+Related models: [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
 
 ```json
 {
   "properties": {
-    "authorId": {
+    "audio": {
+      "$ref": "#/components/schemas/StudioExportAudio",
+      "description": "Absent on exports made before audio was a choice"
+    },
+    "color": {
+      "$ref": "#/components/schemas/StudioExportColor"
+    },
+    "format": {
+      "$ref": "#/components/schemas/StudioExportFormat"
+    },
+    "mastering": {
+      "$ref": "#/components/schemas/StudioExportMastering",
+      "description": "Declared PQ mastering display, fixed when this export was submitted"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioExportQuality",
+      "description": "Absent on exports made before quality was a choice"
+    },
+    "range": {
+      "$ref": "#/components/schemas/StudioExportRangeDto",
+      "description": "Absent renders the whole main timeline"
+    },
+    "resolution": {
+      "$ref": "#/components/schemas/StudioExportResolution"
+    },
+    "subtitleMode": {
+      "$ref": "#/components/schemas/StudioExportSubtitleMode",
+      "description": "Absent uses the native `burn` default"
+    }
+  },
+  "required": [
+    "color",
+    "format",
+    "resolution"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportSmoothMotionDto
+
+
+```json
+{
+  "description": "FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
+  "properties": {
+    "destinationId": {
+      "description": "Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately",
       "format": "uuid",
-      "nullable": true,
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "factor": {
+      "anyOf": [
+        {
+          "type": "number",
+          "format": "double",
+          "enum": [
+            2
+          ]
+        },
+        {
+          "type": "number",
+          "format": "double",
+          "enum": [
+            4
+          ]
+        },
+        {
+          "type": "number",
+          "format": "double",
+          "enum": [
+            8
+          ]
+        }
+      ],
+      "description": "How many frames each frame becomes"
+    }
+  },
+  "required": [
+    "destinationId",
+    "factor"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportSubtitleMode
+
+
+```json
+{
+  "description": "Burn subtitle captions into the picture or omit them; ordinary titles are preserved",
+  "enum": [
+    "burn",
+    "off"
+  ],
+  "type": "string"
+}
+```
+
+## StudioExportVersionDto
+
+Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [StudioExportScope](models-33.md#studioexportscope), [StudioExportSettingsDto](models-33.md#studioexportsettingsdto), [StudioExportVersionState](models-33.md#studioexportversionstate).
+
+```json
+{
+  "properties": {
+    "cancelledAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "contentType": {
+      "nullable": true,
       "type": "string"
     },
     "createdAt": {
       "format": "date-time",
       "type": "string"
     },
-    "digest": {
-      "description": "Null for a reviewer; the digest travels with the graph",
+    "destination": {
+      "$ref": "#/components/schemas/MediaOperationDestination"
+    },
+    "error": {
       "nullable": true,
+      "type": "string"
+    },
+    "errorCode": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Export version ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "includesSharedSources": {
+      "description": "At least one source is shared with you rather than yours",
+      "type": "boolean"
+    },
+    "locked": {
+      "description": "The result inherited a lock from a Locked or sensitive source",
+      "type": "boolean"
+    },
+    "projectId": {
+      "description": "Null once the project was deleted for good",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "publishOperationId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "renderOperationId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "resultAssetId": {
+      "description": "The asset a `library` result became",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "revision": {
+      "description": "The project revision that was rendered",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "scope": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioExportScope"
+        }
+      ],
+      "description": "Where the published result lives",
+      "nullable": true
+    },
+    "sensitive": {
+      "description": "The result inherited sensitive evidence from a source",
+      "type": "boolean"
+    },
+    "settings": {
+      "$ref": "#/components/schemas/StudioExportSettingsDto"
+    },
+    "sizeInBytes": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sourceCount": {
+      "description": "Library sources the result was made from",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "state": {
+      "$ref": "#/components/schemas/StudioExportVersionState"
+    },
+    "version": {
+      "description": "The version number, once published",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "cancelledAt",
+    "contentType",
+    "createdAt",
+    "destination",
+    "error",
+    "errorCode",
+    "id",
+    "includesSharedSources",
+    "locked",
+    "projectId",
+    "publishOperationId",
+    "publishedAt",
+    "renderOperationId",
+    "resultAssetId",
+    "revision",
+    "scope",
+    "sensitive",
+    "settings",
+    "sizeInBytes",
+    "sourceCount",
+    "state",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## StudioExportVersionState
+
+
+```json
+{
+  "description": "Studio export version state",
+  "enum": [
+    "rendering",
+    "staged",
+    "published",
+    "failed",
+    "cancelled"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewDto
+
+Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewStatus](models-33.md#studiopreviewstatus), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "admissionReleased": {
+      "description": "Delivery was durably fenced; does not establish renderer termination",
+      "type": "boolean"
+    },
+    "cancellationState": {
+      "enum": [
+        "not-needed",
+        "requested",
+        "acknowledged",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "consumerRequestId": {
+      "description": "Captured opt-in consumer admission identity",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "contentType": {
+      "nullable": true,
+      "type": "string"
+    },
+    "errorCode": {
+      "description": "Stable code the client turns into a message",
+      "nullable": true,
+      "type": "string"
+    },
+    "etag": {
+      "description": "Revision-bound entity tag for the frame endpoint",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "framePts": {
+      "nullable": true,
+      "type": "string"
+    },
+    "framePtsTimebase": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Preview frame ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "operationId": {
+      "description": "The durable job rendering this frame, when one has been created",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioPreviewQuality"
+    },
+    "readyAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "rendererReleased": {
+      "description": "True only after the captured operation acknowledged cancellation with resources released",
+      "nullable": true,
+      "type": "boolean"
+    },
+    "requestedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "revision": {
+      "description": "The stored project revision this frame was rendered for",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "revisionDigest": {
+      "description": "Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved",
+      "type": "string"
+    },
+    "seekGeneration": {
+      "description": "The seek this frame answers",
+      "type": "string"
+    },
+    "sizeInBytes": {
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/StudioPreviewStatus"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto"
+    },
+    "toneMapped": {
+      "description": "The frame is an explicitly tone-mapped SDR rendering; never the colour authority",
+      "type": "boolean"
+    },
+    "viewportHeight": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "viewportWidth": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contentType",
+    "errorCode",
+    "etag",
+    "expiresAt",
+    "framePts",
+    "framePtsTimebase",
+    "id",
+    "operationId",
+    "projectId",
+    "quality",
+    "readyAt",
+    "requestedAt",
+    "revision",
+    "revisionDigest",
+    "seekGeneration",
+    "sizeInBytes",
+    "status",
+    "time",
+    "toneMapped",
+    "viewportHeight",
+    "viewportWidth"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewQuality
+
+
+```json
+{
+  "description": "Studio preview quality",
+  "enum": [
+    "draft",
+    "standard",
+    "full"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewRequestDto
+
+Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "consumerRequestId": {
+      "description": "Opt in to a session-isolated admission; use a fresh UUID for each logical request",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "projectId": {
+      "description": "Studio project the frame belongs to",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioPreviewQuality"
+    },
+    "revision": {
+      "description": "Stored project revision the frame is bound to; a superseded revision is refused",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "seekGeneration": {
+      "default": 0,
+      "description": "The client's monotonic seek counter, echoed back on the result",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto"
+    },
+    "viewportHeight": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    },
+    "viewportWidth": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "projectId",
+    "quality",
+    "revision",
+    "time",
+    "viewportHeight",
+    "viewportWidth"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewResponseDto
+
+Related models: [StudioPreviewDto](models-33.md#studiopreviewdto).
+
+```json
+{
+  "properties": {
+    "currentRevision": {
+      "description": "The stored revision the project is on now",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "preview": {
+      "$ref": "#/components/schemas/StudioPreviewDto"
+    },
+    "supersededPreviewIds": {
+      "description": "Previews cancelled because the revision advanced",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "currentRevision",
+    "preview",
+    "supersededPreviewIds"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStatus
+
+
+```json
+{
+  "description": "Studio preview status",
+  "enum": [
+    "pending",
+    "rendering",
+    "ready",
+    "superseded",
+    "failed",
+    "evicted"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewStreamAnswerDto
+
+
+```json
+{
+  "properties": {
+    "negotiation": {
+      "description": "The round this answer answers",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sdp": {
+      "description": "A complete session description (SDP)",
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "negotiation",
+    "sdp"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamBoundsDto
+
+
+```json
+{
+  "properties": {
+    "maxBitrateKbps": {
+      "description": "Bitrate the worker may not exceed; the server writes it into the relayed answer",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxDurationSeconds": {
+      "description": "The session closes after this long; playing on opens a new one",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxFrameRate": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxHeight": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxWidth": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "maxBitrateKbps",
+    "maxDurationSeconds",
+    "maxFrameRate",
+    "maxHeight",
+    "maxWidth"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamCloseReason
+
+
+```json
+{
+  "description": "Why a closed session closed",
+  "enum": [
+    "closed",
+    "superseded",
+    "revoked",
+    "stale-revision",
+    "expired",
+    "worker-lost",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewStreamDto
+
+Related models: [StudioPreviewStreamBoundsDto](models-33.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-33.md#studiopreviewstreamclosereason), [StudioPreviewStreamState](models-33.md#studiopreviewstreamstate), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "bounds": {
+      "$ref": "#/components/schemas/StudioPreviewStreamBoundsDto"
+    },
+    "closeReason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioPreviewStreamCloseReason"
+        }
+      ],
+      "nullable": true
+    },
+    "currentRevision": {
+      "description": "The stored head, when the session closed as stale",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "expiresAt": {
+      "description": "The hard end of this session",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stream session ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "keepaliveMs": {
+      "description": "Poll at least this often, or the session is closed",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "negotiation": {
+      "description": "The offer/answer round; an answer must name it",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "offer": {
+      "description": "The worker's offer for this round, while it waits for an answer",
+      "maxLength": 65536,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "revision": {
+      "description": "The stored project revision this session plays",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "start": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto",
+      "description": "Where playback starts"
+    },
+    "state": {
+      "$ref": "#/components/schemas/StudioPreviewStreamState"
+    }
+  },
+  "required": [
+    "bounds",
+    "closeReason",
+    "currentRevision",
+    "expiresAt",
+    "id",
+    "keepaliveMs",
+    "negotiation",
+    "offer",
+    "projectId",
+    "revision",
+    "start",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamOpenDto
+
+Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "projectId": {
+      "description": "Studio project to play",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioPreviewQuality"
+    },
+    "revision": {
+      "description": "Stored project revision to play; a superseded revision is refused",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto"
+    },
+    "viewportHeight": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    },
+    "viewportWidth": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "projectId",
+    "quality",
+    "revision",
+    "time",
+    "viewportHeight",
+    "viewportWidth"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamState
+
+
+```json
+{
+  "description": "Where the session is",
+  "enum": [
+    "queued",
+    "negotiating",
+    "offered",
+    "answered",
+    "closed"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewTimeDto
+
+
+```json
+{
+  "properties": {
+    "denominator": {
+      "description": "Time denominator; must be positive",
+      "pattern": "^-?\\d{1,16}$",
+      "type": "string"
+    },
+    "numerator": {
+      "description": "Time numerator, in seconds over the denominator",
+      "pattern": "^-?\\d{1,16}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "denominator",
+    "numerator"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectAccess
+
+
+```json
+{
+  "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
+  "enum": [
+    "owner",
+    "reviewer"
+  ],
+  "type": "string"
+}
+```
+
+## StudioProjectCreateDto
+
+Related models: [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto).
+
+```json
+{
+  "properties": {
+    "clientId": {
+      "description": "This editor instance; it receives the lease",
+      "pattern": "^[\\w.:-]{1,128}$",
+      "type": "string"
+    },
+    "envelope": {
+      "$ref": "#/components/schemas/StudioProjectEnvelopeDto",
+      "description": "An initial document, saved as revision 1"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestKey": {
+      "description": "Owner-scoped idempotency key for project creation; reuse requires the same payload",
+      "pattern": "^[\\w.:-]{1,128}$",
+      "type": "string"
+    },
+    "spaceId": {
+      "description": "Share the project with a shared space for review",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "clientId",
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectDetailDto
+
+Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto), [StudioProjectShelf](models-34.md#studioprojectshelf).
+
+```json
+{
+  "properties": {
+    "access": {
+      "$ref": "#/components/schemas/StudioProjectAccess"
+    },
+    "archivedAt": {
+      "description": "When the owner archived it",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "deletedAt": {
+      "description": "When it was moved to the trash",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "digest": {
+      "description": "Key-sorted SHA-256 of the head envelope; null when withheld",
+      "nullable": true,
+      "type": "string"
+    },
+    "duplicatedFromId": {
+      "description": "The project this one was duplicated from; null for a reviewer",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
     "envelope": {
@@ -322,14 +1769,38 @@ Related models: [StudioCommandSummaryDto](models-32.md#studiocommandsummarydto),
       ],
       "nullable": true
     },
-    "graphBytes": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
     "id": {
+      "description": "Studio project ID",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "importedFromBundle": {
+      "description": "The project was read in from a portable bundle; always false for a reviewer",
+      "type": "boolean"
+    },
+    "lastOpenedAt": {
+      "description": "When an editor last opened it; null for a reviewer",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "lease": {
+      "$ref": "#/components/schemas/StudioProjectLeaseDto"
+    },
+    "name": {
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "The only account that may write",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "purgeAfter": {
+      "description": "When a trashed project is deleted for good; its library media is never touched",
+      "format": "date-time",
+      "nullable": true,
       "type": "string"
     },
     "resources": {
@@ -340,1646 +1811,250 @@ Related models: [StudioCommandSummaryDto](models-32.md#studiocommandsummarydto),
       ],
       "nullable": true
     },
-    "restoredFromRevision": {
-      "description": "Set when this revision restored an earlier one",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
     "revision": {
+      "description": "Head revision number; 0 until the first save",
       "maximum": 9007199254740991,
-      "minimum": 1,
+      "minimum": 0,
       "type": "integer"
     },
-    "summary": {
-      "$ref": "#/components/schemas/StudioCommandSummaryDto"
+    "shelf": {
+      "$ref": "#/components/schemas/StudioProjectShelf"
+    },
+    "spaceId": {
+      "description": "Shared space whose members may review the project",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "thumbnailAssetId": {
+      "description": "Library asset the owner chose as the poster; null for a reviewer",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
     },
     "withheld": {
+      "description": "The graph was withheld because a source is unavailable to you",
       "type": "boolean"
     }
   },
   "required": [
-    "authorId",
+    "access",
+    "archivedAt",
     "createdAt",
+    "deletedAt",
     "digest",
+    "duplicatedFromId",
     "envelope",
-    "graphBytes",
     "id",
+    "importedFromBundle",
+    "lastOpenedAt",
+    "lease",
+    "name",
+    "ownerId",
+    "purgeAfter",
     "resources",
-    "restoredFromRevision",
     "revision",
-    "summary",
+    "shelf",
+    "spaceId",
+    "thumbnailAssetId",
+    "updatedAt",
     "withheld"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectRevisionDto
+## StudioProjectDiffDto
 
-Related models: [StudioCommandSummaryDto](models-32.md#studiocommandsummarydto).
+Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto).
 
 ```json
 {
   "properties": {
-    "authorId": {
-      "format": "uuid",
+    "added": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "byteDelta": {
+      "description": "Size change of the serialized graph",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "changed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "commands": {
+      "$ref": "#/components/schemas/StudioCommandSummaryDto",
+      "description": "Commands the saves between the two revisions reported"
+    },
+    "from": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "identical": {
+      "description": "The two envelopes have the same digest",
+      "type": "boolean"
+    },
+    "paths": {
+      "description": "Changed graph paths, aggregated and capped",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "removed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "to": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "More paths changed than are listed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "added",
+    "byteDelta",
+    "changed",
+    "commands",
+    "from",
+    "identical",
+    "paths",
+    "removed",
+    "to",
+    "truncated"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectDto
+
+Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectShelf](models-34.md#studioprojectshelf).
+
+```json
+{
+  "properties": {
+    "access": {
+      "$ref": "#/components/schemas/StudioProjectAccess"
+    },
+    "archivedAt": {
+      "description": "When the owner archived it",
+      "format": "date-time",
       "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
     "createdAt": {
       "format": "date-time",
       "type": "string"
     },
-    "digest": {
-      "description": "Null for a reviewer; the digest travels with the graph",
+    "deletedAt": {
+      "description": "When it was moved to the trash",
+      "format": "date-time",
       "nullable": true,
       "type": "string"
     },
-    "graphBytes": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "duplicatedFromId": {
+      "description": "The project this one was duplicated from; null for a reviewer",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
     },
     "id": {
+      "description": "Studio project ID",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "restoredFromRevision": {
-      "description": "Set when this revision restored an earlier one",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+    "importedFromBundle": {
+      "description": "The project was read in from a portable bundle; always false for a reviewer",
+      "type": "boolean"
+    },
+    "lastOpenedAt": {
+      "description": "When an editor last opened it; null for a reviewer",
+      "format": "date-time",
       "nullable": true,
-      "type": "integer"
-    },
-    "revision": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "summary": {
-      "$ref": "#/components/schemas/StudioCommandSummaryDto"
-    }
-  },
-  "required": [
-    "authorId",
-    "createdAt",
-    "digest",
-    "graphBytes",
-    "id",
-    "restoredFromRevision",
-    "revision",
-    "summary"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectSaveDto
-
-Related models: [StudioCommandEnvelopeDto](models-32.md#studiocommandenvelopedto), [StudioCommandSummaryDto](models-32.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-32.md#studioprojectenvelopedto).
-
-```json
-{
-  "properties": {
-    "clientId": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "commands": {
-      "description": "The canonical commands the engine applied to produce this document (FL-92). Each is checked against the catalogue and the head, and the revision summary is counted from them.",
-      "items": {
-        "$ref": "#/components/schemas/StudioCommandEnvelopeDto"
-      },
-      "maxItems": 500,
-      "type": "array"
-    },
-    "envelope": {
-      "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
-    },
-    "expectedRevision": {
-      "description": "The head this document was built on",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "requestKey": {
-      "description": "Stable per attempt; a retry carries the same key",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "summary": {
-      "$ref": "#/components/schemas/StudioCommandSummaryDto"
-    }
-  },
-  "required": [
-    "clientId",
-    "envelope",
-    "expectedRevision",
-    "requestKey"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectSaveResponseDto
-
-Related models: [StudioProjectLeaseDto](models-33.md#studioprojectleasedto), [StudioProjectResourcesDto](models-33.md#studioprojectresourcesdto).
-
-```json
-{
-  "properties": {
-    "digest": {
-      "description": "Digest of the head envelope",
       "type": "string"
     },
     "lease": {
       "$ref": "#/components/schemas/StudioProjectLeaseDto"
     },
-    "replayed": {
-      "description": "This request key was already accepted; the earlier result is returned",
-      "type": "boolean"
-    },
-    "resources": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioProjectResourcesDto"
-        }
-      ],
-      "description": "FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
-      "nullable": true
-    },
-    "revision": {
-      "description": "The head after this request",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "revisionId": {
-      "description": "The revision row; null when nothing was written",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "unchanged": {
-      "description": "The document equals the head, so no revision was written",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "digest",
-    "lease",
-    "replayed",
-    "revision",
-    "revisionId",
-    "unchanged"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectShelf
-
-
-```json
-{
-  "description": "`active`, `archived` (put away, read-only) or `trashed` (restorable until `purgeAfter`)",
-  "enum": [
-    "active",
-    "archived",
-    "trashed"
-  ],
-  "type": "string"
-}
-```
-
-## StudioProjectSort
-
-
-```json
-{
-  "description": "`updated` newest change first, `recent` last opened first, `name` alphabetical",
-  "enum": [
-    "updated",
-    "recent",
-    "name"
-  ],
-  "type": "string"
-}
-```
-
-## StudioProjectTrashEmptyResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Projects deleted for good",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "count"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectUpdateDto
-
-
-```json
-{
-  "properties": {
-    "archived": {
-      "description": "Archive (read-only, off the active shelf) or bring back",
-      "type": "boolean"
-    },
     "name": {
-      "maxLength": 200,
-      "minLength": 1,
       "type": "string"
-    },
-    "spaceId": {
-      "description": "Set or clear the reviewing shared space",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "thumbnailAssetId": {
-      "description": "A library asset you can read, shown as the poster; null clears it",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## StudioRenderCandidateDto
-
-Related models: [StudioExportFormat](models-32.md#studioexportformat).
-
-```json
-{
-  "properties": {
-    "dolbyVision": {
-      "type": "boolean"
-    },
-    "gpuMemoryBytes": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "hdr10": {
-      "type": "boolean"
-    },
-    "maxBitDepth": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "outputFormats": {
-      "description": "Output formats whose exact writer and container this session verified",
-      "items": {
-        "$ref": "#/components/schemas/StudioExportFormat"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "dolbyVision",
-    "gpuMemoryBytes",
-    "hdr10",
-    "maxBitDepth",
-    "outputFormats"
-  ],
-  "type": "object"
-}
-```
-
-## StudioRenderEvidenceDto
-
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [StudioRenderCandidateDto](models-33.md#studiorendercandidatedto).
-
-```json
-{
-  "properties": {
-    "candidates": {
-      "description": "Per-session StudioExport proof; aggregate fields must not authorize an export",
-      "items": {
-        "$ref": "#/components/schemas/StudioRenderCandidateDto"
-      },
-      "type": "array"
-    },
-    "codecs": {
-      "description": "Encoders and decoders qualified sessions verified",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "dolbyVision": {
-      "description": "A qualified session verified Dolby Vision output",
-      "type": "boolean"
-    },
-    "gpuMemoryBytes": {
-      "description": "Largest GPU memory a qualified session verified, or null",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "hdr10": {
-      "description": "A qualified session verified HDR10 output",
-      "type": "boolean"
-    },
-    "maxBitDepth": {
-      "description": "Highest bit depth a qualified session verified (8 when none said more)",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "sessions": {
-      "description": "Qualified live render sessions for this destination",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "codecs",
-    "destination",
-    "dolbyVision",
-    "gpuMemoryBytes",
-    "hdr10",
-    "maxBitDepth",
-    "sessions"
-  ],
-  "type": "object"
-}
-```
-
-## StudioRestoredVersionDto
-
-Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationSourceType](models-06.md#assetrestorationsourcetype), [StudioRestoredVersionUnavailable](models-33.md#studiorestoredversionunavailable).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "The library original it was made from; never replaced by it",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "available": {
-      "description": "Whether it can be placed and rendered now",
-      "type": "boolean"
-    },
-    "durationSeconds": {
-      "description": "Length of a video, in seconds",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "expiresAt": {
-      "description": "When the result will be removed, when it has a retention date",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "height": {
-      "description": "Pixel height of the restored file",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "mediaId": {
-      "description": "The media id a clip of this version carries: `restored-<restorationId>`",
-      "type": "string"
-    },
-    "mode": {
-      "$ref": "#/components/schemas/AssetRestorationMode"
-    },
-    "originalFileName": {
-      "description": "The original’s file name, for the bin label",
-      "type": "string"
-    },
-    "restorationId": {
-      "description": "The restoration",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "restoredAt": {
-      "description": "When the full result finished",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "smoothMotionFactor": {
-      "description": "Frame-rate factor of a Smooth motion version",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "sourceType": {
-      "$ref": "#/components/schemas/AssetRestorationSourceType"
-    },
-    "unavailable": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioRestoredVersionUnavailable"
-        }
-      ],
-      "nullable": true
-    },
-    "upscale": {
-      "description": "Upscale factor of a restoration; 1 for Smooth motion",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "width": {
-      "description": "Pixel width of the restored file",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetId",
-    "available",
-    "durationSeconds",
-    "expiresAt",
-    "height",
-    "mediaId",
-    "mode",
-    "originalFileName",
-    "restorationId",
-    "restoredAt",
-    "smoothMotionFactor",
-    "sourceType",
-    "unavailable",
-    "upscale",
-    "width"
-  ],
-  "type": "object"
-}
-```
-
-## StudioRestoredVersionUnavailable
-
-
-```json
-{
-  "description": "Why the restored version cannot be placed",
-  "enum": [
-    "discarded",
-    "expired",
-    "not-ready",
-    "locked",
-    "trashed",
-    "offline",
-    "hidden-content"
-  ],
-  "type": "string"
-}
-```
-
-## StudioReverseConformApplyDto
-
-
-```json
-{
-  "properties": {
-    "clientId": {
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "clientId",
-    "operationId"
-  ],
-  "type": "object"
-}
-```
-
-## StudioReverseConformEnqueueDto
-
-
-```json
-{
-  "properties": {
-    "clientId": {
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "command": {
-      "properties": {
-        "id": {
-          "enum": [
-            "job.enqueueReverseConform"
-          ],
-          "type": "string"
-        },
-        "idempotencyKey": {
-          "pattern": "^[\\w.:-]{1,128}$",
-          "type": "string"
-        },
-        "issuedAt": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "payload": {
-          "properties": {
-            "clipId": {
-              "pattern": "^[\\w.:-]{1,128}$",
-              "type": "string"
-            },
-            "destinationId": {
-              "enum": [
-                "local"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "clipId",
-            "destinationId"
-          ],
-          "type": "object"
-        },
-        "revision": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "payload",
-        "revision",
-        "idempotencyKey",
-        "issuedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "clientId",
-    "command"
-  ],
-  "type": "object"
-}
-```
-
-## StudioReverseConformQueuedDto
-
-
-```json
-{
-  "properties": {
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "operationId"
-  ],
-  "type": "object"
-}
-```
-
-## StudioReverseConformResultDto
-
-
-```json
-{
-  "properties": {
-    "browserPreview": {
-      "properties": {
-        "checksum": {
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
-        "contentType": {
-          "enum": [
-            "video/mp4"
-          ],
-          "type": "string"
-        },
-        "delivery": {
-          "enum": [
-            "authenticated"
-          ],
-          "type": "string"
-        },
-        "generatedId": {
-          "pattern": "^[\\w.:-]{1,128}$",
-          "type": "string"
-        },
-        "profile": {
-          "enum": [
-            "h264-main-3.2-aac-lc-v1"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "generatedId",
-        "checksum",
-        "contentType",
-        "profile",
-        "delivery"
-      ],
-      "type": "object"
-    },
-    "clipId": {
-      "nullable": true,
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "frameRate": {
-      "properties": {
-        "den": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "num": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "num",
-        "den"
-      ],
-      "type": "object"
-    },
-    "frames": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "generatedId": {
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "height": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "projectId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "sourceRevision": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "width": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "browserPreview",
-    "clipId",
-    "frameRate",
-    "frames",
-    "generatedId",
-    "height",
-    "operationId",
-    "projectId",
-    "sourceRevision",
-    "width"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTimeDto
-
-
-```json
-{
-  "properties": {
-    "den": {
-      "description": "Denominator",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "num": {
-      "description": "Numerator; zero is the start of the sequence",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "den",
-    "num"
-  ],
-  "type": "object"
-}
-```
-
-## StudioUnsupportedSourceDto
-
-Related models: [DecodeRefusal](models-10.md#decoderefusal).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "The library video placed in the project",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "reason": {
-      "description": "Why, in plain words",
-      "type": "string"
-    },
-    "refusal": {
-      "$ref": "#/components/schemas/DecodeRefusal"
-    }
-  },
-  "required": [
-    "assetId",
-    "reason",
-    "refusal"
-  ],
-  "type": "object"
-}
-```
-
-## StudioWorkspaceDto
-
-
-```json
-{
-  "properties": {
-    "engineRevision": {
-      "description": "The engine revision that wrote the layout",
-      "nullable": true,
-      "type": "string"
-    },
-    "layout": {
-      "additionalProperties": {},
-      "description": "The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored",
-      "nullable": true,
-      "type": "object"
-    },
-    "savedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "engineRevision",
-    "layout",
-    "savedAt"
-  ],
-  "type": "object"
-}
-```
-
-## StudioWorkspaceSaveDto
-
-
-```json
-{
-  "properties": {
-    "engineRevision": {
-      "description": "The pinned engine revision writing it",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "layout": {
-      "additionalProperties": {},
-      "description": "The engine layout; stored and returned as the same JSON value (key order and spacing are not kept)",
-      "type": "object"
-    }
-  },
-  "required": [
-    "engineRevision",
-    "layout"
-  ],
-  "type": "object"
-}
-```
-
-## SuppressionResponse
-
-Related models: [SuppressionScope](models-33.md#suppressionscope).
-
-```json
-{
-  "properties": {
-    "personIds": {
-      "description": "Person IDs to suppress from locked browsing sessions",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "petIds": {
-      "description": "Pet IDs to suppress from locked browsing sessions",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "scope": {
-      "$ref": "#/components/schemas/SuppressionScope",
-      "description": "Whether suppression applies only to owned assets or all visible assets"
-    },
-    "tagIds": {
-      "description": "Tag IDs to suppress from locked browsing sessions",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "personIds",
-    "petIds",
-    "scope",
-    "tagIds"
-  ],
-  "type": "object"
-}
-```
-
-## SuppressionScope
-
-
-```json
-{
-  "enum": [
-    "owned",
-    "visible"
-  ],
-  "type": "string"
-}
-```
-
-## SuppressionUpdate
-
-Related models: [SuppressionScope](models-33.md#suppressionscope).
-
-```json
-{
-  "properties": {
-    "personIds": {
-      "description": "Person IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "petIds": {
-      "description": "Pet IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "scope": {
-      "$ref": "#/components/schemas/SuppressionScope",
-      "description": "Whether suppression applies only to owned assets or all visible assets"
-    },
-    "tagIds": {
-      "description": "Tag IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## SyncAckDeleteDto
-
-Related models: [SyncEntityType](models-34.md#syncentitytype).
-
-```json
-{
-  "properties": {
-    "types": {
-      "description": "Sync entity types to delete acks for",
-      "items": {
-        "$ref": "#/components/schemas/SyncEntityType"
-      },
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## SyncAckDto
-
-
-```json
-{
-  "properties": {
-    "ack": {
-      "description": "Acknowledgment ID",
-      "type": "string"
-    },
-    "type": {
-      "enum": [
-        "AlbumAssetAccessV1",
-        "AlbumAssetAccessDeleteV1",
-        "PartnerAssetAccessV1",
-        "PartnerAssetAccessDeleteV1",
-        "PinnedCollectionV1",
-        "PinnedCollectionDeleteV1",
-        "AssetTrashStateV1",
-        "AssetTrashStateDeleteV1",
-        "DuplicateGroupV1",
-        "DuplicateGroupDeleteV1",
-        "SharedSpaceV1",
-        "SharedSpaceDeleteV1",
-        "SharedSpaceMemberV1",
-        "SharedSpaceMemberDeleteV1",
-        "SharedSpaceAlbumV1",
-        "SharedSpaceAlbumDeleteV1",
-        "SharedSpacePersonV1",
-        "SharedSpacePersonDeleteV1",
-        "PetV1",
-        "PetDeleteV1",
-        "PetObservationV1",
-        "PetObservationDeleteV1",
-        "TagV1",
-        "TagDeleteV1",
-        "AssetTagV1",
-        "AssetTagDeleteV1",
-        "AuthUserV1",
-        "AuthUserV2",
-        "UserV1",
-        "UserDeleteV1",
-        "AssetV1",
-        "AssetV2",
-        "AssetV3",
-        "AssetBootstrapV1",
-        "AssetDeleteV2",
-        "AssetDeleteV1",
-        "AssetExifV1",
-        "AssetEditV1",
-        "AssetEditDeleteV1",
-        "AssetMetadataV1",
-        "AssetMetadataDeleteV1",
-        "AssetOcrV1",
-        "AssetOcrDeleteV1",
-        "PartnerV1",
-        "PartnerDeleteV1",
-        "PartnerAssetV1",
-        "PartnerAssetV2",
-        "PartnerAssetBackfillV1",
-        "PartnerAssetBackfillV2",
-        "PartnerAssetDeleteV1",
-        "PartnerAssetExifV1",
-        "PartnerAssetExifBackfillV1",
-        "PartnerStackBackfillV1",
-        "PartnerStackDeleteV1",
-        "PartnerStackV1",
-        "AlbumV1",
-        "AlbumV2",
-        "AlbumV3",
-        "AlbumBootstrapV1",
-        "AlbumDeleteV2",
-        "AlbumDeleteV1",
-        "AlbumUserV1",
-        "AlbumUserBackfillV1",
-        "AlbumUserDeleteV1",
-        "AlbumAssetCreateV1",
-        "AlbumAssetCreateV2",
-        "AlbumAssetUpdateV1",
-        "AlbumAssetUpdateV2",
-        "AlbumAssetBackfillV1",
-        "AlbumAssetBackfillV2",
-        "AlbumAssetExifCreateV1",
-        "AlbumAssetExifUpdateV1",
-        "AlbumAssetExifBackfillV1",
-        "AlbumToAssetV1",
-        "AlbumToAssetDeleteV1",
-        "AlbumToAssetBackfillV1",
-        "MemoryV1",
-        "MemoryDeleteV1",
-        "MemoryToAssetV1",
-        "MemoryToAssetDeleteV1",
-        "StackV1",
-        "StackDeleteV1",
-        "PersonV1",
-        "PersonDeleteV1",
-        "AssetFaceV1",
-        "AssetFaceV2",
-        "AssetFaceV3",
-        "AssetFaceDeleteV1",
-        "UserMetadataV1",
-        "PinnedCollectionsV1",
-        "UserMetadataDeleteV1",
-        "SyncAckV1",
-        "SyncResetV1",
-        "SyncCompleteV1"
-      ],
-      "type": "string"
-    }
-  },
-  "required": [
-    "ack",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAckSetDto
-
-
-```json
-{
-  "properties": {
-    "acks": {
-      "description": "Acknowledgment IDs (max 1000)",
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    }
-  },
-  "required": [
-    "acks"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAckV1
-
-
-```json
-{
-  "properties": {},
-  "type": "object"
-}
-```
-
-## SyncAckV2Dto
-
-Related models: [SyncEntityType](models-34.md#syncentitytype).
-
-```json
-{
-  "properties": {
-    "ack": {
-      "description": "Acknowledgment ID",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/SyncEntityType"
-    }
-  },
-  "required": [
-    "ack",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumAssetAccessDeleteV1
-
-
-```json
-{
-  "description": "Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.",
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumAssetAccessV1
-
-Related models: [SyncAssetV2](models-34.md#syncassetv2).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "asset": {
-      "$ref": "#/components/schemas/SyncAssetV2"
-    }
-  },
-  "required": [
-    "albumId",
-    "asset"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumSourceLinkDeleteV1
-
-
-```json
-{
-  "properties": {
-    "linkId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "linkId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumSourceLinkV1
-
-Related models: [AlbumSourceKind](models-02.md#albumsourcekind).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "The server album the source is linked to",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When the link was made",
-      "format": "date-time",
-      "type": "string"
-    },
-    "deviceKey": {
-      "description": "The device the source id belongs to, when it is device-local",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Link ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/AlbumSourceKind"
-    },
-    "lastSourceName": {
-      "description": "The phone name the server album last followed (the rename guard)",
-      "type": "string"
-    },
-    "sourceId": {
-      "description": "The source on the phone",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "When the link last changed",
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "createdAt",
-    "deviceKey",
-    "id",
-    "kind",
-    "lastSourceName",
-    "sourceId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumToAssetDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumToAssetV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumUserDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumUserV1
-
-Related models: [AlbumUserRole](models-02.md#albumuserrole).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "role": {
-      "$ref": "#/components/schemas/AlbumUserRole"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "role",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV1
-
-Related models: [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "description": {
-      "description": "Album description",
-      "type": "string"
-    },
-    "id": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
     },
     "ownerId": {
-      "description": "Owner ID",
+      "description": "The only account that may write",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
+    "purgeAfter": {
+      "description": "When a trashed project is deleted for good; its library media is never touched",
+      "format": "date-time",
       "nullable": true,
       "type": "string"
     },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "description",
-    "id",
-    "isActivityEnabled",
-    "name",
-    "order",
-    "ownerId",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV2
-
-Related models: [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
+    "revision": {
+      "description": "Head revision number; 0 until the first save",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
     },
-    "description": {
-      "description": "Album description",
-      "type": "string"
+    "shelf": {
+      "$ref": "#/components/schemas/StudioProjectShelf"
     },
-    "id": {
-      "description": "Album ID",
+    "spaceId": {
+      "description": "Shared space whose members may review the project",
       "format": "uuid",
+      "nullable": true,
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
     "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "description",
-    "id",
-    "isActivityEnabled",
-    "name",
-    "order",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV3
-
-Related models: [AlbumKind](models-02.md#albumkind), [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "deletedAt": {
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "description": {
-      "description": "Album description",
-      "type": "string"
-    },
-    "icon": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Album ID",
+      "description": "Library asset the owner chose as the poster; null for a reviewer",
       "format": "uuid",
+      "nullable": true,
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/AlbumKind"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
-    "parentId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "sortOrder": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
-      "nullable": true,
-      "type": "string"
-    },
     "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
       "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
       "type": "string"
     }
   },
   "required": [
+    "access",
+    "archivedAt",
     "createdAt",
     "deletedAt",
-    "description",
-    "icon",
+    "duplicatedFromId",
     "id",
-    "isActivityEnabled",
-    "kind",
+    "importedFromBundle",
+    "lastOpenedAt",
+    "lease",
     "name",
-    "order",
-    "parentId",
-    "sortOrder",
+    "ownerId",
+    "purgeAfter",
+    "revision",
+    "shelf",
+    "spaceId",
     "thumbnailAssetId",
     "updatedAt"
   ],
@@ -1987,86 +2062,110 @@ Related models: [AlbumKind](models-02.md#albumkind), [AssetOrder](models-05.md#a
 }
 ```
 
-## SyncAssetDeleteV1
+## StudioProjectDuplicateDto
 
 
 ```json
 {
   "properties": {
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+    "name": {
+      "description": "Name of the copy; the client supplies the translated default",
+      "maxLength": 200,
+      "minLength": 1,
       "type": "string"
     }
   },
-  "required": [
-    "assetId"
-  ],
   "type": "object"
 }
 ```
 
-## SyncAssetEditDeleteV1
+## StudioProjectEnvelopeDto
 
 
 ```json
 {
   "properties": {
-    "editId": {
-      "description": "Edit ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "editId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAssetEditV1
-
-
-```json
-{
-  "properties": {
-    "action": {
-      "description": "Edit action; future values pass through unchanged",
+    "engine": {
+      "description": "The engine that produced the graph; `freecut`",
       "type": "string"
     },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+    "engineRevision": {
+      "description": "Pinned engine revision the editor was built from",
+      "maxLength": 200,
+      "minLength": 1,
       "type": "string"
     },
-    "id": {
-      "description": "Edit ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "parameters": {
+    "graph": {
       "additionalProperties": {},
-      "description": "Edit parameters",
+      "description": "Opaque engine document, stored and returned byte for byte",
       "type": "object"
     },
-    "sequence": {
-      "description": "Edit sequence",
+    "schemaVersion": {
+      "description": "Envelope shape version; the server accepts exactly one",
       "maximum": 9007199254740991,
       "minimum": -9007199254740991,
       "type": "integer"
     }
   },
   "required": [
-    "action",
-    "assetId",
-    "id",
-    "parameters",
-    "sequence"
+    "engine",
+    "engineRevision",
+    "graph",
+    "schemaVersion"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectHistoryResponseDto
+
+Related models: [StudioProjectRevisionDto](models-34.md#studioprojectrevisiondto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "description": "Newest first",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectRevisionDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectImportCreateDto
+
+
+```json
+{
+  "properties": {
+    "file": {
+      "description": "The file to import",
+      "format": "binary",
+      "type": "string"
+    },
+    "id": {
+      "description": "The media id the editor gave this file; retrying the same file with it is idempotent",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "id"
   ],
   "type": "object"
 }

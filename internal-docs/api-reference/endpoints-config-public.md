@@ -1,18 +1,18 @@
 # Server API — Config (public)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getPublicConfig
 
 `GET /api/public/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-public.controller.ts#L15).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-public.controller.ts#L15).
 
 Get the public configuration
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PublicConfigDto](models-26.md#publicconfigdto).
+Models: [PublicConfigDto](models-27.md#publicconfigdto).
 
 Controller access declarations:
 
@@ -69,13 +69,13 @@ Complete operation contract:
 
 `GET /api/public/config/defaults`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/config-public.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/config-public.controller.ts#L26).
 
 Get the public configuration defaults
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PublicConfigDto](models-26.md#publicconfigdto).
+Models: [PublicConfigDto](models-27.md#publicconfigdto).
 
 Controller access declarations:
 

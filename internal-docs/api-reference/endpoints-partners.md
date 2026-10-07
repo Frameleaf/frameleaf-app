@@ -1,18 +1,18 @@
 # Server API — Partners
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getPartners
 
 `GET /api/partners`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L45).
 
 Retrieve partners
 
 Permission: `partner.read`. Admin only: `false`.
 
-Models: [PartnerDirection](models-17.md#partnerdirection), [PartnerResponseDto](models-17.md#partnerresponsedto).
+Models: [PartnerDirection](models-18.md#partnerdirection), [PartnerResponseDto](models-18.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -97,13 +97,13 @@ Complete operation contract:
 
 `POST /api/partners`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L56).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L56).
 
 Create a partner
 
 Permission: `partner.create`. Admin only: `false`.
 
-Models: [PartnerCreateDto](models-17.md#partnercreatedto), [PartnerResponseDto](models-17.md#partnerresponsedto).
+Models: [PartnerCreateDto](models-18.md#partnercreatedto), [PartnerResponseDto](models-18.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -186,13 +186,13 @@ Complete operation contract:
 
 `GET /api/partners/locked-notice`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L22).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L22).
 
 Get the Locked partner items notice
 
 Permission: `partner.read`. Admin only: `false`.
 
-Models: [PartnerLockedNoticeResponseDto](models-17.md#partnerlockednoticeresponsedto).
+Models: [PartnerLockedNoticeResponseDto](models-18.md#partnerlockednoticeresponsedto).
 
 Controller access declarations:
 
@@ -257,13 +257,13 @@ Complete operation contract:
 
 `PUT /api/partners/locked-notice`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L34).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L34).
 
 Dismiss the Locked partner items notice
 
 Permission: `partner.update`. Admin only: `false`.
 
-Models: [PartnerLockedNoticeResponseDto](models-17.md#partnerlockednoticeresponsedto).
+Models: [PartnerLockedNoticeResponseDto](models-18.md#partnerlockednoticeresponsedto).
 
 Controller access declarations:
 
@@ -327,7 +327,7 @@ Complete operation contract:
 
 `DELETE /api/partners/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L94).
 
 Remove a partner
 
@@ -409,13 +409,13 @@ Complete operation contract:
 
 `POST /api/partners/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L67).
 
 Create a partner
 
 Permission: `partner.create`. Admin only: `false`.
 
-Models: [PartnerResponseDto](models-17.md#partnerresponsedto).
+Models: [PartnerResponseDto](models-18.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -498,13 +498,13 @@ Complete operation contract:
 
 `PUT /api/partners/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/partner.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/partner.controller.ts#L78).
 
 Update a partner
 
 Permission: `partner.update`. Admin only: `false`.
 
-Models: [PartnerResponseDto](models-17.md#partnerresponsedto), [PartnerUpdateDto](models-17.md#partnerupdatedto).
+Models: [PartnerResponseDto](models-18.md#partnerresponsedto), [PartnerUpdateDto](models-18.md#partnerupdatedto).
 
 Controller access declarations:
 

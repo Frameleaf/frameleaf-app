@@ -1,12 +1,12 @@
 # Server API — Shared spaces 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## unlinkSharedSpacePerson
 
 `DELETE /api/shared-spaces/{id}/people/{linkId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L257).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L257).
 
 Unlink a person from a shared space
 
@@ -92,13 +92,13 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L111).
 
 Preview a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePreviewResponseDto](models-30.md#sharedspacepreviewresponsedto).
+Models: [SharedSpacePreviewResponseDto](models-31.md#sharedspacepreviewresponsedto).
 
 Controller access declarations:
 
@@ -174,13 +174,13 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/visit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/shared-space.controller.ts#L270).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-space.controller.ts#L270).
 
 Mark a shared space seen
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceNewResponseDto](models-30.md#sharedspacenewresponsedto).
+Models: [SharedSpaceNewResponseDto](models-31.md#sharedspacenewresponsedto).
 
 Controller access declarations:
 

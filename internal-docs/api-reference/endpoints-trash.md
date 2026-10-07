@@ -1,18 +1,18 @@
 # Server API — Trash
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getUtilityActivity
 
 `GET /api/trash/activity`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L50).
 
 Get utility activity
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [UtilityActivityResponseDto](models-37.md#utilityactivityresponsedto), [UtilityActivityTool](models-37.md#utilityactivitytool).
+Models: [UtilityActivityResponseDto](models-38.md#utilityactivityresponsedto), [UtilityActivityTool](models-38.md#utilityactivitytool).
 
 Controller access declarations:
 
@@ -91,13 +91,13 @@ Complete operation contract:
 
 `POST /api/trash/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L78).
 
 Apply a reviewed trash change
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashApplyDto](models-36.md#trashapplydto), [TrashResponseDto](models-36.md#trashresponsedto).
+Models: [TrashApplyDto](models-37.md#trashapplydto), [TrashResponseDto](models-37.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -178,13 +178,13 @@ Complete operation contract:
 
 `POST /api/trash/empty`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L91).
 
 Empty trash
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashResponseDto](models-36.md#trashresponsedto).
+Models: [TrashResponseDto](models-37.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -258,13 +258,13 @@ Complete operation contract:
 
 `GET /api/trash/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L38).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L38).
 
 List trash items
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-36.md#trashitemsort), [TrashItemsResponseDto](models-36.md#trashitemsresponsedto).
+Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-37.md#trashitemsort), [TrashItemsResponseDto](models-37.md#trashitemsresponsedto).
 
 Controller access declarations:
 
@@ -385,13 +385,13 @@ Complete operation contract:
 
 `POST /api/trash/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L103).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L103).
 
 Restore trash
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashResponseDto](models-36.md#trashresponsedto).
+Models: [TrashResponseDto](models-37.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -465,13 +465,13 @@ Complete operation contract:
 
 `POST /api/trash/restore/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L115).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L115).
 
 Restore assets
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [BulkIdsDto](models-07.md#bulkidsdto), [TrashResponseDto](models-36.md#trashresponsedto).
+Models: [BulkIdsDto](models-07.md#bulkidsdto), [TrashResponseDto](models-37.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -555,13 +555,13 @@ Complete operation contract:
 
 `POST /api/trash/review`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L65).
 
 Review a trash change
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashReviewDto](models-36.md#trashreviewdto), [TrashReviewResponseDto](models-36.md#trashreviewresponsedto).
+Models: [TrashReviewDto](models-37.md#trashreviewdto), [TrashReviewResponseDto](models-37.md#trashreviewresponsedto).
 
 Controller access declarations:
 
@@ -642,13 +642,13 @@ Complete operation contract:
 
 `GET /api/trash/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/trash.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/trash.controller.ts#L26).
 
 Get trash summary
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [TrashSummaryResponseDto](models-36.md#trashsummaryresponsedto).
+Models: [TrashSummaryResponseDto](models-37.md#trashsummaryresponsedto).
 
 Controller access declarations:
 

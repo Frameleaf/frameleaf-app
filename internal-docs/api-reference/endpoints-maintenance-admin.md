@@ -1,12 +1,12 @@
 # Server API — Maintenance (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getIntegrityReport
 
 `GET /api/admin/integrity/report`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L50).
 
 Get integrity report by type
 
@@ -114,7 +114,7 @@ Complete operation contract:
 
 `DELETE /api/admin/integrity/report/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L80).
 
 Delete integrity report item
 
@@ -192,7 +192,7 @@ Complete operation contract:
 
 `GET /api/admin/integrity/report/{id}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L62).
 
 Download flagged file
 
@@ -280,7 +280,7 @@ Complete operation contract:
 
 `GET /api/admin/integrity/report/{type}/csv`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L91).
 
 Export integrity report by type as CSV
 
@@ -367,7 +367,7 @@ Complete operation contract:
 
 `GET /api/admin/integrity/runs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L39).
 
 Get integrity check runs
 
@@ -443,7 +443,7 @@ Complete operation contract:
 
 `GET /api/admin/integrity/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/integrity-admin.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/integrity-admin.controller.ts#L28).
 
 Get integrity report summary
 
@@ -519,13 +519,13 @@ Complete operation contract:
 
 `POST /api/admin/maintenance`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/maintenance.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/maintenance.controller.ts#L57).
 
 Set maintenance mode
 
 Permission: `maintenance`. Admin only: `true`.
 
-Models: [SetMaintenanceModeDto](models-30.md#setmaintenancemodedto).
+Models: [SetMaintenanceModeDto](models-31.md#setmaintenancemodedto).
 
 Controller access declarations:
 
@@ -598,7 +598,7 @@ Complete operation contract:
 
 `GET /api/admin/maintenance/detect-install`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/maintenance.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/maintenance.controller.ts#L35).
 
 Detect existing install
 
@@ -674,7 +674,7 @@ Complete operation contract:
 
 `POST /api/admin/maintenance/login`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/maintenance.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/maintenance.controller.ts#L46).
 
 Log into maintenance mode
 
@@ -747,7 +747,7 @@ Complete operation contract:
 
 `GET /api/admin/maintenance/status`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/maintenance.controller.ts#L24).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/maintenance.controller.ts#L24).
 
 Get maintenance mode status
 
@@ -810,13 +810,13 @@ Complete operation contract:
 
 `POST /api/admin/physical-deduplication/applies/{id}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L102).
 
 Restore a copy of an applied physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationRestoreRequestDto](models-25.md#physicaldeduplicationrestorerequestdto), [PhysicalDeduplicationVerificationDto](models-25.md#physicaldeduplicationverificationdto).
+Models: [PhysicalDeduplicationRestoreRequestDto](models-26.md#physicaldeduplicationrestorerequestdto), [PhysicalDeduplicationVerificationDto](models-26.md#physicaldeduplicationverificationdto).
 
 Controller access declarations:
 
@@ -909,13 +909,13 @@ Complete operation contract:
 
 `POST /api/admin/physical-deduplication/applies/{id}/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L86).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L86).
 
 Verify an applied physical deduplication plan
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationVerificationDto](models-25.md#physicaldeduplicationverificationdto).
+Models: [PhysicalDeduplicationVerificationDto](models-26.md#physicaldeduplicationverificationdto).
 
 Controller access declarations:
 
@@ -998,13 +998,13 @@ Complete operation contract:
 
 `POST /api/admin/physical-deduplication/plan/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L70).
 
 Apply a reviewed physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto), [PhysicalDeduplicationApplyRequestDto](models-25.md#physicaldeduplicationapplyrequestdto).
+Models: [MediaOperationDto](models-15.md#mediaoperationdto), [PhysicalDeduplicationApplyRequestDto](models-26.md#physicaldeduplicationapplyrequestdto).
 
 Controller access declarations:
 
@@ -1086,13 +1086,13 @@ Complete operation contract:
 
 `POST /api/admin/physical-deduplication/plan/review`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L54).
 
 Review a physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationReviewRequestDto](models-25.md#physicaldeduplicationreviewrequestdto), [PhysicalDeduplicationReviewResponseDto](models-25.md#physicaldeduplicationreviewresponsedto).
+Models: [PhysicalDeduplicationReviewRequestDto](models-26.md#physicaldeduplicationreviewrequestdto), [PhysicalDeduplicationReviewResponseDto](models-26.md#physicaldeduplicationreviewresponsedto).
 
 Controller access declarations:
 
@@ -1174,13 +1174,13 @@ Complete operation contract:
 
 `GET /api/admin/physical-deduplication/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L29).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L29).
 
 Get physical deduplication preview
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationPreviewResponseDto](models-25.md#physicaldeduplicationpreviewresponsedto).
+Models: [PhysicalDeduplicationPreviewResponseDto](models-26.md#physicaldeduplicationpreviewresponsedto).
 
 Controller access declarations:
 
@@ -1251,13 +1251,13 @@ Complete operation contract:
 
 `POST /api/admin/physical-deduplication/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/physical-deduplication.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/physical-deduplication.controller.ts#L41).
 
 Request physical deduplication preview
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationPreviewRequestDto](models-25.md#physicaldeduplicationpreviewrequestdto).
+Models: [PhysicalDeduplicationPreviewRequestDto](models-26.md#physicaldeduplicationpreviewrequestdto).
 
 Controller access declarations:
 

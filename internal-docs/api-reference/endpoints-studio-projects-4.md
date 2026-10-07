@@ -1,18 +1,18 @@
 # Server API — Studio projects 4
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## saveStudioProjectRevision
 
 `POST /api/studio/projects/{id}/revisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L265).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L265).
 
 Save a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectSaveDto](models-33.md#studioprojectsavedto), [StudioProjectSaveResponseDto](models-33.md#studioprojectsaveresponsedto).
+Models: [StudioProjectSaveDto](models-34.md#studioprojectsavedto), [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto).
 
 Controller access declarations:
 
@@ -103,13 +103,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L314).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L314).
 
 Get a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectRevisionDetailDto](models-33.md#studioprojectrevisiondetaildto).
+Models: [StudioProjectRevisionDetailDto](models-34.md#studioprojectrevisiondetaildto).
 
 Controller access declarations:
 
@@ -198,13 +198,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}/diff`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L328).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L328).
 
 Compare two Studio project revisions
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDiffDto](models-32.md#studioprojectdiffdto).
+Models: [StudioProjectDiffDto](models-33.md#studioprojectdiffdto).
 
 Controller access declarations:
 
@@ -305,13 +305,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/trash/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-project.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L152).
 
 Restore a Studio project from the trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-32.md#studioprojectdto).
+Models: [StudioProjectDto](models-33.md#studioprojectdto).
 
 Controller access declarations:
 
@@ -391,13 +391,13 @@ Complete operation contract:
 
 `GET /api/studio/restored-versions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-source.controller.ts#L20).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-source.controller.ts#L20).
 
 Get a restored version for Studio
 
 Permission: `asset.edit.get`. Admin only: `false`.
 
-Models: [StudioRestoredVersionDto](models-33.md#studiorestoredversiondto).
+Models: [StudioRestoredVersionDto](models-34.md#studiorestoredversiondto).
 
 Controller access declarations:
 
@@ -478,13 +478,13 @@ Complete operation contract:
 
 `GET /api/studio/workspace`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-workspace.controller.ts#L19).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-workspace.controller.ts#L19).
 
 Get your Studio workspace layout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioWorkspaceDto](models-33.md#studioworkspacedto).
+Models: [StudioWorkspaceDto](models-34.md#studioworkspacedto).
 
 Controller access declarations:
 
@@ -552,13 +552,13 @@ Complete operation contract:
 
 `PUT /api/studio/workspace`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/studio-workspace.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-workspace.controller.ts#L30).
 
 Save your Studio workspace layout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioWorkspaceDto](models-33.md#studioworkspacedto), [StudioWorkspaceSaveDto](models-33.md#studioworkspacesavedto).
+Models: [StudioWorkspaceDto](models-34.md#studioworkspacedto), [StudioWorkspaceSaveDto](models-34.md#studioworkspacesavedto).
 
 Controller access declarations:
 

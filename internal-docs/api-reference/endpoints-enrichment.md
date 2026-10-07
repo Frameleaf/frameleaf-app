@@ -1,12 +1,12 @@
 # Server API — Enrichment
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getVideoMomentFrame
 
 `GET /api/enrichment/frames/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L130).
 
 Get a video moment frame
 
@@ -92,13 +92,13 @@ Complete operation contract:
 
 `GET /api/enrichment/frames/{id}/similar`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L147).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L147).
 
 Find moments like a video frame
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentSearchResponseDto](models-37.md#videomomentsearchresponsedto).
+Models: [VideoMomentSearchResponseDto](models-38.md#videomomentsearchresponsedto).
 
 Controller access declarations:
 
@@ -191,13 +191,13 @@ Complete operation contract:
 
 `POST /api/enrichment/moments/search`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L117).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L117).
 
 Search video moments
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentSearchDto](models-37.md#videomomentsearchdto), [VideoMomentSearchResponseDto](models-37.md#videomomentsearchresponsedto).
+Models: [VideoMomentSearchDto](models-38.md#videomomentsearchdto), [VideoMomentSearchResponseDto](models-38.md#videomomentsearchresponsedto).
 
 Controller access declarations:
 
@@ -278,7 +278,7 @@ Complete operation contract:
 
 `GET /api/enrichment/options`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L61).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L61).
 
 Get enrichment options
 
@@ -354,7 +354,7 @@ Complete operation contract:
 
 `POST /api/enrichment/plans`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L89).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L89).
 
 Queue an enrichment plan
 
@@ -441,7 +441,7 @@ Complete operation contract:
 
 `GET /api/enrichment/plans/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L105).
 
 Get an enrichment plan
 
@@ -527,7 +527,7 @@ Complete operation contract:
 
 `POST /api/enrichment/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L73).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L73).
 
 Preview an enrichment change
 
@@ -614,13 +614,13 @@ Complete operation contract:
 
 `PUT /api/enrichment/videos/{id}/cover`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L175).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L175).
 
 Choose a video cover frame
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [VideoMomentCoverDto](models-37.md#videomomentcoverdto), [VideoMomentsResponseDto](models-37.md#videomomentsresponsedto).
+Models: [VideoMomentCoverDto](models-38.md#videomomentcoverdto), [VideoMomentsResponseDto](models-38.md#videomomentsresponsedto).
 
 Controller access declarations:
 
@@ -711,13 +711,13 @@ Complete operation contract:
 
 `GET /api/enrichment/videos/{id}/moments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L163).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L163).
 
 Get video moments
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentsResponseDto](models-37.md#videomomentsresponsedto).
+Models: [VideoMomentsResponseDto](models-38.md#videomomentsresponsedto).
 
 Controller access declarations:
 
@@ -798,13 +798,13 @@ Complete operation contract:
 
 `POST /api/enrichment/videos/{id}/moments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L191).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L191).
 
 Add a video moment
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [VideoMomentCreateDto](models-37.md#videomomentcreatedto), [VideoMomentDto](models-37.md#videomomentdto).
+Models: [VideoMomentCreateDto](models-38.md#videomomentcreatedto), [VideoMomentDto](models-38.md#videomomentdto).
 
 Controller access declarations:
 
@@ -895,7 +895,7 @@ Complete operation contract:
 
 `DELETE /api/enrichment/videos/{id}/moments/{momentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L222).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L222).
 
 Delete a video moment
 
@@ -984,13 +984,13 @@ Complete operation contract:
 
 `PUT /api/enrichment/videos/{id}/moments/{momentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/enrichment.controller.ts#L207).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/enrichment.controller.ts#L207).
 
 Update a video moment
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [VideoMomentDto](models-37.md#videomomentdto), [VideoMomentUpdateDto](models-37.md#videomomentupdatedto).
+Models: [VideoMomentDto](models-38.md#videomomentdto), [VideoMomentUpdateDto](models-38.md#videomomentupdatedto).
 
 Controller access declarations:
 

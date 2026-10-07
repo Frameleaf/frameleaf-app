@@ -1,10 +1,296 @@
 # Server API models 14
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## JobRunResponseDto
+
+
+```json
+{
+  "properties": {
+    "active": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "blocked": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "cancelled": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "completed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "delayed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "enumerationDone": {
+      "type": "boolean"
+    },
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastProgressAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "lastStage": {
+      "nullable": true,
+      "type": "string"
+    },
+    "needsAttention": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "noDispatchBacklog": {
+      "type": "boolean"
+    },
+    "paused": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reasons": {
+      "items": {
+        "enum": [
+          "worker_unavailable",
+          "no_dispatch_backlog",
+          "first_setup_pending",
+          "dependency_unavailable",
+          "dependency_wait",
+          "dependency_failed",
+          "retry_backoff",
+          "scheduled_delay",
+          "queue_paused",
+          "needs_attention",
+          "stage_failed",
+          "enumerating",
+          "workload-disabled",
+          "destination-unavailable",
+          "destination-configuration",
+          "destination-consent",
+          "destination-budget",
+          "source-unavailable",
+          "local-capacity"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "retrying": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "stageTotals": {
+      "properties": {
+        "active": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cancelled": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delayed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needsAttention": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retrying": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "completed",
+        "failed",
+        "needsAttention",
+        "cancelled",
+        "active",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "running",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked",
+        "unavailable",
+        "needs_attention",
+        "completed",
+        "completed_with_errors",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "waiting": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "active",
+    "blocked",
+    "cancelled",
+    "completed",
+    "createdAt",
+    "delayed",
+    "enumerationDone",
+    "failed",
+    "finishedAt",
+    "id",
+    "kind",
+    "lastProgressAt",
+    "lastStage",
+    "needsAttention",
+    "noDispatchBacklog",
+    "paused",
+    "reasons",
+    "retrying",
+    "stageTotals",
+    "state",
+    "total",
+    "waiting"
+  ],
+  "type": "object"
+}
+```
+
+## KnownAssetDevelopCrop
+
+
+```json
+{
+  "properties": {
+    "h": {
+      "description": "Crop height as a fraction of the frame",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0.05,
+      "type": "number"
+    },
+    "w": {
+      "description": "Crop width as a fraction of the frame",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0.05,
+      "type": "number"
+    },
+    "x": {
+      "description": "Left edge of the crop as a fraction of the oriented frame width",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "y": {
+      "description": "Top edge of the crop as a fraction of the oriented frame height",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    }
+  },
+  "required": [
+    "h",
+    "w",
+    "x",
+    "y"
+  ],
+  "type": "object"
+}
+```
 
 ## KnownAssetDevelopRecipe
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-13.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -496,7 +782,7 @@ Related models: [LibraryScanResponseDto](models-14.md#libraryscanresponsedto).
 
 ## LibraryScanResponseDto
 
-Related models: [LibraryScanPhase](models-14.md#libraryscanphase), [LibraryScanStopReason](models-14.md#libraryscanstopreason), [MediaOperationStatus](models-15.md#mediaoperationstatus).
+Related models: [LibraryScanPhase](models-14.md#libraryscanphase), [LibraryScanStopReason](models-14.md#libraryscanstopreason), [MediaOperationStatus](models-16.md#mediaoperationstatus).
 
 ```json
 {
@@ -1127,7 +1413,7 @@ Related models: [LicenseProductDto](models-14.md#licenseproductdto).
 
 ## LicenseResponseDto
 
-Related models: [UserLicense](models-37.md#userlicense).
+Related models: [UserLicense](models-38.md#userlicense).
 
 ```json
 {
@@ -1844,7 +2130,7 @@ Related models: [MaintenanceDetectInstallStorageFolderDto](models-14.md#maintena
 
 ## MaintenanceDetectInstallStorageFolderDto
 
-Related models: [StorageFolder](models-31.md#storagefolder).
+Related models: [StorageFolder](models-32.md#storagefolder).
 
 ```json
 {
@@ -1924,347 +2210,6 @@ Related models: [MaintenanceAction](models-14.md#maintenanceaction).
   "required": [
     "action",
     "active"
-  ],
-  "type": "object"
-}
-```
-
-## ManagedUploadsStatsResponseDto
-
-
-```json
-{
-  "properties": {
-    "ownerId": {
-      "description": "Account whose uploads these are",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "photos": {
-      "description": "Number of photos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "total": {
-      "description": "Total number of assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usage": {
-      "description": "Storage usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usagePhysical": {
-      "description": "Storage usage in bytes, counting each distinct original file once",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "videos": {
-      "description": "Number of videos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "ownerId",
-    "photos",
-    "total",
-    "usage",
-    "usagePhysical",
-    "videos"
-  ],
-  "type": "object"
-}
-```
-
-## ManualJobName
-
-
-```json
-{
-  "description": "Manual job name",
-  "enum": [
-    "person-cleanup",
-    "tag-cleanup",
-    "user-cleanup",
-    "memory-cleanup",
-    "memory-create",
-    "backup-database",
-    "best-photos-backfill",
-    "physical-deduplication-dry-run",
-    "physical-deduplication-apply",
-    "integrity-missing-files",
-    "integrity-untracked-files",
-    "integrity-checksum-mismatch",
-    "integrity-missing-files-refresh",
-    "integrity-untracked-files-refresh",
-    "integrity-checksum-mismatch-refresh",
-    "integrity-missing-files-delete-all",
-    "integrity-untracked-files-delete-all",
-    "integrity-checksum-mismatch-delete-all",
-    "analytics-collect"
-  ],
-  "type": "string"
-}
-```
-
-## MapMarkerResponseDto
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum).
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City name",
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country name",
-      "nullable": true,
-      "type": "string"
-    },
-    "fileCreatedAt": {
-      "description": "UTC timestamp when the asset was captured",
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "lat": {
-      "description": "Latitude",
-      "format": "double",
-      "type": "number"
-    },
-    "localDateTime": {
-      "description": "Capture date and time in the local time zone where it was taken, encoded as UTC",
-      "format": "date-time",
-      "type": "string"
-    },
-    "lon": {
-      "description": "Longitude",
-      "format": "double",
-      "type": "number"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "state": {
-      "description": "State/Province name",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    }
-  },
-  "required": [
-    "city",
-    "country",
-    "id",
-    "lat",
-    "lon",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## MapReverseGeocodeResponseDto
-
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City name",
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country name",
-      "nullable": true,
-      "type": "string"
-    },
-    "state": {
-      "description": "State/Province name",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "city",
-    "country",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## MapStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "archived": {
-      "description": "The viewer's own located archived items",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "partner": {
-      "description": "Always 0: partners' items arrive as the viewer's own copies (kept for older clients)",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "unlocated": {
-      "description": "The viewer's own timeline items without a location",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "archived",
-    "partner",
-    "unlocated"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthActivityAction
-
-
-```json
-{
-  "description": "What the job did",
-  "enum": [
-    "scan",
-    "locate",
-    "relink-missing-media",
-    "recover-damaged-media",
-    "trash-damaged-media"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthActivityDto
-
-Related models: [MediaHealthActivityAction](models-14.md#mediahealthactivityaction), [MediaOperationStatus](models-15.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaHealthActivityAction"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "items": {
-      "description": "Items the job covered",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "action",
-    "createdAt",
-    "finishedAt",
-    "id",
-    "items",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBucketDto
-
-Related models: [MediaHealthItemDto](models-15.md#mediahealthitemdto).
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Number of findings in the bucket",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthItemDto"
-      },
-      "type": "array"
-    },
-    "timeBucket": {
-      "description": "Timeline bucket date",
-      "type": "string"
-    }
-  },
-  "required": [
-    "count",
-    "items",
-    "timeBucket"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBulkActionDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Media health finding IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
   ],
   "type": "object"
 }

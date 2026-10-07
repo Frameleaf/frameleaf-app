@@ -1,18 +1,18 @@
 # Server API — Workflows
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchWorkflows
 
 `GET /api/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L37).
 
 List all workflows
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-38.md#workflowresponsedto), [WorkflowTrigger](models-38.md#workflowtrigger).
+Models: [WorkflowResponseDto](models-39.md#workflowresponsedto), [WorkflowTrigger](models-39.md#workflowtrigger).
 
 Controller access declarations:
 
@@ -136,13 +136,13 @@ Complete operation contract:
 
 `POST /api/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L26).
 
 Create a workflow
 
 Permission: `workflow.create`. Admin only: `false`.
 
-Models: [WorkflowCreateDto](models-37.md#workflowcreatedto), [WorkflowResponseDto](models-38.md#workflowresponsedto).
+Models: [WorkflowCreateDto](models-38.md#workflowcreatedto), [WorkflowResponseDto](models-39.md#workflowresponsedto).
 
 Controller access declarations:
 
@@ -216,13 +216,13 @@ Complete operation contract:
 
 `GET /api/workflows/triggers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L48).
 
 List all workflow triggers
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [WorkflowTriggerResponseDto](models-38.md#workflowtriggerresponsedto).
+Models: [WorkflowTriggerResponseDto](models-39.md#workflowtriggerresponsedto).
 
 Controller access declarations:
 
@@ -288,7 +288,7 @@ Complete operation contract:
 
 `DELETE /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L108).
 
 Delete a workflow
 
@@ -361,13 +361,13 @@ Complete operation contract:
 
 `GET /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L59).
 
 Retrieve a workflow
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-38.md#workflowresponsedto).
+Models: [WorkflowResponseDto](models-39.md#workflowresponsedto).
 
 Controller access declarations:
 
@@ -442,13 +442,13 @@ Complete operation contract:
 
 `PUT /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L81).
 
 Update a workflow
 
 Permission: `workflow.update`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-38.md#workflowresponsedto), [WorkflowUpdateDto](models-38.md#workflowupdatedto).
+Models: [WorkflowResponseDto](models-39.md#workflowresponsedto), [WorkflowUpdateDto](models-39.md#workflowupdatedto).
 
 Controller access declarations:
 
@@ -542,13 +542,13 @@ Complete operation contract:
 
 `GET /api/workflows/{id}/logs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L133).
 
 Retrieve workflow logs
 
 Permission: `workflow.logs`. Admin only: `false`.
 
-Models: [WorkflowLogEntryDto](models-38.md#workflowlogentrydto), [WorkflowResult](models-38.md#workflowresult).
+Models: [WorkflowLogEntryDto](models-39.md#workflowlogentrydto), [WorkflowResult](models-39.md#workflowresult).
 
 Controller access declarations:
 
@@ -660,7 +660,7 @@ Complete operation contract:
 
 `POST /api/workflows/{id}/runs/{runId}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L120).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L120).
 
 Retry a workflow run
 
@@ -751,13 +751,13 @@ Complete operation contract:
 
 `GET /api/workflows/{id}/share`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/workflow.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L70).
 
 Retrieve a workflow
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowShareResponseDto](models-38.md#workflowshareresponsedto).
+Models: [WorkflowShareResponseDto](models-39.md#workflowshareresponsedto).
 
 Controller access declarations:
 

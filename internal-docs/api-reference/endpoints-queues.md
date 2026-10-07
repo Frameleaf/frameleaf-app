@@ -1,18 +1,18 @@
 # Server API — Queues
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getQueues
 
 `GET /api/queues`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L25).
 
 List all queues
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueResponseDto](models-26.md#queueresponsedto).
+Models: [QueueResponseDto](models-27.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -85,13 +85,13 @@ Complete operation contract:
 
 `GET /api/queues/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L36).
 
 Retrieve a queue
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueName](models-26.md#queuename), [QueueResponseDto](models-26.md#queueresponsedto).
+Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -170,13 +170,13 @@ Complete operation contract:
 
 `PUT /api/queues/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L47).
 
 Update a queue
 
 Permission: `queue.update`. Admin only: `true`.
 
-Models: [QueueName](models-26.md#queuename), [QueueResponseDto](models-26.md#queueresponsedto), [QueueUpdateDto](models-26.md#queueupdatedto).
+Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto), [QueueUpdateDto](models-27.md#queueupdatedto).
 
 Controller access declarations:
 
@@ -265,13 +265,13 @@ Complete operation contract:
 
 `DELETE /api/queues/{name}/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L110).
 
 Empty a queue
 
 Permission: `queueJob.delete`. Admin only: `true`.
 
-Models: [QueueDeleteDto](models-26.md#queuedeletedto), [QueueName](models-26.md#queuename).
+Models: [QueueDeleteDto](models-27.md#queuedeletedto), [QueueName](models-27.md#queuename).
 
 Controller access declarations:
 
@@ -354,13 +354,13 @@ Complete operation contract:
 
 `GET /api/queues/{name}/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L62).
 
 Retrieve queue jobs
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueJobResponseDto](models-26.md#queuejobresponsedto), [QueueJobStatus](models-26.md#queuejobstatus), [QueueName](models-26.md#queuename).
+Models: [QueueJobResponseDto](models-27.md#queuejobresponsedto), [QueueJobStatus](models-27.md#queuejobstatus), [QueueName](models-27.md#queuename).
 
 Controller access declarations:
 
@@ -465,13 +465,13 @@ Complete operation contract:
 
 `POST /api/queues/{name}/jobs/retry-failed`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L95).
 
 Retry failed queue jobs
 
 Permission: `queueJob.create`. Admin only: `true`.
 
-Models: [QueueName](models-26.md#queuename), [QueueRetryFailedResponseDto](models-26.md#queueretryfailedresponsedto).
+Models: [QueueName](models-27.md#queuename), [QueueRetryFailedResponseDto](models-27.md#queueretryfailedresponsedto).
 
 Controller access declarations:
 
@@ -551,13 +551,13 @@ Complete operation contract:
 
 `GET /api/queues/{name}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/queue.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L78).
 
 Retrieve queue statistics for an account
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueName](models-26.md#queuename), [QueueOwnerStatisticsResponseDto](models-26.md#queueownerstatisticsresponsedto).
+Models: [QueueName](models-27.md#queuename), [QueueOwnerStatisticsResponseDto](models-27.md#queueownerstatisticsresponsedto).
 
 Controller access declarations:
 

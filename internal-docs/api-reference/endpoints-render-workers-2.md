@@ -1,18 +1,18 @@
 # Server API — Render workers 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getRenderStreamSignal
 
 `POST /api/render-workers/operations/{id}/stream`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/render-worker.controller.ts#L420).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L420).
 
 Read the signalling of a claimed preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerStreamSignalDto](models-28.md#renderworkerstreamsignaldto), [RenderWorkerStreamSignalRequestDto](models-28.md#renderworkerstreamsignalrequestdto).
+Models: [RenderWorkerStreamSignalDto](models-29.md#renderworkerstreamsignaldto), [RenderWorkerStreamSignalRequestDto](models-29.md#renderworkerstreamsignalrequestdto).
 
 Controller access declarations:
 
@@ -103,13 +103,13 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/stream/offer`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/render-worker.controller.ts#L438).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L438).
 
 Offer a claimed preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerStreamOfferDto](models-28.md#renderworkerstreamofferdto), [RenderWorkerWriteResultDto](models-28.md#renderworkerwriteresultdto).
+Models: [RenderWorkerStreamOfferDto](models-29.md#renderworkerstreamofferdto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -200,13 +200,13 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/validate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/render-worker.controller.ts#L351).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L351).
 
 Begin validating a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCompleteDto](models-28.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-28.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCompleteDto](models-29.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -296,13 +296,13 @@ Complete operation contract:
 
 `GET /api/render-workers/remote-references`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/render-worker.controller.ts#L456).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L456).
 
 List what this worker must stop or delete
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerRemoteReferenceDto](models-28.md#renderworkerremotereferencedto).
+Models: [RenderWorkerRemoteReferenceDto](models-29.md#renderworkerremotereferencedto).
 
 Controller access declarations:
 
@@ -375,13 +375,13 @@ Complete operation contract:
 
 `POST /api/render-workers/remote-references/{id}/acknowledge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/render-worker.controller.ts#L471).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L471).
 
 Acknowledge a remote reference
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerWriteResultDto](models-28.md#renderworkerwriteresultdto).
+Models: [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 

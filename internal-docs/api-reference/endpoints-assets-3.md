@@ -1,12 +1,98 @@
 # Server API — Assets 3
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## pruneVideoEditVersion
+
+`DELETE /api/assets/{id}/edit-versions/{versionId}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L370).
+
+Prune an unselected video version
+
+Permission: `asset.edit.delete`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Delete(':id/edit-versions/:versionId')
+@Authenticated({ permission: Permission.AssetEditDelete })
+@HttpCode(HttpStatus.NO_CONTENT)
+@Endpoint({
+    summary: 'Prune an unselected video version',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "pruneVideoEditVersion",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "versionId",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "204": {
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Prune an unselected video version",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Beta"
+    }
+  ],
+  "x-immich-permission": "asset.edit.delete",
+  "x-immich-state": "Beta"
+}
+```
 
 ## downloadVideoEditVersion
 
 `GET /api/assets/{id}/edit-versions/{versionId}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L123).
 
 Download a video version master
 
@@ -101,7 +187,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/edit-versions/{versionId}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L362).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L362).
 
 Restore a saved video version
 
@@ -184,7 +270,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/edits`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L381).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L381).
 
 Remove edits from an existing asset
 
@@ -262,7 +348,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/edits`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L303).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L303).
 
 Retrieve edits for an existing asset
 
@@ -348,7 +434,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/edits`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L326).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L326).
 
 Apply edits to an existing asset
 
@@ -444,7 +530,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/edits/keyframes`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L314).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L314).
 
 List the original video's keyframes
 
@@ -531,7 +617,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/image-enrichment`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L143).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L143).
 
 Get image enrichment metadata
 
@@ -617,7 +703,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/image-enrichment`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L157).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L157).
 
 Update image enrichment metadata
 
@@ -713,7 +799,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L240).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L240).
 
 Get asset metadata
 
@@ -806,7 +892,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L262).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L262).
 
 Update asset metadata
 
@@ -909,7 +995,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/metadata/{key}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L291).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L291).
 
 Delete asset metadata by key
 
@@ -1001,7 +1087,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/metadata/{key}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L277).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L277).
 
 Retrieve asset metadata by key
 
@@ -1101,7 +1187,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/ocr`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset.controller.ts#L251).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L251).
 
 Retrieve asset OCR data
 
@@ -1194,7 +1280,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/original`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-media.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-media.controller.ts#L141).
 
 Download original asset
 
@@ -1310,7 +1396,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/restorations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L53).
 
 List restorations of an asset
 
@@ -1397,7 +1483,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/restorations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L81).
 
 Request a restoration preview
 
@@ -1495,7 +1581,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/restorations/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L98).
 
 Choose the restoration used for playback
 
@@ -1592,7 +1678,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/restorations/options`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L65).
 
 Get restoration options for an asset
 
@@ -1699,7 +1785,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/restorations/{restorationId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L145).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L145).
 
 Discard a restoration
 
@@ -1790,7 +1876,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/restorations/{restorationId}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-restoration.controller.ts#L114).
 
 Accept a restoration preview
 
@@ -1882,116 +1968,6 @@ Complete operation contract:
     }
   ],
   "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Alpha"
-}
-```
-
-## viewAssetRestorationFile
-
-`GET /api/assets/{id}/restorations/{restorationId}/file`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/asset-restoration.controller.ts#L161).
-
-View a restoration file
-
-Permission: `asset.edit.get`. Admin only: `false`.
-
-Models: [AssetRestorationFileKind](models-06.md#assetrestorationfilekind).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Get(':id/restorations/:restorationId/file')
-@FileResponse()
-@Authenticated({ permission: Permission.AssetEditGet })
-@OriginalTransfer()
-@Endpoint({
-    summary: 'View a restoration file',
-    description: 'Streams the preview input, the restored preview, the full result or its playback rendition.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Streams the preview input, the restored preview, the full result or its playback rendition.",
-  "operationId": "viewAssetRestorationFile",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "description": "Asset ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "kind",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "default": "after",
-        "$ref": "#/components/schemas/AssetRestorationFileKind"
-      }
-    },
-    {
-      "name": "restorationId",
-      "required": true,
-      "in": "path",
-      "description": "Restoration ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/octet-stream": {
-          "schema": {
-            "format": "binary",
-            "type": "string"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "View a restoration file",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.get",
   "x-immich-state": "Alpha"
 }
 ```

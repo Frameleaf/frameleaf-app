@@ -1,18 +1,18 @@
 # Server API — Pets
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllPets
 
 `GET /api/pets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L41).
 
 Retrieve pets
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-18.md#petresponsedto).
+Models: [PetResponseDto](models-19.md#petresponsedto).
 
 Controller access declarations:
 
@@ -93,13 +93,13 @@ Complete operation contract:
 
 `POST /api/pets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L52).
 
 Create a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCreateDto](models-18.md#petcreatedto), [PetResponseDto](models-18.md#petresponsedto).
+Models: [PetCreateDto](models-18.md#petcreatedto), [PetResponseDto](models-19.md#petresponsedto).
 
 Controller access declarations:
 
@@ -177,7 +177,7 @@ Complete operation contract:
 
 `GET /api/pets/candidates`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L63).
 
 Retrieve pet recognition candidates
 
@@ -265,13 +265,13 @@ Complete operation contract:
 
 `POST /api/pets/candidates/{id}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L75).
 
 Accept a pet recognition candidate
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCandidateReviewDto](models-18.md#petcandidatereviewdto), [PetObservationResponseDto](models-18.md#petobservationresponsedto).
+Models: [PetCandidateReviewDto](models-18.md#petcandidatereviewdto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -361,13 +361,13 @@ Complete operation contract:
 
 `POST /api/pets/candidates/{id}/reject`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L91).
 
 Reject a pet recognition candidate
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCandidateRejectDto](models-18.md#petcandidaterejectdto), [PetObservationResponseDto](models-18.md#petobservationresponsedto).
+Models: [PetCandidateRejectDto](models-18.md#petcandidaterejectdto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -456,13 +456,13 @@ Complete operation contract:
 
 `GET /api/pets/observations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L141).
 
 Retrieve the pet observations of an asset
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationResponseDto](models-18.md#petobservationresponsedto).
+Models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -545,7 +545,7 @@ Complete operation contract:
 
 `DELETE /api/pets/observations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L155).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L155).
 
 Remove a pet observation
 
@@ -634,13 +634,13 @@ Complete operation contract:
 
 `DELETE /api/pets/recognition`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L130).
 
 Cancel pet recognition
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-18.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -708,13 +708,13 @@ Complete operation contract:
 
 `GET /api/pets/recognition`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L106).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L106).
 
 Retrieve pet recognition status
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-18.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -783,13 +783,13 @@ Complete operation contract:
 
 `POST /api/pets/recognition`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L118).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L118).
 
 Start pet recognition
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-18.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -858,7 +858,7 @@ Complete operation contract:
 
 `DELETE /api/pets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L194).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L194).
 
 Delete a pet
 
@@ -935,13 +935,13 @@ Complete operation contract:
 
 `GET /api/pets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L172).
 
 Retrieve a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-18.md#petresponsedto).
+Models: [PetResponseDto](models-19.md#petresponsedto).
 
 Controller access declarations:
 
@@ -1020,13 +1020,13 @@ Complete operation contract:
 
 `PUT /api/pets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L183).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L183).
 
 Update a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-18.md#petresponsedto), [PetUpdateDto](models-18.md#petupdatedto).
+Models: [PetResponseDto](models-19.md#petresponsedto), [PetUpdateDto](models-19.md#petupdatedto).
 
 Controller access declarations:
 
@@ -1115,13 +1115,13 @@ Complete operation contract:
 
 `POST /api/pets/{id}/merge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L206).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L206).
 
 Merge pets
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetMergeDto](models-18.md#petmergedto), [PetResponseDto](models-18.md#petresponsedto).
+Models: [PetMergeDto](models-18.md#petmergedto), [PetResponseDto](models-19.md#petresponsedto).
 
 Controller access declarations:
 
@@ -1210,13 +1210,13 @@ Complete operation contract:
 
 `GET /api/pets/{id}/observations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L217).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L217).
 
 Retrieve pet observations
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationResponseDto](models-18.md#petobservationresponsedto).
+Models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -1298,13 +1298,13 @@ Complete operation contract:
 
 `POST /api/pets/{id}/observations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/pet.controller.ts#L228).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/pet.controller.ts#L228).
 
 Add a pet observation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationCreateDto](models-18.md#petobservationcreatedto), [PetObservationResponseDto](models-18.md#petobservationresponsedto).
+Models: [PetObservationCreateDto](models-18.md#petobservationcreatedto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
 
 Controller access declarations:
 

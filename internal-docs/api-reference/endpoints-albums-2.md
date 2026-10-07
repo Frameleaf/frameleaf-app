@@ -1,12 +1,12 @@
 # Server API — Albums 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## createClassificationRule
 
 `POST /api/classification/rules`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L63).
 
 Create a classification rule
 
@@ -92,7 +92,7 @@ Complete operation contract:
 
 `DELETE /api/classification/rules/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L124).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L124).
 
 Delete a classification rule
 
@@ -170,7 +170,7 @@ Complete operation contract:
 
 `GET /api/classification/rules/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L94).
 
 Retrieve a classification rule
 
@@ -256,7 +256,7 @@ Complete operation contract:
 
 `PATCH /api/classification/rules/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L108).
 
 Update a classification rule
 
@@ -353,7 +353,7 @@ Complete operation contract:
 
 `POST /api/classification/rules/{id}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L152).
 
 Apply a classification rule
 
@@ -451,7 +451,7 @@ Complete operation contract:
 
 `POST /api/classification/rules/{id}/decisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L184).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L184).
 
 Review classification rule matches
 
@@ -549,7 +549,7 @@ Complete operation contract:
 
 `GET /api/classification/rules/{id}/matches`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L169).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L169).
 
 List classification rule matches
 
@@ -666,7 +666,7 @@ Complete operation contract:
 
 `POST /api/classification/rules/{id}/plan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L136).
 
 Plan a classification rule re-evaluation
 
@@ -754,7 +754,7 @@ Complete operation contract:
 
 `GET /api/classification/settings`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/classification.controller.ts#L38).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/classification.controller.ts#L38).
 
 Retrieve classification rule settings
 

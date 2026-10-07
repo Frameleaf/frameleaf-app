@@ -1,12 +1,12 @@
 # Server API — Notifications
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteNotifications
 
 `DELETE /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L45).
 
 Delete notifications
 
@@ -89,13 +89,13 @@ Complete operation contract:
 
 `GET /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L22).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L22).
 
 Retrieve notifications
 
 Permission: `notification.read`. Admin only: `false`.
 
-Models: [NotificationDto](models-17.md#notificationdto), [NotificationLevel](models-17.md#notificationlevel), [NotificationType](models-17.md#notificationtype).
+Models: [NotificationDto](models-18.md#notificationdto), [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
 
 Controller access declarations:
 
@@ -208,13 +208,13 @@ Complete operation contract:
 
 `PUT /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L33).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L33).
 
 Update notifications
 
 Permission: `notification.update`. Admin only: `false`.
 
-Models: [NotificationUpdateAllDto](models-17.md#notificationupdatealldto).
+Models: [NotificationUpdateAllDto](models-18.md#notificationupdatealldto).
 
 Controller access declarations:
 
@@ -291,7 +291,7 @@ Complete operation contract:
 
 `DELETE /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L83).
 
 Delete a notification
 
@@ -373,13 +373,13 @@ Complete operation contract:
 
 `GET /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L57).
 
 Get a notification
 
 Permission: `notification.read`. Admin only: `false`.
 
-Models: [NotificationDto](models-17.md#notificationdto).
+Models: [NotificationDto](models-18.md#notificationdto).
 
 Controller access declarations:
 
@@ -463,13 +463,13 @@ Complete operation contract:
 
 `PUT /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/24d509f1346e344bb356f92cd0fbed2a59b74ca8/server/src/controllers/notification.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L68).
 
 Update a notification
 
 Permission: `notification.update`. Admin only: `false`.
 
-Models: [NotificationDto](models-17.md#notificationdto), [NotificationUpdateDto](models-17.md#notificationupdatedto).
+Models: [NotificationDto](models-18.md#notificationdto), [NotificationUpdateDto](models-18.md#notificationupdatedto).
 
 Controller access declarations:
 
