@@ -3,7 +3,13 @@ import sharp from 'sharp';
 // eslint-disable-next-line no-restricted-imports
 import { SharpOperations } from './sharp-operations.js';
 // eslint-disable-next-line no-restricted-imports
-import { SHARP_OPERATIONS, SharpResourceLimitError, assertSharpPixels, sharpPayloadBytes } from './sharp-protocol.js';
+import {
+  SHARP_OPERATIONS,
+  SharpDecodeError,
+  SharpResourceLimitError,
+  assertSharpPixels,
+  sharpPayloadBytes,
+} from './sharp-protocol.js';
 import type { SharpRequest, SharpResponse } from 'src/queue/sharp-protocol.js';
 
 // Bound native threads per child; the parent owns process concurrency and admission.
@@ -66,7 +72,11 @@ async function execute(request: SharpRequest) {
       }
     }
     let completed = 0;
-    const operations = new SharpOperations(maxPixels, () => send({ type: 'progress', id, completed: ++completed }));
+    const operations = new SharpOperations(
+      maxPixels,
+      () => send({ type: 'progress', id, completed: ++completed }),
+      maxBytes,
+    );
     const perform = operations[operation].bind(operations) as (...values: unknown[]) => Promise<unknown>;
     const value = await perform(...args);
     if (sharpPayloadBytes(value) > maxBytes) {
@@ -81,6 +91,7 @@ async function execute(request: SharpRequest) {
       resourceLimit:
         error instanceof SharpResourceLimitError ||
         (error instanceof Error && error.message.includes('Input image exceeds pixel limit')),
+      decodeFailure: error instanceof SharpDecodeError,
     });
   }
 }

@@ -6,6 +6,11 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
   return {
     onModuleDestroy: vitest.fn().mockResolvedValue(undefined),
     generateThumbnail: vitest.fn().mockImplementation(() => Promise.resolve()),
+    generateImageThumbnails: vitest.fn().mockResolvedValue({
+      info: { width: 0, height: 0, channels: 3 },
+      thumbhash: Buffer.from(''),
+      isTransparent: false,
+    }),
     writeExif: vitest.fn().mockImplementation(() => Promise.resolve()),
     removeLocation: vitest.fn().mockResolvedValue(true),
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),

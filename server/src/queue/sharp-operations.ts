@@ -1,5 +1,8 @@
 import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
+// Standalone Node child has no application alias loader.
+// eslint-disable-next-line no-restricted-imports
+import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import type { ImageFormat } from 'src/enum.js';
 import type {
@@ -10,6 +13,11 @@ import type {
   RawImageInfo,
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
+
+export type ThumbnailOutput = {
+  path: string;
+  options: Pick<GenerateThumbnailOptions, 'format' | 'quality' | 'progressive' | 'size'>;
+};
 
 // Kept local so the subprocess loads no application services, database or decorators.
 const ORIENTATION_TO_SHARP_ROTATION: Record<number, { angle: number; flip?: boolean; flop?: boolean }> = {
@@ -28,10 +36,41 @@ export class SharpOperations {
   constructor(
     private readonly maxPixels = 200_000_000,
     private readonly progress: () => void = () => {},
+    private readonly maxBytes = 1024 ** 3,
   ) {}
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
     return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+  }
+
+  async generateImageThumbnails(
+    input: string | Buffer,
+    decode: DecodeToBufferOptions,
+    {
+      outputs,
+      edits,
+      checkTransparency,
+    }: { outputs: ThumbnailOutput[]; edits: AssetEditActionItem[]; checkTransparency: boolean },
+  ) {
+    const decoded = await this.decodeImage(input, decode).catch((error: unknown) => {
+      throw new SharpDecodeError(error instanceof Error ? error.message : String(error));
+    });
+    // Retain the previous decoded-buffer ceiling even though pixels no longer cross IPC.
+    if (sharpPayloadBytes(decoded) > this.maxBytes) {
+      throw new SharpResourceLimitError('decoded buffer is too large');
+    }
+    this.progress();
+    const { data, info } = decoded;
+    const isTransparent = checkTransparency ? (await this.getImageMetadata(input)).isTransparent : false;
+    const base = { colorspace: decode.colorspace, processInvalidImages: false, raw: info, edits };
+    const thumbhash = await this.generateThumbhash(data, base);
+    this.progress();
+    // One child owns every output. No sibling can keep writing after failure or cancellation.
+    for (const { path, options } of outputs) {
+      await this.generateThumbnail(data, { ...options, ...base }, path);
+      this.progress();
+    }
+    return { info: this.toRawInfo(info), thumbhash, isTransparent };
   }
 
   applyEdits(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {

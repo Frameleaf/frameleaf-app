@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   TIMELINE_HIGHLIGHT_DEFAULT,
@@ -10,7 +11,7 @@ import {
   TimelineOrderedDto,
 } from 'src/dtos/time-bucket.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
-import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
+import { TimeBucketOptions, TimelineOrderedPage } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
@@ -40,14 +41,37 @@ export class TimelineService extends BaseService {
    * time buckets' checks and options, so it never shows what the buckets would not.
    */
   async getTimelineOrdered(auth: AuthDto, dto: TimelineOrderedDto): Promise<string> {
-    const { sort, skip, take, ...bucketDto } = dto;
+    const { sort, skip, take, after, before, ...bucketDto } = dto;
+    let cursor: TimelineOrderedPage['cursor'];
+    if (after !== undefined || before !== undefined) {
+      if (after !== undefined && before !== undefined) {
+        throw new BadRequestException('Use either after or before, not both');
+      }
+      try {
+        const [key, date, id] = z
+          .tuple([
+            sort === 'filename' ? z.string().max(4096) : z.number().int().min(-1).max(5),
+            z.iso.datetime({ offset: true }),
+            z.uuid(),
+          ])
+          .parse(JSON.parse(after ?? before!));
+        cursor = { key, date, id };
+      } catch {
+        throw new BadRequestException('Invalid ordered timeline cursor');
+      }
+    }
     // S-15: a shared link that hides EXIF may not sort by file name or rating; the order would reveal them
     if (auth.sharedLink && !auth.sharedLink.showExif) {
       throw new BadRequestException('This link does not allow sorting by file name or rating');
     }
     await this.timeBucketChecks(auth, bucketDto);
     const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
-    const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, { sort, skip, take });
+    const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, {
+      sort,
+      skip,
+      take,
+      ...(cursor && { cursor, reverse: before !== undefined }),
+    });
     return page.assets;
   }
 

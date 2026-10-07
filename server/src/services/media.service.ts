@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
@@ -350,15 +351,7 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      const extractedImage = await this.extractOriginalImage(asset, config.image);
-      const { info, data, colorspace } = extractedImage;
-
-      thumbhash = await this.mediaRepository.generateThumbhash(data, {
-        colorspace,
-        processInvalidImages: false,
-        raw: info,
-        edits: [],
-      });
+      thumbhash = (await this.extractOriginalImage(asset, config.image)).thumbhash;
     }
 
     if (
@@ -494,20 +487,6 @@ export class MediaService extends BaseService {
     return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
   }
 
-  private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
-    const { image } = await this.getConfig({ withCache: true });
-    const colorspace = this.isSRGB(exifInfo) ? Colorspace.Srgb : image.colorspace;
-    const decodeOptions: DecodeToBufferOptions = {
-      colorspace,
-      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
-      size: targetSize,
-      orientation: exifInfo.orientation ? Number(exifInfo.orientation) : undefined,
-    };
-
-    const { info, data } = await this.mediaRepository.decodeImage(thumbSource, decodeOptions);
-    return { info, data, colorspace };
-  }
-
   private shouldSkipThumbnailDecodeError(error: unknown, fileName: string) {
     if (error instanceof RawRenderError) {
       return error.reason === 'unsupported';
@@ -526,7 +505,12 @@ export class MediaService extends BaseService {
     );
   }
 
-  private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
+  private async extractOriginalImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    useEdits = false,
+    outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
+  ) {
     // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
     const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
     const generateFullsize =
@@ -550,21 +534,31 @@ export class MediaService extends BaseService {
       sensorRendered = true;
     }
 
+    const colorspace = this.isSRGB(asset.exifInfo) ? Colorspace.Srgb : image.colorspace;
     const decodeSource = () => {
       const convertFullsize = generateFullsize && (!extracted || sensorRendered);
-      return this.decodeImage(
-        extracted ? extracted.buffer : asset.originalPath,
+      const decodeOptions: DecodeToBufferOptions = {
+        colorspace,
+        processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
+        size: convertFullsize ? undefined : image.preview.size,
         // Embedded previews take the asset's orientation. LibRaw and original-file decoders already apply it.
-        extracted && !sensorRendered ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
-        convertFullsize ? undefined : image.preview.size,
-      ).then((decoded) => ({ ...decoded, convertFullsize }));
+        orientation:
+          extracted && !sensorRendered && asset.exifInfo.orientation ? Number(asset.exifInfo.orientation) : undefined,
+      };
+      return this.mediaRepository
+        .generateImageThumbnails(extracted ? extracted.buffer : asset.originalPath, decodeOptions, {
+          outputs: outputs ? [outputs.thumbnail, outputs.preview, ...(convertFullsize ? [outputs.fullsize] : [])] : [],
+          edits: useEdits ? asset.edits : [],
+          checkTransparency: !extracted && mimeTypes.canBeTransparent(asset.originalPath),
+        })
+        .then((decoded) => ({ ...decoded, convertFullsize }));
     };
     let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
       decoded = await decodeSource();
     } catch (error) {
       executionSignal()?.throwIfAborted();
-      if (!(error instanceof SharpOperationError) || !isRaw || sensorRendered) {
+      if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || sensorRendered) {
         throw error;
       }
       // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
@@ -573,81 +567,68 @@ export class MediaService extends BaseService {
       decoded = await decodeSource();
     }
 
-    let isTransparent = false;
-    if (!extracted && mimeTypes.canBeTransparent(asset.originalPath)) {
-      ({ isTransparent } = await this.mediaRepository.getImageMetadata(asset.originalPath));
-    }
-    return { ...decoded, extracted, generateFullsize, isTransparent };
+    return decoded;
   }
 
   private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
-    // Handle embedded preview extraction for RAW files
-    const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
-    const { info, data, colorspace, convertFullsize, isTransparent } = extractedImage;
-
-    const previewFormat = image.preview.format;
-    this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
-
-    const thumbnailFormat = image.thumbnail.format;
-    this.warnOnTransparencyLoss(isTransparent, thumbnailFormat, asset.id);
-
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
-      format: previewFormat,
+      format: image.preview.format,
       isEdited: useEdits,
-      isProgressive: !!image.preview.progressive && previewFormat !== ImageFormat.Webp,
-      isTransparent,
+      isProgressive: !!image.preview.progressive && image.preview.format !== ImageFormat.Webp,
+      isTransparent: false,
     });
     const thumbnailFile = this.getImageFile(asset, {
       fileType: AssetFileType.Thumbnail,
-      format: thumbnailFormat,
+      format: image.thumbnail.format,
       isEdited: useEdits,
-      isProgressive: !!image.thumbnail.progressive && thumbnailFormat !== ImageFormat.Webp,
-      isTransparent,
+      isProgressive: !!image.thumbnail.progressive && image.thumbnail.format !== ImageFormat.Webp,
+      isTransparent: false,
     });
-    // FL-39: a still develop recipe produces a new preview and a new edited master; it never writes
-    // back over the original. Checked before any of these paths is opened for writing.
-    assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: previewFile.path });
-    assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: thumbnailFile.path });
-
+    const fullsizeFile = this.getImageFile(asset, {
+      fileType: AssetFileType.FullSize,
+      format: image.fullsize.format,
+      isEdited: useEdits,
+      isProgressive: !!image.fullsize.progressive && image.fullsize.format !== ImageFormat.Webp,
+      isTransparent: false,
+    });
+    // Validate every possible output before the child opens any path for writing.
+    for (const file of [previewFile, thumbnailFile, fullsizeFile]) {
+      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
+    }
     this.storageCore.ensureFolders(previewFile.path);
 
-    // generate final images
-    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
-    const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
-    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
-    // One native task per attempt at a time. This also makes zero-pending pools usable and
-    // ensures failure/deferral cannot return while a sibling still writes an attempt output.
-    const thumbhash = await this.mediaRepository.generateThumbhash(data, baseOptions);
-    await this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path);
-    await this.mediaRepository.generateThumbnail(data, previewOptions, previewFile.path);
-
-    let fullsizeFile: UpsertFileOptions | undefined;
+    const { info, thumbhash, convertFullsize, isTransparent } = await this.extractOriginalImage(
+      asset,
+      image,
+      useEdits,
+      {
+        thumbnail: { path: thumbnailFile.path, options: image.thumbnail },
+        preview: { path: previewFile.path, options: image.preview },
+        fullsize: {
+          path: fullsizeFile.path,
+          options: {
+            format: image.fullsize.format,
+            quality: image.fullsize.quality,
+            progressive: image.fullsize.progressive,
+          },
+        },
+      },
+    );
+    const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
+    for (const file of files) {
+      file.isTransparent = isTransparent;
+    }
+    this.warnOnTransparencyLoss(isTransparent, image.preview.format, asset.id);
+    this.warnOnTransparencyLoss(isTransparent, image.thumbnail.format, asset.id);
     if (convertFullsize) {
-      const fullsizeFormat = image.fullsize.format;
-      this.warnOnTransparencyLoss(isTransparent, fullsizeFormat, asset.id);
-      // convert a new fullsize image from the same source as the thumbnail
-      fullsizeFile = this.getImageFile(asset, {
-        fileType: AssetFileType.FullSize,
-        format: fullsizeFormat,
-        isEdited: useEdits,
-        isProgressive: !!image.fullsize.progressive && fullsizeFormat !== ImageFormat.Webp,
-        isTransparent,
-      });
-      const fullsizeOptions = {
-        ...baseOptions,
-        format: fullsizeFormat,
-        quality: image.fullsize.quality,
-        progressive: image.fullsize.progressive,
-      };
-      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: fullsizeFile.path });
-      await this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path);
+      this.warnOnTransparencyLoss(isTransparent, image.fullsize.format, asset.id);
     }
 
     if (asset.exifInfo.projectionType === 'EQUIRECTANGULAR') {
       const promises = [
         this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, previewFile.path),
-        fullsizeFile
+        convertFullsize
           ? this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, fullsizeFile.path)
           : Promise.resolve(),
       ];
@@ -657,11 +638,7 @@ export class MediaService extends BaseService {
     const decodedDimensions = { width: info.width, height: info.height };
     const fullsizeDimensions = useEdits ? getOutputDimensions(asset.edits, decodedDimensions) : decodedDimensions;
 
-    return {
-      files: fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile],
-      thumbhash,
-      fullsizeDimensions,
-    };
+    return { files, thumbhash, fullsizeDimensions };
   }
 
   @OnJob({ name: JobName.PersonGenerateThumbnail, queue: QueueName.ThumbnailGeneration })

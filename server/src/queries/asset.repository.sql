@@ -638,7 +638,7 @@ order by
 
 -- AssetRepository.getTimeBucket
 with
-  "cte" as (
+  "selection" as (
     select
       "asset"."duration",
       "asset"."id",
@@ -751,6 +751,12 @@ with
       asset."fileCreatedAt" desc,
       "asset"."originalFileName" desc
   ),
+  "cte" as (
+    select
+      *
+    from
+      "selection"
+  ),
   "agg" as (
     select
       coalesce(array_agg("duration"), '{}') as "duration",
@@ -787,7 +793,7 @@ from
 
 -- AssetRepository.getTimelineOrdered
 with
-  "cte" as (
+  "selection" as (
     select
       "asset"."duration",
       "asset"."id",
@@ -835,6 +841,13 @@ with
         end,
         1
       ) as "ratio",
+      asset."originalFileName" collate "und-x-icu" as "sortKey",
+      asset."fileCreatedAt" as "sortDate",
+      json_build_array(
+        asset."originalFileName" collate "und-x-icu",
+        asset."fileCreatedAt",
+        asset.id
+      )::text as "cursor",
       "asset_exif"."rating",
       "asset"."originalFileName",
       "asset"."width",
@@ -903,6 +916,12 @@ with
     offset
       $4
   ),
+  "cte" as (
+    select
+      *
+    from
+      "selection"
+  ),
   "agg" as (
     select
       coalesce(array_agg("duration"), '{}') as "duration",
@@ -921,6 +940,8 @@ with
       coalesce(array_agg("ratio"), '{}') as "ratio",
       coalesce(array_agg("status"), '{}') as "status",
       coalesce(array_agg("thumbhash"), '{}') as "thumbhash",
+      (array_agg(cursor)) [1] as "startCursor",
+      (array_agg(cursor)) [count(*)::int] as "endCursor",
       coalesce(array_agg("city"), '{}') as "city",
       coalesce(array_agg("country"), '{}') as "country",
       coalesce(array_agg("rating"), '{}') as "rating",

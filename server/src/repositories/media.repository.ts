@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
+import type { SharpArguments } from 'src/queue/sharp-protocol.js';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -229,6 +230,26 @@ export class MediaRepository {
 
   async generateThumbnail(input: string | Buffer, options: GenerateThumbnailOptions, output: string): Promise<void> {
     return sharpProcessPool.run('generateThumbnail', [input, options, output]);
+  }
+
+  async generateImageThumbnails(...args: SharpArguments<'generateImageThumbnails'>) {
+    const [input, options, batch] = args;
+    try {
+      return await sharpProcessPool.run('generateImageThumbnails', args);
+    } catch (error) {
+      executionSignal()?.throwIfAborted();
+      if (
+        !(error instanceof SharpOperationError) ||
+        !error.decodeFailure ||
+        typeof input !== 'string' ||
+        options.raw ||
+        !mimeTypes.isRaw(input)
+      ) {
+        throw error;
+      }
+      const rendered = await renderRawWithLibRaw(input, executionSignal());
+      return sharpProcessPool.run('generateImageThumbnails', [rendered, { ...options, orientation: undefined }, batch]);
+    }
   }
 
   async writeCloudUpload(input: string, output: string): Promise<void> {

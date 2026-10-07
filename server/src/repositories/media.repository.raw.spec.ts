@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import type { DecodeToBufferOptions } from 'src/types.js';
 import { Colorspace } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -15,9 +16,13 @@ vi.mock('src/utils/raw-renderer.js', async (original) => ({
 
 const options = { colorspace: Colorspace.Srgb, processInvalidImages: false };
 
-describe('MediaRepository RAW fallback', () => {
+describe.each(['decodeImage', 'generateImageThumbnails'] as const)('MediaRepository RAW fallback: %s', (operation) => {
   let sut: MediaRepository;
   let directory: string;
+  const decode = (input: string | Buffer, options: DecodeToBufferOptions) =>
+    operation === 'decodeImage'
+      ? sut.decodeImage(input, options)
+      : sut.generateImageThumbnails(input, options, { outputs: [], edits: [], checkTransparency: false });
   beforeEach(async () => {
     vi.mocked(renderRawWithLibRaw).mockReset();
     // eslint-disable-next-line no-sparse-arrays
@@ -31,7 +36,7 @@ describe('MediaRepository RAW fallback', () => {
     await sharp({ create: { width: 16, height: 8, channels: 3, background: 'red' } })
       .png()
       .toFile(input);
-    expect((await sut.decodeImage(input, options)).info).toMatchObject({ width: 16, height: 8 });
+    expect((await decode(input, options)).info).toMatchObject({ width: 16, height: 8 });
     expect(renderRawWithLibRaw).not.toHaveBeenCalled();
   });
 
@@ -45,7 +50,7 @@ describe('MediaRepository RAW fallback', () => {
       .toBuffer();
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(tiff);
     // This is the normal media repository, with no entitlement, mode or enhanced-RAW setting.
-    const result = await sut.decodeImage(input, { ...options, orientation: 6, size: 4 });
+    const result = await decode(input, { ...options, orientation: 6, size: 4 });
     expect(result.info).toMatchObject({ width: 8, height: 4 });
     expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(input, undefined);
     expect(await readFile(input, 'utf8')).toBe('original RAW bytes');
@@ -54,7 +59,7 @@ describe('MediaRepository RAW fallback', () => {
   it('does not invoke a sensor decoder for an explicitly interleaved raw input', async () => {
     const input = join(directory, 'pixels.CR3');
     await writeFile(input, 'invalid pixels');
-    await expect(sut.decodeImage(input, { ...options, raw: { width: 64, height: 64, channels: 3 } })).rejects.toThrow();
+    await expect(decode(input, { ...options, raw: { width: 64, height: 64, channels: 3 } })).rejects.toThrow();
     expect(renderRawWithLibRaw).not.toHaveBeenCalled();
   });
 
@@ -63,7 +68,7 @@ describe('MediaRepository RAW fallback', () => {
     await writeFile(input, 'unreadable bytes');
     const failure = new RawRenderError('dependency_missing', 'ENOENT');
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
-    await expect(sut.decodeImage(input, options)).rejects.toBe(failure);
+    await expect(decode(input, options)).rejects.toBe(failure);
   });
 
   it.each(['photo.jpg', 'photo.CR3'])(
@@ -73,7 +78,7 @@ describe('MediaRepository RAW fallback', () => {
       if (typeof input === 'string') {
         await writeFile(input, 'invalid image');
       }
-      await expect(sut.decodeImage(input, options)).rejects.toThrow();
+      await expect(decode(input, options)).rejects.toThrow();
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
     },
   );

@@ -127,6 +127,41 @@ describe(TimelineService.name, () => {
       );
     });
 
+    it('validates cursor tuples and retains timestamp precision and bucket privacy options', async () => {
+      const cursor = [5, '2026-10-01T12:00:00.123456+00:00', '00000000-0000-4000-8000-000000000001'];
+      mocks.asset.getTimelineOrdered.mockResolvedValue({ assets: '{}' });
+      const auth = { ...authStub.admin, hideNsfwAssets: true };
+      await sut.getTimelineOrdered(auth, { sort: 'rating', skip: 1000, take: 500, before: JSON.stringify(cursor) });
+      expect(mocks.asset.getTimelineOrdered).toHaveBeenCalledWith(
+        expect.objectContaining({ excludeNsfw: true, userIds: [auth.user.id] }),
+        auth,
+        { sort: 'rating', skip: 1000, take: 500, cursor: { key: 5, date: cursor[1], id: cursor[2] }, reverse: true },
+      );
+      for (const after of [
+        '[]',
+        'null',
+        'bad-json',
+        JSON.stringify(['file.jpg', cursor[1], cursor[2]]),
+        JSON.stringify([6, cursor[1], cursor[2]]),
+        JSON.stringify([5, 'not-a-date', cursor[2]]),
+        JSON.stringify([5, cursor[1], 'not-an-id']),
+      ]) {
+        await expect(sut.getTimelineOrdered(auth, { sort: 'rating', skip: 0, take: 1, after })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+      }
+      await expect(
+        sut.getTimelineOrdered(auth, {
+          sort: 'rating',
+          skip: 0,
+          take: 1,
+          after: JSON.stringify(cursor),
+          before: JSON.stringify(cursor),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getTimelineOrdered).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses the Locked view without an elevated session, as the buckets do', async () => {
       await expect(
         sut.getTimelineOrdered(authStub.admin, {

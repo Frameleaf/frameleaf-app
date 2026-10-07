@@ -508,6 +508,57 @@ describe(TimelineService.name, () => {
       expect(page.rating).toEqual([5, 2, null, null, -1]);
     });
 
+    it.each(['filename', 'rating'] as const)(
+      'seeks %s in both directions across ties, with the same owner and privacy filters',
+      async (sort) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { user: other } = await ctx.newUser();
+        const auth = factory.auth({ user: { id: user.id } });
+        const ids: string[] = [];
+        for (const [name, day, rating] of [
+          ['same.jpg', 5, 5],
+          ['same.jpg', 5, 5],
+          ['same.jpg', 4, 5],
+          ['z.jpg', 3, 0],
+          ['z.jpg', 3, null],
+          ['z.jpg', 1, -1],
+        ] as const) {
+          ids.push((await newItem(ctx, user.id, name, day, { rating })).id);
+        }
+        // Missing EXIF stays excluded, exactly as the existing bucket query requires.
+        const { asset: missingExif } = await ctx.newAsset({ ownerId: user.id, originalFileName: 'same.jpg' });
+        await newItem(ctx, other.id, 'same.jpg', 5, { rating: 5 });
+        await newItem(ctx, user.id, 'same.jpg', 5, { rating: 5 }, { visibility: AssetVisibility.Locked });
+        await newItem(ctx, user.id, 'same.jpg', 5, { rating: 5 }, { visibility: AssetVisibility.Archive });
+        const options = { sort, visibility: AssetVisibility.Timeline, skip: 0, take: 2 };
+        const all = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, take: 100 }));
+        expect(new Set(all.id)).toEqual(new Set(ids));
+        expect(all.id).not.toContain(missingExif.id);
+        const pages = [JSON.parse(await sut.getTimelineOrdered(auth, options))];
+        while (pages.at(-1).id.length > 0) {
+          pages.push(
+            JSON.parse(await sut.getTimelineOrdered(auth, { ...options, skip: 999, after: pages.at(-1).endCursor })),
+          );
+        }
+        expect(pages.flatMap((page) => page.id)).toEqual(all.id);
+        const random = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, skip: 4 }));
+        expect(random.id).toEqual(all.id.slice(4, 6));
+        const previous = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, before: random.startCursor }));
+        expect(previous.id).toEqual(all.id.slice(2, 4));
+        const first = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, before: previous.startCursor }));
+        expect(first.id).toEqual(all.id.slice(0, 2));
+        // Cursor is a position, not authorization to read the referenced owner's rows.
+        const otherPage = JSON.parse(
+          await sut.getTimelineOrdered(factory.auth({ user: { id: other.id } }), {
+            ...options,
+            after: first.endCursor,
+          }),
+        );
+        expect(otherPage.ownerId.every((id: string) => id === other.id)).toBe(true);
+      },
+    );
+
     it('shows exactly what the time buckets show: Locked only in the Locked view of an elevated owner', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

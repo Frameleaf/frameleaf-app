@@ -2,6 +2,7 @@ import type { SharpOperations } from 'src/queue/sharp-operations.js';
 
 export const SHARP_OPERATIONS = [
   'decodeImage',
+  'generateImageThumbnails',
   'generateThumbnail',
   'writeCloudUpload',
   'writeStrippedStill',
@@ -29,7 +30,10 @@ export type SharpResponse =
   | { type: 'ready' }
   | { type: 'progress'; id: number; completed: number }
   | { type: 'result'; id: number; value: unknown }
-  | { type: 'failure'; id: number; message: string; resourceLimit: boolean };
+  | { type: 'failure'; id: number; message: string; resourceLimit: boolean; decodeFailure?: boolean };
+
+/** Only the initial decode of a thumbnail batch may fall back to the RAW sensor renderer. */
+export class SharpDecodeError extends Error {}
 
 export class SharpResourceLimitError extends Error {
   constructor(message: string) {

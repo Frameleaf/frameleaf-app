@@ -26,7 +26,7 @@ import { getKyselyDB, newTestService } from 'test/utils.js';
 /** Real production thumbnail batch + Sharp children + PG facade; unrelated asset publication is a fixture callback. */
 describe('thumbnail batch native lifetime', () => {
   it.each([false, true])(
-    'completes with two workers and no pending slots (first hash hangs: %s)',
+    'completes with two workers and no pending slots (first batch hangs: %s)',
     async (hangFirst) => {
       const db = await getKyselyDB();
       const store = new SqlQueueStore(db);
@@ -59,7 +59,7 @@ describe('thumbnail batch native lifetime', () => {
           child.send = ((...args: Parameters<typeof child.send>) => {
             const message = args[0] as { operation: string };
             operations.push(message.operation);
-            if (shouldHang && message.operation === 'generateThumbhash') {
+            if (shouldHang && message.operation === 'generateImageThumbnails') {
               shouldHang = false;
               child.kill('SIGSTOP');
               paused.resolve(child);
@@ -79,6 +79,7 @@ describe('thumbnail batch native lifetime', () => {
       mocks.media.getImageMetadata.mockImplementation(native.getImageMetadata.bind(native));
       mocks.media.generateThumbhash.mockImplementation(native.generateThumbhash.bind(native));
       mocks.media.generateThumbnail.mockImplementation(native.generateThumbnail.bind(native));
+      mocks.media.generateImageThumbnails.mockImplementation(native.generateImageThumbnails.bind(native));
       mocks.storage.mkdirSync.mockImplementation((path) => {
         mkdirSync(path, { recursive: true });
       });
@@ -161,7 +162,7 @@ describe('thumbnail batch native lifetime', () => {
         expect((await sql`select state from job where id = ${first.id}::uuid`.execute(db)).rows).toEqual([
           { state: 'completed' },
         ]);
-        expect(operations.filter((name) => name === 'generateThumbnail')).toHaveLength(2);
+        expect(operations).toEqual(Array.from({ length: hangFirst ? 2 : 1 }, () => 'generateImageThumbnails'));
         expect(adopted).toHaveBeenCalledTimes(1);
         expect(generated?.thumbhash).toBeInstanceOf(Buffer);
         expect(generated?.files).toHaveLength(2);

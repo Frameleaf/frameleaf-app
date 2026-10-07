@@ -12,7 +12,14 @@ import { QUEUE_TIMING } from 'src/queue/types.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 
 /** Only an image-operation failure is eligible for the existing LibRaw decode fallback. */
-export class SharpOperationError extends Error {}
+export class SharpOperationError extends Error {
+  constructor(
+    message: string,
+    readonly decodeFailure = false,
+  ) {
+    super(message);
+  }
+}
 type Lifetime = ReturnType<typeof superviseMediaProcess>;
 type Task = {
   id: number;
@@ -290,7 +297,9 @@ export class SharpProcessPool {
     slot.task = undefined;
     if (message.type === 'failure') {
       task.reject(
-        message.resourceLimit ? new SharpResourceLimitError(message.message) : new SharpOperationError(message.message),
+        message.resourceLimit
+          ? new SharpResourceLimitError(message.message)
+          : new SharpOperationError(message.message, message.decodeFailure),
       );
     } else {
       task.progress(1); // A completed operation is advancing work, unlike an IPC keepalive.
