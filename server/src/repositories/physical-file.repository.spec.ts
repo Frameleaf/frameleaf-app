@@ -1,5 +1,17 @@
-import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import * as fs from 'node:fs/promises';
+import { StorageCore } from 'src/cores/storage.core.js';
+import {
+  BUDDY_CAPTURE_LOCK,
+  PhysicalFileRepository,
+  recoverFileTrashMoves,
+  withFileTrashMove,
+} from 'src/repositories/physical-file.repository.js';
 import { ScriptedQuery, scriptedKysely } from 'test/scripted-kysely.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  return { ...actual, lstat: vi.fn(actual.lstat) };
+});
 
 const path = '/data/library/owner/2024/photo.jpg';
 const referenceAnswer =
@@ -63,4 +75,37 @@ describe(PhysicalFileRepository.name, () => {
     expect(queries.at(-1)?.sql).toBe('rollback');
     expect(queries.some(({ sql }) => sql === 'commit')).toBe(false);
   });
+});
+
+describe('file trash recovery storage errors', () => {
+  it.each(['EACCES', 'EIO'])('retains the journal when path inspection returns %s', async (code) => {
+    const intent = { id: 'intent-id', oldPath: path, newPath: '/data/file-trash/intent/photo.jpg' };
+    const { db, queries } = scriptedKysely((query) => {
+      if (query.sql.includes('SELECT id, "oldPath", "newPath"')) return { rows: [intent] };
+      if (query.sql.includes('FOR UPDATE')) return { rows: [{ id: intent.id }] };
+      return referenceAnswer(1)(query);
+    });
+    const inspection = vi.mocked(fs.lstat).mockRejectedValue(Object.assign(new Error(code), { code }));
+    const move = vi.fn();
+    try {
+      await expect(recoverFileTrashMoves(db, move)).rejects.toThrow(code);
+      expect(move).not.toHaveBeenCalled();
+      expect(queries.some(({ sql }) => sql.includes('DELETE FROM public.move_history'))).toBe(false);
+      expect(queries.at(-1)?.sql).toBe('rollback');
+    } finally {
+      inspection.mockReset();
+    }
+  });
+});
+
+it('reserves before a transaction and refuses a reservation that recovery already cleared', async () => {
+  StorageCore.setMediaLocation('/data');
+  const { db, queries } = scriptedKysely();
+  const callback = vi.fn().mockResolvedValue(undefined);
+  await expect(withFileTrashMove(db, path, 'photo.jpg', vi.fn(), callback)).rejects.toThrow('reservation changed');
+  expect(callback).not.toHaveBeenCalled();
+  const journal = queries.findIndex(({ sql }) => sql.includes('INSERT INTO public.move_history'));
+  const transaction = queries.findIndex(({ sql }) => sql === 'begin');
+  expect(journal).toBeGreaterThanOrEqual(0);
+  expect(journal).toBeLessThan(transaction);
 });
