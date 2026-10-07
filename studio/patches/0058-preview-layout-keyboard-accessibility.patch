@@ -4334,3 +4334,1181 @@ diff --git a/src/features/timeline/hooks/use-timeline-slip-slide.test.tsx b/src/
 +    expectNoEditPreview()
 +  },
 +)
+diff --git a/src/features/preview/components/mask-editor-overlay.tsx b/src/features/preview/components/mask-editor-overlay.tsx
+--- a/src/features/preview/components/mask-editor-overlay.tsx
++++ b/src/features/preview/components/mask-editor-overlay.tsx
+@@ -22,6 +22,8 @@
+   useTimelineStore,
+   useTimelineViewportStore,
+   useTransitionsStore,
++  useTimelineSettingsStore,
++  useCompositionNavigationStore,
+ } from '@/features/preview/deps/timeline-store'
+ import {
+   screenToCanvas,
+@@ -179,6 +181,17 @@
+ }: MaskEditorOverlayProps) {
+   const canvasRef = useRef<HTMLCanvasElement>(null)
+   const pointSelectorRef = useRef<HTMLSelectElement>(null)
++  const penControlsRef = useRef<HTMLFormElement>(null)
++  const penProjectSizeRef = useRef(coordParams.projectSize)
++  penProjectSizeRef.current = coordParams.projectSize
++  const penPointXRef = useRef<HTMLInputElement>(null)
++  const [penPointX, setPenPointX] = useState(String(coordParams.projectSize.width / 2))
++  const [penPointY, setPenPointY] = useState(String(coordParams.projectSize.height / 2))
++  const keyboardPenSessionRef = useRef<{
++    version: number
++    isValid: () => boolean
++    dispose: () => void
++  } | null>(null)
+   const [pathControl, setPathControl] = useState<'point' | 'in' | 'out'>('point')
+   const [independentHandles, setIndependentHandles] = useState(false)
+   const [hoveredShapeBody, setHoveredShapeBody] = useState(false)
+@@ -224,6 +237,7 @@
+
+   // Pen mode state
+   const penMode = useMaskEditorStore((s) => s.penMode)
++  const shapePenMode = useMaskEditorStore((s) => s.shapePenMode)
+   const penVertices = useMaskEditorStore((s) => s.penVertices)
+   const penDraggingHandle = useMaskEditorStore((s) => s.penDraggingHandle)
+   const penCursorPos = useMaskEditorStore((s) => s.penCursorPos)
+@@ -794,9 +808,13 @@
+   const penInteractionRef = useRef<PenInteraction | null>(null)
+   const closePenPathRef = useRef<(() => void) | null>(null)
+   const resetPenInteraction = useCallback(() => {
++    const session = keyboardPenSessionRef.current
++    if (session && !session.isValid()) return
+     penInteractionRef.current = null
+     setPenDragging(false)
++    if (session && !session.isValid()) return
+     endDrag()
++    if (session && !session.isValid()) return
+     setHover(null)
+   }, [endDrag, setHover, setPenDragging])
+
+@@ -1046,7 +1064,15 @@
+
+   /** Commit pen vertices as a new ShapeItem with shapeType='path'. */
+   const commitShapePenPath = useCallback(
+-    (verts: MaskVertex[], closed: boolean) => {
++    (verts: MaskVertex[], closed: boolean, keyboardSession = keyboardPenSessionRef.current) => {
++      if (keyboardSession && !keyboardSession.isValid()) {
++        if (
++          keyboardPenSessionRef.current === keyboardSession &&
++          useMaskEditorStore.getState().penSessionVersion === keyboardSession.version
++        )
++          cancelPenMode()
++        return
++      }
+       const bounds = getPathBounds(verts)
+       if (!bounds) {
+         cancelPenMode()
+@@ -1115,6 +1141,7 @@
+           !!placementTrack &&
+           placementTrack.order > activeTrack.order)
+
++      let keyboardTracks: TimelineTrack[] | undefined
+       if (shouldCreateTopTrack) {
+         const referenceTrack = tracks.find((track) => track.id === placementTrackId)
+         const minOrder =
+@@ -1139,7 +1166,8 @@
+               items: [],
+             }
+
+-        setTracks([newTrack, ...tracks])
++        if (keyboardSession) keyboardTracks = [newTrack, ...tracks]
++        else setTracks([newTrack, ...tracks])
+         placement = {
+           trackId: newTrack.id,
+           from: currentFrame,
+@@ -1176,11 +1204,26 @@
+         },
+       }
+
+-      addItem(shapeItem)
++      // Recheck after interaction cleanup and shape planning, at the durable write boundary.
++      if (keyboardSession && !keyboardSession.isValid()) {
++        if (
++          keyboardPenSessionRef.current === keyboardSession &&
++          useMaskEditorStore.getState().penSessionVersion === keyboardSession.version
++        )
++          cancelPenMode()
++        return
++      }
++      keyboardSession?.dispose()
++      if (keyboardTracks) useTimelineStore.getState().addItemOnNewTrack(shapeItem, keyboardTracks)
++      else addItem(shapeItem)
+       setActiveTrack(shapeItem.trackId)
+       selectItems([shapeItem.id])
+       useTimelineViewportStore.getState().requestScrollToFrame(shapeItem.from)
+-      stopEditing()
++      if (
++        !keyboardSession ||
++        useMaskEditorStore.getState().penSessionVersion === keyboardSession.version
++      )
++        stopEditing()
+     },
+     [coordParams, cancelPenMode, stopEditing],
+   )
+@@ -1189,29 +1232,199 @@
+   const finishPenMode = useCallback(() => {
+     const state = useMaskEditorStore.getState()
+     const verts = state.penVertices
++    const keyboardSession = keyboardPenSessionRef.current
+
+     resetPenInteraction()
++    if (keyboardSession && !keyboardSession.isValid()) {
++      if (
++        keyboardPenSessionRef.current === keyboardSession &&
++        useMaskEditorStore.getState().penSessionVersion === keyboardSession.version
++      )
++        cancelPenMode()
++      return
++    }
+
+     if (!state.shapePenMode || verts.length < 2) {
+       cancelPenMode()
+       return
+     }
+-    commitShapePenPath(verts, false)
++    commitShapePenPath(verts, false, keyboardSession)
+   }, [cancelPenMode, commitShapePenPath, resetPenInteraction])
+
+   const closePenPath = useCallback(() => {
+     const state = useMaskEditorStore.getState()
+     const verts = state.penVertices
++    const keyboardSession = keyboardPenSessionRef.current
+     resetPenInteraction()
++    if (keyboardSession && !keyboardSession.isValid()) {
++      if (
++        keyboardPenSessionRef.current === keyboardSession &&
++        useMaskEditorStore.getState().penSessionVersion === keyboardSession.version
++      )
++        cancelPenMode()
++      return
++    }
+     if (!state.shapePenMode || verts.length < 3) return
+-    commitShapePenPath(verts, true)
+-  }, [commitShapePenPath, resetPenInteraction])
++    commitShapePenPath(verts, true, keyboardSession)
++  }, [cancelPenMode, commitShapePenPath, resetPenInteraction])
+   closePenPathRef.current = closePenPath
+
+   const cancelCurrentPenMode = useCallback(() => {
++    const session = keyboardPenSessionRef.current
+     resetPenInteraction()
++    if (session && useMaskEditorStore.getState().penSessionVersion !== session.version) return
+     cancelPenMode()
+   }, [cancelPenMode, resetPenInteraction])
++
++  useEffect(() => {
++    if (!penMode) return
++    const returnFocus = document.activeElement
++    const penSessionVersion = useMaskEditorStore.getState().penSessionVersion
++    const controls = penControlsRef.current
++    const cancelKeyboardDraft = () => {
++      if (keyboardPenSessionRef.current) cancelCurrentPenMode()
++    }
++    window.addEventListener('blur', cancelKeyboardDraft)
++    return () => {
++      window.removeEventListener('blur', cancelKeyboardDraft)
++      const session = keyboardPenSessionRef.current
++      session?.dispose()
++      if (
++        session &&
++        useMaskEditorStore.getState().penSessionVersion === session.version &&
++        useMaskEditorStore.getState().penMode
++      )
++        cancelPenMode()
++      if (
++        (!useMaskEditorStore.getState().penMode ||
++          useMaskEditorStore.getState().penSessionVersion === penSessionVersion) &&
++        controls &&
++        (controls.contains(document.activeElement) || document.activeElement === document.body) &&
++        returnFocus instanceof HTMLElement &&
++        returnFocus.isConnected
++      )
++        returnFocus.focus()
++    }
++  }, [penMode, cancelPenMode, cancelCurrentPenMode])
++
++  const addKeyboardPenPoint = () => {
++    const state = useMaskEditorStore.getState()
++    const { width, height } = coordParams.projectSize
++    const x = Number(penPointX)
++    const y = Number(penPointY)
++    if (
++      !state.penMode ||
++      !state.shapePenMode ||
++      state.penDraggingHandle ||
++      penPointX.trim() === '' ||
++      penPointY.trim() === '' ||
++      !Number.isFinite(x) ||
++      !Number.isFinite(y) ||
++      !Number.isFinite(width) ||
++      !Number.isFinite(height) ||
++      !(width > 0 && height > 0) ||
++      x < 0 ||
++      x > width ||
++      y < 0 ||
++      y > height
++    )
++      return
++
++    const previousSession = keyboardPenSessionRef.current
++    if (previousSession && previousSession.version !== state.penSessionVersion)
++      previousSession.dispose()
++    if (!keyboardPenSessionRef.current) {
++      const { tracks, items } = useItemsStore.getState()
++      const { fps, isTimelineLoading } = useTimelineSettingsStore.getState()
++      const { activeTrackId } = useSelectionStore.getState()
++      const { currentFrame } = usePlaybackStore.getState()
++      const { activeCompositionId } = useCompositionNavigationStore.getState()
++      const activeTrack = resolveEffectiveTrackStates(tracks).find(
++        (track) => track.id === activeTrackId,
++      )
++      if (
++        isTimelineLoading ||
++        !Number.isFinite(fps) ||
++        fps <= 0 ||
++        !Number.isFinite(currentFrame) ||
++        currentFrame < 0 ||
++        (activeTrackId && (!activeTrack || activeTrack.locked || activeTrack.isGroup)) ||
++        !findBestCanvasDropPlacement({
++          tracks,
++          items,
++          activeTrackId,
++          proposedFrame: currentFrame,
++          durationInFrames: Math.max(1, Math.round(fps * DEFAULT_PATH_SHAPE_DURATION_SECONDS)),
++          itemType: 'shape',
++        })
++      ) {
++        cancelCurrentPenMode()
++        return
++      }
++      const penSessionVersion = state.penSessionVersion
++      let invalidated = false
++      // ponytail: cancel on any timeline edit; narrow to placement participants if concurrent editing is needed.
++      const isValid = (): boolean =>
++        !invalidated &&
++        keyboardPenSessionRef.current === session &&
++        useMaskEditorStore.getState().penSessionVersion === penSessionVersion &&
++        useMaskEditorStore.getState().penMode &&
++        useMaskEditorStore.getState().shapePenMode &&
++        useItemsStore.getState().tracks === tracks &&
++        useItemsStore.getState().items === items &&
++        useSelectionStore.getState().activeTrackId === activeTrackId &&
++        usePlaybackStore.getState().currentFrame === currentFrame &&
++        useTimelineSettingsStore.getState().fps === fps &&
++        !useTimelineSettingsStore.getState().isTimelineLoading &&
++        useCompositionNavigationStore.getState().activeCompositionId === activeCompositionId &&
++        penProjectSizeRef.current.width === width &&
++        penProjectSizeRef.current.height === height
++      const invalidate = () => {
++        if (invalidated) return
++        if (!isValid()) {
++          invalidated = true
++          cancelCurrentPenMode()
++        }
++      }
++      const unsubscribers = [
++        useItemsStore.subscribe(invalidate),
++        useSelectionStore.subscribe(invalidate),
++        usePlaybackStore.subscribe(invalidate),
++        useTimelineSettingsStore.subscribe(invalidate),
++        useCompositionNavigationStore.subscribe(invalidate),
++        useMaskEditorStore.subscribe((current) => {
++          if (
++            current.penSessionVersion !== penSessionVersion ||
++            !current.penMode ||
++            !current.shapePenMode
++          )
++            session.dispose()
++        }),
++      ]
++      const session = {
++        version: penSessionVersion,
++        isValid,
++        dispose: (): void => {
++          invalidated = true
++          unsubscribers.forEach((unsubscribe) => unsubscribe())
++          if (keyboardPenSessionRef.current === session) keyboardPenSessionRef.current = null
++        },
++      }
++      keyboardPenSessionRef.current = session
++    }
++    if (!keyboardPenSessionRef.current.isValid()) {
++      cancelCurrentPenMode()
++      return
++    }
++    const session = keyboardPenSessionRef.current
++    const position: [number, number] = [x / width, y / height]
++    addPenVertex({ position, inHandle: [0, 0], outHandle: [0, 0], tangentMode: 'corner' })
++    if (!session.isValid()) return
++    setPenCursorPos(position)
++    if (!session.isValid()) return
++    setHover(useMaskEditorStore.getState().penVertices.length - 1, null)
++    if (session.isValid()) penPointXRef.current?.focus()
++  }
+
+   const lastHandledFinishRequestRef = useRef(0)
+   const lastHandledCancelRequestRef = useRef(0)
+@@ -1243,11 +1456,20 @@
+     const state = useMaskEditorStore.getState()
+     if (state.penVertices.length === 0) return
+
++    const session = keyboardPenSessionRef.current
++    const isCurrent = () =>
++      useMaskEditorStore.getState().penSessionVersion === state.penSessionVersion &&
++      useMaskEditorStore.getState().penMode &&
++      (!session || session.isValid())
++    if (!isCurrent()) return
+     const nextVertices = state.penVertices.slice(0, -1)
+     penInteractionRef.current = null
+     setPenDragging(false)
++    if (!isCurrent()) return
+     endDrag()
++    if (!isCurrent()) return
+     setPenVertices(nextVertices)
++    if (!isCurrent()) return
+     setHover(nextVertices.length > 0 ? nextVertices.length - 1 : null)
+   }, [endDrag, setHover, setPenDragging, setPenVertices])
+
+@@ -1263,6 +1485,14 @@
+
+       e.stopPropagation()
+       e.stopImmediatePropagation()
++
++      if (
++        e.key !== 'Escape' &&
++        (e.key === 'Tab' ||
++          (e.target instanceof Element &&
++            e.target.closest('[data-pen-placement-controls], [aria-label="Path pen controls"]')))
++      )
++        return
+
+       if (e.key === 'Escape') {
+         e.preventDefault()
+@@ -2089,6 +2319,92 @@
+         onContextMenu={penMode ? handlePenContextMenu : handleEditContextMenu}
+         onDoubleClick={penMode ? undefined : handleEditDoubleClick}
+       />
++      {penMode && shapePenMode && (
++        <form
++          ref={penControlsRef}
++          aria-label="New pen point placement"
++          data-pen-placement-controls
++          className="absolute left-2 top-2 max-w-[calc(100%_-_1rem)] flex flex-wrap items-center gap-1 rounded border border-border bg-background p-1 pointer-events-auto"
++          onSubmit={(event) => {
++            event.preventDefault()
++            addKeyboardPenPoint()
++          }}
++        >
++          {[
++            {
++              axis: 'X',
++              value: penPointX,
++              setValue: setPenPointX,
++              max: coordParams.projectSize.width,
++            },
++            {
++              axis: 'Y',
++              value: penPointY,
++              setValue: setPenPointY,
++              max: coordParams.projectSize.height,
++            },
++          ].map(({ axis, value, setValue, max }) => (
++            <label key={axis} className="flex items-center gap-1 text-xs">
++              {axis}
++              <input
++                ref={axis === 'X' ? penPointXRef : undefined}
++                type="number"
++                required
++                min={0}
++                max={max}
++                step="any"
++                aria-label={`New pen point ${axis} (project pixels)`}
++                className="h-6 w-16 rounded border border-border bg-background px-1 focus-visible:outline-2 focus-visible:outline-primary"
++                value={value}
++                disabled={penDraggingHandle}
++                onChange={(event) => setValue(event.target.value)}
++              />
++            </label>
++          ))}
++          <button
++            type="submit"
++            className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            disabled={penDraggingHandle}
++          >
++            Add point
++          </button>
++          <button
++            type="button"
++            aria-label="Remove last new pen point"
++            className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            disabled={penDraggingHandle || penVertices.length === 0}
++            onClick={popLastPenVertex}
++          >
++            Remove last
++          </button>
++          <button
++            type="button"
++            aria-label="Finish new pen path"
++            className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            disabled={penDraggingHandle || penVertices.length < 2}
++            onClick={finishPenMode}
++          >
++            Finish open
++          </button>
++          <button
++            type="button"
++            aria-label="Close new pen path"
++            className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            disabled={penDraggingHandle || penVertices.length < 3}
++            onClick={closePenPath}
++          >
++            Close path
++          </button>
++          <button
++            type="button"
++            aria-label="Cancel new pen path"
++            className="h-6 rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-primary"
++            onClick={cancelCurrentPenMode}
++          >
++            Cancel
++          </button>
++        </form>
++      )}
+       {!penMode && (
+         <div className="absolute left-2 top-2 max-w-[calc(100%_-_1rem)] flex flex-wrap items-center gap-1 rounded border border-border bg-background p-1 pointer-events-auto">
+           <select
+diff --git a/src/features/preview/components/mask-editor-overlay.test.tsx b/src/features/preview/components/mask-editor-overlay.test.tsx
+--- a/src/features/preview/components/mask-editor-overlay.test.tsx
++++ b/src/features/preview/components/mask-editor-overlay.test.tsx
+@@ -2,6 +2,7 @@
+ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import {
+   useItemsStore,
++  useCompositionNavigationStore,
+   useTimelineSettingsStore,
+   useTimelineStore,
+   useTransitionsStore,
+@@ -1875,3 +1876,613 @@
+     expect(useGizmoStore.getState().activeGizmo?.interactionId).toBe(newerInteractionId)
+   })
+ })
++
++describe('MaskEditorOverlay native new pen point placement', () => {
++  beforeEach(() => {
++    resetStores()
++    useSelectionStore.getState().setActiveTrack('track-1')
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  function placePoint(x: string, y: string) {
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }), {
++      target: { value: x },
++    })
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }), {
++      target: { value: y },
++    })
++    fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  }
++
++  function startDraft() {
++    useMaskEditorStore.getState().startShapePenMode()
++    const rendered = renderMaskEditorOverlay()
++    placePoint('20', '20')
++    placePoint('120', '80')
++    return rendered
++  }
++
++  it('places project-space points through the native form without changing timeline or history', () => {
++    useMaskEditorStore.getState().startShapePenMode()
++    renderMaskEditorOverlay()
++    const input = screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' })
++    input.focus()
++    for (const key of ['Tab', 'ArrowUp', 'Backspace', 'Enter']) {
++      expect(fireEvent.keyDown(input, { key })).toBe(true)
++    }
++    placePoint('20', '20')
++    expect(useMaskEditorStore.getState().penVertices).toEqual([
++      { position: [0.1, 1 / 6], inHandle: [0, 0], outHandle: [0, 0], tangentMode: 'corner' },
++    ])
++    expect(document.activeElement).toBe(input)
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it.each([
++    ['', '20'],
++    ['201', '20'],
++    ['-1', '20'],
++    ['20', '121'],
++  ])('rejects invalid project coordinates %s/%s without planting a point', (x, y) => {
++    useMaskEditorStore.getState().startShapePenMode()
++    renderMaskEditorOverlay()
++    placePoint(x, y)
++    expect(useMaskEditorStore.getState().penVertices).toEqual([])
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it.each([false, true])(
++    'commits an open/closed keyboard path (%s) with one undo/redo step',
++    (closed) => {
++      usePlaybackStore.getState().setCurrentFrame(48)
++      startDraft()
++      if (closed) placePoint('120', '20')
++      fireEvent.click(
++        screen.getByRole('button', { name: closed ? 'Close new pen path' : 'Finish new pen path' }),
++        { detail: 0 },
++      )
++      const shape = useItemsStore.getState().items[0] as ShapeItem
++      expect(shape.pathClosed).toBe(closed)
++      expect(shape.from).toBe(48)
++      expect(shape.transform?.width).toBeCloseTo(100)
++      expect(shape.transform?.height).toBeCloseTo(60)
++      expect(shape.transform?.x).toBeCloseTo(-30)
++      expect(shape.transform?.y).toBeCloseTo(-10)
++      expect(shape.pathVertices?.map((vertex) => vertex.position)).toEqual(
++        closed
++          ? [
++              [0, 0],
++              [1, 1],
++              [1, 0],
++            ]
++          : [
++              [0, 0],
++              [1, 1],
++            ],
++      )
++      expect(useMaskEditorStore.getState().isEditing).toBe(false)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useItemsStore.getState().items).toEqual([])
++      act(() => useTimelineStore.temporal.getState().redo())
++      expect(useItemsStore.getState().items).toEqual([shape])
++    },
++  )
++
++  it('creates an occupied-track path and its new classic lane in one transaction', () => {
++    const track = { ...useItemsStore.getState().tracks[0]!, kind: 'video' as const, name: 'V1' }
++    useItemsStore.getState().setTracks([track])
++    const busy: ShapeItem = {
++      id: 'busy',
++      type: 'shape',
++      trackId: track.id,
++      from: 0,
++      durationInFrames: 150,
++      label: 'Busy',
++      shapeType: 'rectangle',
++      fillColor: '#fff',
++    }
++    useItemsStore.getState().setItems([busy])
++    startDraft()
++    fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++    const tracks = useItemsStore.getState().tracks
++    const items = useItemsStore.getState().items
++    expect(tracks).toHaveLength(2)
++    expect(tracks.find((entry) => entry.id !== track.id)).toMatchObject({
++      kind: 'video',
++      name: 'V2',
++    })
++    expect(items.find((entry) => entry.id !== busy.id)?.from).toBe(0)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().tracks).toEqual([track])
++    expect(useItemsStore.getState().items).toEqual([busy])
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().tracks).toEqual(tracks)
++    expect(useItemsStore.getState().items).toEqual(items)
++  })
++
++  it.each(['Escape', 'Cancel', 'unmount', 'window blur'])(
++    'cancels via %s without creating history',
++    (route) => {
++      const origin = document.createElement('button')
++      document.body.append(origin)
++      origin.focus()
++      const { unmount } = startDraft()
++      screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }).focus()
++      if (route === 'Escape') fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
++      else if (route === 'Cancel')
++        fireEvent.click(screen.getByRole('button', { name: 'Cancel new pen path' }))
++      else if (route === 'window blur') fireEvent.blur(window)
++      else unmount()
++      expect(useItemsStore.getState().items).toEqual([])
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++      expect(useMaskEditorStore.getState().penVertices).toEqual([])
++      expect(useMaskEditorStore.getState().isEditing).toBe(false)
++      expect(document.activeElement).toBe(origin)
++      origin.remove()
++    },
++  )
++
++  it.each([
++    'lock/unlock',
++    'remove/reinsert',
++    'reparent',
++    'active track',
++    'frame',
++    'fps',
++    'item edit',
++    'composition',
++  ])('latches cancellation after a current placement policy change: %s', (change) => {
++    startDraft()
++    const tracks = useItemsStore.getState().tracks
++    act(() => {
++      if (change === 'lock/unlock') {
++        useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++        useItemsStore.getState().setTracks(tracks)
++      } else if (change === 'remove/reinsert') {
++        useItemsStore.getState().setTracks([])
++        useItemsStore.getState().setTracks(tracks)
++      } else if (change === 'reparent')
++        useItemsStore
++          .getState()
++          .setTracks(tracks.map((track) => ({ ...track, parentTrackId: 'other-group' })))
++      else if (change === 'active track') useSelectionStore.getState().setActiveTrack(null)
++      else if (change === 'frame') usePlaybackStore.getState().setCurrentFrame(1)
++      else if (change === 'fps') useTimelineSettingsStore.setState({ fps: 60 })
++      else if (change === 'composition')
++        useCompositionNavigationStore.setState({ activeCompositionId: 'different-sequence' })
++      else useItemsStore.getState().setItems([])
++      useMaskEditorStore.getState().requestFinishPenMode()
++    })
++    expect(useMaskEditorStore.getState().penVertices).toEqual([])
++    expect(useMaskEditorStore.getState().isEditing).toBe(false)
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    useCompositionNavigationStore.setState({ activeCompositionId: null })
++  })
++
++  it('refuses an inherited locked active lane instead of redirecting the keyboard draft', () => {
++    const track = useItemsStore.getState().tracks[0]!
++    useItemsStore.getState().setTracks([
++      { ...track, id: 'group', isGroup: true, locked: true },
++      { ...track, parentTrackId: 'group' },
++      { ...track, id: 'other' },
++    ])
++    useMaskEditorStore.getState().startShapePenMode()
++    renderMaskEditorOverlay()
++    placePoint('20', '20')
++    expect(useMaskEditorStore.getState().penVertices).toEqual([])
++    expect(useItemsStore.getState().items).toEqual([])
++  })
++
++  it('revalidates policy after Finish publishes interaction cleanup', () => {
++    startDraft()
++    let changed = false
++    const unsubscribe = useMaskEditorStore.subscribe(() => {
++      if (changed) return
++      changed = true
++      const tracks = useItemsStore.getState().tracks
++      useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++      useItemsStore.getState().setTracks(tracks)
++    })
++    fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++    unsubscribe()
++    expect(changed).toBe(true)
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    expect(useMaskEditorStore.getState().penVertices).toEqual([])
++  })
++})
++
++describe('Native pen point publication cancellation', () => {
++  beforeEach(() => {
++    resetStores()
++    useSelectionStore.getState().setActiveTrack('track-1')
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  it.each(['vertex', 'cursor', 'hover'])(
++    'does not republish a canceled draft after %s notification',
++    (notification) => {
++      useMaskEditorStore.getState().startShapePenMode()
++      renderMaskEditorOverlay()
++      let changed = false
++      const unsubscribe = useMaskEditorStore.subscribe((state) => {
++        if (
++          changed ||
++          (notification === 'vertex'
++            ? state.penVertices.length !== 1
++            : notification === 'cursor'
++              ? !state.penCursorPos
++              : state.hoveredVertexIndex !== 0)
++        )
++          return
++        changed = true
++        const tracks = useItemsStore.getState().tracks
++        useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++        useItemsStore.getState().setTracks(tracks)
++      })
++      fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++      unsubscribe()
++      expect(changed).toBe(true)
++      expect(useMaskEditorStore.getState()).toMatchObject({
++        penMode: false,
++        penVertices: [],
++        penCursorPos: null,
++        hoveredVertexIndex: null,
++      })
++      expect(useItemsStore.getState().items).toEqual([])
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    },
++  )
++})
++
++describe('Native pen Finish admission and controls', () => {
++  beforeEach(() => {
++    resetStores()
++    useSelectionStore.getState().setActiveTrack('track-1')
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  function plant(x: number, y: number) {
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }), {
++      target: { value: String(x) },
++    })
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }), {
++      target: { value: String(y) },
++    })
++    fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  }
++
++  it('exposes minimum-point and remove-last controls without hijacking native input Enter', () => {
++    useMaskEditorStore.getState().startShapePenMode()
++    renderMaskEditorOverlay()
++    expect(screen.getByRole('button', { name: 'Finish new pen path' })).toBeDisabled()
++    expect(screen.getByRole('button', { name: 'Close new pen path' })).toBeDisabled()
++    plant(20, 20)
++    expect(screen.getByRole('button', { name: 'Finish new pen path' })).toBeDisabled()
++    plant(120, 80)
++    expect(screen.getByRole('button', { name: 'Finish new pen path' })).toBeEnabled()
++    expect(screen.getByRole('button', { name: 'Close new pen path' })).toBeDisabled()
++    const input = screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' })
++    expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(true)
++    expect(useItemsStore.getState().items).toEqual([])
++    plant(120, 20)
++    expect(screen.getByRole('button', { name: 'Close new pen path' })).toBeEnabled()
++    fireEvent.click(screen.getByRole('button', { name: 'Remove last new pen point' }))
++    expect(useMaskEditorStore.getState().penVertices).toHaveLength(2)
++    expect(screen.getByRole('button', { name: 'Close new pen path' })).toBeDisabled()
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    act(() => useMaskEditorStore.getState().requestFinishPenMode())
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++  })
++
++  it.each([false, true])(
++    'rejects a final policy race during shape planning (closed=%s)',
++    (closed) => {
++      useMaskEditorStore.getState().startShapePenMode()
++      renderMaskEditorOverlay()
++      plant(20, 20)
++      plant(120, 80)
++      if (closed) plant(120, 20)
++      const createId = crypto.randomUUID.bind(crypto)
++      const spy = vi.spyOn(crypto, 'randomUUID').mockImplementationOnce(() => {
++        const tracks = useItemsStore.getState().tracks
++        useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++        useItemsStore.getState().setTracks(tracks)
++        return createId()
++      })
++      try {
++        fireEvent.click(
++          screen.getByRole('button', {
++            name: closed ? 'Close new pen path' : 'Finish new pen path',
++          }),
++        )
++        expect(useItemsStore.getState().items).toEqual([])
++        expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++        expect(useMaskEditorStore.getState().penVertices).toEqual([])
++      } finally {
++        spy.mockRestore()
++      }
++    },
++  )
++
++  it('admits a fresh draft after a canceled lock/unlock session', () => {
++    useMaskEditorStore.getState().startShapePenMode()
++    const rendered = renderMaskEditorOverlay()
++    plant(20, 20)
++    const tracks = useItemsStore.getState().tracks
++    act(() => {
++      useItemsStore.getState().setTracks(tracks.map((track) => ({ ...track, locked: true })))
++      useItemsStore.getState().setTracks(tracks)
++    })
++    act(() => useMaskEditorStore.getState().startShapePenMode())
++    plant(20, 20)
++    plant(120, 80)
++    fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    rendered.unmount()
++  })
++
++  it('keeps pointer-created bezier geometry when a native point completes the path', () => {
++    useMaskEditorStore.getState().startShapePenMode()
++    const { canvas } = renderMaskEditorOverlay()
++    fireEvent.pointerDown(canvas, { clientX: 20, clientY: 20, pointerId: 1 })
++    fireEvent.pointerMove(canvas, { clientX: 40, clientY: 20, pointerId: 1 })
++    fireEvent.pointerUp(canvas, { clientX: 40, clientY: 20, pointerId: 1 })
++    plant(120, 80)
++    fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++    const shape = useItemsStore.getState().items[0] as ShapeItem
++    expect(shape.pathVertices?.[0]?.tangentMode).toBe('smooth')
++    expect(shape.pathVertices?.[0]?.outHandle[0]).toBeCloseTo(0.2)
++    expect(shape.pathVertices?.[0]?.inHandle[0]).toBeCloseTo(-0.2)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++  })
++})
++
++it('refuses to fit a keyboard draft against changed project dimensions', () => {
++  resetStores()
++  useSelectionStore.getState().setActiveTrack('track-1')
++  useTimelineStore.temporal.getState().clear()
++  useMaskEditorStore.getState().startShapePenMode()
++  const rendered = renderMaskEditorOverlay()
++  fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }), {
++    target: { value: '120' },
++  })
++  fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  rendered.rerender(
++    <MaskEditorOverlay
++      coordParams={{ ...createCoordParams(), projectSize: { width: 400, height: 120 } }}
++      playerSize={PLAYER_SIZE}
++      itemTransform={FULL_CANVAS_TRANSFORM}
++    />,
++  )
++  fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++  expect(useItemsStore.getState().items).toEqual([])
++  expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  expect(useMaskEditorStore.getState().penVertices).toEqual([])
++})
++
++describe('Native pen captured-session retirement', () => {
++  const freshVertex = {
++    position: [0.7, 0.8] as [number, number],
++    inHandle: [0, 0] as [number, number],
++    outHandle: [0, 0] as [number, number],
++    tangentMode: 'corner' as const,
++  }
++  beforeEach(() => {
++    resetStores()
++    useSelectionStore.getState().setActiveTrack('track-1')
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  function plant(x: number, y: number) {
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }), {
++      target: { value: String(x) },
++    })
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }), {
++      target: { value: String(y) },
++    })
++    fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  }
++
++  function begin() {
++    useMaskEditorStore.getState().startShapePenMode()
++    renderMaskEditorOverlay()
++    plant(20, 20)
++    plant(120, 80)
++    plant(120, 20)
++  }
++
++  function replaceDraft(cancelFirst: boolean) {
++    if (cancelFirst) useMaskEditorStore.getState().cancelPenMode()
++    useMaskEditorStore.getState().startShapePenMode()
++    useMaskEditorStore.getState().setPenVertices([freshVertex])
++    useMaskEditorStore.getState().setPenCursorPos(freshVertex.position)
++    useMaskEditorStore.getState().setHover(0)
++    screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }).focus()
++  }
++
++  function expectFreshDraft() {
++    expect(useMaskEditorStore.getState()).toMatchObject({
++      penMode: true,
++      shapePenMode: true,
++      isEditing: true,
++      penVertices: [freshVertex],
++      penCursorPos: freshVertex.position,
++      hoveredVertexIndex: 0,
++    })
++    expect(document.activeElement).toBe(
++      screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }),
++    )
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  }
++
++  for (const closed of [false, true]) {
++    for (const cancelFirst of [false, true]) {
++      it.each([false, true])(
++        `retires ${closed ? 'closed' : 'open'} Finish capture on ${cancelFirst ? 'cancel/restart' : 'replacement'} (early subscriber=%s)`,
++        (early) => {
++          let armed = false
++          let replaced = false
++          const listener = () => {
++            if (!armed || replaced) return
++            replaced = true
++            replaceDraft(cancelFirst)
++          }
++          const earlyUnsubscribe = early ? useMaskEditorStore.subscribe(listener) : undefined
++          begin()
++          const unsubscribe = earlyUnsubscribe ?? useMaskEditorStore.subscribe(listener)
++          armed = true
++          fireEvent.click(
++            screen.getByRole('button', {
++              name: closed ? 'Close new pen path' : 'Finish new pen path',
++            }),
++          )
++          unsubscribe()
++          expect(replaced).toBe(true)
++          expectFreshDraft()
++        },
++      )
++    }
++  }
++
++  for (const notification of ['vertex', 'cursor', 'hover']) {
++    it.each([false, true])(
++      `does not publish old ${notification} state into a replacement draft (cancel first=%s)`,
++      (cancelFirst) => {
++        begin()
++        let count = 0
++        let replaced = false
++        const target = notification === 'vertex' ? 1 : notification === 'cursor' ? 2 : 3
++        const unsubscribe = useMaskEditorStore.subscribe(() => {
++          if (replaced || ++count !== target) return
++          replaced = true
++          replaceDraft(cancelFirst)
++        })
++        plant(140, 100)
++        unsubscribe()
++        expect(replaced).toBe(true)
++        expectFreshDraft()
++      },
++    )
++  }
++
++  for (const route of ['Remove last', 'Backspace', 'Delete']) {
++    for (const notification of [1, 2, 3]) {
++      it.each(['lock/unlock', 'cancel/restart'])(
++        `does not restore stale points/hover after ${route} notification ${notification}: %s`,
++        (change) => {
++          begin()
++          let count = 0
++          let changed = false
++          const unsubscribe = useMaskEditorStore.subscribe(() => {
++            if (changed || ++count !== notification) return
++            changed = true
++            if (change === 'cancel/restart') replaceDraft(true)
++            else {
++              const tracks = useItemsStore.getState().tracks
++              useItemsStore
++                .getState()
++                .setTracks(tracks.map((track) => ({ ...track, locked: true })))
++              useItemsStore.getState().setTracks(tracks)
++            }
++          })
++          if (route === 'Remove last')
++            fireEvent.click(screen.getByRole('button', { name: 'Remove last new pen point' }))
++          else fireEvent.keyDown(window, { key: route })
++          unsubscribe()
++          expect(changed).toBe(true)
++          if (change === 'cancel/restart') expectFreshDraft()
++          else {
++            expect(useMaskEditorStore.getState()).toMatchObject({
++              penMode: false,
++              penVertices: [],
++              penCursorPos: null,
++              hoveredVertexIndex: null,
++            })
++            expect(useItemsStore.getState().items).toEqual([])
++            expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++          }
++        },
++      )
++    }
++  }
++
++  it.each(['Cancel', 'Escape'])(
++    'keeps the fresh draft when %s cleanup replaces the captured session',
++    (route) => {
++      begin()
++      let replaced = false
++      const unsubscribe = useMaskEditorStore.subscribe(() => {
++        if (replaced) return
++        replaced = true
++        replaceDraft(true)
++      })
++      if (route === 'Cancel')
++        fireEvent.click(screen.getByRole('button', { name: 'Cancel new pen path' }))
++      else fireEvent.keyDown(window, { key: 'Escape' })
++      unsubscribe()
++      expectFreshDraft()
++    },
++  )
++})
++
++it('places and finishes a fresh keyboard draft inside an earlier cancellation subscriber', () => {
++  resetStores()
++  useSelectionStore.getState().setActiveTrack('track-1')
++  useTimelineStore.temporal.getState().clear()
++  let armed = false
++  let stage = 0
++  const plant = (x: number, y: number) => {
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point X (project pixels)' }), {
++      target: { value: String(x) },
++    })
++    fireEvent.change(screen.getByRole('spinbutton', { name: 'New pen point Y (project pixels)' }), {
++      target: { value: String(y) },
++    })
++    fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++  }
++  const unsubscribe = useMaskEditorStore.subscribe((state) => {
++    if (!armed || stage === 2) return
++    if (stage === 0) {
++      stage = 1
++      useMaskEditorStore.getState().cancelPenMode()
++    } else if (!state.penMode) {
++      stage = 2
++      useMaskEditorStore.getState().startShapePenMode()
++      fireEvent.submit(screen.getByRole('form', { name: 'New pen point placement' }))
++      useMaskEditorStore.getState().addPenVertex({
++        position: [0.65, 0.75],
++        inHandle: [0, 0],
++        outHandle: [0, 0],
++        tangentMode: 'corner',
++      })
++    }
++  })
++  useMaskEditorStore.getState().startShapePenMode()
++  renderMaskEditorOverlay()
++  plant(20, 20)
++  plant(120, 80)
++  armed = true
++  fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++  unsubscribe()
++  expect(stage).toBe(2)
++  expect(useMaskEditorStore.getState().penMode).toBe(true)
++  expect(useMaskEditorStore.getState().penVertices.map((vertex) => vertex.position)).toEqual([
++    [0.6, 2 / 3],
++    [0.65, 0.75],
++  ])
++  expect(useItemsStore.getState().items).toEqual([])
++  expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  fireEvent.click(screen.getByRole('button', { name: 'Finish new pen path' }))
++  expect(useItemsStore.getState().items).toHaveLength(1)
++  expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++})
+diff --git a/src/features/preview/stores/mask-editor-store.ts b/src/features/preview/stores/mask-editor-store.ts
+--- a/src/features/preview/stores/mask-editor-store.ts
++++ b/src/features/preview/stores/mask-editor-store.ts
+@@ -36,6 +36,8 @@
+   hoveredHandle: 'in' | 'out' | null
+
+   // --- Pen tool state ---
++  /** Monotonic identity for editing and pen-mode lifecycle changes. */
++  penSessionVersion: number
+   /** Whether the pen tool is active (drawing a new path) */
+   penMode: boolean
+   /** Vertices placed so far by the pen tool (open path) */
+@@ -117,6 +119,7 @@
+   previewVertices: null,
+   hoveredVertexIndex: null,
+   hoveredHandle: null,
++  penSessionVersion: 0,
+   penMode: false,
+   penVertices: [],
+   penDraggingHandle: false,
+@@ -128,7 +131,8 @@
+   convertSelectedVertexRequestMode: null,
+
+   startEditing: (itemId) =>
+-    set({
++    set((state) => ({
++      penSessionVersion: state.penSessionVersion + 1,
+       isEditing: true,
+       editingItemId: itemId,
+       selectedVertexIndices: [],
+@@ -147,10 +151,11 @@
+       cancelPenRequestVersion: 0,
+       convertSelectedVertexRequestVersion: 0,
+       convertSelectedVertexRequestMode: null,
+-    }),
++    })),
+
+   stopEditing: () =>
+-    set({
++    set((state) => ({
++      penSessionVersion: state.penSessionVersion + 1,
+       isEditing: false,
+       editingItemId: null,
+       selectedVertexIndices: [],
+@@ -169,7 +174,7 @@
+       cancelPenRequestVersion: 0,
+       convertSelectedVertexRequestVersion: 0,
+       convertSelectedVertexRequestMode: null,
+-    }),
++    })),
+
+   selectVertices: (vertexIndices, primaryIndex = null) =>
+     set(() => {
+@@ -226,7 +231,8 @@
+
+   // --- Pen tool ---
+   startPenMode: (itemId) =>
+-    set({
++    set((state) => ({
++      penSessionVersion: state.penSessionVersion + 1,
+       isEditing: true,
+       editingItemId: itemId,
+       penMode: true,
+@@ -244,10 +250,11 @@
+       cancelPenRequestVersion: 0,
+       convertSelectedVertexRequestVersion: 0,
+       convertSelectedVertexRequestMode: null,
+-    }),
++    })),
+
+   cancelPenMode: () =>
+-    set({
++    set((state) => ({
++      penSessionVersion: state.penSessionVersion + 1,
+       penMode: false,
+       shapePenMode: false,
+       penVertices: [],
+@@ -266,7 +273,7 @@
+       cancelPenRequestVersion: 0,
+       convertSelectedVertexRequestVersion: 0,
+       convertSelectedVertexRequestMode: null,
+-    }),
++    })),
+
+   addPenVertex: (vertex) =>
+     set((state) => ({
+@@ -296,7 +303,8 @@
+   getPenVertices: () => get().penVertices,
+
+   startShapePenMode: () =>
+-    set({
++    set((state) => ({
++      penSessionVersion: state.penSessionVersion + 1,
+       isEditing: true,
+       editingItemId: null,
+       penMode: true,
+@@ -315,7 +323,7 @@
+       cancelPenRequestVersion: 0,
+       convertSelectedVertexRequestVersion: 0,
+       convertSelectedVertexRequestMode: null,
+-    }),
++    })),
+
+   requestFinishPenMode: () =>
+     set((state) => ({
