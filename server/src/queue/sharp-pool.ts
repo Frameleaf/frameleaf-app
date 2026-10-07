@@ -97,12 +97,13 @@ export class SharpProcessPool {
     const admittedAt = performance.now();
     let task: Task | undefined;
     let observed = false;
-    const report = (error?: unknown) => {
+    const report = (error?: unknown, failed = false) => {
       if (observed) return;
       observed = true;
+      const finishedAt = performance.now();
       imageWorkerDiagnostics.publish({
         operation,
-        outcome: error
+        outcome: failed
           ? signal?.aborted
             ? 'cancelled'
             : error instanceof SharpResourceLimitError
@@ -116,17 +117,17 @@ export class SharpProcessPool {
                     ? 'timeout'
                     : 'worker-failure'
           : 'success',
-        elapsedMs: performance.now() - admittedAt,
-        queueMs: (task?.startedAt ?? performance.now()) - admittedAt,
+        elapsedMs: finishedAt - admittedAt,
+        queueMs: (task?.startedAt ?? finishedAt) - admittedAt,
         workerLifetimePeakRssBytes: task?.workerLifetimePeakRssBytes,
-        renderMs: task?.startedAt === undefined ? 0 : performance.now() - task.startedAt,
+        renderMs: task?.startedAt === undefined ? 0 : finishedAt - task.startedAt,
         maxBytes: this.options.maxBytes,
         maxPixels: this.options.maxPixels,
         fallbackReason: task?.fallbackReason,
       });
     };
     const refused = (error: unknown) => {
-      report(error);
+      report(error, true);
       return Promise.reject(error);
     };
     if (this.stopped) {
@@ -186,7 +187,7 @@ export class SharpProcessPool {
           resolve(value as SharpResult<K>);
         },
         reject: (error) => {
-          report(error);
+          report(error, true);
           reject(error);
         },
       };
