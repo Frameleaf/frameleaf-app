@@ -260,6 +260,7 @@ const ENGINE_CASES: Record<
   StudioEngineCommandId,
   (f: Fixture) => { payload: Record<string, unknown>; graph?: () => Promise<Project> }
 > = {
+  'captions.set': () => ({ payload: { captions: [{ id: 'canonical-caption', start: seconds(1), end: seconds(2), text: 'Caption' }] } }),
   'clip.add': () => ({ payload: { trackId: 'v1', assetId: STILL, at: seconds(10), duration: seconds(1) } }),
   'clip.delete': (f) => ({ payload: { clipId: f.title } }),
   'clip.insert': () => ({

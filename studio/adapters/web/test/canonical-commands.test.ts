@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
-import type { TextItem } from '@/types/timeline'
+import type { TextItem, TimelineItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
 import { usePlaybackStore } from '@/shared/state/playback'
 import {
@@ -170,6 +170,137 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
     }
     expect(before.project).toEqual(keyed.project)
+  })
+
+  it('sets editable captions at exact NTSC times without shifting overlapping cues', async () => {
+    const graph = project()
+    graph.metadata = { ...graph.metadata, fps: 29.97 }
+    const batch = [envelope('captions.set', { captions: [
+      { id: 'later', start: seconds(1001 * 600_001, 30_000), end: seconds(1001 * 600_003, 30_000), text: 'Later' },
+      { id: 'earlier', start: seconds(1001 * 600_000, 30_000), end: seconds(1001 * 600_002, 30_000), text: 'Earlier\nline' },
+    ] }, 'exact-captions')]
+    const first = await applied(graph, batch)
+    const second = await applied(graph, batch)
+    expect(second.digest).toBe(first.digest)
+    expect(itemsOf(first.project)).toMatchObject([
+      { id: 'earlier', type: 'text', textRole: 'caption', from: 600_000, durationInFrames: 2, text: 'Earlier\nline' },
+      { id: 'later', type: 'text', textRole: 'caption', from: 600_001, durationInFrames: 2, text: 'Later' },
+    ])
+    expect(itemsOf(first.project).every((item) => !('captionSource' in item))).toBe(true)
+    expect((first.project as unknown as Record<string, unknown>).frameleafFuture).toEqual((graph as unknown as Record<string, unknown>).frameleafFuture)
+    expect((await applied(first.project, [])).digest).toBe(first.digest)
+  })
+
+  it('replaces and clears main-sequence caption forms while retaining matching styles and linked media', async () => {
+    const graph = (await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])).project
+    const video = itemsOf(graph).find((item) => item.type === 'video')! as unknown as TimelineItem
+    const transcript = { type: 'transcript' as const, mediaId: ASSET, enabled: true, updatedAt: 1, cues: [
+      { id: 'cue', startSeconds: 0, endSeconds: 1, text: 'Virtual' },
+    ] }
+    video.transcriptCaptions = transcript
+    graph.timeline!.tracks.push({ ...graph.timeline!.tracks[0]!, id: 'captions', order: -1 })
+    const caption = {
+      id: 'keep', type: 'text' as const, textRole: 'caption' as const, trackId: 'captions', from: 0,
+      durationInFrames: 30, text: 'Old', label: 'Old', color: '#ffff00', fontSize: 44,
+      textSpans: [{ text: 'Old styled content' }], frameleafCaptionFuture: { keep: true },
+      linkedGroupId: video.linkedGroupId,
+      captionSource: { type: 'transcript' as const, clipId: video.id, mediaId: ASSET },
+    }
+    // Project's persisted item type predates subtitle segments; use the engine's current union.
+    ;(graph.timeline!.items as unknown as TimelineItem[]).push(caption as TextItem, { ...caption, id: 'remove', textSpans: undefined } as TextItem, {
+      id: 'subtitle', type: 'subtitle', label: 'Imported', trackId: 'captions', from: 0, durationInFrames: 30, color: '#ffffff',
+      source: { type: 'subtitle-import', fileName: 'captions.srt', format: 'srt', importedAt: 1 },
+      cues: [{ id: 'subtitle-cue', startSeconds: 0, endSeconds: 1, text: 'Imported' }],
+    })
+    const before = canonicalJson(graph)
+    const changed = await applied(graph, [envelope('captions.set', { captions: [
+      { id: 'keep', start: seconds(1), end: seconds(2), text: 'New' },
+    ] })])
+    expect(canonicalJson(graph)).toBe(before)
+    expect(itemsOf(changed.project).find((item) => item.id === 'keep')).toMatchObject({
+      ...caption, text: 'New', label: 'New', from: 30, textSpans: undefined,
+    })
+    expect(itemsOf(changed.project).filter((item) => item.type === 'audio')).toEqual(itemsOf(graph).filter((item) => item.type === 'audio'))
+    expect(itemsOf(changed.project).find((item) => item.id === video.id)).toMatchObject({ transcriptCaptions: { ...transcript, enabled: false } })
+    expect(itemsOf(changed.project).map((item) => item.id)).not.toContain('remove')
+    expect(itemsOf(changed.project).map((item) => item.id)).not.toContain('subtitle')
+    const cleared = await applied(changed.project, [envelope('captions.set', { captions: [] })])
+    expect(itemsOf(cleared.project).map((item) => item.type).sort()).toEqual(['audio', 'video'])
+    expect(cleared.project.timeline!.tracks).toEqual(changed.project.timeline!.tracks)
+  })
+
+  it('rejects invalid caption sets and locked replacements atomically', async () => {
+    const line = { id: 'caption', start: seconds(0), end: seconds(1), text: 'Valid' }
+    const graph = (await applied(project(), [envelope('captions.set', { captions: [line] })])).project
+    const before = canonicalJson(graph)
+    for (const payload of [
+      {}, { captions: null }, { captions: [null] }, { captions: [line], sequenceId: 'other' },
+      { captions: [{ ...line, id: '' }] }, { captions: [line, line] },
+      { captions: [{ ...line, text: '  ' }] }, { captions: [{ ...line, text: 'bad\u0000text' }] },
+      { captions: [{ ...line, text: 'x'.repeat(4 * 1024 * 1024 + 1) }] },
+      { captions: [{ ...line, start: seconds(-1, 1000) }] },
+      { captions: [{ ...line, end: seconds(0) }] }, { captions: [{ ...line, end: seconds(1, 1000) }] },
+      { captions: [{ ...line, end: seconds(Number.MAX_SAFE_INTEGER, 1) }] },
+      { captions: [{ ...line, start: seconds(1, 0) }] }, { captions: [{ ...line, style: 'unsupported' }] },
+    ]) {
+      await expect(applyCanonicalCommands(graph, [envelope('captions.set', payload)], media))
+        .resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 0 })
+      expect(canonicalJson(graph)).toBe(before)
+    }
+    graph.timeline!.tracks.find((track) => track.id === itemsOf(graph)[0]!.trackId)!.locked = true
+    await expect(applyCanonicalCommands(graph, [envelope('captions.set', { captions: [] })], media))
+      .resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
+  })
+
+  it('rejects nested composition caption id collisions without changing the graph or host history', async () => {
+    const titled = (await applied(project(), [envelope('title.add', { text: 'Nested', at: seconds(0) })])).project
+    const composed = (await applied(titled, [envelope('composition.add', { name: 'Nested', clipIds: [itemsOf(titled)[0]!.id] })])).project
+    const graph = (await applied(composed, [])).project
+    graph.timeline!.compositions![0]!.items[0]!.id = 'nested-clip'
+    const before = canonicalJson(graph)
+    const nestedBefore = canonicalJson(graph.timeline!.compositions)
+    const collision = envelope('captions.set', { captions: [{ id: 'nested-clip', start: seconds(0), end: seconds(1), text: 'Caption' }] })
+    let current: unknown = graph
+    const history = createStudioGraphHistory()
+    history.record(titled, graph)
+    const depth = history.depth
+    const stage = vi.fn((next: unknown) => { current = next })
+    const bridge = createStudioBridge({
+      context: () => ({ revision: 3, hasLease: true, hasAccess: true, online: true,
+        capabilities: { ...emptyStudioCapabilities(), transcriptionWorker: true } }),
+      handlers: createStudioEngineCommandHandlers({
+        graph: () => current, revision: () => 3, assets: () => [], restore: async () => false, history, stage,
+        engine: async () => ({ dispose() {}, async apply(input, batch) {
+          const result = await applyCanonicalCommands(input, batch as unknown as readonly CanonicalEnvelope[], media)
+          return result.status === 'applied' ? { status: 'applied', graph: result.project, digest: result.digest } : result
+        } }),
+      }),
+    })
+    const [result] = await bridge.submit([collision as unknown as StudioCommandEnvelope])
+    expect(result).toMatchObject({ status: 'rejected', reason: 'invalid' })
+    expect(stage).not.toHaveBeenCalled()
+    expect(current).toBe(graph)
+    expect(history.depth).toEqual(depth)
+    await expect(applyCanonicalCommands(graph, [envelope('title.add', { text: 'Before rejection', at: seconds(3) }), collision], media))
+      .resolves.toMatchObject({ status: 'rejected', reason: 'invalid', index: 1 })
+    expect(canonicalJson(graph)).toBe(before)
+    expect(canonicalJson(graph.timeline!.compositions)).toBe(nestedBefore)
+  })
+
+  it('skips generated caption ids occupied by nested composition items', async () => {
+    const titled = (await applied(project(), [envelope('title.add', { text: 'Nested', at: seconds(0) })])).project
+    const composed = (await applied(titled, [envelope('composition.add', { name: 'Nested', clipIds: [itemsOf(titled)[0]!.id] })])).project
+    const graph = (await applied(composed, [])).project
+    graph.timeline!.tracks.push({ ...graph.timeline!.tracks[0]!, id: 'free-captions', order: -1 })
+    const uuid = deterministicUuids('nested-auto:0')
+    const occupied = uuid()
+    const available = uuid()
+    graph.timeline!.compositions![0]!.items[0]!.id = occupied
+    const before = canonicalJson(graph)
+    const outcome = await applied(graph, [envelope('captions.set', { captions: [{ start: seconds(0), end: seconds(1), text: 'Caption' }] }, 'nested-auto')])
+    expect(itemsOf(outcome.project).find((item) => item.type === 'text' && item.textRole === 'caption')?.id).toBe(available)
+    expect(outcome.project.timeline!.compositions).toEqual(graph.timeline!.compositions)
+    expect(canonicalJson(graph)).toBe(before)
   })
 
   it('initializes the master bus for mute-only edits on empty and absent timelines after another project', async () => {

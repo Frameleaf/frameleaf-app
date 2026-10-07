@@ -50,6 +50,7 @@ import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-se
 import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
+import { findCompatibleCaptionTrack, getCaptionStyleTemplateFromPreset, isCaptionTrackCandidate } from '@/features/media-library/utils/caption-items'
 import {
   filterUnlockedItemIds,
   getLinkedItemIds,
@@ -201,6 +202,7 @@ const invalid = (message: string): never => {
  * implements. `history.undo` and `history.redo` are answered by the host's graph history.
  */
 export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
+  'captions.set': ['readme.local-ai-analysis.1'],
   'clip.add': ['command.addItem', 'command.addClip'],
   'clip.delete': ['command.removeItems'],
   'clip.move': ['command.moveItem'],
@@ -1174,6 +1176,74 @@ async function applySequenceSettings(
 }
 
 const handlers: Record<string, Handler> = {
+  'captions.set'(payload, { cadence }) {
+    if (Object.keys(payload).some((key) => key !== 'captions') || !Array.isArray(payload.captions))
+      invalid('captions.set requires a captions array')
+    const previous = items().filter((item): item is TextItem => item.type === 'text' && item.textRole === 'caption')
+    const byId = new Map(previous.map((item) => [item.id, item]))
+    const occupied = new Set([...items(), ...useCompositionsStore.getState().compositions.flatMap((composition) => composition.items)]
+      .map((item) => item.id))
+    const ids = new Set<string>()
+    let bytes = 0
+    const captions = (payload.captions as unknown[]).map((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('Each caption must be an object')
+      const line = value as Record<string, unknown>
+      if (Object.keys(line).some((key) => !['id', 'start', 'end', 'text'].includes(key))) invalid('Unknown caption field')
+      const id = line.id === undefined ? undefined : stringField(line, 'id')
+      if (id !== undefined && (ids.has(id) || (occupied.has(id) && !byId.has(id)))) invalid('Caption ids must be unique and cannot replace other clips')
+      if (id !== undefined) ids.add(id)
+      const text = stringField(line, 'text')
+      if (!text.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) invalid('Caption text must be nonblank and contain no control characters')
+      if (!isRational(line.start) || !isRational(line.end)) invalid('Caption times must be exact rationals')
+      const start = line.start as Rational
+      const end = line.end as Rational
+      if (start.num < 0 || end.num < 0 || BigInt(end.num) * BigInt(start.den) <= BigInt(start.num) * BigInt(end.den)) invalid('Caption end must be after its nonnegative start')
+      const from = secondsToFrames(start, cadence)
+      const durationInFrames = secondsToFrames(end, cadence) - from
+      if (durationInFrames < 1) invalid('Captions must span at least one frame')
+      bytes += new TextEncoder().encode(JSON.stringify({ id, start: { num: start.num, den: start.den }, end: { num: end.num, den: end.den }, text })).byteLength
+      // Match the existing inline subtitle import limit, including cue metadata.
+      if (bytes > 4 * 1024 * 1024) invalid('Caption sets must be no larger than 4 MB')
+      return { id, text, from, durationInFrames }
+    }).sort((a, b) => a.from - b.from)
+    const subtitles = items().filter((item) => item.type === 'subtitle')
+    const virtual = items().filter((item) => item.transcriptCaptions?.enabled)
+    assertUnlocked([...previous, ...subtitles, ...virtual].map((item) => item.id), 'captions.set')
+    withLinkedSelection(false, () => removeItems([...previous.filter((item) => !ids.has(item.id)), ...subtitles].map((item) => item.id)))
+    for (const item of virtual) updateItem(item.id, { transcriptCaptions: { ...item.transcriptCaptions!, enabled: false } })
+    const additions: TextItem[] = []
+    const planned = items().filter((item) => !byId.has(item.id))
+    const { width, height } = canvas()
+    for (const line of captions) {
+      const old = line.id ? byId.get(line.id) : undefined
+      let track = old && !planned.some((item) => item.trackId === old.trackId && item.from < line.from + line.durationInFrames && item.from + item.durationInFrames > line.from)
+        ? trackOf(old)
+        : findCompatibleCaptionTrack(tracks().filter((candidate) => isCaptionTrackCandidate(candidate, items()) &&
+          items().every((item) => item.trackId !== candidate.id || byId.has(item.id))), planned, line.from, line.from + line.durationInFrames)
+      if (!track) {
+        track = createClassicTrack({ tracks: tracks(), kind: 'video', order: Math.min(0, ...tracks().map((candidate) => candidate.order)) - 1 })
+        setTracks([...tracks(), track])
+      }
+      if (old) {
+        const update = { text: line.text, from: line.from, durationInFrames: line.durationInFrames, trackId: track.id,
+          label: line.text.slice(0, 64), ...(old.text !== line.text ? { textSpans: undefined, textLayoutDrafts: undefined } : {}) }
+        updateItem(old.id, update)
+        planned.push({ ...old, ...update })
+      } else {
+        let id = line.id
+        if (!id) {
+          do { id = crypto.randomUUID() } while (occupied.has(id) || ids.has(id))
+          ids.add(id)
+        }
+        const item: TextItem = { ...getCaptionStyleTemplateFromPreset('netflix', width, height), ...line, id,
+          type: 'text', textRole: 'caption', trackId: track.id, label: line.text.slice(0, 64), color: '#ffffff' }
+        additions.push(item)
+        planned.push(item)
+      }
+    }
+    addItems(additions)
+  },
+
   'clip.add'(payload, { fps, cadence, media }) {
     const assetId = stringField(payload, 'assetId')
     const track = requireTrack(stringField(payload, 'trackId'))

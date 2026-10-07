@@ -8225,7 +8225,7 @@
         "sha256": "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
       },
       {
-        "value": 1e-7,
+        "value": 1e-07,
         "canonical": "1e-7",
         "sha256": "5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"
       },
@@ -139541,32 +139541,6 @@
       }
     },
     {
-      "id": "not-implemented/captions.set",
-      "story": "FL-309",
-      "covers": [
-        "captions.set"
-      ],
-      "summary": "The engine refuses captions.set as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "captions.set",
-          "payload": {
-            "captions": []
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/captions.set",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "captions.set is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/clip.setBlendMode",
       "story": "FL-309",
       "covers": [
@@ -142389,6 +142363,850 @@
         "reason": "not-implemented",
         "detail": "clip.setAudio.muted is not implemented"
       }
+    },
+    {
+      "id": "captions.set/exact-overlap",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "Overlapping caption cues retain exact NTSC times across load on separate tracks.",
+      "base": "empty-2997",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": [
+              {
+                "id": "later",
+                "start": {
+                  "num": 600601001,
+                  "den": 30000
+                },
+                "end": {
+                  "num": 600603003,
+                  "den": 30000
+                },
+                "text": "Later"
+              },
+              {
+                "id": "earlier",
+                "start": {
+                  "num": 600600000,
+                  "den": 30000
+                },
+                "end": {
+                  "num": 600602002,
+                  "den": 30000
+                },
+                "text": "Earlier"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/exact-overlap",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "f1f7ea4cbee545803682d3a05b022382dae99adbbfbecf861146362f45a86a66",
+        "envelopeDigest": "df674f9b2ec9b5b265873b8625cd3c148395b1f5e73b1703c8648ea79c6364e3",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "6aa05f51-d7ea-42ca-883e-076d0cfe5e6c",
+              "at": [
+                "timeline.items[1].trackId",
+                "timeline.tracks[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 29.97002997002997,
+            "frameRate": {
+              "num": 30000,
+              "den": 1001
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "track-6aa05f51-d7ea-42ca-883e-076d0cfe5e6c",
+                "name": "V2",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": -1,
+                "items": []
+              },
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "color": "#ffffff",
+                "backgroundColor": "rgba(0, 0, 0, 0.55)",
+                "backgroundRadius": 4,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.15,
+                "letterSpacing": 0,
+                "textPadding": 12,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 2,
+                  "blur": 6,
+                  "color": "rgba(0, 0, 0, 0.6)"
+                },
+                "fontSize": 43,
+                "transform": {
+                  "x": 0,
+                  "y": 389,
+                  "width": 1344,
+                  "height": 173,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "id": "earlier",
+                "text": "Earlier",
+                "from": 600000,
+                "durationInFrames": 2,
+                "type": "text",
+                "textRole": "caption",
+                "trackId": "v1",
+                "label": "Earlier"
+              },
+              {
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "color": "#ffffff",
+                "backgroundColor": "rgba(0, 0, 0, 0.55)",
+                "backgroundRadius": 4,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.15,
+                "letterSpacing": 0,
+                "textPadding": 12,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 2,
+                  "blur": 6,
+                  "color": "rgba(0, 0, 0, 0.6)"
+                },
+                "fontSize": 43,
+                "transform": {
+                  "x": 0,
+                  "y": 389,
+                  "width": 1344,
+                  "height": 173,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "id": "later",
+                "text": "Later",
+                "from": 600001,
+                "durationInFrames": 2,
+                "type": "text",
+                "textRole": "caption",
+                "trackId": "track-6aa05f51-d7ea-42ca-883e-076d0cfe5e6c",
+                "label": "Later"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "captions.set/replace",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "Replace the main caption list, retaining matching style and source metadata.",
+      "base": "seed:captioned",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": [
+              {
+                "id": "cap1",
+                "start": {
+                  "num": 2,
+                  "den": 1
+                },
+                "end": {
+                  "num": 3,
+                  "den": 1
+                },
+                "text": "Revised"
+              },
+              {
+                "id": "new",
+                "start": {
+                  "num": 4,
+                  "den": 1
+                },
+                "end": {
+                  "num": 5,
+                  "den": 1
+                },
+                "text": "New"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/replace",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "b3f5d1765aee45f738ad59e8d0cfd14ddaea737e32ad32626f0b733b26dc61a7",
+        "envelopeDigest": "c827866571b9bce5ca4412f47533599403c26fa95c9cbf9ad3402e53505a91fd",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v2",
+                "name": "V2",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": -1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "c1",
+                "type": "video",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 90,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "c1-origin",
+                "src": "",
+                "sourceStart": 30,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "c2",
+                "type": "video",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 60,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "c2-origin",
+                "src": "",
+                "sourceStart": 0,
+                "sourceEnd": 60,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "cap1",
+                "type": "text",
+                "trackId": "v2",
+                "from": 60,
+                "durationInFrames": 30,
+                "label": "Revised",
+                "text": "Revised",
+                "color": "#ffffff",
+                "textRole": "caption",
+                "captionSource": {
+                  "type": "transcript",
+                  "clipId": "c1",
+                  "mediaId": "0198a1c2-0000-7000-8000-000000000002"
+                }
+              },
+              {
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "color": "#ffffff",
+                "backgroundColor": "rgba(0, 0, 0, 0.55)",
+                "backgroundRadius": 4,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.15,
+                "letterSpacing": 0,
+                "textPadding": 12,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 2,
+                  "blur": 6,
+                  "color": "rgba(0, 0, 0, 0.6)"
+                },
+                "fontSize": 43,
+                "transform": {
+                  "x": 0,
+                  "y": 389,
+                  "width": 1344,
+                  "height": 173,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "id": "new",
+                "text": "New",
+                "from": 120,
+                "durationInFrames": 30,
+                "type": "text",
+                "textRole": "caption",
+                "trackId": "v2",
+                "label": "New"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "captions.set/clear",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "An empty caption list clears captions without changing the source video.",
+      "base": "seed:captioned",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "5f8511cea56c3c00002389d0cc941064b6651514708a79a70397ff0c2d2a3e92",
+        "envelopeDigest": "bfc6dd95f24428d156558406e82b630f405458309db10258ef3d64d1e2084781",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v2",
+                "name": "V2",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": -1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "c1",
+                "type": "video",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 90,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "c1-origin",
+                "src": "",
+                "sourceStart": 30,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "c2",
+                "type": "video",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 60,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "c2-origin",
+                "src": "",
+                "sourceStart": 0,
+                "sourceEnd": 60,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "captions.set/rejects-media-id",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "A caption id cannot replace a media clip.",
+      "base": "seed:captioned",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": [
+              {
+                "id": "c1",
+                "start": {
+                  "num": 0,
+                  "den": 1
+                },
+                "end": {
+                  "num": 1,
+                  "den": 1
+                },
+                "text": "Collision"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/rejects-media-id",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Caption ids must be unique and cannot replace other clips"
+      }
+    },
+    {
+      "id": "captions.set/rejects-subframe",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "Subframe caption durations are refused without expansion.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": [
+              {
+                "id": "short",
+                "start": {
+                  "num": 0,
+                  "den": 1
+                },
+                "end": {
+                  "num": 1,
+                  "den": 1000
+                },
+                "text": "Too short"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/rejects-subframe",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Captions must span at least one frame"
+      }
+    },
+    {
+      "id": "captions.set/generated-ids",
+      "story": "FL-111",
+      "covers": [
+        "captions.set"
+      ],
+      "summary": "Missing caption ids come from the envelope deterministic UUID stream.",
+      "base": "seed:unknown-fields",
+      "envelopes": [
+        {
+          "id": "captions.set",
+          "payload": {
+            "captions": [
+              {
+                "start": {
+                  "num": 0,
+                  "den": 1
+                },
+                "end": {
+                  "num": 1,
+                  "den": 1
+                },
+                "text": "Generated id"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl111:captions.set/generated-ids",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "959ecae28523d42f3efdbf04c052e34a9b37bc2ac9e37e4fac64680cb49d0cc0",
+        "envelopeDigest": "be27453afc2bf2f51899bf418ee446b43f3e8034ecfafb81915f84afac215158",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "1ef5a7c8-5397-48dd-996a-cb19e7cbb06e",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "color": "#ffffff",
+                "backgroundColor": "rgba(0, 0, 0, 0.55)",
+                "backgroundRadius": 4,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.15,
+                "letterSpacing": 0,
+                "textPadding": 12,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 2,
+                  "blur": 6,
+                  "color": "rgba(0, 0, 0, 0.6)"
+                },
+                "fontSize": 43,
+                "transform": {
+                  "x": 0,
+                  "y": 389,
+                  "width": 1344,
+                  "height": 173,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "id": "1ef5a7c8-5397-48dd-996a-cb19e7cbb06e",
+                "text": "Generated id",
+                "from": 0,
+                "durationInFrames": 30,
+                "type": "text",
+                "textRole": "caption",
+                "trackId": "v1",
+                "label": "Generated id"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          },
+          "frameleafFuture": {
+            "keep": [
+              1,
+              null,
+              {
+                "nested": true
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "history": [
@@ -142847,9 +143665,9 @@
   ],
   "commandStatus": {
     "captions.set": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-111",
+      "section": "15"
     },
     "clip.add": {
       "status": "engine",
