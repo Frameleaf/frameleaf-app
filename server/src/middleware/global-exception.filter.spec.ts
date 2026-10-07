@@ -48,7 +48,7 @@ describe('FL-328 server error display contract', () => {
     expect(body.displayError.args).toEqual({ attemptsLeft: 2 });
   });
 
-  it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, '2', { token: 'private' }])(
+  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '2', { token: 'private' }])(
     'excludes invalid structured arguments: %j',
     (attemptsLeft) => {
       expect(serverErrorDisplay(401, { code: 'setup_code_invalid', attemptsLeft }).args).toEqual({});
@@ -82,7 +82,7 @@ describe('FL-328 server error display contract', () => {
     const log = logger();
     const secret = 'private-provider-account-a';
     const error = new Error(secret);
-    error.stack = secret;
+    Object.defineProperty(error, 'stack', { value: secret });
     const { res, body } = respond(error, 'request-a', log);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(body).toEqual({ message: 'Internal server error', displayError: serverErrorDisplay(500, {}) });

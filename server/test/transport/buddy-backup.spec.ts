@@ -7,13 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import postgres from 'postgres';
+import z from 'zod';
 import { BuddyKitSchema, type BuddyRestoreStatusDto, type BuddyStatusDto } from 'src/dtos/buddy-backup.dto.js';
 import { type BuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { BUDDY_SIDES, type BuddySide, buddyHost, buddyPort, startBuddyCloud } from 'test/fixtures/buddy-cloud.js';
 import { buddyForwardingDiagnostic, startBuddyTransport } from 'test/fixtures/buddy-transport.js';
-import z from 'zod';
 
 // Fails if app capture/pg_dump/crypto/commit/restore stops working, crosses an owner, or indexes hosted media.
 // Direct HTTPS enrollment remains a fixture; actual mode consumes an independently owned Cloud runtime.
@@ -271,7 +271,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
           child.stdin!.end(input);
         });
         const reply = JSON.parse(stdout) as { ok: boolean; result: unknown };
-        if (reply.ok !== true) {
+        if (!Object.is(reply.ok, true)) {
           throw new Error('Owned Cloud control refused');
         }
         return reply.result;
@@ -506,7 +506,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       for (const app of apps) {
         const published = await json<{ connections: Array<{ uri: string }> }>(app, '/server/connections');
         const expected = `https://${buddyHost(app.side)}:${buddyPort(app.side)}`;
-        if (!published.connections.some(({ uri }) => uri === expected)) {
+        if (published.connections.every(({ uri }) => uri !== expected)) {
           report.peerPublication = 'missing-gate: genuine heartbeat publication matching fixture TLS/SNI required';
           throw new Error('Actual peer discovery missing: genuine published HTTPS endpoint must match fixture TLS/SNI');
         }
