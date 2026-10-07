@@ -1,6 +1,7 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -64,6 +65,89 @@ describe(ICloudSyncRepository.name, () => {
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     connection.state = 'connected';
   });
+
+  const legacyConflict = async () => {
+    await repository.update(connection.id, connection.ownerId, { encryptedSession: 'fixture-only' });
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    await repository.materialize(connection, 'library', library);
+    const {
+      rows: [resource],
+    } = await sql<{ id: string }>`SELECT id FROM public.icloud_resource
+      WHERE "connectionId"=${connection.id}::uuid LIMIT 1`.execute(db);
+    const target = {
+      assetId: randomUUID(),
+      updateId: null,
+      originalPath: null,
+      checksumHex: null,
+      checksumAlgorithm: null,
+      isExternal: false,
+      libraryId: null,
+      physicalOriginalFileId: null,
+      outcome: 'imported',
+    };
+    await sql`UPDATE public.icloud_resource SET status='needs-review',"lastError"='reserved_import_content_match',
+      "stagingPath"='/fixture/stage',"promotedPath"='/fixture/promoted',"expectedTarget"=${target}::jsonb,
+      sha1=${Buffer.alloc(20, 1)},sha256=${Buffer.alloc(32, 2)},verification='{"retainedReceipt":"fixture"}'::jsonb
+      WHERE id=${resource.id}::uuid`.execute(db);
+    await sql`INSERT INTO public.media_operation ("ownerId",kind,destination,label,status,"finishedAt",snapshot,settings)
+      VALUES (${connection.ownerId}::uuid,${MediaOperationKind.ICloudSync},${MediaOperationDestination.Local},'Photos',
+      ${MediaOperationStatus.Completed},now(),${{ connectionId: connection.id, trigger: 'schedule' }}::jsonb,'{}')`.execute(
+      db,
+    );
+    return (await repository.resource(resource.id))!;
+  };
+
+  it('admits a legacy reserved hash conflict once through the existing durable schedule without erasing bindings', async () => {
+    const before = await legacyConflict();
+    expect(await repository.dueConnections()).toContainEqual({ id: connection.id, ownerId: connection.ownerId });
+    const results = await Promise.all([
+      repository.queueOperation(connection.id, connection.ownerId, { trigger: 'schedule' }),
+      repository.queueOperation(connection.id, connection.ownerId, { trigger: 'schedule' }),
+    ]);
+    expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'existing']);
+    expect(await repository.resource(before.id)).toMatchObject({
+      status: 'pending',
+      expectedTarget: before.expectedTarget,
+      promotedPath: before.promotedPath,
+      stagingPath: before.stagingPath,
+      sha1: before.sha1,
+      sha256: before.sha256,
+      verification: before.verification,
+      source: before.source,
+      attempts: before.attempts,
+    });
+    expect(await repository.dueConnections()).not.toContainEqual({ id: connection.id, ownerId: connection.ownerId });
+  });
+
+  it.each(['superseded', 'backoff', 'paused-audit'])(
+    'keeps legacy conflict admission deferred for %s',
+    async (condition) => {
+      const before = await legacyConflict();
+      if (condition === 'superseded') {
+        await sql`UPDATE public.icloud_resource SET source=${{ ...before.source, current: false }}::jsonb
+          WHERE id=${before.id}::uuid`.execute(db);
+      } else if (condition === 'backoff') {
+        await repository.update(connection.id, connection.ownerId, { nextRunAt: new Date(Date.now() + 60_000) });
+      } else {
+        await sql`INSERT INTO public.media_operation ("ownerId",kind,destination,label,status,snapshot,settings)
+          VALUES (${connection.ownerId}::uuid,${MediaOperationKind.ICloudSync},${MediaOperationDestination.Local},'Verify originals',
+          ${MediaOperationStatus.Paused},${{ connectionId: connection.id, task: 'identity-audit-weekly' }}::jsonb,'{}')`.execute(
+          db,
+        );
+      }
+      expect(await repository.dueConnections()).not.toContainEqual({ id: connection.id, ownerId: connection.ownerId });
+      expect(
+        (await repository.queueOperation(connection.id, connection.ownerId, { trigger: 'schedule' })).outcome,
+      ).toBe(condition === 'paused-audit' ? 'existing' : 'not-due');
+      expect(await repository.resource(before.id)).toMatchObject({
+        status: 'needs-review',
+        expectedTarget: before.expectedTarget,
+        promotedPath: before.promotedPath,
+        stagingPath: before.stagingPath,
+        verification: before.verification,
+      });
+    },
+  );
 
   it('stores opaque materialization names as strings across keyset resume and empty pages', async () => {
     const records = Array.from({ length: 101 }, (_, index) => ({

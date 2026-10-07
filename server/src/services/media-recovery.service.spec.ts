@@ -142,6 +142,53 @@ describe(MediaRecoveryService.name, () => {
     expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
     expect(reservation.promotedPath).toBe(original);
   });
+  it('adopts a healthy hash-only upload after reserving an import without changing the reserved copies', async () => {
+    await writeFile(original, bytes);
+    const promotedPath = join(directory, 'reserved.jpg');
+    await writeFile(promotedPath, bytes);
+    const resource = {
+      ...(await repository.getResource()),
+      assetId: null,
+      promotedPath,
+      expectedTarget: { assetId: importedId, updateId: null, outcome: 'imported' },
+      source: { current: true },
+      connectionConfig: {},
+    };
+    repository.getResource.mockResolvedValue(resource);
+    expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
+    expect(repository.commitVerifiedReuse).toHaveBeenCalledWith(
+      expect.objectContaining({ candidate, staged: { resource, type: AssetType.Image } }),
+    );
+    expect(repository.reserve).not.toHaveBeenCalled();
+    expect(repository.commit).not.toHaveBeenCalled();
+    expect(await readFile(promotedPath)).toEqual(bytes);
+    expect(await readFile(input.stagedPath)).toEqual(bytes);
+    expect(resource.expectedTarget).toEqual({ assetId: importedId, updateId: null, outcome: 'imported' });
+  });
+  it.each(['missing', 'damaged', 'audit'])(
+    'preserves the reserved import when the race winner is %s',
+    async (condition) => {
+      if (condition !== 'missing') {
+        await writeFile(original, bytes);
+      }
+      candidate.damaged = condition === 'damaged';
+      if (condition === 'audit') {
+        input.audit = { purpose: 'manual-session' } as never;
+      }
+      repository.getResource.mockResolvedValue({
+        ...(await repository.getResource()),
+        assetId: null,
+        expectedTarget: { assetId: importedId, updateId: null, outcome: 'imported' },
+      });
+      expect(await sut.reconcile(input)).toEqual({
+        outcome: 'needs-review',
+        reason: 'reserved_content_match_unavailable',
+      });
+      expect(repository.commitVerifiedReuse).not.toHaveBeenCalled();
+      expect(repository.reserve).not.toHaveBeenCalled();
+      expect(await readFile(input.stagedPath)).toEqual(bytes);
+    },
+  );
   it.each([
     [{ hidden: true }, 'needs-review', 'hidden_match_requires_consent'],
     [{ status: AssetStatus.Trashed }, 'preserve-trashed', 'destination_not_active'],

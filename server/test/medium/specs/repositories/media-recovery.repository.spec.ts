@@ -17,6 +17,8 @@ import {
 } from 'src/enum.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
+import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import {
@@ -30,8 +32,9 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getKyselyDB, getMocks } from 'test/utils.js';
 
 // Exercise the migrated canonical schema, including identity reuse, privacy and retained edit constraints.
 describe(MediaRecoveryRepository.name, () => {
@@ -309,27 +312,76 @@ describe(MediaRecoveryRepository.name, () => {
     });
   });
 
-  it('retains staged and promoted bytes for review when an upload wins an import reservation', async () => {
+  const arrangeStagedWinner = async () => {
     const context = await arrange(false);
+    const source = {
+      recordName: randomUUID().toUpperCase(),
+      recordType: 'CPLAsset',
+      fields: { masterRef: { value: { recordName: 'master' } } },
+    };
+    const master = {
+      recordName: 'master',
+      recordType: 'CPLMaster',
+      fields: {
+        filenameEnc: { value: 'original.jpg' },
+        itemType: { value: 'public.jpeg' },
+        resOriginalRes: { value: { size: bytes.length, fileChecksum: 'fixture-opaque-fingerprint' } },
+      },
+    };
+    const current = resourcesForICloudAsset(source, master)[0];
+    const sync = new ICloudSyncRepository(db);
+    const connection = (await sync.get((await sut.getResource(context.authority))!.connectionId))!;
+    await sync.update(connection.id, connection.ownerId, { encryptedSession: 'fixture-only' });
+    await sync.savePage(connection.id, 'assets:private', 'private', [source, master], null, true);
+    await sql`UPDATE public.icloud_resource SET "sourceAssetId"=${source.recordName},"recordId"=${current.recordId},
+      "resourceKey"=${current.resourceKey},role=${current.role},fingerprint=${current.fingerprint},
+      source=${{ ...current.source, current: true }}::jsonb,verification='{"historicReservation":"fixture"}'::jsonb
+      WHERE id=${context.authority.resourceId}::uuid`.execute(db);
+    expect(
+      await new ICloudIdentityRepository(db).claimForSync(connection.ownerId, source.recordName, connection.id),
+    ).toBeNull();
+    await ctx.newAsset({
+      id: context.assetId,
+      ownerId: context.authority.ownerId,
+      originalPath: '/upload/winner.jpg',
+      originalFileName: 'original.jpg',
+      checksum: verified.sha256,
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+      type: AssetType.Image,
+    });
+    return { ...context, connection, source };
+  };
+
+  it('adopts a healthy hash-only upload while retaining the frozen reservation and promoted bytes', async () => {
+    const context = await arrangeStagedWinner();
     const directory = await mkdtemp(join(tmpdir(), 'icloud-import-race-'));
     const stagedPath = join(directory, 'stage.jpg');
     const promotedPath = join(directory, 'promoted.jpg');
+    const winnerPath = join(directory, 'winner.jpg');
     try {
       await writeFile(stagedPath, bytes);
       await writeFile(promotedPath, bytes);
+      await writeFile(winnerPath, bytes);
       await sql`UPDATE public.icloud_resource SET "stagingPath" = ${stagedPath}, "promotedPath" = ${promotedPath}
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
-      await ctx.newAsset({
-        id: context.assetId,
-        ownerId: context.authority.ownerId,
-        originalPath: '/upload/winner.jpg',
-        originalFileName: 'original.jpg',
-        checksum: verified.sha256,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
-        type: AssetType.Image,
-      });
-      const integrity = { validate: vi.fn().mockResolvedValue(verified) };
-      const recovery = new MediaRecoveryService(sut, integrity as never);
+      await db.updateTable('asset').set({ originalPath: winnerPath }).where('id', '=', context.assetId).execute();
+      const winnerBefore = await db
+        .selectFrom('asset')
+        .selectAll()
+        .where('id', '=', context.assetId)
+        .executeTakeFirstOrThrow();
+      const mocks = getMocks();
+      mocks.media.decodeImage.mockResolvedValue({ data: bytes, info: {} } as never);
+      const integrity = new MediaIntegrityService(
+        new StorageRepository(mocks.logger as never),
+        new CryptoRepository(),
+        mocks.media as never,
+      );
+      const recovery = new MediaRecoveryService(sut, integrity);
+      expect(
+        (await sql`SELECT id FROM public.icloud_source_identity WHERE "assetId"=${context.assetId}::uuid`.execute(db))
+          .rows,
+      ).toEqual([]);
       expect(
         await recovery.reconcile({
           ...context.authority,
@@ -337,20 +389,103 @@ describe(MediaRecoveryRepository.name, () => {
           originalFileName: 'original.jpg',
           type: AssetType.Image,
         }),
-      ).toEqual({
-        outcome: 'needs-review',
-        reason: 'reserved_import_content_match',
-      });
+      ).toEqual({ outcome: 'reused', assetId: context.assetId });
       expect(
         await db.selectFrom('asset').select('id').where('ownerId', '=', context.authority.ownerId).execute(),
       ).toEqual([{ id: context.assetId }]);
       expect(await readFile(stagedPath)).toEqual(bytes);
       expect(await readFile(promotedPath)).toEqual(bytes);
       expect((await sut.getResource(context.authority))?.expectedTarget).toEqual(context.reservation.target);
+      expect(await sut.getResource(context.authority)).toMatchObject({
+        assetId: context.assetId,
+        verification: { historicReservation: 'fixture' },
+        status: 'committed',
+        promotedPath,
+      });
+      const retained = (await sut.getResource(context.authority))!.verification!.retainedRecoveryCopies;
+      expect(retained).toEqual([
+        expect.objectContaining({
+          expectedTarget: context.reservation.target,
+          promotedPath,
+          stagingPath: stagedPath,
+          sha256: verified.sha256.toString('hex'),
+        }),
+      ]);
+      const sync = new ICloudSyncRepository(db);
+      const committed = (await sync.resource(context.authority.resourceId))!;
+      expect(await sync.finalize(committed, () => Promise.resolve())).toBe(true);
+      await sync.startRun(context.connection);
+      const resumed = (await sync.claim(context.connection.id, 1000))!;
+      expect(resumed.verification!.retainedRecoveryCopies).toEqual(retained);
+      expect(await recovery.verifyMapped({ ...context.authority, leaseToken: resumed.leaseToken! })).toEqual({
+        outcome: 'reused',
+        assetId: context.assetId,
+      });
+      expect(
+        (await sut.getResource({ ...context.authority, leaseToken: resumed.leaseToken! }))!.verification!
+          .retainedRecoveryCopies,
+      ).toEqual(retained);
+      expect(
+        await db.selectFrom('asset').selectAll().where('id', '=', context.assetId).executeTakeFirstOrThrow(),
+      ).toEqual(winnerBefore);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it.each(['source', 'reservation', 'configuration', 'claim', 'destination'])(
+    'refuses staged hash adoption when the captured %s changes',
+    async (change) => {
+      const context = await arrangeStagedWinner();
+      const staged = (await sut.getResource(context.authority))!;
+      const candidate = (await sut.findCandidates(context.authority.ownerId, verified))[0];
+      switch (change) {
+        case 'source': {
+          await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${context.connection.id}::uuid
+          AND "recordId"=${context.source.recordName}`.execute(db);
+
+          break;
+        }
+        case 'reservation': {
+          await sql`UPDATE public.icloud_resource SET "promotedPath"='/different/reserved.jpg'
+          WHERE id=${context.authority.resourceId}::uuid`.execute(db);
+
+          break;
+        }
+        case 'configuration': {
+          await sql`UPDATE public.icloud_connection SET config=jsonb_set(config,'{libraries}','["other"]')
+          WHERE id=${context.connection.id}::uuid`.execute(db);
+
+          break;
+        }
+        case 'claim': {
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+          WHERE "ownerId"=${context.authority.ownerId}::uuid`.execute(db);
+
+          break;
+        }
+        default: {
+          await db
+            .updateTable('asset')
+            .set({ originalPath: '/changed/original.jpg' })
+            .where('id', '=', candidate.id)
+            .execute();
+        }
+      }
+      expect(
+        (
+          await sut.commitVerifiedReuse({
+            ...context.authority,
+            candidate,
+            verified,
+            staged: { resource: staged, type: AssetType.Image },
+            verifyFinal: vi.fn().mockResolvedValue(verified),
+          })
+        ).outcome,
+      ).toBe('retry');
+      expect(await sut.getResource(context.authority)).toMatchObject({ assetId: null });
+    },
+  );
 
   it('rejects stale scans and queued trash after recovery', async () => {
     const context = await arrange();

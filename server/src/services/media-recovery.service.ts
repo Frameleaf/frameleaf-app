@@ -174,10 +174,6 @@ export class MediaRecoveryService {
       if (candidate && candidate.type !== input.type) {
         return { outcome: 'needs-review', reason: 'media_type_mismatch' };
       }
-      if (candidate && resource.expectedTarget && !resource.expectedTarget.updateId) {
-        // Keep both recovery copies accounted for until the concurrent import is reconciled.
-        return { outcome: 'needs-review', reason: 'reserved_import_content_match' };
-      }
       let outcome: RecoveryTarget['outcome'] = 'imported';
       if (candidate) {
         const current = input.scheduledValidate
@@ -198,6 +194,26 @@ export class MediaRecoveryService {
             : current.status === 'corrupt'
               ? 'repaired-corrupt'
               : 'repaired-missing';
+        if (resource.expectedTarget && !resource.expectedTarget.updateId) {
+          if (input.audit || resource.assetId || outcome !== 'reused' || candidate.damaged) {
+            return { outcome: 'needs-review', reason: 'reserved_content_match_unavailable' };
+          }
+          // Keep the original reservation and promoted copy accounted for; bind only verified current bytes.
+          return await this.repository.commitVerifiedReuse({
+            ...input,
+            candidate,
+            verified: staged,
+            staged: { resource, type: input.type },
+            verifyFinal: () =>
+              this.integrity.validate({
+                path: candidate.originalPath,
+                originalFileName: candidate.originalFileName,
+                type: candidate.type,
+                expected: staged,
+                deep: true,
+              }),
+          });
+        }
       }
       const extension = extname(input.originalFileName).toLowerCase();
       if (input.audit && outcome !== 'imported' && outcome !== 'reused') {

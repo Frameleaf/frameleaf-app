@@ -116,6 +116,12 @@ export type ICloudRecord = {
   fields?: Record<string, unknown>;
   deleted?: boolean;
 };
+/** Consume only the old reserved-import review finding; staged bytes and reservation bindings stay intact. */
+const legacyHashConflict = sql<boolean>`r."auditRequestId" IS NULL AND r.status='needs-review'
+  AND r."lastError"='reserved_import_content_match' AND r."assetId" IS NULL AND r."leaseToken" IS NULL
+  AND r."stagingPath" IS NOT NULL AND r.sha1 IS NOT NULL AND r.sha256 IS NOT NULL
+  AND r."expectedTarget"->>'outcome'='imported' AND r."expectedTarget"->>'updateId' IS NULL
+  AND coalesce((r.source->>'current')::boolean,true)`;
 @Injectable()
 export class ICloudSyncRepository {
   constructor(
@@ -617,6 +623,8 @@ export class ICloudSyncRepository {
       ownerId: string;
     }>
   > {
+    const legacy = sql<boolean>`EXISTS (SELECT 1 FROM public.icloud_resource r
+      WHERE r."connectionId"=c.id AND r."ownerId"=c."ownerId" AND ${legacyHashConflict})`;
     return sql<{
       id: string;
       ownerId: string;
@@ -626,7 +634,10 @@ export class ICloudSyncRepository {
         AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
           AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
           AND (o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])
-            OR coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
+            OR (NOT ${legacy} AND coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24)))))
+        AND (NOT ${legacy} OR NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId"=c."ownerId"
+          AND o.kind=${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId'=c.id::text
+          AND o.status=ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])))
       ORDER BY c."nextRunAt" NULLS FIRST, c.id LIMIT 100`
       .execute(this.db)
       .then((result) => result.rows);
@@ -684,7 +695,15 @@ export class ICloudSyncRepository {
       if (!connection || connection.state === 'disconnected') {
         return { outcome: 'not-found' };
       }
-      const active = await this.latestOperation(connectionId, ownerId, { activeOnly: true }, db);
+      const { rows: legacy } = await sql`SELECT 1 FROM public.icloud_resource r
+        WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid
+          AND ${legacyHashConflict} LIMIT 1`.execute(db);
+      const active = await this.latestOperation(
+        connectionId,
+        ownerId,
+        { activeOnly: true, includeAudits: legacy.length > 0 },
+        db,
+      );
       if (active) {
         return options.trigger === 'retry' || options.trigger === 'rescan'
           ? { outcome: 'busy', operation: active }
@@ -700,10 +719,21 @@ export class ICloudSyncRepository {
           AND coalesce("finishedAt", "createdAt") > now() - make_interval(hours => ${connection.config.intervalHours}::int)
           LIMIT 1`.execute(db);
           if (
-            recent.rows.length > 0 ||
+            (legacy.length === 0 && recent.rows.length > 0) ||
             (connection.nextRunAt && new Date(connection.nextRunAt).getTime() > Date.now())
           ) {
             return { outcome: 'not-due' };
+          }
+          if (legacy.length > 0) {
+            // The pending resource and ordinary run are the existing durable outbox/cursor.
+            const admitted = await sql`WITH batch AS (SELECT r.id FROM public.icloud_resource r
+              WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND ${legacyHashConflict}
+              ORDER BY r."createdAt",r.id FOR UPDATE SKIP LOCKED LIMIT 100)
+              UPDATE public.icloud_resource r SET status='pending',"nextAttemptAt"=NULL,"updatedAt"=now()
+              FROM batch WHERE r.id=batch.id AND ${legacyHashConflict} RETURNING r.id`.execute(db);
+            if (admitted.rows.length === 0) {
+              return { outcome: 'not-due' };
+            }
           }
           break;
         }

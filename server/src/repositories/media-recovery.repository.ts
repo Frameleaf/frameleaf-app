@@ -3,8 +3,11 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
+import type { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import type { MediaIntegrityIdentity, MediaIntegrityResult } from 'src/services/media-integrity.service.js';
+import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
   AssetStatus,
@@ -29,6 +32,7 @@ import {
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
+import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type VerifiedMedia = Extract<
@@ -51,7 +55,10 @@ export type RecoveryResult = {
   assetId?: string;
   reason?: string;
 };
-export type RecoveryResource = {
+export type RecoveryResource = Pick<
+  ICloudResource,
+  'libraryKey' | 'library' | 'sourceAssetId' | 'recordId' | 'resourceKey' | 'role' | 'fingerprint' | 'source'
+> & {
   id: string;
   ownerId: string;
   connectionId: string;
@@ -64,6 +71,7 @@ export type RecoveryResource = {
   sha1: Buffer | null;
   sha256: Buffer | null;
   verification: Record<string, unknown> | null;
+  connectionConfig?: ICloudConfig;
 };
 export type RecoveryCandidate = {
   id: string;
@@ -224,7 +232,7 @@ export class MediaRecoveryRepository {
       return;
     }
     const result = await sql<RecoveryResource>`
-      SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM public.icloud_resource r
+      SELECT r.*, r."expectedSize"::float8 AS "expectedSize",c.config AS "connectionConfig" FROM public.icloud_resource r
       JOIN public.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > now()
@@ -280,6 +288,8 @@ export class MediaRecoveryRepository {
       candidate: RecoveryCandidate;
       verified: VerifiedMedia;
       verifyFinal: () => Promise<MediaIntegrityResult>;
+      /** Internal downloaded-byte proof only; never identity-reuse or audit authority. */
+      staged?: { resource: RecoveryResource; type: AssetType };
     },
   ): Promise<RecoveryResult> {
     if (input.audit?.purpose === 'scheduled-weekly') {
@@ -298,11 +308,43 @@ export class MediaRecoveryRepository {
       const resource = await this.lockResource(trx, input);
       if (
         !resource ||
-        resource.assetId !== input.candidate.id ||
+        (!input.staged && resource.assetId !== input.candidate.id) ||
         !resource.sha256?.equals(input.verified.sha256) ||
         !resource.sha1?.equals(input.verified.sha1)
       ) {
         return { outcome: 'retry', reason: 'mapping_changed' };
+      }
+      if (
+        input.staged &&
+        (input.audit ||
+          reuse.required ||
+          resource.assetId !== null ||
+          resource.expectedTarget?.updateId !== null ||
+          resource.expectedTarget.outcome !== 'imported' ||
+          input.candidate.type !== input.staged.type ||
+          (
+            [
+              'connectionId',
+              'stagingPath',
+              'promotedPath',
+              'expectedTarget',
+              'expectedSize',
+              'sha1',
+              'sha256',
+              'libraryKey',
+              'library',
+              'sourceAssetId',
+              'recordId',
+              'resourceKey',
+              'role',
+              'fingerprint',
+              'source',
+              'connectionConfig',
+            ] as const
+          ).some((key) => !isDeepStrictEqual(resource[key], input.staged!.resource[key])) ||
+          !(await this.stagedSourceCurrent(trx, resource)))
+      ) {
+        return { outcome: 'retry', reason: 'staged_binding_changed' };
       }
       const target: RecoveryTarget = {
         assetId: input.candidate.id,
@@ -329,12 +371,16 @@ export class MediaRecoveryRepository {
       if (
         final.status !== 'healthy' ||
         !final.sha256.equals(input.verified.sha256) ||
+        !final.sha1.equals(input.verified.sha1) ||
         final.sizeInBytes !== input.verified.sizeInBytes
       ) {
         return { outcome: 'retry', reason: 'final_verification_failed' };
       }
       if (!(await this.lockResource(trx, input))) {
         return { outcome: 'retry', reason: 'lease_expired' };
+      }
+      if (input.staged && !(await this.stagedSourceCurrent(trx, resource))) {
+        return { outcome: 'retry', reason: 'staged_binding_changed' };
       }
       const finalReuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
       if (
@@ -345,9 +391,31 @@ export class MediaRecoveryRepository {
         return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
       }
       const updated = await sql`UPDATE public.icloud_resource SET
-        status = 'committed',
-        path = ${candidate.originalPath}, verification = (CASE WHEN ${reuse.required} THEN coalesce(verification,'{}'::jsonb)
-          ELSE '{}'::jsonb END) || ${JSON.stringify({ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes })}::text::jsonb,
+        status = 'committed',"assetId"=${candidate.id}::uuid,
+        path = ${candidate.originalPath}, verification = (CASE WHEN ${reuse.required || !!input.staged} THEN coalesce(verification,'{}'::jsonb)
+          WHEN verification ? 'retainedRecoveryCopies' THEN jsonb_build_object('retainedRecoveryCopies',verification->'retainedRecoveryCopies')
+          ELSE '{}'::jsonb END) || ${JSON.stringify({
+            outcome: 'reused',
+            identity: final.identity,
+            sizeInBytes: final.sizeInBytes,
+            ...(input.staged && {
+              retainedRecoveryCopies: [
+                ...(Array.isArray(resource.verification?.retainedRecoveryCopies)
+                  ? resource.verification.retainedRecoveryCopies
+                  : []),
+                {
+                  expectedTarget: resource.expectedTarget,
+                  promotedPath: resource.promotedPath,
+                  stagingPath: resource.stagingPath,
+                  sha1: resource.sha1?.toString('hex'),
+                  sha256: resource.sha256?.toString('hex'),
+                  sourceAssetId: resource.sourceAssetId,
+                  resourceKey: resource.resourceKey,
+                  fingerprint: resource.fingerprint,
+                },
+              ],
+            }),
+          })}::text::jsonb,
         "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid
           AND ${finalReuse.context ? weeklyIdentityAdoptionFence(finalReuse.context) : sql<boolean>`true`}
           AND (NOT ${reuse.required} OR ("leaseToken"=${input.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()))
@@ -357,6 +425,74 @@ export class MediaRecoveryRepository {
       }
       return { outcome: 'reused', assetId: candidate.id };
     });
+  }
+  private async stagedSourceCurrent(db: Kysely<DB>, resource: RecoveryResource): Promise<boolean> {
+    const parsed = ICloudConfigSchema.safeParse(resource.connectionConfig);
+    if (!parsed.success) return false;
+    const config = parsed.data;
+    if (
+      resource.source.current === false ||
+      (resource.source.isHidden === true && !config.includeHidden) ||
+      (resource.role.startsWith('edited-') && !config.includeEdits) ||
+      (config.libraries.length > 0 && !config.libraries.includes(resource.libraryKey))
+    ) {
+      return false;
+    }
+    const { rows } = await sql<{
+      recordId: string;
+      recordType: string;
+      revision: string;
+      fields: Record<string, unknown>;
+    }>`
+      SELECT "recordId","recordType",revision,fields FROM public.icloud_record
+      WHERE "connectionId"=${resource.connectionId}::uuid AND "libraryKey"=${resource.libraryKey} AND NOT deleted
+        AND "recordId" IN (${resource.sourceAssetId},${String(resource.source.sourceMasterId ?? '')}) FOR SHARE`.execute(
+      db,
+    );
+    const asset = rows.find((row) => row.recordId === resource.sourceAssetId);
+    const master = rows.find((row) => row.recordId === resource.source.sourceMasterId);
+    if (!asset || !master || asset.recordType !== 'CPLAsset' || master.recordType !== 'CPLMaster') {
+      return false;
+    }
+    const record = (row: NonNullable<typeof asset>) => ({
+      recordName: row.recordId,
+      recordType: row.recordType,
+      recordChangeTag: row.revision,
+      fields: row.fields,
+    });
+    if (
+      resourcesForICloudAsset(record(asset), record(master)).every(
+        (current) =>
+          !(
+            current.recordId === resource.recordId &&
+            current.resourceKey === resource.resourceKey &&
+            current.role === resource.role &&
+            current.fingerprint === resource.fingerprint &&
+            current.expectedSize === resource.expectedSize &&
+            current.source.type === resource.source.type &&
+            current.source.isHidden === resource.source.isHidden &&
+            canonicalJson(current.source.resource) === canonicalJson(resource.source.resource)
+          ),
+      )
+    ) {
+      return false;
+    }
+    if (config.albums.length > 0) {
+      const member =
+        await sql`SELECT 1 FROM public.icloud_membership WHERE "connectionId"=${resource.connectionId}::uuid
+        AND "libraryKey"=${resource.libraryKey} AND "sourceAssetId"=${resource.sourceAssetId} AND "sourcePresent"
+        AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${config.albums}::text[]) FOR SHARE`.execute(db);
+      if (member.rows.length === 0) return false;
+    }
+    const authorized = await sql`SELECT 1 FROM public.icloud_claim claim JOIN public."user" u ON u.id=claim."ownerId"
+      JOIN public.icloud_connection c ON c.id=${resource.connectionId}::uuid AND c."ownerId"=u.id
+      WHERE u.id=${resource.ownerId}::uuid AND u."deletedAt" IS NULL AND c."encryptedSession" IS NOT NULL
+        AND c."lastError" IS DISTINCT FROM 'owner_removed'
+        AND claim."cplAssetRecordName"=upper(${resource.sourceAssetId})
+        AND claim.holder=${`icloud-sync:${resource.connectionId}`} AND claim."expiresAt">clock_timestamp() FOR SHARE OF claim`.execute(
+      db,
+    );
+    return authorized.rows.length === 1;
   }
   async reserve(
     input: RecoveryAuthority & {
@@ -718,24 +854,30 @@ export class MediaRecoveryRepository {
             { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
       await sql`UPDATE public.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
-        path = ${promotedPath}, verification = ${JSON.stringify(scheduledAuthority ? { ...resource.verification, auditFreshDownload: input.scheduled!.receipt } : {})}::text::jsonb || ${JSON.stringify(
-          {
-            outcome: target.outcome,
-            identity: final.identity,
-            sizeInBytes: final.sizeInBytes,
-            ...(input.audit && {
-              auditStaging: {
-                resourceId: input.resourceId,
-                requestId: input.audit.auditRequestId,
-                ownerId: input.ownerId,
-                stagingPath: resource.stagingPath,
-                sha256: final.sha256.toString('hex'),
-                sizeInBytes: final.sizeInBytes,
+        path = ${promotedPath}, verification = ${JSON.stringify(
+          scheduledAuthority
+            ? { ...resource.verification, auditFreshDownload: input.scheduled!.receipt }
+            : {
+                ...(resource.verification?.retainedRecoveryCopies !== undefined && {
+                  retainedRecoveryCopies: resource.verification.retainedRecoveryCopies,
+                }),
               },
-            }),
-            ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
-          },
-        )}::text::jsonb,
+        )}::text::jsonb || ${JSON.stringify({
+          outcome: target.outcome,
+          identity: final.identity,
+          sizeInBytes: final.sizeInBytes,
+          ...(input.audit && {
+            auditStaging: {
+              resourceId: input.resourceId,
+              requestId: input.audit.auditRequestId,
+              ownerId: input.ownerId,
+              stagingPath: resource.stagingPath,
+              sha256: final.sha256.toString('hex'),
+              sizeInBytes: final.sizeInBytes,
+            },
+          }),
+          ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
+        })}::text::jsonb,
         "pendingJobs" = ${JSON.stringify(pendingJobs)}::text::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
       if (scheduledAuthority) {
@@ -856,7 +998,8 @@ export class MediaRecoveryRepository {
     ) {
       return;
     }
-    const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
+    const result =
+      await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize",c.config AS "connectionConfig"
       FROM public.icloud_resource r JOIN public.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > clock_timestamp()
