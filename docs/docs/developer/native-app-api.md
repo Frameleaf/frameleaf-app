@@ -247,6 +247,13 @@ not apply to still output. HDR formats require an explicitly HDR document and
 the experimental server gate. Unknown document intent retains the existing SDR
 intent. A still export does not create or replace Live Photo motion.
 
+Still outputs and individual image inputs are limited to 48 million pixels,
+with at most 64 million decoded input pixels per export. HDR processing uses
+one isolated image worker with a combined 6 GiB surface budget. Photo exports
+have a 180-second ceiling and honor stricter worker claims. The compositor
+rejects images beyond the device's upload-buffer limit or GPU allocation
+failures before publishing an output.
+
 The immutable render snapshot includes a version 1 image contract: dimensions,
 frame, format, output dynamic range, document output intent, reference white of
 203 cd/m², and renderer `frameleaf-studio-image-v1`. The existing worker executes

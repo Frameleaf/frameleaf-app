@@ -364,7 +364,12 @@
       "path": "patches/0074-hdr-raster-large-image-budget.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4e92a872dccfabecd437e214bd359dbe49a3dfa9d467e8f2e3a6657348db3fc5"
+    },
+    {
+      "path": "patches/0075-local-validation-test-contracts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "26778e6994e7c34c352c0fb1f755de4b710de5750b47b0edcdd06acb01bfad40"
     }
   ],
-  "sourceSha256": "9b3dcfd9b12646ba67741da36bd39a437681ae85866f5b692945461201d4ac09"
+  "sourceSha256": "7eb6d3c3abbeffaa6288681d84d30492c8f1abcbd022b0e42272829f9116c69d"
 }
