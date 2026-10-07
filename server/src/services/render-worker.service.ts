@@ -823,7 +823,23 @@ export class RenderWorkerService {
           snapshot: resolved.studio
             ? {
                 ...asObject(operation.snapshot),
-                studio: { ...asObject(asObject(operation.snapshot).studio), graph: resolved.graph },
+                studio: {
+                  ...asObject(asObject(operation.snapshot).studio),
+                  graph: resolved.graph,
+                  // Public closure identity only. Credentials, owners and host paths stay server-side.
+                  resources: resolved.studio.entries.map(
+                    ({ key, kind, id, family, source, graphPath, checksum, grant }) => ({
+                      key,
+                      kind,
+                      id,
+                      family,
+                      source,
+                      graphPath,
+                      checksum,
+                      grant,
+                    }),
+                  ),
+                },
               }
             : asObject(operation.snapshot),
           settings: asObject(operation.settings),

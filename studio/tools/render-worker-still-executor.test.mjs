@@ -59,14 +59,14 @@ test('quality presets reach the encoder, preserve the legacy default and refuse 
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_EXPORT_QUALITY/);
   }
 });
-test('native subtitle modes preserve legacy settings, reject unsupported modes and keep caption graphs refused', () => {
+test('native subtitle modes preserve legacy settings, reject unsupported modes and preserve caption graphs for strict resource/render admission', () => {
   assert.equal(Object.hasOwn(stillRecipe(claim()).settings, 'subtitleMode'), false);
   for (const subtitleMode of ['burn', 'off']) {
     const input = claim();
     input.settings.subtitleMode = subtitleMode;
     assert.equal(stillRecipe(input).settings.subtitleMode, subtitleMode);
-    input.snapshot.studio.graph.timeline.items.push({ type: 'subtitle', text: 'Caption' });
-    assert.throws(() => stillRecipe(input), /SINGLE_STILL_REQUIRED/);
+    input.snapshot.studio.graph.timeline.items.push({ id: 'caption', type: 'subtitle', text: 'Caption', trackId: 'v1', from: 0, durationInFrames: 24 });
+    assert.equal(stillRecipe(input).frames, 24);
   }
   for (const subtitleMode of ['sidecar', 'embedded', null, 10, {}]) {
     const input = claim();
@@ -112,27 +112,27 @@ for (const [name, change] of [
     },
   ],
   [
-    'video source',
+    'missing source timing adapter',
     (c) => {
-      c.snapshot.studio.graph.timeline.items[0].type = 'video';
+      c.snapshot.timing.sources = [{ key: 'library-asset:asset' }];
     },
   ],
   [
-    'untranslated effect',
+    'duplicate timeline item',
     (c) => {
-      c.snapshot.studio.graph.timeline.items[0].effects = [{ type: 'blur' }];
+      c.snapshot.studio.graph.timeline.items.push(c.snapshot.studio.graph.timeline.items[0]);
     },
   ],
   [
-    'animation',
+    'invalid frame bounds',
     (c) => {
-      c.snapshot.studio.graph.timeline.keyframes = [{}];
+      c.snapshot.studio.graph.timeline.items[0].from = 0.5;
     },
   ],
   [
-    'nested graph',
+    'unbound track',
     (c) => {
-      c.snapshot.studio.graph.timeline.compositions = [{}];
+      c.snapshot.studio.graph.timeline.items[0].trackId = 'missing';
     },
   ],
   [
@@ -206,4 +206,46 @@ test('still image recipes preserve explicit document intent and one frame withou
       else process.env.FRAMELEAF_HDR_IMAGES = previous;
     }
   }
+});
+
+test('immutable visual timeline recipe retains multi-item transition, keyframes and effect graph', () => {
+  const input = claim();
+  const graph = input.snapshot.studio.graph;
+  graph.schemaVersion = 1;
+  graph.timeline.items.push({ ...graph.timeline.items[0], id: 'clip-b', mediaId: 'asset-b', from: 24 });
+  graph.timeline.items[0].effects = [{ id: 'fx', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0.15 } } }];
+  graph.timeline.transitions = [{ id: 'dissolve', type: 'crossfade', presentation: 'dissolve', timing: 'linear', trackId: 'v1', leftClipId: 'clip', rightClipId: 'clip-b', durationInFrames: 12 }];
+  graph.timeline.keyframes = [{ itemId: 'clip', properties: [{ property: 'opacity', keyframes: [{ id: 'k0', frame: 0, value: 0, easing: 'linear' }, { id: 'k1', frame: 12, value: 1, easing: 'linear' }] }] }];
+  graph.duration = 2;
+  const original = structuredClone(input);
+  assert.equal(stillRecipe(input).frames, 48);
+  assert.deepEqual(input, original);
+});
+
+
+test('exact rational cadence and checkpoint ticks reuse the actual server timing helpers', () => {
+  const input = claim();
+  input.snapshot.studio.graph.metadata.fps = 30000 / 1001;
+  input.snapshot.studio.graph.metadata.frameRate = { num: 30000, den: 1001 };
+  input.snapshot.studio.graph.duration = 24 * 1001 / 30000;
+  input.snapshot.timing.cadence = '30000/1001';
+  input.snapshot.timing.timeBase = '1/30000';
+  const result = stillRecipe(input);
+  assert.equal(result.frames, 24);
+  assert.equal(result.endTicks, '24024');
+  assert.equal(result.timebase, '1/30000');
+  assert.equal(result.settings.fps, 30000 / 1001);
+  input.snapshot.timing.cadence = '24/1';
+  assert.throws(() => stillRecipe(input), /PROJECT_CADENCE_CHANGED/);
+});
+
+
+test('whole visual timelines use explicit integer bounds even below the renderer duration floor', () => {
+  const input = claim();
+  input.snapshot.studio.graph.timeline.items[0].durationInFrames = 4;
+  input.snapshot.studio.graph.duration = 4 / 24;
+  const result = stillRecipe(input);
+  assert.equal(result.frames, 4);
+  assert.deepEqual(result.frameBounds, { inPoint: 0, outPoint: 4 });
+  assert.equal(result.range, null);
 });

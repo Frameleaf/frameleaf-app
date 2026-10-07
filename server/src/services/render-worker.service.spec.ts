@@ -810,6 +810,25 @@ describe(RenderWorkerService.name, () => {
           expect(studioProjects.getRevision).toHaveBeenCalledWith('project-1', 7);
           expect(claim?.snapshot.studio).toEqual(expect.objectContaining({ revision: 7, graph: storedGraph }));
           expect(storedOp.snapshot.studio).not.toHaveProperty('graph');
+          const resources = (claim?.snapshot.studio as Record<string, unknown>).resources;
+          expect(resources).toEqual(
+            studioManifestStub().entries.map(({ key, kind, id, family, source, graphPath, checksum, grant }) => ({
+              key,
+              kind,
+              id,
+              family,
+              source,
+              graphPath,
+              checksum,
+              grant,
+            })),
+          );
+          for (const entry of resources as Array<Record<string, unknown>>) {
+            expect(entry).not.toHaveProperty('path');
+            expect(entry).not.toHaveProperty('ownerId');
+            expect(entry).not.toHaveProperty('sourceAccess');
+          }
+          expect(storedOp.snapshot.studio).not.toHaveProperty('resources');
 
           expect(studioExports.onRenderClaimed).toHaveBeenCalledWith(
             expect.objectContaining({ id: storedOp.id, claimToken: 'claim-1' }),

@@ -65,6 +65,45 @@ async function validateStillImage(bytes, sharp) {
   }
 }
 
+/** Check the complete server-resolved closure before creating any engine-visible resource. */
+export function validateClaimResourceClosure(prepared, extraction) {
+  assert.equal(extraction.violations.length, 0, 'INVALID_GRAPH_RESOURCE');
+  const entries = prepared.snapshot?.studio?.resources;
+  assert.ok(Array.isArray(entries), 'RESOLVED_RESOURCE_CLOSURE_REQUIRED');
+  const keyOf = ({ kind, id, family }) => family ? `${kind}:${family}:${id}` : `${kind}:${id}`;
+  const references = new Map();
+  for (const reference of extraction.references) {
+    const key = keyOf(reference);
+    assert.ok(!references.has(key), 'DUPLICATE_GRAPH_RESOURCE');
+    references.set(key, reference);
+  }
+  assert.equal(entries.length, references.size, 'RESOURCE_CLOSURE_CHANGED');
+  const seen = new Set();
+  let readable = 0;
+  for (const entry of entries) {
+    const reference = references.get(entry.key);
+    assert.ok(reference && !seen.has(entry.key), 'RESOURCE_CLOSURE_CHANGED');
+    seen.add(entry.key);
+    assert.equal(entry.key, keyOf(entry), 'RESOURCE_IDENTITY_CHANGED');
+    for (const field of ['kind', 'id', 'family', 'source', 'graphPath'])
+      assert.equal(entry[field], reference[field], 'RESOURCE_IDENTITY_CHANGED');
+    assert.ok(entry.grant === 'render' || entry.grant === 'none', 'INVALID_RESOURCE_GRANT');
+    const input = prepared.inputs.get(entry.key);
+    if (entry.grant === 'none') {
+      assert.ok(!input && (entry.checksum === null || typeof entry.checksum === 'string'), 'UNEXPECTED_RESOURCE_BYTES');
+      continue;
+    }
+    readable++;
+    assert.ok(input && Buffer.isBuffer(input.bytes), 'AUTHORIZED_RESOURCE_INPUT_REQUIRED');
+    assert.equal(input.resourceId, entry.id, 'RESOURCE_IDENTITY_CHANGED');
+    assert.equal(input.kind, entry.kind, 'RESOURCE_IDENTITY_CHANGED');
+    assert.ok(typeof entry.checksum === 'string' && entry.checksum.length > 0, 'RESOURCE_CHECKSUM_REQUIRED');
+    assert.equal(input.declaredChecksum, entry.checksum, 'RESOURCE_CHECKSUM_CHANGED');
+    assert.equal(sha256(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
+  }
+  assert.equal(prepared.inputs.size, readable, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
+}
+
 /**
  * Consumes the claim adapter's verified in-memory inputs. The caller owns the lease and must
  * dispose before releasing it. No worker credential, grant URL or host path enters the engine.
@@ -107,7 +146,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   );
   assert.ok(measureStudioGraph(project) <= STUDIO_MAX_GRAPH_BYTES, 'GRAPH_RESOURCE_LIMIT');
   const extraction = extractStudioResourceReferences(project);
-  assert.equal(extraction.violations.length, 0, 'INVALID_GRAPH_RESOURCE');
+  validateClaimResourceClosure(prepared, extraction);
   const { collectMediaIds } = await import(pathToFileURL(path.join(engine, 'headless/lib/workspace.mjs')).href);
   const { createMediaServer } = await import(pathToFileURL(path.join(engine, 'headless/media-server.mjs')).href);
   const ids = collectMediaIds(project);
@@ -167,6 +206,12 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       assert.ok(isLeaseActive(), 'LEASE_LOST');
       const validated = await validateStillImage(source.bytes, sharp);
       source.format = validated.format;
+      source.metadata = {
+        id: source.id, storageType: 'workspace', fileName: `${source.key}.${validated.format}`,
+        fileSize: source.bytes.length, mimeType: validated.format === 'jpeg' ? 'image/jpeg' : `image/${validated.format}`,
+        duration: 0, width: validated.width ?? 0, height: validated.height ?? 0,
+        fps: 0, codec: validated.format, bitrate: 0,
+      };
       let sourcePixels = validated.width * validated.height;
       if (Number.isSafeInteger(sourcePixels)) {
         retainedPixels += sourcePixels;
@@ -177,6 +222,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
         const decoded = await decodeHdrRaster(source.bytes, sharp, abort.signal);
         hdrRasters[source.id] = decoded;
         source.format = 'png';
+        source.metadata = undefined; // Owned linear raster metadata is carried by the HDR contract.
       }
       if (source.format === 'jpeg' || source.format === 'heif') {
         if (!pool) {
@@ -184,6 +230,8 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
           pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 48_000_000, maxBytes: 6 * 1024 ** 3 });
         }
         const encoding = await pool.run('inspectImageEncoding', [source.bytes], abort.signal);
+        source.metadata.width = encoding.width;
+        source.metadata.height = encoding.height;
         if (source.format === 'heif') {
           sourcePixels = encoding.width * encoding.height;
           assert.ok(
@@ -227,6 +275,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
             abort.signal,
           );
           assert.ok(isLeaseActive(), 'LEASE_LOST');
+          source.metadata = undefined; // The derived photo preview uses its existing HDR raster contract.
           paths.set(source.key, preview);
           continue;
         }
@@ -235,6 +284,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
           const preview = path.join(folder, `${source.key}.png`);
           await pool.run('writeStrippedStill', [source.bytes, preview, 'png', 'srgb'], abort.signal);
           assert.ok(isLeaseActive(), 'LEASE_LOST');
+          source.metadata = undefined; // The derived photo preview uses its existing HDR raster contract.
           paths.set(source.key, preview);
           continue;
         }
@@ -266,7 +316,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       // or guessed settings. Each opaque local URL serves only a verified, grant-bound input.
       input: {
         project,
-        media: sources.map(({ id, key }) => ({ mediaId: id, url: server.url(key) })),
+        media: sources.map(({ id, key, metadata }) => ({ mediaId: id, url: server.url(key), metadata })),
         ...(Object.keys(hdrRasters).length && { hdrRasters }),
         strict: true,
       },
@@ -286,7 +336,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
             ...metadata,
             url: harness.mediaUrl(key),
           })),
-          media: sources.map(({ id, key }) => ({ mediaId: id, url: harness.mediaUrl(key) })),
+          media: sources.map(({ id, key, metadata }) => ({ mediaId: id, url: harness.mediaUrl(key), metadata })),
         };
       },
       dispose,
