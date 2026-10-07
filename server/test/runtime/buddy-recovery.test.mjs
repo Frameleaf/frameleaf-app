@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { BuddyRecoveryFiles, buddyRecoveryTarget, readBuddyRecovery } from '../../src/utils/buddy-backup-recovery.ts';
-import { buddyBackupCommand } from '../../src/utils/buddy-backup-offline.ts';
-import { buddyObjectId, encryptBuddyBlock } from '../../src/utils/buddy-backup-crypto.ts';
-import { BuddyVault, buddySnapshotBytes } from '../../src/utils/buddy-backup-vault.ts';
+import { BuddyRecoveryFiles, buddyRecoveryTarget, readBuddyRecovery } from '../../dist/utils/buddy-backup-recovery.js';
+import { buddyBackupCommand } from '../../dist/utils/buddy-backup-offline.js';
+import { buddyObjectId, encryptBuddyBlock } from '../../dist/utils/buddy-backup-crypto.js';
+import { BuddyVault, buddySnapshotBytes } from '../../dist/utils/buddy-backup-vault.js';
 
 test('recovery verifies before publishing, preserves overwritten files, resumes and rolls back', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-apply-')));
@@ -133,7 +133,7 @@ test('an encrypted export plus kit performs offline recovery with no database or
       [
         '--input-type=module',
         '--eval',
-        `const { buddyBackupCommand } = await import(${JSON.stringify(new URL('../../src/utils/buddy-backup-offline.ts', import.meta.url).href)}); await buddyBackupCommand(process.argv.slice(1));`,
+        `const { buddyBackupCommand } = await import(${JSON.stringify(new URL('../../dist/utils/buddy-backup-offline.js', import.meta.url).href)}); await buddyBackupCommand(process.argv.slice(1));`,
         'recover',
         '--vault',
         join(exported, vaultId),
