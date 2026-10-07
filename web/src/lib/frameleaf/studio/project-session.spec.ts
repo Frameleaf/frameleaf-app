@@ -1099,6 +1099,132 @@ describe('studio project session', () => {
   });
 
   describe('new draft', () => {
+    it('recovers the original create before saving edits made during and after response loss', async () => {
+      let rejectCreate!: (error: Error) => void;
+      api.create
+        .mockReturnValueOnce(new Promise<StudioProjectDetailDto>((_, reject) => (rejectCreate = reject)))
+        .mockResolvedValueOnce(detail({ id: 'p-new', name: 'Untitled project', revision: 1 }));
+      api.save.mockResolvedValue(saved(2));
+      const session = create(null);
+      await session.open();
+      session.stage({ first: true });
+      const first = session.flush();
+      session.stage({ second: true });
+      expect(await session.rename('Later name')).toBe(false);
+      rejectCreate(new TypeError('Failed to fetch'));
+      await first;
+      session.stage({ latest: true });
+      await session.flush();
+      expect(api.create.mock.calls[1]).toEqual(api.create.mock.calls[0]);
+      expect(api.create.mock.calls[1][0]).toMatchObject({ requestKey: 'key-1', envelope: { graph: { first: true } } });
+      expect(last()).toMatchObject({ status: 'dirty', project: { id: 'p-new', revision: 1, graph: { latest: true } } });
+      await session.flush();
+      expect(api.save).toHaveBeenCalledExactlyOnceWith(
+        'p-new',
+        expect.objectContaining({
+          requestKey: 'key-2',
+          expectedRevision: 1,
+          envelope: expect.objectContaining({ graph: { latest: true } }),
+        }),
+      );
+      expect(api.create).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([false, true])(
+      'offers lease recovery after replay when another editor holds the lease: %s',
+      async (heldByAnother) => {
+        api.create.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(
+          detail({
+            id: 'p-new',
+            name: 'Untitled project',
+            revision: 1,
+            lease: lease({ heldByYou: false, heldByAnother }),
+          }),
+        );
+        const session = create(null);
+        await session.open();
+        session.stage({ first: true });
+        await session.flush();
+        session.stage({ latest: true });
+        await session.flush();
+        expect(last()).toMatchObject({
+          status: 'lease-lost',
+          hasDraft: true,
+          project: { id: 'p-new', revision: 1, hasLease: false, graph: { latest: true } },
+          conflict: { reason: 'lease-lost', currentRevision: 1, lease: { heldByAnother } },
+        });
+        expect(api.acquireLease).not.toHaveBeenCalled();
+        api.get.mockResolvedValue(detail({ id: 'p-new', revision: 1 }));
+        expect(await session.reacquire()).toBe(true);
+        expect(api.acquireLease).toHaveBeenCalledWith('p-new', { clientId: 'tab-a', takeover: false });
+        expect(last()).toMatchObject({ status: 'dirty', hasDraft: true, project: { hasLease: true } });
+      },
+    );
+
+    it.each(['reacquire', 'takeOver'] as const)(
+      'keeps descendant drafts based on the initial creation when replay finds a newer head: %s',
+      async (recover) => {
+        const current = detail({
+          id: 'p-new',
+          revision: 2,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+          lease: lease({ heldByYou: false, heldByAnother: true }),
+        });
+        api.create.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(current);
+        api.get.mockResolvedValue(current);
+        const session = create(null);
+        await session.open();
+        session.stageEditor({ first: true }, ['editor.save'], 0, 0);
+        await session.flush();
+        session.stageEditor({ latest: true }, ['editor.save'], 0, 0);
+        await session.flush();
+        expect(last()).toMatchObject({
+          status: 'conflict',
+          hasDraft: true,
+          project: { id: 'p-new', revision: 1, graph: { latest: true }, hasLease: false },
+          conflict: { reason: 'stale-revision', currentRevision: 2 },
+        });
+        // The editor still reports its old base; only its own accepted create may advance it to 1.
+        session.stageEditor({ final: true }, ['editor.save'], 0, 0);
+        expect(await session[recover]()).toBe(true);
+        expect(last()).toMatchObject({
+          status: 'conflict',
+          project: { revision: 1, graph: { final: true }, hasLease: true },
+          conflict: { reason: 'stale-revision', currentRevision: 2 },
+        });
+        await session.flush();
+        expect(api.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it('replaces the editor graph with the current replay head when no newer draft remains', async () => {
+      const current = detail({
+        id: 'p-new',
+        revision: 2,
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+        lease: lease({ heldByYou: false, heldByAnother: true }),
+      });
+      api.create.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(current);
+      api.get.mockResolvedValue(current);
+      const session = create(null);
+      await session.open();
+      session.stageEditor({ first: true }, ['editor.save'], 0, 0);
+      await session.flush();
+      await session.flush();
+      expect(last()).toMatchObject({
+        status: 'lease-lost',
+        hasDraft: false,
+        project: { id: 'p-new', revision: 2, graph: { theirs: true }, graphVersion: 1 },
+      });
+      expect(session.stageEditor({ stale: true }, ['editor.save'], 0, 0)).toBe('superseded');
+      expect(await session.reacquire()).toBe(true);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        project: { revision: 2, graph: { theirs: true }, graphVersion: 1 },
+      });
+      expect(api.save).not.toHaveBeenCalled();
+    });
+
     it('creates the project on the first save and switches to its id', async () => {
       api.create.mockResolvedValue(detail({ id: 'p-new', name: 'Untitled project', revision: 1 }));
       const session = create(null);
@@ -1118,6 +1244,65 @@ describe('studio project session', () => {
       });
       expect(last()).toMatchObject({ status: 'saved', project: { id: 'p-new', revision: 1, hasLease: true } });
       expect(timers.pending().map((timer) => timer.ms)).toEqual([30_000]);
+    });
+
+    it('serializes creation and retries a lost response with the same request before saving to the returned project', async () => {
+      let rejectCreate!: (error: Error) => void;
+      api.create
+        .mockReturnValueOnce(new Promise<StudioProjectDetailDto>((_, reject) => (rejectCreate = reject)))
+        .mockResolvedValueOnce(
+          detail({
+            id: 'p-new',
+            name: 'Untitled project',
+            revision: 1,
+            lease: lease({ renewMs: 45_000, autosaveDebounceMs: 2500 }),
+          }),
+        );
+      api.save.mockResolvedValue(saved(2));
+      const session = create(null);
+      await session.open();
+      session.stage({ tracks: ['a'] }, ['clip.add']);
+
+      const first = session.flush();
+      const concurrent = session.flush();
+      expect(api.create).toHaveBeenCalledTimes(1);
+      expect(last()).toMatchObject({ status: 'saving', hasDraft: true });
+      rejectCreate(new TypeError('Failed to fetch'));
+      await Promise.all([first, concurrent]);
+
+      expect(last()).toMatchObject({
+        status: 'dirty',
+        hasDraft: true,
+        project: { id: STUDIO_DRAFT_PROJECT_ID, revision: 0, graph: { tracks: ['a'] } },
+      });
+      await timers.fire((timer) => timer.ms === 5000);
+
+      const request = {
+        name: 'Untitled project',
+        clientId: 'tab-a',
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['a'] } },
+        requestKey: 'key-1',
+      };
+      expect(api.create.mock.calls).toEqual([[request], [request]]);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        hasDraft: false,
+        project: { id: 'p-new', revision: 1, hasLease: true, graph: { tracks: ['a'] } },
+      });
+      expect(timers.pending().map((timer) => timer.ms)).toEqual([45_000]);
+
+      session.stage({ tracks: ['a', 'b'] }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 2500);
+
+      expect(api.create).toHaveBeenCalledTimes(2);
+      expect(api.save).toHaveBeenCalledExactlyOnceWith('p-new', {
+        clientId: 'tab-a',
+        requestKey: 'key-2',
+        expectedRevision: 1,
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['a', 'b'] } },
+        summary: { counts: { 'clip.add': 1 }, total: 1 },
+      });
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, project: { id: 'p-new', revision: 2 } });
     });
   });
 

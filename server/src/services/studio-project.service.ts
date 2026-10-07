@@ -58,6 +58,7 @@ import {
   STUDIO_LEASE_MS,
   STUDIO_LEASE_RENEW_MS,
   StudioProjectEnvelope,
+  canonicalJson,
   checkStudioEnvelope,
   diffStudioGraphs,
   isStudioLeaseHeld,
@@ -300,26 +301,51 @@ export class StudioProjectService {
       await this.assertSpaceUsable(auth, dto.spaceId);
     }
 
-    let project = await this.repository.create({ ownerId: auth.user.id, name: dto.name, spaceId: dto.spaceId ?? null });
-
-    const leased = await this.repository.acquireLease(project.id, {
-      userId: auth.user.id,
-      clientId: dto.clientId,
-      leaseMs: STUDIO_LEASE_MS,
-      takeover: false,
+    const checked = dto.envelope ? checkStudioEnvelope(dto.envelope) : null;
+    if (checked && !checked.ok) {
+      throw new BadRequestException(checked.detail);
+    }
+    const digest = createHash('sha256')
+      .update(
+        canonicalJson({
+          name: dto.name,
+          spaceId: dto.spaceId ?? null,
+          clientId: dto.clientId,
+          envelope: checked?.ok ? checked.envelope : null,
+        }),
+      )
+      .digest('hex');
+    const { project, created } = await this.repository.createWithRevision({
+      ownerId: auth.user.id,
+      name: dto.name,
+      spaceId: dto.spaceId ?? null,
+      lease: { clientId: dto.clientId, leaseMs: STUDIO_LEASE_MS },
+      ...(dto.requestKey && { creation: { requestKey: dto.requestKey, digest } }),
+      ...(checked?.ok && {
+        revision: {
+          authorId: auth.user.id,
+          envelope: checked.envelope as unknown as Record<string, unknown>,
+          digest: studioEnvelopeDigest(checked.envelope),
+          graphBytes: checked.graphBytes,
+          summary: normalizeCommandSummary(undefined),
+          requestKey: dto.requestKey ?? null,
+        },
+      }),
     });
-    project = leased ?? project;
-
-    if (dto.envelope) {
-      await this.save(auth, project.id, {
-        clientId: dto.clientId,
-        requestKey: dto.requestKey ?? `create:${project.id}`,
-        expectedRevision: 0,
-        envelope: dto.envelope,
+    if (dto.requestKey && project.createRequestDigest !== digest) {
+      throw this.conflict('request-key-reused', 'This request key was already used for a different project');
+    }
+    if (created && checked?.ok) {
+      await this.notify({
+        projectId: project.id,
+        ownerId: project.ownerId,
+        revision: 1,
+        digest: studioEnvelopeDigest(checked.envelope),
+        restoredFromRevision: null,
       });
     }
 
-    this.logger.log(`Studio project ${project.id} created`);
+    if (created) this.logger.log(`Studio project ${project.id} created`);
     return this.get(auth, project.id, dto.clientId);
   }
 
