@@ -59,6 +59,29 @@ test('resource limits and invalid working pixels fail before encoding', () => {
   });
 });
 
+test('an authored SDR baseline survives HDR reconstruction and re-encoding', () => {
+  const sdr = Buffer.alloc(width * height * 4, 60);
+  for (let i = 3; i < sdr.length; i += 4) sdr[i] = 255;
+  const encoded = codec.encodePaired(bytes(), width, height, 0, ...limits, sdr, 0);
+  const pair = codec.decodePaired(encoded, ...limits);
+  assert.deepEqual([pair.width, pair.height, pair.gamut], [width, height, 0]);
+  assert.equal(pair.sdrGamut, 0);
+  assert.equal(pair.sdr.length, sdr.length);
+  for (let i = 0; i < sdr.length; i++) assert.ok(Math.abs(pair.sdr[i] - sdr[i]) <= 2);
+  const decoded = new Float32Array(pair.data.buffer, pair.data.byteOffset, pair.data.length / 4);
+  assert.ok(decoded[(32 * width + 60) * 4] > 31);
+  assert.throws(() => codec.encodePaired(bytes(), width, height, 0, ...limits, sdr.subarray(4), 0), {
+    code: 'INVALID_SDR_BASELINE',
+  });
+  assert.throws(() => codec.encodePaired(bytes(), width, height, 0, ...limits, sdr, NaN), {
+    code: 'INVALID_SDR_BASELINE',
+  });
+  sdr[3] = 0;
+  assert.throws(() => codec.encodePaired(bytes(), width, height, 0, ...limits, sdr, 0), {
+    code: 'HDR_JPEG_ALPHA_UNSUPPORTED',
+  });
+});
+
 test('invalid gain-map metadata is never advertised as SDR', () => {
   const fake = Buffer.concat([Buffer.from([255, 216]), Buffer.from('hdrgm:Version'), Buffer.from([255, 217])]);
   const metadata = codec.inspect(fake, ...limits);
@@ -160,4 +183,34 @@ test('all JPEG EXIF orientations transform reconstructed HDR exactly once', () =
       }
   }
   assert.throws(() => codec.decode(orientedJpeg(jpeg, 9), ...limits), { code: 'INVALID_JPEG_METADATA' });
+});
+
+test('paired decoding retains the independently signaled SDR gamut and aligned orientation', () => {
+  const sdr = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++)
+      sdr.set([40 + 30 * Math.floor(x / 16), 80 + 20 * Math.floor(y / 16), 30, 255], (y * width + x) * 4);
+  const encoded = codec.encodePaired(bytes(), width, height, 1, ...limits, sdr, 0);
+  const original = codec.decodePaired(encoded, ...limits);
+  assert.equal(original.sdrGamut, 0);
+  for (let i = 0; i < sdr.length; i++) assert.ok(Math.abs(original.sdr[i] - sdr[i]) <= 4);
+  for (let orientation = 1; orientation <= 8; orientation++) {
+    const pair = codec.decodePaired(orientedJpeg(encoded, orientation), ...limits);
+    assert.deepEqual([pair.width, pair.height, pair.sdrGamut], [width, height, 0]);
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        const [sx, sy] = [
+          [x, y],
+          [width - 1 - x, y],
+          [width - 1 - x, height - 1 - y],
+          [x, height - 1 - y],
+          [y, x],
+          [y, height - 1 - x],
+          [width - 1 - y, height - 1 - x],
+          [width - 1 - y, x],
+        ][orientation - 1];
+        for (let c = 0; c < 4; c++)
+          assert.equal(pair.sdr[(y * width + x) * 4 + c], original.sdr[(sy * width + sx) * 4 + c]);
+      }
+  }
 });

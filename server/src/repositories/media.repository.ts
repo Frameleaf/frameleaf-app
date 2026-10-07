@@ -112,8 +112,8 @@ export class MediaRepository {
     return sharpProcessPool.run('inspectImageEncoding', [input]);
   }
 
-  decodeHdrImage(input: string | Buffer) {
-    return sharpProcessPool.run('decodeHdrImage', [input]);
+  decodeHdrImage(input: string | Buffer, preserveSdrBaseline = false) {
+    return sharpProcessPool.run('decodeHdrImage', [input, preserveSdrBaseline]);
   }
 
   encodeHdrImage(image: SharpArguments<'encodeHdrImage'>[0]) {
