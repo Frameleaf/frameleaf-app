@@ -221,7 +221,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         transform: { x, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity },
         effects: [{ id: `mixed-chroma-key-${transfer}`, enabled: true,
           effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-            params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] }],
+            params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] }],
     }));
     const sdrRgb = [0.25, 0.5, 0.75].map(color.srgbDecodeExtended);
     const sdrOpacity = 0.5;
@@ -304,7 +304,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
             effects: [{ id: `nested-chroma-key-${transfer}`, enabled: true,
               effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-                params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
+                params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
           const mask = { id: `nested-mask-${transfer}`, type: 'shape', trackId: 'nested-mask',
             from: 0, durationInFrames: 30, label: 'upper-half alpha mask', shapeType: 'rectangle',
             fillColor: '#ffffff', strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
@@ -443,7 +443,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
               effects: [{ id: `variant-chroma-key-${transfer}-${variant.name}`, enabled: true,
                 effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-                  params: { keyColor: '#00ff00', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
+                  params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
             const id = `variant-comp-${transfer}-${variant.name}`;
             const variantTracks = [...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
               nestedTrack('variant-video', variant.masks.length, [clip])];
