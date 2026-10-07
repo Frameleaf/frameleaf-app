@@ -53,6 +53,7 @@ describe(ICloudSyncService.name, () => {
       ...overrides,
     }) as never;
   const repository = {
+    dueConnections: vi.fn(),
     refreshResource: vi.fn(),
     invalidateCursor: vi.fn(),
     block: vi.fn(),
@@ -89,6 +90,7 @@ describe(ICloudSyncService.name, () => {
   const identities = { claimForSync: vi.fn() };
   const recovery = { verifyMapped: vi.fn(), reconcile: vi.fn() };
   const adoption = { adopt: vi.fn() };
+  const weeklySchedule = { schedule: vi.fn() };
   const jobs = { queue: vi.fn() };
   const albums = { reconcile: vi.fn() };
   const operations = {
@@ -131,6 +133,8 @@ describe(ICloudSyncService.name, () => {
     repository.hasPending.mockResolvedValue(false);
     repository.counts.mockResolvedValue({ resources: 2, finalized: 1, pending: 1 });
     repository.latestOperation.mockResolvedValue(undefined);
+    repository.dueConnections.mockResolvedValue([]);
+    weeklySchedule.schedule.mockResolvedValue(undefined);
     repository.list.mockResolvedValue([]);
     repository.notify.mockResolvedValue(undefined);
     staging.download.mockResolvedValue('/private/complete');
@@ -179,7 +183,18 @@ describe(ICloudSyncService.name, () => {
         }),
         setAuthority: vi.fn(),
       } as never,
+      weeklySchedule as never,
     );
+  });
+
+  it('drives weekly production from the existing schedule before nudging the worker', async () => {
+    repository.dueConnections.mockResolvedValue([{ id: 'connection', ownerId: 'owner' }]);
+    const tick = vi.spyOn(sut, 'tick').mockImplementation(() => {});
+    await (sut as unknown as { schedule(): Promise<void> }).schedule();
+    expect(repository.queueOperation).toHaveBeenCalledExactlyOnceWith('connection', 'owner', { trigger: 'schedule' });
+    expect(weeklySchedule.schedule).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(weeklySchedule.schedule.mock.invocationCallOrder[0]).toBeLessThan(tick.mock.invocationCallOrder[0]);
   });
 
   it.each([

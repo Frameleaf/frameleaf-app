@@ -19,6 +19,7 @@ import { hiddenContentAssetIdExists } from 'src/utils/database.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
 import { ICloudRecord, resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { isLocked } from 'src/utils/locked.js';
+import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -109,8 +110,27 @@ class WeeklyNoBatch extends Error {
 export class ICloudWeeklyRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** Discovery is not authority: frozen obligations survive retirement and week rollover. */
+  async scheduleCandidates(): Promise<{ ownerId: string; connectionId: string; cohortId: string | null }[]> {
+    const { rows } = await sql<{ ownerId: string; connectionId: string; cohortId: string | null }>`
+      SELECT "ownerId","connectionId","cohortId" FROM (
+        SELECT "ownerId","connectionId",id AS "cohortId","weekStart"
+        FROM public.icloud_weekly_cohort WHERE status IN ('frozen','running')
+        UNION ALL
+        SELECT c."ownerId",c.id,NULL::uuid,date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date
+        FROM public.icloud_connection c
+        JOIN public.icloud_weekly_grant g ON g."connectionId"=c.id AND g."ownerId"=c."ownerId" AND g.enabled
+        JOIN public."user" u ON u.id=c."ownerId" AND u."deletedAt" IS NULL
+        WHERE c.state='connected' AND c."encryptedSession" IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM public.icloud_weekly_cohort existing
+            WHERE existing."ownerId"=c."ownerId" AND existing."connectionId"=c.id
+              AND existing."weekStart"=date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date)
+      ) candidates ORDER BY "weekStart","ownerId","connectionId","cohortId" NULLS LAST`.execute(this.db);
+    return rows;
+  }
+
   /** Freeze every actual 0217 receipt once, using the database's current UTC week. */
-  async freezeCohort(ownerId: string, connectionId: string): Promise<ICloudWeeklyCohort> {
+  async freezeCohort(ownerId: string, connectionId: string, requireAuthority = false): Promise<ICloudWeeklyCohort> {
     ownerId = ownerId.toLowerCase();
     connectionId = connectionId.toLowerCase();
     return this.db
@@ -118,6 +138,10 @@ export class ICloudWeeklyRepository {
       .setIsolationLevel('repeatable read')
       .execute(async (db) => {
         const context = await this.lockContext(db, ownerId, connectionId);
+        // A consent/configuration race must not consume the automatic freeze for this UTC week.
+        if (requireAuthority && !context.available) {
+          throw new ConflictException('Weekly authority unavailable');
+        }
         const {
           rows: [clock],
         } = await sql<{ weekStart: string }>`SELECT
@@ -319,6 +343,14 @@ export class ICloudWeeklyRepository {
           const { cohort, context } = await this.lockCohort(db, cohortId);
           if (!this.sameAuthority(cohort, context)) {
             throw new WeeklyNoBatch(true);
+          }
+          // The existing owner/connection locks serialize this check with another producer or run admission.
+          const { rows: active } = await sql`SELECT 1 FROM public.media_operation
+            WHERE "ownerId"=${cohort.ownerId}::uuid AND kind=${MediaOperationKind.ICloudSync}
+              AND snapshot->>'connectionId'=${cohort.connectionId}
+              AND status=ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[]) LIMIT 1`.execute(db);
+          if (active.length > 0) {
+            throw new WeeklyNoBatch(false);
           }
           const { rows: members } = await sql<WeeklyBatchMember>`SELECT * FROM public.icloud_weekly_member
           WHERE "cohortId"=${cohortId}::uuid AND selected AND outcome='pending' AND "auditRequestId" IS NULL AND "batchOrdinal"=(

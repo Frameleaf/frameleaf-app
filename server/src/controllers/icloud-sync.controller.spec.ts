@@ -50,6 +50,7 @@ describe('iCloud API authorization and input boundaries', () => {
       {} as never,
       {} as never,
       weekly as never,
+      { schedule: vi.fn() } as never,
     );
     context = await controllerSetup(ICloudSyncController, [{ provide: ICloudSyncService, useValue: service }]);
   });
