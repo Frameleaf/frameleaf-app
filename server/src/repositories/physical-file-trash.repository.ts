@@ -5,7 +5,9 @@ import {
   PhysicalFileTrashMove,
   countPathReferences,
   lockFilePath,
+  recoverFileTrashMoves,
   trashUnreferencedOriginal,
+  withFileTrashMove,
 } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 
@@ -59,49 +61,63 @@ export class PhysicalFileTrashRepository {
   /**
    * Moves an original nothing references any more into the file trash, instead of unlinking it. Under the
    * path lock the references are counted as `deleteUnreferencedPath` counts them; while any remain nothing
-   * changes. Otherwise `move` puts the file at `<media>/file-trash/<physicalFileId>/<name>`, the trash row is
+   * changes. Otherwise `move` puts the file at `<media>/file-trash/<entryId>/<name>`, the trash row is
    * written and the physical file row deleted, in one transaction. A file already missing is reported and
    * its physical file row kept, for media health to report.
    */
   async trash(input: PhysicalFileTrashInput, move: PhysicalFileTrashMove): Promise<PhysicalFileTrashResult> {
-    return this.db.transaction().execute(async (trx) => {
-      await lockFilePath(trx, input.path);
-      if (input.removedAssetId) {
-        const kept = await trx
-          .selectFrom('asset')
-          .select('id')
-          .where('id', '=', input.removedAssetId)
-          .executeTakeFirst();
-        if (kept) {
-          return { status: 'referenced', references: 1 };
+    return withFileTrashMove<PhysicalFileTrashResult>(
+      this.db,
+      input.path,
+      input.originalFileName,
+      move,
+      async (trx, id) => {
+        if (input.removedAssetId) {
+          const kept = await trx
+            .selectFrom('asset')
+            .select('id')
+            .where('id', '=', input.removedAssetId)
+            .executeTakeFirst();
+          if (kept) {
+            return { status: 'referenced', references: 1 };
+          }
         }
-      }
-      const physicalFile = await trx
-        .selectFrom('physical_file')
-        .select(['id'])
-        .where('path', '=', input.path)
-        .executeTakeFirst();
-      const references = await countPathReferences(trx, input.path, physicalFile?.id);
-      if (references > 0) {
-        return { status: 'referenced', references };
-      }
-      const trashed = await trashUnreferencedOriginal(trx, input.path, move, {
-        physicalFileId: input.physicalFileId ?? physicalFile?.id ?? null,
-        checksum: input.checksum,
-        sizeInBytes: input.sizeInBytes,
-        lastOwnerId: input.lastOwnerId,
-        lastAssetId: input.lastAssetId,
-        originalFileName: input.originalFileName,
-      });
-      if (!trashed) {
-        return { status: 'missing' };
-      }
-      if (physicalFile) {
-        await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();
-      }
-      const entry = await this.getForUpdate(trx, trashed.id);
-      return { status: 'trashed', entry };
-    });
+        const physicalFile = await trx
+          .selectFrom('physical_file')
+          .select(['id'])
+          .where('path', '=', input.path)
+          .executeTakeFirst();
+        const references = (await countPathReferences(trx, input.path, physicalFile?.id)) - 1;
+        if (references > 0) {
+          return { status: 'referenced', references };
+        }
+        const trashed = await trashUnreferencedOriginal(
+          trx,
+          input.path,
+          move,
+          {
+            physicalFileId: input.physicalFileId ?? physicalFile?.id ?? null,
+            checksum: input.checksum,
+            sizeInBytes: input.sizeInBytes,
+            lastOwnerId: input.lastOwnerId,
+            lastAssetId: input.lastAssetId,
+            originalFileName: input.originalFileName,
+          },
+          id,
+        );
+        if (!trashed) {
+          return { status: 'missing' };
+        }
+        if (physicalFile) {
+          await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();
+        }
+        const entry = await this.getForUpdate(trx, trashed.id);
+        return { status: 'trashed', entry };
+      },
+    );
+  }
+  recoverMoves(move: PhysicalFileTrashMove) {
+    return recoverFileTrashMoves(this.db, move);
   }
   /** The newest trashed original with this exact content, if any. */
   async findByChecksum(

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { ChecksumAlgorithm, JobName } from 'src/enum.js';
+import { Reflector } from '@nestjs/core';
+import { ChecksumAlgorithm, JobName, MetadataKey } from 'src/enum.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -23,6 +24,15 @@ describe(PhysicalFileTrashService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PhysicalFileTrashService));
+  });
+
+  it('runs the same recovery at startup and nightly cleanup', async () => {
+    mocks.physicalFileTrash.recoverMoves.mockResolvedValue(0);
+    expect(new Reflector().get(MetadataKey.EventConfig, sut.onBootstrap).name).toBe('AppBootstrap');
+    expect(new Reflector().get(MetadataKey.EventConfig, sut.recoverMoves).name).toBe('NightlyDatabaseCleanup');
+    await sut.onBootstrap();
+    await sut.recoverMoves();
+    expect(mocks.physicalFileTrash.recoverMoves).toHaveBeenCalledTimes(2);
   });
 
   describe('list', () => {
