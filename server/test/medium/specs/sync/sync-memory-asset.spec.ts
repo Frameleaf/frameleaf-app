@@ -47,6 +47,7 @@ describe(SyncEntityType.MemoryToAssetV1, () => {
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     const { memory } = await ctx.newMemory({ ownerId: user.id });
     await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+    await ctx.syncStream(auth, [SyncRequestType.MemoryToAssetsV1]);
     await memoryRepo.removeAssetIds(memory.id, [asset.id]);
 
     const response = await ctx.syncStream(auth, [SyncRequestType.MemoryToAssetsV1]);
