@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import type { QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
 import {
@@ -15,7 +16,6 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import type { QueueExecution } from 'src/queue/types.js';
 import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';

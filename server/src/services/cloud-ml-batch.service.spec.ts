@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MockInstance } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
+import type { MockInstance } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
   AssetStatus,
@@ -23,9 +24,8 @@ import {
   NotificationType,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { queueExecution, deferJobAdoption } from 'src/queue/context.js';
+import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
-import type { QueueExecution } from 'src/queue/types.js';
 import { CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
@@ -1524,7 +1524,7 @@ describe(CloudMlBatchService.name, () => {
       beforeEach(() => {
         mocks.frameleafCloudMl.getJobView.mockResolvedValue(answer(completedView));
         publish.mockImplementation((_id, _item, source) => {
-          deferJobAdoption(async () => source.onPublished!({ status: JobStatus.Success }));
+          deferJobAdoption(() => Promise.resolve(source.onPublished!({ status: JobStatus.Success })));
           return Promise.resolve({ status: JobStatus.Success });
         });
       });
@@ -1555,9 +1555,11 @@ describe(CloudMlBatchService.name, () => {
           Promise.resolve(Buffer.from(resultDocument('result.json', file.endsWith('p1.json') ? 'p1' : 'p2'))),
         );
         publish.mockImplementation((id, _item, source) => {
-          deferJobAdoption(async () =>
-            source.onPublished!(
-              id === 'a-1' ? { status: JobStatus.Skipped, reasonKey: 'not-eligible' } : { status: JobStatus.Success },
+          deferJobAdoption(() =>
+            Promise.resolve(
+              source.onPublished!(
+                id === 'a-1' ? { status: JobStatus.Skipped, reasonKey: 'not-eligible' } : { status: JobStatus.Success },
+              ),
             ),
           );
           return Promise.resolve({ status: JobStatus.Success });
@@ -1829,10 +1831,10 @@ describe(CloudMlBatchService.name, () => {
         adoptions: [],
       };
       mocks.mediaOperation.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: 'claim-1' });
-      const step = vi.spyOn(sut, 'step').mockImplementation(async () => {
+      const step = vi.spyOn(sut, 'step').mockImplementation(() => {
         abort.abort(new Error('parent stopped'));
         abort.signal.throwIfAborted();
-        return false;
+        return Promise.resolve(false);
       });
       await expect(queueExecution.run(context, () => sut.runPass(now))).rejects.toThrow('parent stopped');
       expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
