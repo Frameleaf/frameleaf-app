@@ -746,10 +746,9 @@ describe(AssetDevelopService.name, () => {
     it.each([null, 'original-motion'])(
       'renders the still atomically with motion link %s intact',
       async (livePhotoVideoId) => {
-        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
-          ...getForGenerateThumbnail(asset),
-          livePhotoVideoId,
-        });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(
+          getForGenerateThumbnail({ ...asset, livePhotoVideoId }),
+        );
         const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued, revision: 3 });
         developRepository.get.mockResolvedValue(revision);
 
