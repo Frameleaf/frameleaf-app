@@ -266,3 +266,132 @@ test('installed decoder availability is distinct from output codec availability'
   assert.equal(typeof caps.heicDecoder, 'boolean');
   assert.equal(typeof caps.avifDecoder, 'boolean');
 });
+
+test('Apple auxiliary metadata identifies HDR headroom while blocking unqualified reconstruction', () => {
+  const input = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const info = codec.inspect(input, ...limits);
+  assert.equal(info.gainMap, 'apple-legacy');
+  assert.equal(info.dynamicRange, 'hdr');
+  assert.equal(info.contentHeadroom, 8);
+  assert.equal(info.reconstructionAvailable, false);
+  assert.equal(info.fallbackReason, 'apple-gain-map-interpretation-unqualified');
+  assert.throws(() => codec.decode(input, ...limits), { code: 'APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED' });
+  assert.throws(() => codec.decodePaired(input, ...limits), { code: 'ADAPTIVE_IMAGE_UNAVAILABLE' });
+  assert.throws(() => codec.inspect(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+});
+
+test('Apple gain-map metadata rejects unknown versions, namespace spoofing and invalid MakerNote values', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const mutations = [
+    ['APPLE_GAIN_MAP_VERSION_UNSUPPORTED', (bytes) => bytes.write('65537', bytes.indexOf('65536'))],
+    ['INVALID_APPLE_GAIN_MAP', (bytes) => bytes.write('X', bytes.indexOf('http://ns.apple.com/HDRGainMap/1.0/'))],
+    ['INVALID_APPLE_GAIN_MAP', (bytes) => bytes.writeUInt32BE(0, bytes.indexOf('Apple iOS\0') + 48)],
+    ['INVALID_APPLE_GAIN_MAP', (bytes) => bytes.writeUInt32BE(0xffffffff, bytes.indexOf('Apple iOS\0') + 26)],
+    ['INVALID_APPLE_GAIN_MAP', (bytes) => bytes.writeUInt16BE(9, bytes.indexOf('Apple iOS\0') + 18)],
+    ['RESOURCE_LIMIT', (bytes) => bytes.writeUInt16BE(65535, bytes.indexOf('Apple iOS\0') + 14)],
+  ];
+  for (const [code, mutate] of mutations) {
+    const bytes = Buffer.from(original);
+    mutate(bytes);
+    if (code === 'RESOURCE_LIMIT') assert.throws(() => codec.inspect(bytes, ...limits), { code });
+    else {
+      const info = codec.inspect(bytes, ...limits);
+      assert.equal(info.dynamicRange, 'hdr');
+      assert.equal(info.reconstructionAvailable, false);
+      assert.equal(
+        info.fallbackReason,
+        code === 'APPLE_GAIN_MAP_VERSION_UNSUPPORTED'
+          ? 'apple-gain-map-interpretation-unqualified'
+          : 'invalid-gain-map',
+      );
+    }
+    assert.throws(() => codec.decode(bytes, ...limits), { code: 'APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED' });
+  }
+  const xmpStart = original.indexOf('<x:xmpmeta'),
+    xmpEnd = original.indexOf('</x:xmpmeta>') + '</x:xmpmeta>'.length;
+  const doctype = '<!DOCTYPE x [<!ENTITY e SYSTEM "file:///must-not-be-read">]><x/>';
+  const invalid = Buffer.from(original);
+  invalid.fill(32, xmpStart, xmpEnd);
+  invalid.write(doctype, xmpStart);
+  assert.equal(codec.inspect(invalid, ...limits).reconstructionAvailable, false);
+  assert.equal(codec.inspect(invalid, ...limits).fallbackReason, 'invalid-gain-map');
+});
+
+test('Apple MakerNotes normalize signed rationals, inline floats and either byte order', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const maker = original.indexOf('Apple iOS\0');
+  assert.ok(maker >= 0);
+  for (const [maker33, maker48] of [
+    [0.5, 0],
+    [0.5, 0.05],
+    [1, 0],
+    [1, 0.05],
+    [1, -0.001],
+  ]) {
+    const stops =
+      maker33 < 1
+        ? maker48 <= 0.01
+          ? -20 * maker48 + 1.8
+          : -0.101 * maker48 + 1.601
+        : maker48 <= 0.01
+          ? -70 * maker48 + 3
+          : -0.303 * maker48 + 2.303;
+    for (const little of [false, true])
+      for (const float of [false, true]) {
+        const bytes = Buffer.from(original);
+        bytes.write(little ? 'II' : 'MM', maker + 12);
+        const u16 = (v, at) => (little ? bytes.writeUInt16LE(v, at) : bytes.writeUInt16BE(v, at));
+        const u32 = (v, at) => (little ? bytes.writeUInt32LE(v, at) : bytes.writeUInt32BE(v, at));
+        const i32 = (v, at) => (little ? bytes.writeInt32LE(v, at) : bytes.writeInt32BE(v, at));
+        u16(2, maker + 14);
+        for (const [i, tag, value] of [
+          [0, 33, maker33],
+          [1, 48, maker48],
+        ]) {
+          const entry = maker + 16 + i * 12,
+            offset = 44 + i * 8;
+          u16(tag, entry);
+          u16(float ? 11 : 10, entry + 2);
+          u32(1, entry + 4);
+          if (float) {
+            if (little) bytes.writeFloatLE(value, entry + 8);
+            else bytes.writeFloatBE(value, entry + 8);
+          } else {
+            u32(offset, entry + 8);
+            i32(Math.round(value * 1000), maker + offset);
+            i32(1000, maker + offset + 4);
+          }
+        }
+        const info = codec.inspect(bytes, ...limits);
+        assert.equal(info.reconstructionAvailable, false);
+        assert.ok(Math.abs(info.contentHeadroom - 2 ** Math.max(stops, 0)) < 0.00001);
+      }
+  }
+});
+
+test('Apple XMP accepts namespaced attributes and rejects duplicates or excessive nesting', () => {
+  const original = readFileSync(new URL('./fixtures/apple-gain-map-p3.heic', import.meta.url));
+  const begin = original.indexOf('<x:xmpmeta'),
+    end = original.indexOf('</x:xmpmeta>') + '</x:xmpmeta>'.length;
+  const namespace = 'http://ns.apple.com/HDRGainMap/1.0/';
+  for (const [xmp, valid] of [
+    [`<x xmlns:a="${namespace}" a:HDRGainMapVersion="65536"/>`, true],
+    [
+      `<x xmlns:a="${namespace}" a:HDRGainMapVersion="65536"><a:HDRGainMapVersion>65536</a:HDRGainMapVersion></x>`,
+      false,
+    ],
+    [
+      `<x xmlns:a="${namespace}">${'<b>'.repeat(33)}<a:HDRGainMapVersion>65536</a:HDRGainMapVersion>${'</b>'.repeat(33)}</x>`,
+      false,
+    ],
+  ]) {
+    assert.ok(Buffer.byteLength(xmp) <= end - begin);
+    const bytes = Buffer.from(original);
+    bytes.fill(32, begin, end);
+    bytes.write(xmp, begin);
+    const info = codec.inspect(bytes, ...limits);
+    assert.equal(info.reconstructionAvailable, false);
+    assert.equal(info.fallbackReason, valid ? 'apple-gain-map-interpretation-unqualified' : 'invalid-gain-map');
+    if (valid) assert.equal(info.contentHeadroom, 8);
+  }
+});

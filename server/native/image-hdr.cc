@@ -3,6 +3,9 @@
 #include <libheif/heif.h>
 #include <libheif/heif_items.h>
 #include <ultrahdr_api.h>
+#include <expat.h>
+#include <optional>
+#include <type_traits>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -201,6 +204,159 @@ bool heifHasToneMap(const Input& input, const heif_context* ctx) {
     adaptive = adaptive || heif_item_get_item_type(ctx, ids[i]) == heif_fourcc('t','m','a','p');
   return adaptive;
 }
+// Apple legacy metadata and reconstruction are distinct from ISO/Ultra HDR gain maps.
+// Formula: https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos
+struct TiffView {
+  const uint8_t* bytes; size_t size; bool little;
+  void range(size_t at, size_t length) const {
+    if (at > size || length > size - at) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  }
+  unsigned u16(size_t at) const {
+    range(at, 2);
+    return little ? unsigned(bytes[at]) | unsigned(bytes[at + 1]) << 8
+      : unsigned(bytes[at]) << 8 | bytes[at + 1];
+  }
+  uint32_t u32(size_t at) const {
+    return little ? uint32_t(u16(at)) | uint32_t(u16(at + 2)) << 16
+      : uint32_t(u16(at)) << 16 | u16(at + 2);
+  }
+  std::optional<size_t> entry(size_t directory, unsigned tag) const {
+    const auto count = u16(directory);
+    if (count > 4096) throw std::runtime_error("RESOURCE_LIMIT");
+    range(directory + 2, size_t(count) * 12);
+    std::optional<size_t> found;
+    for (unsigned i = 0; i < count; ++i) {
+      const size_t at = directory + 2 + i * 12;
+      if (u16(at) == tag) {
+        if (found) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+        found = at;
+      }
+    }
+    return found;
+  }
+  float scalar(size_t at) const {
+    if (u32(at + 4) != 1) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+    const auto format = u16(at + 2);
+    float value;
+    if (format == 11) { const auto bits = u32(at + 8); std::memcpy(&value, &bits, 4); }
+    else if (format == 10 || format == 5) {
+      const size_t offset = u32(at + 8);
+      const double numerator = format == 10 ? double(int32_t(u32(offset))) : double(u32(offset));
+      const double denominator = format == 10 ? double(int32_t(u32(offset + 4))) : double(u32(offset + 4));
+      if (denominator == 0) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+      value = float(numerator / denominator);
+    } else throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+    if (!std::isfinite(value)) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+    return value;
+  }
+};
+std::vector<uint8_t> heifMetadata(const Input& input, const heif_image_handle* handle, heif_item_id id) {
+  const size_t size = heif_image_handle_get_metadata_size(handle, id);
+  if (size == 0 || size > 1048576 || size > input.size || input.size * 2 > input.maxBytes)
+    throw std::runtime_error("RESOURCE_LIMIT");
+  std::vector<uint8_t> data(size); check(heif_image_handle_get_metadata(handle, id, data.data())); return data;
+}
+std::vector<heif_item_id> metadataIds(const heif_image_handle* handle, const char* type) {
+  const int count = heif_image_handle_get_number_of_metadata_blocks(handle, type);
+  if (count < 0 || count > 16) throw std::runtime_error("RESOURCE_LIMIT");
+  std::vector<heif_item_id> ids(count);
+  if (heif_image_handle_get_list_of_metadata_block_IDs(handle, type, ids.data(), count) != count)
+    throw std::runtime_error("CORRUPT_IMAGE");
+  return ids;
+}
+double appleHeadroom(const Input& input, const heif_image_handle* primary) {
+  const auto ids = metadataIds(primary, "Exif");
+  if (ids.size() != 1) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const auto data = heifMetadata(input, primary, ids[0]);
+  TiffView container{data.data(), data.size(), false};
+  const size_t offset = size_t(container.u32(0)) + 4;
+  container.range(offset, 8);
+  TiffView tiff{data.data() + offset, data.size() - offset, data[offset] == 'I' && data[offset + 1] == 'I'};
+  if ((!tiff.little && !(tiff.bytes[0] == 'M' && tiff.bytes[1] == 'M')) || tiff.u16(2) != 42)
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const auto exif = tiff.entry(tiff.u32(4), 0x8769);
+  if (!exif || tiff.u16(*exif + 2) != 4 || tiff.u32(*exif + 4) != 1)
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const auto maker = tiff.entry(tiff.u32(*exif + 8), 0x927c);
+  if (!maker || tiff.u16(*maker + 2) != 7) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const size_t length = tiff.u32(*maker + 4), begin = tiff.u32(*maker + 8);
+  tiff.range(begin, length);
+  if (length < 16 || std::memcmp(tiff.bytes + begin, "Apple iOS\0", 10) != 0)
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  TiffView apple{tiff.bytes + begin, length, tiff.bytes[begin + 12] == 'I' && tiff.bytes[begin + 13] == 'I'};
+  if (!apple.little && !(apple.bytes[12] == 'M' && apple.bytes[13] == 'M'))
+    throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const auto entry33 = apple.entry(14, 33), entry48 = apple.entry(14, 48);
+  if (!entry33 || !entry48) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  const float maker33 = apple.scalar(*entry33), maker48 = apple.scalar(*entry48);
+  const float stops = maker33 < 1 ? (maker48 <= 0.01f ? -20 * maker48 + 1.8f : -0.101f * maker48 + 1.601f)
+    : (maker48 <= 0.01f ? -70 * maker48 + 3.0f : -0.303f * maker48 + 2.303f);
+  const double headroom = std::pow(2.0, std::max(stops, 0.0f));
+  if (!std::isfinite(headroom) || headroom > 10000 / 203.0) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+  return headroom;
+}
+struct AppleXmp {
+  XML_Parser parser; int depth = 0, capture = 0, count = 0; bool invalid = false; std::string value;
+  void stop() { invalid = true; XML_StopParser(parser, XML_FALSE); }
+  static bool version(const XML_Char* name) { return std::strcmp(name, "http://ns.apple.com/HDRGainMap/1.0/|HDRGainMapVersion") == 0; }
+  static void start(void* user, const XML_Char* name, const XML_Char** attributes) {
+    auto& x = *static_cast<AppleXmp*>(user);
+    if (++x.depth > 32 || x.capture) { x.stop(); return; }
+    if (version(name)) { if (++x.count != 1) { x.stop(); return; } x.capture = x.depth; }
+    for (size_t i = 0; attributes[i]; i += 2) if (version(attributes[i])) {
+      if (++x.count != 1 || std::strlen(attributes[i + 1]) > 32) { x.stop(); return; }
+      x.value = attributes[i + 1];
+    }
+  }
+  static void end(void* user, const XML_Char*) {
+    auto& x = *static_cast<AppleXmp*>(user); if (x.capture == x.depth) x.capture = 0; --x.depth;
+  }
+  static void text(void* user, const XML_Char* data, int length) {
+    auto& x = *static_cast<AppleXmp*>(user);
+    if (x.capture) { if (x.value.size() + size_t(length) > 32) x.stop(); else x.value.append(data, size_t(length)); }
+  }
+  static void doctype(void* user, const XML_Char*, const XML_Char*, const XML_Char*, int) { static_cast<AppleXmp*>(user)->stop(); }
+};
+void validateAppleVersion(const Input& input, const heif_image_handle* auxiliary) {
+  int found = 0;
+  for (auto id : metadataIds(auxiliary, nullptr)) {
+    const char* type = heif_image_handle_get_metadata_content_type(auxiliary, id);
+    if (!type || std::strcmp(type, "application/rdf+xml") != 0) continue;
+    const auto data = heifMetadata(input, auxiliary, id);
+    std::unique_ptr<std::remove_pointer_t<XML_Parser>, decltype(&XML_ParserFree)> parser(XML_ParserCreateNS(nullptr, '|'), XML_ParserFree);
+    if (!parser) throw std::runtime_error("RESOURCE_LIMIT");
+    AppleXmp x{parser.get(), 0, 0, 0, false, {}}; x.value.reserve(32);
+    XML_SetUserData(parser.get(), &x); XML_SetElementHandler(parser.get(), AppleXmp::start, AppleXmp::end);
+    XML_SetCharacterDataHandler(parser.get(), AppleXmp::text); XML_SetStartDoctypeDeclHandler(parser.get(), AppleXmp::doctype);
+    XML_SetParamEntityParsing(parser.get(), XML_PARAM_ENTITY_PARSING_NEVER);
+    const auto status = XML_Parse(parser.get(), reinterpret_cast<const char*>(data.data()), int(data.size()), XML_TRUE);
+    if (XML_GetErrorCode(parser.get()) == XML_ERROR_NO_MEMORY) throw std::runtime_error("RESOURCE_LIMIT");
+    if (status == XML_STATUS_ERROR || x.invalid) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+    if (x.count) {
+      const auto begin = x.value.find_first_not_of(" \t\r\n"), end = x.value.find_last_not_of(" \t\r\n");
+      if (begin == std::string::npos || x.value.substr(begin, end - begin + 1) != "65536" || ++found != 1)
+        throw std::runtime_error("APPLE_GAIN_MAP_VERSION_UNSUPPORTED");
+    }
+  }
+  if (found != 1) throw std::runtime_error("INVALID_APPLE_GAIN_MAP");
+}
+Handle appleAuxiliary(const heif_image_handle* primary) {
+  const int count = heif_image_handle_get_number_of_auxiliary_images(primary, 0);
+  if (count < 0 || count > 64) throw std::runtime_error("RESOURCE_LIMIT");
+  std::vector<heif_item_id> ids(count);
+  if (heif_image_handle_get_list_of_auxiliary_image_IDs(primary, 0, ids.data(), count) != count)
+    throw std::runtime_error("CORRUPT_IMAGE");
+  Handle found(nullptr, heif_image_handle_release);
+  for (auto id : ids) {
+    heif_image_handle* raw = nullptr; check(heif_image_handle_get_auxiliary_image_handle(primary, id, &raw));
+    Handle auxiliary(raw, heif_image_handle_release);
+    const char* type = nullptr; check(heif_image_handle_get_auxiliary_type(raw, &type));
+    const bool apple = type && std::strcmp(type, "urn:com:apple:photo:2020:aux:hdrgainmap") == 0;
+    heif_image_handle_release_auxiliary_type(raw, &type);
+    if (apple) { if (found) throw std::runtime_error("INVALID_APPLE_GAIN_MAP"); found = std::move(auxiliary); }
+  }
+  return found;
+}
 napi_value decodeHeif(napi_env env, Input& input) {
   Context ctx(heif_context_alloc(), heif_context_free);
   if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
@@ -208,6 +364,8 @@ napi_value decodeHeif(napi_env env, Input& input) {
   if (heifHasToneMap(input, ctx.get())) throw std::runtime_error("ISO_HEIF_GAIN_MAP_UNAVAILABLE");
   heif_image_handle* raw = nullptr; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
   Handle primary(raw, heif_image_handle_release);
+  auto auxiliary = appleAuxiliary(raw);
+  if (auxiliary) throw std::runtime_error("APPLE_GAIN_MAP_RECONSTRUCTION_UNQUALIFIED");
   input.dimensions(heif_image_handle_get_width(raw), heif_image_handle_get_height(raw));
   heif_color_profile_nclx* profileRaw = nullptr;
   check(heif_image_handle_get_nclx_color_profile(raw, &profileRaw));
@@ -364,21 +522,22 @@ napi_value inspect(napi_env env, napi_callback_info info) {
         }
         else if (transfer == 1 || transfer == 13) field(env, result, "dynamicRange", "sdr");
       }
-      const int count = heif_image_handle_get_number_of_auxiliary_images(raw, 0);
-      if (count < 0 || count > 64) throw std::runtime_error("RESOURCE_LIMIT");
-      std::vector<heif_item_id> ids(count);
-      heif_image_handle_get_list_of_auxiliary_image_IDs(raw, 0, ids.data(), count);
-      for (auto id : ids) {
-        heif_image_handle* auxiliaryRaw;
-        check(heif_image_handle_get_auxiliary_image_handle(raw, id, &auxiliaryRaw));
-        Handle auxiliary(auxiliaryRaw, heif_image_handle_release);
-        const char* auxType = nullptr; check(heif_image_handle_get_auxiliary_type(auxiliaryRaw, &auxType));
-        const std::string name = auxType ? auxType : "";
-        heif_image_handle_release_auxiliary_type(auxiliaryRaw, &auxType);
-        if (name == "urn:com:apple:photo:2020:aux:hdrgainmap") {
-          field(env, result, "dynamicRange", "hdr"); field(env, result, "gainMap", "apple-legacy");
+      auto auxiliary = appleAuxiliary(raw);
+      if (auxiliary) {
+        field(env, result, "dynamicRange", "hdr"); field(env, result, "gainMap", "apple-legacy");
+        field(env, result, "transfer", "adaptive");
+        try {
+          validateAppleVersion(input, auxiliary.get());
+          field(env, result, "contentHeadroom", appleHeadroom(input, raw));
+          // The documented reconstruction disagrees with ImageIO midtones. Do not advertise it.
           field(env, result, "reconstructionAvailable", false);
           field(env, result, "fallbackReason", "apple-gain-map-interpretation-unqualified");
+        } catch (const std::bad_alloc&) { throw;
+        } catch (const std::exception& error) {
+          if (std::strcmp(error.what(), "RESOURCE_LIMIT") == 0) throw;
+          field(env, result, "reconstructionAvailable", false);
+          field(env, result, "fallbackReason", std::strcmp(error.what(), "APPLE_GAIN_MAP_VERSION_UNSUPPORTED") == 0
+            ? "apple-gain-map-interpretation-unqualified" : "invalid-gain-map");
         }
       }
       return result;

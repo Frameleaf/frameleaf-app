@@ -21,3 +21,26 @@ The Docker codec stage runs these same tests on Linux amd64 and arm64. Real
 Apple legacy gain maps, ISO adaptive HEIF, Ultra HDR camera JPEG, portrait/depth,
 PQ/HLG camera fixtures and independent reconstruction/display checks remain
 required before the codec capability is qualified.
+
+## Apple auxiliary metadata fixture
+
+`apple-gain-map-p3.heic` is synthetic: 64 × 32 Display P3 neutral RGB at code
+100, with a quarter-resolution monochrome gain map containing codes 0, 64,
+128 and 255. ImageIO on macOS 26.5.2 (25F84) authored the file using
+`generate-apple-gain-map.swift`; MakerNote 33 = 1, MakerNote 48 = 0,
+HDRGainMapVersion = 65536. SHA-256:
+`1185bc3e539ffe55dce9cc9b8224e6d82727c73258e6f6123bdefd73be3e8d42`.
+
+Regenerate with `swift server/test/native/fixtures/generate-apple-gain-map.swift /path/to/output.heic`.
+ImageIO codec output may differ across OS versions; tests use the committed file.
+This verifies primary-owned Exif, auxiliary-owned XMP, bounded parsing,
+headroom classification and refusal to flatten unsupported HDR during export.
+It is not a camera or display qualification fixture.
+
+Legacy Apple reconstruction remains unavailable. The documented inverse
+Rec.709 reconstruction was compared with ImageIO DecodeToHDR and direct Core
+Image expandToHDR in linear BT.2020. Headroom and SDR appearance agree, but
+midtones differ (maximum absolute RGB error 0.0904 in reference-white units on
+this fixture). Do not substitute a fitted gamma or enable this decoder until
+real fixtures and independent decodes resolve the interpretation. Source:
+[Apple HDR reconstruction guidance](https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos).

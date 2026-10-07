@@ -316,29 +316,35 @@ test('unedited still exports bind decoded bytes to the original checksum and reg
   }
 });
 
-test('still export refuses unreconstructible HDR without publishing an SDR conversion', async () => {
-  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-unsupported-hdr-'));
-  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
-  try {
-    const bytes = await readFile(new URL('./fixtures/pq-rotated.avif', import.meta.url));
-    bytes.write('tmap', 16, 'ascii');
-    const encoding = codec.inspect(bytes, ...limits);
-    assert.equal(encoding.dynamicRange, 'hdr');
-    assert.equal(encoding.reconstructionAvailable, false);
-    const source = join(folder, 'source.avif');
-    await writeFile(source, bytes);
-    const checksum = createHash('sha256').update(bytes).digest();
-    for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
-      const output = join(folder, `${format}.out`);
-      await assert.rejects(
-        pool.run('exportPhotoStill', [source, output, format, checksum]),
-        /HDR_RECONSTRUCTION_UNAVAILABLE/,
-      );
-      await assert.rejects(stat(output), { code: 'ENOENT' });
+for (const fixture of ['pq-rotated.avif', 'apple-gain-map-p3.heic']) {
+  test(`still export refuses unreconstructible HDR (${fixture}) without publishing an SDR conversion`, async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-unsupported-hdr-'));
+    const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+    try {
+      const bytes = await readFile(new URL(`./fixtures/${fixture}`, import.meta.url));
+      if (fixture.endsWith('.avif')) bytes.write('tmap', 16, 'ascii');
+      const encoding = await pool.run('inspectImageEncoding', [bytes]);
+      assert.equal(encoding.dynamicRange, 'hdr');
+      assert.equal(encoding.reconstructionAvailable, false);
+      if (fixture.endsWith('.heic')) {
+        assert.equal(encoding.contentHeadroom, 8);
+        assert.equal(encoding.fallbackReason, 'apple-gain-map-interpretation-unqualified');
+      }
+      const source = join(folder, fixture);
+      await writeFile(source, bytes);
+      const checksum = createHash('sha256').update(bytes).digest();
+      for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
+        const output = join(folder, `${format}.out`);
+        await assert.rejects(
+          pool.run('exportPhotoStill', [source, output, format, checksum]),
+          /HDR_RECONSTRUCTION_UNAVAILABLE/,
+        );
+        await assert.rejects(stat(output), { code: 'ENOENT' });
+      }
+      assert.deepEqual(await readFile(source), bytes);
+    } finally {
+      await pool.close();
+      await rm(folder, { recursive: true, force: true });
     }
-    assert.deepEqual(await readFile(source), bytes);
-  } finally {
-    await pool.close();
-    await rm(folder, { recursive: true, force: true });
-  }
-});
+  });
+}
