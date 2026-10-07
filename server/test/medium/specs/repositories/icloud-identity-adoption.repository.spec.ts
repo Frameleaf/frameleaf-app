@@ -1640,6 +1640,18 @@ describe('iCloud exact identity adoption', () => {
         FROM public.icloud_identity_reuse WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
       expect(published.rows[0].count).toBe(size);
       progress('receipt-population-complete', published.rows[0].count);
+      expect(await operations().beginValidation(f.authority.operationId, f.authority.operationClaimToken, true)).toBe(
+        true,
+      );
+      expect(
+        await operations().complete(
+          f.authority.operationId,
+          f.authority.operationClaimToken,
+          { resultAssetId: null },
+          undefined,
+          true,
+        ),
+      ).toBe(true);
       return f;
     }
 
@@ -1801,6 +1813,19 @@ describe('iCloud exact identity adoption', () => {
       expect(cohort.manifestDigest).toEqual(manifest.digest());
       const batchesStarted = performance.now();
       const first = (await weekly().createNextBatch(cohort.id, operations()))!;
+      expect(first).not.toBeNull();
+      expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
+      // This producer test settles only the operation lifecycle, never an audit result.
+      const claimed = (await operations().claimNext({
+        kinds: [MediaOperationKind.ICloudSync],
+        workerId: 'weekly-producer-fixture',
+        leaseMs: 60_000,
+      }))!;
+      expect(claimed.operation.id).toBe(first.id);
+      expect(await operations().beginValidation(first.id, claimed.claimToken, true)).toBe(true);
+      expect(await operations().complete(first.id, claimed.claimToken, { resultAssetId: null }, undefined, true)).toBe(
+        true,
+      );
       const second = (await weekly().createNextBatch(cohort.id, operations()))!;
       expect(first.totalUnits).toBe(100);
       expect(second.totalUnits).toBe(1);
