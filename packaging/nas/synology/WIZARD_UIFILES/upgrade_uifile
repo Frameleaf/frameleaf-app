@@ -1,1 +1,0 @@
-[{"step_title":"Frameleaf backup","items":[{"type":"singleselect","desc":"Confirm a consistent backup of both PostgreSQL and media before upgrading.","subitems":[{"key":"wizard_backup_confirm","desc":"I have verified both backups","defaultValue":false}]}]}]

@@ -1,3 +1,0 @@
-#!/bin/sh
-# Storage paths and persistent package data are intentionally retained.
-exit 0
