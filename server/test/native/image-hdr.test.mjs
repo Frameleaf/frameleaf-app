@@ -18,6 +18,39 @@ for (let y = 0; y < height; y++)
   }
 const bytes = () => Buffer.from(pixels.buffer);
 
+test('HEIC export is ten-bit PQ, retains HDR headroom and rejects invalid input', () => {
+  const encoded = codec.encodeHeic(bytes(), width, height, 2, ...limits);
+  const metadata = codec.inspect(encoded, ...limits);
+  assert.equal(metadata.codec, 'hevc');
+  assert.equal(metadata.bitDepth, 10);
+  assert.equal(metadata.transfer, 16);
+  assert.equal(metadata.colorPrimaries, 9);
+  assert.equal(metadata.dynamicRange, 'hdr');
+  assert.equal(metadata.reconstructionAvailable, true);
+  const decoded = codec.decode(encoded, ...limits);
+  assert.deepEqual([decoded.width, decoded.height, decoded.gamut], [width, height, 2]);
+  const result = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
+  for (let x = 4; x < width; x += 8) {
+    const offset = (32 * width + x) * 4;
+    assert.ok(Math.abs(result[offset] - pixels[offset]) < 0.7);
+  }
+  assert.throws(() => codec.encodeHeic(bytes(), width, height, 2, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+  const invalid = new Float32Array(pixels);
+  invalid[0] = NaN;
+  assert.throws(() => codec.encodeHeic(Buffer.from(invalid.buffer), width, height, 2, ...limits), {
+    code: 'INVALID_LINEAR_PIXELS',
+  });
+  for (const gamut of [0, 1, 2]) {
+    const transparent = new Float32Array(pixels);
+    for (let i = 3; i < transparent.length; i += 4) transparent[i] = 0.5;
+    const image = codec.encodeHeic(Buffer.from(transparent.buffer), width, height, gamut, ...limits);
+    const alpha = codec.decode(image, ...limits);
+    assert.equal(alpha.gamut, gamut);
+    const data = new Float32Array(alpha.data.buffer, alpha.data.byteOffset, alpha.data.length / 4);
+    assert.ok(Math.abs(data[3] - 0.5) < 0.002);
+  }
+});
+
 test('linear HDR survives the codec round trip without intermediate 8-bit clipping', () => {
   const image = codec.encode(bytes(), width, height, 0, ...limits);
   const metadata = codec.inspect(image, ...limits);

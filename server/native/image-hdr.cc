@@ -513,6 +513,100 @@ napi_value encode(napi_env env, napi_callback_info info) {
 napi_value encodePaired(napi_env env, napi_callback_info info) {
   return invoke(env, info, 8, [&](napi_value* args) { return encodeLinear(env, args, true); });
 }
+napi_value encodeHeic(napi_env env, napi_callback_info info) {
+  return invoke(env, info, 6, [&](napi_value* args) {
+    bool buffer; check(napi_is_buffer(env, args[0], &buffer));
+    if (!buffer) throw std::runtime_error("INVALID_ARGUMENT");
+    void* bytes; size_t size; check(napi_get_buffer_info(env, args[0], &bytes, &size));
+    const double wd = number(env, args[1]), hd = number(env, args[2]), gd = number(env, args[3]);
+    const double maxPixels = number(env, args[4]), maxBytes = number(env, args[5]);
+    if (!std::isfinite(wd) || !std::isfinite(hd) || !std::isfinite(gd)
+        || !std::isfinite(maxPixels) || !std::isfinite(maxBytes)
+        || reinterpret_cast<uintptr_t>(bytes) % alignof(float) != 0
+        || wd < 1 || hd < 1 || wd != std::floor(wd) || hd != std::floor(hd)
+        || maxPixels < 1 || maxPixels > 200000000 || wd * hd > maxPixels
+        || maxBytes <= 0 || maxBytes > 1073741824 || wd * hd * 64 > maxBytes
+        || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
+      throw std::runtime_error("RESOURCE_LIMIT");
+    const auto* source = static_cast<const float*>(bytes);
+    for (size_t i = 0; i < size / 4; ++i)
+      if (!std::isfinite(source[i]) || source[i] < 0 || source[i] > (i % 4 == 3 ? 1 : 10000.0 / 203))
+        throw std::runtime_error("INVALID_LINEAR_PIXELS");
+    Context ctx(heif_context_alloc(), heif_context_free);
+    if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
+    const heif_encoder_descriptor* descriptor = nullptr;
+    if (heif_get_encoder_descriptors(heif_compression_HEVC, "x265", &descriptor, 1) != 1)
+      throw std::runtime_error("HDR_HEIC_ENCODER_UNAVAILABLE");
+    heif_encoder* encoderRaw = nullptr; check(heif_context_get_encoder(ctx.get(), descriptor, &encoderRaw));
+    std::unique_ptr<heif_encoder, decltype(&heif_encoder_release)> encoder(encoderRaw, heif_encoder_release);
+    check(heif_encoder_set_lossy_quality(encoder.get(), 95));
+    check(heif_encoder_set_logging_level(encoder.get(), 0));
+    check(heif_encoder_set_parameter_string(encoder.get(), "chroma", "420"));
+    check(heif_encoder_set_parameter_string(encoder.get(), "x265:pools", "none"));
+    check(heif_encoder_set_parameter_string(encoder.get(), "x265:frame-threads", "1"));
+    check(heif_encoder_set_parameter_string(encoder.get(), "x265:wpp", "0"));
+    heif_image* imageRaw = nullptr;
+    check(heif_image_create(int(wd), int(hd), heif_colorspace_RGB, heif_chroma_interleaved_RRGGBBAA_LE, &imageRaw));
+    std::unique_ptr<heif_image, decltype(&heif_image_release)> image(imageRaw, heif_image_release);
+    check(heif_image_add_plane(image.get(), heif_channel_interleaved, int(wd), int(hd), 10));
+    int stride = 0; auto* plane = heif_image_get_plane(image.get(), heif_channel_interleaved, &stride);
+    if (!plane || stride < wd * 8) throw std::runtime_error("RESOURCE_LIMIT");
+    for (int y = 0; y < int(hd); ++y) {
+      auto* row = reinterpret_cast<uint16_t*>(plane + size_t(y) * stride);
+      for (int x = 0; x < int(wd) * 4; ++x) {
+        double value = source[size_t(y) * int(wd) * 4 + x];
+        if (x % 4 != 3) {
+          // ST 2084 encodes absolute light: working 1.0 is 203 cd/m², PQ 1.0 is 10000 cd/m².
+          const double light = std::pow(value * 203 / 10000, 2610.0 / 16384);
+          value = std::pow((3424.0 / 4096 + 2413.0 / 128 * light) / (1 + 2392.0 / 128 * light), 2523.0 / 32);
+        }
+        row[x] = uint16_t(std::lround(value * 1023));
+      }
+    }
+    Profile profile(heif_nclx_color_profile_alloc(), heif_nclx_color_profile_free);
+    if (!profile) throw std::runtime_error("RESOURCE_LIMIT");
+    check(heif_nclx_color_profile_set_color_primaries(profile.get(), gd == 2 ? 9 : gd == 1 ? 12 : 1));
+    check(heif_nclx_color_profile_set_transfer_characteristics(profile.get(), 16));
+    check(heif_nclx_color_profile_set_matrix_coefficients(profile.get(), gd == 2 ? 9 : 1));
+    profile->full_range_flag = 1;
+    check(heif_image_set_nclx_color_profile(image.get(), profile.get()));
+    std::unique_ptr<heif_encoding_options, decltype(&heif_encoding_options_free)>
+      options(heif_encoding_options_alloc(), heif_encoding_options_free);
+    if (!options) throw std::runtime_error("RESOURCE_LIMIT");
+    options->output_nclx_profile = profile.get();
+    options->image_orientation = heif_orientation_normal;
+    heif_image_handle* handleRaw = nullptr;
+    check(heif_context_encode_image(ctx.get(), image.get(), encoder.get(), options.get(), &handleRaw));
+    Handle handle(handleRaw, heif_image_handle_release);
+    struct Output { std::vector<uint8_t> bytes; size_t limit; } output{{}, size_t(std::min(maxBytes, 134217728.0))};
+    heif_writer writer{1, [](heif_context*, const void* data, size_t length, void* state) -> heif_error {
+      auto& output = *static_cast<Output*>(state);
+      if (length > output.limit - output.bytes.size())
+        return {heif_error_Memory_allocation_error, heif_suberror_Unspecified, "RESOURCE_LIMIT"};
+      try {
+        const auto* bytes = static_cast<const uint8_t*>(data);
+        output.bytes.insert(output.bytes.end(), bytes, bytes + length);
+        return {heif_error_Ok, heif_suberror_Unspecified, nullptr};
+      } catch (...) { return {heif_error_Memory_allocation_error, heif_suberror_Unspecified, "RESOURCE_LIMIT"}; }
+    }};
+    check(heif_context_write(ctx.get(), &writer, &output));
+    // Validate the serialized stream: the encoder's in-memory handle does not report coded bit depth.
+    Context verify(heif_context_alloc(), heif_context_free);
+    if (!verify) throw std::runtime_error("RESOURCE_LIMIT");
+    check(heif_context_read_from_memory_without_copy(verify.get(), output.bytes.data(), output.bytes.size(), nullptr));
+    heif_image_handle* verifiedRaw = nullptr; check(heif_context_get_primary_image_handle(verify.get(), &verifiedRaw));
+    Handle verified(verifiedRaw, heif_image_handle_release);
+    heif_color_profile_nclx* verifiedProfileRaw = nullptr;
+    check(heif_image_handle_get_nclx_color_profile(verified.get(), &verifiedProfileRaw));
+    Profile verifiedProfile(verifiedProfileRaw, heif_nclx_color_profile_free);
+    if (heif_image_handle_get_luma_bits_per_pixel(verified.get()) != 10
+        || verifiedProfile->transfer_characteristics != 16
+        || verifiedProfile->color_primaries != profile->color_primaries)
+      throw std::runtime_error("HDR_HEIC_ENCODER_UNAVAILABLE");
+    napi_value result; check(napi_create_buffer_copy(env, output.bytes.size(), output.bytes.data(), nullptr, &result));
+    return result;
+  });
+}
 napi_value capabilities(napi_env env, napi_callback_info info) {
   return invoke(env, info, 0, [&](napi_value*) {
   napi_value result = object(env);
@@ -531,6 +625,7 @@ napi_value init(napi_env env, napi_value exports) {
     {"encode", nullptr, encode, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"decodePaired", nullptr, decodePaired, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"encodePaired", nullptr, encodePaired, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"encodeHeic", nullptr, encodeHeic, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   check(napi_define_properties(env, exports, sizeof(functions) / sizeof(functions[0]), functions)); return exports;
 }

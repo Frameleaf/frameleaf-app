@@ -484,6 +484,20 @@ describe(ServerService.name, () => {
         imageCapabilities: { renderer: null, decode: [], export: [] },
       });
     });
+    it('offers HDR HEIC only after the admitted codec verifies ten-bit PQ output', async () => {
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+        libheif: '1.23.3',
+        libultrahdr: '2.0.2',
+        heicDecoder: true,
+        avifDecoder: false,
+        heicPqEncoder: true,
+      });
+      expect((await sut.getFeatures()).imageCapabilities).toMatchObject({
+        qualified: false,
+        export: ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'],
+        unavailable: ['apple-gain-map-heic', 'iso-adaptive-heif'],
+      });
+    });
 
     it('reports cloud entitlements only while linked, and the supporter flag from the licence (FL-156)', async () => {
       const now = Math.floor(Date.now() / 1000);

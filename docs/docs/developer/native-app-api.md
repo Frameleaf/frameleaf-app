@@ -185,6 +185,12 @@ get a temporary sRGB JPEG copy through the existing isolated worker, with captur
 metadata stripped; this does not change their recipe, renderer, or stored pixels.
 An external version without verified SDR pixels is refused. Unsupported HDR HEIC
 returns `hdr_heic_export_unavailable`; it never substitutes JPEG or SDR.
+When the codec probe verifies ten-bit PQ encoding, HDR HEIC is made from the
+published HDR master through the same worker. It preserves the source gamut and
+alpha, emits verified PQ/nclx signaling, and strips capture metadata. Its temporary
+copy is delivered only after permission and revision revalidation, then removed.
+HEIC compatibility varies by decoder; the gain-map JPEG remains the compatible
+HDR choice with an authored SDR baseline.
 
 Export filenames identify these as still images. An edited Live Photo still does
 not include motion or claim to be an edited Live Photo pair. Authorized original
@@ -198,8 +204,9 @@ existing isolated image worker. `codecs` records the installed library versions.
 `experimentalEnabled` reports the administrator gate; `qualified` remains false
 until real-media and physical-display acceptance pass. An absent field means an
 older server with unknown capabilities. A missing codec reports empty lists,
-without preventing ordinary server feature discovery. Apple gain-map HEIC, ISO
-adaptive HEIF and HDR HEIC export remain explicitly unavailable in this build.
+without preventing ordinary server feature discovery. Apple gain-map HEIC and ISO
+adaptive HEIF remain explicitly unavailable in this build. HDR HEIC export is
+offered only after the installed encoder passes the worker's ten-bit PQ probe.
 
 ### HDR preview histogram
 

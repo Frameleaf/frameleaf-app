@@ -21,6 +21,10 @@ import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+const features = vi.hoisted(() => ({
+  value: { imageCapabilities: { experimentalEnabled: true, export: [] as string[] } },
+}));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: features }));
 
 /**
  * QuickEditor (FL-113). The test i18n setup renders the literal key rather than its English
@@ -95,6 +99,7 @@ describe('QuickEditor', () => {
   });
 
   beforeEach(() => {
+    features.value.imageCapabilities = { experimentalEnabled: true, export: [] };
     sessionStorage.clear();
     vi.mocked(saveAssetDevelop).mockReset();
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [] });
@@ -479,6 +484,28 @@ describe('QuickEditor', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' }));
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'frameleaf_editor_manage_versions' }));
   };
+
+  it.each([false, true])(
+    'offers HEIC still export only when the server verifies its capability: %s',
+    async (available) => {
+      features.value.imageCapabilities.export = available ? ['hdr-heic'] : [];
+      vi.mocked(getAssetDevelop).mockResolvedValue({
+        assetId: photo.id,
+        currentRevisionId: null,
+        revisions: [revision({ hasHdrMaster: true })],
+      });
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await manageVersions();
+      const link = screen.queryByRole('link', { name: 'frameleaf_editor_export_hdr_heic' });
+      if (available) {
+        expect(link).toHaveAttribute('href', expect.stringContaining('format=hdr-heic'));
+        expect(link).toHaveAttribute('download');
+      } else {
+        expect(link).not.toBeInTheDocument();
+      }
+    },
+  );
 
   it('cancels a version that is still rendering on the server', async () => {
     const rendering = revision({ status: AssetDevelopRevisionStatus.Rendering, progress: 40, hasMaster: false });
