@@ -39,7 +39,9 @@ const forSidecarJob = (
     files?: { id: string; type: AssetFileType; path: string; physicalFileId?: string | null; isEdited: boolean }[];
   } = {},
 ) => {
-  const files = asset.files?.map((file) => ({ ...file, physicalFileId: file.physicalFileId ?? null })) ?? [];
+  const files =
+    asset.files?.map((file) => ({ ...file, physicalFileId: file.physicalFileId ?? null, renditionIdentity: null })) ??
+    [];
 
   return {
     id: factory.uuid(),

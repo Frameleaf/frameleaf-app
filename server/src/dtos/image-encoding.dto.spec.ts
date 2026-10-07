@@ -38,7 +38,7 @@ it('reports only available current HDR derivatives without exposing their identi
       .file({ type: AssetFileType.HdrPreview, isEdited: false, renditionIdentity: 'aa'.repeat(32) })
       .file({ type: AssetFileType.HdrFullSize, isEdited: true, renditionIdentity: 'bb'.repeat(32) })
       .build();
-    const result = mapAsset({ ...asset, hasCurrentDevelop: false }, { stripMetadata: true });
+    const result = mapAsset({ ...getForAsset(asset), hasCurrentDevelop: false }, { stripMetadata: true });
     expect(result.imageRenditions).toEqual({
       sdrPreview: false,
       sdrFullsize: false,
@@ -47,9 +47,9 @@ it('reports only available current HDR derivatives without exposing their identi
     });
     expect(JSON.stringify(result)).not.toContain('bb'.repeat(32));
     vi.stubEnv('FRAMELEAF_HDR_IMAGES', '');
-    expect(mapAsset({ ...asset, hasCurrentDevelop: false }).imageRenditions?.hdrFullsize).toBe(false);
-    expect(mapAsset({ ...asset, hasCurrentDevelop: true }).imageRenditions).toBeUndefined();
-    expect(mapAsset(asset).imageRenditions).toBeUndefined();
+    expect(mapAsset({ ...getForAsset(asset), hasCurrentDevelop: false }).imageRenditions?.hdrFullsize).toBe(false);
+    expect(mapAsset({ ...getForAsset(asset), hasCurrentDevelop: true }).imageRenditions).toBeUndefined();
+    expect(mapAsset(getForAsset(asset)).imageRenditions).toBeUndefined();
   } finally {
     vi.unstubAllEnvs();
   }
@@ -57,5 +57,5 @@ it('reports only available current HDR derivatives without exposing their identi
 
 it('leaves rendition availability unknown when file evidence was not loaded', () => {
   const asset = AssetFactory.create();
-  expect(mapAsset({ ...asset, files: undefined }).imageRenditions).toBeUndefined();
+  expect(mapAsset({ ...getForAsset(asset), files: undefined }).imageRenditions).toBeUndefined();
 });

@@ -916,10 +916,9 @@ describe(AssetMediaService.name, () => {
         });
         mocks.asset.getForThumbnail.mockResolvedValueOnce({
           imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
-          renditionIdentity: null,
+          renditionIdentity: '1'.repeat(64),
           ...asset,
           path: '/data/hdr-preview.jpg',
-          renditionIdentity: '1'.repeat(64),
         });
         await expect(
           sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, dynamicRange: 'hdr' }),
@@ -935,7 +934,6 @@ describe(AssetMediaService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       for (const dynamicRange of ['hdr', 'unknown'] as const) {
         mocks.asset.getForThumbnail.mockResolvedValue({
-          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
           renditionIdentity: null,
           ...asset,
           path: null,
