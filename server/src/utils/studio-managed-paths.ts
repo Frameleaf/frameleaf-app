@@ -26,6 +26,8 @@ export const isManagedStudioExportPath = (item: {
   if (![item.ownerId, item.id].every(isStudioUuid)) return false;
   const version = relative(join(studioExportRoot(item.ownerId), 'versions'), item.outputPath);
   if (new RegExp(String.raw`^${item.id}\.[a-zA-Z0-9]+$`).test(version)) return true;
+  const stillAttempt = new RegExp(String.raw`^${item.id}-([a-f0-9-]+)\.(?:jpg|heic)$`).exec(version);
+  if (stillAttempt && isStudioUuid(stillAttempt[1])) return true;
   if (
     item.renderOperationId &&
     isStudioUuid(item.renderOperationId) &&

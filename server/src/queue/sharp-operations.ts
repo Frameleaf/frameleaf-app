@@ -163,22 +163,34 @@ export class SharpOperations {
   }
 
   encodeHdrImage(image: LinearHdrImage | PairedHdrImage, format: 'jpeg' | 'heic' = 'jpeg') {
-    return imageHdrOperation((codec) =>
-      format === 'heic'
-        ? codec.encodeHeic(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes)
-        : 'sdr' in image
-          ? codec.encodePaired(
-              image.data,
-              image.width,
-              image.height,
-              image.gamut,
-              this.maxPixels,
-              this.maxBytes,
-              image.sdr,
-              image.sdrGamut,
-            )
-          : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
-    );
+    // Advanced IPC may reconstruct a Buffer at an unaligned byte offset. Native float
+    // access requires alignment; include the retained input in the temporary-copy budget.
+    const copy = image.data.byteOffset % Float32Array.BYTES_PER_ELEMENT !== 0;
+    if (copy && (image.data.length % 4 !== 0 || image.data.length * 5 > this.maxBytes)) {
+      throw new SharpResourceLimitError('HDR alignment copy exceeds the image worker budget');
+    }
+    const data = copy ? Buffer.from(new ArrayBuffer(image.data.length)) : image.data;
+    if (copy) image.data.copy(data);
+    try {
+      return imageHdrOperation((codec) =>
+        format === 'heic'
+          ? codec.encodeHeic(data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes)
+          : 'sdr' in image
+            ? codec.encodePaired(
+                data,
+                image.width,
+                image.height,
+                image.gamut,
+                this.maxPixels,
+                this.maxBytes,
+                image.sdr,
+                image.sdrGamut,
+              )
+            : codec.encode(data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
+      );
+    } finally {
+      if (copy) data.fill(0);
+    }
   }
 
   async generateHdrRenditions(input: string | Buffer, outputs: HdrRenditionOutput[], develop?: HdrDevelopRender) {

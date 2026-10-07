@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
+import { AssetTypeEnum, AssetVisibility, DynamicRange } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -56,7 +56,7 @@ it.each([
   { isEdited: true },
   { visibility: AssetVisibility.Locked },
   { isTrashed: true },
-  { duration: '00:01' },
+  { duration: 1 },
   { type: AssetTypeEnum.Video },
 ])('hides original conversion for an unavailable still: %j', (overrides) => {
   render(ViewerMoreMenu, {
@@ -72,7 +72,7 @@ it('offers the server HDR formats only for a reconstructible HDR original', () =
     asset: assetFactory.build({
       ownerId: 'owner',
       type: AssetTypeEnum.Image,
-      imageEncoding: { dynamicRange: 'hdr', reconstructionAvailable: true, gainMap: 'ultra-hdr' },
+      imageEncoding: { dynamicRange: DynamicRange.Hdr, reconstructionAvailable: true, gainMap: 'ultra-hdr' },
     }),
     preAction: vi.fn(),
     onAction: vi.fn(),

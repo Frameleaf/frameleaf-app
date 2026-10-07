@@ -354,7 +354,12 @@
       "path": "patches/0072-linear-hdr-saturation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "759136860afe1eec83a23d7f63a932915ed749509235573fd8ce452694dddb1a"
+    },
+    {
+      "path": "patches/0073-headless-sdr-still-signal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "045448634510e45965ad8b652562562f9052c6c2be79f999ec58d7be3edb6b6d"
     }
   ],
-  "sourceSha256": "d502610febd8cfce05471c4f42fc34b1ecdd881f71b13082ea0655d96977f737"
+  "sourceSha256": "1462ec425aa05d0d8d43274036416ef4c07ff614fb116f7fd51fc70fb08f7103"
 }

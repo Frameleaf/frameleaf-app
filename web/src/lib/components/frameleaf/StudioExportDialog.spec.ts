@@ -50,6 +50,56 @@ describe('Studio export dialog', () => {
     };
   };
 
+  it.each([
+    { outputIntent: 'sdr' as const, hdrEnabled: true },
+    { outputIntent: 'hdr' as const, hdrEnabled: false },
+  ])('keeps HDR still choices unavailable without document intent and the server gate: %j', (props) => {
+    const row = evidence();
+    row.candidates![0].outputFormats.push(StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic);
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      ...props,
+      renderEvidence: [row],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByRole('option', { name: 'frameleaf_studio_export_format_hdr_jpeg' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'frameleaf_studio_export_format_hdr_heic' })).toBeDisabled();
+  });
+
+  it.each([StudioExportFormat.SdrJpeg, StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic])(
+    'exports %s as one still without video or motion settings',
+    async (format) => {
+      const onExport = vi.fn();
+      const row = evidence();
+      row.candidates![0].outputFormats.push(format);
+      render(StudioExportDialog, {
+        open: true,
+        sequenceName: 'Lake trip',
+        outputIntent: 'hdr',
+        hdrEnabled: true,
+        renderEvidence: [row],
+        onExport,
+      });
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), { target: { value: format } });
+      expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.Original);
+      expect(screen.queryByTestId('studio-export-smooth-motion')).not.toBeInTheDocument();
+      await fireEvent.click(exportButton());
+      expect(onExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          format,
+          resolution: StudioExportResolution.Original,
+          color: StudioExportColor.Preserve,
+          quality: StudioExportQuality.High,
+        }),
+      );
+      const choice = onExport.mock.calls[0][0];
+      expect(choice).not.toHaveProperty('subtitleMode');
+      expect(choice).not.toHaveProperty('smoothMotion');
+      expect(choice).not.toHaveProperty('mastering');
+    },
+  );
+
   it("starts from the prototype's defaults and renders on the network", async () => {
     const onExport = vi.fn();
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });

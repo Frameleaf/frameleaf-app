@@ -1,58 +1,102 @@
 #!/usr/bin/env node
-// One immutable, silent SDR still-image export. No enrollment or background daemon.
+// Immutable still exports use the existing claim, renderer and isolated image worker.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepareOneClaim } from './render-worker-claim.mjs';
 import { inventory } from './engine.mjs';
+import { pqDecode } from './hdr-master.mjs';
 const engine = fileURLToPath(new URL('../engine/', import.meta.url));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const only = (object, keys) =>
-  assert.ok(
-    object && Object.keys(object).every((key) => keys.includes(key)),
-    'UNSUPPORTED_RECIPE_FIELD',
-  );
+  assert.ok(object && Object.keys(object).every((key) => keys.includes(key)), 'UNSUPPORTED_RECIPE_FIELD');
 
 /** An explicit first recipe, not general Studio/FL-107 capability admission. */
 export function stillRecipe(claim) {
   const { quality = 'high', range, subtitleMode, ...settings } = claim.settings ?? {};
+  const ceiling = (value, cap) => {
+    assert.ok(value === null || value === undefined || /^[1-9][0-9]*$/.test(value), 'INVALID_RESOURCE_CEILING');
+    return value == null ? cap : Number(BigInt(value) < BigInt(cap) ? BigInt(value) : BigInt(cap));
+  };
+  const graph = claim.snapshot?.studio?.graph;
+  if (['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(settings.format)) {
+    assert.deepEqual(
+      settings,
+      { format: settings.format, color: 'preserve', resolution: 'original', audio: 'preserve' },
+      'UNSUPPORTED_STILL_EXPORT_SETTINGS',
+    );
+    assert.ok(quality === 'high' && subtitleMode === undefined, 'UNSUPPORTED_STILL_EXPORT_SETTINGS');
+    assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
+    const require = createRequire(import.meta.url);
+    const { StudioExportImageContractSchema } = require('../../server/dist/utils/studio-export-contract.js');
+    const photo = StudioExportImageContractSchema.parse(claim.snapshot.contract?.image);
+    assert.equal(photo.format, settings.format, 'STILL_CONTRACT_CHANGED');
+    assert.equal(photo.width, graph?.metadata?.width, 'STILL_CONTRACT_CHANGED');
+    assert.equal(photo.height, graph?.metadata?.height, 'STILL_CONTRACT_CHANGED');
+    assert.equal(photo.outputIntent, graph?.metadata?.colorManagement?.workingRange ?? 'sdr', 'STILL_CONTRACT_CHANGED');
+    assert.equal(photo.frame, range?.inPoint ?? 0, 'STILL_CONTRACT_CHANGED');
+    if (photo.dynamicRange === 'hdr')
+      assert.equal(process.env.FRAMELEAF_HDR_IMAGES, 'experimental', 'HDR_IMAGE_PROCESSING_DISABLED');
+    assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
+    assert.equal(claim.snapshot.contract.audio, null, 'AUDIO_UNSUPPORTED');
+    const { tryParseRational } = require('../../server/dist/utils/rational-time.js');
+    const { timelineFrameTicks, projectCadenceOf } = require('../../server/dist/utils/studio-timing.js');
+    const cadence = tryParseRational(claim.snapshot.timing?.cadence);
+    const timeBase = tryParseRational(claim.snapshot.timing?.timeBase);
+    assert.deepEqual(cadence, projectCadenceOf(graph.metadata), 'STILL_CADENCE_CHANGED');
+    assert.ok(cadence && timeBase && timeBase.num > 0, 'INVALID_STILL_TIMING');
+    const endTicks = timelineFrameTicks(1, cadence, timeBase);
+    assert.ok(Number.isSafeInteger(endTicks) && endTicks > 0, 'INVALID_STILL_TIMING');
+    assert.ok(
+      Number.isFinite(graph.duration) && (photo.frame * cadence.den) / cadence.num < graph.duration,
+      'STILL_FRAME_OUTSIDE_TIMELINE',
+    );
+    if (range !== undefined) {
+      only(range, ['inPoint', 'outPoint']);
+      assert.equal(range.outPoint, range.inPoint + 1, 'STILL_FRAME_RANGE_REQUIRED');
+    }
+    assert.deepEqual(
+      claim.snapshot.contract.range ?? null,
+      range ? { ...range, cadence: claim.snapshot.timing.cadence } : null,
+      'RANGE_CONTRACT_CHANGED',
+    );
+    return {
+      frames: 1,
+      photo,
+      range: range ?? null,
+      timebase: claim.snapshot.timing.timeBase,
+      endTicks: String(endTicks),
+      maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
+      maxMs: ceiling(claim.limits?.maxWallClockMs, 60_000),
+      settings: { quality, resolution: { width: photo.width, height: photo.height } },
+    };
+  }
   // Same four bitrate presets as the pinned engine's headless render core.
   const bitrates = { low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 };
   assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
-  assert.ok(subtitleMode === undefined || subtitleMode === 'burn' || subtitleMode === 'off',
-    'UNSUPPORTED_SUBTITLE_MODE');
+  assert.ok(
+    subtitleMode === undefined || subtitleMode === 'burn' || subtitleMode === 'off',
+    'UNSUPPORTED_SUBTITLE_MODE',
+  );
   assert.deepEqual(
     settings,
     { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
     'UNSUPPORTED_EXPORT_SETTINGS',
   );
   assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
-  const graph = claim.snapshot?.studio?.graph;
-  only(graph, [
-    'id',
-    'name',
-    'description',
-    'createdAt',
-    'updatedAt',
-    'duration',
-    'metadata',
-    'timeline',
-  ]);
+  only(graph, ['id', 'name', 'description', 'createdAt', 'updatedAt', 'duration', 'metadata', 'timeline']);
   only(graph.metadata, ['width', 'height', 'fps']);
   assert.deepEqual(graph.metadata, { width: 1280, height: 720, fps: 24 }, 'UNSUPPORTED_CANVAS');
   only(graph.timeline, ['tracks', 'items', 'transitions', 'keyframes']);
   assert.equal(graph.timeline.tracks.length, 1, 'SINGLE_TRACK_REQUIRED');
   const track = graph.timeline.tracks[0];
   only(track, ['id', 'name', 'kind', 'height', 'locked', 'visible', 'muted', 'solo', 'order']);
-  assert.ok(
-    track.kind === 'video' && track.visible !== false && !track.muted && !track.solo,
-    'UNSUPPORTED_TRACK',
-  );
+  assert.ok(track.kind === 'video' && track.visible !== false && !track.muted && !track.solo, 'UNSUPPORTED_TRACK');
   assert.equal(graph.timeline.items.length, 1, 'SINGLE_STILL_REQUIRED');
   const item = graph.timeline.items[0];
   only(item, ['id', 'type', 'mediaId', 'trackId', 'from', 'durationInFrames']);
@@ -77,23 +121,21 @@ export function stillRecipe(claim) {
   assert.equal(claim.snapshot.timing.sources?.length ?? 0, 0, 'SOURCE_TIMING_UNSUPPORTED');
   if (range !== undefined) {
     only(range, ['inPoint', 'outPoint']);
-    assert.ok(Number.isSafeInteger(range.inPoint) && Number.isSafeInteger(range.outPoint) &&
-      range.inPoint >= 0 && range.outPoint > range.inPoint && range.outPoint <= item.durationInFrames,
-      'UNSUPPORTED_EXPORT_RANGE');
-  }
-  assert.deepEqual(claim.snapshot.contract.range ?? null,
-    range ? { ...range, cadence: '24/1' } : null, 'RANGE_CONTRACT_CHANGED');
-  assert.ok(
-    !claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none',
-    'SMOOTH_MOTION_UNSUPPORTED',
-  );
-  const ceiling = (value, cap) => {
     assert.ok(
-      value === null || value === undefined || /^[1-9][0-9]*$/.test(value),
-      'INVALID_RESOURCE_CEILING',
+      Number.isSafeInteger(range.inPoint) &&
+        Number.isSafeInteger(range.outPoint) &&
+        range.inPoint >= 0 &&
+        range.outPoint > range.inPoint &&
+        range.outPoint <= item.durationInFrames,
+      'UNSUPPORTED_EXPORT_RANGE',
     );
-    return value == null ? cap : Number(BigInt(value) < BigInt(cap) ? BigInt(value) : BigInt(cap));
-  };
+  }
+  assert.deepEqual(
+    claim.snapshot.contract.range ?? null,
+    range ? { ...range, cadence: '24/1' } : null,
+    'RANGE_CONTRACT_CHANGED',
+  );
+  assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
   return {
     frames: range ? range.outPoint - range.inPoint : item.durationInFrames,
     range: range ?? null,
@@ -116,11 +158,10 @@ export function stillRecipe(claim) {
 
 export function probeStillOutput(file, frames, ffprobe = 'ffprobe') {
   const result = JSON.parse(
-    execFileSync(
-      ffprobe,
-      ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file],
-      { timeout: 10_000, maxBuffer: 1024 * 1024 },
-    ).toString(),
+    execFileSync(ffprobe, ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    }).toString(),
   );
   assert.equal(result.streams.length, 1, 'UNEXPECTED_AUDIO_OR_STREAM');
   const video = result.streams[0];
@@ -158,9 +199,7 @@ export async function renderStillImage(context, consume) {
     assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
   };
   assertLive();
-  const build = JSON.parse(
-    await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'),
-  );
+  const build = JSON.parse(await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'));
   assert.equal(process.versions.node, build.node, 'PINNED_NODE_REQUIRED');
   assert.equal(engineInputs.sourceSha256, build.sourceSha256, 'ENGINE_BINDING_MISMATCH');
   // The retained build must carry an independently verified complete artifact inventory.
@@ -173,14 +212,10 @@ export async function renderStillImage(context, consume) {
   const files = await inventory(await realpath(path.join(engine, 'dist')));
   assert.equal(digest(JSON.stringify(files)), report.artifactSha256, 'BUILT_ARTIFACT_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
-  assert.deepEqual(
-    engineInputs.input.project,
-    claim.snapshot.studio.graph,
-    'IMMUTABLE_GRAPH_CHANGED',
-  );
-  assert.equal(context.prepared?.inputs.size, 1, 'SINGLE_VERIFIED_INPUT_REQUIRED');
+  assert.deepEqual(engineInputs.input.project, claim.snapshot.studio.graph, 'IMMUTABLE_GRAPH_CHANGED');
+  if (!recipe.photo) assert.equal(context.prepared?.inputs.size, 1, 'SINGLE_VERIFIED_INPUT_REQUIRED');
   const sharp = require('sharp');
-  for (const input of context.prepared.inputs.values()) {
+  for (const input of recipe.photo ? [] : context.prepared.inputs.values()) {
     assertLive();
     const metadata = await sharp(input.bytes).metadata();
     assert.ok(
@@ -194,33 +229,23 @@ export async function renderStillImage(context, consume) {
       'UNQUALIFIED_IMAGE_COLOR',
     );
     // Only explicit ordinary 8-bit RGB PNG. Do not infer SDR from absent HDR metadata.
-    for (let offset = 8; offset < input.bytes.length; ) {
+    for (let offset = 8; offset < input.bytes.length;) {
       const length = input.bytes.readUInt32BE(offset);
       const kind = input.bytes.toString('ascii', offset + 4, offset + 8);
-      assert.ok(
-        ['IHDR', 'IDAT', 'IEND', 'pHYs', 'sRGB', 'gAMA'].includes(kind),
-        'UNQUALIFIED_PNG_CHUNK',
-      );
+      assert.ok(['IHDR', 'IDAT', 'IEND', 'pHYs', 'sRGB', 'gAMA'].includes(kind), 'UNQUALIFIED_PNG_CHUNK');
       if (kind === 'IHDR')
-        assert.ok(
-          input.bytes[offset + 16] === 8 && input.bytes[offset + 17] === 2,
-          'UNQUALIFIED_PNG_DEPTH',
-        );
-      if (kind === 'gAMA')
-        assert.equal(input.bytes.readUInt32BE(offset + 8), 45455, 'UNQUALIFIED_PNG_GAMMA');
+        assert.ok(input.bytes[offset + 16] === 8 && input.bytes[offset + 17] === 2, 'UNQUALIFIED_PNG_DEPTH');
+      if (kind === 'gAMA') assert.equal(input.bytes.readUInt32BE(offset + 8), 45455, 'UNQUALIFIED_PNG_GAMMA');
       offset += length + 12;
     }
   }
   const { chromium } = require('playwright');
-  const { chromeLaunchArgs } = await import(
-    pathToFileURL(path.join(engine, 'headless/lib/cli.mjs')).href
-  );
-  const { renderJob } = await import(
-    pathToFileURL(path.join(engine, 'headless/lib/render-core.mjs')).href
-  );
+  const { chromeLaunchArgs } = await import(pathToFileURL(path.join(engine, 'headless/lib/cli.mjs')).href);
+  const { renderJob } = await import(pathToFileURL(path.join(engine, 'headless/lib/render-core.mjs')).href);
   const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-still-export-'));
   const abort = new AbortController();
   let browser;
+  let pool;
   let timer;
   let monitoring = false;
   let monitoringDone = Promise.resolve();
@@ -229,7 +254,7 @@ export async function renderStillImage(context, consume) {
   let lastBeat = performance.now();
   const release = async () => {
     abort.abort();
-    await browser?.close();
+    await Promise.allSettled([browser?.close(), pool?.close()]);
   };
   registerRelease(release);
   try {
@@ -273,7 +298,10 @@ export async function renderStillImage(context, consume) {
           assert.ok(entry.isFile(), 'UNEXPECTED_DOWNLOAD_ENTRY');
           total += entry.size;
         }
-        assert.ok(total <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
+        assert.ok(
+          total <= recipe.maxBytes + (recipe.photo ? recipe.photo.width * recipe.photo.height * 16 : 0),
+          'OUTPUT_BYTE_LIMIT',
+        );
       } catch (error) {
         failure = error;
         await release();
@@ -295,39 +323,176 @@ export async function renderStillImage(context, consume) {
         : null;
     });
     assert.ok(
-      gpu &&
-        gpu.isFallbackAdapter === false &&
-        !/swiftshader|software|llvmpipe/i.test(JSON.stringify(gpu)),
+      gpu && gpu.isFallbackAdapter === false && !/swiftshader|software|llvmpipe/i.test(JSON.stringify(gpu)),
       'HARDWARE_GPU_REQUIRED',
     );
-    const result = await renderJob(
-      page,
-      {
-        project: engineInputs.input.project,
-        media: harness.media,
-        settings: recipe.settings,
-        hasRange: recipe.range !== null,
-        inPoint: recipe.range?.inPoint ?? null,
-        outPoint: recipe.range?.outPoint ?? null,
-        missing: [],
-        outPath: path.join(folder, 'output.mp4'),
-        strict: true,
-      },
-      { onWarn: () => {}, downloadTimeoutMs: recipe.maxMs },
-    );
+    let result;
+    if (recipe.photo) {
+      const { SharpProcessPool } = await import(new URL('../../server/dist/queue/sharp-pool.js', import.meta.url));
+      pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 16_777_216 });
+      const download = page.waitForEvent('download', { timeout: recipe.maxMs });
+      // Attach a handler while evaluation runs so a failed render cannot leave an unhandled timeout.
+      download.catch(() => {});
+      await page.evaluate(
+        async ({ project, media, resources, photo }) => {
+          const hdrRasters = {};
+          for (const { id, url, byteLength, sha256, ...metadata } of resources) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('HDR_INPUT_UNAVAILABLE');
+            const bytes = await response.arrayBuffer();
+            const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (value) =>
+              value.toString(16).padStart(2, '0'),
+            ).join('');
+            if (bytes.byteLength !== byteLength || hash !== sha256) throw new Error('VERIFIED_HDR_INPUT_CHANGED');
+            const expected = metadata.width * metadata.height * (metadata.transfer === 'linear' ? 16 : 6);
+            if (bytes.byteLength !== expected) throw new Error('INVALID_HDR_INPUT_LENGTH');
+            hdrRasters[id] = {
+              ...metadata,
+              ...(metadata.transfer === 'linear' ? { rgba: new Float32Array(bytes) } : { rgb: new Uint16Array(bytes) }),
+            };
+          }
+          const rendered = await window.freecut.renderFrameSignal({
+            project,
+            media,
+            frame: photo.frame,
+            strict: true,
+            target: photo.outputIntent === 'sdr' ? 'sdr-display' : 'pq',
+            hdrRasters,
+          });
+          if (rendered.warnings?.length) throw new Error('STILL_RENDER_WARNING_REFUSED');
+          if (
+            rendered.width !== photo.width ||
+            rendered.height !== photo.height ||
+            !(rendered.rgba instanceof Float32Array) ||
+            rendered.rgba.length !== photo.width * photo.height * 4
+          )
+            throw new Error('STILL_RENDER_DIMENSIONS_CHANGED');
+          const url = URL.createObjectURL(new Blob([rendered.rgba], { type: 'application/octet-stream' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'signal.bin';
+          link.click();
+          for (const raster of Object.values(hdrRasters)) {
+            raster.rgba?.fill(0);
+            raster.rgb?.fill(0);
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        {
+          project: engineInputs.input.project,
+          media: harness.media,
+          resources: harness.hdrRasterResources ?? [],
+          photo: recipe.photo,
+        },
+      );
+      const downloaded = await download;
+      const rawPath = path.join(folder, 'signal.bin');
+      await downloaded.saveAs(rawPath);
+      assertLive();
+      const pixels = recipe.photo.width * recipe.photo.height;
+      const rawStat = await stat(rawPath);
+      assert.ok(rawStat.isFile() && rawStat.size === pixels * 16, 'STILL_SIGNAL_LENGTH_CHANGED');
+      const raw = await readFile(rawPath);
+      let encoded;
+      const outputPath = path.join(folder, recipe.photo.format === 'hdr-heic' ? 'output.heic' : 'output.jpg');
+      const sdr = recipe.photo.outputIntent === 'sdr' ? Buffer.alloc(pixels * 3) : null;
+      try {
+        for (let offset = 0; offset < raw.length; offset += 16) {
+          const alpha = raw.readFloatLE(offset + 12);
+          assert.ok(Number.isFinite(alpha) && alpha >= 0 && alpha <= 1, 'INVALID_STILL_ALPHA');
+          for (let channel = 0; channel < 3; channel++) {
+            const signal = raw.readFloatLE(offset + channel * 4);
+            assert.ok(Number.isFinite(signal) && signal >= 0 && signal <= 1, 'INVALID_STILL_SIGNAL');
+            // JPEG/HEIC have no alpha; composite against black in linear light.
+            if (sdr) {
+              const linear = (signal <= 0.04045 ? signal / 12.92 : ((signal + 0.055) / 1.055) ** 2.4) * alpha;
+              sdr[(offset / 16) * 3 + channel] = Math.round(
+                (linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055) * 255,
+              );
+            } else raw.writeFloatLE((pqDecode(signal) / 203) * alpha, offset + channel * 4);
+          }
+          raw.writeFloatLE(1, offset + 12);
+        }
+        if (sdr) {
+          encoded = await pool.run(
+            'encodeDevelopOutput',
+            [
+              sdr,
+              { width: recipe.photo.width, height: recipe.photo.height, channels: 3 },
+              { detail: { median: 0 }, colorspace: 'srgb', format: 'jpeg', quality: 95 },
+            ],
+            abort.signal,
+          );
+        } else
+          encoded = await pool.run(
+            'encodeHdrImage',
+            [
+              { data: raw, width: recipe.photo.width, height: recipe.photo.height, gamut: 2, referenceWhite: 203 },
+              recipe.photo.format === 'hdr-heic' ? 'heic' : 'jpeg',
+            ],
+            abort.signal,
+          );
+      } finally {
+        raw.fill(0);
+        sdr?.fill(0);
+        await rm(rawPath, { force: true });
+      }
+      try {
+        if (recipe.photo.dynamicRange === 'sdr' && recipe.photo.outputIntent === 'hdr')
+          await pool.run(
+            'generateHdrRenditions',
+            [encoded, [{ path: outputPath, dynamicRange: 'sdr', format: 'jpeg' }]],
+            abort.signal,
+          );
+        else await writeFile(outputPath, encoded, { flag: 'wx', mode: 0o600 });
+      } finally {
+        encoded.fill(0);
+      }
+      assertLive();
+      const encoding = await pool.run('inspectImageEncoding', [outputPath], abort.signal);
+      assert.equal(encoding.dynamicRange, recipe.photo.dynamicRange, 'STILL_OUTPUT_RANGE_CHANGED');
+      if (recipe.photo.dynamicRange === 'hdr') {
+        assert.equal(encoding.reconstructionAvailable, true, 'HDR_RECONSTRUCTION_UNAVAILABLE');
+        assert.equal(encoding.width, recipe.photo.width, 'STILL_OUTPUT_DIMENSIONS_CHANGED');
+        assert.equal(encoding.height, recipe.photo.height, 'STILL_OUTPUT_DIMENSIONS_CHANGED');
+      }
+      if (recipe.photo.format === 'hdr-heic') {
+        assert.equal(encoding.container, 'heif', 'STILL_OUTPUT_FORMAT_CHANGED');
+        assert.equal(encoding.codec, 'hevc', 'STILL_OUTPUT_FORMAT_CHANGED');
+        assert.ok(encoding.bitDepth >= 10 && encoding.transfer === 16, 'STILL_HEIC_SIGNAL_CHANGED');
+      } else assert.equal(encoding.container, 'jpeg', 'STILL_OUTPUT_FORMAT_CHANGED');
+      result = { outputPath, encoding };
+    } else
+      result = await renderJob(
+        page,
+        {
+          project: engineInputs.input.project,
+          media: harness.media,
+          settings: recipe.settings,
+          hasRange: recipe.range !== null,
+          inPoint: recipe.range?.inPoint ?? null,
+          outPoint: recipe.range?.outPoint ?? null,
+          missing: [],
+          outPath: path.join(folder, 'output.mp4'),
+          strict: true,
+        },
+        { onWarn: () => {}, downloadTimeoutMs: recipe.maxMs },
+      );
     clearInterval(timer);
     await monitoringDone;
     if (failure) throw failure;
     assertLive();
-    assert.equal(result.ok, true, 'RENDER_REFUSED');
-    assert.equal(result.warnings.length, 0, 'RENDER_WARNING_REFUSED');
-    assert.equal(result.effectiveSettings.codec, 'avc', 'CODEC_FALLBACK_REFUSED');
-    assert.equal(result.effectiveSettings.quality, recipe.settings.quality, 'QUALITY_CHANGED');
-    assert.equal(result.effectiveSettings.subtitleMode, recipe.settings.subtitleMode, 'SUBTITLE_MODE_CHANGED');
-    assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
+    if (!recipe.photo) {
+      assert.equal(result.ok, true, 'RENDER_REFUSED');
+      assert.equal(result.warnings.length, 0, 'RENDER_WARNING_REFUSED');
+      assert.equal(result.effectiveSettings.codec, 'avc', 'CODEC_FALLBACK_REFUSED');
+      assert.equal(result.effectiveSettings.quality, recipe.settings.quality, 'QUALITY_CHANGED');
+      assert.equal(result.effectiveSettings.subtitleMode, recipe.settings.subtitleMode, 'SUBTITLE_MODE_CHANGED');
+      assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
+    }
     const file = await stat(result.outputPath);
     assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
-    const probe = probeStillOutput(result.outputPath, recipe.frames);
+    const probe = recipe.photo ? result.encoding : probeStillOutput(result.outputPath, recipe.frames);
     const bytes = await readFile(result.outputPath);
     const checksum = digest(bytes);
     bytes.fill(0);
@@ -375,62 +540,51 @@ export async function renderStillImage(context, consume) {
 }
 
 export async function executeStillClaim(context) {
-  return renderStillImage(
-    context,
-    async ({ outputPath, checksum, sizeInBytes, signal, recipe }) => {
-      const { claim, request, heartbeat, upload, isLeaseActive } = context;
-      const post = (pathname, body) =>
-        request(
-          pathname,
-          body,
-          Math.max(1, Math.min(10_000, recipe.maxMs - context.elapsedMs())),
-          signal,
-        );
-      const root = `/api/render-workers/operations/${claim.operationId}`;
-      const binding = { claimToken: claim.claimToken };
-      const configDigest = digest(
-        JSON.stringify({ recipe: 'single-still-sdr-v1', settings: recipe.settings,
-          ...(recipe.range && { range: recipe.range }) }),
-      );
-      const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
-      assert.ok(
-        typeof claim.artifactInputDigest === 'string' && claim.artifactInputDigest,
-        'INPUT_DIGEST_REQUIRED',
-      );
-      const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
-      await heartbeat();
-      const planned = await post(`${root}/checkpoints`, {
-        ...binding,
-        sequence: 0,
-        chunkKey,
-        inputDigest: claim.artifactInputDigest,
-        historyDigest,
-        configDigest,
-        seed: null,
-        timebase: '1/24',
-        startTicks: '0',
-        endTicks: String(recipe.frames),
-        requiresSequentialContext: false,
-      });
-      assert.equal(planned?.accepted, true, 'CHECKPOINT_PLAN_REFUSED');
-      await heartbeat();
-      assert.equal(
-        (await upload(outputPath, { chunkKey, checksum, sizeInBytes }, signal))?.accepted,
-        true,
-        'ARTIFACT_REFUSED',
-      );
-      await heartbeat();
-      const complete = { ...binding, artifactSequence: 0, resultAssetId: null };
-      assert.equal(
-        (await post(`${root}/validate`, complete))?.accepted,
-        true,
-        'VALIDATION_REFUSED',
-      );
-      await heartbeat();
-      assert.ok(isLeaseActive(), 'LEASE_LOST');
-      return post(`${root}/complete`, complete);
-    },
-  );
+  return renderStillImage(context, async ({ outputPath, checksum, sizeInBytes, signal, recipe }) => {
+    const { claim, request, heartbeat, upload, isLeaseActive } = context;
+    const post = (pathname, body) =>
+      request(pathname, body, Math.max(1, Math.min(10_000, recipe.maxMs - context.elapsedMs())), signal);
+    const root = `/api/render-workers/operations/${claim.operationId}`;
+    const binding = { claimToken: claim.claimToken };
+    const configDigest = digest(
+      JSON.stringify({
+        recipe: recipe.photo?.renderer ?? 'single-still-sdr-v1',
+        settings: recipe.settings,
+        ...(recipe.photo && { image: recipe.photo }),
+        ...(recipe.range && { range: recipe.range }),
+      }),
+    );
+    const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
+    assert.ok(typeof claim.artifactInputDigest === 'string' && claim.artifactInputDigest, 'INPUT_DIGEST_REQUIRED');
+    const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
+    await heartbeat();
+    const planned = await post(`${root}/checkpoints`, {
+      ...binding,
+      sequence: 0,
+      chunkKey,
+      inputDigest: claim.artifactInputDigest,
+      historyDigest,
+      configDigest,
+      seed: null,
+      timebase: recipe.timebase ?? '1/24',
+      startTicks: '0',
+      endTicks: recipe.endTicks ?? String(recipe.frames),
+      requiresSequentialContext: false,
+    });
+    assert.equal(planned?.accepted, true, 'CHECKPOINT_PLAN_REFUSED');
+    await heartbeat();
+    assert.equal(
+      (await upload(outputPath, { chunkKey, checksum, sizeInBytes }, signal))?.accepted,
+      true,
+      'ARTIFACT_REFUSED',
+    );
+    await heartbeat();
+    const complete = { ...binding, artifactSequence: 0, resultAssetId: null };
+    assert.equal((await post(`${root}/validate`, complete))?.accepted, true, 'VALIDATION_REFUSED');
+    await heartbeat();
+    assert.ok(isLeaseActive(), 'LEASE_LOST');
+    return post(`${root}/complete`, complete);
+  });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {

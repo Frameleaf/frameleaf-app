@@ -11382,7 +11382,7 @@ export type RenderWorkerCheckpointCompleteDto = {
 export type RenderWorkerOutputDto = {
     /** SHA-256 of the whole file */
     checksum: string;
-    /** `video/mp4`, `video/webm` or `video/quicktime` */
+    /** Verified output MIME: `video/mp4`, `video/webm`, `video/quicktime`, `image/jpeg` or `image/heic` */
     contentType: string;
     /** Absolute path inside the render directory the claim named */
     path: string;
@@ -29260,7 +29260,8 @@ export enum StudioExportResolution {
     $720P = "720p",
     $1080P = "1080p",
     $1440P = "1440p",
-    $2160P = "2160p"
+    $2160P = "2160p",
+    Original = "original"
 }
 export enum MemoryExportStatus {
     Pending = "pending",
@@ -29448,7 +29449,10 @@ export enum StudioExportFormat {
     Mp4HevcMain10 = "mp4-hevc-main10",
     Mp4H264 = "mp4-h264",
     WebmAv1 = "webm-av1",
-    Prores422Hq = "prores-422-hq"
+    Prores422Hq = "prores-422-hq",
+    SdrJpeg = "sdr-jpeg",
+    HdrJpeg = "hdr-jpeg",
+    HdrHeic = "hdr-heic"
 }
 export enum MlStudioFeature {
     SpeechToText = "speech-to-text",

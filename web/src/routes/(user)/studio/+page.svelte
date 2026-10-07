@@ -9,6 +9,7 @@
    * `StudioHost` into a single element and is handed data and callbacks only — never the
    * SDK, never a token, never the API base URL.
    */
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -789,7 +790,12 @@
   const canExportVideo = $derived(canExportBundle && writable);
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
-      await session.flush().catch(() => {});
+      try {
+        await session.flush();
+      } catch (error) {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+        return;
+      }
     }
     const revision = storedRevision;
     if (revision === null) {
@@ -1002,6 +1008,11 @@
 <StudioExportDialog
   bind:open={videoExportOpen}
   sequenceName={project.name}
+  hdrEnabled={featureFlagsManager.value.imageCapabilities?.experimentalEnabled === true}
+  outputIntent={(project.graph as { metadata?: { colorManagement?: { workingRange?: string } } } | null)?.metadata
+    ?.colorManagement?.workingRange === 'hdr'
+    ? 'hdr'
+    : 'sdr'}
   busy={exporting}
   {renderEvidence}
   onExport={(choice) => void onExportVideo(choice)}

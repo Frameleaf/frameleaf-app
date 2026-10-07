@@ -49,6 +49,8 @@ export const isInsideFolder = (folder: string, candidate: string): boolean => {
 
 /** The containers an export may produce, and what each becomes in the library. */
 export const STUDIO_EXPORT_CONTENT_TYPES: Readonly<Record<string, { extension: string; assetType: AssetType }>> = {
+  'image/jpeg': { extension: '.jpg', assetType: AssetType.Image },
+  'image/heic': { extension: '.heic', assetType: AssetType.Image },
   'video/mp4': { extension: '.mp4', assetType: AssetType.Video },
   'video/webm': { extension: '.webm', assetType: AssetType.Video },
   'video/quicktime': { extension: '.mov', assetType: AssetType.Video },
@@ -56,10 +58,21 @@ export const STUDIO_EXPORT_CONTENT_TYPES: Readonly<Record<string, { extension: s
 
 export const isStudioExportContentType = (value: string): boolean => Object.hasOwn(STUDIO_EXPORT_CONTENT_TYPES, value);
 
+export const isStudioPhotoFormat = (format: unknown): format is 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic' =>
+  typeof format === 'string' && ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(format);
+
 /** Export formats, colour handling and resolutions offered by the Studio export dialog. */
-export const STUDIO_EXPORT_FORMATS = ['mp4-hevc-main10', 'mp4-h264', 'webm-av1', 'prores-422-hq'] as const;
+export const STUDIO_EXPORT_FORMATS = [
+  'mp4-hevc-main10',
+  'mp4-h264',
+  'webm-av1',
+  'prores-422-hq',
+  'sdr-jpeg',
+  'hdr-jpeg',
+  'hdr-heic',
+] as const;
 export const STUDIO_EXPORT_COLORS = ['preserve', 'hdr10', 'dolby-vision'] as const;
-export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p'] as const;
+export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p', 'original'] as const;
 export const STUDIO_EXPORT_QUALITIES = ['low', 'medium', 'high', 'ultra'] as const;
 export const STUDIO_EXPORT_SUBTITLE_MODES = ['burn', 'off'] as const;
 

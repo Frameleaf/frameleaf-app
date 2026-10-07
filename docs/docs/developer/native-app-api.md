@@ -236,3 +236,29 @@ zero luminance; `clipped.highlights` is the fraction with a channel at the
 encoder's 10,000-nit ceiling. Missing or invalid evidence is unavailable, never
 reconstructed from an 8-bit display canvas. This describes the rendered preview,
 not a measurement of the screen's available brightness.
+
+### Studio still exports
+
+The existing Studio export endpoint additionally accepts `sdr-jpeg`, `hdr-jpeg`,
+and `hdr-heic`, with `resolution=original`, `color=preserve`, and high quality.
+An absent range selects frame zero; an explicit range must select exactly one
+main-timeline frame. Video mastering, subtitle settings, and Smooth motion do
+not apply to still output. HDR formats require an explicitly HDR document and
+the experimental server gate. Unknown document intent retains the existing SDR
+intent. A still export does not create or replace Live Photo motion.
+
+The immutable render snapshot includes a version 1 image contract: dimensions,
+frame, format, output dynamic range, document output intent, reference white of
+203 cd/m², and renderer `frameleaf-studio-image-v1`. The existing worker executes
+it through the float compositor and isolated codec. SDR documents use the
+renderer’s SDR output conversion; SDR exports of HDR documents use the pinned
+codec’s tone mapper. HDR output regenerates a gain map or writes ten-bit PQ HEIC.
+Every still is sanitized again on the server and verified before publication.
+The transaction records the canonical file’s checksum and size. Worker artifacts
+remain private and immutable while a failed publication retries.
+
+Render evidence must prove the specific still writer and its container,
+independently of video encoders. A compositor probe alone does not enroll or
+qualify a worker. Existing destination, revision, source-access, locking,
+private-download, cancellation, and publication checks remain authoritative.
+These formats remain gated until codec, corpus, and hardware acceptance pass.
