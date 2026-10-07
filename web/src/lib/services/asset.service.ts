@@ -110,7 +110,7 @@ export const getAssetActions = (
   };
 
   const Download: ActionItem = {
-    title: $t('download'),
+    title: $t(asset.livePhotoVideoId && asset.isEdited ? 'frameleaf_download_edited_still' : 'download'),
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
     $if: () => !!authUser,
@@ -260,7 +260,7 @@ export const getAssetActions = (
   };
 
   const isUnsupportedEditorMedia =
-    asset.livePhotoVideoId ||
+    (asset.type === AssetTypeEnum.Video && !!asset.livePhotoVideoId) ||
     asset.exifInfo?.projectionType === ProjectionType.EQUIRECTANGULAR ||
     originalPath.endsWith('.insp') ||
     originalPath.endsWith('.gif') ||
@@ -427,7 +427,7 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     return asset.originalPath.includes('encoded-video');
   };
 
-  if (asset.livePhotoVideoId) {
+  if (asset.livePhotoVideoId && (!edited || !asset.isEdited)) {
     const motionAsset = await getAssetInfo({ ...authManager.params, id: asset.livePhotoVideoId });
     if (
       !isAndroidMotionVideo(motionAsset) ||

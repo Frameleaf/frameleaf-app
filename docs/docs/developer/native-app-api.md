@@ -103,3 +103,11 @@ server API repair.
   `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
   It runs on pull requests that touch the ML defaults or model source, and weekly.
 - **API impact:** none. No operationIds changed.
+
+## HEIC retention and Live Photo still edits
+
+Duplicate suggestions always rank RAW first, HEIC/HEIF/HIF second, and other formats third, then file size, EXIF coverage and stable asset ID. `preferOriginalFormat` is deprecated and accepted for compatibility; false does not disable this ordering. Format preference does not establish capture provenance.
+
+Duplicate lists and review groups may include `reviewRequiredReasons`: `edited-copy`, `develop-history`, `distinct-motion`, or `evidence-unavailable`. Clients must not apply bulk suggested keepers to these groups. Historical Develop and external revisions remain protected after reset. Resolution rechecks disposal safety on the server before merging metadata or trashing copies. Keep the protected copies; a suggested HEIC is not permission to discard an edited JPEG or its motion. Burst groups never receive a single-keeper suggestion.
+
+Develop can save and render the visible still image of a Live Photo. Its asset identity, original, motion link and original motion are unchanged. Reset moves only the still's current revision. Native viewers must display the edited still while idle and the original motion only during playback. An edited still export must be identified separately from an original Live Photo pair.

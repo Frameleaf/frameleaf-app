@@ -969,9 +969,6 @@ export class AssetDevelopService {
     if (asset.isOffline) {
       throw new BadRequestException('The original file is offline and cannot be rendered');
     }
-    if (asset.livePhotoVideoId) {
-      throw new BadRequestException('Editing live photos is not supported');
-    }
     if (asset.exifInfo?.projectionType === 'EQUIRECTANGULAR') {
       throw new BadRequestException('Editing panorama media is not supported');
     }

@@ -36,6 +36,7 @@ describe(DuplicateService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DuplicateService));
+    mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set());
   });
 
   it('should work', () => {
@@ -60,6 +61,29 @@ describe(DuplicateService.name, () => {
           suggestedKeepAssetIds: [asset.id],
         },
       ]);
+    });
+
+    it('prefers a smaller HEIC and reports motion that still requires review', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const heic = AssetFactory.from({ originalFileName: 'capture.HEIC' }).exif({ fileSizeInByte: 1000 }).build();
+      const jpeg = AssetFactory.from({ originalFileName: 'capture.jpg', livePhotoVideoId: 'motion' })
+        .exif({ fileSizeInByte: 9000 })
+        .build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(jpeg), getForDuplicate(heic)] },
+      ]);
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+      expect(group.reviewRequiredReasons).toEqual(['distinct-motion']);
+    });
+
+    it('requires review when Develop history evidence is unavailable', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const asset = AssetFactory.from().exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([{ duplicateId: 'group', assets: [getForDuplicate(asset)] }]);
+      mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
     });
 
     it('should hide private NSFW duplicate assets when requested', async () => {
@@ -566,6 +590,43 @@ describe(DuplicateService.name, () => {
   });
 
   describe('resolveGroup (via resolve)', () => {
+    it.each([{ isEdited: true }, { livePhotoVideoId: 'unique-motion' }])(
+      'refuses disposal of protected content %j before mutating anything',
+      async (protectedFields) => {
+        const keeper = AssetFactory.create();
+        const disposable = AssetFactory.create(protectedFields);
+        mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+        mocks.duplicateRepository.get.mockResolvedValue({
+          duplicateId: 'group-1',
+          assets: [keeper, disposable] as unknown as MapAsset[],
+        });
+        const result = await sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+        });
+        expect(result[0]).toMatchObject({ success: false, error: BulkIdErrorReason.VALIDATION });
+        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+        expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
+      },
+    );
+
+    it('protects historical Develop and external edits even after reset', async () => {
+      const keeper = AssetFactory.create();
+      const disposable = AssetFactory.create({ isEdited: false });
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper, disposable] as unknown as MapAsset[],
+      });
+      mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set([disposable.id]));
+      const result = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+      });
+      expect(result[0]).toMatchObject({ success: false, error: BulkIdErrorReason.VALIDATION });
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
     it('should fail if duplicate group not found', async () => {
       mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['missing-id']));
       mocks.duplicateRepository.get.mockResolvedValue(void 0);

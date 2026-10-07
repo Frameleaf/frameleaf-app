@@ -30,7 +30,11 @@ const DuplicateReviewGroupSchema = z
     assets: z.array(AssetResponseSchema).describe('The photos of the group this session may see'),
     suggestedKeepAssetIds: z
       .array(z.uuidv4())
-      .describe('The suggested keeper, from resolution, format and original provenance. Never set for a burst'),
+      .describe('The suggested keeper, from format preference, file size and metadata. Never set for a burst'),
+    reviewRequiredReasons: z
+      .array(z.string())
+      .optional()
+      .describe('Safety reasons requiring review before duplicate disposal'),
     kind: DuplicateGroupKindSchema,
     editable: z.boolean().describe('Whether this session may decide the group'),
     blockedReason: DuplicateGroupBlockSchema.nullable(),

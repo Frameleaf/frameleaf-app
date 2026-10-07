@@ -659,6 +659,9 @@
           <p class="fl-dr-access error" role="alert">{$t(activeProgress.reasonKey)}</p>
         {/if}
 
+        {#if active.reviewRequiredReasons?.length}
+          <p role="status">{$t('frameleaf_duplicates_protected_content')}</p>
+        {/if}
         {#if contactSheet}
           <DuplicateContactSheet
             group={active}

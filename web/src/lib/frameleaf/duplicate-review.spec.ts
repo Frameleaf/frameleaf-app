@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDecisionGroups,
   canSuggest,
+  qualityReasonKey,
   decisionAssetIds,
   decisionParts,
   DuplicateDecisionError,
@@ -83,6 +84,15 @@ describe('duplicate review', () => {
   });
 
   describe('suggestions', () => {
+    it('describes HEIC format without claiming capture provenance', () => {
+      expect(qualityReasonKey('original-format', 'IMG.HEIC')).toBe('frameleaf_duplicates_quality_original_heic_format');
+      expect(qualityReasonKey('original-format', 'IMG.DNG')).toBe('frameleaf_duplicates_quality_original_format');
+    });
+
+    it('does not bulk-apply a suggestion when edits or motion need review', () => {
+      expect(canSuggest(group('g', ['a', 'b'], { reviewRequiredReasons: ['distinct-motion'] }))).toBe(false);
+    });
+
     it('never suggests a keeper in a burst, nor guesses between two suggestions', () => {
       expect(suggestedKeeper(group('b', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBeNull();
       expect(suggestedKeeper(group('g', ['a', 'b'], { suggestedKeepAssetIds: ['a', 'b'] }))).toBeNull();

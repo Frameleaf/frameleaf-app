@@ -201,6 +201,7 @@ export class DuplicateDecisionService {
         // related burst frames are different moments, never disposable copies (FL-61)
         suggestedKeepAssetIds: kind === DuplicateGroupKind.Burst ? [] : group.suggestedKeepAssetIds,
         kind,
+        ...(group.reviewRequiredReasons && { reviewRequiredReasons: group.reviewRequiredReasons }),
         editable: blockedReason === null,
         blockedReason,
         hiddenMemberCount,

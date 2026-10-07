@@ -109,6 +109,14 @@ export class AssetDevelopRepository {
   ) {
     this.db = publicationDatabase(db);
   }
+  /** Includes reset and external revisions: absence of a current edit is not absence of history. */
+  async getAssetIdsWithHistory(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) return new Set();
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT DISTINCT "assetId" FROM ${TABLE} WHERE "assetId" = ANY(${assetIds}::uuid[])
+    `.execute(this.db);
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
   async listByAsset(assetId: string): Promise<AssetDevelopRevision[]> {
     const { rows } = await sql<AssetDevelopRevision>`
       SELECT * FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid ORDER BY revision DESC

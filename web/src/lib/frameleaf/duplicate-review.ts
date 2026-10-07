@@ -67,7 +67,7 @@ export const isActionable = (group: Pick<ReviewGroup, 'editable'>, progress?: Gr
   group.editable && progress?.state !== 'pending' && progress?.state !== 'done';
 
 export const canSuggest = (group: ReviewGroup, progress?: GroupProgress): boolean =>
-  isActionable(group, progress) && suggestedKeeper(group) !== null;
+  isActionable(group, progress) && !group.reviewRequiredReasons?.length && suggestedKeeper(group) !== null;
 
 /**
  * The groups a filter shows, in the queue's order: groups the person can decide first, in the
@@ -387,5 +387,7 @@ export const dimensionsOf = (asset: Asset): { width: number; height: number } | 
 };
 
 /** The label of one quality reason the server gives for a suggested keeper. */
-export const qualityReasonKey = (reason: string): Translations =>
-  `frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}` as Translations;
+export const qualityReasonKey = (reason: string, fileName = ''): Translations =>
+  reason === 'original-format' && /\.(heic|heif|hif)$/i.test(fileName)
+    ? 'frameleaf_duplicates_quality_original_heic_format'
+    : (`frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}` as Translations);

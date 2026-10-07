@@ -188,6 +188,24 @@ export const groupAlignedBatchSize = (
 /* How a group reads                                                            */
 /* -------------------------------------------------------------------------- */
 
+/** A suggestion never proves that edits or unrepresented motion can be discarded. */
+export const duplicateDisposalReasons = (
+  assets: readonly Pick<AssetResponseDto, 'id' | 'isEdited' | 'livePhotoVideoId'>[],
+  keepIds: readonly string[],
+  historyIds: ReadonlySet<string>,
+): string[] => {
+  const keepers = assets.filter(({ id }) => keepIds.includes(id));
+  const reasons = new Set<string>();
+  for (const asset of assets) {
+    if (keepIds.includes(asset.id)) continue;
+    if (asset.isEdited) reasons.add('edited-copy');
+    if (historyIds.has(asset.id)) reasons.add('develop-history');
+    if (asset.livePhotoVideoId && keepers.every((keeper) => keeper.livePhotoVideoId !== asset.livePhotoVideoId))
+      reasons.add('distinct-motion');
+  }
+  return [...reasons];
+};
+
 type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'>;
 
 const captureTime = (asset: ReviewAsset): number | null => {

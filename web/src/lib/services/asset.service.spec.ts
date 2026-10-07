@@ -194,6 +194,12 @@ describe('AssetService', () => {
       expect(assetActions.Edit.$if?.()).toStrictEqual(false);
     });
 
+    it('allows editing the still of a Live Photo', () => {
+      setOwnerUser();
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: 'motion', ownerId });
+      expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
+    });
+
     it('should not allow editing live-photo companion videos', () => {
       setOwnerUser();
       const asset = buildEditableVideo({ livePhotoVideoId: 'live-photo-video-id' });
@@ -205,6 +211,14 @@ describe('AssetService', () => {
   describe('handleDownloadAsset', () => {
     beforeEach(() => {
       vitest.clearAllMocks();
+    });
+
+    it('exports an edited Live Photo still without downloading its original motion', async () => {
+      const asset = assetFactory.build({ livePhotoVideoId: 'motion', isEdited: true });
+      await handleDownloadAsset(asset, { edited: true });
+      expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+      expect(downloadAssetFile).toHaveBeenCalledWith(expect.objectContaining({ id: asset.id, edited: true }));
+      expect(getAssetInfo).not.toHaveBeenCalled();
     });
 
     // FL-45 D-3: a single download goes through the download panel, one row per file.

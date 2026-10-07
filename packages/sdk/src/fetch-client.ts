@@ -1479,7 +1479,7 @@ export type AdminConfigDuplicateDetectionDto = {
     };
     /** Maximum distance threshold for duplicate detection */
     maxDistance: number;
-    /** When suggesting which duplicate to keep, prefer native camera originals (RAW, then HEIC/HEIF) over re-encoded formats such as JPG, regardless of file size */
+    /** Deprecated compatibility setting. RAW, then HEIC/HEIF/HIF, are always preferred over other formats regardless of size */
     preferOriginalFormat: boolean;
 };
 export type AdminConfigFacialRecognitionDto = {
@@ -5895,7 +5895,9 @@ export type DuplicateResponseDto = {
     assets: AssetResponseDto[];
     /** Duplicate group ID */
     duplicateId: string;
-    /** Suggested asset IDs to keep based on file size and EXIF data */
+    /** Safety reasons that prevent unattended disposal of the non-suggested copies */
+    reviewRequiredReasons?: string[];
+    /** Suggested asset IDs to keep based on format preference (RAW, HEIC/HEIF/HIF, then other formats), file size and EXIF data */
     suggestedKeepAssetIds: string[];
 };
 export type DuplicateActiveGroupDto = {
@@ -5963,7 +5965,9 @@ export type DuplicateReviewGroupDto = {
     /** Display names of the other accounts owning photos of a group blocked by another owner */
     otherOwnerNames?: string[];
     qualities: DuplicateReviewQualityDto[];
-    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
+    /** Safety reasons requiring review before duplicate disposal */
+    reviewRequiredReasons?: string[];
+    /** The suggested keeper, from format preference, file size and metadata. Never set for a burst */
     suggestedKeepAssetIds: string[];
     /** Size of the originals shown, in bytes */
     totalBytes: number;
