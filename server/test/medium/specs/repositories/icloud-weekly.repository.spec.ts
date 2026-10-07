@@ -6,10 +6,11 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { AssetType, UserMetadataKey } from 'src/enum.js';
+import { AssetType, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -35,13 +36,13 @@ describe('weekly consent foundation, never execution authority', () => {
   afterAll(async () => db.destroy());
 
   // Schema fixtures represent frozen, unexecuted future obligations, not producer/audit evidence.
-  const freezeFixture = async (f: Awaited<ReturnType<typeof arrange>>) => {
+  const freezeFixture = async (f: Awaited<ReturnType<typeof arrange>>, previousWeeks = 0) => {
     const cohortId = randomUUID();
     const receiptId = randomUUID();
     await sql`INSERT INTO public.icloud_weekly_cohort
       (id,"ownerId","connectionId","weekStart","grantId","grantGeneration","configFingerprint",
         "privacyFingerprint",seed,"manifestDigest","populationCount","staleCount","selectedCount")
-      SELECT ${cohortId}::uuid,"ownerId","connectionId",date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date,
+      SELECT ${cohortId}::uuid,"ownerId","connectionId",date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date-${previousWeeks * 7}::int,
         id,generation,"configFingerprint","privacyFingerprint",${Buffer.alloc(32, 1)},${Buffer.alloc(32, 2)},1,0,1
       FROM public.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     await sql`INSERT INTO public.icloud_weekly_member
@@ -66,6 +67,78 @@ describe('weekly consent foundation, never execution authority', () => {
     const input = { enabled: true, includeProtected: protectedScope, requestKey: randomUUID() };
     return { user, session, auth, connection, input };
   };
+
+  it('discovers a new UTC week without replacing an old frozen obligation, including after retirement', async () => {
+    const f = await arrange();
+    const candidates = async () =>
+      (await sut.scheduleCandidates()).filter((row) => row.connectionId === f.connection.id);
+    expect(await candidates()).toEqual([]);
+    await sut.setAuthority(f.auth, f.connection.id, f.input);
+    const old = await freezeFixture(f, 1);
+    expect(await candidates()).toEqual([
+      { ownerId: f.user.id, connectionId: f.connection.id, cohortId: old },
+      { ownerId: f.user.id, connectionId: f.connection.id, cohortId: null },
+    ]);
+    await sut.setAuthority(f.auth, f.connection.id, { ...f.input, enabled: false, requestKey: randomUUID() });
+    expect(await candidates()).toEqual([{ ownerId: f.user.id, connectionId: f.connection.id, cohortId: old }]);
+    expect(await sut.createNextBatch(old, new MediaOperationRepository(db))).toBeNull();
+    expect(await candidates()).toEqual([]);
+    expect(
+      (
+        await sql`SELECT status,"nextBatch","performedCount","unavailableCount" FROM public.icloud_weekly_cohort
+        WHERE id=${old}::uuid`.execute(db)
+      ).rows[0],
+    ).toMatchObject({ status: 'settled', nextBatch: 0, performedCount: '0', unavailableCount: '1' });
+  });
+
+  it('does not consume the automatic weekly freeze when current consent is unavailable', async () => {
+    const f = await arrange();
+    await expect(sut.freezeCohort(f.user.id, f.connection.id, true)).rejects.toThrow('Weekly authority unavailable');
+    expect(
+      (await sql`SELECT 1 FROM public.icloud_weekly_cohort WHERE "connectionId"=${f.connection.id}::uuid`.execute(db))
+        .rows,
+    ).toEqual([]);
+    await sut.setAuthority(f.auth, f.connection.id, f.input);
+    const current = await sut.freezeCohort(f.user.id, f.connection.id, true);
+    expect(await sut.freezeCohort(f.user.id, f.connection.id, true)).toEqual(current);
+    expect((await sut.scheduleCandidates()).filter((row) => row.connectionId === f.connection.id)).toEqual([]);
+  });
+
+  it.each([MediaOperationStatus.Queued, MediaOperationStatus.Paused])(
+    'does not advance the frozen cursor or create audit bindings while the connection has %s work',
+    async (status) => {
+      const f = await arrange();
+      await sut.setAuthority(f.auth, f.connection.id, f.input);
+      const cohortId = await freezeFixture(f);
+      const queued = await sync.queueOperation(f.connection.id, f.user.id, { trigger: 'schedule' });
+      if (!('operation' in queued)) {
+        throw new Error('Fixture operation was not admitted');
+      }
+      const operation = queued.operation;
+      await db.updateTable('media_operation').set({ status }).where('id', '=', operation.id).execute();
+      expect(await sut.createNextBatch(cohortId, new MediaOperationRepository(db))).toBeNull();
+      expect(
+        (await sql`SELECT status,"nextBatch" FROM public.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db))
+          .rows,
+      ).toEqual([{ status: 'frozen', nextBatch: 0 }]);
+      expect(
+        (
+          await sql`SELECT outcome,"auditRequestId" FROM public.icloud_weekly_member WHERE "cohortId"=${cohortId}::uuid`.execute(
+            db,
+          )
+        ).rows,
+      ).toEqual([{ outcome: 'pending', auditRequestId: null }]);
+      expect(
+        (await sql`SELECT 1 FROM public.icloud_identity_audit WHERE "cohortId"=${cohortId}::uuid`.execute(db)).rows,
+      ).toEqual([]);
+      expect(
+        (
+          await sql`SELECT id FROM public.media_operation WHERE "ownerId"=${f.user.id}::uuid
+          AND kind=${MediaOperationKind.ICloudSync}`.execute(db)
+        ).rows,
+      ).toEqual([{ id: operation.id }]);
+    },
+  );
 
   it('defaults off, never creates work, and requires individual current owner consent', async () => {
     const f = await arrange();

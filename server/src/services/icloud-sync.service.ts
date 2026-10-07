@@ -54,6 +54,7 @@ import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adop
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
@@ -208,6 +209,7 @@ export class ICloudSyncService {
     private audits: ICloudAuditService,
     private adoption: ICloudIdentityAdoptionService,
     private weekly: ICloudWeeklyRepository,
+    private weeklySchedule: ICloudWeeklyService,
   ) {
     this.logger.setContext(ICloudSyncService.name);
   }
@@ -573,6 +575,7 @@ export class ICloudSyncService {
     for (const { id, ownerId } of await this.repository.dueConnections()) {
       await this.repository.queueOperation(id, ownerId, { trigger: 'schedule' });
     }
+    await this.weeklySchedule.schedule();
     this.tick();
   }
 
