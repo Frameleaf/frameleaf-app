@@ -309,7 +309,12 @@
       "path": "patches/0064-project-master-hydration.patch",
       "sha256": "4c2ad8e90ee46ba2033193a68a598d2c1dff64582fbaff8ab636e2f22e25ae22",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0065-linear-display-hdr-subtree.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "beddeae556f10a6bcd8123e829ec556f0ff841a22e27f27fb417d4c1160b37dd"
     }
   ],
-  "sourceSha256": "c6399060ca3e01142e609afe74d05d088536e986809c5a3d4d1c26186f2739c6"
+  "sourceSha256": "1d1241a22bdf314c3bbd945b9deefa8fd48ddacd425bd8b964a2479f7894bf51"
 }
