@@ -150,6 +150,16 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleQueueMetadataExtraction', () => {
+    it('includes uninspected older images only behind the HDR processing gate', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [] } as never);
+        await sut.handleQueueMetadataExtraction({ force: false });
+        expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(false, true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
     it('should queue metadata extraction for all assets without exif values', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [asset] } as never);

@@ -298,6 +298,32 @@ describe(AssetRepository.name, () => {
   });
 
   describe('upsertExif', () => {
+    it('updates image encoding on existing EXIF while unrelated metadata edits preserve it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const sdr = { dynamicRange: 'sdr' as const, gainMap: 'none', reconstructionAvailable: false };
+      const hdr = { dynamicRange: 'hdr' as const, gainMap: 'ultra-hdr', reconstructionAvailable: true };
+      for (const imageEncoding of [sdr, hdr]) {
+        await sut.upsertExif({ exif: { assetId: asset.id, imageEncoding }, lockedPropertiesBehavior: 'skip' });
+        const row = await ctx.database
+          .selectFrom('asset_exif')
+          .select('imageEncoding')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        expect(row.imageEncoding).toEqual(imageEncoding);
+      }
+      await sut.upsertExif({
+        exif: { assetId: asset.id, description: 'Edited caption' },
+        lockedPropertiesBehavior: 'override',
+      });
+      const row = await ctx.database
+        .selectFrom('asset_exif')
+        .select(['imageEncoding', 'description'])
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ imageEncoding: hdr, description: 'Edited caption' });
+    });
     it.each(['make', 'model', null] as const)(
       'atomically writes evidence with EXIF and respects camera lock %s',
       async (lock) => {

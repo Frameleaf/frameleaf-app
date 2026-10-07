@@ -107,6 +107,23 @@ describe(MediaService.name, () => {
   });
 
   describe('durable thumbnail selection', () => {
+    it('includes missing original HDR renditions only behind the HDR processing gate', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const query = { where: vi.fn() };
+        query.where.mockReturnValue(query);
+        mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
+        mocks.person.selectionForThumbnails.mockReturnValue(query as never);
+        await sut.handleQueueGenerateThumbnails({ force: false });
+        expect(mocks.assetJob.selectionForThumbnailJob).toHaveBeenCalledWith({
+          force: false,
+          fullsizeEnabled: false,
+          hdrBackfill: true,
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
     it.each([true, false])(
       'materializes normal and edited stages without holding a stream (force=%s)',
       async (force) => {

@@ -262,3 +262,20 @@ independently of video encoders. A compositor probe alone does not enroll or
 qualify a worker. Existing destination, revision, source-access, locking,
 private-download, cancellation, and publication checks remain authoritative.
 These formats remain gated until codec, corpus, and hardware acceptance pass.
+
+### Existing-library backfill
+
+With `FRAMELEAF_HDR_IMAGES=experimental`, the existing missing-metadata queue also
+selects non-RAW images without an encoding inspection. Successful and failed
+inspections are retained, so repeat enumeration skips them; a deliberate forced
+metadata run retries failed inspections. Video and RAW metadata behavior stays
+unchanged. After inspection, the existing missing-thumbnail queue selects
+reconstructable HDR sources missing either original HDR rendition. Edited sources
+are excluded from this additional selection, and historical Develop revisions
+are not rerendered. Hidden sources retain their existing thumbnail exclusion.
+
+Both selections use the existing durable queue manifest, concurrency, retries,
+leases and cancellation. Generated files belong to an attempt; previous SDR/HDR
+renditions remain available until the complete new set is adopted. Disabling the
+gate stops this additional selection and HDR generation without removing existing
+media, originals or recipes.
