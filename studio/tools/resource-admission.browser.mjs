@@ -1,4 +1,4 @@
-// Real Chromium entrypoint checks. Run against the prepared engine's Vite dev server.
+// Real browser entrypoint checks. Run against the prepared engine's Vite dev server.
 //
 // FL-112: network substitution and blocking route through the shared cross-browser harness
 // (studio/tools/lib/cross-browser-harness.mjs), and the page is driven only through the shared
@@ -9,12 +9,48 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { createHarness } from './lib/cross-browser-harness.mjs';
-import { createChromiumDriver } from './lib/browser-driver.mjs';
+import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
-const { chromium } = require('playwright');
-const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 import { readFile, writeFile } from 'node:fs/promises';
+
+export function assertNoProxyErrors(harness, origin, entry) {
+  assert.deepEqual(harness.observations.filter(o => o.kind === 'error'), [], `${entry}: harness could not reach the dev server`);
+  assert.ok(!harness.observations.some(o => o.kind === 'tunnelled'), `${entry}: opaque CONNECT traffic cannot qualify startup absence`);
+  assert.ok(harness.observations.some(o => o.method === 'GET' && o.kind === 'proxied' &&
+    o.url === new URL(entry, origin).href), `${entry}: no transparent browser GET reached the proxy`);
+}
+
+export async function openPage(harnessOrigin, serviceWorkers, { browser = 'chromium', endpoint, chromium } = {}) {
+  const capabilities = admittedHostCapabilities(browser);
+  if (browser !== 'chromium') assert(endpoint, `${browser} requires WEBDRIVER_ENDPOINT`);
+  capabilities.timeouts = {script: 300_000};
+  if (browser === 'firefox') capabilities['moz:firefoxOptions'].prefs['dom.webgpu.enabled'] = true;
+  const driver = browser === 'chromium'
+    ? await createChromiumDriver({ harnessOrigin, chromium: chromium ?? require('playwright').chromium,
+        contextOptions: { serviceWorkers } })
+    : await createWebDriverClassicDriver({ harnessOrigin, endpoint, capabilities });
+  try {
+    const page = await driver.newPage();
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const matches = browser === 'firefox' ? /Firefox\//.test(userAgent)
+      : browser === 'safari' ? /Safari\//.test(userAgent) && !/(Chrome|Chromium|Firefox)\//.test(userAgent)
+      : /(Chrome|Chromium)\//.test(userAgent);
+    assert(matches, `${browser} did not report the requested browser: ${userAgent}`);
+    return { page, close: () => driver.close(),
+      browser: {name: browser, driver: browser === 'chromium' ? 'playwright' : 'webdriver-classic', userAgent} };
+  }
+  catch (error) { await driver.close(); throw error; }
+}
+
+export async function runResourceAdmission() {
+const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
+const browser = process.env.BROWSER || 'chromium';
+assert.equal(new URL(origin).protocol, 'http:', 'resource-admission requires an observable HTTP origin');
+admittedHostCapabilities(browser);
+if (browser !== 'chromium') assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
+const driverOptions = { browser, endpoint: process.env.WEBDRIVER_ENDPOINT };
 // The generated policy admits what the owner approved (studio/rights-approval.json). These
 // entrypoint regressions check the refusal path, so they substitute a policy in which every
 // reviewed identity is blocked, as a checkout without an approval would generate.
@@ -49,30 +85,27 @@ const report = { origin, built: Boolean(process.env.STUDIO_TEST_BUILT), entries:
 // Playwright's own Chromium: a proxy sees the whole browser, and branded Chrome's background
 // services (time, update, sign-in) reach Google on their own, whatever the page does.
 const drivers = [];
-const openPage = async (harnessOrigin, serviceWorkers) => {
-  const driver = await createChromiumDriver({ harnessOrigin, chromium, contextOptions: { serviceWorkers } });
-  drivers.push(driver);
-  return { page: await driver.newPage(), close: () => driver.close() };
-};
+const harnesses = [];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-// A request the harness could not forward (the dev server down, a reset connection) is a broken
-// run, not a pass: say so at its source.
-const assertNoProxyErrors = (harness, label) =>
-  assert.deepEqual(harness.observations.filter((o) => o.kind === 'error'), [], `${label}: harness could not reach the dev server`);
 try {
   for (const entry of ['/', '/headless.html']) {
     const resourcePayloads = [];
     const overrides = [binaryAssetOverride(resourcePayloads)];
     if (!process.env.STUDIO_TEST_BUILT) overrides.push(policyOverride(blockedPolicy));
     const harness = createHarness({ upstream: origin, overrides });
+    harnesses.push(harness);
     const harnessOrigin = await harness.listen();
-    const { page, close } = await openPage(harnessOrigin, process.env.STUDIO_TEST_BUILT ? 'allow' : 'block');
+    const session = await openPage(harnessOrigin, process.env.STUDIO_TEST_BUILT ? 'allow' : 'block', driverOptions);
+    drivers.push(session);
+    report.browser = session.browser;
+    const { page, close } = session;
     // `external`: every request the harness denied for not matching the Studio origin at all -
     // the harness's own always-on deny-all is what `url.origin !== origin` used to check per-route.
     const external = () => harness.observations.filter((o) => o.kind === 'blocked').map((o) => o.url);
-    const observed = { entry, get external() { return external(); }, resourcePayloads };
+    const observed = { entry, browser: session.browser, get external() { return external(); }, resourcePayloads };
     report.entries.push(observed);
     await page.goto(origin + entry);
+    assertNoProxyErrors(harness, origin, entry);
     await sleep(1000);
     assert.deepEqual(external(), [], `${entry}: implicit external startup request`);
     assert.deepEqual(resourcePayloads, [], `${entry}: implicit resource payload acquisition`);
@@ -89,8 +122,8 @@ try {
       }
       assert.deepEqual(external(), []);
       assert.deepEqual(resourcePayloads, []);
-      console.log(`${entry}: built page ready; no external acquisition; service workers allowed`);
-      assertNoProxyErrors(harness, entry);
+      console.log(`${entry}: built page ready; no external acquisition`);
+      assertNoProxyErrors(harness, origin, entry);
       await close(); await harness.close(); continue;
     }
     const results = await page.evaluate(async () => {
@@ -228,7 +261,7 @@ try {
     assert.deepEqual(results.media, { width: 16, height: 16, name: 'local-smoke.png' });
     assert.deepEqual(external(), [], `${entry}: resource attempt reached network`);
     assert.deepEqual(resourcePayloads, [], `${entry}: same-origin payload attempt reached network`);
-    assertNoProxyErrors(harness, entry);
+    assertNoProxyErrors(harness, origin, entry);
     console.log(`${entry}: ${results.attempts.length} resource refusals; seven workers twice; MOSS pages/iframe/tokenizer blocked; real local PNG import passed`);
     await close(); await harness.close();
   }
@@ -236,9 +269,13 @@ try {
   // engine itself. Each path is same-origin and answers WebAssembly bytes; nothing reaches a CDN.
   if (!process.env.STUDIO_TEST_BUILT) {
     const ortHarness = createHarness({ upstream: origin });
+    harnesses.push(ortHarness);
     const ortHarnessOrigin = await ortHarness.listen();
-    const { page: ortPage, close: closeOrt } = await openPage(ortHarnessOrigin, 'block');
+    const session = await openPage(ortHarnessOrigin, 'block', driverOptions);
+    drivers.push(session);
+    const { page: ortPage, close: closeOrt } = session;
     await ortPage.goto(origin + '/headless.html');
+    assertNoProxyErrors(ortHarness, origin, '/headless.html');
     const ort = await ortPage.evaluate(async () => {
       const assets = await import('/src/shared/utils/local-ort-assets.ts');
       const sets = [assets.ORT_WASM_JSEP(), assets.transformersOrtWasmPaths(), assets.TRANSFORMERS_3_ORT_WASM()];
@@ -258,11 +295,11 @@ try {
       return checked;
     });
     const ortExternal = ortHarness.observations.filter((o) => o.kind === 'blocked').map((o) => o.url);
-    report.ort = { files: ort, external: ortExternal };
+    report.ort = { browser: session.browser, files: ort, external: ortExternal };
     assert.equal(ort.length, 6);
     assert.ok(ort.every((file) => file.sameOrigin && file.ok && file.wasm), JSON.stringify(ort));
     assert.deepEqual(ortExternal, []);
-    assertNoProxyErrors(ortHarness, 'ONNX Runtime');
+    assertNoProxyErrors(ortHarness, origin, '/headless.html');
     console.log('ONNX Runtime WebAssembly: 3 builds served same-origin; no CDN request');
     await closeOrt(); await ortHarness.close();
   }
@@ -278,9 +315,13 @@ try {
     upstream: origin,
     overrides: [policyOverride({ 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } })],
   });
+  harnesses.push(fixtureHarness);
   const fixtureHarnessOrigin = await fixtureHarness.listen();
-  const { page: fixturePage, close: closeFixture } = await openPage(fixtureHarnessOrigin, 'block');
+  const session = await openPage(fixtureHarnessOrigin, 'block', driverOptions);
+  drivers.push(session);
+  const { page: fixturePage, close: closeFixture } = session;
   await fixturePage.goto(origin + '/headless.html');
+  assertNoProxyErrors(fixtureHarness, origin, '/headless.html');
   const fixture = await fixturePage.evaluate(async () => {
     const { verifyResourceBytes } = await import('/src/shared/utils/resource-admission.mjs');
     const accepted = [...await verifyResourceBytes('fixture:approved', new Uint8Array([1, 2, 3]))];
@@ -291,13 +332,17 @@ try {
     return { accepted, tamperDenied: await refuses('fixture:approved', new Uint8Array([1, 2, 4])),
       aliasDenied, userImportDenied: await refuses('asset:user-import', new Uint8Array([1, 2, 3])) };
   });
-  report.fixture = fixture;
+  report.fixture = { browser: session.browser, ...fixture };
   assert.deepEqual(fixture, { accepted: [1, 2, 3], tamperDenied: true, aliasDenied: true, userImportDenied: true });
-  assertNoProxyErrors(fixtureHarness, 'approved fixture');
+  assertNoProxyErrors(fixtureHarness, origin, '/headless.html');
   console.log('Test-only approved fixture: bytes accepted; tamper, blob alias and user-import relabeling rejected');
   await closeFixture(); await fixtureHarness.close();
   }
 } finally {
   await Promise.allSettled(drivers.map((driver) => driver.close()));
+  await Promise.allSettled(harnesses.map((harness) => harness.close()));
   if (process.env.RESOURCE_ADMISSION_REPORT) await writeFile(process.env.RESOURCE_ADMISSION_REPORT, JSON.stringify(report, null, 2));
 }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runResourceAdmission();

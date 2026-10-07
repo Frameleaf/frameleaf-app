@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicDriver } from './browser-driver.mjs';
+import { assertNoProxyErrors, openPage } from '../resource-admission.browser.mjs';
 
 /**
  * A minimal stub speaking just enough of the W3C WebDriver wire protocol to prove
@@ -12,7 +13,7 @@ import { admittedHostCapabilities, createChromiumDriver, createWebDriverClassicD
  * receives so tests can assert on the wire format itself (the proxy capability shape, the
  * execute/sync vs execute/async routing).
  */
-async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, viewport = {width: 500, height: 400}} = {}) {
+async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, viewport = {width: 500, height: 400}, userAgent} = {}) {
   const requests = [];
   let sessionCounter = 0;
   const server = http.createServer((req, res) => {
@@ -43,6 +44,10 @@ async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, v
         return;
       }
       if (req.method === 'POST' && req.url.endsWith('/execute/sync')) {
+        if (userAgent && body.script.includes('navigator.userAgent')) {
+          res.end(JSON.stringify({value: userAgent}));
+          return;
+        }
         if (body.args[0]?.selector && body.args[0]?.position) {
           const value = runInNewContext(`(() => { ${body.script} })()`, {
             arguments: body.args, innerWidth: viewport.width, innerHeight: viewport.height,
@@ -358,4 +363,75 @@ test('WebDriver native iframe hover sends one element-origin pointerMove and res
     }]}]);
     assert.equal(stub.requests.at(-1).url,'/session/s1/frame/parent');
   } finally { await driver.close(); await stub.close(); }
+});
+
+for (const browser of ['firefox', 'safari']) test(`resource admission selects actual ${browser} without loading Chromium`, async () => {
+  const userAgent = browser === 'firefox' ? 'Mozilla/5.0 Firefox/157.0' : 'Mozilla/5.0 Version/26.0 Safari/605.1.15';
+  const stub = await startStubDriver({userAgent});
+  try {
+    const session = await openPage('http://127.0.0.1:5555', 'block', {browser, endpoint: stub.endpoint,
+      chromium: {launch: () => {throw new Error('classic dispatch loaded Chromium');}}});
+    try {
+      await session.page.goto('http://127.0.0.1:5186/headless.html');
+      assert.deepEqual(session.browser, {name: browser, driver: 'webdriver-classic', userAgent});
+      const caps = stub.requests.find(r => r.url === '/session').body.capabilities.alwaysMatch;
+      assert.equal(caps.browserName, browser);
+      assert.deepEqual(caps.proxy, {proxyType: 'manual', httpProxy: '127.0.0.1:5555', sslProxy: '127.0.0.1:5555', noProxy: []});
+      assert.deepEqual(caps.timeouts, {script: 300_000});
+      if (browser === 'safari') assert.ok(!Object.hasOwn(caps, 'moz:firefoxOptions'));
+      else assert.equal(caps['moz:firefoxOptions'].prefs['dom.webgpu.enabled'], true);
+    } finally {await session.close();}
+    assert.equal(stub.requests.at(-1).method, 'DELETE');
+  } finally {await stub.close();}
+});
+
+test('resource admission retains Chromium context policy and closes a failed page', async () => {
+  for (const failure of [false, true]) {
+    const contexts = [];
+    let closed = 0;
+    const session = openPage('http://127.0.0.1:5555', 'block', {chromium: {launch: async options => {
+      assert.deepEqual(options.proxy, {server: 'http://127.0.0.1:5555'});
+      return {newContext: async options => {
+        contexts.push(options);
+        return {newPage: async () => {
+          if (failure) throw new Error('page failed');
+          return {evaluate: async () => 'Chrome/140.0 Safari/537.36'};
+        }};
+      }, close: async () => {closed++;}};
+    }}});
+    if (failure) await assert.rejects(session, /page failed/);
+    else {
+      const opened = await session;
+      assert.equal(opened.browser.driver, 'playwright');
+      await opened.close();
+    }
+    assert.deepEqual(contexts, [{serviceWorkers: 'block'}]);
+    assert.equal(closed, 1);
+  }
+});
+
+test('resource admission refuses missing classic endpoints, unsupported aliases and false browser provenance', async () => {
+  for (const browser of ['firefox', 'safari']) {
+    await assert.rejects(openPage('http://127.0.0.1:5555', 'block', {browser}), /requires WEBDRIVER_ENDPOINT/);
+    const stub = await startStubDriver({userAgent: 'Chrome/140.0 Safari/537.36'});
+    try {
+      await assert.rejects(openPage('http://127.0.0.1:5555', 'block', {browser, endpoint: stub.endpoint}), /did not report the requested browser/);
+      assert.equal(stub.requests.at(-1).method, 'DELETE');
+    } finally {await stub.close();}
+  }
+  for (const browser of ['webkit', 'chrome', 'unknown'])
+    await assert.rejects(openPage('http://127.0.0.1:5555', 'block', {browser}), /unsupported admitted-host browser/);
+});
+
+test('resource admission requires a transparent proxied entry GET before absence can count', () => {
+  const origin = 'http://127.0.0.1:5186';
+  const request = {method: 'GET', kind: 'proxied', url: origin + '/headless.html'};
+  assertNoProxyErrors({observations: [request]}, origin, '/headless.html');
+  assert.throws(() => assertNoProxyErrors({observations: [request,
+    {method: 'CONNECT', kind: 'tunnelled', url: '127.0.0.1:5186'}]}, origin, '/headless.html'), /opaque CONNECT/);
+  for (const observations of [[], [{method: 'CONNECT', kind: 'tunnelled', url: '127.0.0.1:5186'}],
+    [{...request, method: 'POST'}], [{...request, kind: 'override'}], [{...request, kind: 'blocked'}],
+    [{...request, url: origin + '/'}], [{...request, url: 'http://127.0.0.1:5187/headless.html'}]])
+    assert.throws(() => assertNoProxyErrors({observations}, origin, '/headless.html'), /no transparent browser GET|opaque CONNECT/);
+  assert.throws(() => assertNoProxyErrors({observations: [request, {kind: 'error'}]}, origin, '/headless.html'), /could not reach/);
 });

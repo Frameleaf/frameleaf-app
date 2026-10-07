@@ -36,6 +36,16 @@ project within the reopen window, and no asset listing/search or opaque CONNECT 
 Empty observations, HTTPS origins and tunneled traffic cannot produce a passing project-only result.
 This dispatch support does not qualify Safari/iPad hardware, touch, every manifest row or exported-media parity.
 
+`tools/resource-admission.browser.mjs` accepts the same three `BROWSER` values and an HTTP
+`STUDIO_TEST_ORIGIN`. Firefox/Safari require `WEBDRIVER_ENDPOINT`; classic runs do not load
+Playwright. The report records the observed browser user agent, and a mismatched browser fails.
+All startup, blocked-resource, worker, local-import and byte-tamper checks run through the
+same deny-all proxy. Chromium retains its service-worker context policy; classic drivers use
+fresh sessions without a service-worker blocking API. This source support is separate from
+actual Firefox/Safari device qualification.
+An empty proxy log, any opaque tunnel or a substituted entry cannot qualify startup absence;
+each entry must have its own transparent proxied GET and no proxy errors.
+
 ## Studio graph protocol (native apps)
 
 `docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
