@@ -44,6 +44,11 @@ describe('cloud description adoption and remote release', () => {
     const assets = await Promise.all(
       [1, 2].map(() => seedCanonicalAsset(db, { ownerId: user.id, type: AssetType.Image })),
     );
+    await db
+      .insertInto('asset_exif')
+      .values(assets.map(({ id }) => ({ assetId: id })))
+      .onConflict((oc) => oc.column('assetId').doNothing())
+      .execute();
     const operations = new MediaOperationRepository(db);
     const remoteJobId = randomUUID();
     const initial = {
@@ -64,6 +69,7 @@ describe('cloud description adoption and remote release', () => {
       kind: MediaOperationKind.CloudDescriptionBatch,
       destination: MediaOperationDestination.FrameleafCloud,
       label: 'paid descriptions',
+      settings: {},
       snapshot: {
         version: 1,
         origin: 'backfill',
@@ -104,11 +110,11 @@ describe('cloud description adoption and remote release', () => {
       async (assetId, _item, source) => {
         deferJobAdoption(async (tx) => {
           const row = await tx
-            .updateTable('asset')
+            .updateTable('asset_exif')
             .set({ description: 'Paid cloud description' })
-            .where('id', '=', assetId)
-            .where('deletedAt', 'is', null)
-            .returning('id')
+            .where('assetId', '=', assetId)
+            .where('assetId', 'in', tx.selectFrom('asset').select('id').where('deletedAt', 'is', null))
+            .returning('assetId')
             .executeTakeFirst();
           source.onPublished?.(
             row ? { status: JobStatus.Success } : { status: JobStatus.Skipped, reasonKey: 'not-eligible' },
@@ -186,10 +192,10 @@ describe('cloud description adoption and remote release', () => {
     const descriptions = async () =>
       (
         await db
-          .selectFrom('asset')
+          .selectFrom('asset_exif')
           .select('description')
           .where(
-            'id',
+            'assetId',
             'in',
             assets.map(({ id }) => id),
           )
@@ -270,6 +276,7 @@ describe('cloud description adoption and remote release', () => {
       kind: MediaOperationKind.StudioExport,
       destination: MediaOperationDestination.FrameleafCloud,
       label: 'other remote output',
+      settings: {},
       snapshot: {},
       remoteJobId: randomUUID(),
     });
