@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Blob as NodeBlob } from 'node:buffer';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { websocketEvents, websocketStore } from '$lib/stores/websocket';
+import { createStudioCommandEnvelope } from './commands';
 import { clearStudioEngine, loadStudioEngine, pinnedFreecutRevision, registerStudioEngine } from './engine-loader';
 import { createFrameStudioEngine, resolveStudioFrameManifest, toFrameData } from './frame-engine';
 import { STUDIO_FRAME_PROTOCOL_VERSION, type StudioFrameManifest } from './frame-protocol';
@@ -116,6 +117,52 @@ const newStage = () => {
 afterEach(() => {
   clearStudioEngine();
   document.body.replaceChildren();
+});
+
+it('routes transcription progress/results and destroys an in-flight job with its command frame', async () => {
+  const requests: unknown[] = [];
+  const progress = vi.fn();
+  const captions = [{ text: 'Worker cue', start: { num: 1, den: 1 }, end: { num: 2, den: 1 } }];
+  let complete = true;
+  const frame = fakeFrame({
+    kind: 'commands',
+    respond(port, message) {
+      requests.push(message);
+      if (message.type === 'transcribe') {
+        const { requestId } = message as { type: string; requestId: number };
+        const value = { mediaId: 'source', stage: 'transcribing', progress: 0.5, completed: 0, total: 1 };
+        port.postMessage({ type: 'transcription-progress', requestId, progress: { ...value, progress: 2 } });
+        port.postMessage({ type: 'transcription-progress', requestId, progress: value });
+        if (complete) {
+          port.postMessage({ type: 'transcribed', requestId, outcome: { status: 'completed', captions } });
+        }
+      }
+    },
+  });
+  const runtime = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).createCommandEngine!();
+  const envelope = createStudioCommandEnvelope(
+    'job.enqueueTranscription',
+    { sequenceId: 'main', language: 'en', destinationId: 'browser-local' },
+    2,
+  );
+  try {
+    await expect(runtime.transcribe!({ id: 'graph' }, envelope, [], progress)).resolves.toEqual({
+      status: 'completed',
+      captions,
+    });
+    expect(progress).toHaveBeenCalledOnce();
+    complete = false;
+    const pending = runtime.transcribe!({ id: 'graph' }, envelope, [], progress);
+    await vi.waitFor(() =>
+      expect(requests.filter((message) => (message as { type: string }).type === 'transcribe')).toHaveLength(2),
+    );
+    runtime.dispose();
+    await expect(pending).resolves.toEqual({ status: 'cancelled' });
+    expect(frame.frames[0].isConnected).toBe(false);
+    await expect(runtime.transcribe!({}, envelope, [], progress)).resolves.toMatchObject({ status: 'rejected' });
+  } finally {
+    runtime.dispose();
+  }
 });
 
 describe('studio engine manifest', () => {

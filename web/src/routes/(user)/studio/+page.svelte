@@ -18,6 +18,7 @@
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { websocketEvents, websocketStore } from '$lib/stores/websocket';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import {
@@ -31,6 +32,10 @@
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
+  import {
+    createStudioTranscriptionHandlers,
+    type StudioTranscriptionJob,
+  } from '$lib/frameleaf/studio/transcription-jobs';
   import { createStudioRestorationHandlers } from '$lib/frameleaf/studio/restoration-jobs';
   import type { StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
@@ -96,6 +101,15 @@
   // Null until the probe answers, so the host does not call an unknown deployment deficient.
   let capabilities = $state<StudioCapabilities | null>(null);
   let renderEvidence = $state<StudioRenderEvidence[]>([]);
+  let browserTranscriptionSupported = $state(false);
+  let transcriptionConnected = $state(false);
+  let browserTranscription = $state<StudioTranscriptionJob | null>(null);
+  const effectiveCapabilities = $derived(
+    capabilities && {
+      ...capabilities,
+      transcriptionWorker: capabilities.transcriptionWorker || browserTranscriptionSupported,
+    },
+  );
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
@@ -460,6 +474,45 @@
     });
   });
 
+  const transcription = createStudioTranscriptionHandlers({
+    projectId: () => project.id,
+    ownerId: () => auth.userId,
+    graph: () => project.graph,
+    revision: () => project.revision,
+    assets: () => assets,
+    stage: (graph, ids, envelopes) => session.stage(graph, ids, envelopes),
+    restore: (revision) => session.restore(revision),
+    engine: engineForCommands,
+    history,
+    context: () => ({
+      revision: project.revision,
+      hasLease: writable,
+      hasAccess: !accessLost && !forbidden && authManager.authenticated,
+      online: online && transcriptionConnected,
+      capabilities: effectiveCapabilities ?? emptyStudioCapabilities(),
+    }),
+    createRuntime: async () => {
+      const resolution = await loadStudioEngine();
+      return resolution.status === 'available' && resolution.module.browserTranscriptionSupported
+        ? (resolution.module.createCommandEngine?.() ?? null)
+        : null;
+    },
+    onChange: (job) => {
+      browserTranscription = job;
+      if (job.status === 'failed') {
+        handleError(
+          new Error(job.detail ?? 'Browser transcription is unavailable'),
+          $t('frameleaf_studio_command_failed'),
+        );
+      }
+    },
+  });
+  $effect(() => {
+    if (browserTranscription?.status === 'queued' || browserTranscription?.status === 'running') {
+      transcription.reconcile();
+    }
+  });
+
   /**
    * The Restore tab (FL-115, FL-162). A command naming Frameleaf Cloud opens it on that source, where
    * the job is estimated and confirmed on its own; Use in Studio adds a finished version to the bin.
@@ -499,13 +552,14 @@
       hasLease: writable,
       hasAccess: !accessLost && !forbidden && authManager.authenticated,
       online,
-      capabilities: capabilities ?? emptyStudioCapabilities(),
+      capabilities: effectiveCapabilities ?? emptyStudioCapabilities(),
     }),
     // Implemented here: the engine's graph commands and history (FL-92), the preview pair (FL-96)
-    // and the bundle pair (FL-91). Every other row stays a typed extension point owned by a later
+    // the bundle pair (FL-91), and browser-local transcription (FL-111). Every other row stays a typed extension point owned by a later
     // story and is rejected as `not-implemented` rather than silently no-oped.
     handlers: {
       ...engineHandlers,
+      ...transcription.handlers,
       'preview.request': async (envelope) => {
         const payload = envelope.payload as StudioCommandPayloads['preview.request'];
         const request = previewRequestGate.next();
@@ -872,6 +926,10 @@
   // tracking effect would depend on its own subscription and re-run until Svelte stops it
   // (effect_update_depth_exceeded), leaving the page's later updates unapplied.
   onMount(() => {
+    void loadStudioEngine().then((resolution) => {
+      browserTranscriptionSupported =
+        resolution.status === 'available' && resolution.module.browserTranscriptionSupported === true;
+    });
     void probeStudioHost().then((next) => {
       capabilities = next.capabilities;
       renderEvidence = next.renderEvidence;
@@ -892,6 +950,7 @@
       void streamClient.dispose();
       history.clear();
       releaseCommandEngine();
+      transcription.dispose();
       void session.dispose();
     };
     const unsubscribe = eventManager.on({
@@ -900,10 +959,41 @@
       SessionLocked: lost,
     });
 
+    // Cached private source bytes must stop on permission changes, even before the route reloads.
+    const stopTranscription = transcription.dispose;
+    const unsubscribeTranscription = eventManager.on({
+      SessionLockedRemote: stopTranscription,
+      SessionAccessChanged: stopTranscription,
+      AssetUpdate: stopTranscription,
+      AssetsDelete: stopTranscription,
+      AssetsMarkNsfw: stopTranscription,
+      AlbumDelete: stopTranscription,
+      AlbumUserDelete: stopTranscription,
+      PartnerRevoke: stopTranscription,
+    });
+    const stopSourceEvents = [
+      websocketEvents.on('StudioProjectInvalidatedV1', ({ projectId }) => {
+        if (projectId === null || projectId === project.id) {
+          stopTranscription();
+        }
+      }),
+      websocketEvents.on('on_asset_delete', stopTranscription),
+      websocketEvents.on('on_asset_trash', stopTranscription),
+      websocketEvents.on('on_asset_update', stopTranscription),
+      websocketEvents.on('on_asset_hidden', stopTranscription),
+      websocketStore.connected.subscribe((connected) => {
+        transcriptionConnected = connected;
+        if (!connected) {
+          stopTranscription();
+        }
+      }),
+    ];
+
     // A reload or tab close never reaches onDestroy, so give the lease back as the document goes:
     // otherwise the reloaded page (a new client) opens read-only behind its own old lease. A page
     // kept in the back/forward cache may come back alive, so it keeps its session.
     const leave = (event: PageTransitionEvent) => {
+      transcription.dispose();
       if (!event.persisted) {
         void session.dispose({ keepalive: true });
       }
@@ -912,6 +1002,10 @@
 
     return () => {
       unsubscribe();
+      unsubscribeTranscription();
+      for (const stop of stopSourceEvents) {
+        stop();
+      }
       removeEventListener('pagehide', leave);
     };
   });
@@ -919,6 +1013,7 @@
   onDestroy(() => {
     settleExportChoice(null);
     releaseCommandEngine();
+    transcription.dispose();
     void previewClient.dispose();
     void streamClient.dispose();
     void session.dispose();
@@ -955,13 +1050,24 @@
   `accessLost` also covers a project this account can no longer read, so the forbidden state is
   shown and the engine disposed.
 -->
+{#if browserTranscription?.status === 'queued' || browserTranscription?.status === 'running'}
+  <div class="flex items-center gap-3 px-4 py-2" aria-live="polite">
+    <span>{$t('frameleaf_studio_capability_transcription_worker')}</span>
+    <progress
+      aria-label={$t('frameleaf_studio_capability_transcription_worker')}
+      max="1"
+      value={browserTranscription.progress?.progress ?? 0}
+    ></progress>
+    <button type="button" onclick={() => transcription.dispose()}>{$t('cancel')}</button>
+  </div>
+{/if}
 <StudioHost
   {project}
   {assets}
   {projectImports}
   {handoffAssetIds}
   {auth}
-  {capabilities}
+  capabilities={effectiveCapabilities}
   {renderEvidence}
   {services}
   {onBack}

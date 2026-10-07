@@ -41,6 +41,8 @@ import type {
   StudioHostContext,
   StudioHostServices,
   StudioNavigationTarget,
+  StudioTranscriptionOutcome,
+  StudioTranscriptionProgress,
 } from './host-contract';
 
 export const STUDIO_ENGINE_BASE = '/studio-engine/';
@@ -243,6 +245,10 @@ export const createFrameStudioEngine = ({
 }: FrameEngineOptions): StudioEngineModule => ({
   engineRevision: manifest.engineRevision,
   features: [...manifest.features],
+  browserTranscriptionSupported:
+    typeof Worker === 'function' &&
+    typeof MessageChannel === 'function' &&
+    (typeof AudioDecoder === 'function' || typeof AudioContext === 'function'),
 
   async mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices) {
     let revoke: (error: Error) => void = () => {};
@@ -488,11 +494,38 @@ export const createFrameStudioEngine = ({
     }
     let nextRequest = 1;
     const waiting = new Map<number, (outcome: StudioCommandApplyOutcome) => void>();
+    const transcribing = new Map<
+      number,
+      {
+        resolve: (outcome: StudioTranscriptionOutcome) => void;
+        progress: (value: StudioTranscriptionProgress) => void;
+      }
+    >();
     port.addEventListener('message', (event: MessageEvent<StudioCommandFrameMessage>) => {
       const message = event.data;
       if (isRecord(message) && message.type === 'applied') {
         waiting.get(message.requestId)?.(message.outcome);
         waiting.delete(message.requestId);
+      } else if (isRecord(message) && message.type === 'transcribed') {
+        transcribing.get(message.requestId)?.resolve(message.outcome);
+        transcribing.delete(message.requestId);
+      } else if (isRecord(message) && message.type === 'transcription-progress') {
+        const value = message.progress;
+        if (
+          value &&
+          typeof value.mediaId === 'string' &&
+          ['queued', 'downloading', 'preparing', 'decoding', 'transcribing'].includes(value.stage) &&
+          Number.isFinite(value.progress) &&
+          value.progress >= 0 &&
+          value.progress <= 1 &&
+          Number.isSafeInteger(value.completed) &&
+          Number.isSafeInteger(value.total) &&
+          value.total > 0 &&
+          value.completed >= 0 &&
+          value.completed < value.total
+        ) {
+          transcribing.get(message.requestId)?.progress(value);
+        }
       }
     });
     port.start();
@@ -537,12 +570,38 @@ export const createFrameStudioEngine = ({
           port.postMessage(request);
         });
       },
+      async transcribe(graph, envelope, assets, onProgress) {
+        if (closed) {
+          return { status: 'rejected', detail: 'The transcription runtime was released' };
+        }
+        const requestId = nextRequest++;
+        return new Promise<StudioTranscriptionOutcome>((resolve) => {
+          transcribing.set(requestId, { resolve, progress: onProgress });
+          port.postMessage({
+            type: 'transcribe',
+            requestId,
+            graph: toFrameData(graph),
+            envelope: toFrameData(envelope),
+            assets: toFrameData([...assets]),
+          });
+        });
+      },
+      cancelTranscription() {
+        if (!closed) {
+          port.postMessage({ type: 'cancel-transcription' });
+        }
+      },
       dispose() {
         if (closed) {
           return;
         }
+        instance.cancelTranscription?.();
         closed = true;
         access.dispose();
+        for (const pending of transcribing.values()) {
+          pending.resolve({ status: 'cancelled' });
+        }
+        transcribing.clear();
         for (const resolve of waiting.values()) {
           resolve({ status: 'rejected', index: 0, reason: 'failed', detail: 'The command engine was released' });
         }

@@ -458,6 +458,19 @@ export interface StudioEngineInstance {
  * graph, or refuses the whole batch and names the envelope that failed: a batch is atomic, so a
  * partial result is never staged.
  */
+export interface StudioTranscriptionProgress {
+  mediaId: string;
+  stage: 'queued' | 'downloading' | 'preparing' | 'decoding' | 'transcribing';
+  progress: number;
+  completed: number;
+  total: number;
+}
+
+export type StudioTranscriptionOutcome =
+  | { status: 'completed'; captions: import('./commands').StudioCommandPayloads['captions.set']['captions'] }
+  | { status: 'cancelled' }
+  | { status: 'rejected'; detail: string };
+
 export interface StudioCommandEngine {
   apply(
     graph: unknown,
@@ -465,6 +478,14 @@ export interface StudioCommandEngine {
     assets: readonly StudioAssetRef[],
     projectId?: string,
   ): Promise<StudioCommandApplication>;
+  /** Browser-local only; each job owns an isolated runtime, never the mounted editor's stores. */
+  transcribe?(
+    graph: unknown,
+    envelope: StudioCommandEnvelope<'job.enqueueTranscription'>,
+    assets: readonly StudioAssetRef[],
+    onProgress: (progress: StudioTranscriptionProgress) => void,
+  ): Promise<StudioTranscriptionOutcome>;
+  cancelTranscription?(): void;
   dispose(): void;
 }
 
@@ -481,6 +502,8 @@ export interface StudioEngineModule {
   readonly engineRevision: string;
   /** Feature manifest rows this build claims. Used by the conformance work in FL-85. */
   readonly features: readonly string[];
+  /** Platform support only. Every job still admits its exact model and verifies downloaded bytes. */
+  readonly browserTranscriptionSupported?: boolean;
   mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices): Promise<StudioEngineInstance>;
   /**
    * Start the command engine (FL-92), separate from any mounted editor so applying a command never

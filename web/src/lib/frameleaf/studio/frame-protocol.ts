@@ -25,10 +25,12 @@ import type {
   StudioProjectImportRef,
   StudioProjectImportUpload,
   StudioWorkspaceSaveResult,
+  StudioTranscriptionProgress,
+  StudioTranscriptionOutcome,
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 5;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 6;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -119,9 +121,22 @@ export type StudioCommandApplyOutcome =
       detail: string;
     };
 
+export interface StudioTranscriptionRequest {
+  type: 'transcribe';
+  requestId: number;
+  graph: unknown;
+  envelope: StudioCommandEnvelope<'job.enqueueTranscription'>;
+  assets: StudioHostContext['assets'];
+}
+
+export type StudioCommandFrameRequest =
+  StudioCommandApplyRequest | StudioTranscriptionRequest | { type: 'cancel-transcription' };
+
 export type StudioCommandFrameMessage =
   | { type: 'ready'; protocolVersion: number; engineRevision: string }
-  | { type: 'applied'; requestId: number; outcome: StudioCommandApplyOutcome };
+  | { type: 'applied'; requestId: number; outcome: StudioCommandApplyOutcome }
+  | { type: 'transcription-progress'; requestId: number; progress: StudioTranscriptionProgress }
+  | { type: 'transcribed'; requestId: number; outcome: StudioTranscriptionOutcome };
 
 /** The frame documents announce themselves on `window.parent` with this message before the port. */
 export interface StudioFrameHello {

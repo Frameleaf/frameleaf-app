@@ -10,6 +10,7 @@
 import type {
   StudioCommandApplyOutcome,
   StudioCommandApplyRequest,
+  StudioCommandFrameRequest,
   StudioCommandFrameMessage,
   StudioFrameHello,
 } from '@frameleaf/host/frame-protocol'
@@ -21,6 +22,7 @@ import { applyCanonicalCommands, graphDigest } from './canonical-commands'
 import { ENGINE_REVISION } from './engine-revision'
 import { initialMediaRecord, probeVideo, sourceUrlOf } from './library-media'
 import { installBrowserShims } from './browser-shims'
+import { transcribeSequence } from './browser-transcription'
 
 installBrowserShims()
 
@@ -62,6 +64,7 @@ async function apply(request: StudioCommandApplyRequest): Promise<StudioCommandA
 }
 
 let port: MessagePort | null = null
+let transcription: AbortController | null = null
 /** One batch at a time: the stores are shared by every apply in this document. */
 let queue: Promise<void> = Promise.resolve()
 
@@ -71,7 +74,24 @@ window.addEventListener('message', (event) => {
   if (data?.source !== 'frameleaf-studio-host' || !event.ports[0] || port) return
   port = event.ports[0]
   port.onmessage = (portEvent) => {
-    const request = portEvent.data as StudioCommandApplyRequest
+    const request = portEvent.data as StudioCommandFrameRequest
+    if (request?.type === 'cancel-transcription') { transcription?.abort(); return }
+    if (request?.type === 'transcribe') {
+      if (transcription) {
+        port?.postMessage({ type: 'transcribed', requestId: request.requestId, outcome: { status: 'rejected', detail: 'Browser transcription is already running' } })
+        return
+      }
+      const controller = new AbortController()
+      transcription = controller
+      void transcribeSequence(request, controller.signal, (progress) => {
+        port?.postMessage({ type: 'transcription-progress', requestId: request.requestId, progress })
+      }).catch((error: unknown) => controller.signal.aborted
+        ? { status: 'cancelled' as const }
+        : { status: 'rejected' as const, detail: error instanceof Error ? error.message : 'Browser transcription failed' })
+        .then((outcome) => port?.postMessage({ type: 'transcribed', requestId: request.requestId, outcome }))
+        .finally(() => { if (transcription === controller) transcription = null })
+      return
+    }
     if (request?.type !== 'apply') return
     queue = queue.then(async () => {
       let outcome: StudioCommandApplyOutcome
