@@ -1184,6 +1184,7 @@ export class ImageEnrichmentService extends BaseService {
     knownPersons: KnownPerson[];
     destinationId: string;
     modelName: string;
+    onPublished?: (outcome: EnrichmentStageResult) => void;
   }): Promise<EnrichmentStageResult> {
     const { asset, config, machineLearning, options, nsfw, nsfwIsFresh, fingerprintBefore, knownPersons } = args;
     const { destinationId, modelName } = args;
@@ -1242,6 +1243,9 @@ export class ImageEnrichmentService extends BaseService {
         return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
       }
       const published = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+        if (fingerprintBefore && (await this.getSourceFingerprint(id)) !== fingerprintBefore) {
+          return 'source-changed' as const;
+        }
         // FL-57: the names the prompt was given are checked again under the lock. A face correction or
         // rename that landed while the model was working (its invalidation takes this same lock) means
         // this description may name the wrong people: publish nothing and describe the asset again.
@@ -1249,7 +1253,7 @@ export class ImageEnrichmentService extends BaseService {
           (await this.getKnownPersonsForAsset(asset.id, asset.ownerId)).map(({ name }) => name),
         );
         if (namesNow !== provenance.identityHash) {
-          return null;
+          return 'identity-changed' as const;
         }
         if (isNsfwHidingEnabled(machineLearning)) {
           await this.lockGroupRows(id, trx);
@@ -1287,13 +1291,13 @@ export class ImageEnrichmentService extends BaseService {
         const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
         return { metadata: m, previousDescription, previousTagValues, locked };
       });
-      if (!published) {
+      if (typeof published === 'string') {
         this.logger.debug(`The people in asset ${id} changed while it was described; describing it again`);
         // a plan retries the stage itself with its pinned destination; the queue job is queued again
-        if (!options.planRun) {
+        if (!options.planRun && published === 'identity-changed') {
           await this.jobRepository.queue({ name: JobName.ImageDescription, data: { id } });
         }
-        return { status: options.planRun ? JobStatus.Failed : JobStatus.Skipped, reasonKey: 'identity-changed' };
+        return { status: options.planRun ? JobStatus.Failed : JobStatus.Skipped, reasonKey: published };
       }
       const { metadata, previousDescription, previousTagValues, locked } = published;
       if (!queueExecution.getStore()) {
@@ -1366,7 +1370,8 @@ export class ImageEnrichmentService extends BaseService {
     if (
       deferJobAdoption(async () => {
         const result = await publish();
-        if (result.status !== JobStatus.Success) {
+        args.onPublished?.(result);
+        if (!args.onPublished && result.status !== JobStatus.Success) {
           throw new Error('Description inputs changed before publication');
         }
       })
@@ -1395,6 +1400,7 @@ export class ImageEnrichmentService extends BaseService {
       destinationId: string;
       modelName: string;
       failure?: string;
+      onPublished?: (outcome: EnrichmentStageResult) => void;
     },
   ): Promise<EnrichmentStageResult> {
     const config = await this.getConfig({ withCache: true });
@@ -1405,17 +1411,28 @@ export class ImageEnrichmentService extends BaseService {
     }
     const failure = source.failure;
     if (failure) {
-      await this.databaseRepository.withAssetMetadataLock(assetId, async (trx) => {
-        const m = await this.getEnrichmentMetadata(assetId, trx);
-        m.description = {
-          status: 'failed',
-          modelName: source.modelName,
-          updatedAt: new Date().toISOString(),
-          error: failure,
-        };
-        await this.saveEnrichmentMetadata(assetId, m, trx);
-      });
-      return { status: JobStatus.Failed, reasonKey: 'model-error', message: failure };
+      const outcome: EnrichmentStageResult = { status: JobStatus.Failed, reasonKey: 'model-error', message: failure };
+      const publish = async () => {
+        await this.databaseRepository.withAssetMetadataLock(assetId, async (trx) => {
+          const current = await this.assetJobRepository.getForImageEnrichment(assetId);
+          if (!current || !this.isEligibleForDescription(current)) {
+            return;
+          }
+          const m = await this.getEnrichmentMetadata(assetId, trx);
+          m.description = {
+            status: 'failed',
+            modelName: source.modelName,
+            updatedAt: new Date().toISOString(),
+            error: failure,
+          };
+          await this.saveEnrichmentMetadata(assetId, m, trx);
+        });
+        source.onPublished?.(outcome);
+      };
+      if (!deferJobAdoption(publish)) {
+        await publish();
+      }
+      return outcome;
     }
     const stored = this.getStoredNsfw(await this.getEnrichmentMetadata(assetId));
     return this.publishDescription({
@@ -1439,6 +1456,7 @@ export class ImageEnrichmentService extends BaseService {
       knownPersons: await this.getKnownPersonsForAsset(asset.id, asset.ownerId),
       destinationId: source.destinationId,
       modelName: source.modelName,
+      onPublished: source.onPublished,
     });
   }
   /**
