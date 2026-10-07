@@ -99,7 +99,7 @@ const matchesType = (value, type) =>
 const SUPPORTED = new Set([
   '$schema', '$id', '$defs', 'title', 'description', 'type', 'const', 'enum', 'required', 'properties',
   'additionalProperties', 'items', 'minItems', 'maxItems', 'minimum', 'maximum', 'exclusiveMinimum',
-  'minLength', 'pattern', '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then',
+  'minLength', 'maxLength', 'pattern', '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then',
 ]);
 
 export function validate(schema, value) {
@@ -131,7 +131,8 @@ export function validate(schema, value) {
       if (node.exclusiveMinimum !== undefined && data <= node.exclusiveMinimum) fail(`not above ${node.exclusiveMinimum}`);
     }
     if (typeof data === 'string') {
-      if (node.minLength !== undefined && data.length < node.minLength) fail('too short');
+      if (node.minLength !== undefined && [...data].length < node.minLength) fail('too short');
+      if (node.maxLength !== undefined && [...data].length > node.maxLength) fail('too long');
       if (node.pattern && !new RegExp(node.pattern, 'u').test(data)) fail(`does not match ${node.pattern}`);
     }
     if (Array.isArray(data)) {

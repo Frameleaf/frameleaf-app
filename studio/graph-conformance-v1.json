@@ -153140,6 +153140,676 @@
         "reason": "invalid",
         "detail": "trackId: track \"absent\" does not exist"
       }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-sorted",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope sorted.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": 0,
+            "muted": false,
+            "gainEnvelope": [
+              {
+                "id": "end",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "start",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/sorted",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "32453616b4ba8f12ef2cc5d6dd2e178ad0b920d3d38b3ae295d91a09c2da1506",
+        "envelopeDigest": "ef0c2778ac0810235ddd6181f61c649b14cb4193e20c0e88290df01d7f5d8188",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "masterGainEnvelope": [
+              {
+                "id": "start",
+                "frame": 0,
+                "gainDb": -20
+              },
+              {
+                "id": "end",
+                "frame": 30,
+                "gainDb": 0
+              }
+            ],
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-clear",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope clear.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": [
+              {
+                "id": "end",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "start",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/clear-start",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "c0f809f437f5e25938cc67f88dddd2e3bf34ed8cc44a00fd4d44037051f351ca",
+        "envelopeDigest": "f33df606084679abcdb76dbef96098bbb7d1dcc9410c91c00aaaeb986653363f",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-duplicate-frame",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope duplicate-frame.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainDb": 12,
+            "gainEnvelope": [
+              {
+                "id": "a",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "b",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -6
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/duplicate-frame",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Invalid gainEnvelope"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-duplicate-id",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope duplicate-id.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": [
+              {
+                "id": "a",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "a",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": -6
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/duplicate-id",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Invalid gainEnvelope"
+      }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-retime",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope retime.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": [
+              {
+                "id": "end",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "start",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/retime-start",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "sequence.setSettings",
+          "payload": {
+            "sequenceId": "main",
+            "fps": {
+              "num": 60,
+              "den": 1
+            },
+            "timing": "keep-time"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/retime",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "48e8889961b1a7ef7227f6be2beac383a4edecff321400f7fa1ab320a32bac6e",
+        "envelopeDigest": "585dbe0ec55b2a413ce598e5407c8274d853d6c958661c9487942d2e45c51caf",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 60,
+            "frameRate": {
+              "num": 60,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 240,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 240,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "masterGainEnvelope": [
+              {
+                "id": "start",
+                "frame": 0,
+                "gainDb": -20
+              },
+              {
+                "id": "end",
+                "frame": 60,
+                "gainDb": 0
+              }
+            ],
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "project.setMasterAudio/envelope-atomic-rejection",
+      "story": "FL-309",
+      "covers": [
+        "project.setMasterAudio"
+      ],
+      "summary": "FL-103 master envelope atomic-rejection.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": [
+              {
+                "id": "end",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              },
+              {
+                "id": "start",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/atomic-start",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "project.setMasterAudio",
+          "payload": {
+            "gainEnvelope": [
+              {
+                "id": "a",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 13
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103:envelope/atomic-rejected",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "invalid",
+        "detail": "Invalid gainEnvelope"
+      }
     }
   ],
   "history": [
@@ -153962,6 +154632,109 @@
           }
         }
       ]
+    },
+    {
+      "id": "history/master-envelope",
+      "story": "FL-309",
+      "summary": "Master envelope history restores exact graph snapshots and clears redo on a new curve.",
+      "base": "linked-pair",
+      "steps": [
+        {
+          "command": {
+            "id": "project.setMasterAudio",
+            "payload": {
+              "gainEnvelope": [
+                {
+                  "id": "end",
+                  "at": {
+                    "num": 1,
+                    "den": 1
+                  },
+                  "gainDb": 0
+                },
+                {
+                  "id": "start",
+                  "at": {
+                    "num": 0,
+                    "den": 1
+                  },
+                  "gainDb": -20
+                }
+              ]
+            },
+            "revision": 1,
+            "idempotencyKey": "fl103:envelope/history",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        },
+        {
+          "redo": {}
+        },
+        {
+          "command": {
+            "id": "project.setMasterAudio",
+            "payload": {
+              "gainEnvelope": []
+            },
+            "revision": 1,
+            "idempotencyKey": "fl103:envelope/history-clear",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        }
+      ],
+      "expect": [
+        {
+          "outcome": "accepted",
+          "digest": "32453616b4ba8f12ef2cc5d6dd2e178ad0b920d3d38b3ae295d91a09c2da1506",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "c0f809f437f5e25938cc67f88dddd2e3bf34ed8cc44a00fd4d44037051f351ca",
+          "sameAs": 0,
+          "depth": {
+            "undo": 0,
+            "redo": 1
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "32453616b4ba8f12ef2cc5d6dd2e178ad0b920d3d38b3ae295d91a09c2da1506",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "c0f809f437f5e25938cc67f88dddd2e3bf34ed8cc44a00fd4d44037051f351ca",
+          "sameAs": 0,
+          "depth": {
+            "undo": 2,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "32453616b4ba8f12ef2cc5d6dd2e178ad0b920d3d38b3ae295d91a09c2da1506",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 1
+          }
+        }
+      ]
     }
   ],
   "commandStatus": {
@@ -154238,7 +155011,7 @@
       "status": "engine",
       "story": "FL-309",
       "section": "14.7",
-      "note": "Gain and mute only; project-wide ducking is refused."
+      "note": "Gain, mute and bounded linear dB master envelope; project-wide ducking is refused."
     },
     "project.setSettings": {
       "status": "not-implemented",

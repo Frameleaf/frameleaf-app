@@ -73,6 +73,7 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 | `tracks`                                      | array of track | In stored order; compositing order comes from each track's `order` (section 5).                                                     |
 | `items`                                       | array of item  | Every clip of the main timeline, on every track (2.4).                                                                              |
 | `masterBusDb`                                 | number         | Project master gain in dB. `0` by default.                                                                                          |
+| `masterGainEnvelope`                          | array          | Optional sorted project master points `{id, frame, gainDb}`; section 14.7 defines their bounds and root-time evaluation.             |
 | `masterBusMuted`                              | boolean        | `false` by default.                                                                                                                 |
 | `busAudioEq`                                  | object         | Optional.                                                                                                                           |
 | `currentFrame`, `zoomLevel`, `scrollPosition` | number         | View state the engine writes back as it read it. Commands do not change them, except that a retime carries `currentFrame` (14.5.2). |
@@ -319,7 +320,7 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                             |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
@@ -389,7 +390,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `project.applyTemplate`            | Engine          | 14.6.2  |                                                                                                                        |
 | `project.importBundle`             | Bundle import   | 8.1     | Do not record it. Import through the bundle import API; the open graph does not change.                                |
 | `project.rename`                   | Not implemented | 8.2     | Do not record it. Do not change the graph's `name` (2.1).                                                              |
-| `project.setMasterAudio`           | Engine          | 14.7    | Gain and mute only; preserve `busAudioEq`. The `ducking` field is refused.                                             |
+| `project.setMasterAudio`           | Engine          | 14.7    | Gain, mute and linear gain envelope; preserve `busAudioEq`. The `ducking` field is refused.                                             |
 | `project.setSettings`              | Not implemented | 8.2     | Do not record it. Write no editor preference into the graph. Set canvas and rate with `sequence.setSettings` (14.6.1). |
 | `property.bakeModifier`            | Engine          | 13.6.3  |                                                                                                                        |
 | `property.setExpression`           | Engine          | 13.6.1  |                                                                                                                        |
@@ -2087,7 +2088,7 @@ Payload: `trackId`, optional `gainDb`, `eq` and `pan`. This command edits one me
 
 Require at least one of `gainDb`, `pan` and `eq`. Reject unknown payload fields, malformed values, an absent track or an organizational `isGroup` track as `invalid`. Gain and EQ validate before pan. A locked media track is refused as `failed`. A refused batch publishes no partial edits.
 
-Leave all other tracks, clip fields, source windows, linked ownership, keyframes, master controls, mute/solo/visibility and track metadata unchanged. Track mute remains the separate existing `track.set.patch.muted` operation; this command accepts no mute or automation fields. Track/master automation envelopes remain unsupported. Save, reopen, undo and redo use the existing graph and host history rules (sections 7 and 9).
+Leave all other tracks, clip fields, source windows, linked ownership, keyframes, master controls, mute/solo/visibility and track metadata unchanged. Track mute remains the separate existing `track.set.patch.muted` operation; this command accepts no mute or automation fields. Track automation remains unsupported; project master gain automation is defined in section 14.7. Save, reopen, undo and redo use the existing graph and host history rules (sections 7 and 9).
 
 ## 14. Part 4: compositions, groups, titles and settings
 
@@ -2442,19 +2443,49 @@ Sets the project's canvas and rate from a template. Payload: `templateId`, optio
 
 ### 14.7 `project.setMasterAudio`
 
-Sets the persisted project master bus. Payload: `gainDb` and/or `muted`.
+Sets the persisted project master bus. Payload: `gainDb`, `muted` and/or `gainEnvelope`.
+The optional envelope is an array of at most 4096 `{ id, at, gainDb }` points.
+`at` is a nonnegative rational time admitted on an exact project frame. IDs are
+nonempty strings of at most 128 characters; IDs and normalized frame times must
+be unique. Points are stored in ascending frame order as `{ id, frame, gainDb }`.
+Only linear interpolation in finite decibels from -60 to 12 is admitted; extra
+fields/easing are refused. A nonempty curve overrides static gain, with the first
+and last values held outside its endpoints. An omitted curve preserves it; an
+empty curve clears it to static fallback. Master mute preserves the curve.
+
+The curve is project-global: the same point frames apply in every independently
+opened/exported root sequence's own frame domain. Nested samples receive the
+outer root master once. A standalone sequence starts at its own frame zero.
+Main project rate/template keep-time retimes the authored point frames with the
+existing exact frame-ratio rounding rule and refuses collapsed point times;
+keep-frames preserves them. Changing a different root's rate preserves the global
+point frames. Device monitor volume never participates in exports.
+Preview gain is evaluated by a once-only root AudioWorklet for each output sample,
+from an immutable root/context/generation epoch. For audio time `t`, anchor time
+`a`, anchor frame `F`, exact cadence `num/den` and signed rate `r`, the root frame
+is `F + (t-a)*r*num/den`. A loop with inclusive bounds `L..U` uses
+`L + positiveModulo(frame-L, U-L+1)`. Every admitted input channel receives the
+same master gain; mute is independent. Whole epoch replacement is acknowledged;
+loading, failed and unacknowledged root stages are silent. Retired roots and
+contexts disconnect. Gain does not need animation-frame messages to repeat loops.
+Source playback/restart continuity and browser audible behavior remain separate
+qualification gates; gain authority alone does not certify them. Export PCM uses
+absolute root sample time, including the selected range's root frame origin.
+Encoded packet passthrough and original-byte smart copy refuse an active curve.
+
 The monitor/device `volume` and `muted` controls are separate transient playback
 state and never change through this command.
 
 **Refusals, in order**
 
-1. A payload key is not `gainDb`, `muted` or `ducking`: `invalid`.
+1. A payload key is not `gainDb`, `muted`, `gainEnvelope` or `ducking`: `invalid`.
 2. `gainDb` is present and is not a finite number from -60 to 12 dB: `invalid`.
 3. `muted` is present and is not a boolean: `invalid`.
 4. `ducking` is present and is not a boolean: `invalid`. Either boolean is
    refused as `not-implemented`: the engine has no project-wide ducking switch.
    Per-clip sidechain settings are preserved.
-5. Neither `gainDb` nor `muted` is present: `invalid`.
+5. A supplied envelope violates the point/count/time/ID/gain rules above: `invalid`.
+6. None of `gainDb`, `muted` or `gainEnvelope` is present: `invalid`.
 
 **Effect.** Write a supplied `gainDb` to `timeline.masterBusDb`, and a supplied
 `muted` to `timeline.masterBusMuted`. An omitted field keeps its value.

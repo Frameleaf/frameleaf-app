@@ -61,6 +61,7 @@
         "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
         "masterBusDb": { "type": "number" },
         "masterBusMuted": { "type": "boolean" },
+        "masterGainEnvelope": {"type":"array","maxItems":4096,"items":{"type":"object","required":["id","frame","gainDb"],"additionalProperties":false,"properties":{"id":{"type":"string","minLength":1,"maxLength":128},"frame":{"type":"integer","minimum":0,"maximum":9007199254740991},"gainDb":{"type":"number","minimum":-60,"maximum":12}}}},
         "busAudioEq": { "type": "object" },
         "currentFrame": { "$ref": "#/$defs/frame" },
         "zoomLevel": { "type": "number", "minimum": 0.01 },
