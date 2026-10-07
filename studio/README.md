@@ -453,6 +453,10 @@ No library startup script, web/server entry point or Docker image invokes this b
 Patch `0058-preview-layout-keyboard-accessibility.patch` adds keyboard and pointer resizing,
 Bento reorder alternatives and control hit targets while retaining Freecut's MIT terms.
 The playback shortcut yields to buttons and dialog controls so Space can activate them.
+The mask toolbar selects points or incoming/outgoing handles and nudges them one project
+pixel in the displayed direction, including mirrored and rotated paths. Independent
+handle movement follows the existing tangent behavior. Static edits and playhead path
+keyframes use the existing mask edit commands and undo history.
 
 ## Web integration boundary
 
