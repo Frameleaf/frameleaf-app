@@ -1,0 +1,296 @@
+--- a/src/features/export/utils/hdr-raster-sources.ts
++++ b/src/features/export/utils/hdr-raster-sources.ts
+@@ -2,12 +2,23 @@
+ import { MANAGED_COLOR_WGSL } from '@/infrastructure/gpu-color/managed-color-wgsl'
+ import { HDR_WORKING_DOMAIN } from '@/shared/graphics/color/managed-color'
+
+-export interface HdrRasterInput {
++interface SignalRasterInput {
+   width: number
+   height: number
+   transfer: 'pq' | 'hlg'
+   rgb: Uint16Array
+ }
++
++export type HdrRasterInput =
++  | SignalRasterInput
++  | {
++      width: number
++      height: number
++      transfer: 'linear'
++      rgba: Float32Array
++      gamut: 0 | 1 | 2
++      referenceWhite: number
++    }
+
+ export function validateHdrRaster(
+   input: HdrRasterInput | undefined,
+@@ -18,15 +29,37 @@
+     !Number.isSafeInteger(input.height) ||
+     input.width <= 0 ||
+     input.height <= 0 ||
+-    input.width * input.height > 16_777_216 ||
++    input.width * input.height > 16_777_216
++  )
++    throw new Error('Invalid HDR raster input')
++  if (input.transfer === 'linear') {
++    if (
++      !(input.rgba instanceof Float32Array) ||
++      input.rgba.length !== input.width * input.height * 4 ||
++      ![0, 1, 2].includes(input.gamut) ||
++      !Number.isFinite(input.referenceWhite) ||
++      input.referenceWhite < 1 ||
++      input.referenceWhite > 10000
++    )
++      throw new Error('Invalid linear HDR raster input')
++    for (let i = 0; i < input.rgba.length; i++) {
++      const value = input.rgba[i]!
++      if (
++        !Number.isFinite(value) ||
++        (i % 4 === 3 ? value < 0 || value > 1 : Math.abs(value) * input.referenceWhite > 10000)
++      )
++        throw new Error('Invalid linear HDR raster pixels')
++    }
++  } else if (
+     !['pq', 'hlg'].includes(input.transfer) ||
+     !(input.rgb instanceof Uint16Array) ||
+     input.rgb.length !== input.width * input.height * 3
+-  )
++  ) {
+     throw new Error('Invalid HDR raster input')
++  }
+ }
+
+-/** Per-renderer owned textures; integer source codes never pass through a canvas. */
++/** Per-renderer owned textures; HDR pixels never pass through an SDR canvas. */
+ export class HdrRasterSources {
+   private disposed = false
+   private readonly textures = new Map<string, { texture: GPUTexture; colorKey: string }>()
+@@ -41,7 +74,12 @@
+         validateHdrRaster(input)
+         pixels += input.width * input.height
+         if (!id || pixels > 16_777_216) throw new Error('HDR raster resource limit')
+-        return [id, { ...input, rgb: input.rgb.slice() }]
++        return [
++          id,
++          input.transfer === 'linear'
++            ? { ...input, rgba: input.rgba.slice() }
++            : { ...input, rgb: input.rgb.slice() },
++        ]
+       }),
+     )
+   }
+@@ -53,7 +91,7 @@
+   frameTexture(mediaId: string, referenceWhite: number) {
+     if (this.disposed) throw new Error('HDR raster disposed')
+     const input = this.inputs[mediaId]
+-    validateHdrRaster(input)
++    if (!input) throw new Error('Invalid HDR raster input')
+     const device = this.getDevice()
+     if (!device) throw new Error('HDR raster requires WebGPU')
+     if (
+@@ -62,7 +100,7 @@
+     ) {
+       throw new Error('HDR raster exceeds device texture limits')
+     }
+-    if (!(referenceWhite > 0 && Number.isFinite(referenceWhite)))
++    if (!(referenceWhite >= 1 && Number.isFinite(referenceWhite)))
+       throw new Error('Invalid reference white')
+     const cached = this.textures.get(mediaId)
+     const colorKey = `${HDR_WORKING_DOMAIN}:${referenceWhite}`
+@@ -76,22 +114,33 @@
+       let uniform: GPUBuffer | undefined
+       let candidate: GPUTexture | undefined
+       try {
++        const linear = input.transfer === 'linear'
+         source = device.createTexture({
+           size: [input.width, input.height],
+-          format: 'rgba16uint',
++          format: linear ? 'rgba32float' : 'rgba16uint',
+           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+         })
+-        const stride = Math.ceil((input.width * 8) / 256) * 256
+-        const pixels = new Uint16Array((stride / 2) * input.height)
+-        for (let y = 0; y < input.height; y++)
+-          for (let x = 0; x < input.width; x++) {
+-            const at = (y * stride) / 2 + x * 4
++        const stride = Math.ceil((input.width * (linear ? 16 : 8)) / 256) * 256
++        const pixels = linear
++          ? new Float32Array((stride / 4) * input.height)
++          : new Uint16Array((stride / 2) * input.height)
++        for (let y = 0; y < input.height; y++) {
++          if (input.transfer === 'linear') {
+             pixels.set(
+-              input.rgb.subarray((y * input.width + x) * 3, (y * input.width + x) * 3 + 3),
+-              at,
++              input.rgba.subarray(y * input.width * 4, (y + 1) * input.width * 4),
++              (y * stride) / 4,
+             )
+-            pixels[at + 3] = 65535
++          } else {
++            for (let x = 0; x < input.width; x++) {
++              const at = (y * stride) / 2 + x * 4
++              pixels.set(
++                input.rgb.subarray((y * input.width + x) * 3, (y * input.width + x) * 3 + 3),
++                at,
++              )
++              pixels[at + 3] = 65535
++            }
+           }
++        }
+         device.queue.writeTexture({ texture: source }, pixels, { bytesPerRow: stride }, [
+           input.width,
+           input.height,
+@@ -99,17 +148,54 @@
+         pixels.fill(0)
+         const module = device.createShaderModule({
+           code: `${FULLSCREEN_QUAD_WGSL}\n${MANAGED_COLOR_WGSL}\n
+-          @group(0) @binding(0) var source: texture_2d<u32>;
++          @group(0) @binding(0) var source: texture_2d<${linear ? 'f32' : 'u32'}>;
+           @group(0) @binding(1) var<uniform> params: vec4f;
+           @fragment fn fragmentMain(v: VertexOutput) -> @location(0) vec4f {
+             let size = textureDimensions(source);
+             let p = min(vec2u(v.uv * vec2f(size)), size - vec2u(1));
++            ${
++              linear
++                ? `
++            let rgba = textureLoad(source, vec2i(p), 0);
++            var working = rgba.rgb;
++            if (params.x > 1.5) { working = fl_bt2020_to_bt709(working); }
++            else if (params.x > 0.5) {
++              // Display P3 D65 -> linear sRGB: CSS Color 4 conversion matrices.
++              working = vec3f(
++                dot(vec3f(1.224940176, -0.224940176, 0.0), working),
++                dot(vec3f(-0.042056955, 1.042056955, 0.0), working),
++                dot(vec3f(-0.019637555, -0.078636046, 1.098273601), working));
++            }
++            return vec4f(working * params.z / params.y, rgba.a);`
++                : `
+             let signal = vec3f(textureLoad(source, vec2i(p), 0).rgb) / 65535.0;
+-            return vec4f(fl_signal_to_working(signal, params.x, params.y), 1.0);
++            return vec4f(fl_signal_to_working(signal, params.x, params.y), 1.0);`
++            }
++
+           }`,
+         })
++        const layout = linear
++          ? device.createPipelineLayout({
++              bindGroupLayouts: [
++                device.createBindGroupLayout({
++                  entries: [
++                    {
++                      binding: 0,
++                      visibility: GPUShaderStage.FRAGMENT,
++                      texture: { sampleType: 'unfilterable-float' },
++                    },
++                    {
++                      binding: 1,
++                      visibility: GPUShaderStage.FRAGMENT,
++                      buffer: { type: 'uniform' },
++                    },
++                  ],
++                }),
++              ],
++            })
++          : 'auto'
+         const pipeline = device.createRenderPipeline({
+-          layout: 'auto',
++          layout,
+           vertex: { module, entryPoint: 'vertexMain' },
+           fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: 'rgba16float' }] },
+           primitive: { topology: 'triangle-list' },
+@@ -121,7 +207,12 @@
+         device.queue.writeBuffer(
+           uniform,
+           0,
+-          new Float32Array([input.transfer === 'pq' ? 0 : 1, referenceWhite, 0, 0]),
++          new Float32Array([
++            input.transfer === 'linear' ? input.gamut : input.transfer === 'pq' ? 0 : 1,
++            referenceWhite,
++            input.transfer === 'linear' ? input.referenceWhite : 0,
++            0,
++          ]),
+         )
+         candidate = device.createTexture({
+           size: [input.width, input.height],
+@@ -170,6 +261,7 @@
+     this.disposed = true
+     for (const { texture } of this.textures.values()) texture.destroy()
+     this.textures.clear()
+-    for (const input of Object.values(this.inputs)) input.rgb.fill(0)
++    for (const input of Object.values(this.inputs))
++      (input.transfer === 'linear' ? input.rgba : input.rgb).fill(0)
+   }
+ }
+--- a/src/features/export/utils/hdr-raster-sources.test.ts
++++ b/src/features/export/utils/hdr-raster-sources.test.ts
+@@ -23,6 +23,8 @@
+       return b
+     }),
+     createShaderModule: vi.fn(),
++    createBindGroupLayout: vi.fn(),
++    createPipelineLayout: vi.fn(),
+     createRenderPipeline: vi.fn(() => ({ getBindGroupLayout: vi.fn() })),
+     createBindGroup: vi.fn(),
+     createCommandEncoder: vi.fn(() => ({ beginRenderPass: () => pass, finish: vi.fn() })),
+@@ -35,6 +37,60 @@
+   return { device, textures, buffers }
+ }
+ describe('owned HDR raster source', () => {
++  it('uploads reconstructed linear HDR and coverage without integer quantization', () => {
++    vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 1, COPY_DST: 2, RENDER_ATTACHMENT: 4 })
++    vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2 })
++    vi.stubGlobal('GPUShaderStage', { FRAGMENT: 2 })
++    const g = gpu()
++    const input = {
++      width: 2,
++      height: 1,
++      transfer: 'linear' as const,
++      gamut: 0 as const,
++      referenceWhite: 203,
++      rgba: new Float32Array([4.0001, 0.5, 1, 0.25, 2, 3, 4, 0.75]),
++    }
++    const source = new HdrRasterSources({ photo: input }, () => g.device as unknown as GPUDevice)
++    const expected = Array.from(input.rgba)
++    input.rgba.fill(0)
++    let uploaded: number[] = []
++    g.device.queue.writeTexture.mockImplementation((_target, pixels) => {
++      uploaded = Array.from(pixels as Float32Array).slice(0, 8)
++    })
++    source.frameTexture('photo', 203)
++    expect(uploaded).toEqual(expected)
++    expect(g.device.createTexture.mock.calls[0]![0].format).toBe('rgba32float')
++    expect(g.device.createBindGroupLayout.mock.calls[0]![0].entries[0].texture.sampleType).toBe(
++      'unfilterable-float',
++    )
++    const finite = vi.spyOn(Number, 'isFinite')
++    source.frameTexture('photo', 203)
++    expect(finite).toHaveBeenCalledOnce() // reference white only; owned pixels were validated at construction
++    finite.mockRestore()
++    source.dispose()
++    vi.unstubAllGlobals()
++  })
++  it('rejects invalid reconstructed pixels, alpha, gamut and reference white', () => {
++    const valid = {
++      width: 1,
++      height: 1,
++      transfer: 'linear' as const,
++      gamut: 0 as const,
++      referenceWhite: 203,
++      rgba: new Float32Array([4, 0.5, 1, 0.25]),
++    }
++    for (const invalid of [
++      { ...valid, gamut: 3 },
++      { ...valid, referenceWhite: 0 },
++      { ...valid, referenceWhite: Infinity },
++      { ...valid, rgba: new Float32Array([NaN, 0, 0, 1]) },
++      { ...valid, rgba: new Float32Array([100, 0, 0, 1]) },
++      { ...valid, rgba: new Float32Array([4, 0, 0, -0.1]) },
++      { ...valid, rgba: new Float32Array([4, 0, 0, 1.1]) },
++      { ...valid, rgba: new Uint16Array(4) },
++    ])
++      expect(() => validateHdrRaster(invalid as never)).toThrow()
++  })
+   it('uploads actual16bitcodes withoutcanvas and copies callerinput', () => {
+     vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 1, COPY_DST: 2, RENDER_ATTACHMENT: 4 })
+     vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2 })

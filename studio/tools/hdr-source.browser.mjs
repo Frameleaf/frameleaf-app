@@ -88,6 +88,31 @@ window.__vite_plugin_react_preamble_installed__ = true
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
     const device = await EffectsPipeline.requestCachedDevice();
     if (!device) throw new Error('WebGPU unavailable; HDR source regression cannot run');
+    // Reconstructed HEIC/gain-map pixels enter the same float compositor.
+    // Alpha and source reference white must scale radiance, never HDR code values.
+    const linearRasters = [];
+    for (const gamut of [0, 1, 2]) {
+      for (const referenceWhite of [100, 203]) {
+        const rgba = new Float32Array(SIZE * SIZE * 4);
+        for (let i = 0; i < rgba.length; i += 4) rgba.set([0.8, 4, 1, 0.25], i);
+        const canvas = new OffscreenCanvas(SIZE, SIZE);
+        const item = { id: 'linear-photo', type: 'image', mediaId: 'linear-photo', trackId: 'linear-track',
+          src: '', label: 'linear HDR', from: 0, durationInFrames: 30,
+          sourceWidth: SIZE, sourceHeight: SIZE,
+          transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 } };
+        const renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+          durationInFrames: 30, backgroundColor: '#000000', colorManagement: { workingRange: 'hdr' },
+          tracks: [{ id: 'linear-track', name: 'Photo', height: 60, locked: false, visible: true,
+            muted: false, solo: false, order: 0, items: [item] }] }, canvas, canvas.getContext('2d'),
+          { mode: 'export', hdrRasters: { 'linear-photo': { width: SIZE, height: SIZE,
+            transfer: 'linear', gamut, referenceWhite, rgba } } });
+        try {
+          const frame = await renderer.renderFrameSignal(0, 'pq');
+          const at = ((SIZE / 2) * SIZE + SIZE / 2) * 4;
+          linearRasters.push({ gamut, referenceWhite, rgba: Array.from(frame.rgba.slice(at, at + 4)) });
+        } finally { renderer.dispose(); rgba.fill(0); }
+      }
+    }
     const c = SIZE / 2;
     const out = {};
     const historicalHdrRefusals = [];
@@ -947,7 +972,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       TransitionPipeline.prototype.has = hasTransition;
     }
     device.destroy();
-    return { workingDomain: color.HDR_WORKING_DOMAIN, alpha: 'straight', referenceWhiteNits: 203, expectation: 'production helper parity only; independent physical oracle is linear-hdr-subtree', historicalHdrRefusals, ...out, mixed, nestedAlpha, maskVariants, maskedRasterCuts, rasterCutCases, maskUploadFailure, maskUploadPreview, maskContextFailure, rasterForcedRefusal, canvasRefusals, poolRefusals,
+    return { workingDomain: color.HDR_WORKING_DOMAIN, alpha: 'straight', referenceWhiteNits: 203, expectation: 'production helper parity only; independent physical oracle is linear-hdr-subtree', linearRasters, historicalHdrRefusals, ...out, mixed, nestedAlpha, maskVariants, maskedRasterCuts, rasterCutCases, maskUploadFailure, maskUploadPreview, maskContextFailure, rasterForcedRefusal, canvasRefusals, poolRefusals,
       delayedTransition, canvasStateReuse, mixedFailures };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
@@ -1080,6 +1105,26 @@ window.__vite_plugin_react_preamble_installed__ = true
     assert.ok(entries.some(({ points }) => points.some(({ want, nonnegative }) =>
       want.some((value, channel) => Math.abs(value - nonnegative[channel]) > 0.001))),
     `${variant}: golden must independently distinguish negative-RGB clipping`);
+  }
+  // Independent D65 matrix composition, from CSS Color 4's rational matrices.
+  const multiply = (m, rgb) => m.map(row => row.reduce((sum, coefficient, i) => sum + coefficient * rgb[i], 0));
+  const xyzTo709 = [[12831 / 3959, -329 / 214, -1974 / 3959],
+    [-851781 / 878810, 1648619 / 878810, 36519 / 878810], [705 / 12673, -2585 / 12673, 705 / 667]];
+  const p3ToXyz = [[608311 / 1250200, 189793 / 714400, 198249 / 1000160],
+    [35783 / 156275, 247089 / 357200, 198249 / 2500400], [0, 32229 / 714400, 5220557 / 5000800]];
+  const to2020 = [[0.627404, 0.329282, 0.043314], [0.069097, 0.91954, 0.011361], [0.016392, 0.088013, 0.895595]];
+  const pq = nits => {
+    const y = (nits / 10000) ** (2610 / 16384);
+    return ((3424 / 4096 + 2413 / 128 * y) / (1 + 2392 / 128 * y)) ** (2523 / 32);
+  };
+  assert.equal(result.linearRasters.length, 6);
+  for (const sample of result.linearRasters) {
+    const rgb = [0.8, 4, 1];
+    const wide = sample.gamut === 2 ? rgb : multiply(to2020,
+      sample.gamut === 1 ? multiply(xyzTo709, multiply(p3ToXyz, rgb)) : rgb);
+    wide.forEach((value, channel) => assert.ok(Math.abs(sample.rgba[channel] - pq(value * sample.referenceWhite * 0.25)) < 0.002,
+      `linear raster gamut ${sample.gamut}, white ${sample.referenceWhite}, channel ${channel}: ${sample.rgba[channel]}`));
+    assert.equal(sample.rgba[3], 1, 'composite over opaque black retains coverage in radiance');
   }
   assert.equal(result.maskedRasterCuts.status, 'preserved', 'admitted masked HDR raster cuts must stay in float');
   assert.equal(result.maskedRasterCuts.operation, 'hard-cuts');

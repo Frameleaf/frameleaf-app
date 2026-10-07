@@ -339,7 +339,12 @@
       "path": "patches/0070-linear-hdr-contrast.patch",
       "sha256": "d89410f0e7b0eab89820346eeaa20514fd3f1a45f4caa6a991e34d71d77cafa7",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0071-linear-hdr-raster-input.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "55ca40998116fca367f1a1d08ed67fe553fbd82764d87ad17b31dd8b9b31d7b1"
     }
   ],
-  "sourceSha256": "2b690cdc8e6532331315b3b5150048192244c4a50fbb82de23a03be15c199072"
+  "sourceSha256": "2e71abf2554286657bf7d65fb038ed5d7e16cdfa4e5044db6f83a8be07425bcc"
 }
