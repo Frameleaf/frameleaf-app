@@ -79,6 +79,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Setup Mise for shared server contracts
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.21.0
@@ -149,6 +155,11 @@ jobs:
         run: npx --no-install playwright install --with-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
         run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+      - name: Build shared server contracts for render-worker tests
+        run: |
+          mise run //server:install
+          mise run //:plugins
+          mise run //server:build
       - name: Render-worker hardware probe refuses software GPU evidence
         env:
           STUDIO_WORKER_PROBE_BROWSER_TEST: '1'
