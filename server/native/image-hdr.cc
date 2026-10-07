@@ -189,10 +189,22 @@ bool supportedHdrProfile(const heif_color_profile_nclx* profile) {
     && (profile->color_primaries == 1 || profile->color_primaries == 9 || profile->color_primaries == 12))
     || (profile->transfer_characteristics == 18 && profile->color_primaries == 9));
 }
+bool heifHasToneMap(const Input& input, const heif_context* ctx) {
+  bool adaptive = heif_has_compatible_brand(static_cast<const uint8_t*>(input.data), int(input.size), "tmap") == 1;
+  const int count = heif_context_get_number_of_items(ctx);
+  if (count < 0 || count > 4096) throw std::runtime_error("RESOURCE_LIMIT");
+  std::vector<heif_item_id> ids(count);
+  const int listed = heif_context_get_list_of_item_IDs(ctx, ids.data(), count);
+  if (listed < 0 || listed > count) throw std::runtime_error("CORRUPT_IMAGE");
+  for (int i = 0; i < listed; ++i)
+    adaptive = adaptive || heif_item_get_item_type(ctx, ids[i]) == heif_fourcc('t','m','a','p');
+  return adaptive;
+}
 napi_value decodeHeif(napi_env env, Input& input) {
   Context ctx(heif_context_alloc(), heif_context_free);
   if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
   check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+  if (heifHasToneMap(input, ctx.get())) throw std::runtime_error("ISO_HEIF_GAIN_MAP_UNAVAILABLE");
   heif_image_handle* raw = nullptr; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
   Handle primary(raw, heif_image_handle_release);
   input.dimensions(heif_image_handle_get_width(raw), heif_image_handle_get_height(raw));
@@ -323,6 +335,13 @@ napi_value inspect(napi_env env, napi_callback_info info) {
       Context ctx(heif_context_alloc(), heif_context_free);
       if (!ctx) throw std::runtime_error("RESOURCE_LIMIT");
       check(heif_context_read_from_memory_without_copy(ctx.get(), input.data, input.size, nullptr));
+      if (heifHasToneMap(input, ctx.get())) {
+        field(env, result, "container", heif_has_compatible_brand(static_cast<const uint8_t*>(input.data),
+          int(input.size), "avif") == 1 ? "avif" : "heif");
+        field(env, result, "dynamicRange", "hdr"); field(env, result, "gainMap", "iso-21496");
+        field(env, result, "fallbackReason", "iso-heif-gain-map-decoder-unavailable");
+        return result;
+      }
       heif_image_handle* raw; check(heif_context_get_primary_image_handle(ctx.get(), &raw));
       Handle primary(raw, heif_image_handle_release);
       input.dimensions(heif_image_handle_get_width(raw), heif_image_handle_get_height(raw));

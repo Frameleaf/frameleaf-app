@@ -67,6 +67,18 @@ test('invalid gain-map metadata is never advertised as SDR', () => {
   assert.equal(metadata.fallbackReason, 'invalid-gain-map');
 });
 
+test('an unsupported ISO-adaptive HEIF never decodes its base as a complete HDR image', () => {
+  const input = Buffer.from(readFileSync(new URL('./fixtures/pq-rotated.avif', import.meta.url)));
+  assert.equal(input.toString('ascii', 4, 8), 'ftyp');
+  assert.ok(input.readUInt32BE(0) >= 20);
+  input.write('tmap', 16, 'ascii'); // compatible brand only; leaves offsets and the primary intact
+  const metadata = codec.inspect(input, ...limits);
+  assert.equal(metadata.dynamicRange, 'hdr');
+  assert.equal(metadata.reconstructionAvailable, false);
+  assert.equal(metadata.fallbackReason, 'iso-heif-gain-map-decoder-unavailable');
+  assert.throws(() => codec.decode(input, ...limits), { code: 'ISO_HEIF_GAIN_MAP_UNAVAILABLE' });
+});
+
 // Generated 10-bit AVIF fixtures isolate source transfer/primary/geometry interpretation.
 // Real authored Apple/ISO media and physical display acceptance are separate qualification gates.
 test('PQ primary image applies its container quarter turn exactly once and retains headroom', () => {
