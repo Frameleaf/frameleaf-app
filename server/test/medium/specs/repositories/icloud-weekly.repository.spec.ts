@@ -88,7 +88,7 @@ describe('weekly consent foundation, never execution authority', () => {
         await sql`SELECT status,"nextBatch","performedCount","unavailableCount" FROM public.icloud_weekly_cohort
         WHERE id=${old}::uuid`.execute(db)
       ).rows[0],
-    ).toMatchObject({ status: 'settled', nextBatch: 0, performedCount: '0', unavailableCount: '1' });
+    ).toMatchObject({ status: 'settled', nextBatch: 0, performedCount: 0, unavailableCount: 1 });
   });
 
   it('does not consume the automatic weekly freeze when current consent is unavailable', async () => {
