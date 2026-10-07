@@ -1122,6 +1122,35 @@ const commands = {
     }
   },
 
+  /* 13.9 */
+  'clip.setAudio'(state, payload) {
+    const clip = namedClip(state, payload);
+    if (clip.type !== 'video' && clip.type !== 'audio') invalid('clip.setAudio applies to video and audio clips');
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq'].includes(key))
+        invalid(`clip.setAudio: unknown field "${key}"`);
+    }
+    const updates = {};
+    if (payload.volume !== undefined) {
+      if (!finite(payload.volume)) invalid('volume must be a number');
+      if (payload.volume < -60 || payload.volume > 12) invalid('volume must be in -60..12 dB');
+      updates.volume = payload.volume;
+    }
+    for (const [field, property] of [['fadeIn', 'audioFadeIn'], ['fadeOut', 'audioFadeOut']]) {
+      const time = payload[field];
+      if (time === undefined) continue;
+      if (!isRational(time)) invalid(`${field} must be an exact rational duration`);
+      if (time.num < 0 || BigInt(time.num) > 5n * BigInt(time.den)) invalid(`${field} must be in 0..5 seconds`);
+      updates[property] = time.num / time.den;
+    }
+    for (const field of ['muted', 'pitchSemitones', 'pitchCents', 'eq']) {
+      if (payload[field] !== undefined) throw new Refusal('not-implemented', `clip.setAudio.${field} is not implemented`);
+    }
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn or fadeOut');
+    refuseLocked(state, [clip.id], 'clip.setAudio');
+    replace(state, { ...clip, ...updates });
+  },
+
   /* 12.6.2 */
   'clip.update'(state, payload) {
     const clip = namedClip(state, payload);

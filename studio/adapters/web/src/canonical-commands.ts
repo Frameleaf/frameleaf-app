@@ -14,8 +14,9 @@
  * - **Deterministic.** Every id the engine would mint with `crypto.randomUUID` is derived from the
  *   envelope's idempotency key, so the same graph and the same batch always produce the same graph
  *   (and the same canonical digest), in any browser and on retry.
- * - **Exact time.** Payload times are FL-93 rationals in seconds. They become frames at the
- *   project's frame rate with exact integer arithmetic, rounding to the nearest frame.
+ * - **Exact time.** Payload times are FL-93 rationals in seconds. Timeline positions become
+ *   frames at the project's frame rate with exact integer arithmetic, rounding to the nearest
+ *   frame. Audio fades retain seconds, including durations shorter than one video frame.
  * - **Lossless.** Freecut serialises its stores back into the project it was given, so fields this
  *   module does not touch round-trip unchanged.
  *
@@ -214,6 +215,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'clip.trimEnd': ['command.trimEnd'],
   'clip.trimStart': ['command.trimStart'],
   'clip.update': ['command.updateItem'],
+  'clip.setAudio': ['readme.audio.1'],
   'composition.add': ['command.addClip'],
   'effect.add': ['command.addEffect'],
   'effect.remove': ['command.removeEffect'],
@@ -1390,6 +1392,39 @@ const handlers: Record<string, Handler> = {
     else trimItemEnd(item.id, delta)
     if (requireItem(item.id).durationInFrames !== item.durationInFrames + delta)
       failed('clip.trimEnd: the requested end exceeds the source or timeline limits')
+  },
+
+  'clip.setAudio'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'video' && item.type !== 'audio')
+      invalid('clip.setAudio applies to video and audio clips')
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq'].includes(key))
+        invalid(`clip.setAudio: unknown field "${key}"`)
+    }
+    const updates: Partial<TimelineItem> = {}
+    const volume = optionalNumber(payload, 'volume')
+    if (volume !== undefined) {
+      if (volume < -60 || volume > 12) invalid('volume must be in -60..12 dB')
+      updates.volume = volume
+    }
+    for (const [field, property] of [['fadeIn', 'audioFadeIn'], ['fadeOut', 'audioFadeOut']] as const) {
+      const value = payload[field]
+      if (value === undefined) continue
+      if (!isRational(value)) invalid(`${field} must be an exact rational duration`)
+      const time = value as Rational
+      if (time.num < 0 || BigInt(time.num) > 5n * BigInt(time.den))
+        invalid(`${field} must be in 0..5 seconds`)
+      // Audio fades are stored in seconds; rounding them to video frames would lose short fades.
+      updates[property] = time.num / time.den
+    }
+    for (const field of ['muted', 'pitchSemitones', 'pitchCents', 'eq']) {
+      if (payload[field] !== undefined)
+        throw new CommandRejection('not-implemented', `clip.setAudio.${field} is not implemented`)
+    }
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn or fadeOut')
+    assertUnlocked([item.id], 'clip.setAudio')
+    updateItem(item.id, updates)
   },
 
   'clip.update'(payload) {

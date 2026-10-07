@@ -273,6 +273,7 @@ const ENGINE_CASES: Record<
   'clip.push': (f) => ({ payload: { clipId: f.right, delta: seconds(1) } }),
   'clip.reorder': (f) => ({ payload: { trackId: 'v1', clipId: f.right, index: 0 } }),
   'clip.roll': (f) => ({ payload: { clipId: f.left, at: seconds(3) } }),
+  'clip.setAudio': (f) => ({ payload: { clipId: itemsOf(f.graph).find((item) => item.type === 'audio')!.id, volume: -6, fadeIn: seconds(1, 100), fadeOut: seconds(3, 2) } }),
   'clip.setLink': (f) => ({ payload: { clipIds: [f.left], linked: false } }),
   'clip.setSpeed': (f) => ({ payload: { clipId: f.right, speed: { num: 2, den: 1 } } }),
   'clip.setTransform': (f) => ({ payload: { clipId: f.left, transform: { x: 10 } } }),
@@ -456,11 +457,13 @@ const HOST_SERVICE_COMMANDS = new Set<string>([
   'job.enqueueInterpolation',
 ])
 
-/** The manifest rows each catalogue command implements (`studio/frameleaf-studio-commands.json`). */
+/** The manifest rows measured by each command; clip.setAudio currently implements gain/fades only. */
 const catalogue = JSON.parse(
   readFileSync(path.join(__dirname, '../../../frameleaf-studio-commands.json'), 'utf8'),
 ) as { commands: Array<{ id: string; manifestIds: string[] }> }
-const manifestIdsOf = (id: string) => catalogue.commands.find((entry) => entry.id === id)?.manifestIds ?? []
+const manifestIdsOf = (id: string) => id === 'clip.setAudio'
+  ? ['readme.audio.1']
+  : catalogue.commands.find((entry) => entry.id === id)?.manifestIds ?? []
 
 type CaseResult = { case: string; result: 'passed' | 'failed' | 'not-applicable'; reason?: string }
 const report: {

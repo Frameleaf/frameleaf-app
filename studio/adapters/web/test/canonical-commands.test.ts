@@ -137,6 +137,41 @@ const applied = async (graph: unknown, envelopes: CanonicalEnvelope[]) => {
 const itemsOf = (graph: Project) => graph.timeline?.items ?? []
 
 describe('canonical commands on the Freecut engine (FL-92)', () => {
+  it('persists clip gain and exact-second audio fades without changing its timing, automation or linked picture', async () => {
+    const start = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) }),
+      envelope('track.set', { trackId: 'a1', patch: { gain: -4 } }),
+      envelope('project.setMasterAudio', { gainDb: -2, muted: true }),
+    ])
+    const audio = itemsOf(start.project).find((item) => item.type === 'audio')!
+    Object.assign(audio, { audioFadeIn: 2, audioFadeOut: 3, audioFadeInCurve: -0.25, audioPitchSemitones: 2 })
+    const keyed = await applied(start.project, [envelope('keyframe.add', { clipId: audio.id, property: 'volume', at: seconds(1), value: { value: -3 } })])
+    const before = await applied(keyed.project, [])
+    const changed = await applied(before.project, [envelope('clip.setAudio', { clipId: audio.id, volume: -6, fadeIn: seconds(1, 100), fadeOut: seconds(3, 2) })])
+    expect(itemsOf(changed.project)).toEqual(itemsOf(before.project).map((item) => item.id === audio.id
+      ? { ...item, volume: -6, audioFadeIn: 0.01, audioFadeOut: 1.5 }
+      : item))
+    expect({ ...changed.project.timeline, items: [] }).toEqual({ ...before.project.timeline, items: [] })
+    expect((await applied(JSON.parse(JSON.stringify(changed.project)), [])).project).toEqual(changed.project)
+    const reset = await applied(changed.project, [envelope('clip.setAudio', { clipId: audio.id, fadeIn: seconds(0), fadeOut: seconds(0) })])
+    expect(itemsOf(reset.project).find((item) => item.id === audio.id)).toMatchObject({ volume: -6, audioFadeIn: 0, audioFadeOut: 0 })
+    for (const fields of [{}, { volume: NaN }, { volume: -61 }, { volume: 13 }, { fadeIn: -1 }, { fadeIn: seconds(-1, 1000) }, { fadeOut: seconds(1, 0) }, { fadeIn: seconds(5001, 1000) }, { monitorVolume: 0.5 }]) {
+      await expect(applyCanonicalCommands(before.project, [envelope('clip.setAudio', { clipId: audio.id, ...fields })], media))
+        .resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+    const locked = structuredClone(before.project)
+    locked.timeline!.tracks.find((track) => track.id === audio.trackId)!.locked = true
+    await expect(applyCanonicalCommands(locked, [envelope('clip.setAudio', { clipId: audio.id, volume: 0 })], media))
+      .resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
+    for (const fields of [{ muted: false }, { pitchSemitones: 0 }, { pitchCents: 0 }, { eq: null }]) {
+      await expect(applyCanonicalCommands(before.project, [
+        envelope('clip.setAudio', { clipId: audio.id, volume: -12 }),
+        envelope('clip.setAudio', { clipId: audio.id, fadeIn: seconds(1), ...fields }),
+      ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+    }
+    expect(before.project).toEqual(keyed.project)
+  })
+
   it('initializes the master bus for mute-only edits on empty and absent timelines after another project', async () => {
     const eq = { enabled: true, lowGainDb: 2 }
     const empty = project({ tracks: [], items: [], masterBusDb: 3, masterBusMuted: false, busAudioEq: eq })
