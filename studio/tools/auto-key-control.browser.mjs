@@ -1,43 +1,22 @@
 /** Native auto-key -> actual vector timeline/history/render. API persistence is not tested. */
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHarness } from "./lib/cross-browser-harness.mjs";
-import {
-  createChromiumDriver,
-  createWebDriverClassicDriver,
-} from "./lib/browser-driver.mjs";
+import { admittedHostCapabilities } from "./lib/browser-driver.mjs";
+import { openPage } from "./resource-admission.browser.mjs";
 const origin = process.env.STUDIO_TEST_ORIGIN ?? "http://127.0.0.1:5196";
 const browser = process.env.BROWSER ?? "chromium";
 const evidence = process.env.STUDIO_TEST_EVIDENCE;
-assert.ok(["chromium", "firefox"].includes(browser));
+admittedHostCapabilities(browser);
+if (browser !== "chromium") assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
 const harness = createHarness({ upstream: origin });
-const harnessOrigin = await harness.listen();
 let driver;
 try {
-  const require = createRequire(
-    new URL("../engine/package.json", import.meta.url),
-  );
-  driver =
-    browser === "chromium"
-      ? await createChromiumDriver({
-          harnessOrigin,
-          chromium: require("playwright").chromium,
-        })
-      : await createWebDriverClassicDriver({
-          endpoint: process.env.WEBDRIVER_ENDPOINT,
-          harnessOrigin,
-          capabilities: {
-            browserName: "firefox",
-            "moz:firefoxOptions": {
-              binary: "/Applications/Firefox.app/Contents/MacOS/firefox",
-              args: ["-headless"],
-              prefs: { "network.proxy.allow_hijacking_localhost": true },
-            },
-          },
-        });
-  const page = await driver.newPage();
+  const harnessOrigin = await harness.listen();
+  driver = await openPage(harnessOrigin, undefined, {browser, endpoint: process.env.WEBDRIVER_ENDPOINT});
+  const page = driver.page;
+  const browserProvenance = driver.browser;
   await page.goto(`${origin}/studio-engine/test/editor-controls.browser.html`);
   await page.waitForFunction(() => !!window.fl100Editor);
   await page.evaluate(() => {
@@ -159,6 +138,7 @@ try {
   );
   const result = {
     browser,
+    browserProvenance,
     userAgent: await page.evaluate(() => navigator.userAgent),
     measuredAt: new Date().toISOString(),
     passed: true,
@@ -204,6 +184,7 @@ try {
   console.log(
     JSON.stringify({
       browser,
+      browserProvenance,
       passed: true,
       interiorFrame: 15,
       nativeUndoRedo: true,
