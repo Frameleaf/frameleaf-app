@@ -78,6 +78,7 @@ export const studioEngineCommandIds = [
   'track.remove',
   'track.reorder',
   'track.set',
+  'track.setAudio',
 ] as const satisfies readonly StudioCommandId[];
 
 export type StudioEngineCommandId = (typeof studioEngineCommandIds)[number];

@@ -490,7 +490,7 @@ const part4 = Object.entries(fixtures.commandStatus)
 const part4Cases = fixtures.cases.filter((entry) => entry.story === 'FL-309');
 const replayable = [...part2Cases, ...part3Cases, ...part4Cases];
 
-test('part 3 covers its 13 commands with applied and rejected cases', () => {
+test('part 3 covers its 14 commands with applied and rejected cases', () => {
   assert.deepEqual(part3, [
     'clip.setAudio',
     'clip.setKenBurns',
@@ -505,6 +505,7 @@ test('part 3 covers its 13 commands with applied and rejected cases', () => {
     'property.setExpression',
     'property.setModifier',
     'text.setMotion',
+    'track.setAudio',
   ]);
   for (const command of part3) {
     const cases = part3Cases.filter((entry) => entry.id.startsWith(`${command}/`));
@@ -930,6 +931,6 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 51, host: 2, 'bundle-import': 1, 'not-implemented': 19 });
+  assert.deepEqual(counts, { engine: 52, host: 2, 'bundle-import': 1, 'not-implemented': 18 });
   assert.equal(mutating.length, 73);
 });

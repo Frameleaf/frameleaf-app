@@ -225,6 +225,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'clip.trimStart': ['command.trimStart'],
   'clip.update': ['command.updateItem'],
   'clip.setAudio': ['readme.audio.1', 'readme.audio.2', 'readme.audio.3'],
+  'track.setAudio': ['readme.audio.1', 'readme.audio.3'],
   'composition.add': ['command.addClip'],
   'effect.add': ['command.addEffect'],
   'effect.remove': ['command.removeEffect'],
@@ -1182,6 +1183,22 @@ async function applySequenceSettings(
   context.cadence = projectCadenceOf(metadata) ?? context.cadence
 }
 
+/** Clip and track EQ replace the same engine stage, with identical admission rules. */
+function canonicalAudioEq(value: unknown) {
+  if (value === null) return undefined
+  if (typeof value !== 'object' || Array.isArray(value)) invalid('eq must be an object or null')
+  const eq = value as Record<string, unknown>
+  const defaults: Record<string, unknown> = { enabled: true, ...DEFAULT_AUDIO_EQ_SETTINGS }
+  const resolved = resolveAudioEqSettings(eq as AudioEqSettings)
+  for (const [key, setting] of Object.entries(eq)) {
+    if (!Object.hasOwn(defaults, key)) invalid(`eq: unknown field "${key}"`)
+    if (typeof setting !== typeof defaults[key] || (typeof setting === 'number' && !Number.isFinite(setting)) ||
+        (key !== 'enabled' && resolved[key as keyof typeof resolved] !== setting))
+      invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`)
+  }
+  return { ...resolved, enabled: eq.enabled as boolean | undefined }
+}
+
 const handlers: Record<string, Handler> = {
   'captions.set'(payload, { cadence }) {
     if (Object.keys(payload).some((key) => key !== 'captions') || !Array.isArray(payload.captions))
@@ -1505,21 +1522,12 @@ const handlers: Record<string, Handler> = {
       updates[property] = value
     }
     if (payload.eq !== undefined) {
-      if (payload.eq === null) {
+      const eq = canonicalAudioEq(payload.eq)
+      if (eq === undefined) {
         for (const key of Object.keys(getAudioEqSettings()))
           updates[`audioEq${key[0]!.toUpperCase()}${key.slice(1)}`] = undefined
       } else {
-        if (typeof payload.eq !== 'object' || Array.isArray(payload.eq)) invalid('eq must be an object or null')
-        const eq = payload.eq as Record<string, unknown>
-        const defaults: Record<string, unknown> = { enabled: true, ...DEFAULT_AUDIO_EQ_SETTINGS }
-        const resolved = resolveAudioEqSettings(eq as AudioEqSettings)
-        for (const [key, value] of Object.entries(eq)) {
-          if (!Object.hasOwn(defaults, key)) invalid(`eq: unknown field "${key}"`)
-          if (typeof value !== typeof defaults[key] || (typeof value === 'number' && !Number.isFinite(value)) ||
-              (key !== 'enabled' && resolved[key as keyof typeof resolved] !== value))
-            invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`)
-        }
-        Object.assign(updates, buildTimelineEqPatchFromResolvedSettings(resolved), { audioEqEnabled: eq.enabled })
+        Object.assign(updates, buildTimelineEqPatchFromResolvedSettings(eq), { audioEqEnabled: eq.enabled })
       }
     }
     if (payload.muted !== undefined)
@@ -2361,6 +2369,26 @@ const handlers: Record<string, Handler> = {
     for (const item of later) {
       if (requireItem(item.id).from !== item.from - (gapEnd! - gapStart)) failed('track.closeGap: the gap could not be closed')
     }
+  },
+
+  'track.setAudio'(payload) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    if (track.isGroup) invalid('track.setAudio applies to media tracks, not organizational groups')
+    for (const key of Object.keys(payload)) {
+      if (!['trackId', 'gainDb', 'pan', 'eq'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`)
+    }
+    const updates: Partial<TimelineTrack> = {}
+    const gain = optionalNumber(payload, 'gainDb')
+    if (gain !== undefined) {
+      if (gain < -60 || gain > 12) invalid('gainDb must be in -60..12 dB')
+      updates.volume = gain
+    }
+    if (payload.eq !== undefined) updates.audioEq = canonicalAudioEq(payload.eq)
+    if (payload.pan !== undefined)
+      throw new CommandRejection('not-implemented', 'track.setAudio.pan is not implemented')
+    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb or eq')
+    if (track.locked) failed('track.setAudio: the track is locked')
+    setTracks(tracks().map((candidate) => candidate.id === track.id ? { ...candidate, ...updates } : candidate))
   },
 
   'track.set'(payload) {

@@ -69,9 +69,9 @@ const AUDIO_EQ_DEFAULTS = {
 };
 const audioEqField = (key) => `audioEq${key[0].toUpperCase()}${key.slice(1)}`;
 
-function clipAudioEqPatch(eq) {
+function audioEqSettings(eq) {
   const defaults = { enabled: true, ...AUDIO_EQ_DEFAULTS };
-  if (eq === null) return Object.fromEntries(Object.keys(defaults).map((key) => [audioEqField(key), undefined]));
+  if (eq === null) return undefined;
   if (typeof eq !== 'object' || Array.isArray(eq)) invalid('eq must be an object or null');
   const resolved = { ...defaults, ...eq };
   for (const [key, value] of Object.entries(eq)) {
@@ -100,7 +100,12 @@ function clipAudioEqPatch(eq) {
   for (const [key, value] of Object.entries(eq)) {
     if (resolved[key] !== value) invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`);
   }
-  return Object.fromEntries(Object.keys(defaults).map((key) => [audioEqField(key), key === 'enabled' ? eq.enabled : resolved[key]]));
+  return { ...resolved, enabled: eq.enabled };
+}
+
+function clipAudioEqPatch(eq) {
+  const resolved = audioEqSettings(eq);
+  return Object.fromEntries(Object.keys({ enabled: true, ...AUDIO_EQ_DEFAULTS }).map((key) => [audioEqField(key), resolved?.[key]]));
 }
 
 /** The working state of one batch: the parts of the graph the commands read and write. */
@@ -1299,6 +1304,26 @@ const commands = {
   'track.add': trackList,
   'track.reorder': trackList,
   'track.set': trackList,
+
+  /* 13.10 */
+  'track.setAudio'(state, payload) {
+    const track = namedTrack(state, payload);
+    if (track.isGroup) invalid('track.setAudio applies to media tracks, not organizational groups');
+    for (const key of Object.keys(payload)) {
+      if (!['trackId', 'gainDb', 'pan', 'eq'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`);
+    }
+    const updates = {};
+    if (payload.gainDb !== undefined) {
+      if (!finite(payload.gainDb)) invalid('gainDb must be a number');
+      if (payload.gainDb < -60 || payload.gainDb > 12) invalid('gainDb must be in -60..12 dB');
+      updates.volume = payload.gainDb;
+    }
+    if (payload.eq !== undefined) updates.audioEq = audioEqSettings(payload.eq);
+    if (payload.pan !== undefined) throw new Refusal('not-implemented', 'track.setAudio.pan is not implemented');
+    if (Object.keys(updates).length === 0) invalid('track.setAudio needs gainDb or eq');
+    if (track.locked) failed('track.setAudio: the track is locked');
+    state.tracks = state.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, ...updates } : candidate);
+  },
 
   'track.remove'(state, payload) {
     const track = namedTrack(state, payload);

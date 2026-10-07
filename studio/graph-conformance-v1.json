@@ -1516,6 +1516,53 @@
         "zoomLevel": 1,
         "scrollPosition": 0
       }
+    },
+    "track-audio-group": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      },
+      "timeline": {
+        "tracks": [
+          {
+            "id": "v1",
+            "name": "V1",
+            "kind": "video",
+            "height": 80,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 0,
+            "isGroup": true
+          },
+          {
+            "id": "a1",
+            "name": "A1",
+            "kind": "audio",
+            "height": 80,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 1
+          }
+        ],
+        "items": [],
+        "transitions": [],
+        "keyframes": [],
+        "currentFrame": 0,
+        "zoomLevel": 1,
+        "scrollPosition": 0
+      }
     }
   },
   "bases": {
@@ -8366,6 +8413,302 @@
         }
       },
       "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4"
+    },
+    "track-audio": {
+      "seed": "empty-30",
+      "media": "standard",
+      "setup": [
+        {
+          "id": "clip.add",
+          "payload": {
+            "assetId": "0198a1c2-0000-7000-8000-000000000001",
+            "trackId": "v1",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "duration": {
+              "num": 4,
+              "den": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "base:linked-pair:add",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "pitchSemitones": 2,
+            "pitchCents": 25,
+            "eq": {
+              "enabled": true,
+              "outputGainDb": -2,
+              "lowType": "peaking",
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5,
+              "band6Enabled": true,
+              "band6FrequencyHz": 9000
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "audio-fields:base-eq",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -6,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:base",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": -6,
+              "audioEq": {
+                "outputGainDb": 0,
+                "band1Enabled": false,
+                "band1Type": "high-pass",
+                "band1FrequencyHz": 30,
+                "band1GainDb": 0,
+                "band1Q": 1.1,
+                "band1SlopeDbPerOct": 12,
+                "lowCutEnabled": false,
+                "lowCutFrequencyHz": 30,
+                "lowCutSlopeDbPerOct": 12,
+                "lowEnabled": true,
+                "lowType": "low-shelf",
+                "lowGainDb": 4,
+                "lowFrequencyHz": 250,
+                "lowQ": 1.5,
+                "lowMidEnabled": true,
+                "lowMidType": "peaking",
+                "lowMidGainDb": 0,
+                "lowMidFrequencyHz": 400,
+                "lowMidQ": 1.1,
+                "midGainDb": 0,
+                "highMidEnabled": true,
+                "highMidType": "peaking",
+                "highMidGainDb": 0,
+                "highMidFrequencyHz": 1600,
+                "highMidQ": 1.1,
+                "highEnabled": true,
+                "highType": "high-shelf",
+                "highGainDb": 0,
+                "highFrequencyHz": 2800,
+                "highQ": 2.3,
+                "band6Enabled": false,
+                "band6Type": "low-pass",
+                "band6FrequencyHz": 22000,
+                "band6GainDb": 0,
+                "band6Q": 1.1,
+                "band6SlopeDbPerOct": 12,
+                "highCutEnabled": false,
+                "highCutFrequencyHz": 22000,
+                "highCutSlopeDbPerOct": 12
+              },
+              "items": []
+            }
+          ],
+          "items": [
+            {
+              "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+              "trackId": "v1",
+              "from": 0,
+              "durationInFrames": 120,
+              "label": "surf.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+              "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+              "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+              "sourceStart": 0,
+              "sourceEnd": 120,
+              "sourceDuration": 240,
+              "sourceFps": 30,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "video",
+              "src": "",
+              "sourceWidth": 1920,
+              "sourceHeight": 1080,
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 1920,
+                "height": 1080,
+                "rotation": 0
+              }
+            },
+            {
+              "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+              "trackId": "a1",
+              "from": 0,
+              "durationInFrames": 120,
+              "label": "surf.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+              "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+              "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+              "sourceStart": 0,
+              "sourceEnd": 120,
+              "sourceDuration": 240,
+              "sourceFps": 30,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "audio",
+              "src": "",
+              "audioPitchSemitones": 2,
+              "audioPitchCents": 25,
+              "audioEqOutputGainDb": -2,
+              "audioEqBand1Enabled": false,
+              "audioEqBand1Type": "high-pass",
+              "audioEqBand1FrequencyHz": 30,
+              "audioEqBand1GainDb": 0,
+              "audioEqBand1Q": 1.1,
+              "audioEqBand1SlopeDbPerOct": 12,
+              "audioEqLowCutEnabled": false,
+              "audioEqLowCutFrequencyHz": 30,
+              "audioEqLowCutSlopeDbPerOct": 12,
+              "audioEqLowEnabled": true,
+              "audioEqLowType": "peaking",
+              "audioEqLowGainDb": 4,
+              "audioEqLowFrequencyHz": 250,
+              "audioEqLowQ": 1.5,
+              "audioEqLowMidEnabled": true,
+              "audioEqLowMidType": "peaking",
+              "audioEqLowMidGainDb": 0,
+              "audioEqLowMidFrequencyHz": 400,
+              "audioEqLowMidQ": 1.1,
+              "audioEqMidGainDb": 0,
+              "audioEqHighMidEnabled": true,
+              "audioEqHighMidType": "peaking",
+              "audioEqHighMidGainDb": 0,
+              "audioEqHighMidFrequencyHz": 1600,
+              "audioEqHighMidQ": 1.1,
+              "audioEqHighEnabled": true,
+              "audioEqHighType": "high-shelf",
+              "audioEqHighGainDb": 0,
+              "audioEqHighFrequencyHz": 2800,
+              "audioEqHighQ": 2.3,
+              "audioEqBand6Enabled": true,
+              "audioEqBand6Type": "low-pass",
+              "audioEqBand6FrequencyHz": 9000,
+              "audioEqBand6GainDb": 0,
+              "audioEqBand6Q": 1.1,
+              "audioEqBand6SlopeDbPerOct": 12,
+              "audioEqHighCutEnabled": true,
+              "audioEqHighCutFrequencyHz": 9000,
+              "audioEqHighCutSlopeDbPerOct": 12,
+              "audioEqEnabled": true
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3"
+    },
+    "seed:track-audio-group": {
+      "seed": "track-audio-group",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            }
+          ],
+          "items": [],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "2454d0ea80b18b0cb6eef9495907763e6c8288923e135db42cf30ef185938c87"
     }
   },
   "vectors": {
@@ -140189,33 +140532,6 @@
       }
     },
     {
-      "id": "not-implemented/track.setAudio",
-      "story": "FL-309",
-      "covers": [
-        "track.setAudio"
-      ],
-      "summary": "The engine refuses track.setAudio as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "track.setAudio",
-          "payload": {
-            "trackId": "a1",
-            "gainDb": -3
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/track.setAudio",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "track.setAudio is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/voiceover.add",
       "story": "FL-309",
       "covers": [
@@ -145264,6 +145580,3171 @@
         "reason": "not-implemented",
         "detail": "clip.setAudio.muted is not implemented"
       }
+    },
+    {
+      "id": "track.setAudio/gain-min",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain min",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -60
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-min",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "7c2cff608cfe1296bdd352778e219026efd1adee61c82503e065921f872134dc",
+        "envelopeDigest": "1babd681788a4e8b887aaef5a0412a7ab4e599c1de342056f85b9bc16309e246",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -60,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/gain-max",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain max",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": 12
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-max",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "9aacd8cde4a16171c4e72544886acc5a3b64f1237d9e5fb713bc3d71b3e538c6",
+        "envelopeDigest": "f992669207b6cf598c347c8791bf2586aae14769120937d3e374499240d0cf36",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 12,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/gain-and-eq",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain and eq",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -6,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-and-eq",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+        "envelopeDigest": "5797348d25dc165a6198a8c6e994db228dd7a92f0bbb1a47e58adc0aa02894ef",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "items": [],
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-only",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq only",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "lowGainDb": 4
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-only",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "7b29a4a530bcb73f366ab8a99610a1a6ae6c7fc8226bfa1aac335fb57e97b54f",
+        "envelopeDigest": "25f5f8ff997a57f121f29bf0221a24b5b646296e6267245883566bb6e8ad7d5a",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 120,
+                  "lowQ": 2.3,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-disabled",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq disabled",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "enabled": false,
+              "highGainDb": 3
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-disabled",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "02fc96bd56ac955cc3312a766fa176d5dc7dcb1c6276b307a8a82226372dc58c",
+        "envelopeDigest": "eb6b171aa748d14db78f334b278402e8917742010479a8713acc71da1aebebbd",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "audioEq": {
+                  "enabled": false,
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 0,
+                  "lowFrequencyHz": 120,
+                  "lowQ": 2.3,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 3,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-legacy-cuts",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq legacy cuts",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "lowCutEnabled": true,
+              "lowCutFrequencyHz": 90,
+              "lowCutSlopeDbPerOct": 24,
+              "highCutEnabled": true,
+              "highCutFrequencyHz": 8000
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-legacy-cuts",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "766faad54d5ff9429fcb3c94d69f02dc57d596761bb8854c7fdefbaf37da7014",
+        "envelopeDigest": "84b91aadcc52f2a6fbd8d69bd66d3c009a298bc05ebf1eb433e011fca120105b",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": [],
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": true,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 90,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 24,
+                  "lowCutEnabled": true,
+                  "lowCutFrequencyHz": 90,
+                  "lowCutSlopeDbPerOct": 24,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 0,
+                  "lowFrequencyHz": 120,
+                  "lowQ": 2.3,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": true,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 8000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": true,
+                  "highCutFrequencyHz": 8000,
+                  "highCutSlopeDbPerOct": 12
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/video-track",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "video track",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "v1",
+            "gainDb": -3,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:video-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "4d73b1feb74ff41f17d2a9ba36ff4be3c4168954068154c3a3d200685ce448ff",
+        "envelopeDigest": "d9d8de600dafa60fcf55928305738a2e3ead13b6ad86b17baaf6747e81be9e22",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": -3,
+                "items": [],
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                }
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/gain-preserves-eq",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain preserves eq",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -2
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-preserves-eq",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "0def90ac20eb4df812b0ca22933c1fbe3772ee4ca9a372ee89ead201518ea083",
+        "envelopeDigest": "47cea87b3e69dbe21a8632903d31cc882ce07ac343a498f306d3257d89bdca4d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -2,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-replaces-stage",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq replaces stage",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "highGainDb": 2
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-replaces-stage",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "0d13ed6f13b576138ecd2cbea1dbeda7f311e70f4d84ee1f526838744c34d993",
+        "envelopeDigest": "b7e0443f971621da5b3edfa2a53d55d72cfe4f4bd0801523da36279581b30703",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 0,
+                  "lowFrequencyHz": 120,
+                  "lowQ": 2.3,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 2,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-flat-defaults",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq flat defaults",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-flat-defaults",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "d41d7424b267e2f245b1262aa7477aeba68642402e0918ef433de86951f69f58",
+        "envelopeDigest": "f06d8c5ec4f94117b7848f59cec7563a24d19990785a58cec381cceaef06323c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 0,
+                  "lowFrequencyHz": 120,
+                  "lowQ": 2.3,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/eq-clear",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq clear",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": null
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "12b069ebfde921f6dd585b98369e0138188a3e85d96cc6342ce964a98349fe48",
+        "envelopeDigest": "5e8e878ceac03fa71ac7a280cda119f42a918270ec410d6d3966dd74f13c3b13",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/zero-gain-and-clear",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "zero gain and clear",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": 0,
+            "eq": null
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:zero-gain-and-clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
+        "envelopeDigest": "1cba5f0e2b7b39edc384c8984973f933987200b878b99136c961973b5da8056a",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "track.setAudio/gain-below",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain below",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -61
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-below",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "gainDb must be in -60..12 dB"
+      }
+    },
+    {
+      "id": "track.setAudio/gain-above",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain above",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": 13
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-above",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "gainDb must be in -60..12 dB"
+      }
+    },
+    {
+      "id": "track.setAudio/gain-type",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "gain type",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": "-3"
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:gain-type",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "gainDb must be a number"
+      }
+    },
+    {
+      "id": "track.setAudio/eq-array",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq array",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": []
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-array",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq must be an object or null"
+      }
+    },
+    {
+      "id": "track.setAudio/eq-gain-outside",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq gain outside",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "lowGainDb": 21
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-gain-outside",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq.lowGainDb is outside the engine's type or range, or contradicts its cut-band aliases"
+      }
+    },
+    {
+      "id": "track.setAudio/eq-q-outside",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq q outside",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "lowQ": 0
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-q-outside",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq.lowQ is outside the engine's type or range, or contradicts its cut-band aliases"
+      }
+    },
+    {
+      "id": "track.setAudio/eq-enabled-type",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq enabled type",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "enabled": "yes"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-enabled-type",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq.enabled is outside the engine's type or range, or contradicts its cut-band aliases"
+      }
+    },
+    {
+      "id": "track.setAudio/eq-unknown",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq unknown",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "unknown": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-unknown",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq: unknown field \"unknown\""
+      }
+    },
+    {
+      "id": "track.setAudio/eq-alias-conflict",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "eq alias conflict",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "band1Enabled": true,
+              "lowCutEnabled": false
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:eq-alias-conflict",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq.lowCutEnabled is outside the engine's type or range, or contradicts its cut-band aliases"
+      }
+    },
+    {
+      "id": "track.setAudio/empty",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "empty",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1"
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:empty",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "track.setAudio needs gainDb or eq"
+      }
+    },
+    {
+      "id": "track.setAudio/unknown-field",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "unknown field",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -3,
+            "extra": true
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:unknown-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "track.setAudio: unknown field \"extra\""
+      }
+    },
+    {
+      "id": "track.setAudio/mute-field",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "mute field",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "muted": true
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:mute-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "track.setAudio: unknown field \"muted\""
+      }
+    },
+    {
+      "id": "track.setAudio/automation-field",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "automation field",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "automation": []
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:automation-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "track.setAudio: unknown field \"automation\""
+      }
+    },
+    {
+      "id": "track.setAudio/missing-track",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "missing track",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "missing",
+            "gainDb": -3
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:missing-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "trackId: track \"missing\" does not exist"
+      }
+    },
+    {
+      "id": "track.setAudio/locked-track",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "locked track",
+      "base": "seed:clip-audio-locked",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -3
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:locked-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "track.setAudio: the track is locked"
+      }
+    },
+    {
+      "id": "track.setAudio/organizational-group",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "organizational group",
+      "base": "seed:track-audio-group",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "v1",
+            "gainDb": -3
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:organizational-group",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "trackId: track \"v1\" does not exist"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-refusal",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan refusal",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "pan": 0
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:pan-refusal",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "not-implemented"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "not-implemented",
+        "detail": "track.setAudio.pan is not implemented"
+      }
+    },
+    {
+      "id": "track.setAudio/pan-atomic-refusal",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "pan atomic refusal",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -12,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:atomic-first",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -3,
+            "eq": {
+              "lowGainDb": 4,
+              "lowFrequencyHz": 250,
+              "lowQ": 1.5
+            },
+            "pan": 0
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:pan-atomic-refusal",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "not-implemented"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 1,
+        "reason": "not-implemented",
+        "detail": "track.setAudio.pan is not implemented"
+      }
+    },
+    {
+      "id": "track.setAudio/validates-gain-before-pan",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "validates gain before pan",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -61,
+            "pan": 0
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:validates-gain-before-pan",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "gainDb must be in -60..12 dB"
+      }
+    },
+    {
+      "id": "track.setAudio/validates-eq-before-pan",
+      "story": "FL-308",
+      "covers": [
+        "track.setAudio"
+      ],
+      "summary": "validates eq before pan",
+      "base": "clip-audio-eq",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "eq": {
+              "lowQ": 0
+            },
+            "pan": 0
+          },
+          "revision": 1,
+          "idempotencyKey": "track-audio:validates-eq-before-pan",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "eq.lowQ is outside the engine's type or range, or contradicts its cut-band aliases"
+      }
     }
   ],
   "history": [
@@ -145831,6 +149312,135 @@
           }
         }
       ]
+    },
+    {
+      "id": "history/undo-redo-track-audio",
+      "story": "FL-308",
+      "summary": "Track gain/EQ edit, refusal, clear, undo and redo preserve clip audio and ownership. Refused pan creates no history entry.",
+      "base": "clip-audio-eq",
+      "steps": [
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainDb": -6,
+              "eq": {
+                "lowGainDb": 4,
+                "lowFrequencyHz": 250,
+                "lowQ": 1.5
+              }
+            },
+            "revision": 1,
+            "idempotencyKey": "track-audio:history-edit",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainDb": -3,
+              "pan": 0
+            },
+            "revision": 1,
+            "idempotencyKey": "track-audio:history-refuse",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainDb": 0,
+              "eq": null
+            },
+            "revision": 1,
+            "idempotencyKey": "track-audio:history-clear",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        },
+        {
+          "undo": {}
+        },
+        {
+          "redo": {}
+        },
+        {
+          "redo": {}
+        }
+      ],
+      "expect": [
+        {
+          "outcome": "accepted",
+          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "rejected",
+          "reason": "not-implemented",
+          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
+          "sameAs": 0,
+          "depth": {
+            "undo": 2,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 1
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
+          "sameAs": 0,
+          "depth": {
+            "undo": 0,
+            "redo": 2
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 1
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "fc92f1995d234cd9e003eff61078256307a147ebb0fa83a92f37396470da4bc4",
+          "sameAs": 0,
+          "depth": {
+            "undo": 2,
+            "redo": 0
+          }
+        }
+      ]
     }
   ],
   "commandStatus": {
@@ -146195,9 +149805,10 @@
       "section": "12.7.4"
     },
     "track.setAudio": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-308",
+      "section": "13.10",
+      "note": "Static track gain and EQ; pan is refused as not-implemented."
     },
     "voiceover.add": {
       "status": "not-implemented",
