@@ -23,6 +23,9 @@ test('linear HDR survives the codec round trip without intermediate 8-bit clippi
   const metadata = codec.inspect(image, ...limits);
   assert.equal(metadata.dynamicRange, 'hdr');
   assert.equal(metadata.reconstructionAvailable, true);
+  assert.equal(metadata.container, 'jpeg');
+  assert.equal(metadata.codec, 'jpeg');
+  assert.equal(metadata.gainMap, 'iso-21496');
   const decoded = codec.decode(image, ...limits);
   assert.equal(decoded.width, width);
   assert.equal(decoded.height, height);
@@ -72,6 +75,8 @@ test('PQ primary image applies its container quarter turn exactly once and retai
   assert.equal(metadata.bitDepth, 10);
   assert.equal(metadata.transfer, 16);
   assert.equal(metadata.colorPrimaries, 9);
+  assert.equal(metadata.container, 'avif');
+  assert.equal(metadata.codec, 'av1');
   const image = codec.decode(input, ...limits);
   assert.deepEqual([image.width, image.height, image.gamut], [32, 64, 2]);
   const data = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
