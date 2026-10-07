@@ -167,5 +167,5 @@ it('deletes previously delivered metadata and associations after hard deletion, 
   await ctx.syncAckAll(auth, deleted);
   await ctx.assertSyncIsComplete(auth, types);
   const { session } = await ctx.newSession({ userId: auth.user.id });
-  await ctx.assertSyncIsComplete({ ...auth, session }, types);
+  await ctx.assertSyncIsComplete({ ...auth, session: { id: session.id, hasElevatedPermission: false } }, types);
 });
