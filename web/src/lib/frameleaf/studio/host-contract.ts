@@ -26,6 +26,7 @@
  * The adapters that satisfy this contract live outside `studio/vendor/freecut`, which is a
  * provenance-checked snapshot that no story edits.
  */
+import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
@@ -120,6 +121,8 @@ export interface StudioCapabilities {
 
 /** One destination's verified render facts, as `GET /ml-destinations/capabilities` publishes them (FL-42). */
 export interface StudioRenderEvidence {
+  /** Export proof stays together for each qualified StudioExport session. Missing proof admits no export. */
+  candidates?: readonly StudioRenderCandidateDto[];
   destination: string;
   sessions: number;
   gpuMemoryBytes: number | null;

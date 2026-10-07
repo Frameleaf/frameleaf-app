@@ -73,6 +73,15 @@ describe('probeStudioCapabilities (FL-110)', () => {
       maxBitDepth: 10,
       hdr10: true,
       dolbyVision: false,
+      candidates: [
+        {
+          gpuMemoryBytes: 8_589_934_592,
+          outputFormats: ['mp4-hevc-main10'],
+          maxBitDepth: 10,
+          hdr10: true,
+          dolbyVision: false,
+        },
+      ],
     };
     sdkMock.getMlCapabilities.mockResolvedValue({
       ...snapshot({ renderWorker: true }),
@@ -81,6 +90,14 @@ describe('probeStudioCapabilities (FL-110)', () => {
     await expect(probeStudioHost()).resolves.toMatchObject({ renderEvidence: [row] });
 
     expect(toStudioRenderEvidence({ render: [row, { ...row, hdr10: 'yes' }, null] as never })).toEqual([row]);
+    for (const candidate of [
+      null,
+      { ...row.candidates[0], gpuMemoryBytes: NaN },
+      { ...row.candidates[0], outputFormats: 'mp4' },
+      { ...row.candidates[0], hdr10: 'yes' },
+    ]) {
+      expect(toStudioRenderEvidence({ render: [{ ...row, candidates: [candidate] }] } as never)).toEqual([]);
+    }
     expect(toStudioRenderEvidence({} as never)).toEqual([]);
 
     sdkMock.getMlCapabilities.mockRejectedValue(new Error('offline'));
