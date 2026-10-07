@@ -1,8 +1,10 @@
+import { execFile } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { once } from 'node:events';
 import http, { type IncomingHttpHeaders } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import tls from 'node:tls';
+import { promisify } from 'node:util';
 import postgres from 'postgres';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
@@ -361,6 +363,30 @@ describe('FL-225 actual API over relay and 1xx-stripping proxy', () => {
       expect(create.status).toBe(201);
       expect(create.information).toEqual(route === 'relay' ? [104] : []);
       const location = create.headers.location!.replace('/api', '');
+      if (process.env.FL285_RESTART_OWNED_FIXTURE === 'true') {
+        // Recreate only the owned e2e API, preserving its PostgreSQL and anonymous media volume.
+        await promisify(execFile)(
+          'docker',
+          [
+            'compose',
+            '-f',
+            'docker-compose.yml',
+            '-f',
+            'docker-compose.upload-transport.yml',
+            'up',
+            '-d',
+            '--no-build',
+            '--no-deps',
+            '--force-recreate',
+            '--wait',
+            '--wait-timeout',
+            '90',
+            'frameleaf-server',
+          ],
+          { cwd: new URL('../../../e2e', import.meta.url), timeout: 100_000 },
+        );
+        console.log(`PASS FL-285 ${route}: owned API recreated with incomplete resource ${location.split('/').at(-1)}`);
+      }
       expect((await through(route, location, foreignToken, 'HEAD')).status).toBe(404);
       expect((await through(route, location, ownerToken, 'HEAD')).headers['upload-offset']).toBe('7');
       const append = {

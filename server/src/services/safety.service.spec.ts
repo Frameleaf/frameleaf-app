@@ -37,6 +37,7 @@ describe(SafetyService.name, () => {
       {
         id: auth.user.id,
         sha256: hash,
+        deliveredBy: 'icloud-sync:connection',
         onServerSince: at,
         isOffline: false,
         lastIntegrityAt: null,
@@ -56,6 +57,7 @@ describe(SafetyService.name, () => {
     expect(response.assets[0]).toEqual({
       id: auth.user.id,
       sha256: hash,
+      deliveredBy: 'icloud-sync:connection',
       onServerSince: at.toISOString(),
       lastIntegrityAt: null,
       integrityResult: 'unknown',
@@ -71,6 +73,7 @@ describe(SafetyService.name, () => {
       index.getSafetySummary.mockResolvedValue({
         total: 4,
         onServer: 3,
+        fromICloudSync: 2,
         backedUp: 0,
         lastCompletedAt: null,
         lastVerifiedAt: null,
@@ -79,6 +82,7 @@ describe(SafetyService.name, () => {
         cloudAvailability: state,
         total: 4,
         onServer: 3,
+        fromICloudSync: 2,
         onServerPercent: 75,
         backedUp: null,
         backedUpPercent: null,
@@ -93,6 +97,7 @@ describe(SafetyService.name, () => {
     index.getSafetySummary.mockResolvedValue({
       total: 4,
       onServer: 4,
+      fromICloudSync: 1,
       backedUp: 3,
       lastCompletedAt: at,
       lastVerifiedAt: null,
@@ -116,6 +121,7 @@ describe(SafetyService.name, () => {
     index.getSafetySummary.mockResolvedValue({
       total: 4,
       onServer: 4,
+      fromICloudSync: 1,
       backedUp: 3,
       lastCompletedAt: at,
       lastVerifiedAt: null,
@@ -137,6 +143,7 @@ describe(SafetyService.name, () => {
     index.getSafetySummary.mockResolvedValue({
       total: 0,
       onServer: 0,
+      fromICloudSync: 0,
       backedUp: 0,
       lastCompletedAt: null,
       lastVerifiedAt: null,
