@@ -157,6 +157,10 @@ class RuntimeSpec(ConfigModel):
     argv: list[str] = Field(min_length=1)
     env: dict[str, str] = Field(default_factory=dict)
     timeoutSeconds: int = Field(default=3600, ge=10, le=86400)
+    # warm-v1 argv starts a JSON-lines worker once; per-request values travel on stdin.
+    protocol: Literal["process", "warm-v1"] = "process"
+    idleSeconds: int = Field(default=120, ge=1, le=3600)
+    maxRequests: int = Field(default=64, ge=1, le=1024)
 
 
 class WeightSource(ConfigModel):
@@ -214,6 +218,16 @@ class ModelSpec(ConfigModel):
             raise ValueError(f"model {self.id} declares a weight role twice")
         for argument in self.runtime.argv:
             for name in PLACEHOLDER_RE.findall(argument):
+                if self.runtime.protocol == "warm-v1" and name in {
+                    "input_dir",
+                    "output_dir",
+                    "seed",
+                    "target_width",
+                    "target_height",
+                    "factor",
+                    "exp",
+                }:
+                    raise ValueError(f"warm startup argv cannot contain per-request placeholder {{{name}}}")
                 if name.startswith("weight:"):
                     if name.split(":", 1)[1] not in roles:
                         raise ValueError(f"model {self.id} argv names an undeclared weight: {{{name}}}")
@@ -495,12 +509,16 @@ def inspect_runtime(spec: ModelSpec) -> RuntimeStatus:
 
 
 def model_fingerprint(spec: ModelSpec) -> str:
-    """Identity of exactly this model: id, family, revision and every pinned weight hash.
+    """Identity of this model, pinned weights, runtime configuration and qualified limits.
     A full render must present the fingerprint its preview was made with."""
     digest = hashlib.sha256()
     digest.update(f"{spec.id}\n{spec.family}\n{spec.revision}\n".encode())
     for weight in sorted(spec.weights, key=lambda item: item.role):
         digest.update(f"{weight.role}:{weight.sha256}\n".encode())
+    # A changed constructor/config or chunk limit must also invalidate a preview and warm model.
+    digest.update(spec.runtime.model_dump_json().encode())
+    digest.update(spec.limits.model_dump_json().encode())
+    digest.update(str(spec.nativeScale).encode())
     return digest.hexdigest()
 
 
@@ -713,6 +731,10 @@ class RuntimeInvocation:
     cwd: Path
     env: dict[str, str]
     timeout_s: int
+    payload: dict[str, str] | None = None
+    cache_key: str | None = None
+    idle_s: int = 120
+    max_requests: int = 64
 
 
 @dataclass(frozen=True)
@@ -730,6 +752,8 @@ def classify_runtime_failure(returncode: int, stderr: str) -> RestorationFailure
 
 
 def run_runtime(invocation: RuntimeInvocation) -> RuntimeOutcome:
+    if invocation.payload is not None:
+        raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, "warm-v1 requires the worker's managed runner")
     started = time.monotonic()
     with VramSampler() as sampler:
         try:
@@ -775,6 +799,8 @@ class RuntimeJob:
     yuv_matrix: str = "bt709"
     # Smooth motion: frames per source frame. 1 for a restoration.
     interpolation_factor: int = 1
+    # SeedVR2 consumes the validated video segment without a PNG/re-encode round trip.
+    source_video: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -785,6 +811,7 @@ class AdapterRun:
     runtime_ms: int
     peak_vram_bytes: int | None
     warnings: list[str]
+    video: Path | None = None
 
 
 class RestorationAdapter(ABC):
@@ -813,11 +840,25 @@ class RestorationAdapter(ABC):
         # token, for one) never reach third-party model code.
         inherited = {name: value for name, value in os.environ.items() if name in RUNTIME_ENV_ALLOWED}
         env = {**inherited, **self.spec.runtime.env, **RUNTIME_ENV}
+        warm = self.spec.runtime.protocol == "warm-v1"
+        # Include every configuration value and resolved weight root, not request paths/seed.
+        # Registry.select still verifies checkout, checkpoint hashes and qualification first.
+        key = hashlib.sha256(
+            (self.spec.model_dump_json() + str(self.weights_root.resolve()) + json.dumps(env, sort_keys=True)).encode()
+        ).hexdigest()
         return RuntimeInvocation(
             argv=render_argv(self.spec.runtime.argv, values),
             cwd=self.spec.runtime.root,
             env=env,
             timeout_s=self.spec.runtime.timeoutSeconds,
+            payload={
+                name: values[name] for name in ("input_dir", "output_dir", "seed", "target_width", "target_height")
+            }
+            if warm
+            else None,
+            cache_key=key if warm else None,
+            idle_s=self.spec.runtime.idleSeconds,
+            max_requests=self.spec.runtime.maxRequests,
         )
 
     @abstractmethod
@@ -855,9 +896,9 @@ class RealBasicVsrAdapter(RestorationAdapter):
 
 class SeedVr2Adapter(RestorationAdapter):
     """Creative. Upstream's ``projects/inference_seedvr2_*.py`` reads a folder of videos and
-    writes one encoded video per input at ``--res_h``/``--res_w``. That intermediate file is
-    lossy; the pipeline decodes it, checks the frame count and re-encodes, and records the
-    intermediate size so qualification can judge the compression it adds."""
+    writes one encoded video per input at ``--res_h``/``--res_w``. The pipeline validates
+    every frame as a stream and encodes directly from it, without scratch PNGs. Stills use
+    the frame path. The intermediate size is recorded for compression qualification."""
 
     family = "seedvr2"
     VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".mkv"})
@@ -870,9 +911,17 @@ class SeedVr2Adapter(RestorationAdapter):
         output_dir.mkdir()
         timeout = float(self.spec.runtime.timeoutSeconds)
         try:
-            media.encode_near_lossless_clip(
-                job.source_frames, input_dir / "source.mp4", job.frame_rate, yuv_matrix=job.yuv_matrix, timeout=timeout
-            )
+            if job.source_video is not None:
+                # Both files live inside this request's private directory, on the same volume.
+                os.link(job.source_video, input_dir / "source.mp4")
+            else:
+                media.encode_near_lossless_clip(
+                    job.source_frames,
+                    input_dir / "source.mp4",
+                    job.frame_rate,
+                    yuv_matrix=job.yuv_matrix,
+                    timeout=timeout,
+                )
         except media.MediaError as error:
             raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=self.spec.id)
 
@@ -890,8 +939,9 @@ class SeedVr2Adapter(RestorationAdapter):
         try:
             # The runtime chose its own encoder settings, so its file is read with the matrix it
             # is tagged with (or the size convention when untagged), not the source's.
-            intermediate_matrix = media.probe(intermediate, still=job.frame_count == 1).yuv_matrix
-            media.decode_video_frames(intermediate, frames_dir, yuv_matrix=intermediate_matrix, timeout=timeout)
+            if job.source_video is None:
+                intermediate_matrix = media.probe(intermediate, still=job.frame_count == 1).yuv_matrix
+                media.decode_video_frames(intermediate, frames_dir, yuv_matrix=intermediate_matrix, timeout=timeout)
         except media.MediaError as error:
             raise RestorationFailure(RestorationErrorCode.INVALID_OUTPUT, str(error), model_id=self.spec.id)
         return AdapterRun(
@@ -900,6 +950,7 @@ class SeedVr2Adapter(RestorationAdapter):
             runtime_ms=outcome.duration_ms,
             peak_vram_bytes=outcome.peak_vram_bytes,
             warnings=[f"intermediate video {intermediate.name} was {intermediate.stat().st_size} bytes"],
+            video=intermediate if job.source_video is not None else None,
         )
 
 

@@ -168,17 +168,33 @@ def restore(
 
     decode_started = time.monotonic()
     source_frames = work_dir / "source-frames"
+    direct_video = selected.spec.family == "seedvr2" and not still
+    source_video = None
+    source_statistics: list[float] = []
     try:
-        frame_count = media.extract_frames(
-            media_path,
-            source_frames,
-            start_ms=start_ms,
-            end_ms=end_ms,
-            yuv_matrix=source.yuv_matrix,
-            timeout=MEDIA_TIMEOUT_S,
-        )
+        if direct_video:
+            source_video = media_path
+            if start_ms is not None and end_ms is not None:
+                source_video = work_dir / "segment.mp4"
+                media.cut_video_segment(
+                    media_path, source_video, source, start_ms=start_ms, end_ms=end_ms, timeout=MEDIA_TIMEOUT_S
+                )
+            source_statistics = media.video_frame_statistics(
+                source_video, source, max_frames=selected.spec.limits.maxFrames, timeout=MEDIA_TIMEOUT_S
+            )
+            frame_count = len(source_statistics)
+        else:
+            frame_count = media.extract_frames(
+                media_path,
+                source_frames,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                yuv_matrix=source.yuv_matrix,
+                timeout=MEDIA_TIMEOUT_S,
+            )
     except media.MediaError as error:
-        raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=model_id)
+        code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
+        raise RestorationFailure(code, str(error), model_id=model_id)
     decode_ms = _elapsed_ms(decode_started)
     if frame_count == 0:
         raise _unsupported("the segment contains no frames", model_id)
@@ -197,6 +213,7 @@ def restore(
         seed=request.seed,
         yuv_matrix=source.yuv_matrix,
         interpolation_factor=factor,
+        source_video=source_video,
     )
     if smooth and frame_count < 2:
         raise _unsupported("smooth motion needs at least two frames", model_id)
@@ -204,9 +221,15 @@ def restore(
 
     output_count = frame_count
     output_rate = source.frame_rate_text
+    restored_video_probe = None
     try:
-        media.normalize_frame_names(run.frames_dir)
-        if smooth:
+        if direct_video:
+            if run.video is None:
+                raise media.MediaError("SeedVR2 returned no video")
+            restored_video_probe = media.validate_video_output(source_statistics, run.video, timeout=MEDIA_TIMEOUT_S)
+            restored_size = (restored_video_probe.width, restored_video_probe.height)
+        elif smooth:
+            media.normalize_frame_names(run.frames_dir)
             restored_size = media.validate_interpolated_frames(
                 media.list_frames(source_frames),
                 media.list_frames(run.frames_dir),
@@ -218,6 +241,7 @@ def restore(
             )
             output_rate = media.multiply_rate(source.frame_rate, factor)
         else:
+            media.normalize_frame_names(run.frames_dir)
             restored_size = media.validate_output_frames(
                 media.list_frames(source_frames), media.list_frames(run.frames_dir), expected_size=run.expected_size
             )
@@ -249,6 +273,8 @@ def restore(
                 end_ms=end_ms,
                 timeout=MEDIA_TIMEOUT_S,
                 frame_rate=output_rate if smooth else None,
+                video=run.video,
+                video_probe=restored_video_probe,
             )
         restored = media.probe(output_path, still=still)
     except media.MediaError as error:

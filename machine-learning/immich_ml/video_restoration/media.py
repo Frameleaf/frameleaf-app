@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -272,6 +273,144 @@ def encode_near_lossless_clip(
     )
 
 
+def cut_video_segment(
+    source: Path, output: Path, source_probe: SourceProbe, *, start_ms: int, end_ms: int, timeout: float
+) -> None:
+    """Cut exact frames, without PNGs or exposing frames outside the requested segment.
+
+    Stream copy seeks to keyframes; use the same lossless 4:4:4 intermediate as the old
+    frame-folder path, carrying the actual source matrix/range through swscale.
+    """
+    colour = []
+    for flag, value in (
+        ("-color_primaries", source_probe.color_primaries),
+        ("-color_trc", source_probe.color_transfer),
+        ("-colorspace", source_probe.color_space),
+    ):
+        if value:
+            colour += [flag, value]
+    _run(
+        [
+            FFMPEG,
+            "-nostdin",
+            "-v",
+            "error",
+            *_segment_args(start_ms, end_ms),
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-map_metadata",
+            "-1",
+            *PASSTHROUGH_TIMING,
+            "-vf",
+            f"scale=in_color_matrix={source_probe.yuv_matrix}:in_range=auto:"
+            f"out_color_matrix={source_probe.yuv_matrix}:out_range=tv,format=yuv444p",
+            "-c:v",
+            "libx264",
+            "-qp",
+            "0",
+            *colour,
+            str(output),
+        ],
+        timeout=timeout,
+    )
+
+
+def video_frame_statistics(video: Path, source_probe: SourceProbe, *, max_frames: int, timeout: float) -> list[float]:
+    """Validate/count every decoded frame with bounded RAM and no scratch images.
+
+    PPM carries each frame's dimensions, unlike rawvideo; changing dimensions cannot
+    silently be packed into the probed size. Keep only luminance statistics for NaN checks.
+    """
+    try:
+        process = subprocess.Popen(
+            [
+                FFMPEG,
+                "-nostdin",
+                "-v",
+                "error",
+                "-xerror",
+                "-i",
+                str(video),
+                "-map",
+                "0:v:0",
+                *PASSTHROUGH_TIMING,
+                "-vf",
+                f"scale=in_color_matrix={source_probe.yuv_matrix}:in_range=auto,format=rgb24",
+                "-noautoscale",
+                "-c:v",
+                "ppm",
+                "-f",
+                "image2pipe",
+                "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        raise MediaError(f"video decoder could not start: {error}") from error
+    expired = threading.Event()
+
+    def expire() -> None:
+        expired.set()
+        process.kill()
+
+    deadline = threading.Timer(timeout, expire)
+    deadline.daemon = True
+    deadline.start()
+    statistics: list[float] = []
+    try:
+        assert process.stdout is not None
+        while magic := process.stdout.readline(32):
+            dimensions = process.stdout.readline(64)
+            maximum = process.stdout.readline(32)
+            if magic != b"P6\n" or maximum != b"255\n":
+                raise MediaError("the decoder returned an invalid frame")
+            try:
+                width, height = map(int, dimensions.split())
+            except ValueError as error:
+                raise MediaError("the decoder returned invalid dimensions") from error
+            if (width, height) != (source_probe.width, source_probe.height):
+                raise MediaError(f"frame {len(statistics) + 1} changed dimensions to {width}x{height}")
+            if len(statistics) >= max_frames:
+                raise MediaError(f"the video exceeds {max_frames} frames", unsupported=True)
+            pixels = process.stdout.read(width * height * 3)
+            if len(pixels) != width * height * 3:
+                raise MediaError("the decoder returned an incomplete frame")
+            luminance = np.asarray(Image.frombytes("RGB", (width, height), pixels).convert("L"), dtype=np.float32)
+            statistics.append(float(luminance.std()))
+        process.wait()
+        if expired.is_set():
+            raise MediaError("video frame validation timed out")
+        if process.returncode != 0:
+            raise MediaError(f"video frame validation failed ({process.returncode})")
+        return statistics
+    finally:
+        deadline.cancel()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        if process.stdout is not None:
+            process.stdout.close()
+
+
+def validate_video_output(source_statistics: list[float], video: Path, *, timeout: float) -> SourceProbe:
+    restored = probe(video, still=len(source_statistics) == 1)
+    if restored.dynamic_range != DynamicRange.SDR or restored.bit_depth > 8:
+        raise MediaError("the runtime returned an unqualified HDR or high-bit-depth video")
+    output_statistics = video_frame_statistics(video, restored, max_frames=len(source_statistics), timeout=timeout)
+    if len(output_statistics) != len(source_statistics) or not output_statistics:
+        raise MediaError(
+            f"the runtime returned {len(output_statistics)} frames for {len(source_statistics)} source frames"
+        )
+    for index, (source_std, output_std) in enumerate(zip(source_statistics, output_statistics), start=1):
+        if output_std < BLANK_OUTPUT_STD and source_std >= SOURCE_CONTENT_STD:
+            raise MediaError(f"frame {index} is blank although its source has content (suspected NaN output)")
+    return restored
+
+
 def decode_video_frames(video: Path, frames_dir: Path, *, yuv_matrix: str, timeout: float) -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
     _run(
@@ -430,6 +569,8 @@ def encode_output(
     end_ms: int | None,
     timeout: float,
     frame_rate: str | None = None,
+    video: Path | None = None,
+    video_probe: SourceProbe | None = None,
 ) -> Literal["copied", "transcoded", "none"]:
     """Resize restored frames to the target with a conventional Lanczos filter and encode
     them at the source's exact frame rate (or, for Smooth motion, ``frame_rate``) with every
@@ -456,25 +597,29 @@ def encode_output(
         colour += ["-colorspace", source_probe.color_space]
 
     width, height = target
+    rate = frame_rate or source_probe.frame_rate_text
+    video_input = ["-framerate", rate, "-start_number", "1", "-i", str(frames_dir / FRAME_PATTERN)]
+    conversion = ""
+    if video is not None:
+        if video_probe is None:
+            raise MediaError("the runtime video must be validated before encoding")
+        # Replace the model encoder's timing with the exact input rate, frame for frame.
+        video_input = ["-r", rate, "-i", str(video)]
+        conversion = f"in_color_matrix={video_probe.yuv_matrix}:in_range=auto:"
     _run(
         [
             FFMPEG,
             "-nostdin",
             "-v",
             "error",
-            "-framerate",
-            frame_rate or source_probe.frame_rate_text,
-            "-start_number",
-            "1",
-            "-i",
-            str(frames_dir / FRAME_PATTERN),
+            *video_input,
             *audio_input,
             "-map",
             "0:v:0",
             *audio_map,
             "-vf",
             (
-                f"scale={width}:{height}:flags=lanczos:out_color_matrix={source_probe.yuv_matrix}:out_range=tv,"
+                f"scale={width}:{height}:flags=lanczos:{conversion}out_color_matrix={source_probe.yuv_matrix}:out_range=tv,"
                 "format=yuv420p"
             ),
             "-c:v",
@@ -483,6 +628,7 @@ def encode_output(
             "slow",
             "-crf",
             "14",
+            *PASSTHROUGH_TIMING,
             *colour,
             *audio_codec,
             "-movflags",

@@ -20,18 +20,24 @@
         "python": "/opt/restoration/realbasicvsr/.venv/bin/python",
         "argv": [
           "{python}",
-          "inference_realbasicvsr.py",
+          "/usr/src/immich_ml/video_restoration/runtime_worker.py",
+          "realbasicvsr",
+          "--module",
+          "inference_realbasicvsr",
+          "--config",
           "configs/realbasicvsr_x4.py",
+          "--checkpoint",
           "{weight:generator}",
-          "{input_dir}",
-          "{output_dir}",
-          "--max_seq_len={max_seq_len}",
-          "--is_save_as_png=True"
+          "--max-seq-len",
+          "{max_seq_len}"
         ],
         "env": {
           "TORCH_HOME": "/restoration/weights/realbasicvsr/torch-home"
         },
-        "timeoutSeconds": 3600
+        "timeoutSeconds": 3600,
+        "protocol": "warm-v1",
+        "idleSeconds": 120,
+        "maxRequests": 64
       },
       "weights": [
         {
@@ -72,23 +78,19 @@
         "python": "/opt/restoration/seedvr/.venv/bin/python",
         "argv": [
           "/opt/restoration/seedvr/.venv/bin/torchrun",
+          "--standalone",
+          "--nnodes=1",
           "--nproc-per-node=1",
-          "projects/inference_seedvr2_3b.py",
-          "--video_path",
-          "{input_dir}",
-          "--output_dir",
-          "{output_dir}",
-          "--seed",
-          "{seed}",
-          "--res_h",
-          "{target_height}",
-          "--res_w",
-          "{target_width}",
-          "--sp_size",
-          "1"
+          "/usr/src/immich_ml/video_restoration/runtime_worker.py",
+          "seedvr2",
+          "--module",
+          "projects.inference_seedvr2_3b"
         ],
         "env": {},
-        "timeoutSeconds": 7200
+        "timeoutSeconds": 7200,
+        "protocol": "warm-v1",
+        "idleSeconds": 120,
+        "maxRequests": 64
       },
       "weights": [
         {
