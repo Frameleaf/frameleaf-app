@@ -709,6 +709,14 @@ export class DuplicateDecisionService {
       }
 
       const update: Omit<AssetBulkUpdateDto, 'ids'> = {};
+      if (
+        was.livePhotoVideoId === null &&
+        left.livePhotoVideoId &&
+        now.livePhotoVideoId === left.livePhotoVideoId &&
+        (await this.repository.restoreKeeperMotion(auth.user.id, id, left.livePhotoVideoId))
+      ) {
+        await this.assets.notifyVisibilityChanged([id], auth.user.id);
+      }
       if (now.isFavorite === left.isFavorite && was.isFavorite !== left.isFavorite) {
         update.isFavorite = was.isFavorite;
       }

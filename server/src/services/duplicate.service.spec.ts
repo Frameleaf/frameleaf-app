@@ -37,6 +37,7 @@ describe(DuplicateService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DuplicateService));
     mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set());
+    mocks.duplicateRepository.findMotionTransfer.mockResolvedValue(undefined);
     mocks.duplicateRepository.withResolutionLock.mockImplementation((_id, callback) => callback(undefined as never));
   });
 
@@ -85,6 +86,20 @@ describe(DuplicateService.name, () => {
       mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
       const [group] = await sut.getDuplicates(authStub.admin);
       expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+    });
+
+    it('permits a verified motion transfer without pretending the keeper is already paired', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const heic = AssetFactory.from({ originalFileName: 'capture.HEIC' }).exif().build();
+      const jpeg = AssetFactory.from({ livePhotoVideoId: 'proven-motion' }).exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(jpeg), getForDuplicate(heic)] },
+      ]);
+      mocks.duplicateRepository.findMotionTransfer.mockResolvedValue('proven-motion');
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+      expect(group.reviewRequiredReasons).toBeUndefined();
+      expect(group.assets.find(({ id }) => id === heic.id)?.livePhotoVideoId).toBeNull();
     });
 
     it('should hide private NSFW duplicate assets when requested', async () => {
@@ -593,6 +608,29 @@ describe(DuplicateService.name, () => {
   });
 
   describe('resolveGroup (via resolve)', () => {
+    it('attaches a proven motion reference before trashing the JPEG and retains its original link', async () => {
+      const keeper = AssetFactory.from({ originalFileName: 'capture.HEIC' }).build();
+      const jpeg = AssetFactory.from({ livePhotoVideoId: 'proven-motion' }).build();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_owner, ids) => Promise.resolve(ids));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper, jpeg] as unknown as MapAsset[],
+      });
+      mocks.duplicateRepository.findMotionTransfer.mockResolvedValue('proven-motion');
+      const [result] = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [jpeg.id] }],
+      });
+      expect(result.success).toBe(true);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: keeper.id, livePhotoVideoId: 'proven-motion' });
+      expect(mocks.asset.update.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.asset.updateAll.mock.invocationCallOrder[0],
+      );
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(
+        [jpeg.id],
+        expect.objectContaining({ livePhotoVideoId: null }),
+      );
+    });
     it('retains committed success and a durable receipt when sidecar work fails, while attempting disposal events', async () => {
       const keeper = AssetFactory.create();
       const disposable = AssetFactory.create();

@@ -33,6 +33,8 @@ export type DuplicateAssetState = {
  * before and after so the undo can put back only what nothing has changed since.
  */
 export type DuplicateKeeperState = {
+  /** Absent in historical decisions; only new decisions may undo an added pairing. */
+  livePhotoVideoId?: string | null;
   isFavorite: boolean;
   visibility: AssetVisibility;
   rating: number | null;
@@ -129,6 +131,7 @@ export class DuplicateDecisionRepository {
         'asset.id',
         'asset.isFavorite',
         'asset.visibility',
+        'asset.livePhotoVideoId',
         'asset_exif.rating',
         'asset_exif.description',
         'asset_exif.latitude',
@@ -165,6 +168,7 @@ export class DuplicateDecisionRepository {
         {
           isFavorite: row.isFavorite,
           visibility: row.visibility,
+          livePhotoVideoId: row.livePhotoVideoId,
           rating: row.rating ?? null,
           description: row.description ?? '',
           latitude: row.latitude ?? null,
@@ -174,6 +178,44 @@ export class DuplicateDecisionRepository {
         },
       ]),
     );
+  }
+
+  /** Undo an added still reference only; the restored original must still protect its motion. */
+  async restoreKeeperMotion(ownerId: string, keeperId: string, expectedMotionId: string): Promise<boolean> {
+    return this.db
+      .transaction()
+      .setIsolationLevel('serializable')
+      .execute(async (tx) => {
+        await sql`SET LOCAL lock_timeout = '5s'`.execute(tx);
+        const linked = await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('livePhotoVideoId', '=', expectedMotionId)
+          .execute();
+        const ids = [...new Set([keeperId, expectedMotionId, ...linked.map(({ id }) => id)])].toSorted();
+        for (const id of ids) await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        await tx.selectFrom('asset').select('id').where('id', '=', anyUuid(ids)).orderBy('id').forUpdate().execute();
+        const result = await tx
+          .updateTable('asset')
+          .set({ livePhotoVideoId: null })
+          .where('id', '=', keeperId)
+          .where('ownerId', '=', ownerId)
+          .where('deletedAt', 'is', null)
+          .where('livePhotoVideoId', '=', expectedMotionId)
+          .where((eb) =>
+            eb.exists(
+              eb
+                .selectFrom('asset as original')
+                .select('original.id')
+                .where('original.id', '!=', keeperId)
+                .where('original.ownerId', '=', ownerId)
+                .where('original.deletedAt', 'is', null)
+                .where('original.livePhotoVideoId', '=', expectedMotionId),
+            ),
+          )
+          .executeTakeFirst();
+        return result.numUpdatedRows === 1n;
+      });
   }
 
   /** Which of these photos are Locked now (FL-34: a lock record). */
