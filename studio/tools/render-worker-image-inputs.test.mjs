@@ -106,3 +106,120 @@ test('matching grant hashes do not admit text, video, malformed or incomplete im
     await assert.rejects(createClaimImageInputs(claim, () => true));
   }
 });
+
+for (const format of ['jpeg', 'heic'])
+  test(
+    `verified ${format} enters Studio as owned linear HDR with a separate SDR URL`,
+    { skip: !process.env.FRAMELEAF_HDR_BINDING },
+    async () => {
+      const codec = createRequire(import.meta.url)(process.env.FRAMELEAF_HDR_BINDING);
+      const pixels = new Float32Array(64 * 32 * 4);
+      for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+      const original = codec[format === 'heic' ? 'encodeHeic' : 'encode'](
+        Buffer.from(pixels.buffer),
+        64,
+        32,
+        1,
+        16_777_216,
+        1024 ** 3,
+      );
+      const claim = prepared();
+      const input = claim.inputs.get(`library-asset:${mediaId}`);
+      input.bytes = Buffer.from(original);
+      input.sha256 = createHash('sha256').update(original).digest('hex');
+      const previous = process.env.FRAMELEAF_HDR_IMAGES;
+      process.env.FRAMELEAF_HDR_IMAGES = 'experimental';
+      let adapted;
+      try {
+        adapted = await createClaimImageInputs(claim, () => true);
+        const raster = adapted.input.hdrRasters[mediaId];
+        assert.equal(raster.transfer, 'linear');
+        assert.equal(raster.width, 64);
+        assert.equal(raster.height, 32);
+        assert.equal(raster.referenceWhite, 203);
+        assert.ok(raster.rgba instanceof Float32Array);
+        // Pinned lossy codecs allow 0.5 reference-white units for these coloured HDR bars.
+        for (let channel = 0; channel < 4; channel++)
+          assert.ok(Math.abs(raster.rgba[channel] - [8, 4, 2, 1][channel]) <= 0.5);
+        assert.deepEqual(input.bytes, original);
+        const response = await fetch(adapted.input.media[0].url);
+        assert.equal(response.headers.get('content-type'), 'image/jpeg');
+        const baseline = Buffer.from(await response.arrayBuffer());
+        assert.equal(codec.inspect(baseline, 16_777_216, 1024 ** 3).dynamicRange, 'sdr');
+        if (process.env.FRAMELEAF_STUDIO_HDR_GPU_TEST === '1') {
+          const require = createRequire(new URL('../engine/package.json', import.meta.url));
+          const { chromium } = require('playwright');
+          const { chromeLaunchArgs } = await import('../engine/headless/lib/cli.mjs');
+          const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
+          try {
+            const harness = await adapted.createHarness();
+            const page = await browser.newPage();
+            const origin = new URL(harness.harnessUrl).origin;
+            await page.route('**/*', (route) =>
+              new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
+            );
+            await page.goto(harness.harnessUrl);
+            await page.waitForFunction(() => Boolean(window.freecut?.ready));
+            const measured = await page.evaluate(
+              async ({ project, media, id, raster }) => {
+                const adapter = await navigator.gpu?.requestAdapter();
+                if (
+                  !adapter ||
+                  adapter.info.isFallbackAdapter ||
+                  /software|swiftshader|llvmpipe/i.test(JSON.stringify(adapter.info))
+                )
+                  throw new Error('HARDWARE_GPU_REQUIRED');
+                project.metadata.colorManagement = { workingRange: 'hdr' };
+                const result = await window.freecut.renderFrameSignal({
+                  project,
+                  media,
+                  frame: 0,
+                  strict: true,
+                  target: 'pq',
+                  hdrRasters: { [id]: { ...raster, rgba: Float32Array.from(raster.rgba) } },
+                });
+                const offset = (Math.floor(result.height / 2) * result.width + Math.floor(result.width / 2)) * 4;
+                return {
+                  width: result.width,
+                  height: result.height,
+                  sample: Array.from(result.rgba.slice(offset, offset + 4)),
+                };
+              },
+              {
+                project: adapted.input.project,
+                media: harness.media,
+                id: mediaId,
+                raster: { ...raster, rgba: Array.from(raster.rgba) },
+              },
+            );
+            assert.equal(measured.width, 32);
+            assert.equal(measured.height, 32);
+            // Independent ST 2084 EOTF: the rendered signal must still exceed SDR white.
+            const linear = measured.sample.slice(0, 3).map((value) => {
+              const p = value ** (1 / (2523 / 32));
+              return (
+                ((Math.max(p - 3424 / 4096, 0) / (2413 / 128 - (2392 / 128) * p)) ** (1 / (2610 / 16384)) * 10000) / 203
+              );
+            });
+            assert.ok(Math.max(...linear) > 6);
+            assert.ok(Math.min(...linear) > 1);
+            assert.ok(Math.abs(measured.sample[3] - 1) < 0.001);
+          } finally {
+            await browser.close();
+          }
+        }
+        await adapted.dispose();
+        assert.ok(raster.rgba.every((value) => value === 0));
+        assert.deepEqual(input.bytes, original);
+        delete process.env.FRAMELEAF_HDR_IMAGES;
+        await assert.rejects(
+          createClaimImageInputs(claim, () => true),
+          /HDR_IMAGE_PROCESSING_DISABLED/,
+        );
+      } finally {
+        await adapted?.dispose();
+        if (previous === undefined) delete process.env.FRAMELEAF_HDR_IMAGES;
+        else process.env.FRAMELEAF_HDR_IMAGES = previous;
+      }
+    },
+  );
