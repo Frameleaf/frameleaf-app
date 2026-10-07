@@ -6,15 +6,15 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import z from 'zod';
 import { parseHelpLinks } from './app-releases.ts';
 import { BUDDY_UUID } from './buddy-backup-crypto.ts';
-import { readBuddyRecovery } from './buddy-backup-recovery.ts';
+import { buddyRecoveryTarget, readBuddyRecovery } from './buddy-backup-recovery.ts';
 import { writeBuddyFile } from './buddy-backup-vault.ts';
 import { BuddyBootDeclarationSchema, readBuddyBootConfiguration } from './buddy-boot-configuration.ts';
 import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
 import { EnvSchema } from './environment-schema.ts';
 import { parseWorkerSelection } from './environment-values.ts';
 
-// Application settings and one explicitly granted supervisor profile. Capture alone
-// never authorizes identity/security, mounts, feature enabling or dependency credentials.
+// Capture alone never authorizes identity/security, deployment profiles,
+// feature enabling or dependency credentials.
 const applicationKeys = new Set([
   'FRAMELEAF_PORT',
   'FRAMELEAF_HOST',
@@ -29,6 +29,21 @@ const applicationKeys = new Set([
   'NO_COLOR',
 ]);
 const workerKeys = ['FRAMELEAF_WORKERS_INCLUDE', 'FRAMELEAF_WORKERS_EXCLUDE'];
+const mediaKey = 'FRAMELEAF_MEDIA_LOCATION';
+const mountSchema = z.strictObject({
+  roots: z
+    .array(
+      z.strictObject({
+        path: z
+          .string()
+          .refine((path) => isAbsolute(path) && resolve(path) === path && path !== '/' && !path.includes('\0')),
+        device: z.string().regex(/^(0|[1-9]\d*)$/),
+        inode: z.string().regex(/^[1-9]\d*$/),
+      }),
+    )
+    .min(1)
+    .refine((roots) => new Set(roots.map((root) => root.path)).size === roots.length),
+});
 const bindingSchema = z
   .strictObject({
     version: z.literal(1),
@@ -41,6 +56,7 @@ const bindingSchema = z
     mode: z.enum(['keep', 'replace']),
     environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys,
     workerService: z.literal('supervisor').optional(),
+    mountService: mountSchema.optional(),
     recoveryDirectory: z.string(),
     artifactDigest: z.string().regex(/^[\da-f]{64}$/),
     preparedDigest: z.string().regex(/^[\da-f]{64}$/),
@@ -48,10 +64,14 @@ const bindingSchema = z
   .refine(
     (binding) =>
       binding.environmentKeys.every(
-        (key) => applicationKeys.has(key) || (binding.workerService && workerKeys.includes(key)),
+        (key) =>
+          applicationKeys.has(key) ||
+          (binding.workerService && workerKeys.includes(key)) ||
+          (binding.mountService && key === mediaKey),
       ) &&
       (!binding.workerService ||
-        (binding.scope === 'server' && workerKeys.every((key) => binding.environmentKeys.includes(key)))),
+        (binding.scope === 'server' && workerKeys.every((key) => binding.environmentKeys.includes(key)))) &&
+      (!binding.mountService || (binding.scope === 'server' && binding.environmentKeys.includes(mediaKey))),
   );
 type BootBinding = z.infer<typeof bindingSchema>;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -162,6 +182,15 @@ const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) =
   if (JSON.stringify(configuration) !== JSON.stringify(readBuddyBootConfiguration(plan.manifest.bootConfiguration)))
     throw refusal();
   if (binding.environmentKeys.some((key) => configuration.entries.every((entry) => entry.key !== key))) throw refusal();
+  if (binding.mountService) {
+    const roots = new Set(plan.manifest.storageRoots);
+    if (
+      !roots.has(plan.manifest.storageRoot) ||
+      roots.size !== binding.mountService.roots.length ||
+      binding.mountService.roots.some((root) => !roots.has(root.path))
+    )
+      throw refusal();
+  }
   if (requireComplete) {
     const journal = JSON.parse(
       (await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))).toString(),
@@ -169,7 +198,34 @@ const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) =
     if (!z.strictObject({ version: z.literal(2), state: z.literal('complete') }).safeParse(journal).success)
       throw refusal();
   }
-  return configuration;
+  return { configuration, storageRoot: plan.manifest.storageRoot };
+};
+
+/** Admit the exact original directories, never a missing mount's fallback directory or a relocated identity. */
+const validateMountProfile = async (
+  binding: BootBinding,
+  path: string,
+  env: NodeJS.ProcessEnv,
+  storageRoot: string,
+  maintenance = false,
+) => {
+  if (!binding.mountService) return;
+  // ponytail: require an explicit media root; default-path discovery needs a separately verified adapter.
+  if (resolveEnvAliases(env).env.FRAMELEAF_MEDIA_LOCATION !== storageRoot) throw refusal();
+  const roots = binding.mountService.roots.map((root) => root.path);
+  for (const root of binding.mountService.roots) {
+    await buddyRecoveryTarget(root.path, roots, []);
+    const metadata = await lstat(root.path, { bigint: true });
+    if (!metadata.isDirectory() || String(metadata.dev) !== root.device || String(metadata.ino) !== root.inode)
+      throw refusal();
+  }
+  const local = await replacementBootIdentity(path, env);
+  if (
+    local.identity !== binding.replacementIdentity ||
+    (maintenance && !local.marker) ||
+    (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
+  )
+    throw refusal();
 };
 
 /** Validate the entire prospective environment before changing a single selected input. */
@@ -220,10 +276,11 @@ export const loadBuddyBootBinding = async () => {
       (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
     )
       throw refusal();
-    const configuration = await bindingEvidence(binding, binding.state === 'ready');
+    const { configuration, storageRoot } = await bindingEvidence(binding, binding.state === 'ready');
     if (local.marker) return; // Resume maintenance on replacement inputs, never historical inputs.
     if (binding.state !== 'ready') throw refusal();
     const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
+    await validateMountProfile(binding, path, prospective, storageRoot);
     const current = await replacementBootIdentity(path, process.env);
     if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original))
       throw refusal();
@@ -256,14 +313,19 @@ export const finalizeBuddyBootBinding = async (root: string, id: string, assert:
     if (binding.recoveryId !== id || binding.recoveryDirectory !== join(root, 'recovery', id)) throw refusal();
     const local = await replacementBootIdentity(path, process.env);
     if (local.identity !== binding.replacementIdentity || local.marker?.action?.buddyRecoveryId !== id) throw refusal();
-    const configuration = await bindingEvidence(binding, true);
-    if (binding.workerService) bootEnvironmentOverlay(binding, configuration, process.env);
+    const { configuration, storageRoot } = await bindingEvidence(binding, true);
+    const prospective =
+      binding.workerService || binding.mountService
+        ? bootEnvironmentOverlay(binding, configuration, process.env)
+        : process.env;
     await assert();
     if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
+    await validateMountProfile(binding, path, prospective, storageRoot, true);
     if (binding.state === 'ready') return; // Complete retry verifies the same grant idempotently.
     await writeBuddyFile(path, JSON.stringify({ ...binding, state: 'ready' }), false, async () => {
       await assert();
       if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
+      await validateMountProfile(binding, path, prospective, storageRoot, true);
     });
     await assert();
   } catch {

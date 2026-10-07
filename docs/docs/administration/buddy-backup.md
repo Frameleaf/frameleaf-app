@@ -84,10 +84,34 @@ exists; otherwise it fills both. Replace changes the pair and clears their legac
 aliases, including explicit unset values. This grant controls worker selection only;
 it does not authorize Cloud linking, credentials, feature enabling or mounts.
 
+An explicit replacement-local `mountService` grant admits `FRAMELEAF_MEDIA_LOCATION`
+only for full-server recovery. Select that key in `environmentKeys` and declare it
+in the snapshot's boot configuration. The grant is an object with `roots`, an array
+of `{ path, device, inode }` records. Record each original media or external-library
+root once, using its canonical absolute path and decimal strings from the local
+directory's filesystem device and inode. The set must exactly match the prepared
+manifest's `storageRoots`, including its `storageRoot`. Directories must exist,
+have no symlink ancestors and still match their recorded device and inode at
+fenced finalization and on each ordinary boot. This detects a missing mount's
+substitute directory without changing mounts or remapping recovered database paths.
+An intentional remount or directory replacement that changes these identities
+requires a freshly approved local profile before ordinary startup.
+
+The prospective effective media location must explicitly equal the original
+`storageRoot`; unset/default-path discovery is refused. Keep retains a local
+canonical value or alias only when it names that same original root. Replace
+applies the declared root and removes its legacy alias. The prospective identity
+location and key must still identify the replacement server. A changed, incomplete
+or unavailable profile refuses the entire boot overlay before any selected value
+changes. Maintenance continues on replacement inputs, and readiness requires the
+same completed publication journal and live recovery fence as other service grants.
+Directory receipts are replacement-local authority, not proof of media integrity;
+the existing fenced recovery verifies restored file hashes before completion.
+
 All other declared canonical values
 remain privately recoverable but require further replacement-local activation
 adapters. Identity/link/entitlement, security and feature enabling inputs, historical
-mount/configuration paths and database credentials are not activated by this
+configuration paths and database credentials are not activated by this
 registry. Existing database credential-file sources remain unchanged; a matching
 local service adapter must establish and verify credential changes before those
 inputs can become effective. The owner-facing binding controls, deployment
