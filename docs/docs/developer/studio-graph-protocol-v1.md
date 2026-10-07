@@ -301,10 +301,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (51):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 15.
+- **Engine (52):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 15.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (19):** the remaining 19 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (18):** the remaining 18 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
 
@@ -315,14 +315,15 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: compositions and settings (part 4)       | `composition.add`, `clip.group`, `clip.ungroup`, `composition.setPublishedControls`, `composition.setControlOverrides`, `title.add`, `sequence.setSettings`, `project.applyTemplate`, `project.setMasterAudio`                                                                                                                                                                                                                                      |
 | Host                                             | `history.undo`, `history.redo`                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Engine: track audio                              | `track.setAudio` |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                                                                           |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                           |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch and EQ fields of `clip.setAudio` (13.9); its mute field is refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch and EQ fields of `clip.setAudio` (13.9); its mute field is refused as `not-implemented`. It also implements track gain and EQ via `track.setAudio` (13.10); pan is refused as `not-implemented`. It implements the 8 existing part 4 commands, and the gain/mute fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 19 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 16 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 18 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 15 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -406,7 +407,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `track.remove`                     | Engine          | 12.7.2  |                                                                                                                        |
 | `track.reorder`                    | Engine          | 12.7.3  |                                                                                                                        |
 | `track.set`                        | Engine          | 12.7.4  |                                                                                                                        |
-| `track.setAudio`                   | Not implemented | 8.2     | Do not record it. Set a track's gain with `track.set` (12.7.4). Do not change its `audioEq`.                           |
+| `track.setAudio`                   | Engine          | 13.10   | Static track gain and EQ; pan is refused as `not-implemented`. |
 | `voiceover.add`                    | Not implemented | 8.2     | Do not record it. Do not place a voiceover.                                                                            |
 
 The engine-free check fails when a `mutatesGraph` command of the catalogue has no row here, when a row names a command the catalogue does not have, when a row's status or section differs from `commandStatus`, when the section does not exist, and when the fixtures the row promises are missing (section 10).
@@ -1454,7 +1455,7 @@ Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the
 
 ## 13. Part 3: effects, transitions, keyframes and animation
 
-This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), the clip audio command of FL-103 (13.9), the graph fields they write, and the rule for the fields that no engine command writes at this revision (13.8).
+This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), the clip and track audio commands of FL-103 (13.9 and 13.10), the graph fields they write, and the rule for the fields that no engine command writes at this revision (13.8).
 
 | Commands                                                                                  | Section |
 | ----------------------------------------------------------------------------------------- | ------- |
@@ -1465,6 +1466,7 @@ This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), t
 | `text.setMotion`, `clip.setKenBurns`                                                      | 13.7    |
 | Fields with no command: `effect.update`, `effect.reorder`, `clip.setBlendMode` and others | 13.8    |
 | `clip.setAudio`                                                                           | 13.9    |
+| `track.setAudio`                                                                          | 13.10   |
 
 Every command has fixtures named `<command>/<case>` in `studio/graph-conformance-v1.json`, both applied and rejected. Cases of part 2 commands on animated clips (13.2.7) are named after the part 2 command. Where this prose and a fixture differ, the fixture is right and this page has a defect.
 
@@ -2072,6 +2074,17 @@ The legacy `lowCut` and `highCut` prefixes each have `Enabled`, `FrequencyHz` an
 Require at least one of these fields. Reject an unknown field, malformed or out-of-range value, missing clip or other clip type as `invalid`. A clip on a locked track is refused as `failed`. After validating the supported fields, supplying `muted` refuses the whole batch as `not-implemented`, even alongside a supported field. Clips have no persisted mute control in the current audio path; a video's embedded-audio suppression flag has linked-media ownership semantics and must not be reused as clip mute.
 
 Leave omitted gain/fade/pitch fields, volume keyframes, fade curves, source windows, channels, linked companions, tracks and the master/monitor controls unchanged. EQ replacement changes only known clip EQ fields; unknown extension fields survive. The command addresses one clip; it does not expand linked selection. Existing volume keyframes continue to override static gain during playback. Save, reopen, undo and redo use the usual graph and host history rules (sections 7 and 9).
+
+### 13.10 `track.setAudio`
+
+Payload: `trackId`, optional `gainDb`, `eq` and `pan`. This command edits one media track with the existing `setTracks` action. It never expands linked selection or rewrites clips.
+
+- `gainDb`: a finite number in −60..12 dB, stored as track `volume`. Zero resets gain; omission preserves it. This is the same static gain as `track.set.patch.gain` (12.7.4), consumed alongside clip gain by preview and export.
+- `eq`: a complete track EQ stage using exactly the names, types, ranges, defaults and legacy-cut alias rules of 13.9. Store the resolved settings directly in track `audioEq`, with the supplied `enabled` value (omission uses the enabled default). An object replaces the previous stage, `{}` resets to flat defaults, and `null` clears `audioEq`. Omitted `eq` preserves the current stage. Preview and export append track EQ before clip EQ; this command adds no signal processing.
+
+Require at least one of `gainDb` and `eq`. Reject unknown payload fields, malformed supported values, an absent track or an organizational `isGroup` track as `invalid`. After validating supported values, supplied `pan` refuses the entire batch as `not-implemented`, even zero or alongside valid gain/EQ: the current engine has no track pan field or signal stage. A locked media track is refused as `failed`.
+
+Leave all other tracks, clip fields, source windows, linked ownership, keyframes, master controls, mute/solo/visibility and track metadata unchanged. Track mute remains the separate existing `track.set.patch.muted` operation; this command accepts no mute or automation fields. Track/master automation envelopes remain unsupported. Save, reopen, undo and redo use the existing graph and host history rules (sections 7 and 9).
 
 ## 14. Part 4: compositions, groups, titles and settings
 

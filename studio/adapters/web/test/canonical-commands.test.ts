@@ -5,6 +5,8 @@ import type { TextItem, TimelineItem } from '@/types/timeline'
 import { getAudioEqSettings, resolveAudioEqSettings } from '@/shared/utils/audio-eq'
 import { getAudioPitchShiftSemitones, resolvePreviewAudioPitchShiftSemitones } from '@/shared/utils/audio-pitch'
 import { extractAudioSegments } from '@/features/export/utils/canvas-audio'
+import { collectAudioTrackItems } from '@/runtime/composition-runtime/utils/scene-assembly'
+import { buildStandaloneAudioSegments } from '@/runtime/composition-runtime/utils/audio-scene'
 import { useEditorStore } from '@/shared/state/editor'
 import { usePlaybackStore } from '@/shared/state/playback'
 import {
@@ -208,6 +210,49 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       envelope('clip.setAudio', { clipId: audio.id, pitchCents: 50, eq }),
       envelope('clip.setAudio', { clipId: audio.id, muted: true }),
     ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+  })
+
+  it('routes canonical track gain and EQ through preview and export without changing clip audio or ownership', async () => {
+    const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const audio = itemsOf(start.project).find((item) => item.type === 'audio')!
+    const before = await applied(start.project, [
+      envelope('clip.setAudio', { clipId: audio.id, volume: -4, fadeIn: seconds(1, 100), pitchSemitones: -3, pitchCents: 25, eq: { highGainDb: 2 } }),
+      envelope('keyframe.add', { clipId: audio.id, property: 'volume', at: seconds(1), value: { value: -3 } }),
+      envelope('project.setMasterAudio', { gainDb: -2 }),
+    ])
+    const eq = { lowGainDb: 4, lowFrequencyHz: 250, lowQ: 1.5 }
+    const changed = await applied(before.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: -6, eq })])
+    expect(itemsOf(changed.project)).toEqual(itemsOf(before.project))
+    expect({ ...changed.project.timeline, tracks: [] }).toEqual({ ...before.project.timeline, tracks: [] })
+    expect(changed.project.timeline!.tracks.filter((track) => track.id !== 'a1')).toEqual(before.project.timeline!.tracks.filter((track) => track.id !== 'a1'))
+    expect(changed.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: -6, muted: false, audioEq: resolveAudioEqSettings(eq) })
+    const resolvedTracks = changed.project.timeline!.tracks.map((track) => ({ ...track, items: itemsOf(changed.project).filter((item) => item.trackId === track.id).map((item) => ({ ...item, src: 'blob:resolved-audio' })) }))
+    const preview = buildStandaloneAudioSegments(collectAudioTrackItems({ tracks: resolvedTracks, visibleTrackIds: new Set(resolvedTracks.map((track) => track.id)) }), 30).find((segment) => segment.itemId === audio.id)!
+    const exported = extractAudioSegments({ ...changed.project.timeline, fps: 30, tracks: resolvedTracks } as never, 30).find((segment) => segment.itemId === audio.id)!
+    expect(preview).toMatchObject({ volumeDb: -10, audioFadeIn: 0.01, audioPitchSemitones: -3, audioPitchCents: 25, muted: false })
+    expect(exported).toMatchObject({ volume: -10, trackVolumeDb: -6, fadeInFrames: 0.3, pitchShiftSemitones: -2.75 })
+    expect(preview.audioEqStages).toEqual([resolveAudioEqSettings(eq), resolveAudioEqSettings({ highGainDb: 2 })])
+    expect(exported.audioEqStages.slice(-2)).toEqual(preview.audioEqStages)
+    expect((await applied(JSON.parse(JSON.stringify(changed.project)), [])).digest).toBe(changed.digest)
+    const cleared = await applied(changed.project, [envelope('track.setAudio', { trackId: 'a1', gainDb: 0, eq: null })])
+    expect(cleared.project.timeline!.tracks.find((track) => track.id === 'a1')).toMatchObject({ volume: 0 })
+    expect(cleared.project.timeline!.tracks.find((track) => track.id === 'a1')!.audioEq).toBeUndefined()
+    expect(itemsOf(cleared.project)).toEqual(itemsOf(before.project))
+    expect((await applied(JSON.parse(JSON.stringify(cleared.project)), [])).digest).toBe(cleared.digest)
+    for (const fields of [{ gainDb: -61 }, { gainDb: 13 }, { gainDb: NaN }, { eq: [] }, { eq: { lowQ: 11 } }, { eq: { bogus: 1 } }, { muted: true }, { automation: [] }]) {
+      await expect(applyCanonicalCommands(before.project, [envelope('track.setAudio', { trackId: 'a1', ...fields })], media))
+        .resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+    const locked = structuredClone(before.project)
+    locked.timeline!.tracks.find((track) => track.id === 'a1')!.locked = true
+    await expect(applyCanonicalCommands(locked, [envelope('track.setAudio', { trackId: 'a1', gainDb: 0 })], media))
+      .resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
+    const snapshot = structuredClone(before.project)
+    await expect(applyCanonicalCommands(before.project, [
+      envelope('track.setAudio', { trackId: 'a1', gainDb: -12, eq }),
+      envelope('track.setAudio', { trackId: 'a1', gainDb: -3, eq, pan: 0 }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'not-implemented', index: 1 })
+    expect(before.project).toEqual(snapshot)
   })
 
   it('sets editable captions at exact NTSC times without shifting overlapping cues', async () => {
