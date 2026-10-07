@@ -139,6 +139,13 @@ import { propagateInsertedGapToSyncLockedTracks } from '@/features/timeline/stor
 import { useMarkersStore } from '@/features/timeline/stores/markers-store'
 import { buildMediaTimelineItems } from '@/features/timeline/utils/media-timeline-item-builder'
 import { MAX_SPEED, MIN_SPEED } from '@/features/timeline/utils/source-calculations'
+import {
+  AUDIO_PITCH_SEMITONES_MIN, AUDIO_PITCH_SEMITONES_MAX,
+  AUDIO_PITCH_CENTS_MIN, AUDIO_PITCH_CENTS_MAX,
+} from '@/shared/utils/audio-pitch'
+import { DEFAULT_AUDIO_EQ_SETTINGS, getAudioEqSettings, resolveAudioEqSettings } from '@/shared/utils/audio-eq'
+import { buildTimelineEqPatchFromResolvedSettings } from '@/features/editor/components/properties-sidebar/clip-panel/audio-eq-ui'
+import type { AudioEqSettings } from '@/types/audio'
 import { isTrackSyncLockEnabled } from '@/features/timeline/utils/track-sync-lock'
 import { getGpuEffect } from '@/infrastructure/gpu-effects'
 import { transitionRegistry } from '@/shared/timeline/transitions/registry'
@@ -217,7 +224,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'clip.trimEnd': ['command.trimEnd'],
   'clip.trimStart': ['command.trimStart'],
   'clip.update': ['command.updateItem'],
-  'clip.setAudio': ['readme.audio.1'],
+  'clip.setAudio': ['readme.audio.1', 'readme.audio.2', 'readme.audio.3'],
   'composition.add': ['command.addClip'],
   'effect.add': ['command.addEffect'],
   'effect.remove': ['command.removeEffect'],
@@ -1472,7 +1479,7 @@ const handlers: Record<string, Handler> = {
       if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq'].includes(key))
         invalid(`clip.setAudio: unknown field "${key}"`)
     }
-    const updates: Partial<TimelineItem> = {}
+    const updates: Partial<TimelineItem> & Record<string, unknown> = {}
     const volume = optionalNumber(payload, 'volume')
     if (volume !== undefined) {
       if (volume < -60 || volume > 12) invalid('volume must be in -60..12 dB')
@@ -1488,11 +1495,36 @@ const handlers: Record<string, Handler> = {
       // Audio fades are stored in seconds; rounding them to video frames would lose short fades.
       updates[property] = time.num / time.den
     }
-    for (const field of ['muted', 'pitchSemitones', 'pitchCents', 'eq']) {
-      if (payload[field] !== undefined)
-        throw new CommandRejection('not-implemented', `clip.setAudio.${field} is not implemented`)
+    for (const [field, property, min, max] of [
+      ['pitchSemitones', 'audioPitchSemitones', AUDIO_PITCH_SEMITONES_MIN, AUDIO_PITCH_SEMITONES_MAX],
+      ['pitchCents', 'audioPitchCents', AUDIO_PITCH_CENTS_MIN, AUDIO_PITCH_CENTS_MAX],
+    ] as const) {
+      const value = optionalNumber(payload, field)
+      if (value === undefined) continue
+      if (!Number.isInteger(value) || value < min || value > max) invalid(`${field} must be an integer in ${min}..${max}`)
+      updates[property] = value
     }
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn or fadeOut')
+    if (payload.eq !== undefined) {
+      if (payload.eq === null) {
+        for (const key of Object.keys(getAudioEqSettings()))
+          updates[`audioEq${key[0]!.toUpperCase()}${key.slice(1)}`] = undefined
+      } else {
+        if (typeof payload.eq !== 'object' || Array.isArray(payload.eq)) invalid('eq must be an object or null')
+        const eq = payload.eq as Record<string, unknown>
+        const defaults: Record<string, unknown> = { enabled: true, ...DEFAULT_AUDIO_EQ_SETTINGS }
+        const resolved = resolveAudioEqSettings(eq as AudioEqSettings)
+        for (const [key, value] of Object.entries(eq)) {
+          if (!Object.hasOwn(defaults, key)) invalid(`eq: unknown field "${key}"`)
+          if (typeof value !== typeof defaults[key] || (typeof value === 'number' && !Number.isFinite(value)) ||
+              (key !== 'enabled' && resolved[key as keyof typeof resolved] !== value))
+            invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`)
+        }
+        Object.assign(updates, buildTimelineEqPatchFromResolvedSettings(resolved), { audioEqEnabled: eq.enabled })
+      }
+    }
+    if (payload.muted !== undefined)
+      throw new CommandRejection('not-implemented', 'clip.setAudio.muted is not implemented')
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch or eq')
     assertUnlocked([item.id], 'clip.setAudio')
     updateItem(item.id, updates)
   },

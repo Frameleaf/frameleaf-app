@@ -54,6 +54,55 @@ const isRational = (value) =>
   !!value && typeof value === 'object' && Number.isSafeInteger(value.num) && Number.isSafeInteger(value.den) && value.den > 0;
 const unique = (ids) => [...new Set(ids)];
 
+/** 13.9: defaults and field domains of the existing clip EQ stage, independent of the engine. */
+const AUDIO_EQ_DEFAULTS = {
+  outputGainDb: 0,
+  band1Enabled: false, band1Type: 'high-pass', band1FrequencyHz: 30, band1GainDb: 0, band1Q: 1.1, band1SlopeDbPerOct: 12,
+  lowCutEnabled: false, lowCutFrequencyHz: 30, lowCutSlopeDbPerOct: 12,
+  lowEnabled: true, lowType: 'low-shelf', lowGainDb: 0, lowFrequencyHz: 120, lowQ: 2.3,
+  lowMidEnabled: true, lowMidType: 'peaking', lowMidGainDb: 0, lowMidFrequencyHz: 400, lowMidQ: 1.1,
+  midGainDb: 0,
+  highMidEnabled: true, highMidType: 'peaking', highMidGainDb: 0, highMidFrequencyHz: 1600, highMidQ: 1.1,
+  highEnabled: true, highType: 'high-shelf', highGainDb: 0, highFrequencyHz: 2800, highQ: 2.3,
+  band6Enabled: false, band6Type: 'low-pass', band6FrequencyHz: 22000, band6GainDb: 0, band6Q: 1.1, band6SlopeDbPerOct: 12,
+  highCutEnabled: false, highCutFrequencyHz: 22000, highCutSlopeDbPerOct: 12,
+};
+const audioEqField = (key) => `audioEq${key[0].toUpperCase()}${key.slice(1)}`;
+
+function clipAudioEqPatch(eq) {
+  const defaults = { enabled: true, ...AUDIO_EQ_DEFAULTS };
+  if (eq === null) return Object.fromEntries(Object.keys(defaults).map((key) => [audioEqField(key), undefined]));
+  if (typeof eq !== 'object' || Array.isArray(eq)) invalid('eq must be an object or null');
+  const resolved = { ...defaults, ...eq };
+  for (const [key, value] of Object.entries(eq)) {
+    if (!Object.hasOwn(defaults, key)) invalid(`eq: unknown field "${key}"`);
+    let valid = typeof value === typeof defaults[key];
+    if (typeof value === 'number') {
+      const range = key.endsWith('GainDb') ? [-20, 20]
+        : key.endsWith('Q') ? [0.3, 10.3]
+        : key.endsWith('FrequencyHz') ? (key.startsWith('band1') || key.startsWith('lowCut') ? [20, 399]
+          : key.startsWith('band6') || key.startsWith('highCut') ? [1400, 22000] : [20, 22000]) : null;
+      valid &&= Number.isFinite(value) && (range ? value >= range[0] && value <= range[1] : [6, 12, 18, 24].includes(value));
+    }
+    if (typeof value === 'string') valid &&= (key === 'band1Type' ? ['low-shelf', 'peaking', 'high-shelf', 'high-pass']
+      : key === 'band6Type' ? ['low-pass', 'low-shelf', 'peaking', 'high-shelf'] : ['low-shelf', 'peaking', 'high-shelf', 'notch']).includes(value);
+    if (!valid) invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`);
+  }
+  for (const [band, cut, type] of [['band1', 'lowCut', 'high-pass'], ['band6', 'highCut', 'low-pass']]) {
+    if (!Object.keys(eq).some((key) => key.startsWith(band))) {
+      resolved[`${band}Type`] = type;
+      for (const suffix of ['Enabled', 'FrequencyHz', 'SlopeDbPerOct'])
+        resolved[`${band}${suffix}`] = eq[`${cut}${suffix}`] ?? defaults[`${band}${suffix}`];
+    }
+    resolved[`${cut}Enabled`] = resolved[`${band}Enabled`] && resolved[`${band}Type`] === type;
+    for (const suffix of ['FrequencyHz', 'SlopeDbPerOct']) resolved[`${cut}${suffix}`] = resolved[`${band}${suffix}`];
+  }
+  for (const [key, value] of Object.entries(eq)) {
+    if (resolved[key] !== value) invalid(`eq.${key} is outside the engine's type or range, or contradicts its cut-band aliases`);
+  }
+  return Object.fromEntries(Object.keys(defaults).map((key) => [audioEqField(key), key === 'enabled' ? eq.enabled : resolved[key]]));
+}
+
 /** The working state of one batch: the parts of the graph the commands read and write. */
 function open(graph, media) {
   const timeline = structuredClone(graph.timeline);
@@ -1143,10 +1192,16 @@ const commands = {
       if (time.num < 0 || BigInt(time.num) > 5n * BigInt(time.den)) invalid(`${field} must be in 0..5 seconds`);
       updates[property] = time.num / time.den;
     }
-    for (const field of ['muted', 'pitchSemitones', 'pitchCents', 'eq']) {
-      if (payload[field] !== undefined) throw new Refusal('not-implemented', `clip.setAudio.${field} is not implemented`);
+    for (const [field, property, min, max] of [['pitchSemitones', 'audioPitchSemitones', -12, 12], ['pitchCents', 'audioPitchCents', -100, 100]]) {
+      const value = payload[field];
+      if (value === undefined) continue;
+      if (!finite(value)) invalid(`${field} must be a number`);
+      if (!Number.isInteger(value) || value < min || value > max) invalid(`${field} must be an integer in ${min}..${max}`);
+      updates[property] = value;
     }
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn or fadeOut');
+    if (payload.eq !== undefined) Object.assign(updates, clipAudioEqPatch(payload.eq));
+    if (payload.muted !== undefined) throw new Refusal('not-implemented', 'clip.setAudio.muted is not implemented');
+    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch or eq');
     refuseLocked(state, [clip.id], 'clip.setAudio');
     replace(state, { ...clip, ...updates });
   },
