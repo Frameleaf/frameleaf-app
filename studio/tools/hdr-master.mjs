@@ -105,7 +105,7 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
     ...(audio ? ['-i', audio.path, '-map', '0:v:0', '-map', `1:a:${audio.stream ?? 0}`, '-c:a', 'copy'] : []),
     // FL-102 convention: explicit matrix, range and error-diffusion dither.
     '-vf', [
-      'scale=in_range=pc:out_range=tv:out_color_matrix=bt2020:sws_dither=ed,format=yuv420p10le',
+      'format=gbrp16le,zscale=rangein=full:range=limited:matrixin=gbr:matrix=bt2020nc:dither=error_diffusion,format=yuv420p10le',
       ...(timeline ? [`settb=${timeline.timeBase}`, `setpts=${timeline.pts.reduceRight((expr, pts, i) =>
         i === timeline.pts.length - 1 ? String(pts) : `if(eq(N,${i}),${pts},${expr})`, '').replaceAll(',', '\\,')}`] : []),
     ].join(','),
@@ -217,14 +217,52 @@ export function probeMaster(ffprobe, file) {
   };
 }
 
-/** Decodes the master back to full-range BT.2020 RGB signal (rgb48le) for comparison. */
-export function decodeMaster(ffmpeg, file, width, height) {
+/** RGB signal for comparison, or native limited-range ten-bit Y/Cb/Cr planes without RGB conversion. */
+export function decodeMaster(ffmpeg, file, width, height, format = 'rgb48le') {
+  assert.ok(['rgb48le', 'yuv420p10le'].includes(format), 'Unsupported decoded format');
+  assert.ok(Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0,
+    'Invalid decoded size');
+  const planar = format === 'yuv420p10le';
+  if (planar) assert.ok(width % 2 === 0 && height % 2 === 0, 'Ten-bit 4:2:0 requires even dimensions');
   const result = spawnSync(ffmpeg, ['-v', 'error', '-xerror', '-i', file,
-    '-vf', 'scale=in_range=tv:out_range=pc:in_color_matrix=bt2020:flags=accurate_rnd+full_chroma_int,format=rgb48le',
+    ...(planar ? ['-pix_fmt', format] : [
+      '-vf', 'zscale=rangein=limited:range=full:matrixin=bt2020nc:matrix=gbr:dither=error_diffusion,format=gbrp16le,format=rgb48le',
+    ]),
     '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${result.stderr}`);
-  const samples = new Uint16Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength / 2);
-  const frameSize = width * height * 3;
+  const frameSize = width * height * (planar ? 1.5 : 3);
+  assert.ok(Number.isSafeInteger(frameSize) && result.stdout.byteLength > 0 &&
+    result.stdout.byteLength % (frameSize * 2) === 0, 'Decoded output has incomplete frames');
+  const samples = Uint16Array.from({ length: result.stdout.byteLength / 2 }, (_, i) => result.stdout.readUInt16LE(i * 2));
   return Array.from({ length: samples.length / frameSize }, (_, i) =>
-    Float32Array.from(samples.subarray(i * frameSize, (i + 1) * frameSize), (v) => v / 65535));
+    planar ? samples.slice(i * frameSize, (i + 1) * frameSize)
+      : Float32Array.from(samples.subarray(i * frameSize, (i + 1) * frameSize), (v) => v / 65535));
+}
+
+/** Analytical BT.2020 NCL/limited-range oracle at flat-region samples, before publication. */
+export function validateHdrPlaneSamples(frames, width, height, samples) {
+  assert.ok(Number.isSafeInteger(width) && width > 0 && width % 2 === 0 &&
+    Number.isSafeInteger(height) && height > 0 && height % 2 === 0, 'Invalid plane size');
+  const pixels = width * height;
+  assert.ok(Number.isSafeInteger(pixels) && Array.isArray(frames) && frames.length > 0 &&
+    frames.every((frame) => frame instanceof Uint16Array && frame.length === pixels * 1.5), 'Invalid plane size');
+  assert.ok(Array.isArray(samples) && samples.length > 0, 'At least one plane sample is required');
+  return samples.map(({ frame, x, y, rgb }) => {
+    assert.ok(Number.isSafeInteger(frame) && frame >= 0 && frame < frames.length &&
+      Number.isSafeInteger(x) && x >= 0 && x < width && Number.isSafeInteger(y) && y >= 0 && y < height,
+    'Invalid plane sample coordinate');
+    assert.ok(rgb?.length === 3 && typeof rgb.every === 'function' && rgb.every((value) => Number.isFinite(value) && value >= 0 && value <= 1),
+      'Invalid reference signal');
+    const [r, g, b] = rgb;
+    const luma = 0.2627 * r + 0.6780 * g + 0.0593 * b;
+    const expected = [64 + 876 * luma, 512 + 896 * (b - luma) / (2 * (1 - 0.0593)),
+      512 + 896 * (r - luma) / (2 * (1 - 0.2627))];
+    const chroma = Math.floor(y / 2) * (width / 2) + Math.floor(x / 2);
+    const actual = [frames[frame][y * width + x], frames[frame][pixels + chroma],
+      frames[frame][pixels * 1.25 + chroma]];
+    const error = actual.map((value, channel) => Math.abs(value - expected[channel]));
+    assert.ok(actual.every((value) => value <= 1023) && error.every((value) => value <= 2),
+      `HDR plane error at frame ${frame} (${x},${y}): ${actual} vs ${expected}`);
+    return { frame, x, y, rgb: Array.from(rgb), expected, actual, error };
+  });
 }

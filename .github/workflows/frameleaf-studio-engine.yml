@@ -134,6 +134,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -hide_banner -encoders | grep -q libx265
+          ffmpeg -hide_banner -filters | grep -q zscale
           ffmpeg -hide_banner -encoders | grep -q libsvtav1
       - name: HDR diagnostic master metadata, PTS, audio and interrupted restart (FL-107)
         env:

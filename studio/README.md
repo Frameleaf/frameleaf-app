@@ -338,7 +338,9 @@ Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-10
   edited frames themselves and never copies them from a source. It refuses content
   above the declared mastering display. It encodes HEVC Main10 BT.2020 with the FL-102
   explicit matrix/range/dither convention and HDR10 SEI (PQ) or HLG signalling, then
-  probes and decodes the result back.
+  probes and decodes the result back. Matrix/range conversion uses FFmpeg's libzimg
+  `zscale` filter in both directions; an RGB round trip through `scale` alone can
+  hide shifted native ten-bit Y/Cb/Cr codes.
 
 Tests:
 
@@ -370,7 +372,14 @@ decode before atomic publication. The browser and timing diagnostics run their
 independent numerical/PTS/audio QC before that rename too. A rejected candidate
 cannot replace a previous complete master.
 
-The engine workflow installs FFmpeg with libx265 for these tests and retains
+The diagnostics also decode native `yuv420p10le` planes without an RGB conversion
+and compare Y/Cb/Cr with analytical BT.2020 non-constant-luminance, limited-range
+ten-bit reference codes. Flat interior samples allow two codes of conversion/dither
+error. Reports retain the expected codes, decoded codes, absolute errors and decode
+arguments. This check covers the diagnostic flat regions; chroma edges and arbitrary
+edited pictures require their own reference comparison.
+
+The engine workflow requires FFmpeg with libx265 and libzimg/zscale for these tests and retains
 `hdr-master-timing-report.json` with tool versions, commands, input/output SHA-256
 and raw PTS/audio probe results. Run the focused packet with
 `HDR_TIMING_REPORT=/absolute/path/report.json node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs`.

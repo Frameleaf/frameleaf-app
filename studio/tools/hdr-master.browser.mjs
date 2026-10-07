@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
-import { encodeHdrMaster } from './hdr-master.mjs';
+import { decodeMaster, encodeHdrMaster, validateHdrPlaneSamples } from './hdr-master.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
@@ -124,7 +124,7 @@ try {
     });
     const output = path.join(dir, `edited-${transfer}.mp4`);
     const encoded = await encodeHdrMaster({ frames, fps: 24, transfer, output, lossless: true,
-      mastering: { maxNits: 4000, minNits: 0.005 }, validate: ({ light, probe, decoded }) => {
+      mastering: { maxNits: 4000, minNits: 0.005 }, validate: ({ light, probe, decoded, output: candidate }) => {
         assert.equal(probe.codec, 'hevc');
         assert.equal(probe.profile, 'Main 10');
         assert.equal(probe.pixFmt, 'yuv420p10le');
@@ -147,13 +147,19 @@ try {
             }
           }
         });
-        summary[transfer] = { light, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
+        const planes = decodeMaster('ffmpeg', candidate, W, H, 'yuv420p10le');
+        assert.equal(planes.length, FRAMES);
+        const planeSamples = validateHdrPlaneSamples(planes, W, H, frames.flatMap(({ rgba }, frame) =>
+          Object.values(points).map(([x, y]) => ({ frame, x, y, rgb: rgba.slice((y * W + x) * 4, (y * W + x) * 4 + 3) }))));
+        summary[transfer] = { light, planeSamples, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
     } });
     summary[transfer].inputSha256 = createHash('sha256').update(JSON.stringify(rendered.out[transfer])).digest('hex');
     summary[transfer].outputSha256 = createHash('sha256').update(readFileSync(output)).digest('hex');
     summary[transfer].outputPath = process.env.HDR_MASTER_REPORT
       ? path.relative(path.dirname(path.resolve(process.env.HDR_MASTER_REPORT)), output) : null;
     summary[transfer].encoderArgs = encoded.args.map((arg) => arg.endsWith('.partial.mp4') ? '<unpublished-output>' : arg);
+    summary[transfer].planeDecodeArgs = ['-v', 'error', '-xerror', '-i', summary[transfer].outputPath ?? output,
+      '-pix_fmt', 'yuv420p10le', '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'];
   }
   await writeReport(summary);
   console.log(JSON.stringify({ check: 'edited HDR sequence through float route, explicit output and HEVC Main10 master', ...summary }));
