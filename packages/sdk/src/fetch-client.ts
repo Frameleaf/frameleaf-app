@@ -12881,6 +12881,8 @@ export type StudioExportSettingsDto = {
     audio?: StudioExportAudio;
     color: StudioExportColor;
     format: StudioExportFormat;
+    /** Absent on exports made before quality was a choice */
+    quality?: StudioExportQuality;
     resolution: StudioExportResolution;
 };
 export type StudioExportVersionDto = {
@@ -13227,6 +13229,8 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
+    /** Defaults to `high` */
+    quality?: StudioExportQuality;
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
@@ -30266,6 +30270,12 @@ export enum StudioExportColor {
     Preserve = "preserve",
     Hdr10 = "hdr10",
     DolbyVision = "dolby-vision"
+}
+export enum StudioExportQuality {
+    Low = "low",
+    Medium = "medium",
+    High = "high",
+    Ultra = "ultra"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",

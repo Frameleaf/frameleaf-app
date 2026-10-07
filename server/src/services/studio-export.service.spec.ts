@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioExportCreateDto } from 'src/dtos/studio-export.dto.js';
 import {
   AssetLockReason,
   AssetType,
@@ -510,10 +511,28 @@ describe(StudioExportService.name, () => {
       });
       expect(repository.createWithRender).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          settings: { format: 'mp4-h264', color: 'preserve', resolution: '1080p', audio: 'preserve' },
+          settings: { format: 'mp4-h264', color: 'preserve', resolution: '1080p', quality: 'high', audio: 'preserve' },
         }),
         expect.objectContaining({ projectId: PROJECT, revision: 3 }),
       );
+    });
+
+    it('validates quality at admission and keeps the chosen preset in both durable records', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+      for (const quality of ['low', 'medium', 'high', 'ultra'] as const) {
+        const request = StudioExportCreateDto.schema.parse({ ...dto, quality });
+        await sut.create(auth(), PROJECT, request);
+        const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+        expect(job.settings).toEqual(expect.objectContaining({ quality }));
+        expect(version.settings).toEqual(job.settings);
+      }
+      for (const quality of ['lossless', null, 10, {}]) {
+        expect(StudioExportCreateDto.schema.safeParse({ ...dto, quality }).success).toBe(false);
+      }
     });
 
     it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {

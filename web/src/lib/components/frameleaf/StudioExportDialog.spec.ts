@@ -5,6 +5,7 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportQuality,
   getMlCapabilities,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -58,8 +59,20 @@ describe('Studio export dialog', () => {
       format: StudioExportFormat.Mp4HevcMain10,
       color: StudioExportColor.Preserve,
       resolution: StudioExportResolution.$2160P,
+      quality: StudioExportQuality.High,
       destination: MediaOperationDestination.Local,
     });
+  });
+
+  it('submits each chosen quality preset', async () => {
+    const onExport = vi.fn();
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+    const control = screen.getByLabelText('frameleaf_studio_export_quality');
+    for (const quality of Object.values(StudioExportQuality)) {
+      await fireEvent.change(control, { target: { value: quality } });
+      await fireEvent.click(exportButton());
+      expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ quality }));
+    }
   });
 
   it('renders at home only: this server or the home network, never Frameleaf Cloud (FL-159 §2.7)', () => {
@@ -182,6 +195,7 @@ describe('Studio export dialog', () => {
       format: StudioExportFormat.Mp4H264,
       color: StudioExportColor.Preserve,
       resolution: StudioExportResolution.$720P,
+      quality: StudioExportQuality.High,
       destination: MediaOperationDestination.Local,
     });
   });

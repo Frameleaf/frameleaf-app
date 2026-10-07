@@ -38,6 +38,24 @@ test('fresh one-still recipe applies stricter server ceilings and fixed measured
   assert.equal(recipe.maxBytes, 1048576);
   assert.equal(recipe.settings.codec, 'avc');
 });
+test('quality presets reach the encoder, preserve the legacy default and refuse invalid presets', () => {
+  assert.equal(stillRecipe(claim()).settings.quality, 'high');
+  assert.equal(stillRecipe(claim()).settings.videoBitrate, 10_000_000);
+  for (const [quality, bitrate] of Object.entries({
+    low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000,
+  })) {
+    const input = claim();
+    input.settings.quality = quality;
+    const { settings } = stillRecipe(input);
+    assert.equal(settings.quality, quality);
+    assert.equal(settings.videoBitrate, bitrate);
+  }
+  for (const quality of ['lossless', null, 10, {}, 'constructor']) {
+    const input = claim();
+    input.settings.quality = quality;
+    assert.throws(() => stillRecipe(input), /UNSUPPORTED_EXPORT_QUALITY/);
+  }
+});
 for (const [name, change] of [
   [
     'HDR graph',

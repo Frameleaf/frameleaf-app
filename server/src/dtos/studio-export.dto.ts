@@ -3,7 +3,12 @@ import z from 'zod';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
 import { MediaOperationDestinationSchema, StudioExportScopeSchema, StudioExportVersionStateSchema } from 'src/enum.js';
 import { STUDIO_EXPORT_AUDIO } from 'src/utils/studio-export-contract.js';
-import { STUDIO_EXPORT_COLORS, STUDIO_EXPORT_FORMATS, STUDIO_EXPORT_RESOLUTIONS } from 'src/utils/studio-export.js';
+import {
+  STUDIO_EXPORT_COLORS,
+  STUDIO_EXPORT_FORMATS,
+  STUDIO_EXPORT_QUALITIES,
+  STUDIO_EXPORT_RESOLUTIONS,
+} from 'src/utils/studio-export.js';
 
 /**
  * Studio exports and the versions they publish (FL-106, `STU-404`).
@@ -35,6 +40,11 @@ const StudioExportAudioSchema = z
   )
   .meta({ id: 'StudioExportAudio' });
 
+const StudioExportQualitySchema = z
+  .enum(STUDIO_EXPORT_QUALITIES)
+  .describe('Encoder quality preset')
+  .meta({ id: 'StudioExportQuality' });
+
 export const StudioExportResolutionSchema = z
   .enum(STUDIO_EXPORT_RESOLUTIONS)
   .describe('Output resolution')
@@ -52,6 +62,7 @@ const StudioExportCreateSchema = z
     format: StudioExportFormatSchema,
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
+    quality: StudioExportQualitySchema.optional().describe('Defaults to `high`'),
     audio: StudioExportAudioSchema.optional().describe(
       'Defaults to `preserve`; a stereo downmix happens only when asked for',
     ),
@@ -82,6 +93,7 @@ const StudioExportSettingsSchema = z
     format: StudioExportFormatSchema,
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
+    quality: StudioExportQualitySchema.optional().describe('Absent on exports made before quality was a choice'),
     audio: StudioExportAudioSchema.optional().describe('Absent on exports made before audio was a choice'),
   })
   .meta({ id: 'StudioExportSettingsDto' });

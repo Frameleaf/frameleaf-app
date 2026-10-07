@@ -109223,6 +109223,10 @@
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
+          "quality": {
+            "$ref": "#/components/schemas/StudioExportQuality",
+            "description": "Defaults to `high`"
+          },
           "requestKey": {
             "description": "Idempotency key; a repeated submit answers with the first export",
             "pattern": "^[\\w.:-]{1,128}$",
@@ -109290,6 +109294,16 @@
         ],
         "type": "object"
       },
+      "StudioExportQuality": {
+        "description": "Encoder quality preset",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "ultra"
+        ],
+        "type": "string"
+      },
       "StudioExportRemoteReason": {
         "description": "Why a remote destination is asked to drop Studio export data",
         "enum": [
@@ -109327,6 +109341,10 @@
           },
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/StudioExportQuality",
+            "description": "Absent on exports made before quality was a choice"
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
