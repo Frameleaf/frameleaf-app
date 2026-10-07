@@ -11,10 +11,10 @@ import { writeBuddyFile } from './buddy-backup-vault.ts';
 import { BuddyBootDeclarationSchema, readBuddyBootConfiguration } from './buddy-boot-configuration.ts';
 import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
 import { EnvSchema } from './environment-schema.ts';
+import { parseWorkerSelection } from './environment-values.ts';
 
-// Local application-setting authority only. Capture remains all-canonical; security,
-// identity/link/entitlement, mounts, feature enabling and dependency service inputs
-// need their own explicit replacement-local adapter and are never inferred here.
+// Application settings and one explicitly granted supervisor profile. Capture alone
+// never authorizes identity/security, mounts, feature enabling or dependency credentials.
 const applicationKeys = new Set([
   'FRAMELEAF_PORT',
   'FRAMELEAF_HOST',
@@ -28,22 +28,31 @@ const applicationKeys = new Set([
   'FRAMELEAF_SOURCE_URL',
   'NO_COLOR',
 ]);
-const bindingSchema = z.strictObject({
-  version: z.literal(1),
-  state: z.enum(['request', 'ready']),
-  recoveryId: z.string().regex(BUDDY_UUID),
-  snapshotId: z.string().regex(BUDDY_UUID),
-  vaultId: z.string().regex(BUDDY_UUID),
-  replacementIdentity: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-  scope: z.enum(['server', 'settings']),
-  mode: z.enum(['keep', 'replace']),
-  environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys.refine((keys) =>
-    keys.every((key) => applicationKeys.has(key)),
-  ),
-  recoveryDirectory: z.string(),
-  artifactDigest: z.string().regex(/^[\da-f]{64}$/),
-  preparedDigest: z.string().regex(/^[\da-f]{64}$/),
-});
+const workerKeys = ['FRAMELEAF_WORKERS_INCLUDE', 'FRAMELEAF_WORKERS_EXCLUDE'];
+const bindingSchema = z
+  .strictObject({
+    version: z.literal(1),
+    state: z.enum(['request', 'ready']),
+    recoveryId: z.string().regex(BUDDY_UUID),
+    snapshotId: z.string().regex(BUDDY_UUID),
+    vaultId: z.string().regex(BUDDY_UUID),
+    replacementIdentity: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    scope: z.enum(['server', 'settings']),
+    mode: z.enum(['keep', 'replace']),
+    environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys,
+    workerService: z.literal('supervisor').optional(),
+    recoveryDirectory: z.string(),
+    artifactDigest: z.string().regex(/^[\da-f]{64}$/),
+    preparedDigest: z.string().regex(/^[\da-f]{64}$/),
+  })
+  .refine(
+    (binding) =>
+      binding.environmentKeys.every(
+        (key) => applicationKeys.has(key) || (binding.workerService && workerKeys.includes(key)),
+      ) &&
+      (!binding.workerService ||
+        (binding.scope === 'server' && workerKeys.every((key) => binding.environmentKeys.includes(key)))),
+  );
 type BootBinding = z.infer<typeof bindingSchema>;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const refusal = () => new Error('Invalid replacement-local Buddy boot authority');
@@ -180,7 +189,10 @@ const bootEnvironmentOverlay = (
     FRAMELEAF_BUG_FEATURE_URL: helpLinks.bugFeatureUrl,
     FRAMELEAF_SOURCE_URL: helpLinks.sourceUrl,
   };
+  // Keep treats the include/exclude pair as one local deployment profile.
+  const keepWorkers = binding.mode === 'keep' && workerKeys.some((key) => current[key] !== undefined);
   for (const key of binding.environmentKeys) {
+    if (keepWorkers && workerKeys.includes(key)) continue;
     const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
     const existing = (Object.hasOwn(helpValues, key) ? helpValues[key] : current[key]) !== undefined;
     if (binding.mode === 'keep' && existing) continue;
@@ -192,6 +204,7 @@ const bootEnvironmentOverlay = (
   const checked = EnvSchema.safeParse(resolveEnvAliases(prospective).env);
   if (!checked.success) throw refusal();
   parseHelpLinks(checked.data);
+  if (binding.workerService) parseWorkerSelection(checked.data);
   return prospective;
 };
 
@@ -243,7 +256,8 @@ export const finalizeBuddyBootBinding = async (root: string, id: string, assert:
     if (binding.recoveryId !== id || binding.recoveryDirectory !== join(root, 'recovery', id)) throw refusal();
     const local = await replacementBootIdentity(path, process.env);
     if (local.identity !== binding.replacementIdentity || local.marker?.action?.buddyRecoveryId !== id) throw refusal();
-    await bindingEvidence(binding, true);
+    const configuration = await bindingEvidence(binding, true);
+    if (binding.workerService) bootEnvironmentOverlay(binding, configuration, process.env);
     await assert();
     if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
     if (binding.state === 'ready') return; // Complete retry verifies the same grant idempotently.
