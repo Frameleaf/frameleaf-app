@@ -5866,6 +5866,7 @@
   "frameleaf_jobs_name_cloud_backup_verify": "Check whether a Frameleaf Cloud backup verification is due",
   "frameleaf_jobs_name_cloud_ml_description_batch": "Describe photos with Frameleaf Cloud",
   "frameleaf_jobs_name_database_backup": "Back up the database",
+  "frameleaf_jobs_name_duplicate_resolution_lifecycle": "Finish duplicate cleanup",
   "frameleaf_jobs_name_facial_recognition": "Recognize a face",
   "frameleaf_jobs_name_facial_recognition_queue_all": "Find faces to recognize",
   "frameleaf_jobs_name_file_delete": "Delete files",
