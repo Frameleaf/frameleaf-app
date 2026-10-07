@@ -63,7 +63,10 @@ describe(PhysicalFileTrashService.name, () => {
   describe('restore', () => {
     beforeEach(() => {
       mocks.physicalFileTrash.getById.mockResolvedValue(entry);
-      mocks.physicalFileTrash.untrash.mockResolvedValue(entry);
+      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move) => {
+        await move(entry.path, target);
+        return entry;
+      });
       mocks.user.get.mockResolvedValue({ id: 'owner-id', name: 'Ada' } as never);
       mocks.storage.stat.mockResolvedValue({ mtime: new Date('2020-01-01T00:00:00.000Z') } as never);
       mocks.asset.create.mockResolvedValue({ id: 'new-asset-id', ownerId: 'owner-id' } as never);
@@ -74,7 +77,6 @@ describe(PhysicalFileTrashService.name, () => {
       [Buffer.from('c'.repeat(40), 'hex'), ChecksumAlgorithm.sha1File],
     ])('re-imports the file with its retained checksum algorithm (%s, %s)', async (checksum, checksumAlgorithm) => {
       mocks.physicalFileTrash.getById.mockResolvedValue({ ...entry, checksum });
-      mocks.physicalFileTrash.untrash.mockResolvedValue({ ...entry, checksum });
       mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
         physicalFile: { id: 'new-physical' },
         linked: false,
@@ -106,6 +108,76 @@ describe(PhysicalFileTrashService.name, () => {
         'AssetCreate',
         expect.objectContaining({ file: expect.objectContaining({ size: 1234 }) }),
       );
+      expect(mocks.storage.stat).toHaveBeenCalledWith(target);
+      expect(mocks.storage.rename).toHaveBeenCalledExactlyOnceWith(entry.path, target);
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+    });
+
+    it('returns an uninspected file to its original trash entry and restores it on retry', async () => {
+      const inspectionError = new Error('stat failed');
+      const files = new Set([entry.path]);
+      let trashed = true;
+      mocks.physicalFileTrash.getById.mockImplementation(() => Promise.resolve(trashed ? entry : undefined));
+      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move) => {
+        if (!trashed) {
+          return;
+        }
+        await move(entry.path, target);
+        trashed = false;
+        return entry;
+      });
+      mocks.storage.rename.mockImplementation((from, to) => {
+        if (!files.delete(from)) {
+          throw new Error('source missing');
+        }
+        files.add(to);
+        return Promise.resolve();
+      });
+      mocks.storage.stat.mockRejectedValueOnce(inspectionError);
+
+      await expect(sut.restore(entry.id)).rejects.toBe(inspectionError);
+
+      expect(trashed).toBe(true);
+      expect(files).toEqual(new Set([entry.path]));
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+
+      await expect(sut.restore(entry.id)).resolves.toEqual({ assetId: 'new-asset-id' });
+      expect(trashed).toBe(false);
+      expect(files).toEqual(new Set([mocks.physicalFileTrash.untrash.mock.calls[1][1]]));
+      expect(mocks.physicalFileTrash.untrash.mock.calls.map(([id]) => id)).toEqual([entry.id, entry.id]);
+    });
+
+    it('reports inspection and compensation failures while retaining the file', async () => {
+      const inspectionError = new Error('stat failed');
+      const compensationError = new Error('move back failed');
+      const files = new Set([entry.path]);
+      mocks.storage.rename.mockImplementationOnce((from, to) => {
+        files.delete(from);
+        files.add(to);
+        return Promise.resolve();
+      });
+      mocks.storage.rename.mockRejectedValueOnce(compensationError);
+      mocks.storage.stat.mockRejectedValueOnce(inspectionError);
+
+      await expect(sut.restore(entry.id)).rejects.toMatchObject({
+        errors: [inspectionError, compensationError],
+        cause: compensationError,
+      });
+
+      const target = mocks.physicalFileTrash.untrash.mock.calls[0][1];
+      expect(files).toEqual(new Set([target]));
+      expect(mocks.logger.error).toHaveBeenCalledWith('File-trash inspection failed', inspectionError);
+      expect(mocks.logger.error).toHaveBeenCalledWith('File-trash move-back failed', compensationError);
+      expect(mocks.storage.rename).toHaveBeenLastCalledWith(target, entry.path);
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
     it('refuses when the last owner no longer exists', async () => {
