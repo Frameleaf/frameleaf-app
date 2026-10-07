@@ -61,8 +61,8 @@ import {
   unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
-import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 import { SDR_ONLY, isQualifiedRenderSession, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
+import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
