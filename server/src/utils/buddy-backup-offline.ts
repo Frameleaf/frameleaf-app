@@ -6,9 +6,45 @@ import { BUDDY_ID, BUDDY_UUID, parseBuddyKeyring } from './buddy-backup-crypto.t
 import { BuddyBackupReader } from './buddy-backup-reader.ts';
 import { buddyFileHash } from './buddy-backup-recovery.ts';
 import { BuddyVault, createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
+import { prepareBuddyBootBinding, revokeBuddyBootBinding } from './buddy-boot-binding.ts';
 
 /** No database, Cloud credentials, original server, or running application is required. */
 export const buddyBackupCommand = async (args: string[]) => {
+  if (args[0] === 'binding-prepare' || args[0] === 'binding-revoke') {
+    try {
+      const prepare = args[0] === 'binding-prepare';
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        strict: true,
+        allowPositionals: false,
+        options: {
+          binding: { type: 'string' },
+          ...(prepare && {
+            recovery: { type: 'string' },
+            keys: { type: 'string' },
+            'worker-service': { type: 'string' },
+            'mount-profile': { type: 'string' },
+          }),
+        },
+      });
+      if (positionals.length > 0 || typeof values.binding !== 'string')
+        throw new Error('Invalid replacement-local Buddy boot authority');
+      if (prepare) {
+        if (typeof values.recovery !== 'string' || typeof values.keys !== 'string')
+          throw new Error('Invalid replacement-local Buddy boot authority');
+        await prepareBuddyBootBinding(
+          values.binding,
+          values.recovery,
+          values.keys.split(','),
+          values['worker-service'] as string | undefined,
+          values['mount-profile'] as string | undefined,
+        );
+      } else await revokeBuddyBootBinding(values.binding);
+      return;
+    } catch {
+      throw new Error('Invalid replacement-local Buddy boot authority');
+    }
+  }
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
