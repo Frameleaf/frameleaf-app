@@ -45,6 +45,7 @@ import {
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { notificationLocaleOf } from 'src/utils/notification-locale.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
 
@@ -308,6 +309,7 @@ export class PushService {
         userIds: [recipientId],
         title: album.albumName,
         body: `New items were added to ${album.albumName}`,
+        systemTemplate: { version: 1, key: 'push-album-update', args: { albumName: album.albumName } },
         data: { albumId: id, action: 'items-added' },
         assetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
         dedupeKey: `album-update/${id}/${recipientId}`,
@@ -330,6 +332,7 @@ export class PushService {
       userIds: [userId],
       title: 'Shared with you',
       body: `${senderName} shared ${album.albumName} with you`,
+      systemTemplate: { version: 1, key: 'push-album-invite', args: { senderName, albumName: album.albumName } },
       data: { albumId: id, action: 'invited' },
       assetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
     });
@@ -343,6 +346,10 @@ export class PushService {
       userIds: [userId],
       title: 'Shared with you',
       body: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+      systemTemplate:
+        count === 1
+          ? { version: 1, key: 'item-share-one', args: { senderName } }
+          : { version: 1, key: 'item-share-many', args: { senderName, count } },
       data: { ownerId, count, action: 'items-shared' },
     });
   }
@@ -361,6 +368,7 @@ export class PushService {
       userIds,
       title: 'Mentioned in a shared space',
       body: `${senderName} mentioned you in ${album.albumName}`,
+      systemTemplate: { version: 1, key: 'space-mention', args: { senderName, albumName: album.albumName } },
       data: { albumId: id, activityId, action: 'mentioned', ...(assetId && { assetId }) },
       assetIds: assetId ? [assetId] : [],
     });
@@ -380,6 +388,7 @@ export class PushService {
       userIds: [userId],
       title: 'New reply',
       body: `${senderName} replied to your comment in ${album.albumName}`,
+      systemTemplate: { version: 1, key: 'push-space-reply', args: { senderName, albumName: album.albumName } },
       data: { albumId: id, activityId, action: 'replied', ...(assetId && { assetId }) },
       assetIds: assetId ? [assetId] : [],
     });
@@ -397,6 +406,9 @@ export class PushService {
       userIds: [userId],
       title: 'Access changed',
       body: album ? `You no longer have access to ${album.albumName}` : 'You no longer have access to an album',
+      systemTemplate: album
+        ? { version: 1, key: 'access-removed', args: { albumName: album.albumName } }
+        : { version: 1, key: 'access-removed-unknown', args: {} },
       data: { albumId, change: 'removed' },
     });
   }
@@ -435,7 +447,10 @@ export class PushService {
     const assetIds = [...new Set(notice.assetIds)];
     const safeForAll = await this.devices.getPreviewSafeAssetIds(assetIds);
     const safeAssetIds = new Map<string, Set<string>>();
+    const locales = new Map<string, ReturnType<typeof getPreferences>>();
     for (const userId of new Set(devices.map((device) => device.userId))) {
+      // Read at delivery, including retries; queued notices never freeze a device's language.
+      locales.set(userId, getPreferences((await this.userRepository.getMetadata(userId).catch(() => [])) ?? []));
       const hiddenContent = safeForAll.size > 0 ? await this.hiddenContentOf(userId) : undefined;
       safeAssetIds.set(
         userId,
@@ -443,7 +458,15 @@ export class PushService {
       );
     }
     const sentAt = new Date().toISOString();
-    let planned = devices.flatMap((device) => this.plan(device, notice, safeAssetIds.get(device.userId)!, sentAt));
+    let planned = devices.flatMap((device) =>
+      this.plan(
+        device,
+        notice,
+        safeAssetIds.get(device.userId)!,
+        sentAt,
+        notificationLocaleOf(locales.get(device.userId)!, device.sessionId),
+      ),
+    );
     if (notice.retry) {
       const wanted = new Set(notice.retry.targets);
       planned = planned.filter((entry) => wanted.has(deliveryKeyOf(entry)));
@@ -598,6 +621,7 @@ export class PushService {
     notice: PushNotice,
     safeAssetIds: ReadonlySet<string>,
     sentAt: string,
+    locale: string,
   ): PlannedMessage[] {
     const platform =
       device.platform === PushPlatform.Android
@@ -645,7 +669,7 @@ export class PushService {
     // notification, and the end of the chain (complete or failed) is an alert everywhere
     if (!progress || device.platform !== PushPlatform.Ios || progress.state !== 'active') {
       const id = randomUUID();
-      const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds });
+      const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
       try {
         planned.push({
           deviceId: device.id,

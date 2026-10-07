@@ -117799,6 +117799,37 @@
       },
       "UserPreferencesResponseDto": {
         "properties": {
+          "notifications": {
+            "type": "object",
+            "properties": {
+              "locale": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "devices": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "locale": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "locale"
+                  ]
+                }
+              }
+            }
+          },
           "albums": {
             "$ref": "#/components/schemas/AlbumsResponse"
           },
@@ -117881,6 +117912,38 @@
       },
       "UserPreferencesUpdateDto": {
         "properties": {
+          "notifications": {
+            "type": "object",
+            "properties": {
+              "locale": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "devices": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "locale": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "locale"
+                  ]
+                }
+              }
+            },
+            "description": "Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision."
+          },
           "albums": {
             "$ref": "#/components/schemas/AlbumsUpdate"
           },

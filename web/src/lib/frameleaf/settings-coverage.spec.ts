@@ -8,11 +8,11 @@ import { SECRET_CONFIG_PATHS, SECTION_CONFIG_KEYS, SERVER_MANAGED_CONFIG_PATHS }
 /**
  * FL-71 settings coverage gate. Every administrator setting (each leaf of `AdminConfigDto`) and
  * every personal preference (each leaf of `UserPreferencesUpdateDto`) in the generated OpenAPI
- * contract must resolve to a place in the Command Center that edits it: a control on a settings
- * page, a credential dialog, a locked policy row, a server-managed value kept out of the draft or a
- * resource action. A new leaf without a row, a stale row, a row whose evidence left its file, a
- * setting group without a page and a changed bound, enum or secret all fail here instead of
- * quietly losing a source control.
+ * contract must be accounted for by a control on a settings page, a credential dialog, a locked
+ * policy row, a server-managed value kept out of the draft, a resource action or an explicit
+ * API-only preference awaiting client adoption. A new leaf without a row, a stale row, a row whose
+ * evidence left its file, a setting group without a page and a changed bound, enum or secret all
+ * fail here instead of quietly losing source coverage.
  */
 
 type Schema = {
@@ -115,7 +115,7 @@ describe('settings coverage (FL-71)', () => {
     });
   });
 
-  it('places every personal preference, exactly once, with its control still there', () => {
+  it('accounts for every personal preference, exactly once, with its source evidence still there', () => {
     expect(checkCoverage(preferenceLeaves, PREFERENCE_LEAF_COVERAGE)).toEqual({
       unmatched: [],
       doubled: [],

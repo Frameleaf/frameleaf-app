@@ -1,11 +1,13 @@
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, JobName, JobStatus, NotificationLevel, NotificationType, UserMetadataKey } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { notificationStub } from 'test/fixtures/notification.stub.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { userStub } from 'test/fixtures/user.stub.js';
 import { getForAlbum } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
@@ -55,6 +57,7 @@ describe(NotificationService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(NotificationService));
+    mocks.user.getMetadata.mockResolvedValue([]);
     // Existing positive fixtures represent a current authorized owner; individual refusals override it.
     mocks.access.album.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
     mocks.access.asset.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
@@ -88,6 +91,45 @@ describe(NotificationService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  it('persists origin-rendered text without template metadata and falls back when locale lookup fails (FL-329)', async () => {
+    mocks.user.get.mockResolvedValue({
+      ...userStub.user1,
+      metadata: [
+        {
+          key: UserMetadataKey.Preferences,
+          value: {
+            emailNotifications: { enabled: false },
+          },
+        },
+      ],
+    } as never);
+    mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+    mocks.user.getMetadata.mockResolvedValue([
+      {
+        key: UserMetadataKey.Preferences,
+        value: {
+          notifications: { locale: 'en-XA' },
+        },
+      },
+    ]);
+    const event = { ownerId: 'owner', userId: userStub.user1.id, senderName: 'Zoë', count: 1, link: null };
+    NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+    try {
+      await sut.onItemShare(event);
+      const first = mocks.notification.create.mock.calls[0][0];
+      expect(first).toMatchObject({ title: '[Fixture shared]', description: '[Fixture Zoë shared one item]' });
+      expect(first).not.toHaveProperty('systemTemplate');
+      mocks.user.getMetadata.mockRejectedValue(new Error('locale lookup unavailable'));
+      await sut.onItemShare(event);
+      expect(mocks.notification.create.mock.calls[1][0]).toMatchObject({
+        title: 'Shared with you',
+        description: 'Zoë shared an item with you',
+      });
+    } finally {
+      delete NOTIFICATION_CATALOGS['en-XA'];
+    }
   });
 
   describe('notifyAdmins (FL-155)', () => {
@@ -213,6 +255,17 @@ describe(NotificationService.name, () => {
     it.each([
       { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'hunter2-secret' } },
       { name: JobName.SendMail, data: { to: 'a@b.c', subject: 's', html: 'hunter2-secret', text: 'hunter2-secret' } },
+      {
+        name: JobName.PushDeliver,
+        data: {
+          notice: {
+            type: 'shared-activity',
+            title: 'private title',
+            body: 'hunter2-secret',
+            systemTemplate: { version: 1, key: 'item-share-one', args: { senderName: 'hunter2-secret' } },
+          },
+        },
+      },
     ] as const)('never logs the data of a $name job, which carries a password', async (job) => {
       await sut.onJobError({ job, error: new Error('smtp down') });
 

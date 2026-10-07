@@ -1078,6 +1078,12 @@
   "preferences.memories.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.notifications.devices": {
+    "type": "array"
+  },
+  "preferences.notifications.locale": {
+    "type": "string"
+  },
   "preferences.people.enabled": {
     "type": "boolean"
   },

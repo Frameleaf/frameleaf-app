@@ -1,0 +1,69 @@
+{
+  "catalogs": {
+    "en-XA": {
+      "version": 1,
+      "messages": {
+        "item-share-one": { "title": "[Fixture shared]", "body": "[Fixture {senderName} shared one item]" },
+        "access-removed-unknown": { "title": "[Fixture access]", "body": "[Fixture album access ended]" }
+      }
+    },
+    "en-XB": { "version": 0, "messages": { "item-share-one": { "title": "STALE", "body": "STALE {senderName}" } } }
+  },
+  "cases": [
+    {
+      "name": "known template renders only system text",
+      "locale": "en-XA",
+      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë <img src=x> $& {count}" } },
+      "fallback": { "title": "Shared with you", "body": "Zoë <img src=x> $& {count} shared an item with you" },
+      "expected": { "title": "[Fixture shared]", "body": "[Fixture Zoë <img src=x> $& {count} shared one item]" }
+    },
+    {
+      "name": "new known template needs no consumer mapping",
+      "locale": "en-XA",
+      "template": { "version": 1, "key": "access-removed-unknown", "args": {} },
+      "fallback": { "title": "Access changed", "body": "You no longer have access to an album" },
+      "expected": { "title": "[Fixture access]", "body": "[Fixture album access ended]" }
+    },
+    {
+      "name": "unknown template version keeps supplied English",
+      "locale": "en-XA",
+      "template": { "version": 2, "key": "access-removed-unknown", "args": {} },
+      "fallback": { "title": "Access changed", "body": "You no longer have access to an album" },
+      "expected": { "title": "Access changed", "body": "You no longer have access to an album" }
+    },
+    {
+      "name": "unknown template key keeps supplied English",
+      "locale": "en-XA",
+      "template": { "version": 1, "key": "future-template", "args": {} },
+      "fallback": { "title": "Future notice", "body": "Future English text" },
+      "expected": { "title": "Future notice", "body": "Future English text" }
+    },
+    {
+      "name": "legacy English has no template",
+      "locale": "en-XA",
+      "fallback": { "title": "Custom <b>title</b>", "body": "A caption or message {senderName} $& stays verbatim" },
+      "expected": { "title": "Custom <b>title</b>", "body": "A caption or message {senderName} $& stays verbatim" }
+    },
+    {
+      "name": "unsupported locale keeps supplied English",
+      "locale": "fr-CA",
+      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë" } },
+      "fallback": { "title": "Shared with you", "body": "Zoë shared an item with you" },
+      "expected": { "title": "Shared with you", "body": "Zoë shared an item with you" }
+    },
+    {
+      "name": "stale catalog keeps supplied English",
+      "locale": "en-XB",
+      "template": { "version": 1, "key": "item-share-one", "args": { "senderName": "Zoë" } },
+      "fallback": { "title": "Shared with you", "body": "Zoë shared an item with you" },
+      "expected": { "title": "Shared with you", "body": "Zoë shared an item with you" }
+    },
+    {
+      "name": "incorrect argument type keeps supplied English",
+      "locale": "en-XA",
+      "template": { "version": 1, "key": "item-share-many", "args": { "senderName": "Zoë", "count": "2" } },
+      "fallback": { "title": "Shared with you", "body": "Zoë shared 2 items with you" },
+      "expected": { "title": "Shared with you", "body": "Zoë shared 2 items with you" }
+    }
+  ]
+}
