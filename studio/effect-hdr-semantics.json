@@ -32,8 +32,8 @@
     "gpu-brightness": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR adds amount in linear display-light BT.709 reference-white units (1.0 = 203 cd/m²), clamps RGB only to the signed binary16 range, and preserves straight alpha. SDR retains its pinned encoded addition and [0, 1] clamp."
     },
     "gpu-bulge": {
       "sdrParity": true,

@@ -63,16 +63,20 @@ export function photometricSdrExpected(entry) {
   });
 }
 
+// Brightness alone keeps the additive equation when the input is linear light.
+// Other historical encoded equations remain ineligible for the linear domain.
+export const linearBrightnessCases = photometricCases.filter(entry => entry.id === 'gpu-brightness');
+
 export function validatePhotometricResults(results, domain = 'historical-encoded-hdr') {
-  assert(['historical-encoded-hdr', 'srgb-display-bt709'].includes(domain), 'unqualified photometric working domain');
-  assert.deepEqual(results.map(({ name, id, params }) => ({ name, id, params })), photometricCases,
+  assert(['historical-encoded-hdr', 'srgb-display-bt709', 'linear-display-bt709-v1'].includes(domain), 'unqualified photometric working domain');
+  assert.deepEqual(results.map(({ name, id, params }) => ({ name, id, params })), domain === 'linear-display-bt709-v1' ? linearBrightnessCases : photometricCases,
     'photometric cases must be complete, ordered, unique and retain their parameters');
   let channels = 0;
   for (const entry of results) {
     assert(!entry.error, `${entry.name}: GPU render failed: ${entry.error}`);
     assert.equal(entry.pixels?.length, photometricInput.length, `${entry.name}: incomplete GPU pixels`);
     const expected = domain === 'srgb-display-bt709' ? photometricSdrExpected(entry) : photometricExpected(entry);
-    if (domain === 'historical-encoded-hdr') {
+    if (domain !== 'srgb-display-bt709') {
       const rgb = expected.filter((_, i) => i % 4 !== 3);
       assert(rgb.some((v) => v < -0.05) && rgb.some((v) => v > 1.05), `${entry.name}: missing signed/highlight discriminator`);
       const distinguish = (alternative, label) => assert(expected.some((v, i) => i % 4 !== 3 &&
@@ -91,6 +95,6 @@ export function validatePhotometricResults(results, domain = 'historical-encoded
       channels++;
     });
   }
-  assert.equal(channels, 1024, 'all eight 8x4 RGBA numerical cases are mandatory');
+  assert.equal(channels, domain === 'linear-display-bt709-v1' ? 256 : 1024, 'all declared 8x4 RGBA numerical cases are mandatory');
   return { cases: results.length, channels };
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { photometricCases, photometricExpected, photometricInput, photometricSdrExpected, validatePhotometricResults } from './photometric-goldens.mjs';
+import { photometricCases, photometricExpected, photometricInput, photometricSdrExpected, linearBrightnessCases, validatePhotometricResults } from './photometric-goldens.mjs';
 
 // Synthetic checker fixtures only. Hosted browser execution supplies actual
 // production GPU pixels; these CPU fixtures cannot establish GPU qualification.
@@ -42,8 +42,22 @@ test('case omission, duplication, parameter change, partial pixels and GPU refus
 test('current SDR measurements use pinned clamps and gamma; the historical signed oracle cannot qualify linear HDR', () => {
   const sdr = photometricCases.map(entry => ({ ...entry, pixels: photometricSdrExpected(entry) }));
   assert.deepEqual(validatePhotometricResults(sdr, 'srgb-display-bt709'), { cases: 8, channels: 1024 });
-  assert.throws(() => validatePhotometricResults(sdr, 'linear-display-bt709-v1'), /unqualified photometric/);
+  assert.throws(() => validatePhotometricResults(sdr, 'linear-display-bt709-v1'), /complete, ordered, unique/);
   assert.throws(() => validatePhotometricResults(sdr), /channel/);
   const wrong = structuredClone(sdr); wrong[4].pixels = photometricExpected(wrong[4]);
   assert.throws(() => validatePhotometricResults(wrong, 'srgb-display-bt709'), /channel/);
+});
+
+test('linear HDR admits exactly brightness lift/lower and rejects clipping, identity and changed alpha', () => {
+  const samples = () => linearBrightnessCases.map(entry => ({ ...entry, pixels: photometricExpected(entry) }));
+  assert.deepEqual(validatePhotometricResults(samples(), 'linear-display-bt709-v1'), { cases: 2, channels: 256 });
+  assert.throws(() => validatePhotometricResults(fixture(), 'linear-display-bt709-v1'), /complete, ordered, unique/);
+  for (const mutate of [
+    entry => { entry.pixels = [...photometricInput]; },
+    entry => { entry.pixels = entry.pixels.map((v,i) => i%4 === 3 ? v : Math.max(0, Math.min(1,v))); },
+    entry => { entry.pixels[3] = .5; },
+  ]) {
+    const results = samples(); mutate(results[0]);
+    assert.throws(() => validatePhotometricResults(results, 'linear-display-bt709-v1'), /channel/);
+  }
 });

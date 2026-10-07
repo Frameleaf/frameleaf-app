@@ -1,4 +1,4 @@
-// Independent display-light oracles through the real effect-free managed graph.
+// Independent display-light oracles through the managed graph and linear brightness.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
@@ -6,9 +6,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { testedSource } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 const { chromium } = createRequire(new URL('../engine/package.json', import.meta.url))('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
+const source = await testedSource(new URL(import.meta.url));
 const SIZE = 64;
 const FPS = 30;
 // Three solid ten-frame segments per clip, as R'G'B' signal.
@@ -116,6 +118,15 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       record('SDR decode before bilinear filtering',sample(await read(mediaTex),4,1),deliver([.75*decode(128/255)+.25,.75*decode(128/255)+.25,.75*decode(128/255)+.25],'pq'));
       gpu.effects.applyEffectsToTexture(canvas,[],snapshot);
       record('text/Lottie snapshot SDR ingress',sample(await read(snapshot),2,0),deliver([decode(128/255),decode(128/255),decode(128/255)],'pq'));
+      const brightness=[{id:'brightness',type:'gpu-brightness',name:'brightness',enabled:true,params:{amount:.125}}];
+      gpu.effects.applyEffectsToTexture(canvas,brightness,snapshot);
+      record('brightness decodes authored SDR before linear addition',sample(await read(snapshot),2,0),deliver(Array(3).fill(decode(128/255)+.125),'pq'));
+      const encoded=device.createTexture({size:[2,2],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+      try {
+        device.queue.writeTexture({texture:encoded},new Uint8Array(Array.from({length:4},()=>[128,128,128,255]).flat()),{bytesPerRow:8},[2,2]);
+        gpu.effects.applyTextureEffectsToTexture(encoded,[...brightness,{id:'disabled',type:'gpu-exposure',name:'disabled',enabled:false,params:{}}],snapshot,2,2);
+        record('rgba8 texture decode precedes brightness; disabled exposure is ignored',sample(await read(snapshot),2,0),deliver(Array(3).fill(decode(128/255)+.125),'pq'));
+      }finally{encoded.destroy();}
     } finally {mediaTex.destroy();snapshot.destroy();}
     const authoredShape=makeTex(16,16);
     try {
@@ -177,12 +188,16 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       finally {renderer.dispose();}
     };
     const background=[.2,.2,.2].map(decode);const graphic=[.4,.6,.8].map(decode);
+    const lift=(amount)=>[{id:'brightness',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-brightness',params:{amount}}}];
+    await render('root brightness before straight alpha',comp([track(shape('bright','#6699cc',.5,{effects:lift(.125)}),0)]),over(background,graphic.map(v=>v+.125),.5));
+    await render('root signed HDR brightness',comp([track({...image('pq',.6),effects:lift(-.125)},0)]),over(background,linear.pq.map(v=>v-.125),.6));
     const mixed=over(over(over(background,linear.pq,.6),linear.hlg,.4),graphic,.25);
     await render('root mixed linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(image('hlg',.4),1),track(image('pq',.6),2)]),mixed);
     const video=(transfer,opacity)=>({id:`root-video-${transfer}`,mediaId:`root-video-${transfer}`,type:'video',trackId:`root-video-${transfer}`,src:`/hdr-fixture/${transfer}.mp4`,from:0,durationInFrames:60,sourceStart:0,sourceEnd:30,sourceFps:30,sourceDuration:30,speed:1,sourceWidth:64,sourceHeight:64,transform:{x:0,y:0,width:16,height:16,rotation:0,opacity}});
     try {
       for(const transfer of ['pq','hlg']) registerHdrSourceUrl(`root-video-${transfer}`,`/hdr-fixture/${transfer}.mp4`);
       const want=over(over(over(background,videoReferences.pq,.6),videoReferences.hlg,.4),graphic,.25);
+      await render('decoded HDR video brightness',comp([track({...video('pq',.6),effects:lift(.125)},0)]),over(background,videoReferences.pq.map(v=>v+.125),.6),{},25);
       await render('root real decoded video linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(video('hlg',.4),1),track(video('pq',.6),2)]),want,{},25);
     } finally {for(const transfer of ['pq','hlg'])registerHdrSourceUrl(`root-video-${transfer}`,null);}
     await render('half white is 101.5 nits',{...comp([track(shape('white','#ffffff',.5),0)]),backgroundColor:'#000000'},[.5,.5,.5]);
@@ -198,6 +213,12 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const numerator=graphic.map((v,c)=>v*.25+linear.pq[c]*.6*.75);
       const want=background.map((v,c)=>v*(1-alpha*.5)+numerator[c]*.5);
       await render('nested straight alpha source-over',comp([track(instance,0)]),want);
+      const lifted={...nested,id:'brightness-inner',tracks:[track(shape('bright','#6699cc',.25,{effects:lift(.125)}),0),track(image('pq',.6),1)]};
+      lifted.items=lifted.tracks.flatMap(t=>t.items);
+      useCompositionsStore.getState().setCompositions([nested,lifted]);
+      const brightNumerator=graphic.map((v,c)=>(v+.125)*.25+linear.pq[c]*.6*.75);
+      await render('nested child brightness',comp([track({...instance,compositionId:lifted.id},0)]),background.map((v,c)=>v*(1-alpha*.5)+brightNumerator[c]*.5));
+      await render('nested instance brightness preserves coverage',comp([track({...instance,effects:lift(.125)},0)]),background.map((v,c)=>v*(1-alpha*.5)+(numerator[c]+.125*alpha)*.5));
       const matte=shape('nested-mask','#ffffff',.5,{isMask:true,maskType:'alpha'});
       const masked={...nested,id:'linear-masked-inner',tracks:[track(matte,0),...children.map(t=>({...t,order:t.order+1}))],items:[matte,...nested.items]};
       useCompositionsStore.getState().setCompositions([masked]);
@@ -338,6 +359,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     CanvasPool.prototype.acquire=function(...args){pools.canvas.add(this);return acquireCanvas.apply(this,args);};
     GpuTexturePool.prototype.acquire=function(...args){pools.texture.add(this);return acquireTexture.apply(this,args);};
     const gatedCompositions=[
+      ['mixed brightness and exposure',comp([track(shape('mixed','#ffffff',1,{effects:[...lift(.125),...fx]}),0)])],
       ['effect',comp([track(shape('effect','#ffffff',1,{effects:fx}),0)])],
       ['blend',comp([track(shape('blend','#ffffff',.5,{blendMode:'screen'}),0)])],
       ['transition',{...comp([track(image('pq',1),0)]),tracks:[{...track(image('pq',1),0),items:[{...image('pq',1),durationInFrames:30},{...image('hlg',1),from:30,trackId:'pq'}]}],transitions:[{id:'cut',type:'crossfade',presentation:'dissolve',timing:'linear',trackId:'pq',leftClipId:'pq',rightClipId:'hlg',durationInFrames:20,alignment:.5}]}],
@@ -368,12 +390,23 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     const gateInput=makeTex(2,2),gateOutput=makeTex(2,2);
     const refuse=(name,run)=>{let error;try{run();}catch(e){error={name:e.name,message:e.message};}refusals.push({name,error});};
     try {
-      for(const id of GPU_EFFECT_REGISTRY.keys())refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
+      const brightness=[{id:'brightness',type:'gpu-brightness',name:'brightness',enabled:true,params:{amount:.125}}];
+      const legacyVideo=document.createElement('video');
+      refuse('HDR legacy canvas brightness',()=>gpu.effects.applyEffectsToCanvas(canvas,brightness));
+      refuse('HDR legacy video canvas brightness',()=>gpu.effects.applyEffectsToVideo(legacyVideo,brightness,{x:0,y:0,width:2,height:2},2,2));
+      refuse('HDR legacy video texture brightness',()=>gpu.effects.applyEffectsToVideoTexture(legacyVideo,brightness,{x:0,y:0,width:2,height:2},2,2,gateOutput));
+      const encodedOutput=device.createTexture({size:[2,2],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_DST});
+      try { refuse('HDR brightness encoded output',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,brightness,encodedOutput,2,2)); }
+      finally { encodedOutput.destroy(); }
+      refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
+      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>id!=='gpu-brightness'))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
       for(const id of GPU_TRANSITION_REGISTRY.keys())refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
     }finally{gateInput.destroy();gateOutput.destroy();transition.destroy();}
     output.destroy();gpu.dispose();return {rows,refusals,linear,maskUploadPreview};
   });
+  assert.deepEqual(await testedSource(new URL(import.meta.url)),source,'tested inputs changed during measurement');
+  report.source=source;
   if(process.env.LINEAR_HDR_REPORT)await writeFile(process.env.LINEAR_HDR_REPORT,JSON.stringify(report));
   for(const row of report.rows)row.want.forEach((v,c)=>assert.ok(Number.isFinite(row.got[c])&&Math.abs(row.got[c]-v)<=row.budget,`${row.name} channel ${c}: ${row.got[c]} != ${v}`));
   for(const row of report.refusals) {

@@ -421,7 +421,8 @@
       "file": "infrastructure/gpu-effects/effects-pipeline.ts",
       "code": "this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',",
       "class": "format-dispatch",
-      "reason": "Checks the SDR source format to select pre-interpolation linear decoding; allocates no texture."
+      "reason": "Checks the SDR source format to select pre-interpolation linear decoding; allocates no texture.",
+      "count": 2
     },
     {
       "file": "infrastructure/gpu-media/media-render-pipeline.ts",
