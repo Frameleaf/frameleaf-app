@@ -5,6 +5,7 @@
     color: StudioExportColor;
     resolution: StudioExportResolution;
     quality: StudioExportQuality;
+    mastering?: StudioExportMastering;
     range?: { inPoint: number; outPoint: number };
     destination: MediaOperationDestination;
     /**
@@ -34,12 +35,14 @@
     MediaOperationDestination,
     MlDestinationKind,
     MlWorkload,
+    Primaries,
     StudioExportColor,
     StudioExportFormat,
     StudioExportResolution,
     StudioExportQuality,
     getMlCapabilities,
     type MlCapabilityDestinationDto,
+    type StudioExportMastering,
   } from '@frameleaf/sdk';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import { resolvePosition, type DetectedGpu, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
@@ -101,9 +104,12 @@
   ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
-  let color = $state(StudioExportColor.Preserve);
+  let color = $state<StudioExportColor>(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);
   let quality = $state(StudioExportQuality.High);
+  let declarePqMastering = $state(false);
+  let maxNits = $state<number | undefined>();
+  let minNits = $state<number | undefined>();
   let rangeMode = $state('all');
   let inPoint = $state<number | undefined>(0);
   let outPoint = $state<number | undefined>(1);
@@ -174,6 +180,9 @@
     color = StudioExportColor.Preserve;
     resolution = StudioExportResolution.$2160P;
     quality = StudioExportQuality.High;
+    declarePqMastering = false;
+    maxNits = undefined;
+    minNits = undefined;
     rangeMode = 'all';
     inPoint = 0;
     outPoint = 1;
@@ -190,6 +199,20 @@
     }),
   );
   const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
+  const needsMastering = $derived(
+    color === StudioExportColor.Hdr10 || (color === StudioExportColor.Preserve && declarePqMastering),
+  );
+  const mastering = $derived<StudioExportMastering | null>(
+    needsMastering &&
+      typeof maxNits === 'number' &&
+      typeof minNits === 'number' &&
+      [maxNits, minNits].every((nits) => Number.isFinite(nits) && Number(nits.toFixed(4)) === nits) &&
+      maxNits <= 10_000 &&
+      minNits >= 0 &&
+      maxNits > minNits
+      ? { primaries: Primaries.Bt2020, maxNits, minNits }
+      : null,
+  );
   const selectedRange = $derived(
     rangeMode === 'frames' &&
       typeof inPoint === 'number' &&
@@ -204,6 +227,7 @@
   const canExport = $derived(
     !busy &&
       verdict.supported &&
+      (!needsMastering || mastering !== null) &&
       (rangeMode === 'all' || selectedRange !== null) &&
       (smoothFactor === null || !!smoothDestination),
   );
@@ -217,6 +241,7 @@
         color,
         resolution,
         quality,
+        ...(mastering && { mastering }),
         ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
@@ -297,6 +322,48 @@
     </div>
     {#if rangeMode === 'frames' && selectedRange === null}
       <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
+    {/if}
+
+    {#if color === StudioExportColor.Preserve}
+      <label class="note">
+        <input type="checkbox" bind:checked={declarePqMastering} />
+        {$t('frameleaf_studio_export_mastering_preserve')}
+      </label>
+    {/if}
+    {#if needsMastering}
+      <fieldset class="smooth">
+        <legend>{$t('frameleaf_studio_export_mastering_title')}</legend>
+        <p class="note">{$t('frameleaf_studio_export_mastering_hint')}</p>
+        <div class="grid">
+          <label class="field" for="{fieldId}-mastering-max">
+            <span>{$t('frameleaf_studio_export_mastering_max')}</span>
+            <input
+              id="{fieldId}-mastering-max"
+              type="number"
+              min="0"
+              max="10000"
+              step="0.0001"
+              required
+              bind:value={maxNits}
+            />
+          </label>
+          <label class="field" for="{fieldId}-mastering-min">
+            <span>{$t('frameleaf_studio_export_mastering_min')}</span>
+            <input
+              id="{fieldId}-mastering-min"
+              type="number"
+              min="0"
+              max="10000"
+              step="0.0001"
+              required
+              bind:value={minNits}
+            />
+          </label>
+        </div>
+        {#if mastering === null}
+          <p class="note warning" role="status">{$t('frameleaf_studio_export_mastering_invalid')}</p>
+        {/if}
+      </fieldset>
     {/if}
 
     {#if color === StudioExportColor.DolbyVision}

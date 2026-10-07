@@ -64,6 +64,65 @@ describe('Studio export dialog', () => {
     });
   });
 
+  it.each([StudioExportColor.Hdr10, StudioExportColor.Preserve])(
+    'requires chosen display limits for %s PQ export (FL-107)',
+    async (color) => {
+      const onExport = vi.fn();
+      const dialog = render(StudioExportDialog, {
+        open: true,
+        sequenceName: 'Lake trip',
+        renderEvidence: [evidence()],
+        onExport,
+      });
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_color'), { target: { value: color } });
+      if (color === StudioExportColor.Preserve) {
+        await fireEvent.click(screen.getByLabelText('frameleaf_studio_export_mastering_preserve'));
+      }
+      expect(exportButton()).toBeDisabled();
+      const max = screen.getByLabelText('frameleaf_studio_export_mastering_max');
+      const min = screen.getByLabelText('frameleaf_studio_export_mastering_min');
+      expect(max).toHaveValue(null);
+      expect(min).toHaveValue(null);
+      for (const [high, low] of [
+        ['1000', '1000'],
+        ['10001', '0'],
+        ['1000', '-1'],
+        ['1000', '0.00001'],
+        ['1000.00001', '0'],
+        ['', '0'],
+      ]) {
+        await fireEvent.input(max, { target: { value: high } });
+        await fireEvent.input(min, { target: { value: low } });
+        expect(exportButton()).toBeDisabled();
+        await fireEvent.click(exportButton());
+        expect(onExport).not.toHaveBeenCalled();
+      }
+      await fireEvent.input(max, { target: { value: '4000' } });
+      await fireEvent.input(min, { target: { value: '0.005' } });
+      await fireEvent.click(exportButton());
+      expect(onExport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ mastering: { primaries: 'bt2020', maxNits: 4000, minNits: 0.005 } }),
+      );
+      await fireEvent.input(min, { target: { value: '0.0011' } });
+      expect(exportButton()).toBeEnabled();
+      await dialog.rerender({ renderEvidence: [] });
+      expect(exportButton()).toBeDisabled();
+      await dialog.rerender({ renderEvidence: [evidence()] });
+      if (color === StudioExportColor.Preserve) {
+        await fireEvent.click(screen.getByLabelText('frameleaf_studio_export_mastering_preserve'));
+        await fireEvent.click(exportButton());
+        expect(onExport.mock.calls.at(-1)![0]).not.toHaveProperty('mastering');
+      }
+      await dialog.rerender({ open: false });
+      await dialog.rerender({ open: true });
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_color'), {
+        target: { value: StudioExportColor.Hdr10 },
+      });
+      expect(screen.getByLabelText('frameleaf_studio_export_mastering_max')).toHaveValue(null);
+      expect(exportButton()).toBeDisabled();
+    },
+  );
+
   it('submits each chosen quality preset', async () => {
     const onExport = vi.fn();
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
