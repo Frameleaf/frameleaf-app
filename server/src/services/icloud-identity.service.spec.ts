@@ -76,6 +76,8 @@ const setup = (state: {
   visible?: string[];
   /** sha256 hex → asset id held by the caller. */
   hashes?: Record<string, string>;
+  /** Current original SHA-256 by asset; null when no qualified digest is available. */
+  currentHashes?: Record<string, string | null>;
   claims?: ICloudClaimRow[];
   ownsDevice?: boolean;
 }) => {
@@ -104,10 +106,17 @@ const setup = (state: {
     release: vi.fn().mockResolvedValue([]),
   };
   const visible = state.visible ?? (state.identities ?? []).map(({ assetId }) => assetId);
+  const currentHashes = {
+    ...Object.fromEntries((state.identities ?? []).map(({ assetId, sha256 }) => [assetId, sha256.toString('hex')])),
+    ...state.currentHashes,
+  };
   const integrity = {
     getSafetyQuery: vi.fn((_auth: AuthDto, hashes?: string[]) => ({
       where: (_column: string, _op: string, ids: string[]) => ({
-        execute: () => Promise.resolve(ids.filter((id) => visible.includes(id)).map((id) => ({ id }))),
+        execute: () =>
+          Promise.resolve(
+            ids.filter((id) => visible.includes(id)).map((id) => ({ id, sha256: currentHashes[id] ?? null })),
+          ),
       }),
       execute: () =>
         Promise.resolve(
@@ -143,6 +152,62 @@ describe(ICloudIdentityService.name, () => {
   });
 
   describe('lookup', () => {
+    it.each(['original', 'live-motion', 'raw-alternate', 'edit-render'] as const)(
+      'rejects %s identity and audit proof without a matching current original',
+      async (role) => {
+        const known = identity(1, {
+          role,
+          appleFingerprint: MASTER,
+          lastAuditResult: 'match',
+          lastVerifiedAt: new Date(DATE),
+        });
+        for (const current of [sha(2).toString('hex'), null]) {
+          const { sut } = setup({ identities: [known], currentHashes: { [known.assetId]: current } });
+          const { items } = await sut.lookup(auth, {
+            items: [
+              lookupItem(1, { roles: [role] }),
+              lookupItem(1, { roles: [role], sha256ByRole: { [role]: sha(1).toString('hex') } }),
+            ],
+          });
+          for (const item of items) {
+            expect(item.roles[0]).toMatchObject({
+              state: 'unknown',
+              assetId: null,
+              sha256: null,
+              deliveredBy: null,
+              lastVerifiedAt: null,
+              auditVerifiedAt: null,
+            });
+          }
+        }
+      },
+    );
+
+    it.each([sha(1).toString('hex'), sha(2).toString('hex')])(
+      'matches replacement bytes without stale delivery or audit proof when the earlier asset query saw %s',
+      async (current) => {
+        const known = identity(1, { lastAuditResult: 'match', lastVerifiedAt: new Date(DATE) });
+        const replacement = sha(2).toString('hex');
+        const { sut } = setup({
+          identities: [known],
+          currentHashes: { [known.assetId]: current },
+          hashes: { [replacement]: known.assetId },
+        });
+        const { items } = await sut.lookup(auth, {
+          items: [lookupItem(1, { sha256ByRole: { original: replacement } })],
+        });
+        expect(items[0].roles[0]).toMatchObject({
+          state: 'on-server',
+          assetId: known.assetId,
+          sha256: replacement,
+          deliveredBy: null,
+          lastVerifiedAt: null,
+          auditVerifiedAt: null,
+          matchStrength: null,
+        });
+      },
+    );
+
     it('returns review after a source mismatch even when the device sends the old original digest', async () => {
       const known = identity(1, { lastAuditResult: 'mismatch', lastVerifiedAt: null });
       const { sut } = setup({ identities: [known], hashes: { [sha(1).toString('hex')]: known.assetId } });

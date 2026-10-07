@@ -200,12 +200,18 @@ export class ICloudIdentityService {
       identities.map(({ assetId }) => assetId),
       hashes,
     );
+    // Delivery and audit history qualify only the current original, on both lookup paths.
+    const currentIdentities = identities.filter(
+      ({ assetId, sha256 }) => visible.byId.get(assetId) === sha256.toString('hex'),
+    );
     const byConnection = new Map(connections.map((connection) => [connection.id, connection]));
 
     return {
       identityMatching: matching,
       items: items.map(({ item, parsed }) => {
-        const known = parsed ? identities.filter((row) => row.cplAssetRecordName === parsed.cplAssetRecordName) : [];
+        const known = parsed
+          ? currentIdentities.filter((row) => row.cplAssetRecordName === parsed.cplAssetRecordName)
+          : [];
         const records = parsed
           ? inventory.filter(
               (record) =>
@@ -259,7 +265,6 @@ export class ICloudIdentityService {
             const candidates = known.filter(
               (row) =>
                 row.role === role &&
-                visible.ids.has(row.assetId) &&
                 (role !== 'edit-render' || !item.editVersion || row.editVersion === item.editVersion),
             );
             const version = role === 'edit-render' && !item.editVersion ? candidates.at(-1)?.editVersion : undefined;
@@ -285,7 +290,7 @@ export class ICloudIdentityService {
             // 2. the same bytes, whoever delivered them
             const byHash = device ? visible.byHash.get(device) : undefined;
             if (byHash) {
-              const delivered = identities.find(({ assetId }) => assetId === byHash);
+              const delivered = currentIdentities.find(({ assetId }) => assetId === byHash);
               return {
                 ...empty,
                 ...(delivered && this.onServer(delivered)),
@@ -500,7 +505,7 @@ export class ICloudIdentityService {
 
   /** The caller's assets among these, by the safety lookup's rules (FL-226), and which hold these hashes. */
   private async visibleAssets(auth: AuthDto, assetIds: string[], hashes: string[]) {
-    const ids = new Set<string>();
+    const byId = new Map<string, string>();
     const byHash = new Map<string, string>();
     if (assetIds.length > 0) {
       const rows = await this.integrity
@@ -508,16 +513,22 @@ export class ICloudIdentityService {
         .where('asset.id', 'in', [...new Set(assetIds)])
         .execute();
       for (const row of rows) {
-        ids.add(row.id);
+        if (row.sha256) {
+          byId.set(row.id, row.sha256);
+        }
       }
     }
     if (hashes.length > 0) {
       for (const row of await this.integrity.getSafetyQuery(auth, hashes).execute()) {
-        if (row.sha256 && !byHash.has(row.sha256)) {
+        if (!row.sha256) {
+          continue;
+        }
+        byId.set(row.id, row.sha256);
+        if (!byHash.has(row.sha256)) {
           byHash.set(row.sha256, row.id);
         }
       }
     }
-    return { ids, byHash };
+    return { byId, byHash };
   }
 }
