@@ -1,1 +1,0 @@
-{"docker-project":{"projects":[{"name":"frameleaf","path":"project","build_params":{"force_pull":false,"force_recreate":true,"build":false}}]}}
