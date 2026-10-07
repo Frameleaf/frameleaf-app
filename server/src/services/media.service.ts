@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -70,6 +70,7 @@ import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -127,6 +128,7 @@ interface UpsertFileOptions {
   type: AssetFileType;
   path: string;
   physicalFileId?: string | null;
+  renditionIdentity?: string | null;
   isEdited: boolean;
   isProgressive: boolean;
   isTransparent: boolean;
@@ -297,6 +299,8 @@ export class MediaService extends BaseService {
     for (const [type, format] of [
       [AssetFileType.FullSize, image.fullsize.format],
       [AssetFileType.Preview, image.preview.format],
+      [AssetFileType.HdrPreview, ImageFormat.Jpeg],
+      [AssetFileType.HdrFullSize, ImageFormat.Jpeg],
       [AssetFileType.Thumbnail, image.thumbnail.format],
     ] as const) {
       if (!shared.has(type)) {
@@ -510,10 +514,13 @@ export class MediaService extends BaseService {
     image: SystemConfig['image'],
     useEdits = false,
     outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
+    sdrBase?: string,
   ) {
     // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
     const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
     const generateFullsize =
+      !!sdrBase ||
+      (mimeTypes.isWebSupportedImage(asset.originalPath) && asset.exifInfo.imageEncoding?.dynamicRange !== 'sdr') ||
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
       useEdits;
@@ -546,7 +553,7 @@ export class MediaService extends BaseService {
           extracted && !sensorRendered && asset.exifInfo.orientation ? Number(asset.exifInfo.orientation) : undefined,
       };
       return this.mediaRepository
-        .generateImageThumbnails(extracted ? extracted.buffer : asset.originalPath, decodeOptions, {
+        .generateImageThumbnails(extracted ? extracted.buffer : (sdrBase ?? asset.originalPath), decodeOptions, {
           outputs: outputs ? [outputs.thumbnail, outputs.preview, ...(convertFullsize ? [outputs.fullsize] : [])] : [],
           edits: useEdits ? asset.edits : [],
           checkTransparency: !extracted && mimeTypes.canBeTransparent(asset.originalPath),
@@ -598,6 +605,63 @@ export class MediaService extends BaseService {
     }
     this.storageCore.ensureFolders(previewFile.path);
 
+    if (useEdits && !mimeTypes.isRaw(asset.originalFileName)) {
+      const stored = asset.exifInfo.imageEncoding;
+      const encoding =
+        !stored || stored.dynamicRange === 'unknown'
+          ? await this.mediaRepository.inspectImageEncoding(asset.originalPath)
+          : stored;
+      if (encoding?.dynamicRange === 'hdr') {
+        throw new BadRequestException(
+          'This edit requires the HDR-preserving Develop renderer; the previous rendition is retained',
+        );
+      }
+    }
+    let hdrFiles: UpsertFileOptions[] = useEdits
+      ? []
+      : asset.files
+          .filter(
+            (file) =>
+              !file.isEdited && (file.type === AssetFileType.HdrPreview || file.type === AssetFileType.HdrFullSize),
+          )
+          .map((file) => ({ ...file, assetId: asset.id }));
+    let hdrMaster: string | undefined;
+    // Disabled until authored-media and physical-display qualification. Reuses this job's admission and lease.
+    if (
+      !useEdits &&
+      process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+      asset.exifInfo.imageEncoding?.dynamicRange === 'hdr' &&
+      asset.exifInfo.imageEncoding.reconstructionAvailable
+    ) {
+      hdrFiles = [AssetFileType.HdrPreview, AssetFileType.HdrFullSize].map((fileType) =>
+        this.getImageFile(asset, {
+          fileType,
+          format: ImageFormat.Jpeg,
+          isEdited: false,
+          isProgressive: false,
+          isTransparent: false,
+        }),
+      );
+      for (const file of hdrFiles) assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
+      const outputs = await this.mediaRepository.generateHdrRenditions(asset.originalPath, [
+        { path: hdrFiles[0].path, size: image.preview.size },
+        { path: hdrFiles[1].path },
+      ]);
+      for (let index = 0; index < hdrFiles.length; index++) {
+        const output = outputs[index];
+        hdrFiles[index].renditionIdentity = imageRenditionIdentity({
+          sourceChecksum: asset.checksum,
+          editRevision: 0,
+          rendererVersion: HDR_RENDITION_RENDERER_VERSION,
+          width: output.width,
+          height: output.height,
+          gamut: output.gamut,
+          dynamicRange: 'hdr',
+        });
+      }
+      hdrMaster = hdrFiles[1].path;
+    }
+
     const { info, thumbhash, convertFullsize, isTransparent } = await this.extractOriginalImage(
       asset,
       image,
@@ -614,8 +678,10 @@ export class MediaService extends BaseService {
           },
         },
       },
+      hdrMaster,
     );
     const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
+    files.push(...hdrFiles);
     for (const file of files) {
       file.isTransparent = isTransparent;
     }
@@ -2783,7 +2849,8 @@ export class MediaService extends BaseService {
       if (
         existingFile?.path !== newFile.path ||
         existingFile.isProgressive !== newFile.isProgressive ||
-        existingFile.isTransparent !== newFile.isTransparent
+        existingFile.isTransparent !== newFile.isTransparent ||
+        (existingFile.renditionIdentity ?? null) !== (newFile.renditionIdentity ?? null)
       ) {
         toUpsert.push(newFile);
 
@@ -2825,7 +2892,11 @@ export class MediaService extends BaseService {
       const original = await this.physicalFileRepository.getOriginalPhysicalFile(input.assetId);
       const canonical =
         !input.isEdited && original?.canonicalAssetId !== input.assetId
-          ? await this.physicalFileRepository.getCanonicalGeneratedFile(input.assetId, input.type)
+          ? await this.physicalFileRepository.getCanonicalGeneratedFile(
+              input.assetId,
+              input.type,
+              input.renditionIdentity,
+            )
           : undefined;
       if (canonical) {
         prepared.push({ file: { ...input, path: canonical.path, physicalFileId: canonical.id }, physical: undefined });
@@ -2854,11 +2925,13 @@ export class MediaService extends BaseService {
             values (${physical.id}::uuid, ${physical.type}, ${physical.checksum}, ${physical.size}, ${file.path}, ${file.assetId}::uuid)
             on conflict (path) do nothing`.execute(tx);
         }
-        await sql`insert into asset_file("assetId", type, path, "isEdited", "isProgressive", "isTransparent", "physicalFileId")
-          values (${file.assetId}::uuid, ${file.type}, ${file.path}, ${file.isEdited}, ${file.isProgressive}, ${file.isTransparent}, ${file.physicalFileId}::uuid)
+        await sql`insert into asset_file("assetId", type, path, "isEdited", "isProgressive", "isTransparent", "physicalFileId", "renditionIdentity")
+          values (${file.assetId}::uuid, ${file.type}, ${file.path}, ${file.isEdited}, ${file.isProgressive}, ${file.isTransparent}, ${file.physicalFileId}::uuid, ${file.renditionIdentity ?? null})
           on conflict ("assetId", type, "isEdited") do update set path = excluded.path,
             "isProgressive" = excluded."isProgressive", "isTransparent" = excluded."isTransparent",
-            "physicalFileId" = excluded."physicalFileId"`.execute(tx);
+            "physicalFileId" = excluded."physicalFileId", "renditionIdentity" = excluded."renditionIdentity"`.execute(
+          tx,
+        );
       }
       for (const file of obsolete) {
         if (
@@ -2887,7 +2960,11 @@ export class MediaService extends BaseService {
     }
 
     // universal storage is always on: a copy linked to another asset's original shares its generated files
-    const canonical = await this.physicalFileRepository.getCanonicalGeneratedFile(file.assetId, file.type);
+    const canonical = await this.physicalFileRepository.getCanonicalGeneratedFile(
+      file.assetId,
+      file.type,
+      file.renditionIdentity,
+    );
     if (canonical) {
       return {
         file: { ...file, path: canonical.path, physicalFileId: canonical.id },
@@ -2917,6 +2994,8 @@ export class MediaService extends BaseService {
       AssetFileType.Thumbnail,
       AssetFileType.Preview,
       AssetFileType.FullSize,
+      AssetFileType.HdrPreview,
+      AssetFileType.HdrFullSize,
       AssetFileType.EncodedVideo,
     ].includes(type);
   }
@@ -2925,6 +3004,12 @@ export class MediaService extends BaseService {
     switch (type) {
       case AssetFileType.Thumbnail: {
         return PhysicalFileType.Thumbnail;
+      }
+      case AssetFileType.HdrPreview: {
+        return PhysicalFileType.HdrPreview;
+      }
+      case AssetFileType.HdrFullSize: {
+        return PhysicalFileType.HdrFullSize;
       }
       case AssetFileType.Preview: {
         return PhysicalFileType.Preview;

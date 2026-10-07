@@ -39,6 +39,10 @@ export class AssetFileTable {
   @Column()
   path!: string;
 
+  /** Hash of source checksum, edit revision, renderer, dimensions, gamut and dynamic range. */
+  @Column({ nullable: true })
+  renditionIdentity!: Generated<string | null>;
+
   @ForeignKeyColumn(() => PhysicalFileTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE', index: true })
   physicalFileId!: string | null;
 

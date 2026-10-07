@@ -1,4 +1,11 @@
-import { ShallowDehydrateObject } from 'kysely';
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  ShallowDehydrateObject,
+} from 'kysely';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -263,8 +270,150 @@ describe(MediaService.name, () => {
       vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
     });
 
+    it('persists HDR identity only in the durable publication transaction', async () => {
+      const context = {
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetGenerateThumbnails },
+        signal: new AbortController().signal,
+        adoptions: [],
+        afterCommit: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      const identity = 'aa'.repeat(32);
+      const db = new Kysely({
+        dialect: {
+          createDriver: () => new DummyDriver(),
+          createAdapter: () => new PostgresAdapter(),
+          createIntrospector: (db) => new PostgresIntrospector(db),
+          createQueryCompiler: () => new PostgresQueryCompiler(),
+        },
+      });
+      const execute = vi.spyOn(db.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
+      await queueExecution.run(context, () =>
+        sut['stageGeneratedFiles'](
+          [],
+          [
+            {
+              assetId: newUuid(),
+              type: AssetFileType.HdrPreview,
+              path: '/hdr.jpg',
+              isEdited: false,
+              isProgressive: false,
+              isTransparent: false,
+              renditionIdentity: identity,
+            },
+          ],
+        ),
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(context.adoptions).toHaveLength(1);
+      await context.adoptions[0](db as never);
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sql: expect.stringContaining('"renditionIdentity" = excluded."renditionIdentity"'),
+          parameters: expect.arrayContaining([identity]),
+        }),
+        undefined,
+      );
+      await db.destroy();
+    });
+
+    it('keeps full resolution available for web images with unknown encoding', async () => {
+      const asset = getForGenerateThumbnail(AssetFactory.from({ originalFileName: 'image.png' }).exif().build());
+      const result = await sut['extractOriginalImage'](asset, {
+        ...defaults.image,
+        fullsize: { ...defaults.image.fullsize, enabled: false },
+      });
+      expect(result.convertFullsize).toBe(true);
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
+        asset.originalPath,
+        expect.objectContaining({ size: undefined }),
+        expect.anything(),
+      );
+    });
+
+    it('publishes HDR and SDR renditions together while feeding thumbhash from the authored SDR base', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.from({ checksum: Buffer.alloc(32, 1) })
+          .exif({
+            imageEncoding: {
+              dynamicRange: 'hdr',
+              gainMap: 'iso-21496',
+              reconstructionAvailable: true,
+            },
+          })
+          .build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateHdrRenditions.mockImplementation((_source, outputs) =>
+          Promise.resolve(
+            outputs.map((output) => ({
+              path: output.path,
+              width: output.size ?? 100,
+              height: output.size ?? 100,
+              gamut: 1,
+              encoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+            })),
+          ),
+        );
+        mocks.media.generateImageThumbnails.mockResolvedValue({
+          info: rawInfo,
+          thumbhash: Buffer.from('hash'),
+          isTransparent: false,
+        });
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledOnce();
+        expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
+          expect.stringContaining('hdr_fullsize'),
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: AssetFileType.HdrPreview,
+              renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+            }),
+            expect.objectContaining({
+              type: AssetFileType.HdrFullSize,
+              renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+            }),
+            expect.objectContaining({ type: AssetFileType.FullSize }),
+            expect.objectContaining({ type: AssetFileType.Preview }),
+            expect.objectContaining({ type: AssetFileType.Thumbnail }),
+          ]),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('retains the previous rendition set when required HDR generation fails', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.from()
+          .exif({
+            imageEncoding: {
+              dynamicRange: 'hdr',
+              gainMap: 'iso-21496',
+              reconstructionAvailable: true,
+            },
+          })
+          .build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateHdrRenditions.mockRejectedValue(new Error('INVALID_GAIN_MAP'));
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('INVALID_GAIN_MAP');
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it('submits one image batch without returning decoded pixels to the service', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       mocks.media.generateImageThumbnails.mockResolvedValue({
         info: rawInfo,
@@ -341,7 +490,11 @@ describe(MediaService.name, () => {
 
     it('should generate P3 thumbnails for a wide gamut image', async () => {
       const asset = AssetFactory.from()
-        .exif({ profileDescription: 'Adobe RGB', bitsPerSample: 14 })
+        .exif({
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+          profileDescription: 'Adobe RGB',
+          bitsPerSample: 14,
+        })
         .files([AssetFileType.Preview, AssetFileType.Thumbnail])
         .build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -973,7 +1126,9 @@ describe(MediaService.name, () => {
     });
 
     it.each(Object.values(ImageFormat))('should generate an image preview in %s format', async (format) => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { preview: { format } } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const thumbhashBuffer = Buffer.from('a thumbhash', 'utf8');
@@ -1023,7 +1178,9 @@ describe(MediaService.name, () => {
     });
 
     it.each(Object.values(ImageFormat))('should generate an image thumbnail in %s format', async (format) => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { thumbnail: { format } } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const thumbhashBuffer = Buffer.from('a thumbhash', 'utf8');
@@ -1073,7 +1230,9 @@ describe(MediaService.name, () => {
     });
 
     it('should generate progressive JPEG for preview when enabled', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { preview: { progressive: true }, thumbnail: { progressive: false } },
       });
@@ -1112,7 +1271,9 @@ describe(MediaService.name, () => {
     });
 
     it('should generate progressive JPEG for thumbnail when enabled', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { preview: { progressive: false }, thumbnail: { format: ImageFormat.Jpeg, progressive: true } },
       });
@@ -1794,7 +1955,9 @@ describe(MediaService.name, () => {
     });
 
     it('should skip generating full-size preview for web-friendly images', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: true } } });
       mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
       mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });

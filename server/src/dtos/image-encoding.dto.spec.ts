@@ -1,6 +1,6 @@
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { ImageEncodingSchema } from 'src/dtos/image-encoding.dto.js';
-import { AssetType } from 'src/enum.js';
+import { AssetFileType, AssetType } from 'src/enum.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
 
@@ -29,4 +29,33 @@ it('keeps technical HDR information when private EXIF is stripped', () => {
 
 it('does not infer still-image encoding for Live Photo motion or other video', () => {
   expect(mapAsset(getForAsset(AssetFactory.create({ type: AssetType.Video }))).imageEncoding).toBeUndefined();
+});
+
+it('reports only available current HDR derivatives without exposing their identity or path', () => {
+  vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+  try {
+    const asset = AssetFactory.from({ isEdited: true })
+      .file({ type: AssetFileType.HdrPreview, isEdited: false, renditionIdentity: 'aa'.repeat(32) })
+      .file({ type: AssetFileType.HdrFullSize, isEdited: true, renditionIdentity: 'bb'.repeat(32) })
+      .build();
+    const result = mapAsset({ ...asset, hasCurrentDevelop: false }, { stripMetadata: true });
+    expect(result.imageRenditions).toEqual({
+      sdrPreview: false,
+      sdrFullsize: false,
+      hdrPreview: false,
+      hdrFullsize: true,
+    });
+    expect(JSON.stringify(result)).not.toContain('bb'.repeat(32));
+    vi.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+    expect(mapAsset({ ...asset, hasCurrentDevelop: false }).imageRenditions?.hdrFullsize).toBe(false);
+    expect(mapAsset({ ...asset, hasCurrentDevelop: true }).imageRenditions).toBeUndefined();
+    expect(mapAsset(asset).imageRenditions).toBeUndefined();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('leaves rendition availability unknown when file evidence was not loaded', () => {
+  const asset = AssetFactory.create();
+  expect(mapAsset({ ...asset, files: undefined }).imageRenditions).toBeUndefined();
 });

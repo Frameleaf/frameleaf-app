@@ -59,6 +59,8 @@ const generatedFileTypes = new Set([
   AssetFileType.Thumbnail,
   AssetFileType.Preview,
   AssetFileType.FullSize,
+  AssetFileType.HdrPreview,
+  AssetFileType.HdrFullSize,
   AssetFileType.EncodedVideo,
 ]);
 
@@ -907,11 +909,18 @@ export class PhysicalDeduplicationService extends BaseService {
       if (!masterFile || masterFile.path === duplicateFile.path) {
         continue;
       }
+      if (
+        (duplicateFile.type === AssetFileType.HdrPreview || duplicateFile.type === AssetFileType.HdrFullSize) &&
+        (!duplicateFile.renditionIdentity || duplicateFile.renditionIdentity !== masterFile.renditionIdentity)
+      ) {
+        continue;
+      }
 
       const masterPhysicalFile = await this.ensureGeneratedPhysicalFile(
         masterAssetId,
         masterFile.type,
         masterFile.path,
+        masterFile.renditionIdentity,
       );
       if (!masterPhysicalFile || !(await this.storageRepository.checkFileExists(masterPhysicalFile.path))) {
         continue;
@@ -1085,6 +1094,12 @@ export class PhysicalDeduplicationService extends BaseService {
       if (!masterFile || masterFile.path === duplicateFile.path) {
         continue;
       }
+      if (
+        (duplicateFile.type === AssetFileType.HdrPreview || duplicateFile.type === AssetFileType.HdrFullSize) &&
+        (!duplicateFile.renditionIdentity || duplicateFile.renditionIdentity !== masterFile.renditionIdentity)
+      ) {
+        continue;
+      }
 
       bytes += await this.getFileSize(duplicateFile.path);
     }
@@ -1129,8 +1144,15 @@ export class PhysicalDeduplicationService extends BaseService {
     return [`${originalPath}.xmp`, `${join(assetPath.dir, assetPath.name)}.xmp`];
   }
 
-  private async ensureGeneratedPhysicalFile(assetId: string, type: AssetFileType, path: string) {
-    const existing = await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type);
+  private async ensureGeneratedPhysicalFile(
+    assetId: string,
+    type: AssetFileType,
+    path: string,
+    renditionIdentity?: string | null,
+  ) {
+    const existing = renditionIdentity
+      ? await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type, renditionIdentity)
+      : await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type);
     if (existing) {
       return existing;
     }
@@ -1174,6 +1196,12 @@ export class PhysicalDeduplicationService extends BaseService {
     switch (type) {
       case AssetFileType.Thumbnail: {
         return PhysicalFileType.Thumbnail;
+      }
+      case AssetFileType.HdrPreview: {
+        return PhysicalFileType.HdrPreview;
+      }
+      case AssetFileType.HdrFullSize: {
+        return PhysicalFileType.HdrFullSize;
       }
       case AssetFileType.Preview: {
         return PhysicalFileType.Preview;

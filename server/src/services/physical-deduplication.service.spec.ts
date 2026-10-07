@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import type { PhysicalDeduplicationMigrationState } from 'src/types.js';
 import {
+  AssetFileType,
   AssetStatus,
   DatabaseLock,
   JobName,
@@ -820,6 +821,56 @@ describe(PhysicalDeduplicationService.name, () => {
       });
       expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it.each([null, 'bb'.repeat(32)])(
+      'keeps HDR renditions with missing or different identity (%s)',
+      async (identity) => {
+        const { sut, mocks } = setup();
+        mocks.physicalFile.getGeneratedFiles.mockResolvedValue([
+          { type: AssetFileType.HdrPreview, path: '/copy-hdr.jpg', renditionIdentity: identity },
+        ] as never);
+        mocks.physicalFile.getGeneratedFile.mockResolvedValue({
+          type: AssetFileType.HdrPreview,
+          path: '/primary-hdr.jpg',
+          renditionIdentity: 'aa'.repeat(32),
+        } as never);
+
+        await sut.linkToPrimary(COPY_1, MASTER_ID);
+
+        expect(mocks.physicalFile.linkGeneratedFile).not.toHaveBeenCalled();
+        expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      },
+    );
+
+    it('shares HDR only when the entire rendition identity matches', async () => {
+      const { sut, mocks } = setup();
+      const identity = 'aa'.repeat(32);
+      mocks.physicalFile.getGeneratedFiles.mockResolvedValue([
+        { type: AssetFileType.HdrPreview, path: '/copy-hdr.jpg', renditionIdentity: identity },
+      ] as never);
+      mocks.physicalFile.getGeneratedFile.mockResolvedValue({
+        type: AssetFileType.HdrPreview,
+        path: '/primary-hdr.jpg',
+        renditionIdentity: identity,
+      } as never);
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({ id: 'hdr-physical', path: '/primary-hdr.jpg' });
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.linkToPrimary(COPY_1, MASTER_ID);
+
+      expect(mocks.physicalFile.getCanonicalGeneratedFile).toHaveBeenCalledWith(
+        MASTER_ID,
+        AssetFileType.HdrPreview,
+        identity,
+      );
+      expect(mocks.physicalFile.linkGeneratedFile).toHaveBeenCalledWith(
+        COPY_1,
+        AssetFileType.HdrPreview,
+        'hdr-physical',
+        '/primary-hdr.jpg',
+      );
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith('/copy-hdr.jpg', expect.any(Function));
     });
 
     it('links a copy whose own file is missing: its relink', async () => {

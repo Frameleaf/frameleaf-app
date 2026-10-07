@@ -13,6 +13,7 @@ import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/per
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
+  AssetFileType,
   AssetStatus,
   AssetType,
   AssetTypeSchema,
@@ -39,6 +40,15 @@ const SanitizedAssetResponseSchema = z
     imageEncoding: ImageEncodingSchema.optional().describe(
       'Source image color encoding; unprocessed or unavailable evidence remains unknown',
     ),
+    imageRenditions: z
+      .object({
+        sdrPreview: z.boolean(),
+        sdrFullsize: z.boolean(),
+        hdrPreview: z.boolean(),
+        hdrFullsize: z.boolean(),
+      })
+      .optional()
+      .describe('Available current still renditions; omitted when file evidence was not loaded'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     localDateTime: z
       .string()
@@ -169,12 +179,38 @@ export type MapAsset = {
   width: number | null;
   height: number | null;
   isEdited: boolean;
+  hasCurrentDevelop?: boolean;
 };
 
 export type AssetMapOptions = {
   stripMetadata?: boolean;
   withStack?: boolean;
   auth?: AuthDto;
+};
+
+const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
+  if (entity.type !== AssetType.Image || !entity.files || entity.hasCurrentDevelop !== false) return;
+  const available = (type: AssetFileType, hdr = false) =>
+    entity.files!.some(
+      (file) =>
+        file.type === type &&
+        file.isEdited === entity.isEdited &&
+        !!file.path &&
+        (!hdr ||
+          (process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+            !!file.renditionIdentity &&
+            /^[a-f0-9]{64}$/.test(file.renditionIdentity))),
+    );
+  return {
+    sdrPreview: available(AssetFileType.Preview),
+    sdrFullsize:
+      available(AssetFileType.FullSize) ||
+      (!entity.isEdited &&
+        entity.exifInfo?.imageEncoding?.dynamicRange === 'sdr' &&
+        mimeTypes.isWebSupportedImage(entity.originalPath)),
+    hdrPreview: available(AssetFileType.HdrPreview, true),
+    hdrFullsize: available(AssetFileType.HdrFullSize, true),
+  };
 };
 
 const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
@@ -221,6 +257,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       livePhotoVideoId: entity.livePhotoVideoId,
       imageEncoding:
         entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+      imageRenditions: mapImageRenditions(entity),
       hasMetadata: false,
       width: entity.width,
       height: entity.height,
@@ -257,6 +294,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     isOffline: entity.isOffline,
     imageEncoding:
       entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+    imageRenditions: mapImageRenditions(entity),
     hasMetadata: true,
     duplicateId: entity.duplicateId,
     resized: true,

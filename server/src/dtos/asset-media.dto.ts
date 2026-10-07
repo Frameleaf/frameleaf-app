@@ -27,6 +27,12 @@ const AssetMediaOptionsSchema = z
     ),
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
     faceSource: stringToBool.optional().describe('Return the ordinary edited preview used for face coordinates'),
+    dynamicRange: z
+      .enum(['auto', 'sdr', 'hdr'])
+      .optional()
+      .describe(
+        'Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.',
+      ),
   })
   .meta({ id: 'AssetMediaOptionsDto' });
 

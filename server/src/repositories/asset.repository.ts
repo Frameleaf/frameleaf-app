@@ -1450,7 +1450,12 @@ export class AssetRepository {
               .select((eb) => eb.fn.toJson(eb.table('stacked_assets')).as('stack')),
           ),
       )
-      .$if(!!files, (qb) => qb.select(withFiles))
+      .$if(!!files, (qb) =>
+        qb.select(withFiles).select(
+          sql<boolean>`exists(select 1 from public.asset_develop_revision
+          where "assetId" = asset.id and "isCurrent")`.as('hasCurrentDevelop'),
+        ),
+      )
       .$if(!!tags, (qb) => qb.select(withTags))
       .$if(!!edits, (qb) => qb.select(withEdits))
       .limit(1)
@@ -2750,13 +2755,28 @@ export class AssetRepository {
   }
   @GenerateSql({ params: [DummyValue.UUID, AssetFileType.Preview, true] })
   async getForThumbnail(id: string, type: AssetFileType, isEdited: boolean) {
+    const hdr = type === AssetFileType.HdrPreview || type === AssetFileType.HdrFullSize;
     return this.db
       .selectFrom('asset')
       .where('asset.id', '=', id)
-      .leftJoin('asset_file', (join) =>
-        join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
-      )
-      .select(['asset.ownerId', 'asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .leftJoin('asset_file', (join) => {
+        const file = join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type);
+        // HDR may not fall back to original pixels when an edited still is current.
+        return hdr
+          ? isEdited
+            ? file.onRef('asset_file.isEdited', '=', 'asset.isEdited')
+            : file.on('asset_file.isEdited', '=', false)
+          : file;
+      })
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.ownerId',
+        'asset.originalPath',
+        'asset.originalFileName',
+        'asset_file.path as path',
+        'asset_file.renditionIdentity',
+        'asset_exif.imageEncoding',
+      ])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
