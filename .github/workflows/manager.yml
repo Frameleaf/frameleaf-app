@@ -177,7 +177,7 @@ jobs:
     name: Manager Publish
     needs: manager
     environment: production
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/frameleaf-manager-release') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:

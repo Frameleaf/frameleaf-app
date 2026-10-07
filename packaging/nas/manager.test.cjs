@@ -49,6 +49,11 @@ test('NAS Manager packages authenticate the component, both architectures and ex
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));
     assert.deepEqual(await fs.readdir(output), ['manager-manifest.json', 'truenas', 'unraid']);
+    for (const head_branch of ['fork/main', 'aj/frameleaf-manager-release']) {
+      const admitted = path.join(directory, head_branch.replaceAll('/', '-'));
+      await buildManager(file, admitted, { run, request: async () => ({ ...build, head_branch }) });
+      assert.equal(JSON.parse(await fs.readFile(path.join(admitted, 'manager-manifest.json'), 'utf8')).image, manifest.image);
+    }
     let count = 0;
     for (const mutation of [
       value => { value.image = `${IMAGE}:latest`; },
@@ -68,7 +73,9 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     }
     await fs.writeFile(file, JSON.stringify(manifest));
     for (const patch of [{ conclusion: 'failure' }, { path: '.github/workflows/cli.yml' },
-      { head_sha: 'e'.repeat(40) }, { head_branch: 'aj/unreviewed' }, { run_attempt: 2 }]) {
+      { head_sha: 'e'.repeat(40) }, { head_branch: 'aj/unreviewed' },
+      { head_branch: 'aj/frameleaf-manager-release-unreviewed' },
+      { head_repository: { full_name: 'other/frameleaf-app' } }, { run_attempt: 2 }]) {
       const refused = path.join(directory, `refused-${count++}`);
       await assert.rejects(buildManager(file, refused, { run, request: async () => ({ ...build, ...patch }) }));
       await assert.rejects(fs.stat(refused), { code: 'ENOENT' });
