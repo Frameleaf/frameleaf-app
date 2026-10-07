@@ -309,7 +309,12 @@
       "path": "patches/0064-project-master-hydration.patch",
       "sha256": "4c2ad8e90ee46ba2033193a68a598d2c1dff64582fbaff8ab636e2f22e25ae22",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0066-timeline-toolbar-scrollport.patch",
+      "sha256": "13428c4fc8f0c4ae4b8c61d64e2b17f1b65a7a7f6bdc469e3a52ccc63df2a2cf",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "c6399060ca3e01142e609afe74d05d088536e986809c5a3d4d1c26186f2739c6"
+  "sourceSha256": "90f9b32bd2f6cee27040f978a02cfe734e6659e9ee83f86dd88e65dd213987dc"
 }

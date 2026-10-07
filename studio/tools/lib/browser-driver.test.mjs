@@ -211,6 +211,27 @@ test('evaluates an async function via execute/async and unwraps the callback res
   }
 });
 
+test('classic evaluation preserves omitted defaults, explicit null and zero in sync and async callbacks', async () => {
+  const stub = await startStubDriver();
+  const driver = await createWebDriverClassicDriver({endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555'});
+  try {
+    const page = await driver.newPage();
+    for (const callback of [(value = 1200) => value, async (value = 1200) => value]) {
+      for (const arg of [undefined, null, 0]) {
+        await page.evaluate(callback, arg);
+        const {script, args} = stub.requests.at(-1).body;
+        const async = callback.constructor.name === 'AsyncFunction';
+        const execute = (arguments_) => runInNewContext(`(function() { ${script} }).apply(null, args)`, {args: arguments_});
+        const outcome = async ? await new Promise(resolve => execute([...args, resolve])) : execute(args);
+        assert.equal(async ? outcome.result : outcome, arg === undefined ? 1200 : arg);
+      }
+    }
+  } finally {
+    await driver.close();
+    await stub.close();
+  }
+});
+
 test('waitForFunction polls evaluate until it returns truthy, then stops', async () => {
   const stub = await startStubDriver();
   try {

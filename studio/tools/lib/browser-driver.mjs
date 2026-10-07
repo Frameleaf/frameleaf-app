@@ -258,7 +258,7 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
                 body: JSON.stringify({
                   script: [
                     'const callback = arguments[arguments.length - 1];',
-                    `(${fn.toString()})(arguments[0]).then(`,
+                    `(${fn.toString()})(${arg === undefined ? 'undefined' : 'arguments[0]'}).then(`,
                     '  (result) => callback({ ok: true, result }),',
                     '  (error) => callback({ ok: false, error: String((error && error.stack) || error) }),',
                     ');',
@@ -272,7 +272,7 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
             : call('/execute/sync', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ script: `return (${fn.toString()})(arguments[0])`, args: [arg] }),
+                body: JSON.stringify({ script: `return (${fn.toString()})(${arg === undefined ? 'undefined' : 'arguments[0]'})`, args: [arg] }),
               }),
         close: () => {}, // session-scoped; real cleanup happens in the driver's own close()
       };
