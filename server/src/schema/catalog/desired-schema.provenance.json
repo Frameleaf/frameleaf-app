@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "48aaff4a0744c758abc804c41a1852f28e32800b",
+  "sourceCommit": "cc5192ce44ef84c6d8088321f1adeb2de61d5353",
   "sourceHashes": {
-    "src/enum.ts": "ef19273c1cf2390b0cb0d769758cf3ead5f3e51c43697e0cd8053f702eba03fb",
+    "src/enum.ts": "bd31e3ffac6ea9910e9638594da4c1ce7b147d2f093bd9e33ff163f79b7db6ad",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
@@ -29,7 +29,7 @@
     "src/schema/tables/asset-exif.table.ts": "9187718bb229728523f198c1604625c28dda449045540c837254f025e9b84d9f",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
-    "src/schema/tables/asset-file.table.ts": "f448edf1d5db653d445339e45f000077769672d4b2b13400b0e31eec300003d0",
+    "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
     "src/schema/tables/asset-health.table.ts": "536148718f59c2e563872283f16977f306bab2d5d484f94f32b564bef7bf4221",
     "src/schema/tables/asset-job-status.table.ts": "04945382b91c12c509a3ef729b80297925c60a2e17d22fa195d3a680d529d9ab",
     "src/schema/tables/asset-lock.table.ts": "e5c30ecbad4caaa288d8699e03893411f99f3e519e94ac6a62c9df347167f5cc",
@@ -126,6 +126,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "fd07151c9a875cdace47e91caae42b8a30f3ed349740777200b6ff2e872f92f4",
+  "dumpSha256": "fc51dea71646e8d740e83608cffed7a05f6d65d581747bf227b2454c82714efb",
   "rawMetadataSha256": "3129dbe4bb956095e087831badce46c354f75dea68d97e741da6f941db2ee1fd"
 }

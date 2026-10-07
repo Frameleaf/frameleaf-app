@@ -14680,6 +14680,20 @@
         "operationId": "viewAsset",
         "parameters": [
           {
+            "name": "dynamicRange",
+            "required": false,
+            "in": "query",
+            "description": "Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "sdr",
+                "hdr"
+              ]
+            }
+          },
+          {
             "name": "edited",
             "required": false,
             "in": "query",
@@ -58601,6 +58615,8 @@
         "enum": [
           "fullsize",
           "preview",
+          "hdr_preview",
+          "hdr_fullsize",
           "thumbnail",
           "sidecar",
           "encoded_video"
@@ -59172,6 +59188,30 @@
           "imageEncoding": {
             "$ref": "#/components/schemas/ImageEncodingInfo",
             "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+          },
+          "imageRenditions": {
+            "description": "Available current still renditions; omitted when file evidence was not loaded",
+            "properties": {
+              "hdrFullsize": {
+                "type": "boolean"
+              },
+              "hdrPreview": {
+                "type": "boolean"
+              },
+              "sdrFullsize": {
+                "type": "boolean"
+              },
+              "sdrPreview": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "sdrPreview",
+              "sdrFullsize",
+              "hdrPreview",
+              "hdrFullsize"
+            ],
+            "type": "object"
           },
           "isArchived": {
             "description": "Is archived",
@@ -60537,6 +60577,30 @@
           "imageEncoding": {
             "$ref": "#/components/schemas/ImageEncodingInfo",
             "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+          },
+          "imageRenditions": {
+            "description": "Available current still renditions; omitted when file evidence was not loaded",
+            "properties": {
+              "hdrFullsize": {
+                "type": "boolean"
+              },
+              "hdrPreview": {
+                "type": "boolean"
+              },
+              "sdrFullsize": {
+                "type": "boolean"
+              },
+              "sdrPreview": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "sdrPreview",
+              "sdrFullsize",
+              "hdrPreview",
+              "hdrFullsize"
+            ],
+            "type": "object"
           },
           "isArchived": {
             "description": "Is archived",
