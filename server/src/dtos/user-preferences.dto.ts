@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
+import { NotificationLocalePreferencesSchema } from 'src/utils/notification-locale.js';
 import {
   type FrameleafUserPreferences,
   getPreferencesRevision,
@@ -168,6 +169,9 @@ const SavedSearchesUpdateSchema = z
 
 const UserPreferencesUpdateSchema = z
   .object({
+    notifications: NotificationLocalePreferencesSchema.optional().describe(
+      'Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision.',
+    ),
     albums: AlbumsUpdateSchema,
     avatar: AvatarUpdateSchema,
     cast: CastUpdateSchema,
@@ -295,6 +299,7 @@ const RecentlyAddedResponseSchema = z
 
 const UserPreferencesResponseSchema = z
   .object({
+    notifications: NotificationLocalePreferencesSchema.optional(),
     albums: AlbumsResponseSchema,
     folders: FoldersResponseSchema,
     memories: MemoriesResponseSchema,

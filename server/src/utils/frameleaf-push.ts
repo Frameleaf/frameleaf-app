@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
 import { PushEventType } from 'src/enum.js';
+import { type SystemNotificationTemplate, renderSystemNotification } from 'src/utils/notification-locale.js';
 
 /**
  * FL-302 (NAPI-015): the Frameleaf push gateway contract (FC-92, `push.frameleaf.cloud`; frameleaf-cloud
@@ -189,9 +190,11 @@ export type PushNotice = {
   userIds?: string[];
   /** Every administrator, in addition to `userIds` (the server owner's events). */
   admins?: boolean;
-  /** English fallback text; the app may localise from `type` and `data` instead. */
+  /** Supplied fallback text, preserved for legacy notices. */
   title: string;
   body: string;
+  /** FL-329: origin-only system template, rendered per recipient device before encryption. */
+  systemTemplate?: SystemNotificationTemplate;
   data?: PushNoticeData;
   /**
    * Items the notice is about. Only items that are neither Locked nor sensitive reach a payload
@@ -239,8 +242,8 @@ const truncate = (value: string, max: number) =>
  * at all, only its fixed state.) The result always fits `PUSH_PLAINTEXT_MAX_BYTES`.
  */
 export const buildPushPayload = (
-  notice: Pick<PushNotice, 'type' | 'title' | 'body' | 'data' | 'assetIds' | 'activation'>,
-  options: { id: string; sentAt: string; safeAssetIds: ReadonlySet<string> },
+  notice: Pick<PushNotice, 'type' | 'title' | 'body' | 'data' | 'assetIds' | 'activation' | 'systemTemplate'>,
+  options: { id: string; sentAt: string; safeAssetIds: ReadonlySet<string>; locale?: string },
 ): PushPayload => {
   const candidates = notice.assetIds ?? [];
   const withheld = new Set(candidates.filter((id) => !options.safeAssetIds.has(id)));
@@ -248,13 +251,14 @@ export const buildPushPayload = (
   const data = Object.fromEntries(
     Object.entries(notice.data ?? {}).filter(([, value]) => typeof value !== 'string' || !withheld.has(value)),
   );
+  const text = renderSystemNotification(notice.systemTemplate, options.locale ?? 'en', notice);
   const payload: PushPayload = {
     v: 1,
     id: options.id,
     type: notice.type,
     sentAt: options.sentAt,
-    title: truncate(notice.title, 120),
-    body: truncate(notice.body, 400),
+    title: truncate(text.title, 120),
+    body: truncate(text.body, 400),
     data,
     assetIds,
     preview: assetIds.length > 0 ? { assetId: assetIds[0] } : null,

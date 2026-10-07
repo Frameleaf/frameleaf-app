@@ -4,6 +4,8 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { notificationManager } from '$lib/stores/notification-manager.svelte';
 import en from '../../../../../../i18n/en.json';
+import fixtures from '../../../../../../server/test/fixtures/system-notification-locale.json';
+import NotificationItem from './NotificationItem.svelte';
 import NotificationPanel from './NotificationPanel.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -35,6 +37,15 @@ beforeEach(() => {
 });
 
 describe('NotificationPanel', () => {
+  it.each(fixtures.cases)('displays supplied origin text verbatim: $name', ({ expected }) => {
+    const { container } = render(NotificationItem, {
+      notification: { ...notification('fixture', expected.title), description: expected.body },
+      onclick: vi.fn(),
+    });
+    expect(screen.getByText(expected.title)).toBeInTheDocument();
+    expect(screen.getByText(expected.body)).toBeInTheDocument();
+    expect(container.querySelector('img, b')).toBeNull();
+  });
   it('dismisses one notification on its own through the server', async () => {
     sdkMock.deleteNotification.mockResolvedValue(undefined as never);
     render(NotificationPanel);

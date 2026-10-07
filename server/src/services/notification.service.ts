@@ -29,6 +29,12 @@ import { BaseService } from 'src/services/base.service.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
+import {
+  type NotificationText,
+  type SystemNotificationTemplate,
+  notificationLocaleOf,
+  renderSystemNotification,
+} from 'src/utils/notification-locale.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -94,12 +100,16 @@ export class NotificationService extends BaseService {
     switch (job.name) {
       case JobName.DatabaseBackup: {
         const errorMessage = error instanceof Error ? error.message : error;
+        const text = await this.localText(
+          admin.id,
+          { version: 1, key: 'job-failed', args: { jobName: job.name, error: String(errorMessage) } },
+          { title: 'Job Failed', body: `Job ${[job.name]} failed with error: ${errorMessage}` },
+        );
         const item = await this.notificationRepository.create({
           userId: admin.id,
           type: NotificationType.JobFailed,
           level: NotificationLevel.Error,
-          title: 'Job Failed',
-          description: `Job ${[job.name]} failed with error: ${errorMessage}`,
+          ...text,
         });
 
         this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
@@ -257,9 +267,16 @@ export class NotificationService extends BaseService {
       userId,
       type: NotificationType.ItemShare,
       level: NotificationLevel.Success,
-      title: 'Shared with you',
-      description:
-        count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+      ...(await this.localText(
+        userId,
+        count === 1
+          ? { version: 1, key: 'item-share-one', args: { senderName } }
+          : { version: 1, key: 'item-share-many', args: { senderName, count } },
+        {
+          title: 'Shared with you',
+          body: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+        },
+      )),
       data: JSON.stringify({ ownerId, count, link }),
     });
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
@@ -299,8 +316,11 @@ export class NotificationService extends BaseService {
       userId,
       type: NotificationType.ClusterGroupRequest,
       level: NotificationLevel.Info,
-      title: 'Cluster Group Request',
-      description: `${senderName} asked you to join their cluster group`,
+      ...(await this.localText(
+        userId,
+        { version: 1, key: 'cluster-request', args: { senderName } },
+        { title: 'Cluster Group Request', body: `${senderName} asked you to join their cluster group` },
+      )),
       data: JSON.stringify({ clusterGroupId }),
     });
 
@@ -327,8 +347,11 @@ export class NotificationService extends BaseService {
         userId,
         type: NotificationType.SharedSpaceMention,
         level: NotificationLevel.Info,
-        title: 'Mentioned in a shared space',
-        description: `${senderName} mentioned you in ${album.albumName}`,
+        ...(await this.localText(
+          userId,
+          { version: 1, key: 'space-mention', args: { senderName, albumName: album.albumName } },
+          { title: 'Mentioned in a shared space', body: `${senderName} mentioned you in ${album.albumName}` },
+        )),
         data: JSON.stringify({ albumId: id, assetId, activityId }),
       });
 
@@ -361,8 +384,11 @@ export class NotificationService extends BaseService {
       userId,
       type: NotificationType.SharedSpaceReply,
       level: NotificationLevel.Info,
-      title: 'Reply in a shared space',
-      description: `${senderName} replied to your comment in ${album.albumName}`,
+      ...(await this.localText(
+        userId,
+        { version: 1, key: 'space-reply', args: { senderName, albumName: album.albumName } },
+        { title: 'Reply in a shared space', body: `${senderName} replied to your comment in ${album.albumName}` },
+      )),
       data: JSON.stringify({ albumId: id, assetId, activityId, parentActivityId }),
     });
 
@@ -731,13 +757,27 @@ export class NotificationService extends BaseService {
       userId,
       type,
       level: isInvite ? NotificationLevel.Success : NotificationLevel.Info,
-      title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
-      description: isInvite
-        ? `${senderName} shared an album (${album.albumName}) with you`
-        : `New media has been added to the album (${album.albumName})`,
+      ...(await this.localText(
+        userId,
+        isInvite
+          ? { version: 1, key: 'album-invite', args: { senderName, albumName: album.albumName } }
+          : { version: 1, key: 'album-update', args: { albumName: album.albumName } },
+        {
+          title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
+          body: isInvite
+            ? `${senderName} shared an album (${album.albumName}) with you`
+            : `New media has been added to the album (${album.albumName})`,
+        },
+      )),
       data: JSON.stringify({ albumId: album.id }),
     });
 
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  private async localText(userId: string, template: SystemNotificationTemplate, fallback: NotificationText) {
+    const preferences = getPreferences((await this.userRepository.getMetadata(userId).catch(() => [])) ?? []);
+    const { title, body } = renderSystemNotification(template, notificationLocaleOf(preferences), fallback);
+    return { title, description: body };
   }
 }

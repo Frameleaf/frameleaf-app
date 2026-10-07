@@ -22,8 +22,10 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PushService } from 'src/services/push.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { PushNotice, PushSendRequest, PushSendResult, collapseIdOf } from 'src/utils/frameleaf-push.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { factory } from 'test/small.factory.js';
 
 type DeviceKey = { publicKey: string; privateKey: KeyObject };
@@ -135,6 +137,69 @@ const notice = (overrides: Partial<PushNotice> = {}): PushNotice => ({
 });
 
 describe(PushService.name, () => {
+  it('renders per device before encryption and re-reads a changed preference for gateway retries (FL-329)', async () => {
+    const { sut, devices, users, gateway, jobs, sent } = newHarness();
+    const [firstKey, secondKey] = [newDeviceKey(), newDeviceKey()];
+    const first = device(firstKey, { userId: 'user-1' });
+    const second = device(secondKey, { userId: 'user-1' });
+    devices.getDeliveryTargets.mockResolvedValue([first, second]);
+    users.getMetadata.mockResolvedValue([
+      {
+        key: UserMetadataKey.Preferences,
+        value: {
+          notifications: {
+            locale: 'en-XA',
+            devices: [{ sessionId: second.sessionId, locale: 'en' }],
+          },
+        },
+      },
+    ]);
+    let attempts = 0;
+    gateway.send.mockImplementation((_target, request) => {
+      sent.push(request);
+      return Promise.resolve(++attempts === 2 ? { status: 'retry', retryAfterSec: 30 } : { status: 'sent' });
+    });
+    NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+    try {
+      const data = {
+        notice: notice({
+          title: 'Shared with you',
+          body: 'Zoë shared an item with you',
+          systemTemplate: { version: 1, key: 'item-share-one', args: { senderName: 'Zoë' } },
+          dedupeKey: 'same-notice',
+        }),
+      };
+      await sut.handleDeliver(data);
+      expect(decrypt(sent[0], firstKey)).toMatchObject({
+        title: '[Fixture shared]',
+        body: '[Fixture Zoë shared one item]',
+      });
+      expect(decrypt(sent[1], secondKey)).toMatchObject({
+        title: 'Shared with you',
+        body: 'Zoë shared an item with you',
+      });
+      users.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { notifications: { locale: 'en-XA', devices: [] } } },
+      ]);
+      const retry = jobs.queue.mock.calls[0][0];
+      await sut.handleDeliver(retry.data);
+      expect(sent).toHaveLength(3);
+      expect(decrypt(sent[2], secondKey)).toMatchObject({
+        title: '[Fixture shared]',
+        body: '[Fixture Zoë shared one item]',
+      });
+      expect(sent[2].collapseId).toBe(sent[1].collapseId);
+      expect(sent.every((request) => !JSON.stringify(request).includes('Zoë'))).toBe(true);
+      users.getMetadata.mockRejectedValue(new Error('locale lookup unavailable'));
+      await sut.handleDeliver(data);
+      expect(decrypt(sent[3], firstKey)).toMatchObject({
+        title: 'Shared with you',
+        body: 'Zoë shared an item with you',
+      });
+    } finally {
+      delete NOTIFICATION_CATALOGS['en-XA'];
+    }
+  });
   describe('status', () => {
     it('reports push as unavailable on a server that is not linked', async () => {
       const { sut } = newHarness({ linked: false });

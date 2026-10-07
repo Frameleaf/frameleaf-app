@@ -2860,6 +2860,13 @@ export type TagsResponse = {
     sidebarWeb: boolean;
 };
 export type UserPreferencesResponseDto = {
+    notifications?: {
+        locale?: string;
+        devices?: {
+            sessionId: string;
+            locale: string;
+        }[];
+    };
     albums: AlbumsResponse;
     cast: CastResponse;
     download: DownloadResponse;
@@ -2968,6 +2975,14 @@ export type TagsUpdate = {
     sidebarWeb?: boolean;
 };
 export type UserPreferencesUpdateDto = {
+    /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
+    notifications?: {
+        locale?: string;
+        devices?: {
+            sessionId: string;
+            locale: string;
+        }[];
+    };
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
     cast?: CastUpdate;

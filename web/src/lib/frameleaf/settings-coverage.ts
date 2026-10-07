@@ -15,7 +15,9 @@ export type SettingsLeafKind =
   /** Set by a resource action (a consent step), not a form field. */
   | 'resource-action'
   /** Part of the save protocol (a revision check), not a setting. */
-  | 'protocol';
+  | 'protocol'
+  /** Available through the API; a client settings control/adoption is still pending. */
+  | 'api-only';
 
 export type SettingsLeafCoverage = { pattern: string; kind: SettingsLeafKind; file: string; evidence: string };
 
@@ -1482,6 +1484,19 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'memories.sidebarWeb',
+  },
+  // FL-329: origin-server preference API only; client language controls/adoption remain pending.
+  {
+    pattern: 'notifications.devices',
+    kind: 'api-only',
+    file: '../server/src/utils/notification-locale.ts',
+    evidence: '.array(z.object({ sessionId: z.uuid(), locale: NotificationLocaleSchema }))',
+  },
+  {
+    pattern: 'notifications.locale',
+    kind: 'api-only',
+    file: '../server/src/utils/notification-locale.ts',
+    evidence: 'locale: NotificationLocaleSchema.optional(),',
   },
   {
     pattern: 'people.enabled',

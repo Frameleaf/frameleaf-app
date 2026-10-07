@@ -16,9 +16,13 @@ export const IMMICH_SERVER_START = 'Frameleaf Server is listening';
 
 /**
  * FL-71: jobs whose data must never be kept or logged: the signup notice carries the new account's
- * password, and the mail it queues carries it in the rendered body.
+ * password, the mail it queues carries it in the rendered body, and push notices carry private text.
  */
-export const JOBS_WITH_SENSITIVE_DATA: ReadonlySet<JobName> = new Set([JobName.NotifyUserSignup, JobName.SendMail]);
+export const JOBS_WITH_SENSITIVE_DATA: ReadonlySet<JobName> = new Set([
+  JobName.NotifyUserSignup,
+  JobName.SendMail,
+  JobName.PushDeliver,
+]);
 
 /**
  * FL-71: jobs that are reported (JobError) when their handler throws but are not recorded as failed,

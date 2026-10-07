@@ -1465,6 +1465,8 @@ export type IntegrityCheckRun = { runId: string; startedAt: string; batches: num
 export type IntegrityCheckRuns = Partial<Record<IntegrityReport, { lastRunAt?: string; current?: IntegrityCheckRun }>>;
 
 export type UserPreferences = {
+  /** FL-329: origin-rendered system text; device overrides are scoped to signed-in sessions. */
+  notifications?: import('src/utils/notification-locale.js').NotificationLocalePreferences;
   albums: {
     defaultAssetOrder: AssetOrder;
   };

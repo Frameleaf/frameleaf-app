@@ -112,6 +112,7 @@ export const PREFERENCES_CHANGED_MESSAGE =
  */
 const getDefaultPreferences = (): FrameleafUserPreferences => {
   return {
+    notifications: { locale: 'en', devices: [] },
     albums: {
       defaultAssetOrder: AssetOrder.Desc,
     },
