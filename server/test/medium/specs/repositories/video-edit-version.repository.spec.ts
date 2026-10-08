@@ -239,8 +239,6 @@ it('permanently deletes version state and queues all derived paths while protect
     ownerId: user.id,
     type: AssetType.Video,
     originalPath: '/source/delete-versioned.mp4',
-    // Permanent deletion only removes an asset that is still in the trash (FL-71).
-    deletedAt: new Date(),
   });
   const versions = ctx.get(AssetEditRepository);
   await versions.replaceAll(asset.id, recipe);
@@ -253,6 +251,9 @@ it('permanently deletes version state and queues all derived paths while protect
   await versions.publishVideoVersion(exported, rendered(asset.id, exported.id));
   const shared = rendered(asset.id, first.id).masterPath;
   const { asset: alias } = await ctx.newAsset({ ownerId: user.id, originalPath: shared });
+  // Edits are admitted only before trashing; permanent deletion requires the source to remain trashed.
+  await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+  await expect(versions.replaceAll(asset.id, recipe)).rejects.toThrow('Edit source asset is no longer available');
   expect(await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).toBe(JobStatus.Success);
   const selections = await sql`SELECT * FROM public.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
   const history = await sql`SELECT * FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
