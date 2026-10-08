@@ -28,8 +28,8 @@
    * Size and space: `size` picks a height; `LOGO_MIN_HEIGHT` (tokens.ts) is enforced as a floor; `clearSpace`
    * pads the mark by a quarter of its height on every side so neighbours keep their distance.
    *
-   * `arrive` plays Unfurl, the signature motion, once as the mark appears. It is for the moments
-   * Frameleaf introduces itself: sign-in and first run. Never in the top bar, never on an error.
+   * `arrive` fades the mark in once as it appears, for the moments Frameleaf introduces itself:
+   * sign-in and first run. Never in the top bar, never on an error.
    *
    * `decorative` marks the mark `aria-hidden`/`alt=""` for callers (e.g. `TopBar`) that already
    * wrap it in an element carrying its own accessible name, so the name is never announced twice.
@@ -64,7 +64,7 @@
     mono?: boolean;
     size?: keyof typeof sizeClasses;
     clearSpace?: boolean;
-    /** Play the Unfurl signature once as the mark appears (sign-in, first run). */
+    /** Fade the mark in once as it appears (sign-in, first run). */
     arrive?: boolean;
     decorative?: boolean;
     class?: string;
@@ -154,19 +154,9 @@
     height: 100%;
     width: auto;
   }
-  /*
-   * Unfurl, the signature (base.css keyframes): the mark opens out of its lower inline-start
-   * corner once. A crossfade under Reduce Motion; important so it outranks the global clamp.
-   */
+  /* The mark fades in once (base.css keyframes); important so it outranks the global clamp. */
   .fl-logo-arrive {
-    transform-origin: bottom left;
-    animation:
-      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
-      fl-unfurl-in var(--fl-duration-unfurl) var(--fl-unfurl) both;
-  }
-  .fl-logo-arrive:dir(rtl) {
-    transform-origin: bottom right;
-    animation-name: fl-fade-in, fl-unfurl-in-rtl;
+    animation: fl-fade-in var(--fl-motion-slow) var(--fl-ease) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .fl-logo-arrive {

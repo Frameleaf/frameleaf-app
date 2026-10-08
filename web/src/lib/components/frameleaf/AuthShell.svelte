@@ -29,9 +29,9 @@
     /** The prototype's `AuthShell wide` (onboarding): a wider single pane. */
     wide?: boolean;
     /**
-     * The lockup plays Unfurl, the signature, once as the page appears. For the screen where
-     * Frameleaf introduces itself (sign-in) only; the PIN, password and maintenance screens are
-     * seen too often, or at the wrong moment, for it (BRAND.md decisions 6 and 9).
+     * The lockup fades in once as the page appears. For the screen where Frameleaf introduces
+     * itself (sign-in) only; the PIN, password and maintenance screens are seen too often, or at
+     * the wrong moment, for it.
      */
     arrive?: boolean;
   } = $props();

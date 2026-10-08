@@ -219,8 +219,7 @@
           {#if active || $stats.errors > 0}
             <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
           {:else}
-            <!-- Finished with nothing to look at: the done mark unfurls once (a fade under Reduce Motion). -->
-            <span class="fl-done-mark fl-unfurl" aria-hidden="true">
+            <span class="fl-done-mark fl-pop" aria-hidden="true">
               <Icon icon={mdiCloudCheckOutline} size="20" />
             </span>
           {/if}

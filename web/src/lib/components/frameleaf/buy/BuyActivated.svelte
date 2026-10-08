@@ -47,7 +47,7 @@
 
 <section class="auth-card fl-continuous-corners" aria-labelledby={titleId}>
   <div class="buy-active">
-    <span class="buy-badge fl-brand-frame fl-unfurl"><Icon icon={mdiHandHeartOutline} size="28" /></span>
+    <span class="buy-badge fl-pop"><Icon icon={mdiHandHeartOutline} size="28" /></span>
     <div>
       <h3 id={titleId}>
         {name ? $t('frameleaf_buy_thank_you_name', { values: { name } }) : $t('frameleaf_buy_thank_you')}

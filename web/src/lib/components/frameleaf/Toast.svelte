@@ -84,10 +84,7 @@
     {@render children()}
   {:else}
     {#if statusIcon}
-      <!-- A done mark unfurls (the signature); every other status simply arrives with the toast. -->
-      <span class="fl-toast-icon" class:fl-unfurl={color === 'success' || color === 'primary'} aria-hidden="true"
-        ><Icon icon={statusIcon} size={ICON_SIZE.lg} /></span
-      >
+      <span class="fl-toast-icon" aria-hidden="true"><Icon icon={statusIcon} size={ICON_SIZE.lg} /></span>
     {/if}
     <p class="fl-toast-text">
       {#if heading}<strong>{@render text(heading)}</strong>{/if}

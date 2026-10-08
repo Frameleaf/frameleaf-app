@@ -10,9 +10,8 @@
    *
    * `children` renders under the actions, for a hint such as "or drop files anywhere".
    *
-   * A full-size empty state is a moment with no photographs on screen, so it carries the brand:
-   * the icon sits in the logo's frame, drawn in the brand gradient, and unfurls once (BRAND.md
-   * decisions 3 and 6). The compact form, used inside panels beside content, stays plain.
+   * A full-size empty state has no photographs on screen, so its icon sits on a soft accent plate
+   * and fades in once. The compact form, used inside panels beside content, stays plain.
    */
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Icon } from '@frameleaf/ui';
@@ -92,45 +91,17 @@
     display: inline-flex;
     margin-bottom: var(--fl-space-1);
   }
-  /*
-   * The logo's frame, drawn in the brand gradient as a hairline with nothing inside it, and the
-   * Unfurl signature. Written here rather than with the base.css classes so they hold wherever the
-   * component is mounted, and so the frame can be hollow over any surface.
-   */
+  /* Written here rather than with the base.css classes so it holds wherever the component mounts. */
   .icon.framed {
-    position: relative;
     display: inline-grid;
     place-items: center;
     width: 3.5rem;
     height: 3.5rem;
     margin-bottom: var(--fl-space-2);
-    color: var(--fl-text);
-    border-radius: 27%;
-    transform-origin: bottom left;
-    animation:
-      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
-      fl-unfurl-in var(--fl-duration-unfurl) var(--fl-unfurl) both;
-  }
-  .icon.framed::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    padding: 1.5px;
-    background: var(--fl-brand-gradient);
-    border-radius: inherit;
-    -webkit-mask:
-      linear-gradient(black 0 0) content-box,
-      linear-gradient(black 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    mask:
-      linear-gradient(black 0 0) content-box exclude,
-      linear-gradient(black 0 0);
-    pointer-events: none;
-  }
-  .icon.framed:dir(rtl) {
-    transform-origin: bottom right;
-    animation-name: fl-fade-in, fl-unfurl-in-rtl;
+    color: var(--fl-accent);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-accent-soft);
+    animation: fl-fade-in var(--fl-motion-slow) var(--fl-ease) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .icon.framed {

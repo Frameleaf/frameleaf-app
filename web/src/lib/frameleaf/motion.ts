@@ -11,15 +11,7 @@ import {
   type SlideParams,
   type TransitionConfig,
 } from 'svelte/transition';
-import {
-  DURATION,
-  EXIT_DURATION,
-  SNAPPY,
-  SPRING_STOPS,
-  STAGGER_LIMIT,
-  STAGGER_MS,
-  UNFURL_FROM,
-} from '$lib/frameleaf/tokens';
+import { DURATION, EXIT_DURATION, SNAPPY, SPRING_STOPS, STAGGER_LIMIT, STAGGER_MS } from '$lib/frameleaf/tokens';
 import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 
 /**
@@ -34,8 +26,7 @@ import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
  * `sheet`, `dock`, `reveal`, for `in:` and `out:`), and `leave()` for an element that is hidden by
  * script rather than by a Svelte block. Reflow is `animateFlip` / `motionFlip`; Hero is
  * `withViewTransition`, viewer-zoom.ts (a tile and the viewer) and `heroNavigation` (a card and the
- * page it opens). On top of the seven sits the signature, Unfurl (`fl-unfurl`, `in:unfurl`), for
- * marks only.
+ * page it opens).
  */
 
 /** The crossfade that replaces a moving transition under Reduce Motion (apple-style.css:473-490). */
@@ -293,47 +284,6 @@ export const reveal: PatternTransition = pattern(
   }),
   ({ delay }) => ({ delay, duration: DURATION.fast, css: (t) => `opacity: ${t}` }),
 );
-
-/**
- * A single soft overshoot, the script twin of `--fl-unfurl` (cubic-bezier(0.2, 1.5, 0.4, 1)): past
- * the resting value by about eight percent of the travel, then home.
- */
-export const unfurlEasing = (t: number): number => {
-  if (t <= 0) {
-    return 0;
-  }
-  if (t >= 1) {
-    return 1;
-  }
-  const back = t - 1;
-  return 1 + 2.5 * back * back * back + 1.5 * back * back;
-};
-
-/**
- * UNFURL, the Frameleaf signature (BRAND.md decision 6): a mark grows out of its lower
- * inline-start corner, turning eight degrees as it opens, over 440ms with one soft overshoot.
- * `in:unfurl` for the logo on sign-in and first run, the selection tick, a done mark and an
- * empty-state icon; never for a container. `out:unfurl` is a 120ms fade. A crossfade under Reduce
- * Motion. The CSS class `fl-unfurl` is the same move.
- */
-export const unfurl: PatternTransition = (node, params = {}, options = {}) => {
-  if (prefersReducedMotion()) {
-    return crossfade(node, params.delay);
-  }
-  if (options.direction === 'out') {
-    return { delay: params.delay, duration: EXIT_DURATION.pop, css: (t) => `opacity: ${t}` };
-  }
-  const rtl = typeof getComputedStyle === 'function' && getComputedStyle(node).direction === 'rtl';
-  const turn = rtl ? -UNFURL_FROM.rotate : UNFURL_FROM.rotate;
-  return {
-    delay: params.delay,
-    duration: DURATION.unfurl,
-    css: (t) => {
-      const opened = unfurlEasing(t);
-      return `transform-origin: ${params.origin ?? (rtl ? 'bottom right' : 'bottom left')}; opacity: ${fadeWithin(t, DURATION.unfurl, DURATION.reduced)}; scale: ${UNFURL_FROM.scale + (1 - UNFURL_FROM.scale) * opened}; rotate: ${turn * (1 - opened)}deg`;
-    },
-  };
-};
 
 const LEAVE_FRAMES: Record<MotionPattern, { duration: number; to: Keyframe }> = {
   pop: { duration: EXIT_DURATION.pop, to: { opacity: 0 } },

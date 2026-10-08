@@ -55,7 +55,7 @@ export const staggerIn = (node: HTMLElement) => {
 };
 
 /**
- * The welcome arrival. The logo plays Unfurl by itself (`Logo arrive`, CSS); once it has opened,
+ * The welcome arrival. The logo fades in by itself (`Logo arrive`, CSS); once it has shown,
  * every `[data-intro]` element is revealed in turn (the Reveal pattern: a fade with the shared
  * stagger). Reduced motion: the same fades with no stagger. Calls `onSettled` when the last one
  * lands. Any click or key press finishes whatever is still running, so nobody waits for it.
@@ -63,8 +63,8 @@ export const staggerIn = (node: HTMLElement) => {
 export const logoIntro = (node: HTMLElement, onSettled?: () => void) => {
   const reduced = mediaQueryManager.reducedMotion;
   const after = [...node.querySelectorAll('[data-intro]')];
-  // Reveal starts as the mark passes its overshoot, so the two read as one movement.
-  const start = reduced ? 0 : DURATION.unfurl / 2;
+  // Reveal starts as the mark lands, so the two read as one movement.
+  const start = reduced ? 0 : DURATION.slow;
   const running = after.map((element, index) =>
     animate(element, [{ opacity: 0 }, { opacity: 1 }], {
       duration: reduced ? DURATION.reduced : DURATION.base,

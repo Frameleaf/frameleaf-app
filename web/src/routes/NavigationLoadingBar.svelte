@@ -1,8 +1,7 @@
 <script lang="ts">
   /**
-   * The route-change progress line: 2px of the brand gradient on a transparent track at the very
-   * top of the window, one of the few places the gradient appears in the product (BRAND.md
-   * decision 3). It waits a moment before showing so fast navigations never flash it, and fades
+   * The route-change progress line: 2px of the accent on a transparent track at the very top of
+   * the window. It waits a moment before showing so fast navigations never flash it, and fades
    * out when the page arrives rather than vanishing. Under Reduce Motion the line does not creep:
    * it appears part-way and fades.
    */
@@ -52,8 +51,6 @@
     display: block;
     height: 100%;
     background: var(--fl-accent);
-    /* Sized to the window, not the line, so the colours stay put while the line grows across them. */
-    background: var(--fl-brand-gradient) 0 0 / 100vw 100% no-repeat;
     border-start-end-radius: var(--fl-radius-pill);
     border-end-end-radius: var(--fl-radius-pill);
   }

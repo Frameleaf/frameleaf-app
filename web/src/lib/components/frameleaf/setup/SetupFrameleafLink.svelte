@@ -92,7 +92,7 @@
 
 {#if linked || status?.state === 'linked'}
   <div class="frs-linked" role="status">
-    <span class="frs-linked-badge fl-brand-frame fl-unfurl"><Icon icon={mdiCheck} size="22" aria-hidden={true} /></span>
+    <span class="frs-linked-badge fl-pop"><Icon icon={mdiCheck} size="22" aria-hidden={true} /></span>
     <div>
       <strong>
         {status?.account?.label

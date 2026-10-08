@@ -254,7 +254,6 @@
     close('skipped');
   }}
 >
-  <span class="ct-brand-line fl-brand-line" aria-hidden="true"></span>
   <p class="ct-overline" aria-live="polite">
     <span>{$t('frameleaf_cloud_tour_overline')}</span>
     <span aria-hidden="true">·</span>

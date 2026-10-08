@@ -8,13 +8,13 @@
       "dark": "color-mix(in srgb, var(--fl-accent), black 14%)",
       "light": "color-mix(in srgb, var(--fl-accent), var(--fl-text) 24%)"
     },
-    "relation": "Leaf Green is the brand kit base colour and the centre of the logo leaf; the gradient is the same green lit from lime to teal",
+    "relation": "Leaf Green is the brand kit base colour and the centre of the logo leaf",
     "soft": "accent at 14% opacity",
     "softStrong": "accent at 24% opacity"
   },
   "accentP3": {
     "dark": "color(display-p3 0.2 0.82 0.38)",
-    "light": "color(display-p3 0.08 0.49 0.25)"
+    "light": "color(display-p3 0.1 0.5 0.26)"
   },
   "ai": {
     "color": "#5e5ce6",
@@ -26,37 +26,7 @@
   },
   "brand": {
     "blue": "#3b82f6",
-    "gradient": {
-      "allowed": [
-        "the logo artwork",
-        "the loading mark and the navigation line",
-        "sign-in, first-run and link-to-Cloud panels",
-        "the frame around an empty-state or completion icon",
-        "the filled end of a progress bar that has finished"
-      ],
-      "angle": 137,
-      "css": "linear-gradient(137deg, #86f345 0%, #36ec72 25%, #00c4d6 57%, #00c7b0 76%, #00d874 100%)",
-      "name": "Leaf Light",
-      "never": [
-        "button, chip, badge or toggle fills",
-        "text",
-        "panel, card or page backgrounds",
-        "anything that touches or overlaps a photograph or video",
-        "status colours",
-        "glows, blurs or shadows"
-      ],
-      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg #frame-gradient: the five stops and the 137 degree axis of the logo frame",
-      "stops": [
-        ["#86f345", 0],
-        ["#36ec72", 25],
-        ["#00c4d6", 57],
-        ["#00c7b0", 76],
-        ["#00d874", 100]
-      ]
-    },
     "green": "#22c55e",
-    "ink": "#091219",
-    "lime": "#b3ff8b",
     "name": "Frameleaf",
     "teal": "#0ea5a0"
   },
@@ -69,24 +39,24 @@
       "ai-text": "#ffffff",
       "blue": "#5794f7",
       "blue-text": "#061529",
-      "border": "#303b43",
-      "border-strong": "#64727d",
-      "canvas": "#0d1115",
+      "border": "#303940",
+      "border-strong": "#687682",
+      "canvas": "#101416",
       "danger": "#f16966",
       "danger-text": "#2a0605",
-      "muted": "#9aa6b0",
-      "on-material-accent": "#b3ff8b",
+      "muted": "#a1adb8",
+      "on-material-accent": "#8be9ab",
       "on-material-muted": "#d3dae0",
-      "panel": "#141c21",
-      "raised": "#1f2830",
+      "panel": "#171d21",
+      "raised": "#222a30",
       "teal": "#0ea5a0",
       "teal-text": "#04201f",
       "text": "#e5e7eb",
       "viewer-canvas": "#08090b",
-      "viewer-focus": "#b3ff8b",
+      "viewer-focus": "#a5d4ef",
       "viewer-muted": "#979ba2",
       "viewer-panel": "#17181a",
-      "viewer-raised": "#262729",
+      "viewer-raised": "#25272b",
       "viewer-text": "#f1f1f2",
       "warning": "#e4bd69",
       "warning-text": "#2b1f05"
@@ -99,24 +69,24 @@
       "ai-text": "#ffffff",
       "blue": "#0b5fea",
       "blue-text": "#ffffff",
-      "border": "#d4dadf",
+      "border": "#d6dce0",
       "border-strong": "#64727d",
-      "canvas": "#f3f6f8",
+      "canvas": "#f4f6f7",
       "danger": "#c62828",
       "danger-text": "#ffffff",
-      "muted": "#505e6a",
+      "muted": "#53636d",
       "on-material-accent": "#0b4f28",
       "on-material-muted": "#36434b",
       "panel": "#ffffff",
-      "raised": "#eaeef2",
+      "raised": "#eef1f3",
       "teal": "#0a7673",
       "teal-text": "#ffffff",
-      "text": "#0e1b24",
+      "text": "#18252b",
       "viewer-canvas": "#08090b",
-      "viewer-focus": "#b3ff8b",
+      "viewer-focus": "#a5d4ef",
       "viewer-muted": "#979ba2",
       "viewer-panel": "#17181a",
-      "viewer-raised": "#262729",
+      "viewer-raised": "#25272b",
       "viewer-text": "#f1f1f2",
       "warning": "#886100",
       "warning-text": "#ffffff"
@@ -131,12 +101,12 @@
       "canvas": "the page behind everything",
       "danger": "destructive actions and failures",
       "muted": "secondary text; never on frosted material",
-      "on-material": "secondary text and accent marks on frosted material; the dark accent mark is the brand lime",
+      "on-material": "secondary text and accent marks on frosted material",
       "panel": "rails, cards, dialogs, menus",
       "raised": "controls, hover fills, wells inside a panel",
       "teal": "informational status",
       "text": "primary text and icons",
-      "viewer": "the media viewer, neutral and dark in both themes; its focus ring is the brand lime",
+      "viewer": "the media viewer, neutral and dark in both themes",
       "warning": "needs attention, nothing is lost yet"
     }
   },
@@ -165,7 +135,7 @@
       "4": "sheets and dialogs"
     }
   },
-  "extends": "design/frameleaf/tokens.json is a byte-for-byte copy of this file (tokens.spec.ts); edit here, copy there, then regenerate the brand asset inventory",
+  "extends": "design/frameleaf/tokens.json is a byte-for-byte copy of this file (tokens.spec.ts); edit here, copy there, then regenerate the brand asset inventory. Values follow the prototype in design/frameleaf/template.",
   "focus": {
     "inset": -2,
     "nonTextContrast": 3,
@@ -189,15 +159,9 @@
     "selected": "the filled variant marks the current or selected item",
     "set": "Material Design Icons, outline variants at rest"
   },
-  "lime": {
-    "color": "#b3ff8b",
-    "never": "light surfaces, fills, body text",
-    "role": "light on glass: accent marks on frosted material and the focus ring on the always-dark viewer",
-    "source": "the highlight edge of the app icon tile (frameleaf-app-icon.svg #tile-edge)"
-  },
   "logo": {
     "clearSpace": 0.25,
-    "loadingMark": "the gradient symbol, 64px, still; it unfurls once and never spins",
+    "loadingMark": "the gradient symbol, 64px, still; it fades in and never spins",
     "minHeight": {
       "lockup": 20,
       "symbol": 16
@@ -228,8 +192,7 @@
       "sheet": 480,
       "slow": 240,
       "spin": 800,
-      "spring": 380,
-      "unfurl": 440
+      "spring": 380
     },
     "durationMs": 380,
     "ease": "cubic-bezier(0.2, 0.7, 0.2, 1)",
@@ -248,59 +211,38 @@
       "sheet": "fade 200ms plus rise 40px and scale 0.96 to 1 on the 480ms spring; exit 180ms snappy; dialogs, palettes, phone sheets"
     },
     "reducedMotion": "replace movement with crossfades",
-    "signature": {
-      "duration": 440,
-      "ease": "cubic-bezier(0.2, 1.5, 0.4, 1)",
-      "from": {
-        "opacity": 0,
-        "rotate": -8,
-        "scale": 0.86
-      },
-      "name": "Unfurl",
-      "never": ["containers, menus, dialogs, lists"],
-      "origin": "bottom inline-start, where the leaf meets the frame",
-      "reducedMotion": "the shared 150ms crossfade",
-      "use": [
-        "the logo mark on sign-in, first run and the loading screen",
-        "the selection tick",
-        "the done mark when a long task completes",
-        "the icon of an empty state"
-      ]
-    },
     "snappy": "cubic-bezier(0.2, 0.9, 0.1, 1)",
     "spring": "linear() spring with slight settle; see tokens.css --fl-spring",
-    "staggerMs": 30,
-    "unfurl": "cubic-bezier(0.2, 1.5, 0.4, 1)"
+    "staggerMs": 30
   },
   "neutral": {
-    "100": "#eaeef2",
-    "200": "#d4dadf",
+    "100": "#eef1f3",
+    "200": "#d6dce0",
     "300": "#b4bfc9",
-    "400": "#9aa6b0",
-    "50": "#f3f6f8",
+    "400": "#a1adb8",
+    "50": "#f4f6f7",
     "500": "#64727d",
-    "600": "#505e6a",
-    "700": "#303b43",
-    "800": "#1f2830",
-    "900": "#141c21",
-    "950": "#0d1115"
+    "600": "#53636d",
+    "700": "#303940",
+    "800": "#222a30",
+    "900": "#171d21",
+    "950": "#101416"
   },
   "numerals": {
     "counts": "tabular-nums",
     "rule": "anything that counts, times or aligns in a column uses tabular figures"
   },
   "radius": {
-    "capsule": 20,
-    "card": 16,
-    "control": 12,
-    "control-compact": 9,
+    "capsule": 16,
+    "card": 12,
+    "control": 9,
+    "control-compact": 7,
     "corner": "squircle where supported",
-    "frameRatio": 0.27,
-    "panel": 16,
+    "panel": 12,
     "people": "squircle mask",
     "pill": 999,
-    "rule": "a control corner is 27% of its height, the ratio of the logo frame: 12px at 44px, 9px at the 34px compact height",
-    "sheet": 24,
+    "rule": "the prototype scale (apple-style.css): 9px controls, 12px cards, 16px capsules, 22px sheets",
+    "sheet": 22,
     "sm": 6,
     "xs": 4
   },
@@ -321,20 +263,6 @@
     "6": 24,
     "8": 32,
     "half": 2
-  },
-  "surface": {
-    "chrome": ["panel", "raised", "border"],
-    "family": "Ink",
-    "hue": 242,
-    "maxChroma": {
-      "chrome": 0.022,
-      "stage": 0.012,
-      "viewer": 0.006
-    },
-    "minStep": 1.08,
-    "rule": "chrome carries the brand ink, the stage behind photographs stays near neutral, the viewer is neutral",
-    "stage": ["canvas"],
-    "viewer": ["viewer-canvas", "viewer-panel", "viewer-raised"]
   },
   "touchTarget": {
     "androidDp": 48,

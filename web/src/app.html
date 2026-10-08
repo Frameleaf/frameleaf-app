@@ -43,7 +43,7 @@
       light canvas below before first paint, and kept in step with the app theme by
       $lib/frameleaf/theme-color.ts afterwards.
     -->
-    <meta name="theme-color" content="#0d1115" />
+    <meta name="theme-color" content="#101416" />
     <script>
       try {
         const preference = JSON.parse(localStorage.getItem('immich-ui-theme'));
@@ -51,7 +51,7 @@
         if (preference === 'light' || (preference !== 'dark' && !prefersDark)) {
           document.documentElement.classList.remove('dark');
           document.documentElement.classList.add('light');
-          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f3f6f8');
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
         }
       } catch {
         // noop
@@ -69,11 +69,11 @@
 
       /* The canvas of each theme (brand-tokens.json), so the first paint is already Frameleaf. */
       html.dark {
-        background-color: #0d1115;
+        background-color: #101416;
       }
 
       html.light {
-        background-color: #f3f6f8;
+        background-color: #f4f6f7;
       }
 
       body,
@@ -88,18 +88,10 @@
         }
       }
 
-      /*
-       * The loading mark never spins: a logo is not a spinner. It unfurls once, the brand's
-       * signature move (BRAND.md decision 6): out of its lower left corner, where the leaf meets
-       * the frame, with one soft overshoot. Then it holds still until the app replaces it.
-       */
-      @keyframes stencilUnfurl {
+      /* The loading mark never spins: a logo is not a spinner. It fades in and holds still. */
+      @keyframes stencilFade {
         from {
           opacity: 0;
-          transform: scale(0.86) rotate(-8deg);
-        }
-        35% {
-          opacity: 1;
         }
       }
 
@@ -114,10 +106,9 @@
         place-items: center;
         justify-content: center;
         visibility: hidden;
-        transform-origin: bottom left;
         animation:
           0s linear 0.3s forwards delayedVisibility,
-          stencilUnfurl 440ms cubic-bezier(0.2, 1.5, 0.4, 1) 0.3s both;
+          stencilFade 240ms ease-out 0.3s both;
       }
 
       #stencil svg {
