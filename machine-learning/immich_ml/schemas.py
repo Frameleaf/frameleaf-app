@@ -33,6 +33,7 @@ class ModelTask(StrEnum):
     IMAGE_DESCRIPTION = "image-description-tagging"
     NSFW_DETECTION = "nsfw-detection"
     SEMANTIC_MASK = "semantic-mask"
+    INPAINT = "inpaint"
 
 
 class ModelType(StrEnum):
@@ -238,6 +239,10 @@ class SemanticMaskOptions(_OptionsBase):
     device: Literal["cpu", "cuda"] = "cpu"
 
 
+class InpaintOptions(_OptionsBase):
+    """Options for the inpaint task (Clean Up Remove fills). The server sends none today."""
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -249,6 +254,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.IMAGE_DESCRIPTION, ModelType.VISUAL): ImageDescriptionOptions,
     (ModelTask.NSFW_DETECTION, ModelType.CLASSIFICATION): NsfwDetectionOptions,
     (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
+    (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
 }
 
 
