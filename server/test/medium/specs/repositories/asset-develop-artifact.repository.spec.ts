@@ -1,16 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository, DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB, getMocks } from 'test/utils.js';
 
 /** FL-233: develop artifacts are tracked, counted and released (fork migration 0212). */
 let db: Kysely<DB>;
@@ -278,3 +284,85 @@ it('holds the owner’s quota when uploads for several photos arrive at once, an
   await sut.releaseArtifacts(vi.fn().mockResolvedValue(void 0), { unreferencedBefore: before });
   await expect(usage(user.id)).resolves.toBe(300);
 }, 30_000);
+
+it('preserves shared Live Photo originals through Develop save, cancellation, selection and reset', async () => {
+  const { ctx, sut: revisions } = setup();
+  const mocks = getMocks();
+  mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
+  const service = new AssetDevelopService(
+    mocks.logger as never,
+    ctx.get(AccessRepository),
+    ctx.get(AssetRepository),
+    mocks.assetJob as never,
+    revisions,
+    mocks.config as never,
+    mocks.crypto as never,
+    mocks.job as never,
+    mocks.media as never,
+    {} as PhotoToolsRepository,
+    mocks.storage as never,
+    mocks.systemMetadata as never,
+    mocks.mediaOperation as never,
+    mocks.machineLearning as never,
+  );
+  const { user } = await ctx.newUser();
+  const { user: stranger } = await ctx.newUser();
+  const auth = factory.auth({ user: { id: user.id } });
+  const foreign = factory.auth({ user: { id: stranger.id } });
+  const { asset: motion } = await ctx.newAsset({
+    ownerId: user.id,
+    type: AssetType.Video,
+    visibility: AssetVisibility.Hidden,
+    originalFileName: 'motion.MOV',
+  });
+  const stills = await Promise.all(
+    ['original.HEIC', 'related.HEIC'].map((originalFileName) =>
+      ctx.newAsset({ ownerId: user.id, originalFileName, livePhotoVideoId: motion.id }),
+    ),
+  );
+  const ids = [motion.id, ...stills.map(({ asset }) => asset.id)];
+  for (const id of ids) await ctx.newExif({ assetId: id, livePhotoCID: 'same-original-pair' });
+  const originals = await db.selectFrom('asset').selectAll().where('id', 'in', ids).orderBy('id').execute();
+  const identifiers = await db
+    .selectFrom('asset_exif')
+    .selectAll()
+    .where('assetId', 'in', ids)
+    .orderBy('assetId')
+    .execute();
+  const preserved = async () => {
+    expect(await db.selectFrom('asset').selectAll().where('id', 'in', ids).orderBy('id').execute()).toEqual(originals);
+    expect(
+      await db.selectFrom('asset_exif').selectAll().where('assetId', 'in', ids).orderBy('assetId').execute(),
+    ).toEqual(identifiers);
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+    expect(mocks.storage.createFile).not.toHaveBeenCalled();
+    expect(mocks.storage.overwriteFile).not.toHaveBeenCalled();
+    expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
+  };
+  const id = stills[0].asset.id;
+  const recipe = defaultDevelopRecipe();
+  const first = await service.save(auth, id, { recipe, render: false });
+  await preserved();
+  // Codec acceptance is separate: seed its published result to exercise the real selection transaction.
+  await revisions.update(first.id, {
+    status: AssetDevelopRevisionStatus.Rendered,
+    masterPath: '/develop/edited-still.jpg',
+    previewPath: '/develop/edited-preview.jpg',
+  });
+  expect((await service.revert(auth, id, { revisionId: first.id })).currentRevisionId).toBe(first.id);
+  await preserved();
+  const second = await service.save(auth, id, { recipe: { ...recipe, exposure: 1 }, render: false });
+  await revisions.update(second.id, { status: AssetDevelopRevisionStatus.Queued });
+  expect((await service.cancel(auth, id, second.id)).status).toBe(AssetDevelopRevisionStatus.Cancelled);
+  expect((await service.get(auth, id)).currentRevisionId).toBe(first.id);
+  await preserved();
+  await expect(service.save(foreign, id, { recipe, render: false })).rejects.toThrow();
+  await expect(service.revert(foreign, id, {})).rejects.toThrow();
+  expect((await service.revert(auth, id, {})).currentRevisionId).toBeNull();
+  expect((await service.get(auth, id)).revisions.map((value) => value.id)).toEqual([second.id, first.id]);
+  expect((await service.revert(auth, id, { revisionId: first.id })).currentRevisionId).toBe(first.id);
+  expect((await service.get(auth, stills[1].asset.id)).currentRevisionId).toBeNull();
+  await expect(service.revert(auth, stills[1].asset.id, { revisionId: first.id })).rejects.toThrow();
+  await preserved();
+});
