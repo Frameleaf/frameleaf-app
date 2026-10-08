@@ -336,40 +336,44 @@ const REQUIRED_TEST_JOBS = Object.freeze([
 ]);
 async function requireTestQualification(sha, request = github, expected) {
   assert(SHA.test(sha), "Test qualification: invalid source SHA");
-  // Do not filter to success: a newer failed/running run must never fall back to an older green run.
-  const response = await request(
-    `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`,
-  );
-  const runs = response.workflow_runs;
-  assert(
-    Array.isArray(runs) && runs.length > 0,
-    "Test qualification: missing run",
-  );
-  assert(
-    Number.isSafeInteger(response.total_count) &&
-      response.total_count === runs.length,
-    "Test qualification: incomplete runs response",
-  );
-  assert(
-    runs.every(
-      (run) =>
-        Number.isSafeInteger(run.id) &&
-        run.id > 0 &&
-        Number.isFinite(Date.parse(run.updated_at)),
-    ),
-    "Test qualification: invalid run identity",
-  );
-  // A rerun of an older run ID can be newer evidence than a later-created run.
-  const run = [...runs].sort(
-    (a, b) =>
-      Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
-  )[0];
-  assert(
-    trustedRun(run, sha, ".github/workflows/test.yml") &&
-      Number.isSafeInteger(run.run_attempt) &&
-      run.run_attempt > 0,
-    "Test qualification: latest same-SHA run is not trusted and successful",
-  );
+  const latestRun = async () => {
+    // Do not filter to success: a newer failed/running run must never fall back to an older green run.
+    const response = await request(
+      `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`,
+    );
+    const runs = response.workflow_runs;
+    assert(
+      Array.isArray(runs) && runs.length > 0,
+      "Test qualification: missing run",
+    );
+    assert(
+      Number.isSafeInteger(response.total_count) &&
+        response.total_count === runs.length,
+      "Test qualification: incomplete runs response",
+    );
+    assert(
+      runs.every(
+        (run) =>
+          Number.isSafeInteger(run.id) &&
+          run.id > 0 &&
+          Number.isFinite(Date.parse(run.updated_at)),
+      ),
+      "Test qualification: invalid run identity",
+    );
+    // A rerun of an older run ID can be newer evidence than a later-created run.
+    const run = [...runs].sort(
+      (a, b) =>
+        Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
+    )[0];
+    assert(
+      trustedRun(run, sha, ".github/workflows/test.yml") &&
+        Number.isSafeInteger(run.run_attempt) &&
+        run.run_attempt > 0,
+      "Test qualification: latest same-SHA run is not trusted and successful",
+    );
+    return run;
+  };
+  const run = await latestRun();
   const result = await request(
     `actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
   );
@@ -415,6 +419,11 @@ async function requireTestQualification(sha, request = github, expected) {
       current.id === run.id &&
       current.run_attempt === run.run_attempt,
     "Test qualification: run changed during validation",
+  );
+  const latest = await latestRun();
+  assert(
+    latest.id === run.id && latest.run_attempt === run.run_attempt,
+    "Test qualification: latest run changed during validation",
   );
   const evidence = { runId: run.id, attempt: run.run_attempt, jobs };
   if (expected)

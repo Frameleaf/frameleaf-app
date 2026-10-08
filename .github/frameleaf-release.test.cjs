@@ -471,6 +471,53 @@ test("Test qualification rejects missing, failed, stale and untrusted runs witho
     /Test qualification/,
   );
 });
+test("Test qualification refuses newer run evidence created during job validation", async (t) => {
+  for (const change of [
+    { id: 43, status: "in_progress", conclusion: null },
+    { id: 43, conclusion: "failure" },
+    { id: 43 },
+    { id: 41, run_attempt: 3, conclusion: "failure" },
+    { id: 42, run_attempt: 3, status: "in_progress", conclusion: null },
+  ]) {
+    await t.test(JSON.stringify(change), async () => {
+      const fixture = testQualificationFixture();
+      const request = async (endpoint) => {
+        const response = await fixture.request(endpoint);
+        if (response.jobs) {
+          fixture.runs = [
+            fixture.run,
+            {
+              ...fixture.run,
+              ...change,
+              updated_at: "2026-10-04T05:00:00Z",
+            },
+          ];
+        }
+        return response;
+      };
+      await assert.rejects(
+        requireTestQualification(sha, request),
+        /Test qualification/,
+      );
+    });
+  }
+});
+test("Test qualification refuses incomplete final run inventory", async () => {
+  for (const total of [undefined, null, 101, "1"]) {
+    const fixture = testQualificationFixture();
+    let reads = 0;
+    const request = async (endpoint) => {
+      const response = await fixture.request(endpoint);
+      if (response.workflow_runs && ++reads === 2)
+        return { ...response, total_count: total };
+      return response;
+    };
+    await assert.rejects(
+      requireTestQualification(sha, request),
+      /Test qualification: incomplete runs response/,
+    );
+  }
+});
 test("Test qualification rejects untrusted, duplicate and incomplete job evidence", async () => {
   for (const patch of [
     { run_id: 41 },
