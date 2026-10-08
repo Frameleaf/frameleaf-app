@@ -1075,9 +1075,13 @@ export class StudioExportService {
       assertExecutionActive();
       try {
         if (contract.image.dynamicRange === 'hdr') {
-          await this.media.generateHdrRenditions(current, [
-            { path: stagedPath, dynamicRange: 'hdr', format: contract.image.format === 'hdr-heic' ? 'heic' : 'jpeg' },
-          ]);
+          await this.media.generateHdrRenditions(
+            current,
+            [{ path: stagedPath, dynamicRange: 'hdr', format: contract.image.format === 'hdr-heic' ? 'heic' : 'jpeg' }],
+            undefined,
+            undefined,
+            Buffer.from(version.outputChecksum),
+          );
         } else {
           await this.media.writeStrippedStill(current, stagedPath, 'jpeg', 'srgb');
         }

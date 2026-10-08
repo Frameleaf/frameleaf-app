@@ -756,6 +756,7 @@ describe(AssetDevelopService.name, () => {
         [{ path: file.path, format: 'heic' }],
         undefined,
         signal,
+        originalSha,
       );
       expect(file.contentType).toBe('image/heic');
       expect(file.fileName).toContain('_still_hdr.heic');
@@ -984,6 +985,7 @@ describe(AssetDevelopService.name, () => {
         expect(call[1]).toHaveLength(4);
         expect(call[1].map((x) => x.dynamicRange ?? 'hdr')).toEqual(['hdr', 'hdr', 'sdr', 'sdr']);
         expect(call[2]).toMatchObject({ recipe: { version: 1, exposure: 1 }, seed: 2 });
+        expect(call[4]).toEqual(originalSha);
         expect(mocks.media.decodeImage).not.toHaveBeenCalled();
         expect(mocks.storage.rename).toHaveBeenCalledTimes(4);
         expect(developRepository.beginAttempt).toHaveBeenCalledWith(
