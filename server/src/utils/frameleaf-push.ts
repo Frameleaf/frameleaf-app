@@ -170,6 +170,26 @@ export const pushTtlSec = (notice: Pick<PushNotice, 'background' | 'activation'>
 /** Plain values only; identifiers, counts and names, never file paths or credentials. */
 export type PushNoticeData = Record<string, string | number | boolean | null>;
 
+/**
+ * Which API a server job named in a push answers to:
+ * - `media-operation`: `POST /media-operations/{job}/retry`, `/pause`, `/resume`, `/cancel` (Activity jobs:
+ *   Studio exports, photo and video edits, restorations, bulk operations);
+ * - `cloud-backup-run` (administrators): `POST /admin/cloud/backup/runs/{job}/pause`, `/resume`, `/cancel`,
+ *   and `POST /admin/cloud/backup/runs` to retry (a new run uploads only what is still missing).
+ */
+export type PushJobType = 'media-operation' | 'cloud-backup-run';
+/** What a device may offer for the job at the time the push was built. */
+export type PushJobAction = 'retry' | 'pause' | 'resume' | 'cancel';
+export type PushJobRef = { id: string; type: PushJobType; actions: PushJobAction[] };
+
+/**
+ * The `data` fields that name the server job a notice is about, so an app can offer Retry or Pause for
+ * it: `job` (the job's id), `jobType` (which API answers for it) and `jobActions` (comma-separated
+ * actions on offer, possibly empty). Absent when the notice is not about a job.
+ */
+export const pushJobData = (job: PushJobRef | null | undefined): PushNoticeData =>
+  job ? { job: job.id, jobType: job.type, jobActions: job.actions.join(',') } : {};
+
 /** The Cloud Backup activation chain, as the activation screen and its Live Activity show it. */
 export type CloudBackupActivationProgress = {
   step: number;
