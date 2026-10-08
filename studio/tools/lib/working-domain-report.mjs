@@ -12,7 +12,7 @@ export const WORKING_DOMAINS = {
 };
 export const REPORT_BINDINGS = ['studio/tools/lib/working-domain-report.mjs', 'studio/tools/lib/cross-browser-harness.mjs',
   'studio/tools/lib/browser-driver.mjs', 'studio/tools/photometric-goldens.mjs',
-  'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/pixelate-reference.mjs', 'studio/tools/hdr-source-validation.mjs',
+  'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/pixelate-reference.mjs', 'studio/tools/geometry-reference.mjs', 'studio/tools/hdr-source-validation.mjs',
   'studio/effect-hdr-semantics.json', 'studio/transition-semantics.json'];
 const root = new URL('../../../', import.meta.url);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -57,7 +57,7 @@ export function domainObservations(report) {
     if (family === 'effects') {
       for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
         add(id, name, WORKING_DOMAINS.sdr, `effects.${index}.${route}`);
-      if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature', 'gpu-vibrance', 'gpu-grayscale', 'gpu-sepia', 'gpu-invert', 'gpu-pixelate'].includes(id) || HDR_BLURS.includes(id)) {
+      if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature', 'gpu-vibrance', 'gpu-grayscale', 'gpu-sepia', 'gpu-invert', 'gpu-pixelate', 'gpu-twirl', 'gpu-wave', 'gpu-bulge'].includes(id) || HDR_BLURS.includes(id)) {
         for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
           add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.${row.hdr ? 'hdr' : row.hdrAffine ? 'hdrAffine' : 'hdrSpatial'}.${row.hdrAffine && id === 'gpu-invert' && name === 'invalid' ? 'extra' : route}`);
       } else add(id, 'extreme', WORKING_DOMAINS.hdr, `effects.${index}.hdrRefusal`, 'refused');

@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { photometricCases, photometricInput, linearColorCases, photometricTolerance, validatePhotometricResults } from './photometric-goldens.mjs';
 import { blurReference, HDR_BLURS } from './blur-reference.mjs';
 import { pixelateReference } from './pixelate-reference.mjs';
+import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
 import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
@@ -73,7 +74,7 @@ const source = await testedSource(new URL(import.meta.url));
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
   'effects/color.ts': '3db983b8869e446d3a5b3037e8a1a0efcf146927f1f65cade0bd01c280695e90',
-  'common.ts': '5cfea24579d6e76b145ac88d9d20dc31334a62fd88d5cf56f16a0b1f13df8c62',
+  'common.ts': '52ab33cf18b4a855898a008acf9dea98e8438971f777dda80cd9da09cb4f8d90',
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
   // Pinned SDR colour and spatial branches remain unchanged; HDR sampling is independently measured.
@@ -114,7 +115,7 @@ const affineInput = [0,.25,.5,1].flatMap(alpha => [
 ].flatMap(rgb => [...rgb,alpha]));
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
-  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput }) => {
+  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY }) => {
     const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
@@ -215,7 +216,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     const effects = [];
     for (const definition of GPU_EFFECT_REGISTRY.values()) {
       const entry = { id: definition.id, category: definition.category, cases: [] };
-      if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
+      if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate',...HDR_GEOMETRY].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
       if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
       if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) {
         const packedDefault = definition.packUniforms(getGpuEffectDefaultParams(definition.id));
@@ -399,7 +400,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     for (const texture of [...Object.values(inputs), sdrFloatInput, affineTexture]) texture.destroy();
     device.destroy();
     return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric, linearColor };
-  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput }),
+  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY }),
 );
 report.photometricSource = photometricSource;
 
@@ -529,10 +530,10 @@ for (const effect of report.effects) {
       pixels(entry.got,expected(entry.params),`HDR ${effect.id} invalid ${entry.name}`);
       pixels(entry.want,expected(entry.params),`HDR ${effect.id} invalid meaning ${entry.name}`);
     }
-  } else if (HDR_BLURS.includes(effect.id) || effect.id === 'gpu-pixelate') {
+  } else if (HDR_BLURS.includes(effect.id) || effect.id === 'gpu-pixelate' || HDR_GEOMETRY.includes(effect.id)) {
     check(rule.hdr === 'linear-display-bt709-v1', `${effect.id}: linear domain required`);
     const input = Array.from(new Float16Array(floatInput));
-    const expected = params => effect.id === 'gpu-pixelate' ? pixelateReference(input,W,H,params) : blurReference(input,W,H,effect.id,params);
+    const expected = params => effect.id === 'gpu-pixelate' ? pixelateReference(input,W,H,params) : HDR_GEOMETRY.includes(effect.id) ? geometryReference(input,W,H,effect.id,params) : blurReference(input,W,H,effect.id,params);
     const pixels = (result, want, label) => {
       check(!result.error && !result.errorType && result.pixels?.length === want.length, `${label}: linear render failed`);
       if (result.pixels) want.forEach((v,i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i]-v) <= Math.max(.004,Math.abs(v)*.003), `${label}: independent channel ${i}`));
