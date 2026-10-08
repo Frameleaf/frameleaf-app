@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, sql } from 'kysely';
+import { type Insertable, type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { readFile } from 'node:fs/promises';
 import type { IntegrityCheckRun, SystemMetadata } from 'src/types.js';
@@ -8,13 +8,32 @@ import { IntegrityReport, SystemMetadataKey } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
+import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 
 type Upsert = Insertable<SystemMetadataTable>;
 
 @Injectable()
 export class SystemMetadataRepository {
+  private configTransaction = false;
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.db = publicationDatabase(this.db);
+  }
+
+  /** The lock and every callback query share the transaction connection through commit. */
+  async withConfigTransaction<T>(
+    callback: (metadata: SystemMetadataRepository, tx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    const run = async (tx: Transaction<DB>) => {
+      await lockEffectiveConfig(tx, 'write');
+      const metadata = new SystemMetadataRepository(tx);
+      metadata.configTransaction = true;
+      return callback(metadata, tx);
+    };
+    return this.db.isTransaction ? run(this.db as Transaction<DB>) : this.db.transaction().execute(run);
+  }
+
+  async getEffectiveConfigEpoch() {
+    return this.get(SystemMetadataKey.EffectiveConfigEpoch);
   }
 
   @GenerateSql({ params: ['metadata_key'] })
@@ -32,6 +51,11 @@ export class SystemMetadataRepository {
   }
 
   async set<T extends keyof SystemMetadata>(key: T, value: SystemMetadata[T], overwrite = true): Promise<void> {
+    if (
+      (key === SystemMetadataKey.SystemConfig || key === SystemMetadataKey.EffectiveConfigEpoch) &&
+      !this.configTransaction
+    )
+      throw new Error('effective_config_transaction_required');
     await this.db
       .insertInto('system_metadata')
       .values({ key, value } as Upsert)
@@ -117,6 +141,8 @@ export class SystemMetadataRepository {
 
   @GenerateSql({ params: ['metadata_key'] })
   async delete<T extends keyof SystemMetadata>(key: T): Promise<void> {
+    if (key === SystemMetadataKey.SystemConfig || key === SystemMetadataKey.EffectiveConfigEpoch)
+      throw new Error('effective_config_delete_refused');
     await this.db.deleteFrom('system_metadata').where('key', '=', key).execute();
   }
 

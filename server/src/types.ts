@@ -1422,6 +1422,13 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
+  [SystemMetadataKey.EffectiveConfigEpoch]: {
+    format: 1;
+    epoch: number;
+    sourceKind: 'database' | 'file';
+    digest: string;
+    trashEnabled: boolean;
+  };
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;
   [SystemMetadataKey.VersionCheckState]: VersionCheckMetadata;
   [SystemMetadataKey.MemoriesState]: MemoriesState;

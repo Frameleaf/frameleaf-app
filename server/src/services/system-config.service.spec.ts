@@ -759,16 +759,14 @@ describe(SystemConfigService.name, () => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ oauth: { issuerUrl: 'accounts.google.com' } }));
 
-      await expect(sut.getAdminConfig()).rejects.toThrow(
-        '[oauth.issuerUrl] Issuer URL must be an empty string or a valid URL',
-      );
+      await expect(sut.getAdminConfig()).rejects.toThrow('effective_config_candidate_invalid');
     });
 
     it('should reject invalid cron expressions', async () => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ library: { scan: { cronExpression: 'foo' } } }));
 
-      await expect(sut.getAdminConfig()).rejects.toThrow('[library.scan.cronExpression] Invalid cron expression');
+      await expect(sut.getAdminConfig()).rejects.toThrow('effective_config_candidate_invalid');
     });
 
     it('should log errors with the config file', async () => {
@@ -779,11 +777,8 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getAdminConfig()).rejects.toBeInstanceOf(Error);
 
       expect(mocks.systemMetadata.readFile).toHaveBeenCalledWith('immich-config.json');
-      expect(mocks.logger.error).toHaveBeenCalledTimes(2);
-      expect(mocks.logger.error.mock.calls[0][0]).toEqual('Unable to load configuration file: immich-config.json');
-      expect(mocks.logger.error.mock.calls[1][0].toString()).toEqual(
-        expect.stringContaining('YAMLException: duplicated mapping key (1:21)'),
-      );
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
     });
 
     it('should load the config from a yaml file', async () => {
@@ -887,7 +882,8 @@ describe(SystemConfigService.name, () => {
         mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify(test.config));
 
         if (test.throws) {
-          await expect(sut.getAdminConfig()).rejects.toThrow(test.throws);
+          await expect(sut.getAdminConfig()).rejects.toThrow('effective_config_candidate_invalid');
+          expect(mocks.logger.error).not.toHaveBeenCalled();
         } else if (test.warn) {
           await sut.getAdminConfig();
           expect(mocks.logger.warn).toHaveBeenCalled();

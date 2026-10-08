@@ -1,9 +1,11 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Put, Query } from '@nestjs/common';
 import { ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigDto, ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
 import {
+  ConfigFileActivationResponseDto,
+  ConfigFileReloadDto,
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
   MachineLearningHardwareQueryDto,
@@ -38,6 +40,28 @@ export class SystemConfigController {
   })
   getConfig(): Promise<AdminConfigDto> {
     return this.service.getAdminConfig();
+  }
+
+  @Get('config-file/activation')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.SystemConfigRead, admin: true, refreshElevation: false })
+  @Endpoint({
+    summary: 'Get activated file configuration epoch',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getConfigFileActivation(@Auth() auth: AuthDto): Promise<ConfigFileActivationResponseDto> {
+    return this.service.getConfigFileActivation(auth);
+  }
+
+  @Post('config-file/reload')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    summary: 'Activate the configured server file',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  reloadConfigFile(@Auth() auth: AuthDto, @Body() dto: ConfigFileReloadDto): Promise<ConfigFileActivationResponseDto> {
+    return this.service.reloadConfigFile(auth, dto);
   }
 
   @Get('defaults')

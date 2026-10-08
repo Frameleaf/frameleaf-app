@@ -170,7 +170,7 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { recordConfigHistory } from 'src/utils/config-history.js';
-import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
+import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
 import {
   advanceExecutionProgress,
@@ -708,33 +708,36 @@ export class CloudBackupService {
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
       DatabaseLock.SystemConfigUpdate,
       async () => {
-        const current = await readConfig(this.configRepos());
-        const next = structuredClone(current);
-        next.frameleafCloud.cloudBackup = {
-          ...current.frameleafCloud.cloudBackup,
-          enabled: true,
-          target: dto.target,
-          // managed storage's key is issued per operation and never kept; your own bucket's is
-          s3: managed
-            ? current.frameleafCloud.cloudBackup.s3
-            : {
-                endpoint: connection.endpoint,
-                region: dto.s3?.region?.trim() ?? '',
-                bucket: connection.bucket,
-                accessKeyId: connection.accessKeyId,
-                secretAccessKey: connection.secretAccessKey,
-              },
-          keyMode: dto.keyMode,
-          // escrow belongs to one server-generated key; a new setup starts without it
-          escrow: false,
-        };
-        const saved = await updateConfig(this.configRepos(), next);
+        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+          const current = await readConfig(repos);
+          const next = structuredClone(current);
+          next.frameleafCloud.cloudBackup = {
+            ...current.frameleafCloud.cloudBackup,
+            enabled: true,
+            target: dto.target,
+            // managed storage's key is issued per operation and never kept; your own bucket's is
+            s3: managed
+              ? current.frameleafCloud.cloudBackup.s3
+              : {
+                  endpoint: connection.endpoint,
+                  region: dto.s3?.region?.trim() ?? '',
+                  bucket: connection.bucket,
+                  accessKeyId: connection.accessKeyId,
+                  secretAccessKey: connection.secretAccessKey,
+                },
+            keyMode: dto.keyMode,
+            // escrow belongs to one server-generated key; a new setup starts without it
+            escrow: false,
+          };
+          const saved = await updateConfig(repos, next);
+          return { oldConfig: current, newConfig: saved };
+        });
         // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), current, saved, auth.user, {
+        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
           kind: 'settings',
           source: 'frameleaf-cloud',
         });
-        return { oldConfig: current, newConfig: saved };
+        return result;
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -971,16 +974,19 @@ export class CloudBackupService {
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
       DatabaseLock.SystemConfigUpdate,
       async () => {
-        const current = await readConfig(this.configRepos());
-        const next = structuredClone(current);
-        next.frameleafCloud.cloudBackup.enabled = false;
-        const saved = await updateConfig(this.configRepos(), next);
+        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+          const current = await readConfig(repos);
+          const next = structuredClone(current);
+          next.frameleafCloud.cloudBackup.enabled = false;
+          const saved = await updateConfig(repos, next);
+          return { oldConfig: current, newConfig: saved };
+        });
         // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), current, saved, auth.user, {
+        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
           kind: 'settings',
           source: 'frameleaf-cloud',
         });
-        return { oldConfig: current, newConfig: saved };
+        return result;
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -3611,16 +3617,19 @@ export class CloudBackupService {
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
       DatabaseLock.SystemConfigUpdate,
       async () => {
-        const current = await readConfig(this.configRepos());
-        const next = structuredClone(current);
-        next.frameleafCloud.cloudBackup.escrow = escrow;
-        const saved = await updateConfig(this.configRepos(), next);
+        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+          const current = await readConfig(repos);
+          const next = structuredClone(current);
+          next.frameleafCloud.cloudBackup.escrow = escrow;
+          const saved = await updateConfig(repos, next);
+          return { oldConfig: current, newConfig: saved };
+        });
         // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), current, saved, undefined, {
+        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, undefined, {
           kind: 'settings',
           source: 'frameleaf-cloud',
         });
-        return { oldConfig: current, newConfig: saved };
+        return result;
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });

@@ -618,6 +618,7 @@ export enum SystemMetadataKey {
    * their values before and after; credentials only as replaced or cleared, never a value).
    */
   SystemConfigHistory = 'system-config-history',
+  EffectiveConfigEpoch = 'effective-config-epoch',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
   /**
