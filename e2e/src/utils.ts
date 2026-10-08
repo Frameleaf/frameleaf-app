@@ -33,15 +33,19 @@ import {
   createStack,
   createUserAdmin,
   deleteAssets,
+  deleteConfigCredential,
   deleteDatabaseBackup,
   emptyQueue,
   getAssetInfo,
   getConfig,
+  getConfigCredentials,
   getConfigDefaults,
   getQueue,
   getQueues,
+  getRemoteAccess,
   listDatabaseBackups,
   login,
+  removeRemoteHostname,
   runQueueCommandLegacy,
   scanLibrary,
   searchAssets,
@@ -55,6 +59,7 @@ import {
   updateConfig,
   updateLibrary,
   updateMyPreferences,
+  updateRemoteAccess,
   upsertTags,
   validate,
   viewAsset,
@@ -290,7 +295,11 @@ export const utils = {
    * Never fabricate job completion or stopped proof. The public clear API and real coordinator
    * settle cancelled work; a reset that cannot prove quiescence refuses to delete fixture data.
    */
-  drainQueues: async (mutate?: (db: pg.Client, context: WaitContext) => Promise<void>, signal?: AbortSignal) => {
+  drainQueues: async (
+    mutate?: (db: pg.Client, context: WaitContext) => Promise<void>,
+    signal?: AbortSignal,
+    resetConfig = false,
+  ) => {
     if (resetting || resetFailure) {
       throw new Error(
         resetting ? 'Another database reset is still running' : 'Previous database reset did not settle safely',
@@ -415,6 +424,104 @@ export const utils = {
               `SELECT id FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
             );
             let token = admins.length > 0 ? await ownerToken(context, admins[0].id) : undefined;
+            const drain = () =>
+              withDeadline(
+                'Quiescing test database',
+                Math.min(6000, total.remaining()),
+                async (context) => {
+                  phase = 'request active-job cancellation';
+                  await query(
+                    context,
+                    `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
+                  );
+                  await waitUntil(
+                    context,
+                    async () => {
+                      // Independent bulk/render/import workers do not claim from job_queue. Cancel
+                      // through the owner's real API, preserving edit refusal and remote cleanup.
+                      phase = 'cancel media operations';
+                      await cancelOperations(context);
+                      phase = 'confirm executor stop';
+                      return drainAfterExecutorStop(
+                        (text) => query(context, text),
+                        async () => {
+                          if (!token) {
+                            phase = 'inspect unauthenticated work';
+                            // Periodic jobs can be admitted without an administrator. They cannot drain
+                            // while paused, so use owned fixture authentication for the normal clear API.
+                            const { rows } = await query(
+                              context,
+                              `SELECT
+                    EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
+                    OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
+                    OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
+                      WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
+                    OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
+                            );
+                            if (!rows[0].unfinished && !resetConfig) {
+                              const operations = await unfinishedOperations(context);
+                              return operations.length > 0;
+                            }
+                            // Record ownership before the atomic write, including an ambiguous response.
+                            // No signup/onboarding hooks or existing account promotion are involved.
+                            resetAdminId = randomUUID();
+                            await query(
+                              context,
+                              `WITH owned_group AS (
+                              INSERT INTO cluster_group (id) VALUES ($1) RETURNING id
+                            ) INSERT INTO "user" (id, email, "isAdmin", "clusterGroupId")
+                              SELECT id, $2, true, id FROM owned_group`,
+                              [resetAdminId, `reset-${resetAdminId}@example.invalid`],
+                            );
+                            token = await ownerToken(context, resetAdminId);
+                          }
+                          const headers = asBearerAuth(token);
+                          phase = 'read queues before clear';
+                          const before = await readQueues(token, context);
+                          lastUnfinished = before.some((queue) => queue.hasUnfinishedWork);
+                          phase = 'inspect sensitive library intents';
+                          const { rows: dirtyIntents } = await query(
+                            context,
+                            `SELECT DISTINCT queue FROM job_run_item WHERE "jobId" IS NULL
+                            AND "libraryIntent"->>'sensitive' = 'true'
+                            AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
+                          );
+                          const dirtyQueues = new Set(dirtyIntents.map((row) => row.queue));
+                          for (const queue of before) {
+                            if (
+                              !queue.hasUnfinishedWork &&
+                              queue.statistics.failed === 0 &&
+                              !dirtyQueues.has(queue.name)
+                            ) {
+                              continue;
+                            }
+                            const name = queue.name;
+                            phase = `clear queue ${name}`;
+                            context.remaining();
+                            await emptyQueue(
+                              { name, queueDeleteDto: { failed: true } },
+                              { headers, signal: context.signal },
+                            );
+                          }
+                          phase = 'read all queues';
+                          const queues = await readQueues(token, context);
+                          const unfinished = queues.some((queue) => queue.hasUnfinishedWork);
+                          lastUnfinished = unfinished;
+                          if (unfinished) {
+                            return true;
+                          }
+                          phase = 'inspect media operations';
+                          const operations = await unfinishedOperations(context);
+                          return operations.length > 0;
+                        },
+                      );
+                    },
+                    (unfinished) => !unfinished,
+                    100,
+                  );
+                },
+                total.signal,
+              );
             await resetWhilePaused({
               pause: async () => {
                 phase = 'pause queues';
@@ -429,105 +536,14 @@ export const utils = {
                   throw error;
                 }
               },
-              drain: () =>
-                withDeadline(
-                  'Quiescing test database',
-                  Math.min(6000, total.remaining()),
-                  async (context) => {
-                    phase = 'request active-job cancellation';
-                    await query(
-                      context,
-                      `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
-                    );
-                    await waitUntil(
-                      context,
-                      async () => {
-                        // Independent bulk/render/import workers do not claim from job_queue. Cancel
-                        // through the owner's real API, preserving edit refusal and remote cleanup.
-                        phase = 'cancel media operations';
-                        await cancelOperations(context);
-                        phase = 'confirm executor stop';
-                        return drainAfterExecutorStop(
-                          (text) => query(context, text),
-                          async () => {
-                            if (!token) {
-                              phase = 'inspect unauthenticated work';
-                              // Periodic jobs can be admitted without an administrator. They cannot drain
-                              // while paused, so use owned fixture authentication for the normal clear API.
-                              const { rows } = await query(
-                                context,
-                                `SELECT
-                    EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
-                    OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
-                    OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
-                      WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
-                    OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
-                              );
-                              if (!rows[0].unfinished) {
-                                const operations = await unfinishedOperations(context);
-                                return operations.length > 0;
-                              }
-                              // Record ownership before the atomic write, including an ambiguous response.
-                              // No signup/onboarding hooks or existing account promotion are involved.
-                              resetAdminId = randomUUID();
-                              await query(
-                                context,
-                                `WITH owned_group AS (
-                              INSERT INTO cluster_group (id) VALUES ($1) RETURNING id
-                            ) INSERT INTO "user" (id, email, "isAdmin", "clusterGroupId")
-                              SELECT id, $2, true, id FROM owned_group`,
-                                [resetAdminId, `reset-${resetAdminId}@example.invalid`],
-                              );
-                              token = await ownerToken(context, resetAdminId);
-                            }
-                            const headers = asBearerAuth(token);
-                            phase = 'read queues before clear';
-                            const before = await readQueues(token, context);
-                            lastUnfinished = before.some((queue) => queue.hasUnfinishedWork);
-                            phase = 'inspect sensitive library intents';
-                            const { rows: dirtyIntents } = await query(
-                              context,
-                              `SELECT DISTINCT queue FROM job_run_item WHERE "jobId" IS NULL
-                            AND "libraryIntent"->>'sensitive' = 'true'
-                            AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
-                            );
-                            const dirtyQueues = new Set(dirtyIntents.map((row) => row.queue));
-                            for (const queue of before) {
-                              if (
-                                !queue.hasUnfinishedWork &&
-                                queue.statistics.failed === 0 &&
-                                !dirtyQueues.has(queue.name)
-                              ) {
-                                continue;
-                              }
-                              const name = queue.name;
-                              phase = `clear queue ${name}`;
-                              context.remaining();
-                              await emptyQueue(
-                                { name, queueDeleteDto: { failed: true } },
-                                { headers, signal: context.signal },
-                              );
-                            }
-                            phase = 'read all queues';
-                            const queues = await readQueues(token, context);
-                            const unfinished = queues.some((queue) => queue.hasUnfinishedWork);
-                            lastUnfinished = unfinished;
-                            if (unfinished) {
-                              return true;
-                            }
-                            phase = 'inspect media operations';
-                            const operations = await unfinishedOperations(context);
-                            return operations.length > 0;
-                          },
-                        );
-                      },
-                      (unfinished) => !unfinished,
-                      100,
-                    );
-                  },
-                  total.signal,
-                ),
+              drain,
               mutate: async () => {
+                if (resetConfig) {
+                  phase = 'reset fixture configuration';
+                  context.remaining();
+                  await utils.resetAdminConfig(token!, context.signal);
+                  await drain();
+                }
                 phase = 'confirm stop before mutation';
                 context.remaining();
                 // Recheck retained attempts after terminal clearing and immediately before the
@@ -634,70 +650,73 @@ export const utils = {
     if (selected.some((table) => !/^[a-z_]+$/.test(table))) {
       throw new Error('Invalid reset table name');
     }
-    await utils.drainQueues(async (db, context) => {
-      const timeout = Math.min(1000, context.remaining());
-      await db.query('BEGIN');
-      try {
-        await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [
-          `${timeout}ms`,
-        ]);
-        if (selected.includes('system_metadata')) {
-          // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
-          // stable server identity and future operational metadata survive ordinary test resets.
-          // MediaLocation must survive too: a restarted worker needs it to validate files created after reset.
-          await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
-            [
-              'facial-recognition-state',
-              'memories-state',
-              'admin-onboarding',
-              'maintenance-mode',
-              'system-config',
-              'version-check-state',
-              'physical-deduplication-migration',
-              'frameleaf-cloud-link',
-              'frameleaf-service-discovery',
-              'frameleaf-ml-wallet',
-              'frameleaf-license',
-              'frameleaf-pricing',
-              'frameleaf-ml-suspension',
-              'frameleaf-cloud-backup',
-              'frameleaf-remote-access',
-              'frameleaf-remote-access-test',
-              'hardware-check',
-              'frameleaf-cloud-migration-notice',
-              'frameleaf-cloud-description-queue',
-              'frameleaf-cloud-description-estimates',
-              'frameleaf-cloud-ml-job-estimates',
-              'integrity-checksum-checkpoint',
-              'locked-detections-state',
-              'system-config-history',
-              'integrity-check-runs',
-              'backup-restore-verification',
-              'frameleaf-setup',
-            ],
-          ]);
-        }
-        const dataTables = selected.filter((table) => table !== 'system_metadata');
-        if (partial) {
-          for (const table of dataTables) {
-            context.remaining();
-            await db.query(`DELETE FROM "${table}"`);
-          }
-        } else if (dataTables.length > 0) {
-          context.remaining();
-          await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
-        }
-        context.remaining();
-        await db.query('COMMIT');
-      } catch (error) {
+    await utils.drainQueues(
+      async (db, context) => {
+        const timeout = Math.min(1000, context.remaining());
+        await db.query('BEGIN');
         try {
-          await db.query('ROLLBACK');
-        } catch (error_) {
-          throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
+          await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [
+            `${timeout}ms`,
+          ]);
+          if (selected.includes('system_metadata')) {
+            // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
+            // stable server identity and future operational metadata survive ordinary test resets.
+            // MediaLocation must survive too: a restarted worker needs it to validate files created after reset.
+            await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
+              [
+                'facial-recognition-state',
+                'memories-state',
+                'admin-onboarding',
+                'maintenance-mode',
+                'version-check-state',
+                'physical-deduplication-migration',
+                'frameleaf-cloud-link',
+                'frameleaf-service-discovery',
+                'frameleaf-ml-wallet',
+                'frameleaf-license',
+                'frameleaf-pricing',
+                'frameleaf-ml-suspension',
+                'frameleaf-cloud-backup',
+                'frameleaf-remote-access',
+                'frameleaf-remote-access-test',
+                'hardware-check',
+                'frameleaf-cloud-migration-notice',
+                'frameleaf-cloud-description-queue',
+                'frameleaf-cloud-description-estimates',
+                'frameleaf-cloud-ml-job-estimates',
+                'integrity-checksum-checkpoint',
+                'locked-detections-state',
+                'system-config-history',
+                'integrity-check-runs',
+                'backup-restore-verification',
+                'frameleaf-setup',
+              ],
+            ]);
+          }
+          const dataTables = selected.filter((table) => table !== 'system_metadata');
+          if (partial) {
+            for (const table of dataTables) {
+              context.remaining();
+              await db.query(`DELETE FROM "${table}"`);
+            }
+          } else if (dataTables.length > 0) {
+            context.remaining();
+            await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
+          }
+          context.remaining();
+          await db.query('COMMIT');
+        } catch (error) {
+          try {
+            await db.query('ROLLBACK');
+          } catch (error_) {
+            throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
+          }
+          throw error;
         }
-        throw error;
-      }
-    }, signal);
+      },
+      signal,
+      selected.includes('system_metadata'),
+    );
   },
 
   unzip: async (input: string, output: string) => {
@@ -1455,9 +1474,42 @@ export const utils = {
     }
   },
 
-  resetAdminConfig: async (accessToken: string) => {
-    const defaultConfig = await getConfigDefaults({ headers: asBearerAuth(accessToken) });
-    await updateConfig({ adminConfigDto: defaultConfig }, { headers: asBearerAuth(accessToken) });
+  resetAdminConfig: async (accessToken: string, signal?: AbortSignal) => {
+    const options = { headers: asBearerAuth(accessToken), signal };
+    const defaultConfig = await getConfigDefaults(options);
+    // Whole-config saves deliberately retain same-account credentials and remote authority.
+    // A disposable E2E fixture owns these values and clears them only through their explicit APIs.
+    // This first save also retains the precise CONFIG_FILE_IN_USE refusal before protected writes.
+    await updateConfig({ adminConfigDto: defaultConfig }, options);
+    const credentials = await getConfigCredentials(options);
+    for (const credential of credentials) {
+      if (credential.configured) {
+        await deleteConfigCredential({ name: credential.name }, options);
+      }
+    }
+    const defaults = defaultConfig.frameleafCloud?.remoteAccess;
+    if (defaults) {
+      const remote = await getRemoteAccess(options);
+      if (remote.customHostname) {
+        await removeRemoteHostname(options);
+      }
+      const next = {
+        enabled: defaults.enabled,
+        mode: defaults.mode,
+        directPort: defaults.directPort,
+        portMapping: defaults.portMapping,
+        publicUrl: defaults.publicUrl,
+      };
+      if (
+        remote.enabled !== next.enabled ||
+        remote.mode !== next.mode ||
+        remote.directPort !== next.directPort ||
+        remote.portMapping !== next.portMapping ||
+        remote.publicUrlChoice !== next.publicUrl
+      ) {
+        await updateRemoteAccess({ remoteAccessUpdateDto: next }, options);
+      }
+    }
   },
 
   isQueueEmpty: (accessToken: string, queue: keyof QueuesResponseLegacyDto, signal?: AbortSignal) =>

@@ -91,6 +91,22 @@ describe(PostgresSocketTransport.name, () => {
     await transport.close();
   });
 
+  it('configuration discovery refuses an unregistered publisher even with no remote peers', async () => {
+    const transport = new PostgresSocketTransport({} as ConfigRepository);
+    fixture.query.mockResolvedValueOnce({ rows: [{ count: 0, selfLive: false }] });
+    await expect(transport.discoverWorkers(server(), true)).rejects.toThrow('not a live registered websocket worker');
+    await transport.close();
+  });
+
+  it('configuration discovery excludes its registered publisher without requiring a fictitious remote worker', async () => {
+    const transport = new PostgresSocketTransport({} as ConfigRepository);
+    fixture.query.mockResolvedValueOnce({ rows: [{ count: 0, selfLive: true, workerIds: [] }] });
+    fixture.adapter.serverCount.mockResolvedValueOnce(1);
+    await expect(transport.discoverWorkers(server(), true)).resolves.toEqual([]);
+    expect(fixture.query).toHaveBeenCalledWith(expect.stringContaining('id <> $2'), [true, expect.any(String)]);
+    await transport.close();
+  });
+
   it('waits for restart publication instead of returning with an in-flight PostgreSQL message', async () => {
     const transport = new PostgresSocketTransport({} as ConfigRepository);
     let commit!: () => void;

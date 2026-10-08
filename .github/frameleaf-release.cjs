@@ -1244,6 +1244,11 @@ async function releaseFlags(
       1,
       `${restoreTag}: missing or duplicate ${spec.image}${spec.suffix}`,
     );
+    assert.equal(
+      records[0].sourceCommit,
+      evidence.sourceCommit,
+      "Restored image source differs",
+    );
     const digest = records[0].digest;
     const verified = await verifyImage(
       registry,
