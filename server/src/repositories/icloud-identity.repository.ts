@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { ICloudEditBaselineDto, ICloudEditSuccessorDto } from 'src/dtos/icloud-identity.dto.js';
+import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -249,6 +251,13 @@ export class ICloudIdentityRepository {
   /** Extend live claims of `holder`, never past four hours from when each was taken. */
   async renew(ownerId: string, ids: string[], holder: string, ttlSec: number): Promise<ICloudClaimRow[]> {
     return this.db.transaction().execute(async (tx) => {
+      const hints = await sql<{ item: string }>`SELECT "cplAssetRecordName" AS item FROM public.icloud_claim
+        WHERE "ownerId"=${ownerId}::uuid AND id=ANY(${ids}::uuid[]) AND holder=${holder}`.execute(tx);
+      await lockICloudItemClaims(
+        tx,
+        ownerId,
+        hints.rows.map((row) => row.item),
+      );
       const { rows } = await sql<ICloudClaimRow>`
         UPDATE public.icloud_claim
         SET "expiresAt" = least("createdAt" + interval '4 hours', clock_timestamp() + make_interval(secs => ${ttlSec}))
@@ -262,6 +271,13 @@ export class ICloudIdentityRepository {
   /** Give up claims of `holder`; answers the ids released. */
   async release(ownerId: string, ids: string[], holder: string): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
+      const hints = await sql<{ item: string }>`SELECT "cplAssetRecordName" AS item FROM public.icloud_claim
+        WHERE "ownerId"=${ownerId}::uuid AND id=ANY(${ids}::uuid[]) AND holder=${holder}`.execute(tx);
+      await lockICloudItemClaims(
+        tx,
+        ownerId,
+        hints.rows.map((row) => row.item),
+      );
       const { rows } = await sql<{
         id: string;
       }>`
@@ -369,6 +385,15 @@ export class ICloudIdentityRepository {
       `.execute(tx);
       return rows[0]?.sha256.equals(input.sha256) ?? false;
     });
+  }
+  discoverEditEvidence(auth: AuthDto, assetId: string) {
+    return new ICloudEditAuthorityRepository(this.db).discover(auth, assetId);
+  }
+  acceptEditBaseline(auth: AuthDto, dto: ICloudEditBaselineDto) {
+    return new ICloudEditAuthorityRepository(this.db).baseline(auth, dto);
+  }
+  acceptEditSuccessor(auth: AuthDto, dto: ICloudEditSuccessorDto) {
+    return new ICloudEditAuthorityRepository(this.db).successor(auth, dto);
   }
   /** Whether `deviceKey` is one of the owner's registered backup devices. */
   async ownsDevice(ownerId: string, deviceKey: string): Promise<boolean> {

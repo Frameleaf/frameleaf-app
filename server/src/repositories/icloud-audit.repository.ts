@@ -119,7 +119,7 @@ export async function guardAuditAuthority(
 }
 
 /** No credentials or serialized elevation survive a worker restart. */
-async function currentAuth(
+export async function currentAuth(
   db: Kysely<DB>,
   ownerId: string,
   sessionId: string,

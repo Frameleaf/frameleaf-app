@@ -21,14 +21,24 @@ const vectors = JSON.parse(
 ) as { producer: Vector[] };
 
 const logger = () => ({ setContext: vi.fn(), debug: vi.fn(), error: vi.fn() });
-const respond = (error: Error, id = 'request-a', log = logger()) => {
+const respond = (error: Error, id = 'request-a', log = logger(), path?: string) => {
   const res = { headersSent: false, header: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis(), json: vi.fn() };
   const sut = new GlobalExceptionFilter(log as unknown as LoggingRepository, { getId: () => id } as ClsService);
-  sut.handleError({ complete: true } as Request, res as unknown as Response, error);
+  sut.handleError({ complete: true, path } as Request, res as unknown as Response, error);
   return { res, log, body: res.json.mock.calls[0]?.[0] as Record<string, any> };
 };
 
 describe('FL-328 server error display contract', () => {
+  it.each(['/icloud-sync/edits/evidence', '/api/icloud-sync/edits/evidence/', '/ICLOUD-SYNC/edits/evidence/'])(
+    'keeps owner evidence errors private and noncacheable on the admitted %s route',
+    (path) => {
+      for (const status of [400, 401, 403, 409]) {
+        const { res } = respond(new HttpException('fixed-refusal', status), 'request-a', logger(), path);
+        expect(res.header).toHaveBeenCalledWith(expect.objectContaining({ 'Cache-Control': 'private, no-store' }));
+      }
+    },
+  );
+
   it.each(vectors.producer)('produces the exact $name wire fixture', ({ input, expected }) => {
     const { res, body } = respond(new HttpException(input.response, input.status));
     expect(res.status).toHaveBeenCalledWith(input.status);

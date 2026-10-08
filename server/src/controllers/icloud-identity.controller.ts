@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -13,6 +13,11 @@ import {
   ICloudClaimResponseDto,
   ICloudCoverageDto,
   ICloudCoverageResponseDto,
+  ICloudEditBaselineDto,
+  ICloudEditDecisionResponseDto,
+  ICloudEditEvidenceQueryDto,
+  ICloudEditEvidenceResponseDto,
+  ICloudEditSuccessorDto,
   ICloudLookupDto,
   ICloudLookupResponseDto,
   ICloudVerifyDto,
@@ -31,6 +36,54 @@ export class ICloudIdentityController {
     private service: ICloudIdentityService,
     private audits: ICloudAuditService,
   ) {}
+
+  @Get('edits/evidence')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetRead, refreshElevation: false })
+  @Endpoint({
+    summary: 'Discover owned edit evidence and administrative authority',
+    description:
+      'Complete bounded owner-session snapshot. Receipts are current owned bytes; administrative authority is not provider chronology. Incoming eligibility is a snapshot, never admission permission. Oversized or inaccessible evidence requires review.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  discoverICloudEditEvidence(
+    @Auth() auth: AuthDto,
+    @Query() dto: ICloudEditEvidenceQueryDto,
+  ): Promise<ICloudEditEvidenceResponseDto> {
+    return this.service.discoverEditEvidence(auth, dto.assetId);
+  }
+
+  @Post('edits/baseline')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Accept an administrative edit-owner baseline',
+    description:
+      'Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  acceptICloudEditBaseline(
+    @Auth() auth: AuthDto,
+    @Body() dto: ICloudEditBaselineDto,
+  ): Promise<ICloudEditDecisionResponseDto> {
+    return this.service.acceptEditBaseline(auth, dto);
+  }
+
+  @Post('edits/successor')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Accept verified bytes as an administrative edit successor',
+    description:
+      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Unsupported or unsafe supersede decisions require review.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  acceptICloudEditSuccessor(
+    @Auth() auth: AuthDto,
+    @Body() dto: ICloudEditSuccessorDto,
+  ): Promise<ICloudEditDecisionResponseDto> {
+    return this.service.acceptEditSuccessor(auth, dto);
+  }
 
   @Post('identities/verify')
   @HttpCode(HttpStatus.ACCEPTED)

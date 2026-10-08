@@ -27,6 +27,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
+import { editAuthorityReviewReason } from 'src/repositories/icloud-edit-authority.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import {
   ICloudConnection,
@@ -1107,9 +1108,14 @@ export class ICloudSyncService {
       await this.repository.clearOutbox(resource);
       await this.repository.finalize(resource, () => this.staging.cleanup(committed));
     } catch (error) {
-      const reason = error instanceof ICloudTransportError ? error.code : 'icloud_transfer_failed';
+      const editReason = editAuthorityReviewReason(error);
+      const reason = editReason ?? (error instanceof ICloudTransportError ? error.code : 'icloud_transfer_failed');
       const current = await this.repository.resource(resource.id);
-      await this.repository.finish(resource, current?.status === 'committed' ? 'committed' : 'retry', reason);
+      await this.repository.finish(
+        resource,
+        current?.status === 'committed' ? 'committed' : editReason ? 'needs-review' : 'retry',
+        reason,
+      );
       if (error instanceof ICloudTransportError && error.code === 'resource_changed') {
         await this.repository.refreshResource(resource);
         return;

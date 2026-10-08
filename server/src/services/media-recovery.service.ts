@@ -5,6 +5,7 @@ import { copyFile, link, mkdir, open, unlink } from 'node:fs/promises';
 import { basename, dirname, extname, join, normalize } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetStatus, AssetType, StorageFolder } from 'src/enum.js';
+import { editAuthorityReviewReason } from 'src/repositories/icloud-edit-authority.repository.js';
 import {
   MediaRecoveryRepository,
   RecoveryAuthority,
@@ -91,8 +92,9 @@ export class MediaRecoveryService {
         verified,
         verifyFinal: validate,
       });
-    } catch {
-      return { outcome: 'retry', reason: 'reuse_not_committed' };
+    } catch (error) {
+      const reason = editAuthorityReviewReason(error);
+      return reason ? { outcome: 'needs-review', reason } : { outcome: 'retry', reason: 'reuse_not_committed' };
     }
   }
 
@@ -285,6 +287,10 @@ export class MediaRecoveryService {
               }),
       });
     } catch (error) {
+      const reason = editAuthorityReviewReason(error);
+      if (reason) {
+        return { outcome: 'needs-review', reason };
+      }
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
       return { outcome: 'retry', reason: code === '23505' ? 'concurrent_content_match' : 'recovery_not_committed' };
     }

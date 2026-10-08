@@ -318,3 +318,112 @@ export const ICloudAttachResponseSchema = z
   })
   .meta({ id: 'ICloudAttachResponseDto' });
 export class ICloudAttachResponseDto extends createZodDto(ICloudAttachResponseSchema) {}
+
+/** Explicit owner decisions are administrative authority, never provider revision/equivalence proof. */
+const EditDecisionBase = {
+  requestId: z.uuid(),
+  expectedGeneration: z.int().min(0).max(2_147_483_646),
+};
+export const ICloudEditBaselineSchema = z
+  .object({
+    ...EditDecisionBase,
+    receiptId: z.uuid().describe('An accessible owned stored source identity with verified current asset digest'),
+    holder: z.discriminatedUnion('kind', [
+      z.object({ kind: z.enum(['device']).meta({ id: 'ICloudEditDeviceHolderKind' }), id: z.uuid() }).strict(),
+      z.object({ kind: z.enum(['icloud-sync']).meta({ id: 'ICloudEditSyncHolderKind' }), id: z.uuid() }).strict(),
+    ]),
+    sourceIncarnation: z.uuid(),
+    nativeVersion: z.string().min(1).max(256),
+    takeOver: z.boolean().default(false).describe('Only bypasses the 72-hour wait for an unhealthy source'),
+  })
+  .strict()
+  .meta({ id: 'ICloudEditBaselineDto' });
+export class ICloudEditBaselineDto extends createZodDto(ICloudEditBaselineSchema) {}
+export const ICloudEditSuccessorSchema = z
+  .object({
+    ...EditDecisionBase,
+    expectedVersionId: z.uuid(),
+    reuseVersionId: z
+      .uuid()
+      .optional()
+      .describe(
+        'Explicit administrative binding to a known canonical version with identical verified render bytes; never inferred provider equivalence',
+      ),
+    channel: z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudEditPublicationChannel' }),
+    resourceId: z.uuid().describe('Existing verified bytes; accepting this is an explicit owner successor decision'),
+    policy: z.enum(['keep', 'supersede']).meta({ id: 'ICloudEditRetentionPolicy' }).default('keep'),
+  })
+  .strict()
+  .meta({ id: 'ICloudEditSuccessorDto' });
+export class ICloudEditSuccessorDto extends createZodDto(ICloudEditSuccessorSchema) {}
+export const ICloudEditDecisionResponseSchema = z
+  .object({
+    decisionId: z.uuid(),
+    generation: z.int().min(1),
+    versionId: z.uuid(),
+    evidenceType: z.literal('administrative'),
+  })
+  .meta({ id: 'ICloudEditDecisionResponseDto' });
+export class ICloudEditDecisionResponseDto extends createZodDto(ICloudEditDecisionResponseSchema) {}
+
+/** Discovery is a complete bounded snapshot, never a publication grant or provider ordering. */
+export const ICloudEditEvidenceQuerySchema = z
+  .object({ assetId: z.uuid() })
+  .strict()
+  .meta({ id: 'ICloudEditEvidenceQueryDto' });
+export class ICloudEditEvidenceQueryDto extends createZodDto(ICloudEditEvidenceQuerySchema) {}
+export const ICloudEditEvidenceResponseSchema = z
+  .object({
+    complete: z.literal(true),
+    admissionGuaranteed: z.literal(false),
+    items: z.array(
+      z.object({
+        item: z.string(),
+        receipts: z.array(
+          z.object({
+            receiptId: z.uuid(),
+            assetId: z.uuid(),
+            sha256: Sha256,
+            role: z.enum(['original', 'edit-render']).meta({ id: 'ICloudEditReceiptRole' }),
+            nativeVersion: z.string(),
+            suggestedAdministrativeLabel: z.literal('administrative-original').nullable(),
+            deliveredBy: z.string(),
+          }),
+        ),
+        authority: z
+          .object({
+            evidenceType: z.literal('administrative'),
+            generation: z.int(),
+            versionId: z.uuid(),
+            assetId: z.uuid(),
+            sha256: Sha256,
+            holder: z.string(),
+            sourceIncarnation: z.uuid(),
+          })
+          .nullable(),
+        holders: z.array(
+          z.object({
+            holder: z.string(),
+            state: z.string(),
+            unhealthySince: DateTime.nullable(),
+            automaticTakeoverEligible: z.boolean(),
+          }),
+        ),
+        claims: z.array(z.object({ claimId: z.uuid(), holder: z.string(), expiresAt: DateTime })),
+        incoming: z.array(
+          z.object({
+            channel: z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudEditPublicationChannel' }),
+            resourceId: z.uuid(),
+            holder: z.string(),
+            nativeVersion: z.string(),
+            sha256: Sha256,
+            state: z.string(),
+            claimLive: z.boolean(),
+            administrativeDecisionRequired: z.literal(true),
+          }),
+        ),
+      }),
+    ),
+  })
+  .meta({ id: 'ICloudEditEvidenceResponseDto' });
+export class ICloudEditEvidenceResponseDto extends createZodDto(ICloudEditEvidenceResponseSchema) {}
