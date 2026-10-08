@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+import { MlCapabilitiesResponseDto } from 'src/dtos/ml-destination.dto.js';
 import {
   RESTORATION_PROTOCOL,
   RestorationDynamicRange,
@@ -986,6 +987,62 @@ describe(MlDestinationService.name, () => {
         const { studio } = await sut.getCapabilities();
         return { gpuWorker: studio.gpuWorker, renderWorker: studio.renderWorker };
       };
+
+      it('projects Sidecar only from one fresh engine-bound session, preserving ordinary output proof', async () => {
+        const profile = 'mp4-h264+srt-sidecar-v1';
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({}, { id: 'paired' }),
+          liveSession({}, { id: 'media' }),
+          liveSession({}, { id: 'marker' }),
+          liveSession({ engineDigest: null }, { id: 'unbound' }),
+          liveSession({}, { id: 'near' }),
+          liveSession({}, { id: 'expired', expiresAt: new Date(Date.now() - hour) }),
+          liveSession({}, { id: 'revoked', revokedAt: new Date() }),
+          liveSession({}, { id: 'stale', conformanceReportedAt: new Date(Date.now() - 25 * hour) }),
+          liveSession({}, { id: 'wrong-engine', engineDigest: 'other' }),
+          liveSession({}, { id: 'wrong-scope', scopes: [MediaOperationKind.Restoration] }),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockImplementation((id) =>
+          Promise.resolve({
+            codecs: ['webcodecs-avc'],
+            formats:
+              id === 'media'
+                ? ['mp4']
+                : id === 'marker'
+                  ? [profile]
+                  : id === 'near'
+                    ? ['mp4', `${profile}-extra`]
+                    : ['mp4', profile],
+          }),
+        );
+        const response = await sut.getCapabilities();
+        const { studio } = response;
+        const candidatesSchema = MlCapabilitiesResponseDto.schema.shape.studio.shape.render.element.shape.candidates;
+        expect(candidatesSchema.parse(studio.render[0].candidates)).toEqual(studio.render[0].candidates);
+        const malformed = structuredClone(studio.render[0].candidates!);
+        malformed[0].sidecarOutputFormats = ['unknown' as never];
+        expect(candidatesSchema.safeParse(malformed).success).toBe(false);
+        malformed[0].sidecarOutputFormats = ['mp4-h264', 'mp4-h264'];
+        expect(candidatesSchema.safeParse(malformed).success).toBe(false);
+        expect(studio.render[0].candidates).toEqual([
+          expect.objectContaining({ outputFormats: ['mp4-h264'], sidecarOutputFormats: ['mp4-h264'] }),
+          expect.objectContaining({ outputFormats: ['mp4-h264'] }),
+          expect.objectContaining({ outputFormats: [] }),
+          expect.objectContaining({ outputFormats: ['mp4-h264'] }),
+          expect.objectContaining({ outputFormats: ['mp4-h264'] }),
+        ]);
+        for (const candidate of studio.render[0].candidates!.slice(1))
+          expect(candidate).not.toHaveProperty('sidecarOutputFormats');
+        expect(mocks.renderWorker.getSessionCapabilities.mock.calls.map(([id]) => id)).toEqual([
+          'paired',
+          'media',
+          'marker',
+          'unbound',
+          'near',
+        ]);
+        expect(JSON.stringify(studio)).not.toContain(profile);
+        expect(JSON.stringify(studio)).not.toContain('sha256:engine');
+      });
 
       it('publishes same-session export proof without combining different workers (FL-342)', async () => {
         const gib = 1024 ** 3;

@@ -1,3 +1,5 @@
+import { RenderWorkerAdmissionDto } from 'src/dtos/render-worker.dto.js';
+import { StudioExportSettingsDto } from 'src/dtos/studio-export.dto.js';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
 import {
   ClaimAdmissionInput,
@@ -116,6 +118,8 @@ const claimInput = (
     gpuMemoryBytes: 24 * 1024 ** 3,
     activeOperations: 0,
     limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: null },
+    engineDigest: 'engine-1',
+    conformanceMaxAgeMs: 60 * 60_000,
     ...overrides.worker,
   },
   session: {
@@ -124,6 +128,7 @@ const claimInput = (
     scopes: [MediaOperationKind.StudioExport, MediaOperationKind.Restoration],
     gpuMemoryBytes: 24 * 1024 ** 3,
     engineDigest: 'engine-1',
+    conformanceReportedAt: minutesAgo(5),
     ...overrides.session,
   },
   operation: {
@@ -669,5 +674,103 @@ describe('evaluateRenderOutput (FL-42)', () => {
     ).toEqual({
       supported: true,
     });
+  });
+});
+
+describe('Sidecar v1 same-session capability admission', () => {
+  // Synthetic protocol fixtures exercise admission; they do not qualify a real worker.
+  const profile = 'mp4-h264+srt-sidecar-v1';
+  const settings = {
+    format: 'mp4-h264',
+    color: 'preserve',
+    resolution: '720p',
+    quality: 'high',
+    audio: 'preserve',
+    subtitleMode: 'sidecar',
+  };
+  const capabilities = { codecs: ['webcodecs-avc'], formats: ['mp4', profile] };
+  const candidate = { gpuMemoryBytes: 8 * 1024 ** 3, ...capabilities, colorPrecision: null, engineDigest: 'engine-1' };
+
+  it('requires the exact profile, real encoder and MP4 in the same session', () => {
+    expect(provesOutput(capabilities, requiredOutput(settings)!)).toBe(true);
+    for (const evidence of [
+      null,
+      { codecs: [], formats: ['mp4', profile] },
+      { codecs: ['h264'], formats: ['mp4', profile] },
+      { codecs: capabilities.codecs, formats: [profile] },
+      ...[
+        [],
+        ['mp4'],
+        ['mp4', 'srt'],
+        ['mp4', profile.toUpperCase()],
+        ['mp4', 'mp4-h264+srt-sidecar-v2'],
+        ['mp4', `${profile}-extra`],
+      ].map((formats) => ({ codecs: capabilities.codecs, formats })),
+    ]) {
+      expect(provesOutput(evidence, requiredOutput(settings)!)).toBe(false);
+    }
+  });
+
+  it('refuses unknown modes and unsupported v1 tuples without ordinary-output fallback', () => {
+    for (const patch of [
+      { subtitleMode: 'unknown' },
+      { format: 'prores-422-hq' },
+      { color: 'hdr10' },
+      { resolution: '1080p' },
+      { quality: 'draft' },
+      { audio: 'off' },
+      { format: '' },
+    ]) {
+      expect(provesOutput(capabilities, requiredOutput({ ...settings, ...patch })!)).toBe(false);
+    }
+    for (const subtitleMode of [undefined, 'burn', 'off']) {
+      expect(
+        provesOutput({ codecs: capabilities.codecs, formats: ['mp4'] }, requiredOutput({ ...settings, subtitleMode })!),
+      ).toBe(true);
+    }
+  });
+
+  it('uses immutable claim settings and requires the expected engine binding', () => {
+    expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings } }))).toEqual({
+      admitted: true,
+    });
+    for (const session of [{ engineDigest: null }, { engineDigest: 'engine-2' }]) {
+      expect(
+        evaluateClaimAdmission(claimInput({ session: { ...session, capabilities }, operation: { settings } })),
+      ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.EngineDigestMismatch });
+    }
+    expect(
+      evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings, snapshot: {} } })),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.EngineDigestMismatch });
+    expect(
+      evaluateClaimAdmission(
+        claimInput({ session: { capabilities: { ...capabilities, formats: ['mp4'] } }, operation: { settings } }),
+      ),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+  });
+
+  it('never combines memory, media or profile across candidates', () => {
+    expect(evaluateRenderOutput([candidate], settings)).toEqual({ supported: true });
+    expect(
+      evaluateRenderOutput(
+        [
+          { ...candidate, formats: ['mp4'] },
+          { ...candidate, gpuMemoryBytes: 1, formats: [profile] },
+        ],
+        settings,
+      ),
+    ).toEqual({ supported: false, refusal: RenderOutputRefusal.CodecUnavailable });
+    expect(evaluateRenderOutput([{ ...candidate, engineDigest: undefined }], settings)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+  });
+
+  it('round-trips the profile through the native bounded admission DTO without changing legacy strings', () => {
+    expect(StudioExportSettingsDto.schema.shape.subtitleMode.safeParse('sidecar').success).toBe(false);
+    const formats = RenderWorkerAdmissionDto.schema.shape.formats;
+    expect(formats.parse(['mp4', profile, 'legacy-container'])).toEqual(['mp4', profile, 'legacy-container']);
+    expect(formats.safeParse(['x'.repeat(31)]).success).toBe(false);
+    expect(formats.safeParse(Array.from({ length: 33 }, () => 'mp4')).success).toBe(false);
   });
 });

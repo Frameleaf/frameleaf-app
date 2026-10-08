@@ -166,7 +166,7 @@ const RenderWorkerAdmissionSchema = z
       .array(z.string().max(30))
       .max(32)
       .optional()
-      .describe('Containers the check verified writing, such as `mp4`, `webm` or `mov`'),
+      .describe('Containers and versioned paired-output profiles the check verified writing'),
   })
   .meta({ id: 'RenderWorkerAdmissionDto' });
 

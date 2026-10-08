@@ -783,13 +783,26 @@ export class MlDestinationService extends BaseService {
           candidates: await Promise.all(
             entries
               .filter(({ session }) => session.scopes.includes(MediaOperationKind.StudioExport))
-              .map(async ({ session }) => {
+              .map(async ({ worker, session }) => {
                 const capabilities = await this.renderWorkerRepository.getSessionCapabilities(session.id);
                 return {
                   gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
                   outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
                     provesOutput(capabilities ?? null, requiredOutput({ format })!),
                   ),
+                  ...(worker.engineDigest &&
+                    worker.engineDigest === session.engineDigest &&
+                    provesOutput(
+                      capabilities ?? null,
+                      requiredOutput({
+                        format: 'mp4-h264',
+                        subtitleMode: 'sidecar',
+                        color: 'preserve',
+                        resolution: '720p',
+                        quality: 'high',
+                        audio: 'preserve',
+                      })!,
+                    ) && { sidecarOutputFormats: ['mp4-h264' as const] }),
                   ...(session.colorPrecision ?? SDR_ONLY),
                 };
               }),
