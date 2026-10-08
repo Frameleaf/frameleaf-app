@@ -376,6 +376,8 @@ COPY ./server/package.json ./server/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
 
 COPY ./server ./server/
+COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
+COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/
 COPY ./docker/scripts/verify-server-package.mjs /build/verify-server-package.mjs
 # The build channel is compiled into the server (server/src/utils/frameleaf-build-channel.ts). Only
 # .github/workflows/integration-image.yml passes FRAMELEAF_BUILD_CHANNEL=integration; every release
@@ -398,7 +400,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter frameleaf --prod --no-optional deploy /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
-RUN node /build/verify-server-package.mjs /output/server-pruned
+RUN node /build/verify-server-package.mjs /output/server-pruned /usr/src/app/studio/runtime
 
 # Explicit manual RAW qualification uses the actual production native base and compiled/pruned
 # server adapter. It builds no web, Studio, CLI or plugin WASM and starts no application service.

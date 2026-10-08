@@ -504,7 +504,17 @@
       "path": "patches/0104-browser-whisper-tiny-selector.patch",
       "sha256": "c57d67bbf395e68e83c385e18034219a4f00c8a1533703eb4c2edf4fbde3487b",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0105-subtitle-sidecar-shared-producer.patch",
+      "sha256": "6cd8fd7f0fe8bada9ca1ea80c1c143692150ec7bed7bd0c258604b0fc05e31a9",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0106-browser-whisper-tiny-settings-test.patch",
+      "sha256": "52d2e4d90c9d8d2e5e191a0418780dad0e797a85a2db781ca95af376daab7c95",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "01983a71b49ed5721ed9692b6bfd92b3122c651b7f48d1a5c7e675007f410156"
+  "sourceSha256": "680d0070383b0b7d5721a9cd874325abc19b3d635490b90d0f0d90b72b67d5c0"
 }

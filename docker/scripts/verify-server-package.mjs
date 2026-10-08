@@ -5,7 +5,12 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Inspect the real pnpm-deployed package without starting services or executing DDL. */
-export async function verifyServerPackage(directory) {
+export async function verifyServerPackage(
+  directory,
+  canonicalRuntime = fileURLToPath(
+    new URL("../../studio/runtime/", import.meta.url),
+  ),
+) {
   const root = await realpath(directory);
   const contained = async (file) => {
     const target = await realpath(file);
@@ -39,6 +44,8 @@ export async function verifyServerPackage(directory) {
     "dist/schema/catalog/baseline.sql.manifest.json",
   ])
     await contained(resolve(root, name));
+
+  await verifyStudioSubtitleRuntime(root, canonicalRuntime);
 
   const require = createRequire(resolve(root, "package.json"));
   const entry = await contained(require.resolve("@frameleaf/sql-tools"));
@@ -107,11 +114,63 @@ export async function verifyServerPackage(directory) {
   );
 }
 
+/** Verify real deployed bytes and execute the emitted helper, never a source/test alias. */
+export async function verifyStudioSubtitleRuntime(directory, canonicalRuntime) {
+  const root = await realpath(directory);
+  for (const name of ["subtitle-sidecar.mjs", "subtitle-sidecar.d.mts"]) {
+    const file = resolve(root, "resources/studio", name);
+    assert.equal(
+      await realpath(file),
+      file,
+      `Subtitle runtime cannot escape or use symlinks: ${name}`,
+    );
+    assert(
+      (await stat(file)).isFile(),
+      `Subtitle runtime must be regular: ${name}`,
+    );
+    assert.deepEqual(
+      await readFile(file),
+      await readFile(resolve(canonicalRuntime, name)),
+      `Subtitle runtime differs from owned implementation: ${name}`,
+    );
+  }
+  const { buildStudioSidecarSemanticPlan } = await import(
+    pathToFileURL(resolve(root, "dist/utils/studio-subtitle-sidecar.js")).href
+  );
+  const graph = {
+    metadata: { fps: 30000 / 1001, frameRate: { num: 30000, den: 1001 } },
+    timeline: {
+      tracks: [{ id: "caption", order: 0, visible: true }],
+      items: [
+        {
+          id: "late",
+          type: "text",
+          textRole: "caption",
+          captionSource: { type: "subtitle-import" },
+          trackId: "caption",
+          from: 30000,
+          durationInFrames: 30,
+          text: "Late",
+        },
+      ],
+    },
+  };
+  assert.equal(
+    buildStudioSidecarSemanticPlan(graph).content,
+    "1\n00:16:41,000 --> 00:16:42,001\nLate",
+  );
+  assert.equal(
+    buildStudioSidecarSemanticPlan(graph, { inPoint: 29970, outPoint: 30060 })
+      .content,
+    "1\n00:00:01,001 --> 00:00:02,002\nLate",
+  );
+}
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  await verifyServerPackage(process.argv[2]);
+  await verifyServerPackage(process.argv[2], process.argv[3]);
   console.log(
     "Pruned Frameleaf server dependencies, canonical artifacts and Sharp runtime verified",
   );
