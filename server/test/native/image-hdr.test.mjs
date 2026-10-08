@@ -535,17 +535,25 @@ test('independent Apple auxiliary geometry cannot be advertised as aligned HDR',
   assert.throws(() => codec.decode(bytes, ...limits), { code: 'APPLE_GAIN_MAP_GEOMETRY_UNSUPPORTED' });
 });
 
-for (const [extension, format, maximum, rms] of [
+for (const [extension, format, maximum, rms, source] of [
   ['jpg', 'jpeg', 0.2, 0.02],
   ['heic', 'heic', 0.08, 0.015],
+  ['jpg', 'Pixel 7 Pro', 0.12, 0.012, 'android-ultrahdr/cityscape'],
 ]) {
-  test(`Develop HDR ${format} export agrees with independent Apple reconstruction`, () => {
-    const input = readFileSync(new URL(`./fixtures/develop-hdr.${extension}`, import.meta.url));
+  test(`${source ? `Camera HDR ${format}` : `Develop HDR ${format} export`} agrees with independent Apple reconstruction`, () => {
+    const input = readFileSync(new URL(`./fixtures/${source ?? 'develop-hdr'}.${extension}`, import.meta.url));
     const reference = JSON.parse(
-      readFileSync(new URL(`./fixtures/develop-hdr-${format}-reference.json`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`./fixtures/${source ?? `develop-hdr-${format}`}-reference.json`, import.meta.url), 'utf8'),
     );
     assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
     assert.equal(reference.colorSpace, 'extended-linear-display-p3');
+    if (source) {
+      const info = codec.inspect(input, ...limits);
+      assert.equal(info.reconstructionAvailable, true);
+      assert.equal(info.gainMap, 'ultra-hdr');
+      assert.equal(info.dynamicRange, 'hdr');
+      assert.ok(Math.abs(info.contentHeadroom - 2.4599926471710205) < 0.001);
+    }
     const image = codec.decode(input, ...limits);
     assert.deepEqual([image.width, image.height, image.gamut], [reference.width, reference.height, 1]);
     const values = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
@@ -563,6 +571,7 @@ for (const [extension, format, maximum, rms] of [
         }
     assert.ok(max < maximum, `${format} maximum reconstruction error ${max}`);
     assert.ok(Math.sqrt(squared / count) < rms, `${format} RMS reconstruction error ${Math.sqrt(squared / count)}`);
+    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
     if (format === 'jpeg') {
       assert.ok(input.includes(Buffer.from('hdrgm:Version')));
       assert.ok(input.includes(Buffer.from('urn:iso:std:iso:ts:21496:-1')));
