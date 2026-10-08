@@ -1,0 +1,90 @@
+diff --git a/src/infrastructure/gpu-effects/common.ts b/src/infrastructure/gpu-effects/common.ts
+--- a/src/infrastructure/gpu-effects/common.ts
++++ b/src/infrastructure/gpu-effects/common.ts
+@@ -117,6 +117,29 @@
+   if (FL_EXTENDED_RANGE) { return sign(c) * pow(abs(c), e); }
+   return pow(max(c, vec3f(0.0)), e);
+ }
++// Spatial filters accumulate premultiplied light, then return straight alpha.
++// SDR retains its pinned hardware sampling and encoded straight-RGBA averaging.
++fn fl_blur_sample(tex: texture_2d<f32>, smp: sampler, uv: vec2f) -> vec4f {
++  if (!FL_EXTENDED_RANGE) { return textureSample(tex, smp, uv); }
++  let size = vec2i(textureDimensions(tex));
++  let point = uv * vec2f(size) - vec2f(0.5);
++  let origin = vec2i(floor(point));
++  let fraction = fract(point);
++  var color = vec4f(0.0);
++  for (var y = 0; y < 2; y++) {
++    for (var x = 0; x < 2; x++) {
++      let value = textureLoad(tex, clamp(origin + vec2i(x, y), vec2i(0), size - vec2i(1)), 0);
++      let weight = select(1.0 - fraction.x, fraction.x, x == 1) * select(1.0 - fraction.y, fraction.y, y == 1);
++      color += vec4f(value.rgb * value.a, value.a) * weight;
++    }
++  }
++  return color;
++}
++fn fl_blur_output(color: vec4f) -> vec4f {
++  if (!FL_EXTENDED_RANGE) { return color; }
++  if (color.a <= 0.0) { return vec4f(0.0); }
++  return vec4f(fl_range3(color.rgb / color.a), clamp(color.a, 0.0, 1.0));
++}
+ fn fl_domain_offset3(c: vec3f) -> vec3f {
+   if (FL_EXTENDED_RANGE) { return c - clamp(c, vec3f(0.0), vec3f(1.0)); }
+   return vec3f(0.0);
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -62,7 +62,8 @@
+ 
+ /** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
+ export function isLinearHdrEffectType(type: string): boolean {
+-  return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation'
++  return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' ||
++    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur'
+ }
+ 
+ /** True when the gpu effect type belongs to the color category (a "grade" effect). */
+diff --git a/src/infrastructure/gpu-effects/effects/blur.ts b/src/infrastructure/gpu-effects/effects/blur.ts
+--- a/src/infrastructure/gpu-effects/effects/blur.ts
++++ b/src/infrastructure/gpu-effects/effects/blur.ts
+@@ -27,11 +27,11 @@
+       let offset = vec2f(f32(x), f32(y)) * texelSize * (params.radius / f32(sampleRadius));
+       let distSq = f32(x * x + y * y);
+       let weight = exp(-distSq / twoSigmaSq);
+-      color += textureSample(inputTex, texSampler, input.uv + offset) * weight;
++      color += fl_blur_sample(inputTex, texSampler, input.uv + offset) * weight;
+       totalWeight += weight;
+     }
+   }
+-  return color / totalWeight;
++  return fl_blur_output(color / totalWeight);
+ }`,
+   params: {
+     radius: {
+@@ -81,11 +81,11 @@
+   for (var x = -samples; x <= samples; x++) {
+     for (var y = -samples; y <= samples; y++) {
+       let offset = vec2f(f32(x), f32(y)) * texelSize;
+-      color += textureSample(inputTex, texSampler, input.uv + offset);
++      color += fl_blur_sample(inputTex, texSampler, input.uv + offset);
+       count += 1.0;
+     }
+   }
+-  return color / count;
++  return fl_blur_output(color / count);
+ }`,
+   params: {
+     radius: {
+@@ -140,10 +140,10 @@
+     let t = (f32(i) / f32(samples - 1) - 0.5) * 2.0;
+     let offset = direction * t * radius;
+     let weight = exp(-t * t * 2.0);
+-    color += textureSample(inputTex, texSampler, input.uv + offset) * weight;
++    color += fl_blur_sample(inputTex, texSampler, input.uv + offset) * weight;
+     totalWeight += weight;
+   }
+-  return color / totalWeight;
++  return fl_blur_output(color / totalWeight);
+ }`,
+   params: {
+     amount: {

@@ -218,7 +218,10 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
   Saturation mixes toward artistic gray (RGB weights 0.299/0.587/0.114),
   amount [0, 3], on linear BT.709 with unchanged straight alpha; the weights
   retain the existing look and do not measure physical BT.709 luminance. SDR
-  keeps the same encoded equation and clamp. The other 50 enabled effects, 21 transitions and 24
+  keeps the same encoded equation and clamp. Gaussian, box and motion blur
+  preserve the pinned kernels and parameter bounds, accumulating premultiplied
+  linear light and coverage before returning straight alpha. SDR keeps encoded
+  hardware sampling. The other 47 enabled effects, 21 transitions and 24
   non-normal blends throw the shared `HdrRenderUnavailableError` until individually migrated and
   measured in this domain. Nested compositions containing a transition refuse
   as a whole. A declined HDR float item also refuses Canvas fallback.
@@ -230,8 +233,12 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
 The effects, blend and transition matrices retain production SDR measurements:
 parameter extremes and meanings, animation, stack order, blend equations,
 transition endpoints/directions and rgba8/float parity. They also observe each
-unmigrated HDR operator's typed refusal. Brightness, contrast, exposure, saturation and normal HDR blend have
-positive linear-domain measurements, including signed/highlight and alpha checks.
+unmigrated HDR operator's typed refusal. Brightness, contrast, exposure, saturation,
+Gaussian/box/motion blur and normal HDR blend have positive linear-domain
+measurements, including signed/highlight and alpha checks. Spatial blur accumulates
+premultiplied light and coverage, then returns straight alpha; hidden colors cannot
+bleed into visible highlights. `tools/hdr-blur.browser.mjs` checks independent
+spatial equations and full composition PQ exports against the prepared source.
 The independent photometric equations and signed/gamma/
 highlight discriminators remain historical checks, with a separate current SDR
 oracle and reviewed source hash guard. `tools/linear-hdr-subtree.browser.mjs`
