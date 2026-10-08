@@ -14,16 +14,34 @@
    * authorized media URL as every other thumbnail, and a pet with no featured photo gets
    * a plain mark rather than a borrowed image. Like every people photo it is a squircle
    * (apple-style.css:137-148; the people grid is the prototype pattern pets follow).
+   *
+   * `heroKey` marks it as one end of the card-to-page Hero (`data-fl-shared`); `heroPage` is the
+   * end on the page the card opens.
    */
   let {
     assetId,
     cacheKey,
     size = 160,
     alt = '',
-  }: { assetId?: string | null; cacheKey?: string | null; size?: number; alt?: string } = $props();
+    heroKey,
+    heroPage = false,
+  }: {
+    assetId?: string | null;
+    cacheKey?: string | null;
+    size?: number;
+    alt?: string;
+    heroKey?: string;
+    heroPage?: boolean;
+  } = $props();
 </script>
 
-<span class="pet-thumb fl-squircle" style:width="{size}px" style:height="{size}px">
+<span
+  class="pet-thumb fl-squircle"
+  style:width="{size}px"
+  style:height="{size}px"
+  data-fl-shared={heroKey}
+  data-fl-shared-page={heroKey && heroPage ? '' : undefined}
+>
   {#if assetId}
     {#key assetId + (cacheKey ?? '')}
       <ImageThumbnail

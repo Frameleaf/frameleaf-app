@@ -39,11 +39,12 @@
   let viewerInvisible = $state(false);
   const options = $derived({ visibility: AssetVisibility.Timeline, personId: data.person.id });
 
-  let previousRoute = $state<string>(Route.explore());
+  // People is this page's parent: a reload, a shared address or a notification goes back there.
+  let previousRoute = $state<string>(Route.people());
   let refresh = $state(0);
 
   onMount(() => {
-    const fallbackRoute = $page.params.assetId ? Route.viewPerson(data.person) : Route.explore();
+    const fallbackRoute = $page.params.assetId ? Route.viewPerson(data.person) : Route.people();
     previousRoute = Route.continue($page.url.searchParams.get(QueryParameter.PREVIOUS_ROUTE), fallbackRoute).toString();
   });
 

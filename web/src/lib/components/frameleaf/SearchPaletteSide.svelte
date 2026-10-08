@@ -1,5 +1,7 @@
 <script lang="ts">
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import { motionFade } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import {
     histogramBarLabel,
     histogramBars,
@@ -42,6 +44,7 @@
     enrichmentCounts,
     onNarrow,
     onAddToken,
+    onRemoveToken,
     onPickPerson,
     onToggleEnrichment,
   }: {
@@ -57,6 +60,9 @@
     enrichmentCounts: Partial<Record<ImageEnrichmentFilter, number>>;
     onNarrow: (bar: HistogramBar) => void;
     onAddToken: (raw: string) => void;
+    /** A pressed facet is clicked again: its chip leaves the search. */
+    onRemoveToken: (raw: string) => void;
+    /** Adds the person, or takes them out again when they are already in the search. */
     onPickPerson: (id: string, name: string | undefined) => void;
     onToggleEnrichment: (value: ImageEnrichmentFilter) => void;
   } = $props();
@@ -120,12 +126,23 @@
 
   const thumbnail = (asset: AssetResponseDto) =>
     getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash });
+
+  /** Every refine facet is a real toggle: pressed means "in the search", and a click flips it. */
+  const toggleToken = (raw: string) => (tokenSet.has(raw) ? onRemoveToken(raw) : onAddToken(raw));
+  const idlePlaces = $derived((facets[SearchFacetField.City] ?? []).filter((item) => item.count > 0));
 </script>
 
 <aside class="sp-side" aria-label={$t('frameleaf_search_refine')}>
   {#if previewAsset}
     <figure class="sp-preview">
-      <img src={thumbnail(previewAsset)} alt={previewAsset.originalFileName} />
+      <!-- The preview follows the active result with a short crossfade instead of a swap. -->
+      {#key previewAsset.id}
+        <img
+          src={thumbnail(previewAsset)}
+          alt={previewAsset.originalFileName}
+          in:motionFade={{ duration: DURATION.base }}
+        />
+      {/key}
       <figcaption>
         <strong>{previewAsset.originalFileName}</strong>
         <span>
@@ -192,7 +209,7 @@
               <button
                 type="button"
                 aria-pressed={tokenSet.has(group.token(item.value))}
-                onclick={() => onAddToken(group.token(item.value))}
+                onclick={() => toggleToken(group.token(item.value))}
               >
                 {group.label(item.value)}
                 <small>{item.count.toLocaleString($locale ?? undefined)}</small>
@@ -221,13 +238,17 @@
     </section>
   {/if}
 
-  <!-- As in the prototype, Places stays while not typing even when the library has none yet. -->
-  {#if !typing}
+  <!-- Places to start from, before anything is typed; no heading over an empty list. -->
+  {#if !typing && idlePlaces.length > 0}
     <section>
       <h3>{$t('places')}</h3>
       <div class="sp-facets">
-        {#each facets[SearchFacetField.City] ?? [] as item (item.value)}
-          <button type="button" onclick={() => onAddToken(operatorToken('place', item.value))}>
+        {#each idlePlaces as item (item.value)}
+          <button
+            type="button"
+            aria-pressed={tokenSet.has(operatorToken('place', item.value))}
+            onclick={() => toggleToken(operatorToken('place', item.value))}
+          >
             {item.value}
             <small>{item.count.toLocaleString($locale ?? undefined)}</small>
           </button>
@@ -275,7 +296,7 @@
     width: 100%;
     aspect-ratio: 4 / 3;
     object-fit: cover;
-    border-radius: 12px;
+    border-radius: var(--fl-radius-control);
   }
   .sp-preview figcaption {
     display: grid;

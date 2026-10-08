@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import {
     albumTargetRows,
@@ -88,7 +89,7 @@
   </label>
   <ul aria-busy={status === 'loading'}>
     {#if status === 'loading'}
-      <li class="empty" role="status">{$t('loading')}</li>
+      <li class="empty"><Spinner /></li>
     {:else if status === 'failed'}
       <li class="empty">
         <button type="button" class="more" onclick={() => void load()}>{$t('retry')}</button>

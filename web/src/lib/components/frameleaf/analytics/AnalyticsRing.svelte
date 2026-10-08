@@ -46,7 +46,7 @@
     fill: none;
     stroke: var(--an-1);
     stroke-linecap: round;
-    transition: stroke-dasharray 900ms var(--fl-spring, ease);
+    transition: stroke-dasharray 900ms var(--fl-spring);
   }
   .center {
     position: absolute;
@@ -55,7 +55,7 @@
     place-content: center;
     font-size: 15px;
     font-weight: 650;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     text-align: center;
   }
   @media (prefers-reduced-motion: reduce) {

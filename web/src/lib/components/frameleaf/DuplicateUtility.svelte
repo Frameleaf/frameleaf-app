@@ -18,7 +18,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+  import { getAssetInfo, QueueName, type AssetResponseDto } from '@frameleaf/sdk';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';
@@ -94,6 +94,9 @@
     keyboardPaused={assetViewerManager.isViewing}
     onOpen={(asset, group) => void openAsset(asset, group)}
     onOpenTrash={() => void goto(Route.trash())}
+    onRunDetection={authManager.user.isAdmin
+      ? () => void goto(Route.viewQueue({ name: QueueName.DuplicateDetection }))
+      : undefined}
   />
 </div>
 

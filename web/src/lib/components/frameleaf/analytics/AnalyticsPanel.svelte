@@ -95,8 +95,8 @@
     text-underline-offset: 3px;
   }
   .an-link:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   @container (max-width: 520px) {
     .an-panel {

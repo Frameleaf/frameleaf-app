@@ -114,7 +114,9 @@
   style="--sidebar-width: {railWidth}"
   class="relative z-0 grid overflow-hidden
     {rail ? 'grid-cols-[--spacing(0)_auto] sidebar:grid-cols-[var(--sidebar-width)_auto]' : 'grid-cols-1'}
-    {sidebarStore.isResizing ? '' : 'transition-[grid-template-columns] duration-200'}
+    {sidebarStore.isResizing
+    ? ''
+    : 'transition-[grid-template-columns] duration-(--fl-duration) ease-(--fl-snappy) motion-reduce:transition-none'}
     {heightClass}
     {hideNavbar ? 'pt-(--navbar-height)' : ''}
     {hideNavbar ? 'max-md:pt-(--navbar-height-md)' : ''}"
@@ -148,8 +150,12 @@
 
   <main class="relative">
     <!-- On phones the frosted tab bar floats over the foot of the page (TabBar.svelte). -->
+    <!--
+      `fl-scope` (tokens.css, base.css): the Frameleaf baseline classes and primitives work in page
+      content without a local wrapper, and no element already on these pages is restyled.
+    -->
     <div
-      class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2"
+      class="{scrollbarClass} fl-scope absolute {hasTitleClass} w-full overflow-y-auto p-2"
       style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
       use:useActions={use}
     >

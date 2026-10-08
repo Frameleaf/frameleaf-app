@@ -218,7 +218,7 @@
     height: 40px;
     flex: none;
     overflow: hidden;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
   }
   .face img {

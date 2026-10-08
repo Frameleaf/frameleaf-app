@@ -25,6 +25,8 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { findInTree } from '$lib/frameleaf/discovery-find';
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { viewInLibraryHref } from '$lib/frameleaf/library-query-options';
   import {
     DEFAULT_TAG_COLOR,
@@ -40,7 +42,6 @@
     tagColorHex,
     tagColorId,
     tagDotColor,
-    tagIdsRevealingMatches,
     tagMatches,
     tagNameTaken,
     type FrameleafTagNode,
@@ -48,6 +49,7 @@
   } from '$lib/frameleaf/tag-tree';
   import { Route } from '$lib/route';
   import { getAssetUrls } from '$lib/utils';
+  import { navigateToAsset } from '$lib/utils/asset-utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
     AssetVisibility,
@@ -76,6 +78,7 @@
     mdiTagOutline,
     mdiTagPlusOutline,
   } from '@mdi/js';
+  import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
@@ -110,11 +113,28 @@
       }
     }
   });
-  // Prototype: searching opens every ancestor of a match so it can be seen.
+  // Find narrows the tree to the matching tags and the branches that lead to them, all open, the
+  // way Find on Places narrows its grid; clearing it returns the tree as the reader left it.
+  const found = $derived(query ? findInTree(tree.roots, (item) => tagMatches(item, query)) : null);
+  const clearSearch = () => {
+    search = '';
+    searchInput?.focus();
+  };
+  let searchInput = $state<HTMLInputElement>();
+  let treePane = $state<HTMLElement>();
   $effect(() => {
-    for (const id of tagIdsRevealingMatches(tree, query)) {
-      expanded.add(id);
+    const id = found?.firstMatchId;
+    if (!id) {
+      return;
     }
+    void tick().then(() => {
+      for (const row of treePane?.querySelectorAll<HTMLElement>('[data-tree-id]') ?? []) {
+        if (row.dataset.treeId === id) {
+          row.scrollIntoView?.({ block: 'nearest', behavior: motionScrollBehavior() });
+          return;
+        }
+      }
+    });
   });
 
   const expandable = $derived(expandableTagIds(tree));
@@ -354,9 +374,13 @@
           placeholder={$t('frameleaf_tags_find')}
           aria-label={$t('frameleaf_tags_find')}
           bind:value={search}
+          bind:this={searchInput}
         />
       </label>
-      <Button onclick={toggleAll}>
+      <span class="dv-find-count" role="status">
+        {#if found}{$t('frameleaf_tags_find_count', { values: { count: found.matches } })}{/if}
+      </span>
+      <Button onclick={toggleAll} disabled={!!found}>
         <Icon icon={allExpanded ? mdiArrowCollapseAll : mdiArrowExpandAll} size="16" aria-hidden="true" />
         {allExpanded ? $t('frameleaf_tags_collapse_all') : $t('frameleaf_tags_expand_all')}
       </Button>
@@ -370,12 +394,19 @@
   <Status message={status} />
 
   <div class="dv-split">
-    <nav class="dv-pane dv-tree-pane" aria-label={$t('frameleaf_tags_tree_label')}>
-      {#if tree.roots.length > 0}
+    <nav class="dv-pane dv-tree-pane" aria-label={$t('frameleaf_tags_tree_label')} bind:this={treePane}>
+      {#if found && found.matches === 0}
+        <div class="dv-empty compact">
+          <span class="dv-empty-icon"><Icon icon={mdiMagnify} size="26" aria-hidden="true" /></span>
+          <strong>{$t('frameleaf_tags_find_none_title', { values: { query: search.trim() } })}</strong>
+          <p>{$t('frameleaf_discovery_find_none_help')}</p>
+          <Button onclick={clearSearch}>{$t('frameleaf_discovery_find_clear')}</Button>
+        </div>
+      {:else if tree.roots.length > 0}
         <DiscoveryTree
-          roots={tree.roots}
+          roots={found?.roots ?? tree.roots}
           label={$t('tags')}
-          {expanded}
+          expanded={found?.expanded ?? expanded}
           selectedId={node?.id ?? null}
           bind:focusedId
           count={(item) => item.total}
@@ -482,7 +513,14 @@
         {#if covers.length > 0}
           <div class="dv-strip" aria-label={$t('frameleaf_tags_preview_of', { values: { tag: node.name } })}>
             {#each covers as asset (asset.id)}
-              <img src={getAssetUrls(asset).thumbnail} alt="" loading="lazy" />
+              <button
+                type="button"
+                class="dv-strip-item"
+                aria-label={$t('frameleaf_tags_open_preview_item', { values: { name: asset.originalFileName } })}
+                onclick={() => void navigateToAsset(asset)}
+              >
+                <img src={getAssetUrls(asset).thumbnail} alt="" loading="lazy" />
+              </button>
             {/each}
           </div>
         {:else}

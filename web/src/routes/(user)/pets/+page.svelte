@@ -10,14 +10,21 @@
    *
    * Every mutation goes through the real `@frameleaf/sdk` pet services. Nothing on this page
    * is a fixture, and the empty review state says which of the two empty cases applies.
+   *
+   * The controls are the People page's: search, sort, a Hidden (N) switch, the merge dialog with
+   * both photos, and the Frameleaf confirmation for delete. Suggestions sit above the grid while
+   * there is something to review. Hide and favorite say what happened in a toast with Undo.
    */
   import { goto } from '$app/navigation';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
+  import MergePetsDialog from '$lib/components/frameleaf/pets/MergePetsDialog.svelte';
   import PetCard from '$lib/components/frameleaf/pets/PetCard.svelte';
   import PetRecognitionPanel from '$lib/components/frameleaf/pets/PetRecognitionPanel.svelte';
   import PetReviewPanel from '$lib/components/frameleaf/pets/PetReviewPanel.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { toastPetDecision } from '$lib/frameleaf/pet-undo';
   import {
     filterPetsByName,
@@ -28,6 +35,8 @@
     sortPets,
     speciesLabelKey,
   } from '$lib/frameleaf/pets';
+  import { toastUndo } from '$lib/frameleaf/toast';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
@@ -50,8 +59,8 @@
     type PetRecognitionStatusResponseDto,
     type PetResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
-  import { mdiPawOutline, mdiPlus } from '@mdi/js';
+  import { Icon, toastManager } from '@frameleaf/ui';
+  import { mdiEyeOffOutline, mdiEyeOutline, mdiPawOutline, mdiPlus } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -73,6 +82,7 @@
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
   let search = $state('');
+  let sort = $state<'name' | 'count'>('name');
   let showHidden = $state(false);
   let editingId = $state<string | null>(null);
   let busyCandidateId = $state<string | null>(null);
@@ -91,11 +101,14 @@
 
   let mergeOpen = $state(false);
   let mergeFrom = $state<PetResponseDto | null>(null);
-  let mergeTarget = $state('');
 
-  const visible = $derived(sortPets(filterPetsByName(pets, search)).filter((pet) => showHidden || !pet.isHidden));
   const hiddenCount = $derived(pets.filter((pet) => pet.isHidden).length);
-  const mergeOptions = $derived(pets.filter((pet) => pet.id !== mergeFrom?.id));
+  // The switch is only offered while a pet is hidden, so it cannot stay on with nothing to show.
+  const showingHidden = $derived(showHidden && hiddenCount > 0);
+  const named = $derived(sortPets(filterPetsByName(pets, search)).filter((pet) => showingHidden || !pet.isHidden));
+  // "Photo count" keeps the name order between pets with the same number of photos.
+  const visible = $derived(sort === 'count' ? [...named].sort((a, b) => b.assetCount - a.assetCount) : named);
+  const nameOf = (pet: { name: string }) => pet.name || $t('frameleaf_pets_unnamed');
 
   const replacePet = (updated: PetResponseDto) => {
     pets = pets.map((pet) => (pet.id === updated.id ? updated : pet));
@@ -193,9 +206,32 @@
     }
   };
 
-  const handleToggle = async (pet: PetResponseDto, petUpdateDto: { isHidden?: boolean; isFavorite?: boolean }) => {
+  /** Hide, show and favorite are one field each: the toast says what happened and can put it back. */
+  const handleToggle = async (
+    pet: PetResponseDto,
+    petUpdateDto: { isHidden?: boolean; isFavorite?: boolean },
+    undoable = true,
+  ) => {
     try {
       replacePet(await updatePet({ id: pet.id, petUpdateDto }));
+      const name = nameOf(pet);
+      const message =
+        petUpdateDto.isHidden === undefined
+          ? petUpdateDto.isFavorite
+            ? $t('frameleaf_people_favorited_status', { values: { name } })
+            : $t('frameleaf_people_unfavorited_status', { values: { name } })
+          : petUpdateDto.isHidden
+            ? $t('frameleaf_people_hidden_status', { values: { name } })
+            : $t('frameleaf_people_shown_status', { values: { name } });
+      if (undoable) {
+        const previous =
+          petUpdateDto.isHidden === undefined
+            ? { isFavorite: !petUpdateDto.isFavorite }
+            : { isHidden: !petUpdateDto.isHidden };
+        toastUndo(message, () => void handleToggle(pet, previous, false));
+      } else {
+        toastManager.primary(message);
+      }
     } catch (error) {
       handleError(error, $t('frameleaf_pets_error_update'));
     }
@@ -228,10 +264,11 @@
   };
 
   const handleDelete = async (pet: PetResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_pets_delete'),
-      prompt: $t('frameleaf_pets_delete_prompt', { values: { name: pet.name || $t('frameleaf_pets_unnamed') } }),
-      confirmText: $t('delete'),
+      prompt: $t('frameleaf_pets_delete_prompt', { values: { name: nameOf(pet) } }),
+      confirmText: $t('frameleaf_pets_delete'),
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -249,23 +286,19 @@
     }
   };
 
-  const handleMerge = async (event: Event) => {
-    event.preventDefault();
-    if (!mergeFrom || !mergeTarget) {
-      return;
-    }
-
-    const source = mergeFrom;
+  const handleMerge = async (source: PetResponseDto, target: PetResponseDto) => {
     try {
       // The target keeps every durable observation of both pets; the server resolves a
       // photo both pets answered for in favour of the confirmation.
-      await mergePets({ id: mergeTarget, petMergeDto: { ids: [source.id] } });
-      mergeOpen = false;
-      mergeTarget = '';
+      await mergePets({ id: target.id, petMergeDto: { ids: [source.id] } });
       await Promise.all([refreshPets(), refreshCandidates()]);
-      toastManager.primary($t('frameleaf_pets_merged'));
+      toastManager.primary(
+        $t('frameleaf_people_merged_status', { values: { from: nameOf(source), into: nameOf(target) } }),
+      );
+      return true;
     } catch (error) {
       handleError(error, $t('frameleaf_pets_error_merge'));
+      return false;
     }
   };
 
@@ -351,27 +384,40 @@
         placeholder={$t('frameleaf_pets_search_placeholder')}
         aria-label={$t('frameleaf_pets_search_placeholder')}
       />
+      <select aria-label={$t('frameleaf_pets_sort')} bind:value={sort}>
+        <option value="name">{$t('name')}</option>
+        <option value="count">{$t('frameleaf_people_sort_count')}</option>
+      </select>
       {#if hiddenCount > 0}
-        <label class="show-hidden">
-          <input type="checkbox" bind:checked={showHidden} />
-          {$t('frameleaf_pets_show_hidden', { values: { count: hiddenCount } })}
-        </label>
+        <FrameleafButton pressed={showingHidden} onclick={() => (showHidden = !showingHidden)}>
+          <Icon icon={showingHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_hidden_toggle', { values: { count: hiddenCount } })}
+        </FrameleafButton>
       {/if}
       <FrameleafButton variant="primary" onclick={() => (createOpen = true)}>
-        <Icon icon={mdiPlus} size="16" />
+        <Icon icon={mdiPlus} size={ICON_SIZE.md} aria-hidden="true" />
         {$t('frameleaf_pets_create')}
       </FrameleafButton>
     </div>
 
+    <!-- Suggestions come first while there is something to review, as on People. -->
+    {#if candidates.length > 0}
+      {@render review()}
+    {/if}
+
     {#if visible.length === 0}
-      <p class="empty">
-        <Icon icon={mdiPawOutline} size="24" />
+      <p class="empty" role="status">
+        <Icon icon={mdiPawOutline} size={ICON_SIZE.hero} aria-hidden="true" />
         <span>{pets.length === 0 ? $t('frameleaf_pets_empty') : $t('frameleaf_pets_no_matches')}</span>
       </p>
     {:else}
       <ul class="grid">
         {#each visible as pet (pet.id)}
-          <li>
+          <li
+            animate:listFlip={{ count: visible.length }}
+            in:listEnter={{ count: visible.length }}
+            out:listLeave={{ count: visible.length }}
+          >
             <PetCard
               {pet}
               editing={editingId === pet.id}
@@ -383,7 +429,6 @@
               onToggleHide={() => void handleToggle(pet, { isHidden: !pet.isHidden })}
               onMerge={() => {
                 mergeFrom = pet;
-                mergeTarget = '';
                 mergeOpen = true;
               }}
               onEditDetails={() => openDetails(pet)}
@@ -402,17 +447,24 @@
       onCancel={() => void handleCancelRecognition()}
     />
 
-    <PetReviewPanel
-      {candidates}
-      {pets}
-      {recognitionAvailable}
-      {busyCandidateId}
-      onAccept={handleAccept}
-      onReassign={handleReassign}
-      onReject={handleReject}
-    />
+    {#if candidates.length === 0}
+      {@render review()}
+    {/if}
   </section>
 </UserPageLayout>
+
+{#snippet review()}
+  <PetReviewPanel
+    {candidates}
+    {pets}
+    {recognitionAvailable}
+    {busyCandidateId}
+    showModel={authManager.user.isAdmin}
+    onAccept={handleAccept}
+    onReassign={handleReassign}
+    onReject={handleReject}
+  />
+{/snippet}
 
 <Dialog bind:open={createOpen} title={$t('frameleaf_pets_create')} closeLabel={$t('close')}>
   <form class="form" onsubmit={handleCreate}>
@@ -463,30 +515,15 @@
   {/if}
 </Dialog>
 
-<Dialog bind:open={mergeOpen} title={$t('frameleaf_pets_merge_into')} closeLabel={$t('close')}>
-  {#if mergeFrom}
-    <form class="form" onsubmit={handleMerge}>
-      <p class="hint">
-        {$t('frameleaf_pets_merge_prompt', {
-          values: { name: mergeFrom.name || $t('frameleaf_pets_unnamed') },
-        })}
-      </p>
-      <label>
-        {$t('frameleaf_pets_merge_target')}
-        <select bind:value={mergeTarget}>
-          <option value="">{$t('frameleaf_pets_merge_target_placeholder')}</option>
-          {#each mergeOptions as option (option.id)}
-            <option value={option.id}>{option.name || $t('frameleaf_pets_unnamed')}</option>
-          {/each}
-        </select>
-      </label>
-      <div class="form-actions">
-        <FrameleafButton variant="quiet" onclick={() => (mergeOpen = false)}>{$t('cancel')}</FrameleafButton>
-        <FrameleafButton variant="primary" type="submit">{$t('frameleaf_pets_merge_confirm')}</FrameleafButton>
-      </div>
-    </form>
-  {/if}
-</Dialog>
+{#if mergeFrom}
+  {@const source = mergeFrom}
+  <MergePetsDialog
+    pet={source}
+    candidates={pets}
+    bind:open={mergeOpen}
+    onMerge={(target) => handleMerge(source, target)}
+  />
+{/if}
 
 <style>
   .pets {
@@ -504,18 +541,20 @@
   .toolbar input[type='search'] {
     flex: 1;
     min-width: 12rem;
+    min-height: var(--fl-control-height);
     padding: 0.5rem 0.75rem;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .show-hidden {
-    display: inline-flex;
-    gap: 0.375rem;
-    align-items: center;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
+  .toolbar select {
+    min-height: var(--fl-control-height);
+    padding: 0 0.75rem;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
   }
   .grid {
     display: grid;

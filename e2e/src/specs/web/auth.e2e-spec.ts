@@ -81,7 +81,7 @@ test.describe('Registration', () => {
     await expect(page).toHaveURL('/auth/change-password');
     await page.getByLabel('New password', { exact: true }).fill('new-password');
     await page.getByLabel('Confirm new password', { exact: true }).fill('new-password');
-    await page.getByRole('button', { name: 'Save and continue' }).click();
+    await page.getByRole('button', { name: 'Save and sign in again' }).click();
 
     // login with new password
     await expect(page).toHaveURL('/auth/login?autoLaunch=0');
@@ -224,10 +224,10 @@ test.describe('Sign-in lifecycle', () => {
     await expect(page).toHaveURL('/auth/change-password');
     await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
     await expect(page.getByLabel('Account', { exact: true })).toHaveValue(user.email);
-    await expect(page.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Save and sign in again' })).toBeDisabled();
     await page.getByLabel('New password', { exact: true }).fill('a-new-password');
     await page.getByLabel('Confirm new password', { exact: true }).fill('a-new-password');
-    await page.getByRole('button', { name: 'Save and continue' }).click();
+    await page.getByRole('button', { name: 'Save and sign in again' }).click();
 
     await expect(page).toHaveURL(/\/auth\/login/);
     await signIn(page, user.email, 'a-new-password');

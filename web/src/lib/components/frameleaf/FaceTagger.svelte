@@ -1,3 +1,24 @@
+<script module lang="ts">
+  import { TOAST_ACTION_TIMEOUT_MS, toastUndo } from '$lib/frameleaf/toast';
+
+  type Tags = import('$lib/frameleaf/face-tags').DraftFace[];
+
+  /**
+   * Unsaved tags set aside by Cancel or Escape, one per item, for as long as the "discarded" toast
+   * offers Undo. In memory only; they are put back only over the same stored faces they were drawn on.
+   */
+  type Discarded = {
+    baseline: string;
+    draft: Tags;
+    addedPeople: import('$lib/frameleaf/face-tags').DraftPerson[];
+    history: Tags[];
+    restore: boolean;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  const discarded = new Map<string, Discarded>();
+  const DISCARD_GRACE_MS = 1000;
+</script>
+
 <script lang="ts">
   /**
    * FL-38 (V-28): the Frameleaf face tagger, ported from the September 22 prototype's
@@ -20,11 +41,15 @@
    * - Close, Cancel and Escape close at once, as the prototype does (FaceTagger.jsx:316-318,
    *   387-389, 406, 731); an Escape during a drag only cancels the drag and restores the draft
    *   from before it (FaceTagger.jsx:242-249), and a failed save keeps every unsaved change.
+   *   Unsaved tags closed that way can be brought back: the toast that says they were discarded
+   *   offers Undo, which reopens the tagger with them.
    */
   import '$lib/frameleaf/tokens.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import { leave } from '$lib/frameleaf/motion';
   import {
     boxFromPoints,
     checkPersonName,
@@ -84,9 +109,14 @@
     onClose: () => void;
     /** Re-reads the viewer's asset and faces after a save changed anything. */
     onSaved: () => void | Promise<void>;
+    /** Opens the tagger on this item again, for Undo after closing with unsaved tags. */
+    onReopen?: (assetId: string) => void;
   };
 
-  const { asset, onClose, onSaved }: Props = $props();
+  const { asset, onClose, onSaved, onReopen }: Props = $props();
+
+  // A photo that arrives sooner than this never shows the loading ring.
+  const SPINNER_DELAY_MS = 200;
 
   type Gesture = {
     mode: 'draw' | 'move' | 'resize';
@@ -155,6 +185,9 @@
     sourceRevision
       ? `${getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: sourceRevision })}&faceSource=true`
       : '',
+  );
+  const thumbnail = $derived(
+    getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash }),
   );
   const content = $derived(imageContentRect(viewport, natural));
 
@@ -254,6 +287,19 @@
       error = '';
       selectedId = draft[0]?.id ?? null;
       drawing = draft.length === 0;
+      // Undo after a close with unsaved tags: they come back, over the same stored faces only.
+      const parked = discarded.get(asset.id);
+      if (parked?.restore) {
+        clearTimeout(parked.timer);
+        discarded.delete(asset.id);
+        if (parked.baseline === JSON.stringify(baseline)) {
+          draft = parked.draft;
+          addedPeople = parked.addedPeople;
+          history = parked.history;
+          selectedId = draft[0]?.id ?? null;
+          drawing = false;
+        }
+      }
     } catch {
       // face-tags.mjs:27-30
       loadFailed = true;
@@ -342,10 +388,42 @@
 
   // Escape, the close button, Cancel and the dialog's own cancel close at once, unsaved tags and
   // all, unless a save is in flight (FaceTagger.jsx:316-318, 387-389, 406, 731).
-  const requestClose = () => {
-    if (!saving) {
-      onClose();
+  let closing = false;
+  /** The dialog leaves with the Sheet exit, then closes; at once where nothing can animate. */
+  const close = () => {
+    if (closing) {
+      return;
     }
+    closing = true;
+    leave(dialog, 'sheet', onClose, { backdrop: true });
+  };
+
+  const requestClose = () => {
+    if (saving || closing) {
+      return;
+    }
+    if (changed && !loading && onReopen) {
+      const assetId = asset.id;
+      clearTimeout(discarded.get(assetId)?.timer);
+      const entry: Discarded = {
+        baseline: JSON.stringify(baseline),
+        draft: snapshot(),
+        addedPeople: $state.snapshot(addedPeople) as Discarded['addedPeople'],
+        history: $state.snapshot(history) as Tags[],
+        restore: false,
+        timer: setTimeout(() => discarded.delete(assetId), TOAST_ACTION_TIMEOUT_MS + DISCARD_GRACE_MS),
+      };
+      discarded.set(assetId, entry);
+      toastUndo($t('frameleaf_face_tagger_discarded'), () => {
+        if (discarded.get(assetId) !== entry) {
+          return;
+        }
+        clearTimeout(entry.timer);
+        entry.restore = true;
+        onReopen(assetId);
+      });
+    }
+    close();
   };
 
   const addBox = async (box: FaceBox = DEFAULT_FACE_BOX) => {
@@ -624,7 +702,7 @@
       return;
     }
     if (failures === 0) {
-      onClose();
+      close();
       return;
     }
 
@@ -715,7 +793,7 @@
 
 <dialog
   bind:this={dialog}
-  class="frameleaf face-tagger"
+  class="frameleaf face-tagger fl-sheet"
   data-theme={appTheme}
   aria-labelledby={titleId}
   onkeydown={onKeydown}
@@ -775,7 +853,14 @@
       >
         {#if imageFailed}
           <p class="ft-image-error">{$t('frameleaf_face_tagger_image_unavailable')}</p>
-        {:else if sourceRevision}
+        {:else if !natural}
+          <!-- Until the photo arrives the stage shows its thumbnail, which the grid already loaded, and says it is loading. -->
+          <img class="ft-stage-waiting" src={thumbnail} alt="" aria-hidden="true" draggable="false" />
+          <div class="ft-stage-spinner">
+            <Spinner size="lg" label={$t('loading')} delay={SPINNER_DELAY_MS} />
+          </div>
+        {/if}
+        {#if !imageFailed && sourceRevision}
           <img
             src={source}
             alt={asset.originalFileName}
@@ -799,6 +884,7 @@
                 class:selected={face.id === selectedId}
                 class:detected={face.provenance === 'detected'}
                 data-provenance={face.provenance}
+                style:--i={Math.min(index, 8)}
                 style:left="{face.box.x * 100}%"
                 style:top="{face.box.y * 100}%"
                 style:width="{face.box.width * 100}%"
@@ -864,48 +950,20 @@
       {/if}
       {#if selected}
         {@const current = selected}
-        <section class="ft-position">
-          <div class="ft-section-title">
-            <h3>{$t('frameleaf_face_tagger_position')}</h3>
-            <Button variant="quiet" disabled={saving} onclick={removeSelected}>
-              {$t('frameleaf_faces_remove_face')}
-            </Button>
-          </div>
-          <div class="ft-coordinates">
-            {#each COORDINATES as [key, labelKey] (key)}
-              <label>
-                {$t(labelKey)}
-                <input
-                  type="number"
-                  aria-label={$t(labelKey)}
-                  step="0.1"
-                  min={key === 'width' || key === 'height' ? '0.5' : '0'}
-                  max="100"
-                  value={toPercent(current.box[key])}
-                  disabled={saving}
-                  oninput={(event) => {
-                    const value = event.currentTarget.value;
-                    if (value !== '') {
-                      typeBox(current.id, adjustFaceBox(current.box, key, Number(value) / 100));
-                    }
-                  }}
-                  onchange={commitField}
-                  onblur={commitField}
-                />
-              </label>
-            {/each}
-          </div>
-          <p>{$t('frameleaf_face_tagger_position_note')}</p>
-        </section>
         <section class="ft-assign">
-          <!-- The unassign control follows the quiet "Remove face" pattern of the position section (FaceTagger.jsx:579-594). -->
+          <!-- Naming is why this dialog is opened, so it comes first; Unassign and Remove face sit quietly beside the heading. -->
           <div class="ft-section-title ft-assign-title">
             <h3>{$t('frameleaf_face_tagger_who')}</h3>
-            {#if current.stored && current.personId}
-              <Button variant="quiet" disabled={saving} onclick={unassignSelected}>
-                {$t('frameleaf_face_tagger_unassign')}
+            <div class="ft-title-actions">
+              {#if current.stored && current.personId}
+                <Button variant="quiet" disabled={saving} onclick={unassignSelected}>
+                  {$t('frameleaf_face_tagger_unassign')}
+                </Button>
+              {/if}
+              <Button variant="quiet" disabled={saving} onclick={removeSelected}>
+                {$t('frameleaf_faces_remove_face')}
               </Button>
-            {/if}
+            </div>
           </div>
           <input
             bind:this={searchInput}
@@ -967,6 +1025,35 @@
             </form>
           {/if}
         </section>
+        <!-- Exact position is the rare case: it waits behind a disclosure, under the naming. -->
+        <details class="ft-position">
+          <summary>{$t('frameleaf_face_tagger_adjust_position')}</summary>
+          <div class="ft-coordinates">
+            {#each COORDINATES as [key, labelKey] (key)}
+              <label>
+                {$t(labelKey)}
+                <input
+                  type="number"
+                  aria-label={$t(labelKey)}
+                  step="0.1"
+                  min={key === 'width' || key === 'height' ? '0.5' : '0'}
+                  max="100"
+                  value={toPercent(current.box[key])}
+                  disabled={saving}
+                  oninput={(event) => {
+                    const value = event.currentTarget.value;
+                    if (value !== '') {
+                      typeBox(current.id, adjustFaceBox(current.box, key, Number(value) / 100));
+                    }
+                  }}
+                  onchange={commitField}
+                  onblur={commitField}
+                />
+              </label>
+            {/each}
+          </div>
+          <p>{$t('frameleaf_face_tagger_position_note')}</p>
+        </details>
       {:else}
         <div class="ft-empty">
           <h3>{$t('frameleaf_face_tagger_empty_title')}</h3>
@@ -1017,8 +1104,12 @@
     display: flex;
     flex-direction: column;
   }
+  /* The shared scrim (Dialog.svelte); the fallbacks cover engines where ::backdrop does not inherit. */
   .face-tagger::backdrop {
-    background: #080a0ed9;
+    background: var(--fl-scrim, rgb(0 0 0 / 40%));
+    -webkit-backdrop-filter: var(--fl-scrim-blur, blur(12px));
+    backdrop-filter: var(--fl-scrim-blur, blur(12px));
+    animation: fl-fade-in var(--fl-duration-fade, 200ms) var(--fl-ease, ease) both;
   }
   .face-tagger :global(*) {
     box-sizing: border-box;
@@ -1083,6 +1174,17 @@
     pointer-events: none;
     user-select: none;
   }
+  .ft-stage > img.ft-stage-waiting {
+    opacity: 0.55;
+  }
+  .ft-stage-spinner {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--fl-viewer-text);
+    pointer-events: none;
+  }
   .ft-stage.drawing {
     cursor: crosshair;
   }
@@ -1095,6 +1197,18 @@
     border: 2px solid #b9c4dc;
     box-shadow: 0 0 0 1px #05080a88;
     pointer-events: auto;
+    /* The regions arrive one after another once the photo is in, and a selection changes colour rather than snapping. */
+    animation: ft-box-in var(--fl-motion) var(--fl-ease) both;
+    animation-delay: calc(var(--i, 0) * var(--fl-stagger));
+    transition:
+      border-color var(--fl-motion-fast) var(--fl-ease),
+      background-color var(--fl-motion-fast) var(--fl-ease);
+  }
+  @keyframes ft-box-in {
+    from {
+      opacity: 0;
+      scale: 0.96;
+    }
   }
   .ft-face-box.selected {
     border-color: #a1dbad;
@@ -1243,10 +1357,29 @@
     font-size: 11px;
     line-height: 1.5;
   }
-  .ft-assign {
-    margin-top: 20px;
+  .ft-face-list + .ft-assign {
+    margin-top: var(--fl-space-4);
+  }
+  .ft-title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+  }
+  .ft-position {
+    margin-top: var(--fl-space-5);
     border-top: 1px solid var(--fl-border);
-    padding-top: 16px;
+    padding-top: var(--fl-space-3);
+  }
+  .ft-position summary {
+    width: fit-content;
+    padding: var(--fl-space-1) 0;
+    border-radius: var(--fl-radius-xs);
+    font-size: var(--fl-font-small);
+    font-weight: 550;
+    cursor: pointer;
+  }
+  .ft-position[open] summary {
+    margin-bottom: var(--fl-space-3);
   }
   .ft-person-list {
     display: grid;

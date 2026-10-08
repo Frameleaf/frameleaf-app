@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { t, type Translations } from 'svelte-i18n';
   import { getAssetDevelop } from '@frameleaf/sdk';
   import { isNativeRecipe, type NativeRecipe } from '$lib/frameleaf/native-develop';
   import {
@@ -33,24 +34,37 @@
   let error = $state('');
   let controller: AbortController | undefined;
   let disposed = false;
-  const labels: Record<NativeSyncField, string> = {
-    exposureEV: 'Exposure',
-    whiteBalance: 'White balance',
-    shadows: 'Shadows',
-    highlights: 'Highlights',
-    saturation: 'Saturation',
-    contrast: 'Contrast',
-    curve: 'Curve',
-    noiseThreshold: 'Noise reduction',
-    sharpen: 'Sharpening',
-    lensCorrection: 'Lens correction',
-    masks: 'Shape & AI masks',
-    crop: 'Crop',
-    rotation: 'Rotation',
-    straighten: 'Straightening',
-    flipHorizontal: 'Horizontal flip',
-    flipVertical: 'Vertical flip',
+  const labels: Record<NativeSyncField, Translations> = {
+    exposureEV: 'frameleaf_photography_sync_exposure',
+    whiteBalance: 'frameleaf_photography_sync_white_balance',
+    shadows: 'frameleaf_photography_sync_shadows',
+    highlights: 'frameleaf_photography_sync_highlights',
+    saturation: 'frameleaf_photography_sync_saturation',
+    contrast: 'frameleaf_photography_sync_contrast',
+    curve: 'frameleaf_photography_sync_curve',
+    noiseThreshold: 'frameleaf_photography_sync_noise',
+    sharpen: 'frameleaf_photography_sync_sharpen',
+    lensCorrection: 'frameleaf_photography_sync_lens',
+    masks: 'frameleaf_photography_sync_masks',
+    crop: 'frameleaf_photography_sync_crop',
+    rotation: 'frameleaf_photography_sync_rotation',
+    straighten: 'frameleaf_photography_sync_straighten',
+    flipHorizontal: 'frameleaf_photography_sync_flip_horizontal',
+    flipVertical: 'frameleaf_photography_sync_flip_vertical',
   };
+  const statusKeys: Record<string, Translations> = {
+    queued: 'frameleaf_photography_sync_status_queued',
+    rendering: 'frameleaf_photography_sync_status_rendering',
+    rendered: 'frameleaf_photography_sync_status_rendered',
+    failed: 'frameleaf_photography_sync_status_failed',
+    cancelled: 'frameleaf_photography_sync_status_cancelled',
+    unavailable: 'frameleaf_photography_unavailable',
+  };
+  const statusLabel = (status: string) => {
+    const key = Object.hasOwn(statusKeys, status) ? statusKeys[status] : undefined;
+    return key ? $t(key) : status;
+  };
+
   async function loadSource(id: string) {
     sourceId = id;
     source = null;
@@ -65,12 +79,14 @@
       }
       const revision = value.revisions.find((row) => row.isCurrent);
       if (!revision || !isNativeRecipe(revision.recipe)) {
-        throw new Error('Open this photograph in RAW development and save a version first.');
+        // Nothing to copy from yet: say what to do, in its own words.
+        error = $t('frameleaf_photography_sync_no_source');
+        return;
       }
       source = revision.recipe;
-    } catch (error_) {
+    } catch {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'Could not load the source settings.';
+        error = $t('frameleaf_photography_sync_source_failed');
       }
     }
   }
@@ -106,9 +122,9 @@
       if (controller.signal.aborted) {
         await cancel();
       }
-    } catch (error_) {
+    } catch {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'The batch could not be started.';
+        error = $t('frameleaf_photography_sync_start_failed');
       }
     } finally {
       if (!disposed) {
@@ -147,10 +163,10 @@
         const revision = value.revisions.find((item) => item.id === row.revisionId);
         states[row.assetId] = revision
           ? { status: revision.status, progress: revision.progress, error: revision.error }
-          : { status: 'unavailable', progress: 0, error: 'Version unavailable' };
-      } catch (error_) {
+          : { status: 'unavailable', progress: 0, error: $t('frameleaf_photography_sync_version_unavailable') };
+      } catch {
         if (!disposed) {
-          error = error_ instanceof Error ? error_.message : 'Could not refresh the batch.';
+          error = $t('frameleaf_photography_sync_refresh_failed');
         }
       }
     }
@@ -161,23 +177,22 @@
   });
 </script>
 
-<section class="phd-card phd" aria-label="Batch RAW development" aria-busy={busy}>
+<section class="phd-card phd" aria-label={$t('frameleaf_photography_batch_raw')} aria-busy={busy}>
   <div class="phd-row">
     <div>
-      <h3>Batch RAW development</h3>
+      <h3>{$t('frameleaf_photography_batch_raw')}</h3>
       <p>
-        Sync selected adjustments from a saved native RAW version. AI masks are recalculated for each photograph; brush
-        strokes stay with their photograph.
+        {$t('frameleaf_photography_sync_body')}
       </p>
     </div>
-    <a href={Route.queues()}>Open Activity</a>
+    <a href={Route.queues()}>{$t('frameleaf_photography_sync_open_activity')}</a>
   </div>
   {#if error}<p role="alert">{error}</p>{/if}<label
-    >Source photograph<select
+    >{$t('frameleaf_photography_sync_source')}<select
       value={sourceId}
       disabled={busy || results.length > 0}
       onchange={(event) => loadSource(event.currentTarget.value)}
-      ><option value="">Choose a saved RAW edit</option
+      ><option value="">{$t('frameleaf_photography_sync_choose_source')}</option
       >{#each photos.filter((photo) => assetIds.includes(photo.id)) as photo (photo.id)}<option value={photo.id}
           >{photo.fileName}</option
         >{/each}</select
@@ -191,28 +206,36 @@
           checked={fields.includes(field)}
           onchange={(event) =>
             (fields = event.currentTarget.checked ? [...fields, field] : fields.filter((item) => item !== field))}
-        />{labels[field]}</label
+        />{$t(labels[field])}</label
       >{/each}
   </div>
   <div class="phd-actions">
     <Button
       variant="primary"
       disabled={busy || !source || fields.length === 0 || assetIds.filter((id) => id !== sourceId).length === 0}
-      onclick={start}>{results.length > 0 ? 'Retry failed photos' : 'Queue selected photos'}</Button
-    ><Button disabled={!busy && results.every((row) => row.status !== 'queued')} onclick={cancel}>Cancel batch</Button
-    ><Button disabled={busy || results.length === 0} onclick={refresh}>Refresh render progress</Button>
+      onclick={start}
+      >{results.length > 0
+        ? $t('frameleaf_photography_sync_retry_failed')
+        : $t('frameleaf_photography_sync_queue')}</Button
+    ><Button disabled={!busy && results.every((row) => row.status !== 'queued')} onclick={cancel}
+      >{$t('frameleaf_photography_sync_cancel')}</Button
+    ><Button disabled={busy || results.length === 0} onclick={refresh}
+      >{$t('frameleaf_photography_sync_refresh')}</Button
+    >
     {#if results.length}<Button
         disabled={busy}
         onclick={() => {
           results = [];
           states = {};
           error = '';
-        }}>Start another batch</Button
+        }}>{$t('frameleaf_photography_sync_another')}</Button
       >{/if}
   </div>
   {#each results as row (row.assetId)}<div class="phd-row">
-      <span>{photos.find((photo) => photo.id === row.assetId)?.fileName ?? 'Photograph'}</span><span
-        >{states[row.assetId]?.status ?? row.status} {states[row.assetId]?.progress ?? 0}%</span
+      <span
+        >{photos.find((photo) => photo.id === row.assetId)?.fileName ??
+          $t('frameleaf_photography_client_photograph')}</span
+      ><span>{statusLabel(states[row.assetId]?.status ?? row.status)} · {states[row.assetId]?.progress ?? 0}%</span
       >{#if row.error || states[row.assetId]?.error}<p role="alert">{states[row.assetId]?.error ?? row.error}</p>{/if}
     </div>{/each}
 </section>

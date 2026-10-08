@@ -95,7 +95,7 @@
       aria-label={$t('frameleaf_pets_open_pet', { values: { name } })}
       onclick={onOpen}
     >
-      <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} {size} />
+      <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} {size} heroKey="pet:{pet.id}" />
     </button>
     {#if pet.isFavorite}
       <span class="badge favorite" title={$t('to_favorite')}>
@@ -211,8 +211,8 @@
     justify-content: center;
     width: 1.5rem;
     height: 1.5rem;
-    color: #fff;
-    background: rgb(0 0 0 / 45%);
+    color: var(--fl-viewer-text);
+    background: var(--fl-scrim);
     border-radius: 50%;
   }
   .badge.favorite {
@@ -231,8 +231,8 @@
   .menu-anchor :global(.menu-root > button) {
     min-width: 32px;
     padding: 0.25rem;
-    color: #fff;
-    background: rgb(0 0 0 / 45%);
+    color: var(--fl-viewer-text);
+    background: var(--fl-scrim);
     border: 0;
     border-radius: 50%;
   }

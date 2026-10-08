@@ -14,7 +14,6 @@
   import { timeToLoadTheMap } from '$lib/constants';
   import { ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
   import { originOwnerName } from '$lib/frameleaf/partner-sharing';
-  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -28,8 +27,8 @@
     type AlbumResponseDto,
     type AssetResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, IconButton, Link, LoadingSpinner, Text } from '@frameleaf/ui';
-  import { mdiAccountArrowLeftOutline, mdiAccountOutline, mdiClose } from '@mdi/js';
+  import { Icon, Link, LoadingSpinner, Text } from '@frameleaf/ui';
+  import { mdiAccountArrowLeftOutline, mdiAccountOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -114,18 +113,6 @@
 <OnEvents onAlbumAddAssets={() => (albums = refreshAlbums())} />
 
 <section class="relative p-2">
-  <div class="flex place-items-center gap-2">
-    <IconButton
-      icon={mdiClose}
-      aria-label={$t('close')}
-      onclick={() => assetViewerManager.closeDetailPanel()}
-      shape="round"
-      color="secondary"
-      variant="ghost"
-    />
-    <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('frameleaf_viewer_information_heading')}</p>
-  </div>
-
   <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
 
   <DetailPanelDescription
@@ -289,7 +276,7 @@
     margin: 0 24px;
     padding: 16px 0;
     border-bottom: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     font-size: var(--fl-font-small, 13px);
   }
 </style>

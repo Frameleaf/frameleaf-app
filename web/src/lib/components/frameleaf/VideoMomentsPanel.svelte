@@ -295,9 +295,9 @@
     {#if moments}
       <div class="space-y-3 text-sm">
         {#if moments.state === VideoMomentIndexState.None}
-          <p class="text-xs text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_none')}</p>
+          <p class="text-xs text-(--fl-muted)">{$t('frameleaf_moments_none')}</p>
         {:else if moments.staleReason}
-          <p class="text-xs text-amber-700 dark:text-amber-300" role="status">
+          <p class="text-xs text-(--fl-warning)" role="status">
             {$t(staleReasonKey[moments.staleReason])}
           </p>
         {/if}
@@ -364,11 +364,11 @@
                   </IconButton>
                 {/snippet}
                 {#if search.hits === null}
-                  <p class="text-xs text-gray-500 dark:text-gray-400" role="status">
+                  <p class="text-xs text-(--fl-muted)" role="status">
                     {$t('frameleaf_moments_similar_loading')}
                   </p>
                 {:else if search.failed}
-                  <p class="text-xs text-red-600 dark:text-red-400" role="alert">
+                  <p class="text-xs text-(--fl-danger)" role="alert">
                     {$t('frameleaf_moments_similar_error')}
                   </p>
                   <button
@@ -379,7 +379,7 @@
                     {$t('retry')}
                   </button>
                 {:else}
-                  <p class="text-xs text-gray-500 dark:text-gray-400" role="status">
+                  <p class="text-xs text-(--fl-muted)" role="status">
                     {$t('frameleaf_moments_similar_none')}
                   </p>
                 {/if}
@@ -408,11 +408,11 @@
         {#if moments.moments.length > 0}
           <ul class="space-y-2" aria-label={$t('frameleaf_moments_list')}>
             {#each moments.moments as moment (moment.id)}
-              <li class="rounded-md border border-gray-200 p-2 dark:border-gray-700">
+              <li class="rounded-md border border-(--fl-border) p-2">
                 <div class="flex items-start gap-2">
                   <button
                     type="button"
-                    class="shrink-0 font-mono text-xs text-immich-primary underline dark:text-immich-dark-primary"
+                    class="shrink-0 font-mono text-xs text-(--fl-accent) underline"
                     onclick={() => seek(moment.timestampMs)}
                     aria-label={$t('frameleaf_moments_play_from', {
                       values: { time: formatMomentTime(moment.timestampMs) },
@@ -425,15 +425,15 @@
                       {moment.caption ?? $t(untitledKey(moment))}
                     </p>
                     {#if moment.transcript}
-                      <p class="mt-1 text-xs wrap-break-word whitespace-pre-line text-gray-600 dark:text-gray-300">
+                      <p class="mt-1 text-xs wrap-break-word whitespace-pre-line text-(--fl-muted)">
                         {moment.transcript}
                       </p>
                     {/if}
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p class="mt-1 text-xs text-(--fl-muted)">
                       {$t(sourceKey(moment))}
                       {#if moment.staleReason}
                         ·
-                        <span class="text-amber-700 dark:text-amber-300">
+                        <span class="text-(--fl-warning)">
                           {$t(staleReasonKey[moment.staleReason])}
                         </span>
                       {/if}
@@ -470,16 +470,16 @@
 
         {#if isOwner && editing}
           <form
-            class="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-700"
+            class="space-y-2 rounded-md border border-(--fl-border) p-3"
             onsubmit={(event) => {
               event.preventDefault();
               void save();
             }}
           >
             <label class="block text-xs">
-              <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_time')}</span>
+              <span class="text-(--fl-muted)">{$t('frameleaf_moments_time')}</span>
               <input
-                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 font-mono dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-(--fl-border-strong) bg-transparent px-2 py-1 font-mono"
                 bind:value={editing.time}
                 placeholder="0:42"
                 inputmode="numeric"
@@ -488,24 +488,24 @@
               />
             </label>
             <label class="block text-xs">
-              <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_caption')}</span>
+              <span class="text-(--fl-muted)">{$t('frameleaf_moments_caption')}</span>
               <input
-                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-(--fl-border-strong) bg-transparent px-2 py-1"
                 bind:value={editing.caption}
                 maxlength="500"
               />
             </label>
             <label class="block text-xs">
-              <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_transcript')}</span>
+              <span class="text-(--fl-muted)">{$t('frameleaf_moments_transcript')}</span>
               <textarea
-                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-(--fl-border-strong) bg-transparent px-2 py-1"
                 rows="3"
                 bind:value={editing.transcript}
                 maxlength="20000"></textarea>
-              <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_transcript_help')}</span>
+              <span class="text-(--fl-muted)">{$t('frameleaf_moments_transcript_help')}</span>
             </label>
             {#if editError}
-              <p class="text-xs text-red-600 dark:text-red-400" role="alert">{editError}</p>
+              <p class="text-xs text-(--fl-danger)" role="alert">{editError}</p>
             {/if}
             <div class="flex justify-end gap-2">
               <Button size="small" color="secondary" variant="ghost" onclick={() => (editing = null)}>
@@ -557,13 +557,13 @@
               {$t('frameleaf_moments_add_captions')}
             </Button>
           </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-(--fl-muted)">
             {$t('frameleaf_moments_captions_cost', { values: { count: captionRequestCount(1, framesPerVideo) } })}
           </p>
         {/if}
 
         {#if plan}
-          <p class="text-xs text-gray-600 dark:text-gray-300" role="status" aria-live="polite">
+          <p class="text-xs text-(--fl-muted)" role="status" aria-live="polite">
             {isPlanActive(plan.operation.status)
               ? $t('frameleaf_moments_plan_running')
               : plan.counts.failed > 0
@@ -573,7 +573,7 @@
         {/if}
 
         {#if moments.indexedAt || moments.captionedAt || moments.framesExtractedAt}
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-(--fl-muted)">
             {#if moments.framesExtractedAt}
               {$t('frameleaf_moments_frames_cut', { values: { date: formatDate(moments.framesExtractedAt) } })}
             {/if}
@@ -619,11 +619,11 @@
     background: rgb(0 0 0 / 20%);
   }
   .frame.cover {
-    border-color: var(--fl-accent, #3fb68b);
+    border-color: var(--fl-accent);
   }
   .frame:focus-visible {
-    outline: 2px solid var(--fl-accent, #3fb68b);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .frame img {
     width: 100%;

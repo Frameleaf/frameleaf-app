@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   /**
    * Frameleaf FL-57: the correction history of a person, over `GET /people/:id/corrections`
    * (25 decisions a page, "Show more") with Undo (`POST /people/corrections/:id/undo`). The
@@ -261,7 +262,7 @@
     {/each}
   </ul>
   {#if loading}
-    <p class="note" role="status">{$t('loading')}</p>
+    <p class="note"><Spinner /></p>
   {:else if loadError}
     <p class="note">{$t('frameleaf_people_correction_history_error')}</p>
   {:else if corrections.length === 0}
@@ -317,6 +318,7 @@
     font-size: 17px;
     font-weight: 600;
   }
+  /* The heading takes focus from script when the panel opens (tabindex -1); it is never a tab stop. */
   .pd-history-header h2:focus {
     outline: none;
   }

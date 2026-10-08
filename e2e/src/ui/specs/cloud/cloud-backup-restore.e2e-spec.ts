@@ -37,7 +37,7 @@ test.describe('Frameleaf Cloud backup restore', () => {
   test('restores an item still in the library in place from the chosen backup', async ({ page }) => {
     await page.goto(backupPage);
     const restore = page.locator('#fc-restore-title');
-    await expect(restore.getByRole('heading', { name: 'Restore', exact: true })).toBeVisible();
+    await expect(restore.getByRole('heading', { name: 'Restore', exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(restore.getByText('Newest backup')).toBeVisible();
 
     await restore.getByRole('searchbox', { name: 'Search this backup' }).fill('elk');

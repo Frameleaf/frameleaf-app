@@ -64,6 +64,7 @@
   } from '@mdi/js';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { canAnimate, leave } from '$lib/frameleaf/motion';
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import type { CaptureTime } from '$lib/frameleaf/time-zones';
 
@@ -181,6 +182,37 @@
   const menuId = $props.id();
 
   let open = $derived(count > 0);
+  // The bar fades out after the selection is cleared; it keeps the last count until it is gone
+  // rather than flashing "0 selected".
+  let shownCount = $state(untrack(() => count));
+  $effect(() => {
+    if (count > 0) {
+      shownCount = count;
+    }
+  });
+  // The More menu leaves on the Pop exit: it stays mounted, inert, until the fade ends (Menu.svelte).
+  let menuLeaving = $state(false);
+  let cancelMenuLeave: (() => void) | undefined;
+  let menuWasOpen = false;
+  $effect.pre(() => {
+    if (menuOpen) {
+      cancelMenuLeave?.();
+      cancelMenuLeave = undefined;
+      menuLeaving = false;
+      menuWasOpen = true;
+      return;
+    }
+    if (!menuWasOpen) {
+      return;
+    }
+    menuWasOpen = false;
+    const node = untrack(() => menu);
+    if (!canAnimate(node) || !node.isConnected) {
+      return;
+    }
+    menuLeaving = true;
+    cancelMenuLeave = leave(node, 'pop', () => (menuLeaving = false));
+  });
   let trash = $derived(!!context.trash);
   let locked = $derived(!!context.locked);
   let actions = $derived(
@@ -361,7 +393,7 @@
 
   <div class="pill">
     <div class="count">
-      <span aria-live="polite">{$t('selected_count', { values: { count } })}</span>
+      <span aria-live="polite">{$t('selected_count', { values: { count: shownCount } })}</span>
       {#if onSelectAllMatching && total !== null && total > count}
         <button type="button" class="text" onclick={onSelectAllMatching}>
           {$t('frameleaf_selection_select_all_matching', { values: { total } })}
@@ -392,10 +424,15 @@
           type="button"
           class="action is-leading"
           class:is-primary={action.primary}
-          title={action.label}
-          disabled={action.disabled}
+          title={action.disabled && action.disabledReason ? action.disabledReason : action.label}
+          aria-disabled={action.disabled && action.disabledReason ? 'true' : undefined}
+          disabled={action.disabled && !action.disabledReason}
           data-testid="selection-leading-{action.id}"
-          onclick={action.onClick}
+          onclick={() => {
+            if (!action.disabled) {
+              action.onClick();
+            }
+          }}
         >
           <Icon icon={action.icon} size="1.125rem" />
           <span>{action.label}</span>
@@ -404,12 +441,13 @@
       {#if leading.length > 0}
         <span class="divider" aria-hidden="true"></span>
       {/if}
-      {#each primary as action (action.id)}
+      {#each primary as action, index (action.id)}
         <button
           type="button"
           class="action"
           class:is-danger={action.danger}
           class:icon-only={leading.length > 0}
+          class:is-everyday={index < 3}
           title={$t(action.labelKey)}
           aria-label={$t(action.labelKey)}
           onclick={() => perform(action.id)}
@@ -445,13 +483,15 @@
             <span>{$t('more')}</span>
           </button>
 
-          {#if menuOpen}
+          {#if menuOpen || menuLeaving}
             <div
               bind:this={menu}
               id={menuId}
-              class="menu"
+              class="menu fl-pop fl-origin-bottom-end"
               role="menu"
               tabindex="-1"
+              inert={!menuOpen}
+              aria-hidden={menuOpen ? undefined : 'true'}
               aria-label={$t('frameleaf_selection_more_actions')}
               onkeydown={menuKeydown}
             >
@@ -553,8 +593,8 @@
     opacity: 0;
     translate: 0 12px;
     transition:
-      opacity 200ms ease,
-      translate 420ms var(--fl-spring, ease);
+      opacity var(--fl-duration-fade) var(--fl-ease),
+      translate var(--fl-duration-dock) var(--fl-spring);
   }
   .selection-bar.is-open {
     opacity: 1;
@@ -566,7 +606,7 @@
   @media (prefers-reduced-motion: reduce) {
     .selection-bar {
       translate: none;
-      transition: opacity 150ms ease;
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease) !important;
     }
   }
   .pill {
@@ -578,11 +618,11 @@
     min-block-size: 52px;
     color: var(--fl-text);
     background: var(--fl-material);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
-    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
     border: 1px solid var(--fl-material-edge);
-    border-radius: 18px;
-    box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+    border-radius: var(--fl-radius-capsule);
+    box-shadow: var(--fl-shadow-3);
     padding: 6px 10px 6px 18px;
     font-size: 0.875rem;
   }
@@ -606,6 +646,23 @@
   }
   .action.icon-only span {
     display: none;
+  }
+  /* A disabled action that says why stays focusable and hoverable so its reason can be read. */
+  .action[aria-disabled='true'] {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .action[aria-disabled='true']:hover {
+    background: transparent;
+  }
+  /* With room to spare the three everyday actions carry their names, even beside a page's own. */
+  @media (min-width: 1600px) {
+    .action.icon-only.is-everyday {
+      padding-inline: 0.6rem;
+    }
+    .action.icon-only.is-everyday span {
+      display: inline;
+    }
   }
   .action.is-primary {
     background: var(--fl-accent);
@@ -644,7 +701,7 @@
     background: transparent;
     color: var(--fl-text);
     border: 1px solid transparent;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     padding: 0 0.6rem;
     font: inherit;
   }
@@ -660,7 +717,7 @@
     color: var(--fl-muted);
   }
   .is-danger {
-    color: #e0716a;
+    color: var(--fl-danger);
   }
   .more {
     position: relative;
@@ -672,10 +729,11 @@
     min-inline-size: 15rem;
     max-block-size: 60dvh;
     overflow: auto;
+    /* Solid, not frosted: it hangs inside the frosted capsule, which leaves it nothing to blur. */
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-2);
     padding: 0.35rem;
   }
   .menu button {
@@ -706,7 +764,26 @@
       justify-content: space-between;
       overflow-x: auto;
     }
-    .actions .action span {
+    /* No tooltips on touch: each action carries a short name under its icon. */
+    .actions .action,
+    .actions .action.icon-only {
+      flex: 0 0 auto;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-inline-size: 3.5rem;
+      padding: 4px 6px;
+    }
+    .actions .action span,
+    .actions .action.icon-only span {
+      display: block;
+      max-inline-size: 5rem;
+      overflow: hidden;
+      font-size: var(--fl-font-micro);
+      font-weight: 500;
+      text-overflow: ellipsis;
+    }
+    .divider {
       display: none;
     }
   }

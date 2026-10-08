@@ -415,6 +415,6 @@
   }
   .error {
     font-size: var(--fl-font-small);
-    color: var(--fl-danger, #ff453a);
+    color: var(--fl-danger);
   }
 </style>

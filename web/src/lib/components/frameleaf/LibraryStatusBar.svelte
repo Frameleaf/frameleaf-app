@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiCheckCircle } from '@mdi/js';
+  import { mdiAlertCircleOutline } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -9,9 +9,16 @@
    * `design/frameleaf/template/src/App.jsx` and apple-style.css "floating capsule toolbar".
    *
    * It only appears where photos are browsed (library, person and partner views, September 24
-   * polish pass): how many items the view shows, how many are selected, and whether this device
-   * kept the view. Compare, Quick edit and Open in Studio are not here; they live on the selection
-   * bar, which takes this bar's place while anything is selected. On phones the tab bar replaces it.
+   * polish pass), and it says only what the page does not already show:
+   *
+   * - "128 of 4,210 items" while a filter narrows the view. Unfiltered, the count is in the results
+   *   toolbar above the photos and is not repeated here.
+   * - Selected items these results do not show, when there are any. The selected count itself is on
+   *   the selection bar, which takes this bar's place while anything is selected.
+   * - That this device could not keep the view. When it could, nothing is said.
+   *
+   * With none of those and no controls it is not drawn at all. Compare, Quick edit and Open in
+   * Studio are not here; they live on the selection bar. On phones the tab bar replaces it.
    *
    * `controls` is the trailing slot for the Thumbnail size control (Packet 2i).
    */
@@ -20,7 +27,6 @@
     count: number | null;
     /** Items in the whole scope (library, person, partner) before any filter, when known. */
     total?: number | null;
-    selected: number;
     /** Selected items these results do not show. */
     outside?: number;
     /** Whether the view state was kept on this device (`LibrarySessionStore.persist`). */
@@ -30,35 +36,43 @@
     controls?: Snippet;
   };
 
-  let { count, total = null, selected, saved, hidden = false, outside = 0, controls }: Props = $props();
+  let { count, total = null, saved, hidden = false, outside = 0, controls }: Props = $props();
+
+  const filtered = $derived(count !== null && total !== null && total !== count);
+  const hasText = $derived(filtered || outside > 0 || !saved);
 </script>
 
-<footer
-  class="fl-status-bar"
-  class:is-hidden={hidden}
-  aria-hidden={hidden}
-  inert={hidden}
-  data-testid="library-status-bar"
->
-  <span class="fl-status-counts">
-    {#if count !== null && total !== null && total !== count}
-      {$t('frameleaf_status_items_of', { values: { count, total } })}
-      <i aria-hidden="true"></i>
-    {:else if (count ?? total) !== null}
-      {$t('frameleaf_status_items', { values: { count: count ?? total } })}
-      <i aria-hidden="true"></i>
+{#if hasText || controls}
+  <footer
+    class="fl-status-bar"
+    class:is-hidden={hidden}
+    aria-hidden={hidden}
+    inert={hidden}
+    data-testid="library-status-bar"
+  >
+    {#if filtered || outside > 0}
+      <span class="fl-status-counts" aria-live="polite">
+        {#if filtered}
+          <!-- Keyed on the text, so a new count fades in rather than snapping. -->
+          {#key `${count}/${total}`}
+            <span class="fl-reveal">{$t('frameleaf_status_items_of', { values: { count, total } })}</span>
+          {/key}
+        {/if}
+        {#if outside > 0}
+          {#if filtered}<i aria-hidden="true"></i>{/if}
+          {$t('frameleaf_status_selected_outside', { values: { count: outside } })}
+        {/if}
+      </span>
     {/if}
-    {$t('selected_count', { values: { count: selected } })}
-    {#if outside > 0}
-      {$t('frameleaf_status_outside', { values: { count: outside } })}
+    {#if !saved}
+      <span class="fl-status-saved" role="status" title={$t('frameleaf_status_not_saved_help')}>
+        <Icon icon={mdiAlertCircleOutline} size="13" aria-hidden={true} />
+        {$t('frameleaf_status_not_saved')}
+      </span>
     {/if}
-  </span>
-  <span class="fl-status-saved" role="status" title={saved ? undefined : $t('frameleaf_status_not_saved_help')}>
-    <Icon icon={saved ? mdiCheckCircle : mdiAlertCircleOutline} size="13" aria-hidden={true} />
-    {saved ? $t('frameleaf_status_saved') : $t('frameleaf_status_not_saved')}
-  </span>
-  {@render controls?.()}
-</footer>
+    {@render controls?.()}
+  </footer>
+{/if}
 
 <style>
   /* apple-style.css: the library bar floats as a frosted capsule centred over the photos. */
@@ -70,23 +84,23 @@
     z-index: 25;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--fl-space-4);
     width: fit-content;
     max-width: calc(100vw - var(--fl-left, 0px) - var(--fl-right, 0px) - 24px);
     min-height: 52px;
     margin-inline: auto;
-    padding: 6px 18px;
+    padding: 4px 18px;
     border: 1px solid var(--fl-material-edge);
-    border-radius: 18px;
+    border-radius: var(--fl-radius-capsule);
     background: var(--fl-material);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
-    backdrop-filter: blur(28px) saturate(180%);
-    box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+    box-shadow: var(--fl-shadow-3);
     color: var(--fl-text);
-    font-size: 13px;
+    font-size: var(--fl-font-callout);
     transition:
-      opacity 200ms ease,
-      translate 420ms var(--fl-spring, ease);
+      opacity var(--fl-duration-fade) var(--fl-ease),
+      translate var(--fl-duration-dock) var(--fl-spring);
   }
   /* "#1 one toolbar": the library bar steps aside while the selection bar is open. */
   .fl-status-bar.is-hidden {
@@ -104,7 +118,7 @@
     .fl-status-bar,
     .fl-status-bar.is-hidden {
       translate: none;
-      transition: opacity 150ms ease;
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease) !important;
     }
   }
   .fl-status-counts {
@@ -119,16 +133,13 @@
   .fl-status-saved {
     display: flex;
     align-items: center;
-    gap: 9px;
-    margin: 0 0 0 16px;
-    color: var(--fl-on-material-muted);
-    font-size: 12px;
+    gap: var(--fl-space-2);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
     white-space: nowrap;
   }
-  @media (max-width: 1000px) {
-    .fl-status-saved {
-      display: none;
-    }
+  .fl-status-saved :global(svg) {
+    color: var(--fl-warning);
   }
   /* On phones the tab bar replaces the library bar. */
   @media (max-width: 700px) {

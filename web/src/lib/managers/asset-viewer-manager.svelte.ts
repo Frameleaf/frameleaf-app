@@ -1,8 +1,8 @@
 import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
-import { cubicOut } from 'svelte/easing';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
+import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -17,6 +17,9 @@ export interface Faces {
   boundingBoxY1: number;
   boundingBoxY2: number;
 }
+
+/** Zoom settles without overshoot: the shape of `--fl-snappy`, not the spring. */
+const zoomEase = (t: number): number => 1 - Math.pow(1 - t, 4);
 
 const createDefaultZoomState = (): ZoomImageWheelState => ({
   currentRotation: 0,
@@ -142,13 +145,19 @@ class AssetViewerManager extends BaseEventManager<Events> {
   animatedZoom(targetZoom: number, duration = 300) {
     this.cancelZoomAnimation();
 
+    // Reduce Motion: a zoom step is a scaling photo, so it lands at once.
+    if (mediaQueryManager.reducedMotion) {
+      this.zoomState = { ...this.#zoomState, currentZoom: targetZoom };
+      return;
+    }
+
     const startZoom = this.#zoomState.currentZoom;
     const startTime = performance.now();
 
     const frame = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const linearProgress = Math.min(elapsed / duration, 1);
-      const easedProgress = cubicOut(linearProgress);
+      const easedProgress = zoomEase(linearProgress);
       const interpolatedZoom = startZoom + (targetZoom - startZoom) * easedProgress;
 
       this.zoomState = { ...this.#zoomState, currentZoom: interpolatedZoom };
@@ -211,6 +220,10 @@ class AssetViewerManager extends BaseEventManager<Events> {
   /** FL-38: opens or closes the face tagger (`frameleaf/FaceTagger.svelte`), mounted by AssetViewer. */
   toggleFaceEditMode() {
     this.#isFaceEditMode = !this.#isFaceEditMode;
+  }
+
+  openFaceEditMode() {
+    this.#isFaceEditMode = true;
   }
 
   closeFaceEditMode() {

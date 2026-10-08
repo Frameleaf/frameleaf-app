@@ -22,8 +22,9 @@
    * button; the list is a `menu` with arrow-key roving focus. Escape or Tab closes it and returns
    * focus to the trigger, and a press outside closes it without moving focus.
    */
+  import { leave } from '$lib/frameleaf/motion';
   import { Icon } from '@frameleaf/ui';
-  import { tick, type Snippet } from 'svelte';
+  import { onDestroy, tick, type Snippet } from 'svelte';
 
   interface Props {
     /** Accessible name of the trigger and the menu. */
@@ -45,25 +46,45 @@
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
   const menuId = $props.id();
+  // True while the closed popover is still fading out; it stays in place, inert, until the exit ends.
+  let leaving = $state(false);
+  let cancelLeave: (() => void) | undefined;
+  onDestroy(() => cancelLeave?.());
 
   const enabledItems = () => [
     ...(menu?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])') ?? []),
   ];
 
   async function toggle() {
-    open = !open;
     if (open) {
-      await tick();
-      const options = enabledItems();
-      (options.find((item) => item.getAttribute('aria-checked') === 'true') ?? options[0])?.focus();
+      close(false);
+      return;
     }
+    cancelLeave?.();
+    cancelLeave = undefined;
+    leaving = false;
+    open = true;
+    await tick();
+    const options = enabledItems();
+    (options.find((item) => item.getAttribute('aria-checked') === 'true') ?? options[0])?.focus();
   }
 
   function close(restoreFocus: boolean) {
-    open = false;
     if (restoreFocus) {
       trigger?.focus();
     }
+    if (!open) {
+      return;
+    }
+    open = false;
+    // The Pop exit: a short fade (a crossfade under Reduce Motion). Without animations it just hides.
+    leaving = true;
+    cancelLeave?.();
+    cancelLeave = leave(menu, 'pop', () => {
+      leaving = false;
+      cancelLeave?.();
+      cancelLeave = undefined;
+    });
   }
 
   function onMenuKeyDown(event: KeyboardEvent) {
@@ -85,6 +106,19 @@
     }
   }
 
+  /**
+   * Escape with the popover open closes the popover, wherever focus is inside the control, and
+   * goes no further: the editor behind treats Escape as Cancel.
+   */
+  function onKeyDown(event: KeyboardEvent) {
+    if (!open || event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    close(true);
+  }
+
   function onWindowPointerDown(event: PointerEvent) {
     if (open && !menu?.contains(event.target as Node) && !trigger?.contains(event.target as Node)) {
       close(false);
@@ -102,7 +136,8 @@
 
 <svelte:window onpointerdown={onWindowPointerDown} />
 
-<div class="ed-menu">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="ed-menu" onkeydown={onKeyDown}>
   <button
     bind:this={trigger}
     type="button"
@@ -119,7 +154,13 @@
       <span>{text}</span>
     {/if}
   </button>
-  <div bind:this={menu} class="ed-menu-popover" hidden={!open}>
+  <div
+    bind:this={menu}
+    class="ed-menu-popover"
+    hidden={!open && !leaving}
+    inert={leaving && !open}
+    aria-hidden={leaving && !open ? 'true' : undefined}
+  >
     {#if heading}
       <h3 id="{menuId}-title">{heading}</h3>
     {/if}

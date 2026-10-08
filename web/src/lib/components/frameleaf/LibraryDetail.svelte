@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   /**
    * One library's detail panel (FL-78), the libraries half of the design template's
    * `resource-detail` in `design/frameleaf/template/src/AccountsLibraries.jsx`: Overview (snapshot,
@@ -197,7 +198,10 @@
     {/if}
   {:else if tab === 'activity'}
     {#if historyStatus === 'loading'}
-      <p class="resource-empty" role="status">{$t('loading')}</p>
+      <div class="resource-empty" role="status" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        <Skeleton variant="text" lines={3} />
+      </div>
     {:else if historyStatus === 'error'}
       <p class="resource-error" role="alert">{$t('frameleaf_account_history_error')}</p>
     {:else if history.length > 0}

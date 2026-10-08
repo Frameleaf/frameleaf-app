@@ -91,7 +91,7 @@
   h3 {
     margin: 0 0 6px;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro, 11px);
+    font-size: var(--fl-font-micro);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -108,7 +108,7 @@
     gap: 16px;
     padding: 6px 0;
     border-bottom: 1px solid var(--fl-border);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
   }
   dt {
     display: inline-flex;
@@ -122,7 +122,7 @@
     gap: 4px;
     margin: 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro, 11px);
+    font-size: var(--fl-font-micro);
   }
   kbd {
     display: inline-grid;
@@ -130,14 +130,14 @@
     min-width: 24px;
     height: 24px;
     padding: 0 6px;
-    border-radius: 5px;
+    border-radius: var(--fl-radius-xs);
     background: var(--fl-raised);
     color: var(--fl-text);
     box-shadow:
       inset 0 -1px 0 var(--fl-border),
       0 0 0 1px var(--fl-border);
     font:
-      500 var(--fl-font-micro, 11px) / 1 ui-monospace,
+      500 var(--fl-font-micro) / 1 ui-monospace,
       'SF Mono',
       Menlo,
       monospace;
@@ -151,7 +151,7 @@
     grid-column: 1 / -1;
     margin: 8px 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
   }
   .fl-sr {
     position: absolute;

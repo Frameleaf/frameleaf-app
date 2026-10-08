@@ -152,7 +152,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Escape from any control inside closes the panel) -->
 <aside
   class="activity"
-  aria-label={$t('frameleaf_album_activity_title')}
+  aria-label={$t('frameleaf_album_comments_title')}
   onkeydown={(event) => {
     if (event.key !== 'Escape') {
       return;
@@ -163,8 +163,8 @@
   }}
 >
   <header>
-    <h2>{$t('frameleaf_album_activity_title')}</h2>
-    <button type="button" aria-label={$t('frameleaf_album_activity_close')} onclick={onClose}>
+    <h2>{$t('frameleaf_album_comments_title')}</h2>
+    <button type="button" aria-label={$t('frameleaf_album_comments_close')} onclick={onClose}>
       <Icon icon={mdiClose} size="18" />
     </button>
   </header>
@@ -348,7 +348,7 @@
     color: var(--fl-text);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   header button:hover {
     background: var(--fl-raised);
@@ -367,7 +367,7 @@
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     font: inherit;
   }
   .like.on {
@@ -402,7 +402,7 @@
     max-height: 10rem;
     overflow-y: auto;
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
   }
   .likers li {
@@ -423,7 +423,7 @@
     padding: 0.625rem;
     color: var(--fl-muted);
     background: var(--fl-raised);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     font-size: 0.875rem;
   }
   .list {
@@ -455,7 +455,7 @@
     min-inline-size: 0;
     padding: 0.5rem 0.625rem;
     background: var(--fl-raised);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .item.own .bubble {
     background: var(--fl-accent-soft);
@@ -492,7 +492,7 @@
     overflow: hidden;
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .subject img {
     inline-size: 100%;
@@ -513,7 +513,7 @@
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .send {
     display: inline-flex;
@@ -524,7 +524,7 @@
     color: var(--fl-accent-text);
     background: var(--fl-accent);
     border: 1px solid var(--fl-accent);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .send:disabled {
     color: var(--fl-muted);

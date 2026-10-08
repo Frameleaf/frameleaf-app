@@ -5,7 +5,7 @@
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@frameleaf/sdk';
   import { isEqual } from 'lodash-es';
   import { onMount } from 'svelte';
-  import { motionFade } from '$lib/frameleaf/motion';
+  import { reveal } from '$lib/frameleaf/motion';
   import AvailabilityChecksSection from './machine-learning/AvailabilityChecksSection.svelte';
   import DuplicateDetectionSection from './machine-learning/DuplicateDetectionSection.svelte';
   import FacialRecognitionSection from './machine-learning/FacialRecognitionSection.svelte';
@@ -79,7 +79,7 @@
 </script>
 
 <div class="mt-2">
-  <div in:motionFade={{ duration: 500 }}>
+  <div in:reveal>
     <form autocomplete="off" class="mx-4 mt-4" onsubmit={(event) => event.preventDefault()}>
       <MlUrlsSection
         bind:workingConfig={configToEdit.machineLearning}

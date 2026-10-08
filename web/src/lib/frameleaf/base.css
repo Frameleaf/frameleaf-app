@@ -79,27 +79,89 @@
     margin: 0;
   }
 
+  /*
+   * Headings sit on the type scale (tokens.css): h1 display, h2 headline, h3 body size. Their
+   * tracking follows the step, so a title tightens as it grows (BRAND.md decision 5).
+   */
   :where(.frameleaf h1) {
-    font-size: 28px;
+    font-size: var(--fl-font-display);
     font-weight: 600;
-    letter-spacing: -0.6px;
-    line-height: 1.3;
+    line-height: 1.15;
+    letter-spacing: var(--fl-tracking-display);
   }
 
   :where(.frameleaf h2) {
-    font-size: 18px;
+    font-size: var(--fl-font-headline);
     font-weight: 600;
+    letter-spacing: var(--fl-tracking-headline);
   }
 
   :where(.frameleaf h3) {
-    font-size: 14px;
+    font-size: var(--fl-font-size);
     font-weight: 500;
   }
 
-  /* Balanced, slightly tightened titles and tabular numbers (apple-style.css:59-69). */
+  /*
+   * The type scale as classes, for text that is not a heading element: `fl-type-hero`,
+   * `-display`, `-title`, `-headline`, `-body`, `-callout`, `-caption`, `-micro`. Colour is
+   * separate: add `muted` for secondary text.
+   */
+  :where(.frameleaf .fl-type-hero, .fl-scope .fl-type-hero) {
+    font: var(--fl-type-hero);
+    letter-spacing: var(--fl-tracking-hero);
+    text-wrap: balance;
+  }
+
+  :where(.frameleaf .fl-type-display, .fl-scope .fl-type-display) {
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
+  }
+
+  :where(.frameleaf .fl-type-title, .fl-scope .fl-type-title) {
+    font: var(--fl-type-title);
+    letter-spacing: var(--fl-tracking-title);
+  }
+
+  :where(.frameleaf .fl-type-headline, .fl-scope .fl-type-headline) {
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
+  }
+
+  :where(.frameleaf .fl-type-body, .fl-scope .fl-type-body) {
+    font: var(--fl-type-body);
+    letter-spacing: var(--fl-tracking-body);
+  }
+
+  :where(.frameleaf .fl-type-callout, .fl-scope .fl-type-callout) {
+    font: var(--fl-type-callout);
+    letter-spacing: var(--fl-tracking-callout);
+  }
+
+  :where(.frameleaf .fl-type-caption, .fl-scope .fl-type-caption) {
+    font: var(--fl-type-caption);
+    letter-spacing: var(--fl-tracking-caption);
+  }
+
+  :where(.frameleaf .fl-type-micro, .fl-scope .fl-type-micro) {
+    font: var(--fl-type-micro);
+    letter-spacing: var(--fl-tracking-micro);
+  }
+
+  /* Balanced titles and tabular numbers (apple-style.css:59-69). */
   :where(.frameleaf h1, .frameleaf h2, .frameleaf h3) {
     text-wrap: balance;
-    letter-spacing: -0.015em;
+  }
+
+  :where(.frameleaf h3) {
+    letter-spacing: var(--fl-tracking-headline);
+  }
+
+  /* Uppercase section headings ("EXPLORE", "ALBUMS"): the micro step, set wide. */
+  :where(.frameleaf .fl-type-overline, .fl-scope .fl-type-overline) {
+    font: var(--fl-type-micro);
+    letter-spacing: var(--fl-tracking-micro);
+    text-transform: uppercase;
+    color: var(--fl-muted);
   }
 
   :where(
@@ -111,9 +173,10 @@
     .frameleaf .stars,
     .frameleaf .duration,
     .frameleaf .fl-tabular,
+    .fl-scope .fl-tabular,
     .frameleaf [aria-live]
   ) {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
 
   /*
@@ -122,47 +185,58 @@
    * turns it solid under Increase Contrast and Reduce Transparency. `fl-material-capsule` is the
    * floating toolbar shape; `fl-material-sheet` a sheet or floating card.
    */
-  :where(.frameleaf .fl-material, .frameleaf.fl-material) {
+  :where(.frameleaf .fl-material, .fl-scope .fl-material, .frameleaf.fl-material) {
     background: var(--fl-material);
     border-color: var(--fl-material-edge);
     -webkit-backdrop-filter: var(--fl-material-blur);
     backdrop-filter: var(--fl-material-blur);
   }
 
-  :where(.frameleaf .fl-material-capsule, .frameleaf.fl-material-capsule) {
+  :where(.frameleaf .fl-material-capsule, .fl-scope .fl-material-capsule, .frameleaf.fl-material-capsule) {
     border: 1px solid var(--fl-material-edge);
-    border-radius: 18px;
-    box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+    border-radius: var(--fl-radius-capsule);
+    box-shadow: var(--fl-shadow-3);
   }
 
-  :where(.frameleaf .fl-material-sheet, .frameleaf.fl-material-sheet) {
+  :where(.frameleaf .fl-material-sheet, .fl-scope .fl-material-sheet, .frameleaf.fl-material-sheet) {
     border: 1px solid var(--fl-material-edge);
     border-radius: var(--fl-radius-sheet);
-    box-shadow: 0 24px 80px rgb(0 0 0 / 67%);
+    box-shadow: var(--fl-shadow-4);
   }
 
-  :where(.frameleaf .fl-card) {
+  /*
+   * The scrim for an overlay that is an ordinary element. A native dialog's ::backdrop uses the
+   * same two tokens directly (Dialog.svelte).
+   */
+  :where(.frameleaf .fl-scrim, .fl-scope .fl-scrim, .frameleaf.fl-scrim) {
+    background: var(--fl-scrim);
+    -webkit-backdrop-filter: var(--fl-scrim-blur);
+    backdrop-filter: var(--fl-scrim-blur);
+  }
+
+  :where(.frameleaf .fl-card, .fl-scope .fl-card) {
     border-radius: var(--fl-radius-card);
   }
 
   /*
-   * Continuous corners where the engine supports them (apple-style.css:109-135): controls and
-   * chips keep their radius, cards and sheets grow it so the squircle reads at the same size.
+   * Continuous corners where the engine supports them (apple-style.css:109-135), for surfaces
+   * only: cards and sheets grow their radius so the squircle reads at the same size. Controls and
+   * chips keep the plain 12px and pill corners: a squircle at an ungrown radius reads as about
+   * 7px, which made a `.button`, a field and a chip squarer than the Button primitive beside
+   * them and squarer than the logo's frame ratio (BRAND.md decision 7).
    */
   @supports (corner-shape: squircle) {
     :where(
-      .frameleaf .button,
-      .frameleaf .chip,
-      .frameleaf select,
-      .frameleaf input:not([type='checkbox'], [type='radio'], [type='range']),
       .frameleaf .fl-card,
+      .fl-scope .fl-card,
       .frameleaf .fl-material-sheet,
+      .fl-scope .fl-material-sheet,
       .frameleaf.fl-material-sheet
     ) {
       corner-shape: squircle;
     }
 
-    :where(.frameleaf .fl-card) {
+    :where(.frameleaf .fl-card, .fl-scope .fl-card) {
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
 
@@ -172,14 +246,17 @@
      */
     :where(
       .frameleaf .fl-tile:not([data-layout='browse'], .has-caption),
+      .fl-scope .fl-tile:not([data-layout='browse'], .has-caption),
       .frameleaf .fl-tile.has-caption .fl-tile-open,
-      .frameleaf .fl-tl-card-open
+      .fl-scope .fl-tile.has-caption .fl-tile-open,
+      .frameleaf .fl-tl-card-open,
+      .fl-scope .fl-tl-card-open
     ) {
       corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
 
-    :where(.frameleaf .fl-material-sheet, .frameleaf.fl-material-sheet) {
+    :where(.frameleaf .fl-material-sheet, .fl-scope .fl-material-sheet, .frameleaf.fl-material-sheet) {
       border-radius: calc(var(--fl-radius-sheet) * 1.8);
     }
   }
@@ -188,7 +265,7 @@
     margin: 12px 0;
   }
 
-  :where(.frameleaf .muted) {
+  :where(.frameleaf .muted, .fl-scope .muted) {
     color: var(--fl-muted);
   }
 
@@ -196,7 +273,7 @@
     flex: 1;
   }
 
-  :where(.frameleaf .sr-only) {
+  :where(.frameleaf .sr-only, .fl-scope .sr-only) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -208,7 +285,7 @@
     border: 0;
   }
 
-  :where(.frameleaf .button) {
+  :where(.frameleaf .button, .fl-scope .button) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -222,11 +299,21 @@
     flex-shrink: 0;
   }
 
-  :where(.frameleaf .button:hover:not(:disabled)) {
+  /*
+   * Page content in `.fl-scope` inherits the document's 16px, not the 14px body step a
+   * `.frameleaf` root sets, so a control there says its own size and matches the same control
+   * in a dialog or the shell. Inside a nested `.frameleaf` root the size is already inherited,
+   * and a surface that sets a smaller one for its own controls keeps it.
+   */
+  :where(.fl-scope .button:not(.frameleaf *), .fl-scope .fl-control:not(.frameleaf *)) {
+    font-size: var(--fl-font-size);
+  }
+
+  :where(.frameleaf .button:hover:not(:disabled), .fl-scope .button:hover:not(:disabled)) {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
 
-  :where(.frameleaf .button.active) {
+  :where(.frameleaf .button.active, .fl-scope .button.active) {
     background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
     border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
     color: var(--fl-text);
@@ -239,30 +326,329 @@
    * editor mask handles) must track the pointer, so they never scale. Under Reduce Motion the
    * press does not move (:473-490).
    */
-  :where(.frameleaf button, .frameleaf .button) {
+  /*
+   * PRESS, the first of the seven motion patterns (BRAND.md). `fl-press` gives the same feedback
+   * to a pressable element that is not a button (a tile, a card link).
+   */
+  :where(.frameleaf button, .frameleaf .fl-press, .fl-scope .fl-press, .frameleaf .button, .fl-scope .button) {
     transition:
       transform var(--fl-duration) var(--fl-spring),
-      background-color 160ms ease,
-      border-color 160ms ease,
-      color 160ms ease,
-      box-shadow 200ms ease;
+      background-color var(--fl-motion) var(--fl-ease),
+      border-color var(--fl-motion) var(--fl-ease),
+      color var(--fl-motion) var(--fl-ease),
+      box-shadow var(--fl-duration-fade) var(--fl-ease);
   }
 
   :where(
     .frameleaf button:active:not(:disabled, .fl-no-press),
-    .frameleaf .button:active:not(:disabled, .fl-no-press)
+    .frameleaf .fl-press:active:not(.fl-no-press),
+    .fl-scope .fl-press:active:not(.fl-no-press),
+    .frameleaf .button:active:not(:disabled, .fl-no-press),
+    .fl-scope .button:active:not(:disabled, .fl-no-press)
   ) {
     transform: scale(0.96);
-    transition-duration: 90ms;
+    transition-duration: var(--fl-duration-press);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    :where(.frameleaf button:active:not(:disabled), .frameleaf .button:active:not(:disabled)) {
-      transform: none;
+  /*
+   * POP, SHEET, DOCK and REVEAL: the entrance plays when the class is on a newly shown element,
+   * and adding `fl-leaving` plays the exit (motion.ts `leave()` does that and resolves when it
+   * ends). An entrance is a short fade plus the pattern's spring move; an exit is quicker and
+   * never overshoots. The Svelte transitions `pop`, `sheet`, `dock` and `reveal` in motion.ts are
+   * the same motion for `in:` / `out:`.
+   *
+   * POP: menus, popovers, comboboxes. Grows from the corner it hangs from: the default is the
+   * top inline-start corner; `fl-origin-top-end`, `fl-origin-bottom-start`, `fl-origin-bottom-end`
+   * and `fl-origin-center` move it.
+   */
+  :where(.frameleaf .fl-pop, .fl-scope .fl-pop, .frameleaf.fl-pop) {
+    transform-origin: top left;
+    animation:
+      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+      fl-pop-in var(--fl-duration-pop) var(--fl-spring) both;
+  }
+
+  :where(
+    .frameleaf .fl-pop:dir(rtl),
+    .fl-scope .fl-pop:dir(rtl),
+    .frameleaf.fl-pop:dir(rtl),
+    .frameleaf .fl-origin-top-end,
+    .fl-scope .fl-origin-top-end
+  ) {
+    transform-origin: top right;
+  }
+
+  :where(.frameleaf .fl-origin-top-end:dir(rtl), .fl-scope .fl-origin-top-end:dir(rtl)) {
+    transform-origin: top left;
+  }
+
+  :where(
+    .frameleaf .fl-origin-bottom-start,
+    .fl-scope .fl-origin-bottom-start,
+    .frameleaf .fl-origin-bottom-end:dir(rtl),
+    .fl-scope .fl-origin-bottom-end:dir(rtl)
+  ) {
+    transform-origin: bottom left;
+  }
+
+  :where(
+    .frameleaf .fl-origin-bottom-end,
+    .fl-scope .fl-origin-bottom-end,
+    .frameleaf .fl-origin-bottom-start:dir(rtl),
+    .fl-scope .fl-origin-bottom-start:dir(rtl)
+  ) {
+    transform-origin: bottom right;
+  }
+
+  :where(.frameleaf .fl-origin-center, .fl-scope .fl-origin-center) {
+    transform-origin: center;
+  }
+
+  :where(.frameleaf .fl-pop.fl-leaving, .fl-scope .fl-pop.fl-leaving, .frameleaf.fl-pop.fl-leaving) {
+    animation: fl-fade-out var(--fl-duration-pop-out) var(--fl-ease) both;
+  }
+
+  /* SHEET: dialogs, palettes, phone sheets. */
+  :where(.frameleaf .fl-sheet, .fl-scope .fl-sheet, .frameleaf.fl-sheet) {
+    animation:
+      fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+      fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
+  }
+
+  :where(.frameleaf .fl-sheet.fl-leaving, .fl-scope .fl-sheet.fl-leaving, .frameleaf.fl-sheet.fl-leaving) {
+    animation: fl-sheet-out var(--fl-duration-sheet-out) var(--fl-snappy) both;
+  }
+
+  /* DOCK: the selection bar, status bar, toasts, inspectors, viewer chrome. */
+  :where(.frameleaf .fl-dock, .fl-scope .fl-dock, .frameleaf.fl-dock) {
+    animation:
+      fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+      fl-dock-in var(--fl-duration-dock) var(--fl-spring) both;
+  }
+
+  :where(.frameleaf .fl-dock.fl-leaving, .fl-scope .fl-dock.fl-leaving, .frameleaf.fl-dock.fl-leaving) {
+    animation: fl-dock-out var(--fl-duration-dock-out) var(--fl-snappy) both;
+  }
+
+  /*
+   * REVEAL: content replacing a skeleton, a section arriving, a settings pane. Set `--i` to the
+   * item's index for a stagger; it stops growing after eight items.
+   */
+  :where(.frameleaf .fl-reveal, .fl-scope .fl-reveal, .frameleaf.fl-reveal) {
+    animation: fl-fade-in var(--fl-motion) var(--fl-ease) both;
+    animation-delay: calc(min(var(--i, 0), 8) * var(--fl-stagger));
+  }
+
+  :where(.frameleaf .fl-reveal.fl-leaving, .fl-scope .fl-reveal.fl-leaving, .frameleaf.fl-reveal.fl-leaving) {
+    animation: fl-fade-out var(--fl-motion-fast) var(--fl-ease) both;
+  }
+
+  /*
+   * UNFURL, the Frameleaf signature (BRAND.md decision 6). A mark grows out of its lower
+   * inline-start corner, where the leaf meets the frame in the logo, turning eight degrees as it
+   * opens and settling with one soft overshoot. Only for marks: the logo on sign-in, first run and
+   * the loading screen, the selection tick, a done mark, the icon of an empty state. Never for a
+   * container, a menu or a list; those are Pop, Sheet, Dock and Reveal. `in:unfurl` in motion.ts
+   * is the same move.
+   */
+  :where(.frameleaf .fl-unfurl, .fl-scope .fl-unfurl, .frameleaf.fl-unfurl) {
+    transform-origin: bottom left;
+    animation:
+      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+      fl-unfurl-in var(--fl-duration-unfurl) var(--fl-unfurl) both;
+  }
+
+  :where(.frameleaf .fl-unfurl:dir(rtl), .fl-scope .fl-unfurl:dir(rtl), .frameleaf.fl-unfurl:dir(rtl)) {
+    transform-origin: bottom right;
+    animation:
+      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+      fl-unfurl-in-rtl var(--fl-duration-unfurl) var(--fl-unfurl) both;
+  }
+
+  :where(.frameleaf .fl-unfurl.fl-leaving, .fl-scope .fl-unfurl.fl-leaving, .frameleaf.fl-unfurl.fl-leaving) {
+    animation: fl-fade-out var(--fl-duration-pop-out) var(--fl-ease) both;
+  }
+
+  /*
+   * LEAF LIGHT, the brand gradient, in the only two shapes the product draws it (BRAND.md
+   * decision 3). `fl-brand-line` is a hairline: the navigation line, the finished end of a
+   * progress bar, the rule under a sign-in or first-run heading. `fl-brand-frame` is the logo's
+   * frame around one icon: an empty state, a done mark. The frame's corner is the logo's own 27%.
+   * Neither ever touches a photograph, fills a control or sits behind text.
+   */
+  :where(.frameleaf .fl-brand-line, .fl-scope .fl-brand-line, .frameleaf.fl-brand-line) {
+    display: block;
+    height: 2px;
+    background: var(--fl-brand-gradient);
+    border-radius: var(--fl-radius-pill);
+  }
+
+  :where(.frameleaf .fl-brand-frame, .fl-scope .fl-brand-frame, .frameleaf.fl-brand-frame) {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: var(--fl-brand-frame-size, 56px);
+    height: var(--fl-brand-frame-size, 56px);
+    color: var(--fl-text);
+    background:
+      linear-gradient(var(--fl-brand-frame-fill, var(--fl-panel)), var(--fl-brand-frame-fill, var(--fl-panel)))
+        padding-box,
+      var(--fl-brand-gradient) border-box;
+    border: 1.5px solid transparent;
+    border-radius: 27%;
+  }
+
+  /*
+   * The loading placeholder (Skeleton.svelte) and the one ring spinner (Spinner.svelte). The
+   * placeholder breathes; the ring turns. Under Reduce Motion both hold still: the shape alone
+   * says "loading", and Spinner carries the text for assistive technology.
+   */
+  :where(.frameleaf .fl-skeleton, .fl-scope .fl-skeleton, .frameleaf.fl-skeleton) {
+    display: block;
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-sm);
+    animation: fl-skeleton-pulse var(--fl-duration-pulse) var(--fl-ease) infinite alternate;
+  }
+
+  :where(.frameleaf .fl-spinner, .fl-scope .fl-spinner, .frameleaf.fl-spinner) {
+    display: inline-block;
+    flex-shrink: 0;
+    width: var(--fl-spinner-size, var(--fl-icon-lg));
+    height: var(--fl-spinner-size, var(--fl-icon-lg));
+    border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: fl-spin var(--fl-duration-spin) linear infinite;
+  }
+
+  @keyframes fl-fade-in {
+    from {
+      opacity: 0;
     }
   }
 
-  :where(.frameleaf .button.primary) {
+  @keyframes fl-fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fl-pop-in {
+    from {
+      scale: 0.9;
+    }
+  }
+
+  @keyframes fl-unfurl-in {
+    from {
+      scale: 0.86;
+      rotate: -8deg;
+    }
+  }
+
+  @keyframes fl-unfurl-in-rtl {
+    from {
+      scale: 0.86;
+      rotate: 8deg;
+    }
+  }
+
+  @keyframes fl-sheet-in {
+    from {
+      translate: 0 40px;
+      scale: 0.96;
+    }
+  }
+
+  @keyframes fl-sheet-out {
+    to {
+      opacity: 0;
+      translate: 0 12px;
+      scale: 0.98;
+    }
+  }
+
+  @keyframes fl-dock-in {
+    from {
+      translate: 0 12px;
+    }
+  }
+
+  @keyframes fl-dock-out {
+    to {
+      opacity: 0;
+      translate: 0 12px;
+    }
+  }
+
+  @keyframes fl-skeleton-pulse {
+    to {
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes fl-spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  /*
+   * Reduce Motion. Nothing moves: a press does not scale, and every pattern above becomes one
+   * short opacity crossfade. These are !important inside the layer on purpose: an important
+   * declaration in a layer outranks the unlayered kill-switch in tokens.css and app.css, which
+   * would otherwise cut the crossfade to an instant change. Svelte transitions and the Web
+   * Animations API are gated separately in motion.ts.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :where(
+      .frameleaf button:active:not(:disabled),
+      .frameleaf .fl-press:active,
+      .fl-scope .fl-press:active,
+      .frameleaf .button:active:not(:disabled),
+      .fl-scope .button:active:not(:disabled)
+    ) {
+      transform: none;
+    }
+
+    :where(
+      .frameleaf .fl-pop,
+      .fl-scope .fl-pop,
+      .frameleaf.fl-pop,
+      .frameleaf .fl-sheet,
+      .fl-scope .fl-sheet,
+      .frameleaf.fl-sheet,
+      .frameleaf .fl-dock,
+      .fl-scope .fl-dock,
+      .frameleaf.fl-dock,
+      .frameleaf .fl-unfurl,
+      .fl-scope .fl-unfurl,
+      .frameleaf.fl-unfurl,
+      .frameleaf .fl-reveal,
+      .fl-scope .fl-reveal,
+      .frameleaf.fl-reveal
+    ) {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+      animation-delay: 0s !important;
+    }
+
+    :where(.frameleaf .fl-leaving, .fl-scope .fl-leaving, .frameleaf.fl-leaving) {
+      animation: fl-fade-out var(--fl-duration-reduced) var(--fl-ease) both !important;
+    }
+
+    :where(
+      .frameleaf .fl-skeleton,
+      .fl-scope .fl-skeleton,
+      .frameleaf.fl-skeleton,
+      .frameleaf .fl-spinner,
+      .fl-scope .fl-spinner,
+      .frameleaf.fl-spinner
+    ) {
+      animation: none !important;
+    }
+  }
+
+  :where(.frameleaf .button.primary, .fl-scope .button.primary) {
     background: var(--fl-accent);
     color: var(--fl-accent-text);
     border-color: var(--fl-accent);
@@ -270,8 +656,35 @@
   }
 
   /* The prototype's hover mix per theme; see --fl-accent-hover in tokens.css. */
-  :where(.frameleaf .button.primary:hover:not(:disabled)) {
+  :where(.frameleaf .button.primary:hover:not(:disabled), .fl-scope .button.primary:hover:not(:disabled)) {
     background: var(--fl-accent-hover);
+    border-color: var(--fl-accent-hover);
+  }
+
+  :where(.frameleaf .button.primary:active:not(:disabled), .fl-scope .button.primary:active:not(:disabled)) {
+    background: var(--fl-accent-pressed);
+    border-color: var(--fl-accent-pressed);
+  }
+
+  /*
+   * The destructive action of a confirmation (the prototype's `.dialog .button.danger`): a filled
+   * danger button. One per surface, never the first focus. `fl-danger` rather than `danger`,
+   * which components already use for danger-coloured text.
+   */
+  /*
+   * The label colour is !important on purpose: an important declaration in a layer outranks any
+   * unlayered rule, and a component that uses `fl-danger` as a text-colour class globally would
+   * otherwise paint the label in the fill colour and make the destructive action unreadable.
+   */
+  :where(.frameleaf .button.fl-danger, .fl-scope .button.fl-danger) {
+    background: var(--fl-danger);
+    color: var(--fl-danger-text) !important;
+    border-color: transparent;
+    font-weight: 600;
+  }
+
+  :where(.frameleaf .button.fl-danger:hover:not(:disabled), .fl-scope .button.fl-danger:hover:not(:disabled)) {
+    background: color-mix(in srgb, var(--fl-danger), var(--fl-text) 10%);
   }
 
   /*

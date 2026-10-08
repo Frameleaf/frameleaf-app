@@ -8,12 +8,23 @@
   without WebCodecs and without local HEVC decoding, because the browser's own media stack decodes
   the stream.
 
+  The panel is opened from the Studio header. It sits in the lower corner of the editor and moves
+  clear of an open drawer (`--fl-studio-drawer-width`, set by the host), so it never covers the
+  comment field. The host measures it (`data-studio-dock-clear`) so the upload and download dock, which
+  lives in the same corner of the window, rises above it.
+
   The panel never fetches anything. The route owns both clients and hands them in as data; when the
   stream is revoked, closed or unavailable its `stream` is null and the video element is emptied.
 -->
 <script lang="ts">
   import type { StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { studioStreamMessageKey, type StudioStreamView } from '$lib/frameleaf/studio/preview-stream';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { pop } from '$lib/frameleaf/motion';
+  import { popOut } from '$lib/frameleaf/studio/chrome-motion';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiClose } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
 
@@ -83,14 +94,17 @@
     class="fl-server-preview"
     aria-label={$t('frameleaf_studio_server_preview')}
     data-testid="studio-server-preview"
+    data-studio-dock-clear
     data-stream-phase={stream.phase}
     data-preview-phase={preview.phase}
+    in:pop
+    out:popOut
   >
     <header>
       <strong>{$t('frameleaf_studio_server_preview')}</strong>
-      <button type="button" class="fl-server-preview-hide" onclick={() => (open = false)}>
-        {$t('frameleaf_studio_server_preview_hide')}
-      </button>
+      <IconButton label={$t('frameleaf_studio_server_preview_hide')} onclick={() => (open = false)}>
+        <Icon icon={mdiClose} size={ICON_SIZE.md} />
+      </IconButton>
     </header>
     <div class="fl-server-preview-canvas">
       <!-- Muted: preview playback is picture only, and autoplay needs it. -->
@@ -118,57 +132,50 @@
       <p role="status" aria-live="polite" data-testid="studio-server-preview-status">{$t(message)}</p>
     {/if}
   </section>
-{:else if available}
-  <button
-    type="button"
-    class="fl-server-preview fl-server-preview-show"
-    data-testid="studio-server-preview-show"
-    onclick={() => (open = true)}
-  >
-    {$t('frameleaf_studio_server_preview_show')}
-  </button>
 {/if}
 
 <style>
   .fl-server-preview {
     position: absolute;
-    right: 1rem;
-    bottom: 1rem;
+    inset-inline-end: calc(var(--fl-space-4) + var(--fl-studio-drawer-width, 0rem));
+    bottom: var(--fl-space-4);
     z-index: 3;
-    font-size: 0.75rem;
+    width: 20rem;
+    max-width: calc(100% - var(--fl-space-8));
+    padding: var(--fl-space-2);
+    font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card, 14px);
-    box-shadow: var(--fl-shadow-2);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-3);
+    /* It grows from the corner it is docked in. */
+    transform-origin: bottom right;
+    transition: inset-inline-end var(--fl-motion-slow) var(--fl-ease);
   }
-  section.fl-server-preview {
-    width: 20rem;
-    max-width: calc(100% - 2rem);
-    padding: 0.5rem;
+  :global([dir='rtl']) .fl-server-preview {
+    transform-origin: bottom left;
   }
-  .fl-server-preview-show {
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
+  /* A narrow editor has no room beside a drawer: the panel stays in its corner, above it. */
+  @media (max-width: 43.75rem) {
+    .fl-server-preview {
+      inset-inline-end: var(--fl-space-4);
+    }
   }
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.375rem;
-  }
-  .fl-server-preview-hide {
-    color: inherit;
-    cursor: pointer;
-    background: none;
-    border: 0;
+    gap: var(--fl-space-2);
+    margin-bottom: var(--fl-space-1);
+    padding-inline-start: var(--fl-space-1);
   }
   .fl-server-preview-canvas {
     position: relative;
     aspect-ratio: 16 / 9;
     overflow: hidden;
-    background: var(--fl-viewer-canvas, #000);
-    border-radius: 0.5rem;
+    background: var(--fl-viewer-canvas);
+    border-radius: var(--fl-radius-sm);
   }
   .fl-server-preview-canvas video,
   .fl-server-preview-canvas img {
@@ -181,11 +188,14 @@
   .fl-server-preview-canvas video.hidden {
     visibility: hidden;
   }
+  .fl-server-preview-canvas img {
+    transition: opacity var(--fl-motion) var(--fl-ease);
+  }
   .fl-server-preview-canvas img.stale {
     opacity: 0.5;
   }
   p {
-    margin: 0.375rem 0 0;
+    margin: var(--fl-space-2) var(--fl-space-1) 0;
     color: var(--fl-muted);
   }
 </style>

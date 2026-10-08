@@ -46,6 +46,16 @@ const planned = (patch: Partial<CloudTourFacts> = {}, state: 'active' | 'grace' 
   });
 
 describe('linked-server tour (FL-196)', () => {
+  it('colours each tile by role, keeps indigo for the AI step, and opens Cloud backup under Backup', () => {
+    for (const step of cloudTourSteps) {
+      expect(['blue', 'teal', 'accent', 'ai', 'neutral'], step.id).toContain(step.tile);
+      expect(step.tile === 'ai', step.id).toBe(!!step.ai);
+    }
+    const backup = cloudTourSteps.find(({ id }) => id === 'backup')!.links[0];
+    expect(backup).toMatchObject({ area: 'backups', params: { backupView: 'cloud' } });
+    expect(backup.section).toBeUndefined();
+  });
+
   it('has the six prototype steps, and every step opens a real settings page', () => {
     expect(cloudTourSteps.map(({ id }) => id)).toEqual(['remote', 'address', 'signin', 'processing', 'backup', 'plan']);
     for (const step of cloudTourSteps) {

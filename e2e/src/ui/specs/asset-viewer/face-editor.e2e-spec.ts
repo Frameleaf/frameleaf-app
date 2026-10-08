@@ -113,6 +113,8 @@ test.describe('face tagger', () => {
   test('numeric inputs and arrow keys move the selected region, and Undo reverts', async ({ page }) => {
     const dialog = await openFaceTagger(page, pickAsset());
     await addFace(dialog);
+    // The exact position sits behind a disclosure, under the naming.
+    await dialog.getByText('Adjust position', { exact: true }).click();
     const left = dialog.getByRole('spinbutton', { name: 'Left (%)' });
     await expect(left).toHaveValue('35');
 
@@ -205,6 +207,7 @@ test.describe('face tagger', () => {
       await expect(faces).toContainText(mockPeople[0].name);
       await expect(faces).toContainText('Detected');
       // detected faces can be placed with the position fields too
+      await dialog.getByText('Adjust position', { exact: true }).click();
       await expect(dialog.getByRole('spinbutton', { name: 'Left (%)' })).toBeEnabled();
 
       await dialog.getByRole('button', { name: mockPeople[1].name }).click();

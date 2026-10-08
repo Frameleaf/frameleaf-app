@@ -7,7 +7,8 @@
    */
   import { page } from '$app/state';
   import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
-  import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import {
     AnalyticsRange,
     getAnalyticsReport,
@@ -24,13 +25,17 @@
 
   let scopes = $state<AnalyticsScopeOptionDto[]>();
   let report = $state<AnalyticsReportResponseDto>();
-  let error = $state<string>();
+  let failed = $state(false);
+  /** True while a changed scope or range is read; the last report stays, dimmed and inert, until it lands. */
+  let loading = $state(true);
+  let attempt = $state(0);
 
   $effect(() => {
     const wanted = { scope: requested, range };
+    void attempt;
     let cancelled = false;
-    report = undefined;
-    error = undefined;
+    loading = true;
+    failed = false;
     void (async () => {
       try {
         scopes ??= (await getAnalyticsScopes()).scopes;
@@ -39,11 +44,14 @@
         const next = await getAnalyticsReport({ scope, range: wanted.range });
         if (!cancelled) {
           report = next;
-          error = undefined;
+          loading = false;
         }
-      } catch (error_) {
+      } catch {
         if (!cancelled) {
-          error = getServerErrorMessage(error_) ?? String(error_);
+          // Another selection's figures never stand in for the one that could not be read.
+          report = undefined;
+          failed = true;
+          loading = false;
         }
       }
     })();
@@ -53,18 +61,37 @@
   });
 </script>
 
-{#if report && scopes}
-  <LibraryAnalytics {scopes} {report} />
-{:else if error}
-  <p class="state" role="alert">{$t('frameleaf_analytics_load_failed')} · {error}</p>
+{#if report}
+  <!--
+    The figures update in place: while the next report is read the last one is dimmed and cannot be
+    used (its export would be the previous selection's), then the new values swap in so the rings
+    and counts animate between them (design review finding 69).
+  -->
+  <div class="report" class:busy={loading} aria-busy={loading} inert={loading}>
+    <LibraryAnalytics {report} />
+  </div>
+  {#if loading}<p class="sr-only" role="status">{$t('frameleaf_analytics_loading')}</p>{/if}
+{:else if failed}
+  <InlineError message={$t('frameleaf_analytics_load_failed')} onRetry={() => attempt++} />
 {:else}
-  <p class="state" role="status">{$t('frameleaf_analytics_loading')}</p>
+  <div class="loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('frameleaf_analytics_loading')}</span>
+    <Skeleton variant="text" lines={2} width="18rem" />
+    <Skeleton variant="block" height="11rem" />
+    <Skeleton variant="block" height="18rem" />
+  </div>
 {/if}
 
 <style>
-  .state {
-    margin: 0;
-    padding: 2rem 0;
-    color: var(--fl-muted);
+  .report {
+    transition: opacity var(--fl-motion) var(--fl-ease);
+  }
+  .report.busy {
+    opacity: 0.6;
+  }
+  .loading {
+    display: grid;
+    gap: var(--fl-space-5);
+    padding: var(--fl-space-2) 0;
   }
 </style>

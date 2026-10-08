@@ -1,13 +1,60 @@
 import '@testing-library/jest-dom';
 import { init } from 'svelte-i18n';
 
+/**
+ * happy-dom has no Web Animations API. This stand-in finishes every animation at once, which is
+ * what a unit test wants: Svelte removes an element with an `out:` transition only when the
+ * animation's `onfinish` runs, and `animate:` asks an element for its running animations before
+ * moving it. So `onfinish` is called in a microtask as soon as it is set, `finished` is already
+ * resolved, and `getAnimations()` reports none running.
+ *
+ * `finishesAtOnce` tells `$lib/frameleaf/motion` `canAnimate()` there is no exit to wait for, so
+ * `leave()`, Dialog and Menu close synchronously here, as they do without the API. A spec that
+ * wants to observe an exit replaces `animate` with its own double (which has no such mark).
+ *
+ * A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
+ * implementation and every later animation (toasts, transitions) would get `undefined` back.
+ */
+const animateAtOnce = Object.assign(
+  function animate(): Animation {
+    let handler: ((event: AnimationPlaybackEvent) => void) | null = null;
+    return {
+      cancel: () => {},
+      finish: () => {},
+      pause: () => {},
+      play: () => {},
+      finished: Promise.resolve(),
+      ready: Promise.resolve(),
+      currentTime: 0,
+      playState: 'finished',
+      get onfinish() {
+        return handler;
+      },
+      set onfinish(next: ((event: AnimationPlaybackEvent) => void) | null) {
+        handler = next;
+        if (next) {
+          queueMicrotask(() => {
+            if (handler === next) {
+              next({} as AnimationPlaybackEvent);
+            }
+          });
+        }
+      },
+    } as unknown as Animation;
+  },
+  { finishesAtOnce: true },
+);
+
+const installAnimations = () => {
+  Element.prototype.animate = animateAtOnce;
+  Element.prototype.getAnimations ??= () => [];
+};
+installAnimations();
+
 beforeAll(async () => {
   await init({ fallbackLocale: 'dev' });
-  // A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
-  // implementation and every later animation (toasts, transitions) would get `undefined` back.
-  Element.prototype.animate = function () {
-    return { cancel: () => {}, finished: Promise.resolve() } as unknown as Animation;
-  };
+  // Again for each file: a spec may have replaced `animate` with its own double.
+  installAnimations();
 });
 
 if (!('part' in HTMLElement.prototype)) {

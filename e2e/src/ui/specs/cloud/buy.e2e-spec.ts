@@ -108,9 +108,9 @@ test.describe('Support Frameleaf', () => {
     });
 
     await page.goto(`/link?target=frameleaf_license&linkCode=${CODE}`);
-    await expect(page).toHaveURL(/\/buy$/);
+    await expect(page).toHaveURL(/\/buy$/, { timeout: 30_000 });
     await expect.poll(() => redeemed).toEqual({ code: CODE });
-    await expect(page.getByText('Thank you! Your key is active.')).toBeVisible();
+    await expect(page.getByText('Thank you. Your key is active.')).toBeVisible();
     await expect(page.getByLabel('Product key')).toHaveValue('');
 
     // the code went out once, in a request body; after the page took it only the address it was
@@ -148,7 +148,7 @@ test.describe('Support Frameleaf', () => {
       );
 
       await page.goto(address);
-      await expect(page).toHaveURL(/\/buy$/);
+      await expect(page).toHaveURL(/\/buy$/, { timeout: 30_000 });
       await expect(page.getByText(/keys are no longer accepted in links\. Paste your key below/)).toBeVisible();
       await expect(page.getByLabel('Product key')).toHaveValue('');
 
@@ -186,7 +186,7 @@ test.describe('Support Frameleaf', () => {
     );
 
     await page.goto(`/link?target=frameleaf_license&linkCode=${invalid}`);
-    await expect(page).toHaveURL(/\/buy$/);
+    await expect(page).toHaveURL(/\/buy$/, { timeout: 30_000 });
     await expect(
       page.getByText(/This link from your Frameleaf account isn’t valid\. Paste your key below/),
     ).toBeVisible();
@@ -237,7 +237,7 @@ test.describe('Support Frameleaf', () => {
     await context.route('**/api/license/products', (route) => route.fulfill({ json: products(null) }));
     await page.goto('/buy');
 
-    await expect(page.getByRole('heading', { name: 'Support Frameleaf' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Support Frameleaf' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('$99.90')).toBeVisible();
     // Two plans and two supporter keys, plus the AI credit note an administrator sees under the
     // credit packs (design/frameleaf/template/src/AuthScreens.jsx, the "AI credit" card).

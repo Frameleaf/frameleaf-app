@@ -14,12 +14,21 @@
    * Hovering (or focusing) a tile shows its quick actions — favorite, edit, share, more — in the
    * top corner (`AssetTile.jsx` `.at-actions`), except while a selection is in progress.
    *
+   * Selection follows the prototype's inset-and-settle (`asset-tile.css` `.is-selected`): the photo
+   * settles to 0.92 on an accent bed inside an accent ring, and the tick fills. The ring is drawn by
+   * a pseudo-element above the photo: an outline on the tile or its button paints under their
+   * positioned children, so it never showed. On touch, press and hold starts a selection, and
+   * dragging on from there adds every tile the finger passes (`timeline/drag-select.ts`).
+   *
    * Media sources are the production ones. The hover scrub plays the existing preview transcode
    * (`/assets/:id/video/playback`), never the original file, and a Live Photo plays its own motion
    * part. Nothing here downloads an original.
    */
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
+  import { beginDragSelect, DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
+  import { isRevealingLocks } from '$lib/components/timeline/lock-reveal';
+  import Thumbhash from '$lib/components/Thumbhash.svelte';
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
@@ -120,20 +129,54 @@
 
   const PREVIEW_DELAY = 300;
   const PRESS_DELAY = 400;
+  /** A press that travels further than this is a scroll, not a hold. */
+  const PRESS_SLOP = 8;
+  /** A thumbnail that arrives sooner than this was cached: it replaces its placeholder without a fade. */
+  const INSTANT_LOAD_MS = 80;
+
+  // The photo develops: its thumbhash shows at once, then dissolves into the thumbnail.
+  let imageLoaded = $state(false);
+  let fadeHash = $state(true);
+  let requestedAt = 0;
+  $effect(() => {
+    if (imageRequested && !requestedAt) {
+      requestedAt = performance.now();
+    }
+  });
+  const onImageComplete = () => {
+    // A tile painted during a scrub, or from the cache, swaps at once; a slow one crossfades.
+    fadeHash = performance.now() - requestedAt > INSTANT_LOAD_MS;
+    imageLoaded = true;
+  };
 
   let previewMode = $state<'video' | 'live' | null>(null);
   let hovered = $state(false);
   let videoElement = $state<HTMLVideoElement>();
   let hoverTimer: ReturnType<typeof setTimeout> | null = null;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
-  let pressing = false;
+  let pressing = $state(false);
+  let pressOrigin: { x: number; y: number } | null = null;
   let suppressClick = false;
+  let endDragSelect: (() => void) | undefined;
+
+  /**
+   * A short tick under the finger where the device offers one. Read loosely: Safari has no
+   * `navigator.vibrate`, and there the selection ring is the only feedback.
+   */
+  const buzz = () => {
+    const vibrate: unknown = Reflect.get(navigator, 'vibrate');
+    if (typeof vibrate === 'function') {
+      Reflect.apply(vibrate, navigator, [8]);
+    }
+  };
 
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
   const isLive = $derived(asset.isImage && !!asset.livePhotoVideoId);
   const isPanorama = $derived(!!asset.projectionType && asset.projectionType !== ProjectionType.NONE);
   const stackCount = $derived(asset.stack?.assetCount ?? 0);
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
+  // Decided once, as the tile is drawn: a Locked item that appears right after the PIN sharpens in.
+  const revealing = untrack(() => asset.visibility === AssetVisibility.Locked && isRevealingLocks());
   // FL-34: `Locked` for an item from the old Locked folder, `Sensitive` for a mark or a detection
   const lockLabelKey = $derived(lockBadgeLabelKey(asset.lockReason));
   // T-17: the template draws no Archived badge (archiving takes an item out of the library), and the
@@ -254,7 +297,21 @@
     previewMode = null;
   };
 
-  onDestroy(() => clearTimers());
+  onDestroy(() => {
+    clearTimers();
+    endDragSelect?.();
+  });
+
+  /** Another tile's hold is being dragged across this one: join the selection (never leave it). */
+  const dragSelected = (node: HTMLElement) => {
+    const onDragSelect = (event: Event) => {
+      if (!selected && event instanceof CustomEvent && event.detail?.assetId === asset.id) {
+        onToggleSelect?.(asset, new MouseEvent('click'));
+      }
+    };
+    node.addEventListener(DRAG_SELECT_EVENT, onDragSelect);
+    return { destroy: () => node.removeEventListener(DRAG_SELECT_EVENT, onDragSelect) };
+  };
 
   $effect(() => {
     if (previewMode && videoElement) {
@@ -281,6 +338,14 @@
 
   /** Move across the tile to scrub the transcode; the pointer's x is the position in the clip. */
   const onPointerMove = (event: PointerEvent) => {
+    if (pressing && pressOrigin && event.pointerType === 'touch') {
+      if (Math.hypot(event.clientX - pressOrigin.x, event.clientY - pressOrigin.y) > PRESS_SLOP) {
+        // The finger is scrolling the grid.
+        clearTimers();
+        pressing = false;
+      }
+      return;
+    }
     if (previewMode !== 'video' || !videoElement) {
       return;
     }
@@ -301,19 +366,42 @@
     endPreview();
   };
 
-  /** Press and hold plays a Live Photo, as it does on a phone. */
+  /**
+   * Press and hold on touch starts a selection with this item, as in every phone gallery. Once a
+   * selection is in progress a tap toggles, so the hold goes back to playing a Live Photo; it also
+   * does on a grid that offers no selection.
+   */
   const onPointerDown = (event: PointerEvent) => {
-    if (event.pointerType !== 'touch' || !isLive) {
+    if (event.pointerType !== 'touch') {
+      return;
+    }
+    // A hold whose click never came (the browser's own long-press took it) must not eat this tap.
+    suppressClick = false;
+    const playsLive = isLive && (selecting || !onToggleSelect);
+    if (!playsLive && (selecting || !onToggleSelect)) {
       return;
     }
     pressing = true;
+    pressOrigin = { x: event.clientX, y: event.clientY };
+    const pressed = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
     clearTimers();
     pressTimer = setTimeout(() => {
       if (!pressing) {
         return;
       }
       suppressClick = true;
-      previewMode = 'live';
+      if (playsLive) {
+        previewMode = 'live';
+        return;
+      }
+      pressing = false;
+      buzz();
+      onToggleSelect?.(asset, event);
+      if (pressed) {
+        // The finger is still down: moving on from here adds the tiles it passes.
+        endDragSelect?.();
+        endDragSelect = beginDragSelect(pressed, asset.id);
+      }
     }, PRESS_DELAY);
   };
 
@@ -346,7 +434,10 @@
   class:is-selected={selected}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
+  class:is-pressing={pressing && !previewMode}
   class:has-actions={hasQuickActions && !selecting}
+  class:is-revealing={revealing}
+  use:dragSelected
   aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
   data-layout={layout}
@@ -356,7 +447,7 @@
 >
   <button
     type="button"
-    class="fl-tile-open"
+    class="fl-tile-open fl-continuous-corners"
     style:height={withCaption || listed ? `${imageHeight}px` : undefined}
     style:width={listed ? `${imageWidth}px` : undefined}
     {tabindex}
@@ -377,105 +468,108 @@
       }
     }}
   >
-    {#if imageRequested}
-      <ImageThumbnail
-        url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
-        altText={title}
-        widthStyle="{imageWidth}px"
-        heightStyle="{imageHeight}px"
-        class="fl-tile-image"
-      />
-    {:else}
-      <div
-        class={['fl-tile-image', 'bg-gray-300 dark:bg-gray-700']}
-        style:width="{imageWidth}px"
-        style:height="{imageHeight}px"
-        aria-hidden="true"
-      ></div>
-    {/if}
-    {#if previewMode && previewSource}
-      <video
-        bind:this={videoElement}
-        class="fl-tile-preview"
-        src={previewSource}
-        muted
-        playsinline
-        loop={previewMode === 'live'}
-        preload="auto"
-        aria-hidden="true"
-        tabindex={-1}
-      ></video>
-    {/if}
-    <span class="fl-tile-scrim" aria-hidden="true"></span>
-    {#if overlay}
-      <span class="fl-tile-overlay" aria-hidden="true">{@render overlay(asset)}</span>
-    {/if}
-    <span class="fl-tile-badges">
-      {#if asset.isVideo}
-        <span class="fl-badge">
-          <Icon icon={mdiPlay} size="12" />
-          {durationLabel(durationSeconds)}
-        </span>
+    <span class="fl-tile-media">
+      {#if imageRequested}
+        <ImageThumbnail
+          url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+          altText={title}
+          widthStyle="{imageWidth}px"
+          heightStyle="{imageHeight}px"
+          class="fl-tile-image"
+          onComplete={onImageComplete}
+        />
+      {:else}
+        <span class="fl-tile-image fl-tile-placeholder" aria-hidden="true"></span>
       {/if}
-      {#if isLive}
-        <span class="fl-badge" title={$t('frameleaf_library_badge_live_photo')}>
-          <Icon icon={mdiMotionPlayOutline} size="13" />
-          <span class="fl-sr">{$t('frameleaf_library_badge_live_photo')}</span>
-        </span>
+      {#if asset.thumbhash && !imageLoaded}
+        <Thumbhash base64ThumbHash={asset.thumbhash} class="fl-tile-hash" fadeOut={fadeHash} aria-hidden="true" />
       {/if}
-      {#if isPanorama}
-        <span class="fl-badge fl-badge-icon" title={$t('frameleaf_library_badge_panorama')}>
-          <Icon icon={mdiPanoramaVariantOutline} size="13" />
-          <span class="fl-sr">{$t('frameleaf_library_badge_panorama')}</span>
-        </span>
+      {#if previewMode && previewSource}
+        <video
+          bind:this={videoElement}
+          class="fl-tile-preview"
+          src={previewSource}
+          muted
+          playsinline
+          loop={previewMode === 'live'}
+          preload="auto"
+          aria-hidden="true"
+          tabindex={-1}
+        ></video>
       {/if}
-      {#if stackCount > 1}
-        <span class="fl-badge" title={$t('stacked_assets_count', { values: { count: stackCount } })}>
-          <Icon icon={mdiLayersOutline} size="12" />
-          {stackCount}
-          <span class="fl-sr">{$t('stacked_assets_count', { values: { count: stackCount } })}</span>
-        </span>
+      <span class="fl-tile-scrim" aria-hidden="true"></span>
+      {#if overlay}
+        <span class="fl-tile-overlay" aria-hidden="true">{@render overlay(asset)}</span>
       {/if}
-      {#if isLocked || sensitive}
-        {@const label = isLocked ? $t(lockLabelKey) : $t('frameleaf_library_badge_sensitive')}
-        <span class="fl-badge fl-badge-icon" title={label}>
-          <Icon icon={mdiShieldLockOutline} size="13" />
-          <span class="fl-sr">{label}</span>
-        </span>
+      <span class="fl-tile-badges">
+        {#if asset.isVideo}
+          <span class="fl-badge">
+            <Icon icon={mdiPlay} size="12" />
+            {durationLabel(durationSeconds)}
+          </span>
+        {/if}
+        {#if isLive}
+          <span class="fl-badge" title={$t('frameleaf_library_badge_live_photo')}>
+            <Icon icon={mdiMotionPlayOutline} size="13" />
+            <span class="fl-sr">{$t('frameleaf_library_badge_live_photo')}</span>
+          </span>
+        {/if}
+        {#if isPanorama}
+          <span class="fl-badge fl-badge-icon" title={$t('frameleaf_library_badge_panorama')}>
+            <Icon icon={mdiPanoramaVariantOutline} size="13" />
+            <span class="fl-sr">{$t('frameleaf_library_badge_panorama')}</span>
+          </span>
+        {/if}
+        {#if stackCount > 1}
+          <span class="fl-badge" title={$t('stacked_assets_count', { values: { count: stackCount } })}>
+            <Icon icon={mdiLayersOutline} size="12" />
+            {stackCount}
+            <span class="fl-sr">{$t('stacked_assets_count', { values: { count: stackCount } })}</span>
+          </span>
+        {/if}
+        {#if isLocked || sensitive}
+          {@const label = isLocked ? $t(lockLabelKey) : $t('frameleaf_library_badge_sensitive')}
+          <span class="fl-badge fl-badge-icon" title={label}>
+            <Icon icon={mdiShieldLockOutline} size="13" />
+            <span class="fl-sr">{label}</span>
+          </span>
+        {/if}
+        {#if isOffline}
+          <span class="fl-badge fl-badge-icon" title={$t('asset_offline')}>
+            <Icon icon={mdiCloudOffOutline} size="13" />
+            <span class="fl-sr">{$t('asset_offline')}</span>
+          </span>
+        {/if}
+        {#if asset.isFavorite}
+          <span class="fl-badge fl-badge-icon fl-favorite" title={$t('favorite')}>
+            <Icon icon={mdiHeart} size="12" />
+            <span class="fl-sr">{$t('favorite')}</span>
+          </span>
+        {/if}
+      </span>
+      {#if job && jobLabel}
+        <!-- The durable job's state keeps the tile's top-right corner. -->
+        <span class="fl-tile-job-slot"><TileJobState {job} label={jobLabel} /></span>
       {/if}
-      {#if isOffline}
-        <span class="fl-badge fl-badge-icon" title={$t('asset_offline')}>
-          <Icon icon={mdiCloudOffOutline} size="13" />
-          <span class="fl-sr">{$t('asset_offline')}</span>
-        </span>
-      {/if}
-      {#if asset.isFavorite}
-        <span class="fl-badge fl-badge-icon fl-favorite" title={$t('favorite')}>
-          <Icon icon={mdiHeart} size="12" />
-          <span class="fl-sr">{$t('favorite')}</span>
+      {#if showRating}
+        <span
+          class="fl-tile-rating"
+          aria-label={stars === -1
+            ? $t('frameleaf_library_rating_rejected')
+            : $t('frameleaf_library_rating_stars', { values: { count: stars } })}
+        >
+          {#if stars === -1}
+            {$t('frameleaf_library_rating_rejected')}
+          {:else}
+            {#each Array.from({ length: Math.min(5, stars) }, (_, index) => index) as index (index)}
+              <Icon icon={mdiStar} size="11" />
+            {/each}
+          {/if}
         </span>
       {/if}
     </span>
-    {#if job && jobLabel}
-      <!-- The durable job's state keeps the tile's top-right corner. -->
-      <span class="fl-tile-job-slot"><TileJobState {job} label={jobLabel} /></span>
-    {/if}
-    {#if showRating}
-      <span
-        class="fl-tile-rating"
-        aria-label={stars === -1
-          ? $t('frameleaf_library_rating_rejected')
-          : $t('frameleaf_library_rating_stars', { values: { count: stars } })}
-      >
-        {#if stars === -1}
-          {$t('frameleaf_library_rating_rejected')}
-        {:else}
-          {#each Array.from({ length: Math.min(5, stars) }, (_, index) => index) as index (index)}
-            <Icon icon={mdiStar} size="11" />
-          {/each}
-        {/if}
-      </span>
-    {/if}
+    <!-- The selection and focus ring, above the photo (an outline on the button paints under it). -->
+    <span class="fl-tile-ring fl-continuous-corners" aria-hidden="true"></span>
   </button>
 
   <label class="fl-tile-select" class:is-coarse={coarsePointer}>
@@ -490,7 +584,8 @@
     />
     <span aria-hidden="true">
       {#if selected}
-        <Icon icon={mdiCheck} size="14" />
+        <!-- The mark unfurls, the brand's signature (BRAND.md decision 6); a fade under Reduce Motion. -->
+        <i class="fl-tile-tick fl-unfurl"><Icon icon={mdiCheck} size="15" /></i>
       {/if}
     </span>
   </label>
@@ -572,10 +667,12 @@
 
 <style>
   .fl-tile {
+    /* The favourite mark is one colour on the badge and on the quick action. */
+    --fl-tile-favorite: #ff7b8a;
     position: relative;
     display: block;
     overflow: hidden;
-    border-radius: var(--fl-radius-card, 12px);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
   }
   /* Browse: the Photos-style dense grid has square corners (apple-style.css "grids per tab"). */
@@ -591,7 +688,7 @@
   .fl-tile.has-caption .fl-tile-open {
     overflow: hidden;
     bottom: auto;
-    border-radius: var(--fl-radius-card, 12px);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
   }
   .fl-tile-open {
@@ -601,13 +698,64 @@
     padding: 0;
     border: 0;
     min-height: 0;
+    border-radius: inherit;
     background: transparent;
     cursor: pointer;
+    -webkit-touch-callout: none;
+  }
+  /*
+   * Everything drawn on the photo lives in one layer, so a selection can inset the photo with its
+   * badges in a single compositor move.
+   */
+  .fl-tile-media {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: hidden;
+    /* Square at rest (the tile clips its own corners); it rounds only as it insets. */
+    border-radius: 0;
+    transition:
+      scale var(--fl-duration) var(--fl-spring),
+      border-radius var(--fl-motion) var(--fl-ease);
   }
   .fl-tile :global(.fl-tile-image) {
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    background: var(--fl-raised);
+    transition: scale var(--fl-duration-hero) var(--fl-snappy);
+  }
+  /* The thumbhash covers the tile until the thumbnail lands, then dissolves (Thumbhash `fadeOut`). */
+  .fl-tile :global(.fl-tile-hash) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    /*
+     * apple-style.css:297-302: the photo eases in a touch under the pointer, as album covers do.
+     * Only where tiles have room around them (Timeline and Work): in Browse's dense 2px grid a
+     * zoom on every tile the pointer crosses reads as flicker, and a List row is not a picture.
+     */
+    .fl-tile:is([data-layout='timeline'], [data-layout='work']):not(.is-selected):hover :global(.fl-tile-image) {
+      scale: 1.03;
+    }
+  }
+  /*
+   * Just unlocked (finding 90): a Locked item that comes into view because of the PIN arrives out
+   * of focus and sharpens. The layer clips itself, so the blur never bleeds onto its neighbours.
+   */
+  .fl-tile.is-revealing .fl-tile-media {
+    animation: fl-tile-reveal var(--fl-motion-slow) var(--fl-ease) both;
+  }
+  @keyframes fl-tile-reveal {
+    from {
+      filter: blur(12px);
+      opacity: 0.6;
+    }
   }
   .fl-tile-preview {
     position: absolute;
@@ -627,17 +775,54 @@
     inset: 0;
     background: linear-gradient(to bottom, rgb(0 0 0 / 35%), transparent 32%, transparent 68%, rgb(0 0 0 / 35%));
     opacity: 0;
-    transition: opacity var(--fl-motion-fast, 120ms) ease;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
   .fl-tile:hover .fl-tile-scrim,
   .fl-tile:focus-within .fl-tile-scrim,
   .fl-tile.is-selected .fl-tile-scrim {
     opacity: 1;
   }
-  .fl-tile.is-selected:not(.has-caption),
+  /*
+   * Selected (asset-tile.css:64-72): the photo settles inward on an accent bed. The ring is its own
+   * element, last in the button, so it paints above the photo; it also carries the keyboard focus
+   * ring, which an outline on the button itself would draw under the photo.
+   */
+  .fl-tile-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 3px var(--fl-accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
   .fl-tile.is-selected .fl-tile-open {
-    outline: 3px solid var(--fl-accent);
-    outline-offset: -3px;
+    background: color-mix(in srgb, var(--fl-accent) 18%, var(--fl-canvas));
+  }
+  .fl-tile.is-selected .fl-tile-ring {
+    opacity: 1;
+  }
+  .fl-tile.is-pressing:not([data-layout='list']) .fl-tile-media {
+    scale: 0.96;
+  }
+  .fl-tile.is-selected:not([data-layout='list']) .fl-tile-media {
+    scale: 0.92;
+    border-radius: var(--fl-radius-xs);
+  }
+  .fl-tile-open:focus-visible {
+    outline: none;
+  }
+  .fl-tile-open:focus-visible .fl-tile-ring {
+    opacity: 1;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-inset);
+    box-shadow: inset 0 0 0 4px var(--fl-canvas);
+  }
+  @media (forced-colors: active) {
+    .fl-tile.is-selected .fl-tile-ring {
+      outline: 3px solid Highlight;
+      outline-offset: -3px;
+    }
   }
   /* T-16 (asset-tile.css:177-237): badges sit bottom-left on 20px, 4px-radius plates; the rating
      sits bottom-right as plain stars over a drop shadow. */
@@ -658,10 +843,10 @@
     gap: 3px;
     height: 20px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--fl-radius-xs);
     background: rgb(0 0 0 / 58%);
-    color: #fff;
-    font-size: var(--fl-font-micro, 11px);
+    color: var(--fl-viewer-text);
+    font-size: var(--fl-font-micro);
     font-weight: 500;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -673,7 +858,7 @@
     justify-content: center;
   }
   .fl-favorite {
-    color: #ff7b8a;
+    color: var(--fl-tile-favorite);
   }
   .fl-tile-rating {
     position: absolute;
@@ -682,8 +867,8 @@
     display: inline-flex;
     align-items: center;
     gap: 1px;
-    color: #fff;
-    font-size: var(--fl-font-micro, 11px);
+    color: var(--fl-viewer-text);
+    font-size: var(--fl-font-micro);
     filter: drop-shadow(0 1px 2px rgb(0 0 0 / 70%));
     pointer-events: none;
   }
@@ -717,13 +902,13 @@
     gap: 2px;
     padding: 2px;
     border: 1px solid rgb(255 255 255 / 12%);
-    border-radius: 6px;
-    background: rgb(16 20 22 / 86%);
+    border-radius: var(--fl-radius-sm);
+    background: color-mix(in srgb, var(--fl-viewer-canvas) 86%, transparent);
     opacity: 0;
     transform: translateY(-4px);
     transition:
-      opacity var(--fl-motion-fast, 120ms) var(--fl-ease, ease),
-      transform var(--fl-motion-fast, 120ms) var(--fl-ease, ease);
+      opacity var(--fl-motion-fast) var(--fl-ease),
+      transform var(--fl-motion-fast) var(--fl-ease);
   }
   .fl-tile:hover .fl-tile-actions,
   .fl-tile:focus-within .fl-tile-actions {
@@ -738,9 +923,9 @@
     min-height: 0;
     padding: 0;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--fl-radius-xs);
     background: transparent;
-    color: #e5e7eb;
+    color: var(--fl-viewer-text);
     cursor: pointer;
   }
   .fl-tile-actions button:hover,
@@ -748,7 +933,7 @@
     background: rgb(255 255 255 / 14%);
   }
   .fl-tile-actions button.is-favorite {
-    color: var(--fl-accent);
+    color: var(--fl-tile-favorite);
   }
   /* The actions take the top corner while they show; the job state there steps aside. */
   .fl-tile.has-actions:hover .fl-tile-job-slot,
@@ -757,45 +942,93 @@
   }
   .fl-tile-select {
     position: absolute;
-    inset-inline-start: 6px;
-    top: 6px;
+    inset-inline-start: 4px;
+    top: 4px;
+    z-index: 2;
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     opacity: 0;
-    transition: opacity var(--fl-motion-fast, 120ms) ease;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
   .fl-tile:hover .fl-tile-select,
   .fl-tile:focus-within .fl-tile-select,
   .fl-tile.is-selecting .fl-tile-select,
-  .fl-tile.is-selected .fl-tile-select,
-  .fl-tile-select.is-coarse {
+  .fl-tile.is-selected .fl-tile-select {
     opacity: 1;
+  }
+  /*
+   * Touch (asset-tile.css `@media (hover: none)`): no ring on every photograph. Press and hold
+   * starts a selection; the rings then show with a full-size target.
+   */
+  .fl-tile-select.is-coarse {
+    inset-inline-start: 0;
+    top: 0;
+    width: var(--fl-control-height);
+    height: var(--fl-control-height);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .fl-tile.is-selecting .fl-tile-select.is-coarse,
+  .fl-tile.is-selected .fl-tile-select.is-coarse {
+    opacity: 1;
+    pointer-events: auto;
   }
   .fl-tile-select input {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
     margin: 0;
+    /* Above the ring it sits on: the ring scales on hover, which would otherwise lift it over the
+       input and take the click. */
+    z-index: 1;
     opacity: 0;
     cursor: pointer;
   }
   .fl-tile-select > span {
     display: grid;
     place-items: center;
-    width: 20px;
-    height: 20px;
-    border: 2px solid #fff;
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgb(255 255 255 / 92%);
     border-radius: 50%;
-    background: rgb(0 0 0 / 35%);
+    background: rgb(0 0 0 / 28%);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
     color: var(--fl-accent-text);
+    transition:
+      scale var(--fl-motion-fast) var(--fl-ease),
+      background-color var(--fl-motion-fast) var(--fl-ease),
+      border-color var(--fl-motion-fast) var(--fl-ease);
   }
+  .fl-tile-select.is-coarse > span {
+    width: 24px;
+    height: 24px;
+  }
+  .fl-tile-select:hover > span {
+    scale: 1.08;
+  }
+  /* A filled accent plate; the tick on it unfurls once as the photo settles. */
   .fl-tile.is-selected .fl-tile-select > span {
-    background: var(--fl-accent);
     border-color: var(--fl-accent);
+    background: var(--fl-accent);
+  }
+  .fl-tile-tick {
+    display: grid;
+    place-items: center;
+  }
+  .fl-tile-select:has(input:focus-visible) > span {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  @media (hover: none) {
+    /* Hover-only quick actions have no touch equivalent; the selection bar carries them. */
+    .fl-tile-actions {
+      display: none;
+    }
   }
   /*
    * Template asset-tile.css `.at-caption`: inset from the tile edges so one tile's time never runs
@@ -811,7 +1044,7 @@
     gap: 8px;
     padding: 6px 6px 0;
     color: var(--fl-text);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
     line-height: 1.4;
     pointer-events: none;
   }
@@ -825,7 +1058,7 @@
     flex: 0 0 auto;
     margin-inline-start: auto;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro, 11px);
+    font-size: var(--fl-font-micro);
     font-variant-numeric: tabular-nums;
   }
   .fl-sr {
@@ -852,7 +1085,7 @@
     position: relative;
     inset: auto;
     overflow: hidden;
-    border-radius: 6px;
+    border-radius: var(--fl-radius-sm);
     background: var(--fl-raised);
   }
   .fl-tile[data-layout='list'] .fl-tile-actions {
@@ -872,13 +1105,13 @@
     min-width: 0;
     overflow: hidden;
     color: var(--fl-text);
-    font-size: var(--fl-font-small, 13px);
+    font-size: var(--fl-font-small);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .fl-list-cell {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -898,6 +1131,23 @@
     .fl-tile-scrim,
     .fl-tile-select {
       transition: none;
+    }
+    /* Reduce Motion: nothing scales; the ring, tint and tick crossfade in. */
+    .fl-tile.is-selected .fl-tile-media,
+    .fl-tile.is-pressing .fl-tile-media {
+      scale: none;
+      border-radius: 0;
+    }
+    .fl-tile:hover :global(.fl-tile-image),
+    .fl-tile-select:hover > span {
+      scale: none;
+    }
+    /* The just-unlocked item crossfades in instead of sharpening. */
+    .fl-tile.is-revealing .fl-tile-media {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+    }
+    .fl-tile-ring {
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease) !important;
     }
   }
 </style>

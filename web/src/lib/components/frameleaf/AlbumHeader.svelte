@@ -20,7 +20,6 @@
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import { fromResponse, timeAgo } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
-  import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import {
     canEdit,
     defaultIconFor,
@@ -53,12 +52,11 @@
     getClassificationRule,
     type ClassificationRuleCreateDto,
     type ClassificationRuleResponseDto,
-    SharedLinkType,
     type AlbumResponseDto,
     type CreateAlbumDto,
     type MapMarkerResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountCircleOutline,
     mdiAccountMultipleOutline,
@@ -98,6 +96,10 @@
    * `GET /albums/{id}/map-marker` for the map and `GET /albums/tree` (loaded by the route)
    * for the album strip. What a viewer, an editor and the owner may do follows the roles the
    * server returned in `albumUsers`, so a revoked role removes the control on the next read.
+   *
+   * What an action did is said in a toast. The line under the toolbar is only for what stays
+   * true: that this person's role on the album changed while the page was open. "Shared links"
+   * opens the Share dialog at this album's links, where they are listed, edited and created.
    */
   interface Props {
     album: AlbumResponseDto;
@@ -170,13 +172,18 @@
 
   let iconOpen = $state(false);
   let shareOpen = $state(false);
+  let shareSection = $state<'people' | 'links'>('people');
+  const openShare = (section: 'people' | 'links' = 'people') => {
+    shareSection = section;
+    shareOpen = true;
+  };
   let coverOpen = $state(false);
   let optionsOpen = $state(false);
   let deleteOpen = $state(false);
   let leaveOpen = $state(false);
   let createOpen = $state(false);
-  let linkFormOpen = $state(false);
   let editOpen = $state(false);
+  /** The persistent line: this person's access to the album changed while the page was open. */
   let status = $state('');
 
   /** "Edit details" (`CollectionFormDialog`, CollectionHeader.jsx:1303-1308): name, description, icon, collection. */
@@ -186,7 +193,7 @@
       return false;
     }
     onAlbumChange(saved);
-    status = $t('frameleaf_albums_saved', { values: { name: saved.albumName || $t('unnamed_album') } });
+    toastManager.primary($t('frameleaf_albums_saved', { values: { name: saved.albumName || $t('unnamed_album') } }));
     await onRefresh();
     return true;
   };
@@ -231,7 +238,7 @@
   });
 
   const onRuleChanged = async (message: string) => {
-    status = message;
+    toastManager.primary(message);
     if (album.smartRuleId) {
       await loadRule(album.smartRuleId);
     }
@@ -263,7 +270,6 @@
       ruleOpen = false;
     }
     if (!access.owner) {
-      linkFormOpen = false;
       deleteOpen = false;
     }
     if (previous.editor && !access.editor) {
@@ -307,18 +313,18 @@
   /** The prototype's cover status (FL-83): whether the cover now follows the newest item. */
   const onCoverChange = (updated: AlbumResponseDto) => {
     onAlbumChange(updated);
-    status = updated.coverFollowsNewest
-      ? $t('frameleaf_album_cover_follows_newest')
-      : $t('frameleaf_album_cover_updated');
+    toastManager.primary(
+      updated.coverFollowsNewest ? $t('frameleaf_album_cover_follows_newest') : $t('frameleaf_album_cover_updated'),
+    );
   };
 
+  /** The service says `message` in a toast once the change is saved. */
   const save = async (dto: Parameters<typeof handleUpdateAlbumInfo>[1], message: string) => {
     const updated = await handleUpdateAlbumInfo(album.id, dto, { message });
     if (!updated) {
       return false;
     }
     onAlbumChange(updated);
-    status = message;
     return true;
   };
 
@@ -332,7 +338,9 @@
     if (!created) {
       return false;
     }
-    status = $t('frameleaf_albums_created', { values: { name: created.albumName || $t('unnamed_album') } });
+    toastManager.primary(
+      $t('frameleaf_albums_created', { values: { name: created.albumName || $t('unnamed_album') } }),
+    );
     await onRefresh();
     return true;
   };
@@ -371,22 +379,8 @@
     }
   };
 
-  const linkTarget = $derived({
-    type: SharedLinkType.Album,
-    albumId: album.id,
-    name,
-    previewAssetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
-    count: assetCount,
-  });
-
-  /** With links already on the album, the list is the useful place; otherwise create one. */
-  const openLinks = async () => {
-    if (album.hasSharedLink) {
-      await goto(Route.sharedLinks());
-      return;
-    }
-    linkFormOpen = true;
-  };
+  /** This album's links are listed, edited and created in the Share dialog. */
+  const openLinks = () => openShare('links');
 </script>
 
 <header class="album-header" aria-label={kindLabel}>
@@ -498,12 +492,12 @@
         {/if}
         <span class="dot" aria-hidden="true"></span>
         {#if others.length > 0}
-          <button type="button" class="members" onclick={() => (shareOpen = true)}>
+          <button type="button" class="members" onclick={() => openShare()}>
             <AlbumAvatarStack users={others} />
             <span>{$t('frameleaf_album_shared_with_count', { values: { count: others.length } })}</span>
           </button>
         {:else if owner}
-          <button type="button" class="members" onclick={() => (shareOpen = true)}>
+          <button type="button" class="members" onclick={() => openShare()}>
             <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="16" /></span>
             <span>{$t('frameleaf_album_private_share_it')}</span>
           </button>
@@ -549,7 +543,7 @@
       </button>
     {/if}
 
-    <button type="button" class="action" onclick={() => (shareOpen = true)}>
+    <button type="button" class="action" onclick={() => openShare()}>
       <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" />
       <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
     </button>
@@ -561,7 +555,7 @@
     -->
     {#if !compact}
       {#if owner}
-        <button type="button" class="action" onclick={() => void openLinks()}>
+        <button type="button" class="action" onclick={openLinks}>
           <Icon icon={mdiLinkVariant} size="18" />
           <span>{$t('shared_links')}</span>
         </button>
@@ -586,7 +580,7 @@
 
       <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
       {#if onToggleActivity}
-        <!-- The count badge and "Activity, N entries" name follow CollectionHeader.jsx:1290-1297. -->
+        <!-- Named for the panel it opens ("Likes & comments"); "Activity" is the app's own workspace. -->
         <button
           type="button"
           class="action"
@@ -595,7 +589,7 @@
           onclick={() => onToggleActivity?.()}
         >
           <Icon icon={mdiCommentTextOutline} size="18" />
-          <span>{$t('activity')}</span>
+          <span>{$t('frameleaf_album_comments_title')}</span>
           {#if likeCount + commentCount > 0}
             <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
           {/if}
@@ -611,7 +605,7 @@
       {/snippet}
       {#if compact}
         {#if owner}
-          <MenuItem onSelect={() => void openLinks()}>
+          <MenuItem onSelect={openLinks}>
             <Icon icon={mdiLinkVariant} size="18" />
             {$t('shared_links')}
           </MenuItem>
@@ -635,7 +629,7 @@
             <Icon icon={mdiCommentTextOutline} size="18" />
             {likeCount + commentCount > 0
               ? $t('frameleaf_album_activity_menu', { values: { count: likeCount + commentCount } })
-              : $t('activity')}
+              : $t('frameleaf_album_comments_title')}
           </MenuItem>
         {/if}
         <div class="menu-separator" role="separator"></div>
@@ -723,10 +717,15 @@
   {/if}
 </header>
 
-<AlbumShareDialog {album} bind:open={shareOpen} onChanged={onRefresh} onLeave={() => (leaveOpen = true)} />
+<AlbumShareDialog
+  {album}
+  section={shareSection}
+  bind:open={shareOpen}
+  onChanged={onRefresh}
+  onLeave={() => (leaveOpen = true)}
+/>
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
-<SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
 
 <AlbumCreateDialog
   kind={album.kind}
@@ -908,7 +907,7 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
   }
   .shared-by {
     display: inline-flex;
@@ -992,11 +991,12 @@
     background: var(--fl-canvas);
   }
   .count {
+    font-variant-numeric: var(--fl-numeric);
     padding: 0 0.375rem;
     font-size: 0.75rem;
     color: var(--fl-accent-text);
     background: var(--fl-accent);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
   }
   .spacer {
     flex: 1;

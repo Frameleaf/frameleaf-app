@@ -102,7 +102,7 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
       setPlayOriginalVideo,
     });
     expect(screen.getByRole('group', { name: 'frameleaf_viewer_video_source' })).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_play_original' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_source_original' }));
     expect(setPlayOriginalVideo).toHaveBeenCalledWith(true);
     expect(screen.queryByRole('button', { name: 'frameleaf_viewer_zoom_in' })).toBeNull();
   });

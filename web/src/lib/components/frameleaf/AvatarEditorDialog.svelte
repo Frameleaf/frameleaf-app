@@ -338,7 +338,7 @@
     position: relative;
     touch-action: none;
     cursor: grab;
-    outline-offset: 4px;
+    outline-offset: var(--fl-focus-offset);
     display: grid;
     place-items: center;
   }

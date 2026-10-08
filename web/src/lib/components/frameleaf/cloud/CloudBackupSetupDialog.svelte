@@ -3,7 +3,9 @@
    * "Set up cloud backup" (FL-160): the prototype's `BackupSetup`
    * (design/frameleaf/template/src/FrameleafCloud.jsx). Steps: Destination (your own bucket, checked for
    * SSE-C), Encryption key ("Generate a key for me" or "I'll maintain my own key"), the Recovery kit for
-   * a generated key, and Claim bucket, which claims it on the server and turns backup on.
+   * a generated key, and Claim bucket, which claims it on the server and turns backup on. With
+   * Frameleaf-managed storage the owner never chose a bucket, so that last step is "Turn on backup":
+   * one sentence, one button that claims and closes, and the bucket details behind a disclosure.
    *
    * An own key is made in this browser and must be downloaded, and saved somewhere other than this
    * server, before Continue is enabled; without a copy on this server (own-memory) the administrator
@@ -104,11 +106,12 @@
     target === 'managed' ? managedBucketName(dataRegion, instanceId) : settings.bucket.trim(),
   );
   const escrowValid = $derived(!escrow || isEscrowPassphraseValid(passphrase.first, passphrase.second));
+  const managed = $derived(target === 'managed');
   const stepLabels: Record<Step, string> = $derived({
     destination: $t('frameleaf_cloud_backup_step_destination'),
     key: $t('frameleaf_cloud_backup_step_key'),
     kit: $t('frameleaf_cloud_backup_step_kit'),
-    claim: $t('frameleaf_cloud_backup_step_claim'),
+    claim: managed ? $t('frameleaf_cloud_backup_turn_on') : $t('frameleaf_cloud_backup_step_claim'),
   });
 
   const canContinue = $derived.by(() => {
@@ -221,6 +224,13 @@
     step += 1;
   };
 
+  const finish = () => {
+    if (claim?.status) {
+      onDone(claim.status);
+    }
+    open = false;
+  };
+
   const claimBucket = async () => {
     const key = serverKey ? generated?.key : ownKey?.key;
     if (!key) {
@@ -238,13 +248,17 @@
           ...(keyMode === CloudBackupKeyMode.OwnMemory && { acknowledgement: typed }),
         },
       });
-      let message = $t('frameleaf_cloud_backup_claimed');
+      let message = managed ? $t('frameleaf_cloud_backup_turned_on') : $t('frameleaf_cloud_backup_claimed');
+      let said = false;
       if (serverKey && escrow) {
         // the bucket is claimed either way; a copy that could not be stored is said, not hidden
         try {
           status = await storeCloudBackupEscrow({ cloudBackupEscrowDto: { passphrase: passphrase.first } });
-          message = $t('frameleaf_cloud_backup_claimed_with_escrow');
+          message = managed
+            ? $t('frameleaf_cloud_backup_turned_on_with_escrow')
+            : $t('frameleaf_cloud_backup_claimed_with_escrow');
         } catch (error) {
+          said = true;
           message = $t('frameleaf_cloud_backup_escrow_failed', {
             values: { error: getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed') },
           });
@@ -252,18 +266,16 @@
       }
       passphrase = { first: '', second: '' };
       claim = { ok: true, message, status };
+      // Managed storage: one button turns backup on and closes. A key copy that could not be stored
+      // still has to be read, so the dialog stays open for that message.
+      if (managed && !said) {
+        finish();
+      }
     } catch (error) {
       claim = { ok: false, message: getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed') };
     } finally {
       busy = false;
     }
-  };
-
-  const finish = () => {
-    if (claim?.status) {
-      onDone(claim.status);
-    }
-    open = false;
   };
 </script>
 
@@ -445,6 +457,24 @@
         {/if}
       </div>
     {/if}
+  {:else if managed}
+    <p>{$t('frameleaf_cloud_backup_turn_on_body')}</p>
+    <details class="fc-disclosure fl-continuous-corners">
+      <summary>{$t('frameleaf_cloud_backup_details')}</summary>
+      <p class="fc-muted">{$t('frameleaf_cloud_backup_claim_body', { values: { marker: BUCKET_MARKER } })}</p>
+      <dl class="fc-facts">
+        <dt>{$t('frameleaf_cloud_backup_bucket')}</dt>
+        <dd><code>{bucketName}</code></dd>
+        <dt>{$t('frameleaf_cloud_backup_instance')}</dt>
+        <dd><code>{instanceId}</code></dd>
+      </dl>
+    </details>
+    {#if claim}
+      <p class={claim.ok ? 'fc-ok' : 'fc-refusal'} role={claim.ok ? 'status' : 'alert'}>
+        <Icon icon={claim.ok ? mdiCheckCircleOutline : mdiAlertCircleOutline} size="18" />
+        {claim.message}
+      </p>
+    {/if}
   {:else}
     <p>{$t('frameleaf_cloud_backup_claim_body', { values: { marker: BUCKET_MARKER } })}</p>
     <dl class="fc-facts">
@@ -477,6 +507,10 @@
     </Button>
     {#if current === 'claim' && claim?.ok}
       <Button variant="primary" onclick={finish}>{$t('frameleaf_cloud_backup_finish')}</Button>
+    {:else if current === 'claim' && managed}
+      <Button variant="primary" disabled={busy} onclick={() => void claimBucket()}>
+        {busy ? $t('frameleaf_cloud_backup_turning_on') : $t('frameleaf_cloud_backup_turn_on')}
+      </Button>
     {:else if current !== 'claim'}
       <Button variant="primary" disabled={!canContinue || busy} onclick={() => void next()}>
         {$t('frameleaf_cloud_backup_continue')}

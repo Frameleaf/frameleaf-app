@@ -17,8 +17,10 @@
    */
   import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { SORT_OPTIONS } from '$lib/components/frameleaf/results-sort';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
+  import { pop } from '$lib/frameleaf/motion';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { describeFilterFields, filterFieldEntityIds } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -38,6 +40,7 @@
     mdiChevronDown,
     mdiDotsHorizontal,
     mdiFormatListBulleted,
+    mdiInformationOutline,
     mdiMagnify,
     mdiMapMarker,
     mdiPlayBoxOutline,
@@ -128,14 +131,6 @@
     tags: mdiTagOutline,
     all: mdiTuneVariant,
   };
-  /** The prototype's five sorts, in its order (`App.jsx` "Sort assets"). */
-  const SORT_OPTIONS: { value: LibrarySort; label: Translations }[] = [
-    { value: 'captured-desc', label: 'frameleaf_library_sort_captured_newest' },
-    { value: 'captured-asc', label: 'frameleaf_library_sort_captured_oldest' },
-    { value: 'imported-desc', label: 'frameleaf_library_sort_added_newest' },
-    { value: 'filename', label: 'frameleaf_library_sort_filename' },
-    { value: 'rating', label: 'frameleaf_library_sort_rating' },
-  ];
 
   let menuOpen = $state(false);
   let filterControl = $state<HTMLDivElement>();
@@ -379,8 +374,9 @@
 
       {#if menuOpen}
         <ul
-          class="fl-filter-menu"
+          class="fl-filter-menu fl-pop"
           role="menu"
+          out:pop
           aria-label={$t('frameleaf_library_choose_filter')}
           bind:this={menu}
           onkeydown={menuKeydown}
@@ -415,7 +411,8 @@
         pressed={inspectorOpen}
         onclick={onToggleInspector}
       >
-        <Icon icon={mdiTuneVariant} size="18" aria-hidden />
+        <!-- Its own glyph: the Filter control beside it already uses the sliders. -->
+        <Icon icon={mdiInformationOutline} size="18" aria-hidden />
       </IconButton>
     {/if}
 
@@ -559,7 +556,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-panel-radius);
     background: var(--fl-panel);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+    box-shadow: var(--fl-shadow-2);
   }
   .fl-filter-menu button {
     display: flex;

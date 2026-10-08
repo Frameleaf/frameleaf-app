@@ -2,8 +2,12 @@
   import ShareCover from '../../../routes/(user)/shared-links/(list)/ShareCover.svelte';
   import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
+  import EmptyState from './EmptyState.svelte';
   import IconButton from './IconButton.svelte';
+  import SharedLinkCopyButton from './SharedLinkCopyButton.svelte';
   import SharedLinkForm from './SharedLinkForm.svelte';
+  import Skeleton from './Skeleton.svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import QrCode from './QrCode.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import '$lib/frameleaf/tokens.css';
@@ -16,7 +20,6 @@
   } from '$lib/frameleaf/shared-link-badges';
   import { Route } from '$lib/route';
   import { asUrl } from '$lib/services/shared-link.service';
-  import { copyToClipboard } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
     getAllAlbums,
@@ -30,7 +33,6 @@
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
     mdiClockOutline,
-    mdiContentCopy,
     mdiDeleteOutline,
     mdiDownloadOutline,
     mdiInformationOutline,
@@ -241,11 +243,8 @@
   /** An album link opens the album here; a selection opens the public page, as a visitor sees it. */
   const openPublic = (link: SharedLinkResponseDto) => window.open(asUrl(link), '_blank', 'noopener,noreferrer');
 
+  /** For screen readers: which link was copied or deleted (the toast says only that it happened). */
   let status = $state('');
-  const copy = async (link: SharedLinkResponseDto) => {
-    await copyToClipboard(asUrl(link));
-    status = $t('frameleaf_sharing.link_copied_for', { values: { name: titleOf(link) } });
-  };
 
   const openPicker = async () => {
     dialog = { kind: 'pick' };
@@ -366,14 +365,29 @@
 
   <div id="sl-panel" role="tabpanel" aria-labelledby={`sl-tab-${tab}`}>
     {#if loading}
-      <p class="muted">{$t('loading')}</p>
+      <!-- Cards at their final size while the links load, so the page does not jump. -->
+      <ul class="sl-grid" aria-busy="true" aria-label={$t('loading')}>
+        {#each [0, 1, 2] as placeholder (placeholder)}
+          <li class="sl-card sl-card-loading">
+            <Skeleton variant="block" aspect="16 / 9" />
+            <div class="sl-body"><Skeleton variant="text" lines={3} /></div>
+          </li>
+        {/each}
+      </ul>
     {:else if visible.length}
       <ul class="sl-grid">
-        {#each visible as link (link.id)}
+        {#each visible as link, index (link.id)}
           {@const title = titleOf(link)}
           {@const expired = isExpired(link)}
           {@const isAlbum = link.type === SharedLinkType.Album}
-          <li class="sl-card" data-expired={expired || undefined}>
+          <li
+            class="sl-card fl-reveal"
+            style:--i={index}
+            data-expired={expired || undefined}
+            animate:listFlip={{ count: visible.length }}
+            in:listEnter={{ count: visible.length }}
+            out:listLeave={{ count: visible.length }}
+          >
             {#if isAlbum && link.album}
               <a
                 class="sl-cover"
@@ -412,12 +426,11 @@
               <p class="sl-meta">{createdLabel(link)} · {link.slug ? `/s/${link.slug}` : link.id}</p>
             </div>
             <div class="sl-actions">
-              <IconButton
+              <SharedLinkCopyButton
+                value={asUrl(link)}
                 label={$t('frameleaf_sharing.copy_link_for', { values: { name: title } })}
-                onclick={() => void copy(link)}
-              >
-                <Icon icon={mdiContentCopy} size="18" />
-              </IconButton>
+                onCopied={() => (status = $t('frameleaf_sharing.link_copied_for', { values: { name: title } }))}
+              />
               <IconButton
                 label={$t('frameleaf_sharing.qr_code_for', { values: { name: title } })}
                 onclick={() => openQr(link)}
@@ -444,15 +457,15 @@
         {/each}
       </ul>
     {:else}
-      <div class="sl-empty">
-        <Icon icon={mdiLinkVariant} size="40" aria-hidden={true} />
-        <h2>
-          {links.length > 0 ? $t('frameleaf_sharing.empty_matches_title') : $t('frameleaf_sharing.empty_links_title')}
-        </h2>
-        <p>
-          {links.length > 0 ? $t('frameleaf_sharing.empty_matches_body') : $t('frameleaf_sharing.empty_links_body')}
-        </p>
-      </div>
+      <EmptyState
+        icon={mdiLinkVariant}
+        title={links.length > 0
+          ? $t('frameleaf_sharing.empty_matches_title')
+          : $t('frameleaf_sharing.empty_links_title')}
+        message={links.length > 0
+          ? $t('frameleaf_sharing.empty_matches_body')
+          : $t('frameleaf_sharing.empty_links_body')}
+      />
     {/if}
   </div>
 </section>
@@ -504,12 +517,17 @@
 {#if dialog?.kind === 'delete'}
   {@const link = dialog.link}
   <!-- AL-22: the prototype's delete dialog says who loses what, and what is kept. -->
-  <!-- The prototype focuses "Delete link" first and keeps both buttons in the dialog footer (SharedLinks.jsx:396-412). -->
+  <!--
+    The footer every Frameleaf confirmation has (ConfirmDialog): Cancel takes the first focus, so
+    Enter on open never deletes, and the destructive action is the filled danger button.
+  -->
   <Dialog title={$t('delete_shared_link')} closeLabel={$t('close')} bind:open={deleteOpen}>
     <p>{$t('frameleaf_sharing.delete_link_body', { values: { name: titleOf(link) } })}</p>
     {#snippet actions()}
-      <Button onclick={() => (deleteOpen = false)}>{$t('cancel')}</Button>
-      <Button variant="primary" initialFocus onclick={confirmDelete}>{$t('delete_link')}</Button>
+      <button type="button" class="button" data-initial-focus onclick={() => (deleteOpen = false)}
+        >{$t('cancel')}</button
+      >
+      <button type="button" class="button fl-danger" onclick={confirmDelete}>{$t('delete_link')}</button>
     {/snippet}
   </Dialog>
 {/if}
@@ -572,7 +590,7 @@
     font-size: 0.8125rem;
     min-height: 32px;
     padding: 4px 12px;
-    border-radius: 4px;
+    border-radius: var(--fl-radius-xs);
     cursor: pointer;
     transition:
       background var(--fl-motion) var(--fl-ease),
@@ -658,8 +676,8 @@
     font-size: var(--fl-font-micro);
     font-weight: 600;
     letter-spacing: 0.02em;
-    color: #fff;
-    background: color-mix(in srgb, var(--fl-danger), black 15%);
+    color: var(--fl-danger-text);
+    background: var(--fl-danger);
     border-radius: var(--fl-radius-pill);
     padding: 3px 9px;
   }
@@ -760,21 +778,8 @@
   .sl-danger:hover {
     border-color: color-mix(in srgb, var(--fl-danger), transparent 50%);
   }
-  .sl-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 60px 20px;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .sl-empty h2 {
-    color: var(--fl-text);
-    white-space: normal;
-  }
-  .sl-empty p {
-    margin: 0;
+  .sl-card-loading:hover {
+    box-shadow: none;
   }
   .sl-dialog-actions {
     display: flex;

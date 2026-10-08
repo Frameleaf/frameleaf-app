@@ -1,12 +1,13 @@
 <script lang="ts">
-  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
+  import Brand from '$lib/components/frameleaf/Brand.svelte';
   import summit from '$lib/assets/frameleaf/auth-summit.webp';
   import cabin from '$lib/assets/frameleaf/auth-cabin.webp';
   import '$lib/frameleaf/tokens.css';
   import '$lib/frameleaf/auth.css';
   import { mdiMoonWaningCrescent, mdiWhiteBalanceSunny } from '@mdi/js';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import type { Snippet } from 'svelte';
+  import { DURATION } from '$lib/frameleaf/tokens';
+  import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -17,6 +18,7 @@
     hero,
     keypad = 'auto',
     wide = false,
+    arrive = false,
   }: {
     title?: string;
     withHeader?: boolean;
@@ -26,7 +28,21 @@
     keypad?: 'auto' | 'always' | 'never';
     /** The prototype's `AuthShell wide` (onboarding): a wider single pane. */
     wide?: boolean;
+    /**
+     * The lockup plays Unfurl, the signature, once as the page appears. For the screen where
+     * Frameleaf introduces itself (sign-in) only; the PIN, password and maintenance screens are
+     * seen too often, or at the wrong moment, for it (BRAND.md decisions 6 and 9).
+     */
+    arrive?: boolean;
   } = $props();
+
+  // The entrance (auth.css): the photograph settles and the heading and card rise once. The
+  // attribute goes afterwards, so later changes inside the pane never replay it.
+  let entering = $state(true);
+  onMount(() => {
+    const timer = setTimeout(() => (entering = false), DURATION.hero + DURATION.sheet);
+    return () => clearTimeout(timer);
+  });
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const heroImage = $derived(hero === 'summit' ? summit : cabin);
@@ -45,12 +61,11 @@
   class:wide
   data-theme={appTheme}
   data-keypad={keypad}
+  data-entering={entering || undefined}
 >
   <div class="auth-pane">
     <div class="auth-pane-top">
-      <div class="auth-brand-plate">
-        <FrameleafLogo variant="inline" theme="dark" />
-      </div>
+      <span class="auth-brand"><Brand surface={appTheme} size="tiny" {arrive} /></span>
       <button
         type="button"
         class="button auth-theme-toggle"

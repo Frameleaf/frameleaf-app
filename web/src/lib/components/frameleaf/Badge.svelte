@@ -17,7 +17,8 @@
     value: string | number;
     /** Full translated meaning, for example "3 filters active". */
     label: string;
-    tone?: 'accent' | 'teal' | 'blue' | 'warning' | 'danger' | 'neutral';
+    /** `ai` is the reserved indigo: only for something Frameleaf's AI produced. */
+    tone?: 'accent' | 'teal' | 'blue' | 'warning' | 'danger' | 'neutral' | 'ai';
   } = $props();
 </script>
 
@@ -42,6 +43,8 @@
     /* The revision's floor: nothing below 11px. */
     font-size: var(--fl-font-micro);
     font-weight: 600;
+    /* Counts never jiggle as they change. */
+    font-variant-numeric: var(--fl-numeric);
     line-height: 1;
     border-radius: var(--fl-radius-pill);
   }
@@ -75,6 +78,10 @@
   .danger {
     color: var(--fl-danger-text);
     background: var(--fl-danger);
+  }
+  .ai {
+    color: var(--fl-ai-text);
+    background: var(--fl-ai);
   }
   .neutral {
     color: var(--fl-text);

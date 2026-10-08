@@ -47,7 +47,7 @@ test('round trip: export, interrupted import retried once, and refused wrong ori
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const editor = page.getByRole('dialog', { name: /^Edit / });
   await editor.getByRole('button', { name: 'Versions' }).click();
-  await page.getByRole('menuitem', { name: 'All versions and renders' }).click();
+  await page.getByRole('menuitem', { name: 'All versions' }).click();
   await expect(editor.getByRole('heading', { name: 'Edit in another app' })).toBeVisible();
 
   const download = page.waitForEvent('download');

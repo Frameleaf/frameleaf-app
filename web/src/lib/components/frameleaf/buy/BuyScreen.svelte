@@ -22,6 +22,8 @@
   import './buy.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import BuyActivated from '$lib/components/frameleaf/buy/BuyActivated.svelte';
   import BuyKeyField from '$lib/components/frameleaf/buy/BuyKeyField.svelte';
   import BuyPlanCard from '$lib/components/frameleaf/buy/BuyPlanCard.svelte';
@@ -81,6 +83,14 @@
   let linkError = $state('');
   let redeeming = $state(false);
   let checkout = $state<{ product: LicenseProductDto; title: string } | null>(null);
+  /** The product list could not be read: the page says so and offers to try again. */
+  let loadFailed = $state(false);
+  let loading = $state(false);
+  /** A failed "Remove key" or badge change, shown in the activated card where the action is. */
+  let actionError = $state('');
+  /** The store was opened in another tab: say so, and read the licence again when they come back. */
+  let awaitingStore = $state(false);
+  let checking = $state(false);
 
   const isAdmin = $derived(authManager.user.isAdmin);
   // FL-156: a licensed server (its supporter key, or this person's own key) pays less for plans
@@ -123,11 +133,52 @@
   const share = $derived(discount === null ? 0 : (products?.licensedDiscount ?? 0));
   const pct = $derived(discountPercent(products?.licensedDiscount ?? 0));
 
+  const loadServerLicense = async () => {
+    if (!isAdmin) {
+      return;
+    }
+    serverLicense = await getLicenseStatus().catch(() => serverLicense);
+    wallet = (await getCloudMlStatus().catch(() => null))?.wallet ?? wallet;
+  };
+
   const load = async () => {
-    products = await getLicenseProducts();
-    if (isAdmin) {
-      serverLicense = await getLicenseStatus().catch(() => null);
-      wallet = (await getCloudMlStatus().catch(() => null))?.wallet ?? null;
+    if (loading) {
+      return;
+    }
+    loading = true;
+    loadFailed = false;
+    try {
+      products = await getLicenseProducts();
+      await loadServerLicense();
+    } catch {
+      loadFailed = true;
+    } finally {
+      loading = false;
+    }
+  };
+
+  /** Back from the store tab: read the plan, key and credit again so a finished purchase shows. */
+  const recheck = async () => {
+    if (!awaitingStore || checking || busy) {
+      return;
+    }
+    checking = true;
+    const before = { plan: currentPlan?.state, key: !!serverKey || !!personal, credit: wallet?.availableUsd };
+    try {
+      await loadServerLicense();
+      await reloadUser();
+      const changed =
+        before.plan !== currentPlan?.state ||
+        before.key !== (!!serverKey || !!personal) ||
+        before.credit !== wallet?.availableUsd;
+      if (changed) {
+        awaitingStore = false;
+        success = $t('frameleaf_buy_store_updated');
+      }
+    } catch {
+      // still waiting: the next return to this tab, or "Check now", tries again
+    } finally {
+      checking = false;
     }
   };
 
@@ -178,6 +229,7 @@
 
   const remove = async (kind: 'server' | 'individual') => {
     busy = true;
+    actionError = '';
     try {
       if (kind === 'server') {
         serverLicense = await removeLicenseKey();
@@ -187,26 +239,29 @@
       await reloadUser();
       success = $t('frameleaf_buy_removed');
     } catch (error) {
-      keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
+      actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
       busy = false;
     }
   };
 
   const setBadgeHidden = async (hidden: boolean) => {
+    actionError = '';
     try {
       const response = await updateMyPreferences({
         userPreferencesUpdateDto: { purchase: { showSupportBadge: !hidden } },
       });
       authManager.setPreferences(withoutLockedRuleIds(response));
     } catch (error) {
-      keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
+      actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }
   };
 
   const openStore = (product: LicenseProductDto) => {
     if (product.storeUrl) {
       window.open(product.storeUrl, '_blank', 'noopener,noreferrer');
+      awaitingStore = true;
+      success = '';
     }
     checkout = null;
   };
@@ -221,6 +276,8 @@
           : null,
   );
 </script>
+
+<svelte:window onfocus={() => void recheck()} />
 
 <div class="buy-screen">
   <div class="buy-head">
@@ -254,8 +311,24 @@
     </p>
   {/if}
 
-  {#if !products}
-    <p class="auth-note" role="status">{$t('frameleaf_cloud_loading')}</p>
+  {#if awaitingStore}
+    <div class="buy-waiting" role="status">
+      <Icon icon={mdiOpenInNew} size="18" aria-hidden={true} />
+      <span>{$t('frameleaf_buy_store_waiting')}</span>
+      <Button disabled={checking} onclick={() => void recheck()}>
+        {checking ? $t('frameleaf_buy_store_checking') : $t('frameleaf_buy_store_check')}
+      </Button>
+      <button type="button" class="auth-link" onclick={() => (awaitingStore = false)}>{$t('dismiss')}</button>
+    </div>
+  {/if}
+
+  {#if loadFailed && !products}
+    <InlineError message={$t('frameleaf_buy_load_failed')} onRetry={load} retrying={loading} />
+  {:else if !products}
+    <div class="buy-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>
+      <Skeleton variant="block" height="220px" />
+      <Skeleton variant="block" height="220px" />
+    </div>
   {:else}
     <section class="buy-section" aria-labelledby="buy-cloud">
       <div class="buy-section-head">
@@ -379,6 +452,7 @@
         activatedAt={activeCard.activatedAt}
         {badgeHidden}
         {busy}
+        error={actionError}
         onBadgeHidden={(hidden) => void setBadgeHidden(hidden)}
         onRemove={activeCard.remove ? () => void remove(activeCard.kind) : undefined}
       />

@@ -15,7 +15,7 @@
 </script>
 
 <fieldset
-  class="flex h-full rounded-2xl bg-gray-200 ring-gray-400 has-focus-visible:ring dark:bg-immich-dark-gray dark:ring-gray-600"
+  class="flex h-full rounded-lg border border-(--fl-border) bg-(--fl-raised) ring-(--fl-accent) has-focus-visible:ring-2"
 >
   <legend class="sr-only">{label}</legend>
   {#each filters as filter, index (`${id}-${index}`)}
@@ -31,7 +31,7 @@
       />
       <label
         for="{id}-{index}"
-        class="flex h-full cursor-pointer items-center px-4 text-sm group-first-of-type:rounded-s-2xl group-last-of-type:rounded-e-2xl peer-checked:bg-gray-300 hover:bg-gray-300 peer-checked:dark:bg-gray-700 dark:hover:bg-gray-800"
+        class="flex h-full cursor-pointer items-center px-4 text-sm text-(--fl-muted) transition-colors group-first-of-type:rounded-s-lg group-last-of-type:rounded-e-lg peer-checked:bg-(--fl-panel) peer-checked:text-(--fl-text) hover:text-(--fl-text)"
       >
         {labels?.[index] ?? filter}
       </label>

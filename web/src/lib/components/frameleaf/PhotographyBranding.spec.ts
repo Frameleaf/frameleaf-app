@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import en from '$i18n/en.json';
 import { loadBrand, saveBrand, type Brand } from '$lib/frameleaf/photography/api';
+import { PhotographyError } from '$lib/frameleaf/photography/errors';
 import PhotographyBranding from './PhotographyBranding.svelte';
 
 const access = vi.hoisted(() => ({ changed: undefined as undefined | (() => void) }));
@@ -39,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(loadBrand).mockResolvedValue({ revision: 'loaded', brand, logoUnavailable: true });
 });
+beforeAll(() => addMessages('dev', en));
 it('edits real loaded settings and reports success only after the server resolves', async () => {
   const onSaved = vi.fn();
   let resolveSave!: (value: Awaited<ReturnType<typeof saveBrand>>) => void;
@@ -63,9 +67,7 @@ it('edits real loaded settings and reports success only after the server resolve
 });
 it('surfaces a conflict without announcing a save and reloads the latest server revision', async () => {
   const onSaved = vi.fn();
-  vi.mocked(saveBrand).mockRejectedValue(
-    new Error('Photography settings changed in another window. Reload before saving.'),
-  );
+  vi.mocked(saveBrand).mockRejectedValue(new PhotographyError('settings_changed', 409));
   render(PhotographyBranding, { onSaved });
   await screen.findByRole('textbox', { name: 'Studio name' });
   await fireEvent.click(screen.getByRole('button', { name: 'Save branding' }));

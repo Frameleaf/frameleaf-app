@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import tokens from '../../../../design/frameleaf/tokens.json';
+import brand from './brand-tokens.json';
+import {
+  BRAND_GRADIENT,
+  CONTROL_HEIGHT,
+  DURATION,
+  EASE,
+  EXIT_DURATION,
+  ICON_PX,
+  ICON_SIZE,
+  LOGO_CLEAR_SPACE,
+  LOGO_MIN_HEIGHT,
+  SNAPPY,
+  SPRING_STOPS,
+  STAGGER_MS,
+  UNFURL,
+  UNFURL_FROM,
+  Z_INDEX,
+} from './tokens';
 
 const css = readFileSync('src/lib/frameleaf/tokens.css', 'utf8');
 const baseline = readFileSync('src/lib/frameleaf/base.css', 'utf8');
@@ -75,6 +93,21 @@ const ratio = (first: number, second: number) => {
 
 const contrast = (a: string, b: string) => ratio(luminance(a), luminance(b));
 
+/** OKLCH chroma and hue of a hex colour: how much colour a neutral carries, and which. */
+const oklch = (color: string) => {
+  const [r, g, b] = [1, 3, 5].map((offset) => linear(Number.parseInt(color.slice(offset, offset + 2), 16) / 255));
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bAxis = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return {
+    lightness: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    chroma: Math.hypot(a, bAxis),
+    hue: ((Math.atan2(bAxis, a) * 180) / Math.PI + 360) % 360,
+  };
+};
+
 /** `share` of `top` composited over `bottom`, per channel, as a hex colour. */
 const composite = (top: string, bottom: string, share: number) => {
   const channel = (color: string, offset: number) => Number.parseInt(color.slice(offset, offset + 2), 16);
@@ -85,7 +118,7 @@ const composite = (top: string, bottom: string, share: number) => {
 };
 
 /** Foregrounds that must stay readable on every Frameleaf surface. */
-const foregrounds = ['text', 'muted', 'accent', 'teal', 'blue', 'warning', 'danger'] as const;
+const foregrounds = ['text', 'muted', 'accent', 'teal', 'blue', 'warning', 'danger', 'ai-ink'] as const;
 const surfaces = ['canvas', 'panel', 'raised'] as const;
 /** Foregrounds on the viewer chrome, which stays dark in both themes. */
 const viewerForegrounds = ['viewer-text', 'viewer-muted', 'viewer-focus'] as const;
@@ -104,7 +137,7 @@ const fillPairs = [
 describe('Frameleaf theme contract', () => {
   for (const theme of ['dark', 'light'] as const) {
     it(`matches approved ${theme} colors and readable foreground contrast`, () => {
-      for (const [name, value] of Object.entries(tokens[theme])) {
+      for (const [name, value] of Object.entries(tokens.color[theme])) {
         expect(themes[theme].get(`--fl-${name}`)).toBe(value);
       }
       for (const foreground of foregrounds) {
@@ -151,6 +184,506 @@ describe('Frameleaf theme contract', () => {
     });
   }
 
+  it('keeps design/frameleaf/tokens.json a copy of brand-tokens.json', () => {
+    // One source, two homes: the web reads brand-tokens.json; design/frameleaf/tokens.json is the
+    // same document for the design reference, bound by the brand asset inventory
+    // (scripts/frameleaf-brand-assets.py). Edit brand-tokens.json, copy it over, regenerate.
+    expect(brand.version).toBe(3);
+    expect(tokens).toEqual(brand);
+  });
+
+  for (const theme of ['dark', 'light'] as const) {
+    it(`keeps the ${theme} surfaces in the Ink family without tinting the stage`, () => {
+      const { hue, maxChroma, minStep, stage, chrome, viewer } = brand.surface;
+      const color = (name: string) => hex(theme, name);
+      // The canvas sits behind photographs: next to no colour of its own.
+      for (const name of stage) {
+        expect(oklch(color(name)).chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.stage);
+      }
+      // The chrome around it carries the brand ink, within a cap, all of one hue.
+      for (const name of chrome) {
+        const { chroma, hue: actual } = oklch(color(name));
+        expect(chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.chrome);
+        if (chroma > 0.004) {
+          expect(Math.abs(actual - hue), `${name} hue (${theme})`).toBeLessThanOrEqual(12);
+        }
+      }
+      // The viewer is neutral in both themes.
+      for (const name of viewer) {
+        expect(oklch(color(name)).chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.viewer);
+      }
+      // Each surface steps clearly from the one it sits on.
+      // Dark builds up from the canvas; light sets white panels on the canvas and wells into them.
+      const steps =
+        theme === 'dark'
+          ? [
+              ['canvas', 'panel'],
+              ['panel', 'raised'],
+              ['raised', 'border'],
+            ]
+          : [
+              ['panel', 'canvas'],
+              ['panel', 'raised'],
+              ['raised', 'border'],
+            ];
+      for (const [from, to] of steps) {
+        expect(contrast(color(from), color(to)), `${from} to ${to} (${theme})`).toBeGreaterThanOrEqual(minStep);
+      }
+    });
+
+    it(`keeps ${theme} non-text marks and outlines at 3:1`, () => {
+      const minimum = brand.focus.nonTextContrast;
+      // The focus ring is the accent; a control drawn by its edge alone uses border-strong; status
+      // colours double as icons. Each is checked on every surface it can sit on.
+      for (const mark of ['accent', 'border-strong', 'teal', 'blue', 'warning', 'danger', 'ai-ink']) {
+        for (const surface of surfaces) {
+          expect(
+            contrast(hex(theme, mark), hex(theme, surface)),
+            `${mark} on ${surface} (${theme})`,
+          ).toBeGreaterThanOrEqual(minimum);
+        }
+      }
+      for (const surface of viewerSurfaces) {
+        expect(contrast(hex(theme, 'viewer-focus'), hex(theme, surface))).toBeGreaterThanOrEqual(minimum);
+      }
+    });
+  }
+
+  it('reserves the lime for dark glass: accent marks on material and the viewer focus ring', () => {
+    expect(base.get('--fl-lime')).toBe(brand.lime.color);
+    expect(brand.brand.lime).toBe(brand.lime.color);
+    expect(themes.dark.get('--fl-on-material-accent')).toBe(brand.lime.color);
+    for (const theme of ['dark', 'light'] as const) {
+      expect(themes[theme].get('--fl-viewer-focus')).toBe(brand.lime.color);
+    }
+    // Never on a light surface: it cannot be read there.
+    expect(themes.light.get('--fl-on-material-accent')).not.toBe(brand.lime.color);
+    expect(contrast(brand.lime.color, brand.color.light.panel)).toBeLessThan(3);
+  });
+
+  it('takes the brand gradient from the logo and keeps it out of everything but brand moments', () => {
+    const gradient = base.get('--fl-brand-gradient');
+    expect(gradient).toBe(brand.brand.gradient.css);
+    // The stops and the axis are the logo frame's own (brand-kit/frameleaf-symbol.svg).
+    const symbol = readFileSync('../design/frameleaf/brand-kit/frameleaf-symbol.svg', 'utf8');
+    const frame =
+      /<linearGradient id="frame-gradient"[^>]*x1="(\d+)" y1="(\d+)" x2="(\d+)" y2="(\d+)">([\S\s]*?)<\/linearGradient>/.exec(
+        symbol,
+      );
+    expect(frame).not.toBeNull();
+    const [, x1, y1, x2, y2, stopMarkup] = frame as RegExpExecArray;
+    const stops = [...stopMarkup.matchAll(/offset="([\d.]+)" stop-color="(#[\da-f]{6})"/g)].map(([, offset, color]) => [
+      color,
+      Math.round(Number(offset) * 100),
+    ]);
+    expect(brand.brand.gradient.stops).toEqual(stops);
+    expect(BRAND_GRADIENT.stops).toEqual(stops);
+    const angle = 180 - (Math.atan2(Number(x2) - Number(x1), Number(y2) - Number(y1)) * 180) / Math.PI;
+    expect(Math.round(angle)).toBe(brand.brand.gradient.angle);
+    expect(BRAND_GRADIENT.angle).toBe(brand.brand.gradient.angle);
+    expect(gradient).toBe(
+      `linear-gradient(${brand.brand.gradient.angle}deg, ${stops.map(([color, at]) => `${color} ${at}%`).join(', ')})`,
+    );
+
+    // Only these files may name the token. Everything else uses the fl-brand-line and
+    // fl-brand-frame classes, or the Logo, so the gradient cannot spread to controls or photos.
+    const allowed = [
+      /^src\/lib\/frameleaf\/(tokens|base|auth|first-run-setup)\.css$/,
+      /^src\/lib\/frameleaf\/(BRAND\.md|brand-tokens\.json|tokens\.spec\.ts|tokens\.ts)$/,
+      /^src\/lib\/components\/frameleaf\/(EmptyState|Logo|Brand|Spinner|Skeleton)\.svelte$/,
+      /^src\/lib\/components\/frameleaf\/(setup|cloud|buy)\//,
+      /^src\/routes\/NavigationLoadingBar\.svelte$/,
+      /^src\/routes\/auth\//,
+    ];
+    const offenders = (readdirSync('src', { recursive: true }) as string[])
+      .map((file) => `src/${file.replaceAll('\\', '/')}`)
+      .filter((file) => /\.(svelte|css|ts)$/.test(file))
+      .filter((file) => allowed.every((pattern) => !pattern.test(file)))
+      .filter((file) => readFileSync(file, 'utf8').includes('--fl-brand-gradient'));
+    expect(offenders).toEqual([]);
+
+    // The two shapes the product draws it in.
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-line\) {[^}]*background: var\(--fl-brand-gradient\);/);
+    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-frame\) {[^}]*var\(--fl-brand-gradient\) border-box;/);
+    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-frame\) {[^}]*border-radius: 27%;/);
+    expect(brand.radius.frameRatio).toBe(0.27);
+  });
+
+  it('defines Unfurl, the signature motion, for marks only', () => {
+    expect(base.get('--fl-unfurl')).toBe(brand.motion.unfurl);
+    expect(UNFURL).toBe(brand.motion.unfurl);
+    expect(brand.motion.signature.ease).toBe(brand.motion.unfurl);
+    expect(brand.motion.signature.duration).toBe(brand.motion.duration.unfurl);
+    expect(UNFURL_FROM).toEqual({
+      scale: brand.motion.signature.from.scale,
+      rotate: brand.motion.signature.from.rotate,
+    });
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    expect(withoutComments).toMatch(
+      /\.frameleaf\.fl-unfurl\) {\s*transform-origin: bottom left;\s*animation:\s*fl-fade-in var\(--fl-duration-reduced\) var\(--fl-ease\) both,\s*fl-unfurl-in var\(--fl-duration-unfurl\) var\(--fl-unfurl\) both;/,
+    );
+    expect(withoutComments).toMatch(/@keyframes fl-unfurl-in {\s*from {\s*scale: 0\.86;\s*rotate: -8deg;/);
+    // It mirrors in a right-to-left page, and is a plain crossfade under Reduce Motion.
+    expect(withoutComments).toContain('@keyframes fl-unfurl-in-rtl {');
+    const reduced = blockAfter(withoutComments, '@media (prefers-reduced-motion: reduce)');
+    expect(reduced).toContain('.frameleaf.fl-unfurl,');
+  });
+
+  it('keeps the logo rules where scripts and specs can read them', () => {
+    expect(LOGO_CLEAR_SPACE).toBe(brand.logo.clearSpace);
+    expect(LOGO_MIN_HEIGHT).toEqual(brand.logo.minHeight);
+  });
+
+  it('lets page content use the baseline classes through .fl-scope without restyling elements', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const scoped = [...withoutComments.matchAll(/\.fl-scope ([^,){]+)/g)].map(([, rest]) => rest.trim());
+    expect(scoped.length).toBeGreaterThan(20);
+    for (const selector of scoped) {
+      // Classes only: a bare element selector under .fl-scope would restyle the pages already there.
+      expect(selector, selector).toMatch(/^\.(fl-[\w-]+|button|sr-only|muted)\b/);
+    }
+    for (const name of [
+      '.button',
+      '.sr-only',
+      '.muted',
+      '.fl-skeleton',
+      '.fl-spinner',
+      '.fl-reveal',
+      '.fl-type-title',
+    ]) {
+      expect(scoped, name).toContain(name);
+    }
+    // The ring and the height floor reach only what opts in by class.
+    expect(css).toMatch(
+      /\.fl-scope :where\(\.button, \.fl-control, \.fl-press\):focus-visible {\s*outline: var\(--fl-focus-ring\);/,
+    );
+    expect(css).toMatch(/\.fl-scope :where\(\.button, \.fl-control\) {\s*min-height: 44px;/);
+    expect(readFileSync('src/lib/components/layouts/UserPageLayout.svelte', 'utf8')).toMatch(
+      /class="[^"]*\bfl-scope\b/,
+    );
+  });
+
+  for (const theme of ['dark', 'light'] as const) {
+    it(`declares every ${theme} colour role and elevation from brand-tokens.json`, () => {
+      for (const [name, value] of Object.entries(brand.color[theme])) {
+        expect(themes[theme].get(`--fl-${name}`), `--fl-${name} (${theme})`).toBe(value);
+      }
+      for (const [level, value] of Object.entries(brand.elevation[theme])) {
+        expect(themes[theme].get(`--fl-shadow-${level}`), `--fl-shadow-${level} (${theme})`).toBe(value);
+      }
+    });
+  }
+
+  it('declares the type scale: size, line height, weight and tracking for every step', () => {
+    const sizeTokens: Record<string, string> = {
+      display: 'display',
+      title: 'title',
+      headline: 'headline',
+      hero: 'hero',
+      body: 'size',
+      callout: 'callout',
+      caption: 'small',
+      micro: 'micro',
+    };
+    for (const [step, { size, lineHeight, weight, tracking }] of Object.entries(brand.type)) {
+      const sizeToken = `--fl-font-${sizeTokens[step]}`;
+      expect(base.get(sizeToken), sizeToken).toBe(`${size}px`);
+      expect(base.get(`--fl-type-${step}`), `--fl-type-${step}`).toBe(
+        `${weight} var(${sizeToken}) / ${lineHeight} var(--fl-family-ui)`,
+      );
+      expect(base.get(`--fl-tracking-${step}`), `--fl-tracking-${step}`).toBe(tracking);
+      // Every step has its class in the baseline.
+      expect(baseline).toMatch(
+        new RegExp(String.raw`:where\(\.frameleaf \.fl-type-${step}, \.fl-scope \.fl-type-${step}\) {`),
+      );
+    }
+  });
+
+  it('declares the spacing, radius, icon, control, layer and focus scales', () => {
+    for (const [step, value] of Object.entries(brand.space)) {
+      expect(base.get(`--fl-space-${step}`), `--fl-space-${step}`).toBe(`${value}px`);
+      // A 4px grid, with one 2px half step.
+      expect(value % 4 === 0 || step === 'half').toBe(true);
+    }
+    const radiusTokens = {
+      xs: 'xs',
+      sm: 'sm',
+      control: 'control',
+      'control-compact': 'control-compact',
+      card: 'card',
+      capsule: 'capsule',
+      pill: 'pill',
+    };
+    for (const [name, token] of Object.entries(radiusTokens)) {
+      expect(base.get(`--fl-radius-${token}`), `--fl-radius-${token}`).toBe(
+        `${brand.radius[name as keyof typeof radiusTokens]}px`,
+      );
+    }
+    expect(base.get('--fl-radius-dialog')).toBe(`${brand.radius.sheet}px`);
+    // The frame ratio: a control's corner is 27% of its height, as the logo's frame is.
+    expect(Math.round(brand.control.default * brand.radius.frameRatio)).toBe(brand.radius.control);
+    expect(Math.round(brand.control.compact * brand.radius.frameRatio)).toBe(brand.radius['control-compact']);
+    // Each larger surface steps up by one grid unit, so nested corners stay concentric.
+    expect(brand.radius.card - brand.radius.control).toBe(4);
+    expect(brand.radius.capsule - brand.radius.card).toBe(4);
+    expect(brand.radius.sheet - brand.radius.capsule).toBe(4);
+
+    expect(Object.keys(brand.icon)).toHaveLength(6);
+    expect(ICON_PX).toEqual(brand.icon);
+    // The Icon component takes its size as a string; the same numbers, as strings.
+    expect(ICON_SIZE).toEqual(
+      Object.fromEntries(Object.entries(brand.icon).map(([name, value]) => [name, String(value)])),
+    );
+    for (const [name, value] of Object.entries(brand.icon)) {
+      expect(base.get(`--fl-icon-${name}`), `--fl-icon-${name}`).toBe(`${value}px`);
+    }
+
+    expect(CONTROL_HEIGHT).toEqual(brand.control);
+    expect(base.get('--fl-control-height')).toBe(`${brand.control.default}px`);
+    expect(base.get('--fl-control-height-touch')).toBe(`${brand.control.touch}px`);
+    expect(base.get('--fl-control-height-compact')).toBe(`${brand.control.compact}px`);
+    expect(brand.control.default).toBe(brand.touchTarget.iosPoints);
+    expect(brand.control.touch).toBe(brand.touchTarget.androidDp);
+
+    expect(Z_INDEX).toEqual(brand.z);
+    for (const [name, value] of Object.entries(brand.z)) {
+      expect(base.get(`--fl-z-${name}`), `--fl-z-${name}`).toBe(String(value));
+    }
+    // A modal sits above its scrim, a toast above a modal, a menu above a toast, a tooltip above all.
+    const { popover, scrim, modal, toast, menu, tooltip } = brand.z;
+    const layers = [popover, scrim, modal, toast, menu, tooltip];
+    expect(layers).toEqual([...layers].sort((a, b) => a - b));
+  });
+
+  it('defines one focus ring with one offset for controls and one for edge-to-edge items', () => {
+    expect(base.get('--fl-focus-ring')).toBe(`${brand.focus.width}px solid var(--fl-accent)`);
+    expect(base.get('--fl-focus-offset')).toBe(`${brand.focus.offset}px`);
+    expect(base.get('--fl-focus-inset')).toBe(`${brand.focus.inset}px`);
+    expect(css).toMatch(
+      /\.frameleaf :focus-visible,[^{]*{\s*outline: var\(--fl-focus-ring\);\s*outline-offset: var\(--fl-focus-offset\);/,
+    );
+    expect(css).toMatch(/\.frameleaf \.fl-focus-inset:focus-visible {\s*outline-offset: var\(--fl-focus-inset\);/);
+  });
+
+  it('declares one duration per motion pattern, mirrored for script use', () => {
+    const cssNames: Record<string, string> = {
+      fast: '--fl-motion-fast',
+      base: '--fl-motion',
+      slow: '--fl-motion-slow',
+      spring: '--fl-duration',
+    };
+    for (const [name, value] of Object.entries(brand.motion.duration)) {
+      expect(base.get(cssNames[name] ?? `--fl-duration-${name}`), name).toBe(`${value}ms`);
+    }
+    expect(DURATION).toEqual(brand.motion.duration);
+    for (const [name, value] of Object.entries(brand.motion.exit)) {
+      expect(base.get(`--fl-duration-${name}-out`), `${name} exit`).toBe(`${value}ms`);
+      // An exit is always quicker than its entrance.
+      expect(value).toBeLessThan(brand.motion.duration[name as keyof typeof brand.motion.exit]);
+    }
+    expect(EXIT_DURATION).toEqual(brand.motion.exit);
+    expect(base.get('--fl-stagger')).toBe(`${brand.motion.staggerMs}ms`);
+    expect(STAGGER_MS).toBe(brand.motion.staggerMs);
+    expect(base.get('--fl-ease')).toBe(brand.motion.ease);
+    expect(EASE).toBe(brand.motion.ease);
+    expect(SNAPPY).toBe(brand.motion.snappy);
+    // Seven patterns, and one signature on top of them.
+    expect(Object.keys(brand.motion.patterns).sort()).toEqual(
+      ['press', 'pop', 'sheet', 'dock', 'reflow', 'hero', 'reveal'].sort(),
+    );
+    expect(brand.motion.signature.name).toBe('Unfurl');
+    // The view transition's pseudo-elements hang off <html>: the hero duration comes from the root tokens.
+    expect(appCss).toMatch(/::view-transition-group\(fl-hero\) {\s*animation-duration: var\(--fl-duration-hero\);/);
+  });
+
+  it('mirrors the CSS spring as script stops', () => {
+    const entries = (base.get('--fl-spring') ?? '')
+      .replace(/^linear\(/, '')
+      .replace(/\)$/, '')
+      .split(',')
+      .map((entry) => entry.trim().split(/\s+/))
+      .map(([value, at]) => ({ value: Number(value), at: at ? Number(at.replace('%', '')) / 100 : undefined }));
+    entries[0].at ??= 0;
+    entries.at(-1)!.at ??= 1;
+    // A stop without a position sits evenly between its positioned neighbours, as linear() does.
+    for (let index = 0; index < entries.length; index++) {
+      if (entries[index].at !== undefined) {
+        continue;
+      }
+      let next = index;
+      while (entries[next].at === undefined) {
+        next++;
+      }
+      const from = entries[index - 1].at as number;
+      const step = ((entries[next].at as number) - from) / (next - index + 1);
+      for (let fill = index; fill < next; fill++) {
+        entries[fill].at = from + step * (fill - index + 1);
+      }
+    }
+    expect(SPRING_STOPS).toHaveLength(entries.length);
+    for (const [index, [at, value]] of SPRING_STOPS.entries()) {
+      expect(at).toBeCloseTo(entries[index].at as number, 4);
+      expect(value).toBe(entries[index].value);
+    }
+  });
+
+  it('defines one scrim, darker and unblurred under Increase Contrast and Reduce Transparency', () => {
+    expect(base.get('--fl-scrim')).toBe(brand.scrim.fill);
+    expect(base.get('--fl-scrim-blur')).toBe(brand.scrim.blur);
+    const fallback = blockAfter(css, '@media (prefers-contrast: more), (prefers-reduced-transparency: reduce)');
+    expect(fallback).toContain('--fl-scrim: rgb(0 0 0 / 67%);');
+    expect(fallback).toContain('--fl-scrim-blur: none;');
+    expect(baseline).toMatch(/\.frameleaf \.fl-scrim,[^{]*{[^}]*background: var\(--fl-scrim\);/);
+  });
+
+  it('puts the tokens on the document root without restyling it', () => {
+    // Portalled surfaces (toasts, kit modals) and the kit mapping in app.css read the root tokens.
+    expect(css).toMatch(/:root\.dark,\s*\.fl-media-viewer,\s*\.frameleaf\[data-theme='dark'\] {/);
+    expect(css).toMatch(/:root:not\(\.dark\),\s*\.frameleaf\[data-theme='light'\] {/);
+    expect(css).toMatch(/:root,\s*\.fl-media-viewer,\s*\.frameleaf {/);
+    const withoutComments = css.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    for (const [, selector, body] of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!selector.includes(':root')) {
+        continue;
+      }
+      // A rule that reaches the root declares custom properties and color-scheme, nothing else.
+      const declared = body
+        .split(';')
+        .map((declaration) => declaration.trim().split(':', 1)[0].trim())
+        .filter(Boolean);
+      for (const property of declared) {
+        expect(property.startsWith('--fl-') || property === 'color-scheme', `${property} on ${selector.trim()}`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('gives the legacy kit and Tailwind the brand from app.css', () => {
+    // Tailwind gray and neutral are the Frameleaf neutral ramp.
+    for (const ramp of ['gray', 'neutral']) {
+      for (const [step, value] of Object.entries(brand.neutral)) {
+        expect(appCss, `--color-${ramp}-${step}`).toContain(`--color-${ramp}-${step}: ${value};`);
+      }
+    }
+    // The ramp's ends are the theme surfaces, and its text steps stay readable on them.
+    expect(brand.neutral['50']).toBe(brand.color.light.canvas);
+    expect(brand.neutral['100']).toBe(brand.color.light.raised);
+    expect(brand.neutral['200']).toBe(brand.color.light.border);
+    expect(brand.neutral['600']).toBe(brand.color.light.muted);
+    expect(brand.neutral['400']).toBe(brand.color.dark.muted);
+    expect(brand.neutral['700']).toBe(brand.color.dark.border);
+    expect(brand.neutral['800']).toBe(brand.color.dark.raised);
+    expect(brand.neutral['900']).toBe(brand.color.dark.panel);
+    expect(brand.neutral['950']).toBe(brand.color.dark.canvas);
+    expect(contrast(brand.neutral['500'], '#ffffff')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(brand.neutral['500'], brand.neutral['100'])).toBeGreaterThanOrEqual(4);
+    expect(contrast(brand.neutral['400'], brand.neutral['800'])).toBeGreaterThanOrEqual(4.5);
+
+    // The legacy colour utilities are RGB triplets of the same tokens.
+    const triplet = (color: string) =>
+      [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16)).join(' ');
+    for (const [name, value] of [
+      ['--immich-primary', brand.color.light.accent],
+      ['--immich-bg', brand.color.light.panel],
+      ['--immich-fg', brand.color.light.text],
+      ['--immich-gray', brand.color.light.canvas],
+      ['--immich-dark-primary', brand.color.dark.accent],
+      ['--immich-dark-bg', brand.color.dark.canvas],
+      ['--immich-dark-fg', brand.color.dark.text],
+      ['--immich-dark-gray', brand.color.dark.raised],
+    ]) {
+      expect(appCss, name).toContain(`${name}: ${triplet(value)};`);
+    }
+
+    // The kit's primary, status and neutral variables point at the tokens in both themes.
+    const kit = { light: blockAfter(appCss, ':root,\n.light {'), dark: blockAfter(appCss, '\n.dark {') };
+    for (const theme of ['light', 'dark'] as const) {
+      expect(kit[theme]).toContain('--immich-ui-primary-500: var(--fl-accent);');
+      expect(kit[theme]).toContain('--immich-ui-danger-500: var(--fl-danger);');
+      expect(kit[theme]).toContain('--immich-ui-warning-500: var(--fl-warning);');
+      expect(kit[theme]).toContain('--immich-ui-info-500: var(--fl-blue);');
+      expect(kit[theme]).toContain('--immich-ui-dark: var(--fl-text);');
+      expect(kit[theme]).toContain('--immich-ui-default-border: var(--fl-border);');
+      for (const step of [50, 100, 200, 300, 400, 600, 700, 800, 900, 950]) {
+        expect(kit[theme], `primary-${step} (${theme})`).toMatch(
+          new RegExp(String.raw`--immich-ui-primary-${step}: color-mix\(in srgb, var\(--fl-accent\) \d+%, `),
+        );
+      }
+      // A filled kit button is `bg-<status> text-light`: `light` must be readable on every fill.
+      const light = /--immich-ui-light: var\(--fl-(\w+)\);/.exec(kit[theme])?.[1] as 'panel' | 'canvas';
+      expect(light).toBe(theme === 'light' ? 'panel' : 'canvas');
+      for (const fill of ['accent', 'danger', 'warning', 'blue'] as const) {
+        expect(
+          contrast(brand.color[theme][light], brand.color[theme][fill]),
+          `kit text on ${fill} (${theme})`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    // No trace of the earlier indigo.
+    expect(appCss).not.toContain('66 80 175');
+    expect(appCss).not.toContain('172 203 250');
+    // The app font is the Frameleaf stack, not the earlier bundled face.
+    expect(appCss).toMatch(/--font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;/);
+  });
+
+  it('defines the motion vocabulary as classes with exits and a Reduce Motion crossfade', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    for (const [name, duration] of [
+      ['pop', '--fl-duration-pop'],
+      ['sheet', '--fl-duration-sheet'],
+      ['dock', '--fl-duration-dock'],
+    ]) {
+      // Entrance: a fade plus the pattern's move on the spring.
+      expect(withoutComments).toMatch(
+        new RegExp(
+          String.raw`\.frameleaf\.fl-${name}\) {[^}]*animation:\s*fl-fade-in var\(--fl-duration-\w+\) var\(--fl-ease\) both,\s*fl-${name}-in var\(${duration}\) var\(--fl-spring\) both;`,
+        ),
+      );
+      // Exit: the pattern's own, shorter duration, never on the spring.
+      const exit = new RegExp(String.raw`\.frameleaf\.fl-${name}\.fl-leaving\) {\s*animation: ([^;]+);`).exec(
+        withoutComments,
+      )?.[1];
+      expect(exit, `${name} exit`).toContain(`var(--fl-duration-${name}-out)`);
+      expect(exit, `${name} exit`).not.toContain('--fl-spring');
+    }
+    expect(withoutComments).toMatch(
+      /\.frameleaf\.fl-reveal\) {\s*animation: fl-fade-in var\(--fl-motion\) var\(--fl-ease\) both;\s*animation-delay: calc\(min\(var\(--i, 0\), 8\) \* var\(--fl-stagger\)\);/,
+    );
+    for (const keyframes of [
+      'fl-fade-in',
+      'fl-fade-out',
+      'fl-pop-in',
+      'fl-sheet-in',
+      'fl-sheet-out',
+      'fl-dock-in',
+      'fl-dock-out',
+      'fl-skeleton-pulse',
+      'fl-spin',
+    ]) {
+      expect(withoutComments, keyframes).toContain(`@keyframes ${keyframes} {`);
+    }
+    // No literal durations or bare easings in the baseline's motion.
+    const motion = [...withoutComments.matchAll(/(?:animation|transition)(?:-duration)?:\s*([^;]+);/g)].map(
+      ([, value]) => value,
+    );
+    expect(motion.length).toBeGreaterThan(8);
+    for (const value of motion) {
+      expect(value, value).not.toMatch(/\b\d+m?s\b(?!\s*!important)|\bease(-in|-out|-in-out)?\b(?!\))/);
+    }
+    // Under Reduce Motion every pattern is one crossfade, important inside the layer so it outranks
+    // the unlayered clamp, and the continuous indicators hold still.
+    const reduced = blockAfter(withoutComments, '@media (prefers-reduced-motion: reduce)');
+    expect(reduced).toMatch(
+      /\.frameleaf\.fl-reveal\s*\) {\s*animation: fl-fade-in var\(--fl-duration-reduced\) var\(--fl-ease\) both !important;/,
+    );
+    expect(reduced).toMatch(
+      /\.fl-leaving\) {\s*animation: fl-fade-out var\(--fl-duration-reduced\) var\(--fl-ease\) both !important;/,
+    );
+    expect(reduced).toMatch(/\.frameleaf\.fl-spinner\s*\) {\s*animation: none !important;/);
+  });
+
   it('uses the approved type scale with nothing below 11px', () => {
     expect(base.get('--fl-font-size')).toBe('14px');
     expect(base.get('--fl-font-small')).toBe('12px');
@@ -169,10 +702,12 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-motion')).toBe('180ms');
     expect(base.get('--fl-motion-slow')).toBe('240ms');
     expect(base.get('--fl-ease')).toBeDefined();
-    // The September 24 continuous corners (apple-style.css, design/frameleaf/tokens.json).
-    expect(base.get('--fl-radius-control')).toBe('9px');
-    expect(base.get('--fl-radius-card')).toBe('12px');
-    expect(base.get('--fl-radius-dialog')).toBe('22px');
+    // Continuous corners on the frame ratio (BRAND.md decision 7).
+    expect(base.get('--fl-radius-control')).toBe('12px');
+    expect(base.get('--fl-radius-control-compact')).toBe('9px');
+    expect(base.get('--fl-radius-card')).toBe('16px');
+    expect(base.get('--fl-radius-capsule')).toBe('20px');
+    expect(base.get('--fl-radius-dialog')).toBe('24px');
     expect(base.get('--fl-radius-pill')).toBe('999px');
     expect(base.get('--fl-radius-sheet')).toBe('var(--fl-radius-dialog)');
     expect(`${tokens.radius.sheet}px`).toBe(base.get('--fl-radius-dialog'));
@@ -271,8 +806,11 @@ describe('Frameleaf theme contract', () => {
   });
 
   it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
-    const stack = /font-family: ([^;]+);/.exec(blockAfter(css, '.frameleaf {'))?.[1];
+    const stack = base.get('--fl-family-ui');
     expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));
+    expect(base.get('--fl-family-mono')).toBe(brand.font.mono);
+    // The scope sets its own face from the body step of the type scale.
+    expect(css).toMatch(/\.fl-media-viewer,\s*\.frameleaf {[^}]*font: var\(--fl-type-body\);/);
     expect(stack?.indexOf('-apple-system')).toBe(0);
     expect(stack?.indexOf('Inter')).toBeGreaterThan(stack?.indexOf('system-ui') ?? Infinity);
   });
@@ -285,9 +823,14 @@ describe('Frameleaf theme contract', () => {
 
   it('balances titles, uses tabular numbers, continuous corners and a springy press', () => {
     const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
-    expect(withoutComments).toMatch(
-      /:where\(\.frameleaf h1, \.frameleaf h2, \.frameleaf h3\) {\s*text-wrap: balance;\s*letter-spacing: -0\.015em;/,
-    );
+    expect(withoutComments).toMatch(/:where\(\.frameleaf h1, \.frameleaf h2, \.frameleaf h3\) {\s*text-wrap: balance;/);
+    // A heading's tracking follows its step of the type scale: it tightens as it grows.
+    expect(withoutComments).toMatch(/:where\(\.frameleaf h1\) {[^}]*letter-spacing: var\(--fl-tracking-display\);/);
+    expect(withoutComments).toMatch(/:where\(\.frameleaf h2\) {[^}]*letter-spacing: var\(--fl-tracking-headline\);/);
+    const tracking = (step: string) => Number((base.get(`--fl-tracking-${step}`) ?? '').replace('em', ''));
+    expect(tracking('hero')).toBeLessThan(tracking('display'));
+    expect(tracking('display')).toBeLessThan(tracking('title'));
+    expect(tracking('title')).toBeLessThan(tracking('headline'));
     // One transition list: the spring press and the colour/border changes of `.button` together.
     const transitions = [...withoutComments.matchAll(/transition:\s*([^;]+);/g)].map(([, value]) => value);
     const buttonTransition = transitions.find((value) => value.includes('var(--fl-spring)')) ?? '';
@@ -297,7 +840,8 @@ describe('Frameleaf theme contract', () => {
     expect(transitions.filter((value) => value.includes('transform'))).toHaveLength(1);
     // Drag handles never scale.
     expect(withoutComments).toMatch(/button:active:not\(:disabled, \.fl-no-press\)/);
-    expect(withoutComments).toContain('font-variant-numeric: tabular-nums;');
+    expect(withoutComments).toContain('font-variant-numeric: var(--fl-numeric);');
+    expect(base.get('--fl-numeric')).toBe(brand.numerals.counts);
     const corners = blockAfter(withoutComments, '@supports (corner-shape: squircle)');
     expect(corners).toContain('corner-shape: squircle;');
     expect(corners).toContain('calc(var(--fl-radius-sheet) * 1.8)');
@@ -340,7 +884,10 @@ describe('Frameleaf theme contract', () => {
   });
 
   it('keeps the prototype baseline below component styles and the touch-target floor', () => {
-    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    // Keyframes have no selectors of their own to scope; everything else is checked.
+    const withoutComments = baseline
+      .replaceAll(/\/\*[\S\s]*?\*\//g, '')
+      .replaceAll(/@keyframes [\w-]+ {(?:[^{}]*{[^{}]*})*\s*}/g, '');
     const selectors = [...withoutComments.matchAll(/([^{}]+)\{/g)]
       .map(([, selector]) => selector.trim())
       .filter((selector) => selector.length > 0 && !selector.startsWith('@'));
@@ -425,14 +972,33 @@ describe('Frameleaf theme contract', () => {
       expect(other, `unexpected --fl-accent-hover in the ${theme} theme`).toBeDefined();
       const fill = mix(hex(theme, 'accent'), other === 'white' ? '#ffffff' : hex(theme, 'text'), Number(share) / 100);
       expect(contrast(hex(theme, 'accent-text'), fill), `accent-text on hover (${theme})`).toBeGreaterThanOrEqual(4.5);
+      expect(hover).toBe(brand.accent.hover[theme]);
+
+      // Pressed goes the other way from hover in the dark theme and further the same way in the light.
+      const pressed = themes[theme].get('--fl-accent-pressed');
+      expect(pressed).toBe(brand.accent.pressed[theme]);
+      const [, pressedOther, pressedShare] =
+        /^color-mix\(in srgb, var\(--fl-accent\), (black|var\(--fl-text\)) (\d+)%\)$/.exec(pressed ?? '') ?? [];
+      expect(pressedOther, `unexpected --fl-accent-pressed in the ${theme} theme`).toBeDefined();
+      const pressedFill = mix(
+        hex(theme, 'accent'),
+        pressedOther === 'black' ? '#000000' : hex(theme, 'text'),
+        Number(pressedShare) / 100,
+      );
+      expect(
+        contrast(hex(theme, 'accent-text'), pressedFill),
+        `accent-text on pressed (${theme})`,
+      ).toBeGreaterThanOrEqual(4.5);
     }
     // The prototype's own lightening mix stays in the dark theme.
     expect(themes.dark.get('--fl-accent-hover')).toBe('color-mix(in srgb, var(--fl-accent), white 10%)');
   });
 
   it('never leaks the prototype stylesheet into production', () => {
-    // Every rule stays under the .frameleaf scope; no bare element, html/body or :root
-    // rules, so mounting Theme.svelte cannot restyle the surrounding application.
+    // Every rule stays under the .frameleaf scope; no bare element or html/body rules, so
+    // mounting Theme.svelte cannot restyle the surrounding application. The document root is named
+    // only beside a .frameleaf selector, in rules that declare custom properties alone (checked in
+    // 'puts the tokens on the document root without restyling it').
     const withoutComments = css.replaceAll(/\/\*[\S\s]*?\*\//g, '').replaceAll(/@import[^;]+;/g, '');
     const selectors = [...withoutComments.matchAll(/([^{}]+)\{/g)]
       .map(([, selector]) => selector.trim())
@@ -440,6 +1006,7 @@ describe('Frameleaf theme contract', () => {
     expect(selectors.length).toBeGreaterThan(0);
     for (const selector of selectors) {
       expect(selector, 'unscoped rule').toContain('.frameleaf');
+      expect(selector, 'bare element rule').not.toMatch(/(^|,)\s*(html|body|\*)\b/);
     }
   });
 });

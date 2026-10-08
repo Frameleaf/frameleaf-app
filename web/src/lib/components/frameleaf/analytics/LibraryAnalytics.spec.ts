@@ -44,7 +44,7 @@ describe('LibraryAnalytics', () => {
   });
 
   it('shows measured values, the whole volume beside the selection, and no sample-data badge', () => {
-    render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+    render(LibraryAnalytics, { report: analyticsReportFixture() });
     expect(screen.getByRole('heading', { level: 1, name: 'Library analytics' })).toBeInTheDocument();
     expect(screen.queryByText(/sample data/i)).not.toBeInTheDocument();
     expect(screen.getByText('Volume used')).toBeInTheDocument();
@@ -57,7 +57,6 @@ describe('LibraryAnalytics', () => {
   it('shows unknown history instead of a chart, and an unreadable volume as unknown', () => {
     const base = analyticsReportFixture();
     render(LibraryAnalytics, {
-      scopes,
       report: analyticsReportFixture({
         history: { ...base.history, state: AnalyticsState.Unknown, lastObservedAt: null },
         host: {
@@ -78,7 +77,6 @@ describe('LibraryAnalytics', () => {
   it('marks stale history with when it was last collected', () => {
     const base = analyticsReportFixture();
     render(LibraryAnalytics, {
-      scopes,
       report: analyticsReportFixture({ history: { ...base.history, state: AnalyticsState.Stale } }),
     });
     expect(screen.getByText('Out of date')).toBeInTheDocument();
@@ -87,7 +85,6 @@ describe('LibraryAnalytics', () => {
 
   it('leaves processing out for an account instead of drawing zeros', () => {
     render(LibraryAnalytics, {
-      scopes,
       report: analyticsReportFixture({
         scope: scopes[1].value,
         scopeKind: AnalyticsScopeKind.Account,
@@ -110,14 +107,14 @@ describe('LibraryAnalytics', () => {
   });
 
   it('labels the processing cost as an estimate, never a charge', () => {
-    render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+    render(LibraryAnalytics, { report: analyticsReportFixture() });
     const row = screen.getByRole('rowheader', { name: 'Estimated cloud processing' }).closest('tr')!;
     expect(within(row).getByText(/Not a bill\./)).toBeInTheDocument();
   });
 
   it('puts the plotted arrivals in the data table, totalling the upload calendar', () => {
     const report = analyticsReportFixture();
-    const { container } = render(LibraryAnalytics, { scopes, report });
+    const { container } = render(LibraryAnalytics, { report });
     const arrivals = container.querySelector(':scope [data-table-id="arrivals"] tbody')!;
     const cells = [...arrivals.querySelectorAll(':scope > tr')].map((row) =>
       [...row.querySelectorAll(':scope > td')].reduce((sum, cell) => sum + Number(cell.textContent), 0),
@@ -133,7 +130,7 @@ describe('LibraryAnalytics', () => {
   });
 
   it('exports the CSV in the browser without any request', async () => {
-    render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+    render(LibraryAnalytics, { report: analyticsReportFixture() });
     const summary = screen.getByRole('region', { name: 'Backup & hosting' });
     await waitFor(() => expect(summary).toHaveAttribute('aria-busy', 'false'));
     // Initial summary status requests are separate from the browser-only export action.
@@ -148,13 +145,10 @@ describe('LibraryAnalytics', () => {
     fetchSpy.mockRestore();
   });
 
-  it('changes scope through the address so the page load reads the new report', async () => {
-    render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
-    await fireEvent.change(screen.getByLabelText('Library scope'), { target: { value: scopes[1].value } });
-    expect(goto).toHaveBeenCalledWith(
-      expect.stringContaining(`scope=${encodeURIComponent(scopes[1].value)}`),
-      expect.anything(),
-    );
+  it('leaves the scope to the command center picker: no second scope select on the page', () => {
+    render(LibraryAnalytics, { report: analyticsReportFixture() });
+    expect(screen.queryByLabelText('Library scope')).toBeNull();
+    expect(screen.getByLabelText('Date range')).toBeInTheDocument();
   });
 
   describe('the dashboard (FL-79, AnalyticsDashboard.jsx)', () => {
@@ -168,7 +162,7 @@ describe('LibraryAnalytics', () => {
       container.querySelector<HTMLElement>(`[data-panel="${CSS.escape(id)}"]`)!;
 
     it('opens with the library total, its span, fact chips and the four tiles', () => {
-      render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      render(LibraryAnalytics, { report: analyticsReportFixture() });
       const hero = screen.getByRole('region', { name: 'Library at a glance' });
       expect(within(hero).getByText('100')).toBeInTheDocument();
       expect(within(hero).getByText('8 years')).toBeInTheDocument();
@@ -184,7 +178,7 @@ describe('LibraryAnalytics', () => {
 
     it('makes every breakdown add up to the report total', () => {
       const report = analyticsReportFixture();
-      const { container } = render(LibraryAnalytics, { scopes, report });
+      const { container } = render(LibraryAnalytics, { report });
       const total = report.summary.items - report.insights!.hiddenItems;
       for (const id of ['years', 'punchcard', 'lenses', 'focal-lengths', 'orientation', 'places']) {
         expect(tableTotal(container, id)).toBe(total);
@@ -210,7 +204,7 @@ describe('LibraryAnalytics', () => {
           { name: null, kind: AnalyticsCameraKind.Unknown, count: 20 },
         ],
       });
-      const { container } = render(LibraryAnalytics, { scopes, report });
+      const { container } = render(LibraryAnalytics, { report });
       expect(tableTotal(container, 'cameras')).toBe(report.summary.items - insights.hiddenItems);
       expect(screen.getByRole('note')).toHaveTextContent(
         '4 hidden items are left out of the breakdowns below, so they add up to 96.',
@@ -219,7 +213,7 @@ describe('LibraryAnalytics', () => {
     });
 
     it('ranks leaders and keeps catch-all rows last without setting the bar scale', () => {
-      const { container } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const { container } = render(LibraryAnalytics, { report: analyticsReportFixture() });
       const places = within(panel(container, 'places')).getByRole('list', { name: 'Where they were taken' });
       const rows = within(places).getAllByRole('listitem');
       expect(rows.map((row) => row.querySelector(':scope .name')!.textContent)).toEqual([
@@ -238,7 +232,7 @@ describe('LibraryAnalytics', () => {
     });
 
     it('draws captures per year, the punchcard peak, formats and coverage from the report', () => {
-      const { container } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const { container } = render(LibraryAnalytics, { report: analyticsReportFixture() });
       expect(
         within(panel(container, 'years')).getByRole('heading', { name: '8 years, 2019 to today' }),
       ).toBeInTheDocument();
@@ -267,7 +261,7 @@ describe('LibraryAnalytics', () => {
 
     it('shows the daily heatmap with an exact-count table for the chosen date', async () => {
       const report = analyticsReportFixture();
-      const { container } = render(LibraryAnalytics, { scopes, report });
+      const { container } = render(LibraryAnalytics, { report });
       const days = panel(container, 'days');
       expect(within(days).getByRole('heading', { name: '7 captures over 7 days' })).toBeInTheDocument();
       // the accessible name starts with the visible text (WCAG 2.5.3)
@@ -281,7 +275,6 @@ describe('LibraryAnalytics', () => {
 
     it('hides people and places outside the owner scope and says why', () => {
       const { container } = render(LibraryAnalytics, {
-        scopes,
         report: analyticsReportFixture({ insights: analyticsInsightsFixture({ peopleAndPlaces: null }) }),
       });
       expect(panel(container, 'people')).toBeNull();
@@ -294,7 +287,6 @@ describe('LibraryAnalytics', () => {
     it('shows the library records without inventing names it was not given', () => {
       const base = analyticsInsightsFixture();
       const { container } = render(LibraryAnalytics, {
-        scopes,
         report: analyticsReportFixture({
           insights: { ...base, records: { ...base.records, largestFile: { bytes: 3 * 1024 ** 3, name: null } } },
         }),
@@ -308,7 +300,7 @@ describe('LibraryAnalytics', () => {
     });
 
     it('puts every insight breakdown in the CSV export', async () => {
-      render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      render(LibraryAnalytics, { report: analyticsReportFixture() });
       await fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
       const [blob] = downloadBlob.mock.calls[0] as [Blob, string];
       const csv = await blob.text();
@@ -318,14 +310,14 @@ describe('LibraryAnalytics', () => {
     });
 
     it('links the People panel to recognition settings for an administrator, and to People otherwise', () => {
-      const { container, unmount } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const { container, unmount } = render(LibraryAnalytics, { report: analyticsReportFixture() });
       expect(within(panel(container, 'people')).getByRole('link', { name: /Recognition/ })).toHaveAttribute(
         'href',
         '/user-settings?area=intelligence',
       );
       unmount();
       auth.user = { id: 'me', isAdmin: false };
-      const { container: own } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const { container: own } = render(LibraryAnalytics, { report: analyticsReportFixture() });
       expect(within(panel(own, 'people')).queryByRole('link', { name: /Recognition/ })).toBeNull();
       expect(within(panel(own, 'people')).getByRole('link', { name: /People/ })).toHaveAttribute('href', '/people');
     });
@@ -333,7 +325,6 @@ describe('LibraryAnalytics', () => {
     it('splits the whole volume by what the server measured, as shares of the capacity', () => {
       const base = analyticsReportFixture();
       const { container } = render(LibraryAnalytics, {
-        scopes,
         report: analyticsReportFixture({
           host: {
             ...base.host,
@@ -364,7 +355,6 @@ describe('LibraryAnalytics', () => {
     it('still draws the volume when free space could not be read', () => {
       const base = analyticsReportFixture();
       const { container } = render(LibraryAnalytics, {
-        scopes,
         report: analyticsReportFixture({ host: { ...base.host, freeBytes: null } }),
       });
       const storage = within(panel(container, 'storage'));

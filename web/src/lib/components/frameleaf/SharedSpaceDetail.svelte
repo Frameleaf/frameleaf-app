@@ -550,7 +550,7 @@
         type="button"
         class="action"
         aria-pressed={panel === 'activity'}
-        aria-label={$t('frameleaf_album_activity_button', { values: { count: activityCount } })}
+        aria-label={$t('frameleaf_spaces_activity_button', { values: { count: activityCount } })}
         onclick={() => choosePanel('activity')}
       >
         <Icon icon={mdiCommentTextOutline} size="18" />
@@ -820,7 +820,7 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
   }
   .badge-pill::first-letter {
     text-transform: uppercase;
@@ -893,11 +893,12 @@
     background: var(--fl-canvas);
   }
   .count {
+    font-variant-numeric: var(--fl-numeric);
     padding: 0 0.375rem;
     font-size: 0.75rem;
     color: var(--fl-accent-text);
     background: var(--fl-accent);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
   }
   .spacer {
     flex: 1;

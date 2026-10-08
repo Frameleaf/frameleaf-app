@@ -650,7 +650,7 @@
   .shortcut-list small {
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   button.link {
     min-height: 0;

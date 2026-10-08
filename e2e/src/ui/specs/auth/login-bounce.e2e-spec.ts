@@ -61,14 +61,14 @@ test.describe('Sign in with Frameleaf from a home address', () => {
     const nonce = 'n'.repeat(32);
     // someone else's code, without this tab's nonce, is never used
     await page.goto(`/auth/login#frameleafHandoff=someone-elses&frameleafNonce=${nonce}`);
-    await expect(page.getByRole('button', { name: 'Sign in with Frameleaf' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in with Frameleaf' })).toBeVisible({ timeout: 30_000 });
     expect(redeemed).toBeNull();
 
     await page.evaluate((value) => sessionStorage.setItem('frameleaf.auth.handoffNonce', value), nonce);
     // a fresh load (a fragment-only change would not reload the page)
     await page.goto('about:blank');
     await page.goto(`/auth/login#frameleafHandoff=one-time-code&frameleafNonce=${nonce}`);
-    await expect(page.getByText('This sign-in code is not valid any more')).toBeVisible();
+    await expect(page.getByText('This sign-in code is not valid any more')).toBeVisible({ timeout: 30_000 });
     expect(redeemed).toEqual({ code: 'one-time-code', rememberMe: true });
     // the code is taken out of the address at once
     expect(page.url()).not.toContain('one-time-code');

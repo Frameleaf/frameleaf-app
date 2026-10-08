@@ -44,3 +44,30 @@ describe('focused HDR viewing', () => {
     }
   });
 });
+
+describe('holding the full-size requests', () => {
+  it('shows the thumbnail and asks for the preview only once the hold is released', async () => {
+    const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+    const props = { asset, container: { width: 400, height: 400 } };
+    const view = render(AdaptiveImage, { ...props, holdFullSize: true });
+    await fireEvent.load(await view.findByTestId('thumbnail'));
+    await Promise.resolve();
+    expect(view.queryByTestId('preview')).toBeNull();
+
+    await view.rerender({ ...props, holdFullSize: false });
+    expect(await view.findByTestId('preview')).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('asks for the preview as soon as the thumbnail settles when the hold was released first', async () => {
+    const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+    const props = { asset, container: { width: 400, height: 400 } };
+    const view = render(AdaptiveImage, { ...props, holdFullSize: true });
+    const thumbnail = await view.findByTestId('thumbnail');
+    await view.rerender({ ...props, holdFullSize: false });
+    expect(view.queryByTestId('preview')).toBeNull();
+    await fireEvent.load(thumbnail);
+    expect(await view.findByTestId('preview')).toBeInTheDocument();
+    view.unmount();
+  });
+});

@@ -91,7 +91,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 11px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   caption {
     padding: 10px 0;
@@ -123,7 +123,7 @@
   }
   summary:focus-visible,
   .scroll:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
 </style>

@@ -107,10 +107,8 @@
           </button>
           <p class="name">{moment.asset.originalFileName}</p>
           <div class="actions">
-            <button type="button" class="link" onclick={() => onPlay(moment)}>
-              {$t('frameleaf_moments_play_from', { values: { time } })}
-            </button>
-            <!-- Only once frames are cut, and not for the moment that already is the cover. -->
+            <!-- The thumbnail is the one way to play; only the cover action sits beside the name.
+                 It appears once frames are cut, and not for the moment that already is the cover. -->
             {#if isCover}
               <span class="is-cover">
                 <Icon icon={mdiImageCheckOutline} size="14" aria-hidden="true" />
@@ -183,8 +181,8 @@
   }
   .play:focus-visible,
   .link:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .play img {
     width: 100%;

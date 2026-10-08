@@ -377,7 +377,7 @@
   .head-actions .icon {
     padding: 0.375rem;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: transparent;
   }
   .older {
@@ -410,7 +410,7 @@
   .avatar-gap {
     inline-size: 2rem;
     block-size: 2rem;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-border);
     flex: none;
   }
@@ -429,7 +429,7 @@
     display: inline-block;
     margin-inline-start: 0.375rem;
     padding: 0 0.375rem;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-accent);
     color: var(--fl-accent-text);
     font-size: 0.6875rem;

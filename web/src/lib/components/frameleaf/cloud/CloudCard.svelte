@@ -13,14 +13,17 @@
     status?: string;
     tone?: 'muted' | 'ok' | 'warning' | 'danger' | 'running';
     icon?: string;
+    /** The link-to-Cloud card only: the brand hairline along the top edge (BRAND.md decision 3). */
+    brand?: boolean;
     children?: Snippet;
   };
 
-  let { title, description, status, tone = 'muted', icon, children }: Props = $props();
+  let { title, description, status, tone = 'muted', icon, brand = false, children }: Props = $props();
   const titleId = $props.id();
 </script>
 
-<section class="fc-card fl-continuous-corners" aria-labelledby={titleId}>
+<section class="fc-card fl-continuous-corners" class:is-brand={brand} aria-labelledby={titleId}>
+  {#if brand}<span class="fc-card-brand fl-brand-line" aria-hidden="true"></span>{/if}
   <div class="fc-card-title">
     {#if icon}
       <span class="fc-card-icon"><Icon {icon} size="18" /></span>

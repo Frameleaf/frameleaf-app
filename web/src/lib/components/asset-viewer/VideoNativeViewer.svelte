@@ -787,12 +787,12 @@
   }
 
   .playback-retry:hover {
-    background: #ffffff12;
+    background: color-mix(in srgb, var(--fl-viewer-text) 7%, transparent);
   }
 
   .playback-retry:focus-visible {
     outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline-offset: var(--fl-focus-offset);
   }
 
   media-controller {

@@ -5,11 +5,17 @@ import {
   areaForPersonalSection,
   areaSectionKeys,
   areaForSection,
+  BACKUP_PAGES,
+  backupPageFor,
   commandCenterUrl,
   defaultSettingsArea,
   directoryGroup,
+  honoursScope,
   isAreaAvailable,
+  isBackupSection,
   isScreenArea,
+  presentedArea,
+  presentedAreaForSection,
   resolveSettingsArea,
   resolveSettingsSection,
   searchSettingsSections,
@@ -104,6 +110,40 @@ describe('Frameleaf settings areas', () => {
     expect(isAreaAvailable(area('backups'), true)).toBe(true);
     expect(areaForSection('cloud-backup')).toBe('cloud');
     expect(areaForSection('backup')).toBe('backup');
+  });
+
+  it('shows every backup page under the one Backup area without moving its address (design review finding 66)', () => {
+    expect(BACKUP_PAGES.map(({ id }) => id)).toEqual(['destinations', 'schedule', 'restore']);
+    // The schedule, the backups manager and Cloud backup are shown in Backup…
+    expect(presentedArea('backup', 'backup')).toBe('backups');
+    expect(presentedArea('maintenance', 'backups')).toBe('backups');
+    expect(presentedArea('cloud', 'cloud-backup')).toBe('backups');
+    expect(presentedAreaForSection('backup')).toBe('backups');
+    expect(backupPageFor('backups')).toBe('destinations');
+    expect(backupPageFor('backup', 'backup')).toBe('schedule');
+    expect(backupPageFor('maintenance', 'backups')).toBe('restore');
+    expect(backupPageFor('cloud', 'cloud-backup')).toBe('destinations');
+    // …and nothing else moves.
+    expect(presentedArea('backup', 'takeout')).toBe('backup');
+    expect(presentedArea('maintenance', 'integrity')).toBe('maintenance');
+    expect(presentedArea('cloud', 'cloud-plan')).toBe('cloud');
+    expect(presentedAreaForSection('trash')).toBe('storage');
+    expect(isBackupSection('maintenance', 'mode')).toBe(false);
+    expect(backupPageFor('storage', 'trash')).toBeUndefined();
+    // The addresses older links, the redirects and the command palette use are unchanged.
+    expect(areaForSection('backup')).toBe('backup');
+    expect(areaForSection('backups')).toBe('maintenance');
+    expect(areaForSection('cloud-backup')).toBe('cloud');
+  });
+
+  it('offers the Viewing scope only where a page reads it (design review finding 65)', () => {
+    expect(honoursScope('overview')).toBe(true);
+    expect(honoursScope('analytics')).toBe(true);
+    expect(honoursScope('care', 'repair')).toBe(true);
+    expect(honoursScope('processing', 'queues')).toBe(true);
+    expect(honoursScope('processing', 'workers')).toBe(false);
+    expect(honoursScope('storage')).toBe(false);
+    expect(honoursScope('utilities')).toBe(false);
   });
 
   it('lists the areas in the template catalogue order', () => {

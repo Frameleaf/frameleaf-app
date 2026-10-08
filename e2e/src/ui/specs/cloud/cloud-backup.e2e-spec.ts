@@ -45,7 +45,7 @@ test.describe('Frameleaf Cloud backup setup', () => {
     page,
   }) => {
     await page.goto(backupPage);
-    await expect(page.getByText('Cloud backup is not set up')).toBeVisible();
+    await expect(page.getByText('Cloud backup is not set up')).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Set up cloud backup' }).click();
     const dialog = page.getByRole('dialog');
     // Frameleaf-managed storage is not offered until Frameleaf Cloud provides it

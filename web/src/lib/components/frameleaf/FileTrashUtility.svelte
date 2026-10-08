@@ -126,7 +126,7 @@
     gap: 0.75rem;
   }
   .muted {
-    color: var(--fl-muted, inherit);
+    color: var(--fl-muted);
     margin: 0;
   }
   table {
@@ -137,7 +137,7 @@
   td {
     text-align: start;
     padding: 0.5rem 0.75rem 0.5rem 0;
-    border-bottom: 1px solid var(--fl-line, rgb(128 128 128 / 0.25));
+    border-bottom: 1px solid var(--fl-border);
     vertical-align: middle;
   }
   .name {
@@ -156,7 +156,7 @@
     tr {
       display: grid;
       padding: 0.5rem 0;
-      border-bottom: 1px solid var(--fl-line, rgb(128 128 128 / 0.25));
+      border-bottom: 1px solid var(--fl-border);
     }
     td {
       border: 0;

@@ -103,15 +103,15 @@
     border: 0;
     border-radius: var(--fl-radius-control, 10px);
     background: none;
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     font: inherit;
     font-size: var(--fl-font-small, 13px);
     cursor: pointer;
   }
 
   .fl-stars-clear:hover:not(:disabled) {
-    color: var(--fl-viewer-text, #f1f1f2);
-    background: #ffffff0f;
+    color: var(--fl-viewer-text);
+    background: color-mix(in srgb, var(--fl-viewer-text) 6%, transparent);
   }
 
   .fl-stars-clear:disabled {

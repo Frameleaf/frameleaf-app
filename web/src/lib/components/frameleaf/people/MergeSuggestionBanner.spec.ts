@@ -31,7 +31,11 @@ describe('MergeSuggestionBanner', () => {
     const callbacks = handlers();
     render(MergeSuggestionBanner, { suggestion: pair, remaining: 0, ...callbacks });
 
-    await fireEvent.click(screen.getByText(label));
+    // "Ask me later" and "Stop suggesting" are the quiet answers in the "More answers" menu
+    if (!screen.queryByText(label)) {
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_people_merge_suggestion_more_answers' }));
+    }
+    await fireEvent.click(await screen.findByText(label));
     expect(callbacks[handler]).toHaveBeenCalledOnce();
     for (const [name, callback] of Object.entries(callbacks)) {
       if (name !== handler) {
@@ -62,16 +66,25 @@ describe('MergeSuggestionBanner', () => {
     expect(container.querySelectorAll(':scope .fl-merge-suggestion-photo img')).toHaveLength(1);
   });
 
-  it('should disable every answer while busy', () => {
+  it('should disable every answer while busy', async () => {
     render(MergeSuggestionBanner, { suggestion: pair, remaining: 0, busy: true, ...handlers() });
 
-    for (const label of [
-      'frameleaf_people_merge_suggestion_accept',
-      'frameleaf_people_merge_suggestion_reject',
-      'frameleaf_people_merge_suggestion_skip',
-      'frameleaf_people_merge_suggestion_ignore',
-    ]) {
+    for (const label of ['frameleaf_people_merge_suggestion_accept', 'frameleaf_people_merge_suggestion_reject']) {
       expect(screen.getByText(label).closest('button')).toBeDisabled();
     }
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_people_merge_suggestion_more_answers' }));
+    for (const label of ['frameleaf_people_merge_suggestion_skip', 'frameleaf_people_merge_suggestion_ignore']) {
+      expect((await screen.findByText(label)).closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    }
+  });
+
+  it('should call a person without a name "Unnamed person", never the "Add a name" button label', async () => {
+    const unnamed = personFactory.build({ name: '' });
+    render(MergeSuggestionBanner, { suggestion: { ...pair, person: unnamed }, remaining: 0, ...handlers() });
+
+    expect(screen.queryByText('add_a_name')).toBeNull();
+    expect(screen.getAllByText('unnamed_person').length).toBeGreaterThan(0);
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_people_merge_suggestion_more_answers' }));
+    expect(await screen.findByText('frameleaf_people_merge_suggestion_ignore_unnamed')).toBeTruthy();
   });
 });

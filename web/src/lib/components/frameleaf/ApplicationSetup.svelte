@@ -291,7 +291,7 @@
   }
   .fingerprint {
     overflow-wrap: anywhere;
-    font-family: ui-monospace, monospace;
+    font-family: var(--fl-family-mono);
   }
   .checklist {
     list-style: none;

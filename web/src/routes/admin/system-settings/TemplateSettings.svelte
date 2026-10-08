@@ -9,7 +9,7 @@
   import { Button, Icon, LoadingSpinner, modalManager } from '@frameleaf/ui';
   import { mdiEyeOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { motionFade } from '$lib/frameleaf/motion';
+  import { reveal } from '$lib/frameleaf/motion';
 
   // FL-66: the templates are part of the one settings draft.
   const settingsDraft = requireSystemConfigDraft();
@@ -58,7 +58,7 @@
   };
 </script>
 
-<div in:motionFade={{ duration: 500 }}>
+<div in:reveal>
   <form autocomplete="off" {onsubmit} class="mt-4">
     <div class="flex flex-col gap-4">
       <SettingGroup

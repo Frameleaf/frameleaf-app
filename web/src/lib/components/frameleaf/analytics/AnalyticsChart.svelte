@@ -242,7 +242,7 @@
     fill: var(--fl-muted);
     font-family: inherit;
     font-size: 10px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .category {
     font-size: 11px;

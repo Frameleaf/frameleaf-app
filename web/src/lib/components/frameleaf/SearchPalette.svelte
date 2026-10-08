@@ -1,6 +1,7 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
   import { goto } from '$app/navigation';
+  import { clickOutside } from '$lib/actions/click-outside';
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
@@ -20,7 +21,8 @@
   import { isCommandQuery, navigationCommands, searchCommands, type CommandItem } from '$lib/frameleaf/command-palette';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
-  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
+  import { leave, pop, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { describeFilterChips } from '$lib/frameleaf/search-filters';
   import {
     emptyFilterPanelOptions,
@@ -79,6 +81,7 @@
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
+    mdiAlertCircleOutline,
     mdiArrowRight,
     mdiBookmarkOutline,
     mdiCalendarRange,
@@ -101,7 +104,8 @@
     mdiTextRecognition,
     mdiTuneVariant,
   } from '@mdi/js';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
+  import type { Attachment } from 'svelte/attachments';
   import { t } from 'svelte-i18n';
 
   /**
@@ -132,7 +136,7 @@
     commandIndex = [],
     section,
     unsupported = [],
-    onClose,
+    onClose: closed,
     onCommand,
     onOpenPalette,
   }: {
@@ -150,7 +154,25 @@
     onOpenPalette?: (text: string) => void;
   } = $props();
 
+  /**
+   * Closing plays the Pop exit (a short fade of the panel and its backdrop) before the palette is
+   * taken away, so it leaves the way it arrived. Instant where nothing can animate.
+   */
+  let leaving = false;
+  const onClose = () => {
+    if (leaving) {
+      return;
+    }
+    leaving = true;
+    leave(dialog, 'pop', closed, { backdrop: true });
+  };
+
   const TOP_HITS = 12;
+  const PENDING_TILES = Array.from({ length: TOP_HITS }, (_, index) => index);
+  /** How long "Deleted … · Undo" stays after a saved search is deleted. */
+  const UNDO_MS = 6000;
+  /** The platform's modifier for "all results" (both ⌘⏎ and Ctrl+⏎ work). */
+  const MOD_ENTER = isMacPlatform() ? '⌘⏎' : 'Ctrl ⏎';
   const INPUT_DEFER_MS = 120;
   const REMOTE_DEBOUNCE_MS = 200;
   const ADVANCED_KEY = 'frameleaf.search.advanced';
@@ -235,6 +257,13 @@
   let counts = $state<{ current: PaletteCount | null; library: PaletteCount | null }>({ current: null, library: null });
   let enrichmentCounts = $state.raw<Partial<Record<ImageEnrichmentFilter, number>>>({});
   let loading = $state(false);
+  /**
+   * The last search could not be answered (offline, server down). The palette says so and offers a
+   * retry; it never reports "no matches" for a question it could not ask.
+   */
+  let failed = $state(false);
+  /** Bumped by Retry: asks the same search again. */
+  let attempt = $state(0);
   /** Bumped on every access change: everything loaded before it is dropped and loaded again. */
   let generation = $state(0);
 
@@ -489,6 +518,7 @@
       typing,
       advanced,
       generation,
+      attempt,
     ]),
   );
 
@@ -509,24 +539,37 @@
     const libraryBody = paletteSearchBody(libraryQuery);
     const searchBody = scopeChoice === 'library' ? libraryBody : currentBody;
     const smartFor = (target: typeof searchBody) => smartEnabled && isSmartBody(target);
-    const settle = <T,>(work: Promise<T>, apply: (value: T | null) => void) =>
+    // The count and the results are the answer; if either cannot be had, the search failed. The
+    // facets, histogram and quick-filter counts are refinements and simply stay empty.
+    let failedNow = false;
+    const settle = <T,>(work: Promise<T>, apply: (value: T | null) => void, answer = false) =>
       work
         .then((value) => !signal.aborted && apply(value))
         .catch((error: unknown) => {
-          if (!isAbort(error, signal)) {
-            apply(null);
+          if (isAbort(error, signal)) {
+            return;
           }
+          failedNow ||= answer;
+          apply(null);
         });
 
     const tasks = [
-      settle(loadPaletteCount(currentBody, smartFor(currentBody), signal), (value) => {
-        counts.current = value;
-        if (!scope) {
-          counts.library = value;
-        }
-      }),
+      settle(
+        loadPaletteCount(currentBody, smartFor(currentBody), signal),
+        (value) => {
+          counts.current = value;
+          if (!scope) {
+            counts.library = value;
+          }
+        },
+        scopeChoice === 'current' || !scope,
+      ),
       scope
-        ? settle(loadPaletteCount(libraryBody, smartFor(libraryBody), signal), (value) => (counts.library = value))
+        ? settle(
+            loadPaletteCount(libraryBody, smartFor(libraryBody), signal),
+            (value) => (counts.library = value),
+            scopeChoice === 'library',
+          )
         : Promise.resolve(),
       settle(loadPaletteFacets(searchBody, signal), (value) => (facets = value ?? {})),
       settle(
@@ -540,14 +583,18 @@
       typing
         ? settle(
             loadPaletteResults(searchBody, smartFor(searchBody), TOP_HITS, signal),
-            (value) => (results = value ?? []),
+            // A failed search keeps the last good hits on screen (dimmed) rather than emptying the list
+            (value) => value && (results = value),
+            true,
           )
         : Promise.resolve((results = [])),
     ];
     void Promise.all(tasks).finally(() => {
-      if (!signal.aborted) {
-        loading = false;
+      if (signal.aborted) {
+        return;
       }
+      failed = failedNow;
+      loading = false;
     });
   };
 
@@ -572,6 +619,7 @@
     counts = { current: null, library: null };
     enrichmentCounts = {};
     settledLabel = '';
+    failed = false;
     generation += 1;
   });
 
@@ -581,6 +629,7 @@
     catalogController?.abort();
     remoteController?.abort();
     clearTimeout(remoteTimer);
+    clearTimeout(undoTimer);
   });
 
   $effect(() => {
@@ -659,6 +708,12 @@
     input?.focus();
   };
 
+  /** A pressed refine facet is a toggle: a second click takes its chip away again. */
+  const dropToken = (raw: string) => {
+    tokens = tokens.filter((item) => item !== raw);
+    input?.focus();
+  };
+
   const removeToken = (index: number, raw: string) => {
     tokens = tokens.filter((item, position) => !(position === index && item === raw));
     input?.focus();
@@ -708,7 +763,18 @@
   };
 
   const pickPerson = (id: string, name: string | undefined) => {
-    if (name) {
+    // A person already in the search is taken out again, however their chip was typed
+    const typed = chips.find((chip) => chip.token?.key === 'person' && chip.token.id === id && !chip.token.exclude);
+    if (typed) {
+      removeToken(typed.index, typed.raw);
+    } else if (base.filter.personIds?.any?.includes(id)) {
+      const any = base.filter.personIds.any.filter((item) => item !== id);
+      const rest = { ...base.filter.personIds, any: any.length > 0 ? any : undefined };
+      base =
+        rest.any || rest.all?.length || rest.none?.length
+          ? { ...base, filter: { ...base.filter, personIds: rest } }
+          : withoutDiscoveryFilter(base, 'personIds');
+    } else if (name) {
       addToken(operatorToken('person', name));
     } else {
       // Unnamed people have no name to type, so they are picked as a filter instead
@@ -837,7 +903,93 @@
   /* Saved searches                                                          */
   /* ---------------------------------------------------------------------- */
 
-  const deleteSavedSearch = (name: string) => void savedSearchesStore.remove(name);
+  /**
+   * Deleting a saved search fades its row away and leaves "Deleted … · Undo" in its place for a few
+   * seconds; Undo saves the same search again under the same name.
+   */
+  type SavedEntry = { name: string; query: DiscoveryQuery };
+  let deletedSaved = $state.raw<SavedEntry | null>(null);
+  let deleteFailed = $state(false);
+  let undoTimer: ReturnType<typeof setTimeout> | undefined;
+  const deleteSavedSearch = (item: SavedEntry, row: Element | null) => {
+    leave(row, 'reveal', () => {
+      void savedSearchesStore.remove(item.name).then((removed) => {
+        clearTimeout(undoTimer);
+        deleteFailed = !removed;
+        deletedSaved = removed ? item : null;
+        undoTimer = setTimeout(() => {
+          deletedSaved = null;
+          deleteFailed = false;
+        }, UNDO_MS);
+      });
+    });
+  };
+  const undoDeleteSaved = async () => {
+    const item = deletedSaved;
+    clearTimeout(undoTimer);
+    deletedSaved = null;
+    if (item) {
+      await savedSearchesStore.save(item.name, $state.snapshot(item.query) as DiscoveryQuery);
+    }
+    input?.focus();
+  };
+
+  /** Recent searches can be taken off the list one at a time or all at once (a shared computer). */
+  const forgetRecent = (item: PaletteSearch) => {
+    const key = JSON.stringify(item.query);
+    searchStore.recentSearches = searchStore.recentSearches.filter((entry) => JSON.stringify(entry.query) !== key);
+    input?.focus();
+  };
+  const clearRecent = () => {
+    searchStore.recentSearches = [];
+    input?.focus();
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /* Mode menu and syntax help                                               */
+  /* ---------------------------------------------------------------------- */
+
+  /** The mode menu takes focus on its checked item and moves with the arrow keys, Home and End. */
+  const focusCheckedMode: Attachment<HTMLElement> = (menu) => {
+    (menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu.querySelector<HTMLElement>('button'))?.focus();
+  };
+  const onModeMenuKey = (event: KeyboardEvent) => {
+    const options = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+    const at = options.indexOf(document.activeElement as HTMLElement);
+    const target =
+      event.key === 'ArrowDown'
+        ? options[(at + 1) % options.length]
+        : event.key === 'ArrowUp'
+          ? options[(at - 1 + options.length) % options.length]
+          : event.key === 'Home'
+            ? options[0]
+            : event.key === 'End'
+              ? options.at(-1)
+              : undefined;
+    if (target) {
+      event.preventDefault();
+      event.stopPropagation();
+      target.focus();
+    } else if (event.key === 'Tab') {
+      modeMenu = false;
+    }
+  };
+
+  /** A syntax example goes into the field, which keeps the caret so typing carries on from it. */
+  const insertSyntax = async (snippet: string) => {
+    const value = `${text ? `${text} ` : ''}${snippet}`;
+    if (/[:-]$/.test(snippet)) {
+      text = value;
+    } else {
+      onInput(value);
+    }
+    await tick();
+    input?.focus();
+    input?.setSelectionRange(input.value.length, input.value.length);
+  };
+
+  /** Save search needs something to save: text, a chip or a filter. */
+  const canSave = $derived(typing || baseChips.length > 0 || !!base.imageEnrichment);
 
   /** The compiled search the save dialog keeps, frozen when it opens. */
   let saveQuery = $state.raw<DiscoveryQuery>(emptyDiscoveryQuery());
@@ -865,11 +1017,22 @@
   const countLabel = (count: PaletteCount) =>
     $t('frameleaf_search_palette_matches', { values: { count: count.total, capped: count.capped ? 'yes' : 'no' } });
   const matchesLabel = $derived(
-    pending || !selectedCount ? $t('frameleaf_search_searching') : countLabel(selectedCount),
+    pending
+      ? $t('frameleaf_search_searching')
+      : failed
+        ? $t('frameleaf_search_failed')
+        : selectedCount
+          ? countLabel(selectedCount)
+          : $t('frameleaf_search_searching'),
   );
   // The live region speaks only settled answers, never "Searching…" on every keystroke
   $effect(() => {
-    if (!pending && selectedCount) {
+    if (pending) {
+      return;
+    }
+    if (failed) {
+      settledLabel = $t('frameleaf_search_failed');
+    } else if (selectedCount) {
       settledLabel = countLabel(selectedCount);
     }
   });
@@ -942,7 +1105,7 @@
           <Icon icon={mdiClose} size="16" aria-hidden={true} />
         </button>
       {/if}
-      <div class="sp-mode">
+      <div class="sp-mode" use:clickOutside={{ onOutclick: () => (modeMenu = false) }}>
         <button
           type="button"
           aria-label={$t('frameleaf_search_mode_label', { values: { mode: $t(modeEntry.labelKey) } })}
@@ -955,7 +1118,14 @@
           <Icon icon={mdiChevronDown} size="14" aria-hidden={true} />
         </button>
         {#if modeMenu}
-          <div role="menu" class="sp-menu">
+          <!-- svelte-ignore a11y_interactive_supports_focus -->
+          <div
+            role="menu"
+            class="sp-menu fl-pop fl-origin-top-end"
+            out:pop
+            onkeydown={onModeMenuKey}
+            {@attach focusCheckedMode}
+          >
             {#each modes as entry (entry.value)}
               <button
                 type="button"
@@ -1049,19 +1219,16 @@
         <p>{$t('frameleaf_search_syntax_intro')}</p>
         <div>
           {#each SEARCH_OPERATORS as operator (operator.key)}
-            <button type="button" onclick={() => (text = `${text ? `${text} ` : ''}${operator.key}:`)}>
+            <button type="button" onclick={() => void insertSyntax(`${operator.key}:`)}>
               <code>{operator.hint}</code>
               <span>{$t(operator.labelKey)}</span>
             </button>
           {/each}
-          <button
-            type="button"
-            onclick={() => (text = `${text ? `${text} ` : ''}"${$t('frameleaf_search_exact_phrase')}"`)}
-          >
+          <button type="button" onclick={() => void insertSyntax(`"${$t('frameleaf_search_exact_phrase')}"`)}>
             <code>"{$t('frameleaf_search_exact_phrase')}"</code>
             <span>{$t('frameleaf_search_phrase')}</span>
           </button>
-          <button type="button" onclick={() => (text = `${text ? `${text} ` : ''}-`)}>
+          <button type="button" onclick={() => void insertSyntax('-')}>
             <code>-{$t('frameleaf_search_word')}</code>
             <span>{$t('frameleaf_search_exclude_word')}</span>
           </button>
@@ -1091,6 +1258,19 @@
         aria-label={$t('frameleaf_search_results')}
         bind:this={resultsList}
       >
+        {#if failed && !pending}
+          <p class="sp-failed fl-reveal">
+            <Icon icon={mdiAlertCircleOutline} size="18" aria-hidden={true} />
+            <span>
+              <strong>{$t('frameleaf_search_failed')}</strong>
+              {$t('frameleaf_search_failed_hint')}
+            </span>
+            <button type="button" class="sp-secondary" onclick={() => (attempt += 1)}>
+              {$t('frameleaf_error_retry')}
+            </button>
+          </p>
+        {/if}
+
         {#if suggestions.length > 0}
           <section>
             <h3>{$t('frameleaf_search_suggestions')}</h3>
@@ -1135,37 +1315,53 @@
               {#if selectedCount && selectedCount.total > TOP_HITS}
                 <button type="button" class="sp-link" onclick={run}>
                   {$t('frameleaf_search_show_all', { values: { count: formatScopeCount(selectedCount) } })}
-                  <kbd aria-hidden="true">⌘⏎</kbd>
+                  <kbd aria-hidden="true">{MOD_ENTER}</kbd>
                 </button>
               {/if}
             </h3>
             {#if results.length > 0}
-              <div class="sp-hits">
-                {#each items as entry (entry)}
-                  {#if entry.kind === 'asset'}
-                    {@const at = indexOf(entry)}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <div
-                      id="{listId}-item-{at}"
-                      role="option"
-                      tabindex="-1"
-                      aria-selected={at === active}
-                      aria-label={entry.item.originalFileName}
-                      class="sp-hit"
-                      class:active={at === active}
-                      title={entry.item.originalFileName}
-                      onmouseenter={() => (active = at)}
-                      onclick={() => activate(entry)}
-                    >
-                      <img src={thumbnail(entry.item)} alt="" loading="lazy" />
-                      {#if entry.item.type === AssetTypeEnum.Video}
-                        <Icon icon={mdiPlayCircleOutline} size="16" aria-hidden={true} />
-                      {/if}
-                    </div>
-                  {/if}
+              <!--
+                Keyed by the item, so a hit that stays in the answer keeps its tile (and its loaded
+                photo) while the list around it changes; each photo fades in as it loads.
+              -->
+              <div class="sp-hits" class:stale={failed && !pending}>
+                {#each results.slice(0, TOP_HITS) as asset, position (asset.id)}
+                  {@const at = suggestions.length + position}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <div
+                    id="{listId}-item-{at}"
+                    role="option"
+                    tabindex="-1"
+                    aria-selected={at === active}
+                    aria-label={asset.originalFileName}
+                    class="sp-hit"
+                    class:active={at === active}
+                    title={asset.originalFileName}
+                    style:--i={position}
+                    onmouseenter={() => (active = at)}
+                    onclick={() => activate({ kind: 'asset', item: asset })}
+                  >
+                    <img
+                      src={thumbnail(asset)}
+                      alt=""
+                      loading="lazy"
+                      onload={(event) => event.currentTarget.classList.add('loaded')}
+                      onerror={(event) => event.currentTarget.classList.add('loaded')}
+                    />
+                    {#if asset.type === AssetTypeEnum.Video}
+                      <Icon icon={mdiPlayCircleOutline} size="16" aria-hidden={true} />
+                    {/if}
+                  </div>
                 {/each}
               </div>
-            {:else if !pending}
+            {:else if pending}
+              <!-- The first answer is on its way: the grid's shape, not a bare heading. -->
+              <div class="sp-hits" aria-hidden="true">
+                {#each PENDING_TILES as index (index)}
+                  <span class="sp-hit sp-hit-pending fl-skeleton"></span>
+                {/each}
+              </div>
+            {:else if !failed}
               <p class="sp-empty">
                 {scopeChoice === 'current'
                   ? $t('frameleaf_search_no_matches_in_scope', { values: { scope: scopeLabel } })
@@ -1209,36 +1405,67 @@
 
         {#if !typing}
           <section>
-            <h3>{recent.length > 0 ? $t('recent_searches') : $t('frameleaf_search_try')}</h3>
+            <h3>
+              {recent.length > 0 ? $t('recent_searches') : $t('frameleaf_search_try')}
+              {#if recent.length > 0}
+                <button
+                  type="button"
+                  class="sp-link"
+                  aria-label={$t('frameleaf_search_recent_clear')}
+                  onclick={clearRecent}
+                >
+                  {$t('clear')}
+                </button>
+              {/if}
+            </h3>
             {#each items as entry (entry)}
               {#if entry.kind === 'recent'}
                 {@const at = indexOf(entry)}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <div
-                  id="{listId}-item-{at}"
-                  role="option"
-                  tabindex="-1"
-                  aria-selected={at === active}
-                  class="sp-row"
-                  class:active={at === active}
-                  onmouseenter={() => (active = at)}
-                  onclick={() => activate(entry)}
-                >
-                  <Icon icon={mdiHistory} size="16" aria-hidden={true} />
-                  <span>{searchRow(entry.item.query).label}</span>
-                  <small>
-                    {$t(
-                      PALETTE_MODES.find((item) => item.value === searchRow(entry.item.query).mode)?.labelKey ??
-                        'search',
-                    )}
-                  </small>
+                {@const row = searchRow(entry.item.query)}
+                <div class="sp-saved" role="presentation">
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <div
+                    id="{listId}-item-{at}"
+                    role="option"
+                    tabindex="-1"
+                    aria-selected={at === active}
+                    class="sp-row"
+                    class:active={at === active}
+                    onmouseenter={() => (active = at)}
+                    onclick={() => activate(entry)}
+                  >
+                    <!-- A search that was run carries the history mark; an example to try does not. -->
+                    <Icon icon={recent.length > 0 ? mdiHistory : mdiMagnify} size="16" aria-hidden={true} />
+                    <span>{row.label}</span>
+                    <small>
+                      {$t(PALETTE_MODES.find((item) => item.value === row.mode)?.labelKey ?? 'search')}
+                    </small>
+                  </div>
+                  {#if recent.length > 0}
+                    <button
+                      type="button"
+                      class="sp-row-action sp-row-quiet"
+                      aria-label={$t('frameleaf_search_recent_remove', { values: { name: row.label } })}
+                      onclick={() => forgetRecent(entry.item)}
+                    >
+                      <Icon icon={mdiClose} size="14" aria-hidden={true} />
+                    </button>
+                  {/if}
                 </div>
               {/if}
             {/each}
           </section>
-          {#if saved.length > 0}
+          {#if saved.length > 0 || deletedSaved || deleteFailed}
             <section>
               <h3>{$t('frameleaf_search_saved_searches')}</h3>
+              {#if deletedSaved}
+                <p class="sp-undo fl-reveal" role="status">
+                  <span>{$t('frameleaf_search_saved_deleted', { values: { name: deletedSaved.name } })}</span>
+                  <button type="button" class="sp-link" onclick={() => void undoDeleteSaved()}>{$t('undo')}</button>
+                </p>
+              {:else if deleteFailed}
+                <p class="sp-undo fl-reveal" role="alert">{$t('frameleaf_search_saved_delete_failed')}</p>
+              {/if}
               {#each items as entry (entry)}
                 {#if entry.kind === 'saved'}
                   {@const at = indexOf(entry)}
@@ -1262,7 +1489,7 @@
                       type="button"
                       class="sp-row-action"
                       aria-label={$t('frameleaf_search_delete_saved', { values: { name: entry.item.name } })}
-                      onclick={() => deleteSavedSearch(entry.item.name)}
+                      onclick={(event) => deleteSavedSearch(entry.item, event.currentTarget.closest('.sp-saved'))}
                     >
                       <Icon icon={mdiClose} size="14" aria-hidden={true} />
                     </button>
@@ -1299,6 +1526,7 @@
         {enrichmentCounts}
         onNarrow={(bar) => (tokens = narrowToBar(tokens, bar))}
         onAddToken={addToken}
+        onRemoveToken={dropToken}
         onPickPerson={pickPerson}
         onToggleEnrichment={toggleEnrichment}
       />
@@ -1306,19 +1534,22 @@
 
     <footer class="sp-footer">
       <span class="sp-keys" aria-hidden="true">
-        <kbd>↑</kbd><kbd>↓</kbd>
-        {$t('frameleaf_search_key_move')}
-        <kbd>⏎</kbd>
-        {$t('frameleaf_search_key_open')}
-        <kbd>⇥</kbd>
-        {$t('frameleaf_search_key_complete')}
-        <kbd>⌘⏎</kbd>
+        <!-- The Advanced view has no list to move through, so only the keys that still act are named. -->
+        {#if !advanced}
+          <kbd>↑</kbd><kbd>↓</kbd>
+          {$t('frameleaf_search_key_move')}
+          <kbd>⏎</kbd>
+          {$t('frameleaf_search_key_open')}
+          <kbd>⇥</kbd>
+          {$t('frameleaf_search_key_complete')}
+        {/if}
+        <kbd>{MOD_ENTER}</kbd>
         {$t('frameleaf_search_key_all')}
         <kbd>esc</kbd>
         {$t('frameleaf_search_key_close')}
       </span>
       <span class="sp-note">{smart ? $t('frameleaf_search_smart_note') : ''}</span>
-      <button type="button" class="sp-secondary" onclick={openSave}>
+      <button type="button" class="sp-secondary" disabled={!canSave} onclick={openSave}>
         <Icon icon={mdiContentSaveOutline} size="16" aria-hidden={true} />
         {$t('frameleaf_search_save_search')}
       </button>
@@ -1363,7 +1594,7 @@
       0 30px 120px #000a,
       inset 0 1px 0 #ffffff14;
     font-size: 13px;
-    animation: sp-in 420ms var(--fl-spring) both;
+    animation: sp-in var(--fl-duration-dock) var(--fl-spring) both;
   }
   @keyframes sp-in {
     from {
@@ -1384,11 +1615,11 @@
     }
   }
   .search-palette.reduced-motion {
-    animation: sp-fade 150ms ease both;
+    animation: sp-fade var(--fl-duration-reduced) var(--fl-ease) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .search-palette {
-      animation: sp-fade 150ms ease both;
+      animation: sp-fade var(--fl-duration-reduced) var(--fl-ease) both !important;
     }
   }
   .search-palette::backdrop {
@@ -1518,7 +1749,7 @@
     height: 32px;
     padding: 0 8px 0 10px;
     border: 1px solid var(--sp-edge);
-    border-radius: 9px;
+    border-radius: var(--fl-radius-control-compact);
     background: transparent;
     white-space: nowrap;
   }
@@ -1531,10 +1762,10 @@
     min-width: 200px;
     padding: 6px;
     border: 1px solid var(--sp-edge);
-    border-radius: 12px;
+    border-radius: var(--fl-radius-control);
     background: color-mix(in srgb, var(--fl-panel) 92%, transparent);
     backdrop-filter: blur(30px);
-    box-shadow: 0 16px 50px #0008;
+    box-shadow: var(--fl-shadow-2);
   }
   .sp-menu button {
     display: flex;
@@ -1583,7 +1814,7 @@
   .sp-scope {
     display: inline-flex;
     padding: 2px;
-    border-radius: 9px;
+    border-radius: var(--fl-radius-control-compact);
     background: var(--sp-row);
   }
   .sp-scope button {
@@ -1592,14 +1823,14 @@
     align-items: baseline;
     padding: 4px 12px;
     border: 0;
-    border-radius: 7px;
+    border-radius: calc(var(--fl-radius-control-compact) - 2px);
     background: transparent;
     color: var(--fl-muted);
   }
   .sp-scope button[aria-checked='true'] {
     background: var(--fl-raised);
     color: var(--fl-text);
-    box-shadow: 0 1px 4px #0005;
+    box-shadow: var(--fl-shadow-1);
   }
   .sp-understood {
     display: flex;
@@ -1672,6 +1903,11 @@
   .sp-body[hidden] {
     display: none;
   }
+  /* Switching between the results and the Advanced view is a short crossfade, not a cut. */
+  .sp-body:not([hidden]),
+  .sp-advanced {
+    animation: sp-fade var(--fl-motion) var(--fl-ease) both;
+  }
   .sp-results {
     overflow: auto;
     padding: 14px 18px;
@@ -1727,6 +1963,52 @@
   .sp-row-action:hover {
     background: var(--sp-row);
   }
+  /* A recent search's remove control stays out of the way until its row is pointed at or focused. */
+  .sp-row-quiet {
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .sp-saved:hover .sp-row-quiet,
+  .sp-row-quiet:focus-visible {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .sp-row-quiet {
+      opacity: 1;
+    }
+  }
+  .sp-undo {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: 36px;
+    margin: 0;
+    padding: 0 10px;
+    color: var(--fl-muted);
+  }
+  .sp-failed {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-3);
+    margin: 0;
+    padding: var(--fl-space-2) var(--fl-space-3);
+    border: 1px solid var(--sp-edge);
+    border-radius: var(--fl-radius-card);
+    background: var(--sp-row);
+    color: var(--fl-muted);
+  }
+  .sp-failed > :global(svg) {
+    color: var(--fl-danger);
+  }
+  .sp-failed > span {
+    flex: 1;
+    min-width: 0;
+  }
+  .sp-failed strong {
+    display: block;
+    color: var(--fl-text);
+    font-weight: 600;
+  }
   .sp-link {
     display: inline-flex;
     align-items: center;
@@ -1752,13 +2034,31 @@
     cursor: pointer;
     outline: 2px solid transparent;
     outline-offset: 2px;
-    transition: outline-color 120ms ease;
+    background: color-mix(in srgb, var(--sp-row) 40%, transparent);
+    transition: outline-color var(--fl-motion-fast) var(--fl-ease);
   }
   .sp-hit img {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    opacity: 0;
+    transition: opacity var(--fl-motion) var(--fl-ease);
+    transition-delay: calc(min(var(--i, 0), 8) * var(--fl-stagger));
+  }
+  .sp-hit :global(img.loaded) {
+    opacity: 1;
+  }
+  .sp-hit-pending {
+    cursor: default;
+    border-radius: 10px;
+  }
+  /* The last good answer, while the newer one could not be had. */
+  .sp-hits.stale {
+    opacity: 0.6;
+  }
+  .sp-hits {
+    transition: opacity var(--fl-motion) var(--fl-ease);
   }
   .sp-hit :global(svg) {
     position: absolute;

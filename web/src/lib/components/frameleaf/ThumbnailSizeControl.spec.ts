@@ -18,6 +18,22 @@ describe('ThumbnailSizeControl', () => {
     expect(preferences.thumbnailSize).toBe(260);
     expect(localStorage.getItem('frameleaf-thumbnail-size')).toBe('260');
   });
+
+  it('steps the same size from its smaller and larger buttons, and stops at the ends', async () => {
+    const preferences = new LibraryGridPreferences();
+    render(ThumbnailSizeControl, { preferences });
+    const smaller = screen.getByRole('button', { name: 'frameleaf_library_thumbnail_smaller' });
+    const larger = screen.getByRole('button', { name: 'frameleaf_library_thumbnail_larger' });
+
+    await fireEvent.click(larger);
+    expect(preferences.thumbnailSize).toBe(230);
+    await fireEvent.click(larger);
+    await fireEvent.click(larger);
+    expect(preferences.thumbnailSize).toBe(290);
+    expect(larger).toBeDisabled();
+    await fireEvent.click(smaller);
+    expect(preferences.thumbnailSize).toBe(260);
+  });
 });
 
 describe('WorkFileNamesToggle', () => {

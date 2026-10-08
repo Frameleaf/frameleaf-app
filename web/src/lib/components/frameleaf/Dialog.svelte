@@ -1,15 +1,22 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { leave } from '$lib/frameleaf/motion';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
-  import type { Snippet } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   /**
    * The Frameleaf modal: prototype `Dialog` (template/src/Controls.jsx) and its `.dialog`
    * styles, with the September 24 sheet chrome (apple-style.css:106-135, 211-217, 303-321):
-   * 22px continuous corners, a spring entry, and a dimmed, blurred backdrop. A title bar with
+   * continuous sheet corners, a spring entry, and a dimmed, blurred backdrop. A title bar with
    * an icon close button, the body, and an optional `actions` footer that stays pinned while a
    * long body scrolls.
+   *
+   * It opens and closes on the Sheet motion pattern (BRAND.md). Setting `open` to false plays the
+   * exit and then closes the native dialog and returns focus; `onClosed` fires at that point. A
+   * caller that unmounts the dialog in response to closing (a `modalManager.show` wrapper) should
+   * do so from `onClosed`, not as soon as `open` turns false, or the exit is cut short.
    */
   let {
     title,
@@ -20,6 +27,7 @@
     onkeydown,
     wide = false,
     compactControls = false,
+    onClosed,
     children,
     actions,
   }: {
@@ -36,6 +44,8 @@
     wide?: boolean;
     /** Opt in to the prototype's compact desktop controls while retaining touch targets. */
     compactControls?: boolean;
+    /** Runs once the exit has finished and the dialog is closed. Not called if the dialog is unmounted first. */
+    onClosed?: () => void;
     children: Snippet;
     /**
      * The footer buttons. A form body associates its submit button through the `form`
@@ -54,21 +64,70 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const requestClose = () => (onRequestClose ? onRequestClose() : (open = false));
 
+  // Not $state: bookkeeping for the exit, never rendered.
+  let shown = false;
+  let previous: Element | null = null;
+  let cancelLeave: (() => void) | undefined;
+  let finishLeave: (() => void) | undefined;
+  let destroyed = false;
+
+  /** Closes the native dialog and hands focus back to whatever opened it. */
+  const closeNow = () => {
+    if (dialog.open) {
+      dialog.close();
+    }
+    // The exit holds its last frame until the dialog is closed; release it for the next open.
+    cancelLeave?.();
+    cancelLeave = finishLeave = undefined;
+    if (previous instanceof HTMLElement && previous.isConnected) {
+      previous.focus();
+    }
+  };
+
+  // Runs only when `open` changes; unmounting is handled by onDestroy below.
   $effect(() => {
-    if (!open || dialog.open) {
+    if (open) {
+      // Reopened while the exit was still playing: keep the dialog and drop the exit.
+      cancelLeave?.();
+      cancelLeave = finishLeave = undefined;
+      if (!dialog.open) {
+        previous = untrack(() => returnFocus) ?? document.activeElement;
+        dialog.showModal();
+        // As in the prototype, a caller marks the control that should take focus first.
+        dialog.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
+      }
+      shown = true;
       return;
     }
-
-    const previous = returnFocus ?? document.activeElement;
-    dialog.showModal();
-    // As in the prototype, a caller marks the control that should take focus first.
-    dialog.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
-    return () => {
-      dialog.close();
-      if (previous instanceof HTMLElement && previous.isConnected) {
-        previous.focus();
+    if (!shown) {
+      return;
+    }
+    shown = false;
+    const exit = { finished: false };
+    const finish = () => {
+      exit.finished = true;
+      closeNow();
+      // A dialog torn down by its owner has nobody left to tell.
+      if (!destroyed) {
+        onClosed?.();
       }
     };
+    finishLeave = finish;
+    // Sheet exit, then close. Where nothing can animate, `finish` runs at once, as before.
+    const cancel = leave(dialog, 'sheet', finish, { backdrop: true });
+    if (!exit.finished) {
+      cancelLeave = cancel;
+    }
+  });
+
+  // Unmounted while open or mid-exit: close and return focus now, there is nothing left to animate.
+  onDestroy(() => {
+    destroyed = true;
+    if (finishLeave) {
+      finishLeave();
+    } else if (shown) {
+      closeNow();
+    }
   });
 </script>
 
@@ -89,7 +148,7 @@
 >
   <header class="dialog-title">
     <h2 id={titleId}>{title}</h2>
-    <IconButton label={closeLabel} onclick={requestClose}><Icon icon={mdiClose} size="1.125rem" /></IconButton>
+    <IconButton label={closeLabel} onclick={requestClose}><Icon icon={mdiClose} size={ICON_SIZE.lg} /></IconButton>
   </header>
   {#if actions}
     <div class="dialog-body">{@render children()}</div>
@@ -101,11 +160,13 @@
 
 <style>
   /*
-   * template/src/styles.css `.dialog` with the apple-style.css sheet: the radius and motion come
-   * from the token scale. Under Reduce Motion the media query below turns the rise into a
-   * crossfade. A dialog mounted inside another `.frameleaf` scope is also matched by the
-   * tokens.css clamp (`.frameleaf *`, !important), so that rule is !important too and wins on
-   * specificity, keeping the crossfade rather than an instant change.
+   * template/src/styles.css `.dialog` with the apple-style.css sheet: the radius, elevation,
+   * scrim and motion all come from the token scale. The entrance is the Sheet pattern (base.css
+   * keyframes `fl-fade-in` and `fl-sheet-in`); the exit is played from script (motion.ts `leave`)
+   * so it can finish before the native dialog closes. Under Reduce Motion the media query below
+   * turns the rise into a crossfade. A dialog mounted inside another `.frameleaf` scope is also
+   * matched by the tokens.css clamp (`.frameleaf *`, !important), so that rule is !important too
+   * and wins on specificity, keeping the crossfade rather than an instant change.
    */
   .dialog {
     color: var(--fl-text);
@@ -118,10 +179,10 @@
     max-width: min(510px, calc(100vw - 32px));
     max-height: calc(100dvh - 44px);
     overflow: auto;
-    box-shadow: 0 18px 80px rgb(0 0 0 / 47%);
+    box-shadow: var(--fl-shadow-4);
     animation:
-      fl-sheet-fade 220ms ease both,
-      fl-sheet-rise 480ms var(--fl-spring) both;
+      fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+      fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
   }
   .dialog.wide {
     max-width: min(1120px, calc(100vw - 32px));
@@ -145,22 +206,15 @@
       min-width: 48px;
     }
   }
+  /*
+   * The shared scrim. The fallbacks repeat the token values for engines where ::backdrop does
+   * not inherit custom properties from its dialog.
+   */
   .dialog::backdrop {
-    background: rgb(0 0 0 / 40%);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    animation: fl-sheet-fade 260ms ease both;
-  }
-  @keyframes fl-sheet-fade {
-    from {
-      opacity: 0;
-    }
-  }
-  @keyframes fl-sheet-rise {
-    from {
-      translate: 0 40px;
-      scale: 0.96;
-    }
+    background: var(--fl-scrim, rgb(0 0 0 / 40%));
+    -webkit-backdrop-filter: var(--fl-scrim-blur, blur(12px));
+    backdrop-filter: var(--fl-scrim-blur, blur(12px));
+    animation: fl-fade-in var(--fl-duration-fade, 200ms) var(--fl-ease, ease) both;
   }
   @supports (corner-shape: squircle) {
     .dialog {
@@ -169,13 +223,13 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .dialog {
-      animation: fl-sheet-fade 200ms ease both !important;
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
     }
   }
   /* The solid fallback of the frosted materials: a darker scrim, nothing blurred behind it. */
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
     .dialog::backdrop {
-      background: rgb(0 0 0 / 67%);
+      background: var(--fl-scrim, rgb(0 0 0 / 67%));
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
@@ -189,7 +243,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fl-font-headline);
     font-weight: 600;
   }
   .dialog-actions {
@@ -214,7 +268,7 @@
     min-height: 0;
     /*
      * Room for a full-width field's focus ring, which the scrolling body would otherwise clip:
-     * tokens.css draws it 2px wide at a 3px offset (5px out from the field), so 6px clears it.
+     * tokens.css draws it 2px wide at a 2px offset (4px out from the field), so 6px clears it.
      * The negative margin keeps the prototype's edges.
      */
     padding: 6px;

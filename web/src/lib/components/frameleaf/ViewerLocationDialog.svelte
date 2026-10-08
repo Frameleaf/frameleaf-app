@@ -312,7 +312,7 @@
 
   .mv-map:focus-visible {
     outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline-offset: var(--fl-focus-offset);
   }
 
   .mv-map-wrap small {

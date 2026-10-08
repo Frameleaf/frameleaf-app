@@ -423,7 +423,7 @@
   }
   .scope-controls input:focus-visible,
   .scope-controls select:focus-visible {
-    outline: 2px solid var(--fl-accent);
+    outline: var(--fl-focus-ring);
   }
 
   .toolbar {

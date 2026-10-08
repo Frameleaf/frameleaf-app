@@ -37,10 +37,10 @@
     place-items: center;
     width: 22px;
     height: 22px;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     /* The same scrim the tile's other badges sit on, so it reads over any photo. */
     background: rgb(0 0 0 / 55%);
-    color: #fff;
+    color: var(--fl-viewer-text);
   }
   .fl-tile-job.is-failed {
     background: var(--fl-danger);

@@ -110,13 +110,13 @@
     justify-content: center;
     min-width: 44px;
     padding: 0.375rem;
-    color: var(--fl-text, inherit);
+    color: var(--fl-text);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
   }
   .upload-menu :global(.menu-root > button:hover) {
-    background: var(--fl-raised, rgb(0 0 0 / 6%));
+    background: var(--fl-raised);
   }
   .upload-menu :global(.menu-root > button) {
     gap: 0.375rem;

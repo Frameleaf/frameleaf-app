@@ -157,7 +157,7 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   expect(persisted.revisions).toHaveLength(1);
   expect(persisted.revisions[0].recipe.masks).toEqual(saved.recipe.masks);
   await editor.getByRole('button', { name: 'Versions', exact: true }).click();
-  await editor.getByRole('menuitem', { name: 'All versions and renders', exact: true }).click();
+  await editor.getByRole('menuitem', { name: 'All versions', exact: true }).click();
   await editor.getByRole('button', { name: 'Compare with original', exact: true }).click();
   await expect(editor.getByRole('button', { name: 'Compare with original', exact: true })).toHaveAttribute(
     'aria-pressed',

@@ -10,6 +10,7 @@
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { updateMyUser } from '@frameleaf/sdk';
+  import { setAuthNotice } from '../auth-notice';
   import { t } from 'svelte-i18n';
 
   let password = $state('');
@@ -33,6 +34,8 @@
     errorMessage = '';
     try {
       await updateMyUser({ userUpdateMeDto: { password } });
+      // Changing the password ends this session: the sign-in page says so and fills the email in.
+      setAuthNotice({ kind: 'password-changed', email: authManager.user.email });
       await goto(Route.logout());
     } catch (error) {
       errorMessage = getServerErrorMessage(error) || $t('frameleaf_auth_change_password_failed');
@@ -78,8 +81,9 @@
         >{$t('frameleaf_auth_passwords_mismatch_hint')}</span
       >{/if}
     <button type="submit" class="button primary auth-submit" disabled={!ready || loading}
-      >{loading ? $t('frameleaf_auth_saving') : $t('frameleaf_auth_save_and_continue')}</button
+      >{loading ? $t('frameleaf_auth_saving') : $t('frameleaf_auth_save_and_sign_in')}</button
     >
+    <p class="auth-note">{$t('frameleaf_auth_change_password_signs_out')}</p>
     <a href={Route.logout()} class="auth-link">{$t('frameleaf_auth_sign_out_instead')}</a>
   </form>
 </AuthShell>

@@ -295,7 +295,7 @@
   }
   .list small.blocked,
   .list small.issue {
-    color: var(--fl-warning-text);
+    color: var(--fl-warning);
   }
   .empty {
     padding: 2.8rem 1.25rem;
@@ -303,7 +303,7 @@
     color: var(--fl-muted);
   }
   .error {
-    color: var(--fl-danger-text);
+    color: var(--fl-danger);
   }
   .notice {
     color: var(--fl-muted);

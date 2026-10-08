@@ -66,7 +66,7 @@
           <a
             class="fla-bg"
             class:is-paused={row.stage === 'paused'}
-            href={commandCenterUrl('cloud', 'cloud-backup')}
+            href={commandCenterUrl('backups', undefined, { backupView: 'cloud' })}
             aria-label={$t('frameleaf_cloud_work_row_label', { values: { title, detail } })}
           >
             <span class="fla-bg-icon" aria-hidden="true">
@@ -100,14 +100,14 @@
     align-items: center;
     gap: 8px;
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fl-font-small);
     font-weight: 600;
     letter-spacing: 0.02em;
     text-transform: uppercase;
     color: var(--fl-muted);
   }
   .fla-bg-count {
-    font-size: 11px;
+    font-size: var(--fl-font-micro);
     font-weight: 500;
     color: var(--fl-muted);
     background: var(--fl-raised);
@@ -120,7 +120,7 @@
   .fla-bg-hint {
     margin: 0.25rem 0 0.75rem;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 0.75rem);
+    font-size: var(--fl-font-small);
   }
   .fla-bg-list {
     display: grid;
@@ -136,7 +136,7 @@
     align-items: center;
     padding: 0.75rem 0.875rem;
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control, 10px);
+    border-radius: var(--fl-radius-control);
     color: inherit;
     text-decoration: none;
   }
@@ -152,7 +152,7 @@
     place-items: center;
     width: 2rem;
     height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
   }
   .fla-bg-body {
@@ -165,11 +165,11 @@
   }
   .fla-bg-detail {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 0.75rem);
+    font-size: var(--fl-font-small);
   }
   .fla-bg-bar {
     height: 4px;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
     overflow: hidden;
   }
@@ -183,7 +183,7 @@
     gap: 0.25rem;
     align-items: center;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 0.75rem);
+    font-size: var(--fl-font-small);
     white-space: nowrap;
   }
 </style>

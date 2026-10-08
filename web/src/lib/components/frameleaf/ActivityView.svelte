@@ -400,9 +400,8 @@
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
       {#if filter === 'all' || filter === 'running'}
         <p>{$t('frameleaf_activity_empty_help')}</p>
-        <Button onclick={() => void goto(Route.studioProjects())}>
-          <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_studio')}
-        </Button>
+        <!-- Nothing is running, so the way on is back to the photos, not into another workspace. -->
+        <Button onclick={() => void goto(Route.photos())}>{$t('frameleaf_activity_back_to_library')}</Button>
       {:else}
         <p>{$t('frameleaf_activity_empty_help_finished')}</p>
       {/if}
@@ -683,7 +682,7 @@
   /* The prototype's 30px segments keep the 44px/48px floor from tokens.css. */
   .fla-filters button {
     padding: 0 12px;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     display: inline-flex;
@@ -793,7 +792,7 @@
   .fla-thumb {
     width: 112px;
     aspect-ratio: 16 / 10;
-    border-radius: 6px;
+    border-radius: var(--fl-radius-sm);
     overflow: hidden;
     background: var(--fl-raised);
     display: flex;

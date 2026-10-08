@@ -9,7 +9,13 @@ import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumPage from './+page.svelte';
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidate: vi.fn(), onNavigate: vi.fn() }));
+vi.mock('$app/navigation', () => ({
+  afterNavigate: vi.fn(),
+  beforeNavigate: vi.fn(),
+  goto: vi.fn(),
+  invalidate: vi.fn(),
+  onNavigate: vi.fn(),
+}));
 vi.mock('$app/state', () => ({ navigating: { complete: Promise.resolve() } }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),

@@ -6,6 +6,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import { installFrameleafToasts } from '$lib/frameleaf/toast';
 import { albumDirectoryView } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -27,6 +28,7 @@ vi.mock('$app/navigation', () => ({
   replaceState: app.replaceState,
   invalidate: vi.fn(),
   afterNavigate: vi.fn(),
+  onNavigate: vi.fn(),
 }));
 vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => app.routerStarted }));
 
@@ -70,11 +72,16 @@ const tree: AlbumTreeResponseDto = {
   spaces: [space],
 };
 
+/** The line under the filters (drag hint, "your albums changed"); outcomes are toasts, also `status`. */
+const directoryStatus = () => within(screen.getByRole('region', { name: 'Albums' })).getByRole('status');
+
 describe('AlbumDirectory', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
     register('en-US', () => import('$i18n/en.json'));
     await waitLocale('en-US');
+    // Outcomes are said in the Frameleaf toast, as the root layout installs it.
+    installFrameleafToasts();
     HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
       this.open = true;
     };
@@ -168,7 +175,18 @@ describe('AlbumDirectory', () => {
       }),
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-    expect(screen.getByRole('status')).toHaveTextContent('“Summer in the Rockies” is now on its own');
+    // Said in a toast at the foot of the page, not in the line under the filters.
+    expect(await screen.findByText(/“Summer in the Rockies” is now on its own/)).toBeInTheDocument();
+    expect(directoryStatus()).toHaveTextContent('');
+
+    // Undo moves it back to the collection it came from.
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() =>
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenLastCalledWith({
+        id: 'rockies',
+        moveAlbumDto: { collectionId: 'family', expectedParentId: null },
+      }),
+    );
   });
 
   it('keeps shared spaces top level, opening on their own page, with a way to Sharing and its invitations', () => {
@@ -359,7 +377,9 @@ describe('AlbumDirectory', () => {
         }),
       );
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-      expect(screen.getByRole('status')).toHaveTextContent('“Winter 2026” is now 1 of 2');
+      expect(await screen.findByText(/“Winter 2026” is now 1 of 2/)).toBeInTheDocument();
+      // the moved tile is marked so the eye finds it
+      await waitFor(() => expect(screen.getByRole('article', { name: 'Winter 2026' })).toHaveClass('moved'));
     });
 
     it('arranges collections at the top level too', async () => {
@@ -440,7 +460,7 @@ describe('AlbumDirectory', () => {
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Move earlier' }));
 
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-      expect(screen.getByRole('status')).toHaveTextContent('Your albums changed since this page loaded');
+      expect(directoryStatus()).toHaveTextContent('Your albums changed since this page loaded');
     });
 
     it('reloads and says so when a move is refused because the album was moved since (stale moved node)', async () => {
@@ -456,7 +476,7 @@ describe('AlbumDirectory', () => {
       await fireEvent.click(dialog.getByRole('button', { name: 'Move' }));
 
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-      expect(screen.getByRole('status')).toHaveTextContent('Your albums changed since this page loaded');
+      expect(directoryStatus()).toHaveTextContent('Your albums changed since this page loaded');
     });
   });
 
@@ -491,7 +511,7 @@ describe('AlbumDirectory', () => {
       }),
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-    expect(screen.getByRole('status')).toHaveTextContent('Trips');
+    expect(await screen.findByText(/Summer in the Rockies.*Trips/)).toBeInTheDocument();
   });
 
   it('never offers Move to… or a drag to an editor of someone else’s album (FL-83 AL-9)', async () => {

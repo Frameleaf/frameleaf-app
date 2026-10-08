@@ -14,18 +14,13 @@
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import QrCode from '$lib/components/frameleaf/QrCode.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import CloudPendingCode from '$lib/components/frameleaf/cloud/CloudPendingCode.svelte';
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
-  import {
-    dataRegionKey,
-    displayHost,
-    formatCountdown,
-    linkRefusalKeys,
-    secondsUntil,
-    shortFingerprint,
-  } from '$lib/frameleaf/cloud';
+  import { dataRegionKey, displayHost, linkRefusalKeys, shortFingerprint } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -46,7 +41,6 @@
     mdiLinkOff,
     mdiLinkVariant,
     mdiOpenInNew,
-    mdiProgressClock,
     mdiQrcode,
     mdiRefresh,
     mdiServerOutline,
@@ -57,24 +51,17 @@
   onMount(() => cloudManager.listen());
 
   const status = $derived(cloudManager.status);
-  let notice = $state('');
+  /** A notice belongs to the link state it was written in: "Link started" goes once the link lands. */
+  let noticeText = $state('');
+  let noticeState = $state<string | undefined>();
+  const notice = $derived(noticeText && noticeState === status?.state ? noticeText : '');
   let failure = $state('');
   let busy = $state(false);
   let unlinking = $state(false);
   let understood = $state(false);
-  let now = $state(Date.now());
-
-  $effect(() => {
-    if (status?.state !== 'pending') {
-      return;
-    }
-    now = Date.now();
-    const timer = setInterval(() => (now = Date.now()), 1000);
-    return () => clearInterval(timer);
-  });
-
-  const left = $derived(secondsUntil(status?.pending?.expiresAt, now));
-  const expired = $derived(status?.state === 'pending' && left === 0);
+  /** Reported by the pending-code block when its countdown reaches zero. */
+  let codeExpired = $state(false);
+  const expired = $derived(status?.state === 'pending' && codeExpired);
 
   const formatWhen = (value: string | null | undefined) =>
     value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
@@ -84,7 +71,8 @@
     failure = '';
     try {
       await call();
-      notice = success;
+      noticeText = success;
+      noticeState = cloudManager.status?.state;
       return true;
     } catch (error) {
       failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
@@ -101,6 +89,12 @@
   const regionName = (region: string | null | undefined) => {
     const key = region ? dataRegionKey(region) : null;
     return key ? $t(key) : null;
+  };
+
+  /** The region as a value on its own line: "The EU", or the raw code for a region without a name. */
+  const regionLabel = (region: string) => {
+    const name = regionName(region);
+    return name ? name.charAt(0).toUpperCase() + name.slice(1) : region.toUpperCase();
   };
 
   const heartbeatLabel = (field: CloudHeartbeatField) => $t(`frameleaf_cloud_sends_${field}` as Translations);
@@ -140,7 +134,7 @@
         type="button"
         class="fc-link"
         aria-label={$t('frameleaf_cloud_dismiss_notice')}
-        onclick={() => (notice = '')}
+        onclick={() => (noticeText = '')}
       >
         <Icon icon={mdiClose} size="16" />
       </button>
@@ -149,9 +143,15 @@
 
   {#if !status}
     {#if cloudManager.error}
-      <p class="fc-notice is-error" role="alert">{$t('frameleaf_cloud_status_unavailable')}</p>
+      <InlineError
+        message={$t('frameleaf_cloud_status_unavailable')}
+        onRetry={() => void act(() => cloudManager.refresh())}
+        retrying={busy}
+      />
     {:else}
-      <p class="fc-muted" role="status">{$t('frameleaf_cloud_loading')}</p>
+      <div class="fc-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>
+        <Skeleton variant="block" height="168px" />
+      </div>
     {/if}
   {:else if status.state === 'not-configured'}
     <CloudCard
@@ -216,6 +216,7 @@
       <CloudBanner tone="warning" title={$t('frameleaf_cloud_last_problem')}>{status.lastError}</CloudBanner>
     {/if}
     <CloudCard
+      brand
       icon={mdiCloudOutline}
       title={$t('frameleaf_cloud_unlinked_title')}
       description={$t('frameleaf_cloud_unlinked_description')}
@@ -284,44 +285,13 @@
       status={expired ? $t('frameleaf_cloud_code_expired') : $t('frameleaf_cloud_waiting')}
       tone={expired ? 'danger' : 'running'}
     >
-      <div class="fc-device-code">
-        <div>
-          <p class="fc-overline">{$t('frameleaf_cloud_your_code')}</p>
-          <p class="fc-code" class:is-expired={expired} aria-live="polite">{pending.userCode}</p>
-          <p>
-            {$t('frameleaf_cloud_go_to')}
-            <a href={pending.verificationUriComplete} target="_blank" rel="noopener noreferrer">
-              {displayHost(pending.verificationUri)}
-            </a>
-            {$t('frameleaf_cloud_enter_code')}
-          </p>
-          <dl class="fc-facts">
-            <dt>{$t('frameleaf_cloud_expires_in')}</dt>
-            <dd>{expired ? $t('frameleaf_cloud_expired') : formatCountdown(left)}</dd>
-            <dt>{$t('frameleaf_cloud_server_key')}</dt>
-            <dd><code title={status.keyFingerprint ?? ''}>{shortFingerprint(status.keyFingerprint)}</code></dd>
-          </dl>
-          <p class="fc-muted">{$t('frameleaf_cloud_pending_check')}</p>
-          {#if !expired}
-            <p class="fc-waiting"><Icon icon={mdiProgressClock} size="18" /> {$t('frameleaf_cloud_waiting')}</p>
-          {/if}
-          {#if cloudManager.pollError}
-            <p class="fc-notice is-error" role="alert">{$t('frameleaf_cloud_poll_failed')}</p>
-          {/if}
-          {#if status.lastError}
-            <p class="fc-muted" role="status">{status.lastError}</p>
-          {/if}
-        </div>
-        <QrCode
-          value={pending.verificationUriComplete}
-          size={168}
-          label={$t('frameleaf_cloud_qr_label')}
-          copyLabel={$t('frameleaf_cloud_qr_copy')}
-          downloadLabel={$t('frameleaf_cloud_qr_download')}
-          errorLabel={$t('frameleaf_cloud_qr_error')}
-          showActions={false}
-        />
-      </div>
+      <CloudPendingCode
+        {pending}
+        keyFingerprint={status.keyFingerprint}
+        lastError={status.lastError}
+        pollError={!!cloudManager.pollError}
+        bind:expired={codeExpired}
+      />
       <div class="fc-actions">
         <Button
           variant={expired ? 'primary' : 'default'}
@@ -378,7 +348,7 @@
         <dd><code title={status.keyFingerprint ?? ''}>{shortFingerprint(status.keyFingerprint)}</code></dd>
         {#if status.dataRegion}
           <dt>{$t('frameleaf_cloud_data_region')}</dt>
-          <dd>{status.dataRegion.toUpperCase()}</dd>
+          <dd>{regionLabel(status.dataRegion)}</dd>
         {/if}
       </dl>
       <p class="fc-muted">{$t('frameleaf_cloud_signin_role_notice')}</p>

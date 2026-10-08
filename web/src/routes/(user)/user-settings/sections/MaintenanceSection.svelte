@@ -6,6 +6,8 @@
    */
   import { page } from '$app/state';
   import IntegrityReportSection from './IntegrityReportSection.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
@@ -57,16 +59,24 @@
   // What the old page loaded with it: the integrity summary, the server version and the backups. Each
   // section waits only for its own data, so backups that cannot be listed do not hide the integrity
   // checks (FL-81).
-  onMount(() => {
+  const loadIntegrity = () => {
+    integrityFailed = false;
     void getIntegrityReportSummary()
       .then((summary) => (integrityReport = summary))
       .catch(() => (integrityFailed = true));
+  };
+  const loadBackups = () => {
+    backupsFailed = false;
     void Promise.all([getServerVersion(), listDatabaseBackups()])
       .then(([{ major, minor, patch }, result]) => {
         expectedVersion = `${major}.${minor}.${patch}`;
         backups = result.backups;
       })
       .catch(() => (backupsFailed = true));
+  };
+  onMount(() => {
+    loadIntegrity();
+    loadBackups();
     void loadRuns();
   });
 
@@ -163,7 +173,10 @@
     integrityHref={Route.systemMaintenance({ section: 'integrity' })}
   />
 {:else if failed}
-  <p role="alert">{$t('frameleaf_cc_load_failed')}</p>
+  <InlineError
+    message={$t('frameleaf_cc_section_load_failed')}
+    onRetry={section === 'integrity' ? loadIntegrity : loadBackups}
+  />
 {:else if section === 'integrity' && report}
   <IntegrityReportSection type={report} />
 {:else if section === 'integrity' && integrityReport}
@@ -186,5 +199,17 @@
   <MaintenanceBackupsPanel {backups} {expectedVersion} />
   <MaintenanceRestoreTest />
 {:else}
-  <p role="status">{$t('loading')}</p>
+  <div class="maintenance-loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="block" height="5rem" />
+    <Skeleton variant="block" height="5rem" />
+    <Skeleton variant="block" height="5rem" />
+  </div>
 {/if}
+
+<style>
+  .maintenance-loading {
+    display: grid;
+    gap: var(--fl-space-3);
+  }
+</style>

@@ -512,7 +512,9 @@ test.describe('Timeline', () => {
           : route.fallback(),
       );
       await page.goto('/favorites');
-      await expect(page.getByText('No photos or videos in this view.')).toBeVisible();
+      // It says how items get here, and offers no upload: that belongs to an empty library only.
+      await expect(page.getByText('Photos and videos you mark with the heart appear here.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Upload photos' })).toHaveCount(0);
     });
   });
 
@@ -552,6 +554,38 @@ test.describe('Timeline', () => {
           Number(getComputedStyle(element).getPropertyValue('--fl-sticky-offset').replace('px', '')),
         );
       expect(offset).toBeGreaterThan(0);
+    });
+
+    test('a brand-new library offers Upload and holds back the chrome that needs photos', async ({ page }) => {
+      await page.route('**/api/timeline/buckets?*', (route) => route.fulfill({ json: [] }));
+      await page.goto('/photos');
+      await expect(page.getByRole('heading', { name: 'Your library starts here' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Upload photos' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Upload folder' })).toBeVisible();
+      await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
+      await expect(page.getByRole('group', { name: 'Layout' })).toHaveCount(0);
+      await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
+    });
+
+    test('on a phone the library header is one row with a single view menu', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await pageUtils.openPhotosPage(page);
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      await expect(toolbar.getByTestId('frameleaf-result-count')).toBeVisible();
+      // The layout switch, Sort, Grid / List and Slideshow are in the menu, not stacked above the photos.
+      await expect(page.getByRole('group', { name: 'Layout' })).toHaveCount(0);
+      await expect(toolbar.getByRole('combobox', { name: 'Sort by' })).toHaveCount(0);
+      const [count, menuButton] = await Promise.all([
+        toolbar.getByTestId('frameleaf-result-count').boundingBox(),
+        toolbar.getByRole('button', { name: 'View options' }).boundingBox(),
+      ]);
+      expect(Math.abs(count!.y + count!.height / 2 - (menuButton!.y + menuButton!.height / 2))).toBeLessThanOrEqual(12);
+
+      await toolbar.getByRole('button', { name: 'View options' }).click();
+      const menu = page.getByRole('menu', { name: 'View options' });
+      await expect(menu.getByRole('menuitemcheckbox', { name: 'Browse' })).toHaveAttribute('aria-checked', 'true');
+      await menu.getByRole('menuitemcheckbox', { name: 'Timeline' }).click();
+      await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
     });
 
     test('on a phone the drawer ends above the tab bar and its footer stays reachable', async ({ page }) => {
@@ -602,15 +636,16 @@ test.describe('Timeline', () => {
       await page.keyboard.press('Escape');
       await expect(page.getByRole('menu', { name: 'Choose a filter' })).toBeHidden();
       await expect(toolbar.getByRole('button', { name: 'Slideshow' })).toBeEnabled();
-      await expect(toolbar.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-desc');
+      await expect(toolbar.getByRole('combobox', { name: 'Sort by' })).toHaveValue('captured-desc');
 
       await toolbar.getByRole('button', { name: 'Show information panel' }).click();
       await expect(page.getByTestId('frameleaf-work-inspector')).toBeVisible();
 
       await toolbar.getByRole('button', { name: 'More library actions' }).click();
-      const actions = page.getByRole('dialog', { name: 'Collection actions' });
+      const actions = page.getByRole('dialog', { name: 'View actions' });
       await expect(actions).toBeVisible();
-      await expect(actions.getByRole('button', { name: 'Compare selected items' })).toBeDisabled();
+      // Compare lives on the selection bar only; the sheet does not repeat it.
+      await expect(actions.getByRole('button', { name: 'Compare selected items' })).toHaveCount(0);
     });
 
     test('Browse sorts by file name through the flat order, and List shows rows (S-15)', async ({ page }) => {
@@ -618,7 +653,7 @@ test.describe('Timeline', () => {
       await timelineUtils.setLayout(page, 'Browse');
       const toolbar = page.getByTestId('frameleaf-results-toolbar');
       const ordered = page.waitForRequest((request) => request.url().includes('/api/timeline/ordered'));
-      await toolbar.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+      await toolbar.getByRole('combobox', { name: 'Sort by' }).selectOption('filename');
       await ordered;
       const first = assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b))[0];
       await expect(page.locator('[data-testid="frameleaf-asset-tile"]').first()).toHaveAttribute(
@@ -629,7 +664,7 @@ test.describe('Timeline', () => {
       await toolbar.getByRole('button', { name: 'List view' }).click();
       await expect(page.locator('[data-testid="frameleaf-asset-tile"]').first()).toHaveAttribute('data-layout', 'list');
       await toolbar.getByRole('button', { name: 'Grid view' }).click();
-      await toolbar.getByRole('combobox', { name: 'Sort assets' }).selectOption('captured-desc');
+      await toolbar.getByRole('combobox', { name: 'Sort by' }).selectOption('captured-desc');
 
       // The Timeline keeps its dates: only newest-first and oldest-first are offered there.
       await timelineUtils.setLayout(page, 'Timeline');

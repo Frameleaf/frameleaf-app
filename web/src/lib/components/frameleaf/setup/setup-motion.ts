@@ -3,9 +3,11 @@
  * and WAAPI ignore the CSS reduced-motion kill switch, so every animation here is gated on
  * `mediaQueryManager.reducedMotion` explicitly and falls back to a plain fade.
  */
+import { DURATION, EASE, SNAPPY, STAGGER_LIMIT, STAGGER_MS } from '$lib/frameleaf/tokens';
 import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 
-export const SETUP_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+/** Movement inside setup uses the shared small-move curve (tokens.css `--fl-snappy`). */
+export const SETUP_EASE = SNAPPY;
 
 export const animate = (node: Element | null | undefined, frames: Keyframe[], options: KeyframeAnimationOptions) =>
   node && typeof node.animate === 'function'
@@ -23,7 +25,7 @@ export const stepIn = (node: HTMLElement, direction: number) => {
           { opacity: 0, transform: `translateX(${direction * 36}px)` },
           { opacity: 1, transform: 'none' },
         ],
-    { duration: reduced ? 200 : 460 },
+    { duration: reduced ? DURATION.reduced : DURATION.sheet },
   );
   return { destroy: () => run?.cancel() };
 };
@@ -40,7 +42,7 @@ export const staggerIn = (node: HTMLElement) => {
             { opacity: 0, transform: 'translateY(8px)' },
             { opacity: 1, transform: 'none' },
           ],
-      { duration: reduced ? 200 : 420, delay: 120 + index * 170 },
+      { duration: reduced ? DURATION.reduced : DURATION.dock, delay: DURATION.fast + index * DURATION.base },
     ),
   );
   return {
@@ -53,77 +55,82 @@ export const staggerIn = (node: HTMLElement) => {
 };
 
 /**
- * The logo intro: the symbol draws its outline, fills, the glow rises, then every `[data-intro]`
- * element rises in turn. Reduced motion: fades only. Calls `onSettled` when the last one lands.
+ * The welcome arrival. The logo plays Unfurl by itself (`Logo arrive`, CSS); once it has opened,
+ * every `[data-intro]` element is revealed in turn (the Reveal pattern: a fade with the shared
+ * stagger). Reduced motion: the same fades with no stagger. Calls `onSettled` when the last one
+ * lands. Any click or key press finishes whatever is still running, so nobody waits for it.
  */
 export const logoIntro = (node: HTMLElement, onSettled?: () => void) => {
   const reduced = mediaQueryManager.reducedMotion;
   const after = [...node.querySelectorAll('[data-intro]')];
-  const running: (Animation | undefined)[] = [];
-  if (reduced || typeof node.animate !== 'function') {
-    running.push(animate(node.querySelector('svg'), [{ opacity: 0 }, { opacity: 1 }], { duration: 400 }));
-    for (const [index, element] of after.entries()) {
-      running.push(animate(element, [{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 300 + index * 150 }));
+  // Reveal starts as the mark passes its overshoot, so the two read as one movement.
+  const start = reduced ? 0 : DURATION.unfurl / 2;
+  const running = after.map((element, index) =>
+    animate(element, [{ opacity: 0 }, { opacity: 1 }], {
+      duration: reduced ? DURATION.reduced : DURATION.base,
+      delay: reduced ? 0 : start + Math.min(index, STAGGER_LIMIT) * STAGGER_MS,
+      easing: EASE,
+    }),
+  );
+  // The skip listeners live until the intro settles or the element goes away.
+  const listening = new AbortController();
+  let settled = false;
+  const settle = () => {
+    if (settled) {
+      return;
     }
-  } else {
-    for (const [index, path] of [...node.querySelectorAll('.frs-logo-stroke')].entries()) {
-      running.push(
-        animate(
-          path,
-          [
-            { strokeDashoffset: 1, opacity: 1 },
-            { strokeDashoffset: 0, opacity: 1 },
-            { strokeDashoffset: 0, opacity: 0 },
-          ],
-          { duration: 2000, delay: index * 220, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
-        ),
-      );
+    settled = true;
+    listening.abort();
+    onSettled?.();
+  };
+  // Jumps every animation to its end state, then settles the intro.
+  const skip = () => {
+    for (const run of running) {
+      try {
+        run?.finish();
+      } catch {
+        // an animation that cannot be finished is left to end by itself
+      }
     }
-    for (const [index, path] of [...node.querySelectorAll('.frs-logo-fill')].entries()) {
-      running.push(
-        animate(
-          path,
-          [
-            { opacity: 0, transform: 'scale(0.96)' },
-            { opacity: 1, transform: 'none' },
-          ],
-          {
-            duration: 700,
-            delay: 1300 + index * 120,
-          },
-        ),
-      );
-    }
-    running.push(
-      animate(node.querySelector('.frs-logo-glow'), [{ opacity: 0 }, { opacity: 1 }], { duration: 1600, delay: 900 }),
-    );
-    for (const [index, element] of after.entries()) {
-      running.push(
-        animate(
-          element,
-          [
-            { opacity: 0, transform: 'translateY(10px)' },
-            { opacity: 1, transform: 'none' },
-          ],
-          {
-            duration: 700,
-            delay: 1900 + index * 380,
-          },
-        ),
-      );
-    }
-  }
+    settle();
+  };
   const last = running.findLast(Boolean);
   if (last) {
-    last.onfinish = () => onSettled?.();
+    last.onfinish = settle;
+    addEventListener('pointerdown', skip, { capture: true, signal: listening.signal });
+    addEventListener('keydown', skip, { capture: true, signal: listening.signal });
   } else {
-    onSettled?.();
+    settle();
   }
   return {
     destroy: () => {
+      settled = true;
+      listening.abort();
       for (const run of running) {
         run?.cancel();
       }
     },
   };
+};
+
+/**
+ * The hand-off out of setup: the stage fades while the logo grows a touch, then `done` runs (the
+ * navigation to the library, which the app crossfades). Reduced motion: a short fade, no scale.
+ * Resolves at once where the Web Animations API is missing.
+ */
+export const stageOut = async (stage: HTMLElement | null | undefined, logo?: Element | null): Promise<void> => {
+  if (!stage || typeof stage.animate !== 'function') {
+    return;
+  }
+  const reduced = mediaQueryManager.reducedMotion;
+  const duration = reduced ? DURATION.reduced : DURATION.spring;
+  const fade = animate(stage, [{ opacity: 1 }, { opacity: 0 }], { duration, fill: 'forwards' });
+  if (!reduced) {
+    animate(logo, [{ transform: 'none' }, { transform: 'scale(1.04)' }], { duration, fill: 'forwards' });
+  }
+  try {
+    await fade?.finished;
+  } catch {
+    // cancelled: carry on to the library
+  }
 };

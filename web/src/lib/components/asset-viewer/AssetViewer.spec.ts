@@ -12,6 +12,11 @@ import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import {
+  clearRender,
+  markRenderReady,
+  setRenderProgress,
+} from '$lib/components/frameleaf/editor/pending-render.svelte';
 import { saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
 import { resetPlaybackRevisions, setDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
@@ -73,6 +78,12 @@ vi.mock('$lib/components/asset-viewer/ImagePanoramaViewer.svelte', async () => {
 // FL-148: the guard-parity specs only need isFaceEditMode toggled and FaceTagger mounted, not its own
 // (heavier) face-loading/canvas behaviour.
 vi.mock('$lib/components/frameleaf/FaceTagger.svelte', async () => {
+  const { default: MockText } = await import('@test-data/components/MockText.svelte');
+  return { default: MockText };
+});
+
+// The information card's contents load albums, people and tags; the viewer specs only need the card's frame.
+vi.mock('$lib/components/asset-viewer/DetailPanel.svelte', async () => {
   const { default: MockText } = await import('@test-data/components/MockText.svelte');
   return { default: MockText };
 });
@@ -169,6 +180,85 @@ describe('AssetViewer', () => {
         'photo-hash-develop-rendered-photo',
       ),
     );
+  });
+
+  it('puts the photo on screen before the develop lookup answers, so the opening zoom has somewhere to land', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: null });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const lookup = deferred<Awaited<ReturnType<typeof getAssetDevelop>>>();
+    vi.mocked(getAssetDevelop).mockReturnValue(lookup.promise);
+
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+    expect(document.querySelector('#immich-asset-viewer [data-viewer-hero]')).toBeInTheDocument();
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledWith({ id: asset.id }));
+    lookup.resolve({ assetId: asset.id, currentRevisionId: null, revisions: [] });
+  });
+
+  it('keeps the photo mounted from one item to the next instead of blanking the canvas', async () => {
+    const user = userAdminFactory.build();
+    const first = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: null });
+    const second = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: null });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const view = renderWithTooltips(AssetViewer, { cursor: { current: first }, showNavigation: false });
+    const hero = document.querySelector('#immich-asset-viewer [data-viewer-hero]');
+    expect(hero).toBeInTheDocument();
+
+    vi.mocked(getAssetDevelop).mockReturnValue(new Promise(() => {}));
+    await view.rerender({ componentProps: { cursor: { current: second }, showNavigation: false } });
+
+    expect(document.querySelector('#immich-asset-viewer [data-viewer-hero]')).toBe(hero);
+  });
+
+  it('says on the photo that a saved edit is being finished, then that it is ready', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    expect(screen.queryByTestId('viewer-edit-status')).not.toBeInTheDocument();
+
+    try {
+      setRenderProgress(asset.id, 40);
+      const status = await screen.findByTestId('viewer-edit-status');
+      expect(status).toHaveAttribute('role', 'status');
+      expect(status).toHaveTextContent('frameleaf_viewer_edit_finishing_progress');
+
+      markRenderReady(asset.id);
+      await waitFor(() =>
+        expect(screen.getByTestId('viewer-edit-status')).toHaveTextContent('frameleaf_viewer_edit_ready'),
+      );
+    } finally {
+      clearRender(asset.id);
+    }
+  });
+
+  it('keeps the information card’s Close above its scrolling details', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, hasMetadata: true });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    if (!assetViewerManager.isShowDetailPanel) {
+      assetViewerManager.toggleDetailPanel();
+    }
+
+    const card = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>('#detail-panel');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const head = card.querySelector('header')!;
+    const body = card.querySelector('.fl-viewer-info-body')!;
+    expect(head.nextElementSibling).toBe(body);
+    expect(body.contains(head)).toBe(false);
+
+    await fireEvent.click(head.querySelector('button')!);
+    expect(assetViewerManager.isShowDetailPanel).toBe(false);
+    await waitFor(() => expect(document.querySelector('#detail-panel')).toBeNull());
   });
 
   it('keeps both preview and zoom on the media route after a failed develop lookup', async () => {
@@ -606,6 +696,34 @@ describe('AssetViewer', () => {
 
       expect(onNavigateToAsset).not.toHaveBeenCalled();
       now.mockRestore();
+    });
+
+    it('moves on from a sideways flick on the photo, and stays put where there is no neighbour', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+      const canvas = view.container.ownerDocument.querySelector<HTMLElement>('[data-viewer-content]')!;
+
+      // Towards the right there is nothing before this item: the photo springs back.
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 320, clientY: 204 });
+      expect(canvas).toHaveClass('following');
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 380, clientY: 204 });
+      expect(canvas).not.toHaveClass('following');
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+
+      // Towards the left the next item is shown beside the photo, and the release moves on to it.
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 300, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 240, clientY: 202 });
+      expect(canvas.querySelector('[data-viewer-peek="next"]')).toBeInTheDocument();
+      expect(canvas.querySelector('[data-viewer-peek="previous"]')).not.toBeInTheDocument();
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 202 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 20, clientY: 202 });
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledExactlyOnceWith(nextAsset));
     });
 
     it('ignores an ArrowRight press when navigation is turned off for this viewer instance', async () => {

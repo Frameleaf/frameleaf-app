@@ -58,7 +58,7 @@
   .fl-live-badge.playing,
   .fl-live-badge:hover {
     background: color-mix(in srgb, var(--fl-teal) 28%, var(--fl-viewer-panel));
-    color: #fff;
+    color: var(--fl-viewer-text);
   }
 
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {

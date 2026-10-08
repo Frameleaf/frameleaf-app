@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Status from '$lib/components/frameleaf/Status.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
@@ -57,7 +57,7 @@
   <p class="hint">{$t('frameleaf_spaces_places_hint')}</p>
 
   {#if loading}
-    <Status message={$t('loading')} busy={true} />
+    <div class="loading"><Spinner /></div>
   {:else if markers.length === 0}
     <p class="empty">{$t('frameleaf_spaces_places_empty')}</p>
   {:else}
@@ -110,5 +110,11 @@
     align-items: center;
     justify-content: center;
     height: 100%;
+  }
+  .loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-6) 0;
+    color: var(--fl-muted);
   }
 </style>

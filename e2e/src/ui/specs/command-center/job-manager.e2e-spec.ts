@@ -67,7 +67,7 @@ const setupQueueMocks = async (context: BrowserContext) => {
         : [],
     });
   });
-  // FL-71 (J-1): the Account filter's accounts and one account's counts.
+  // FL-71 (J-1): the accounts, and one account's counts for the Viewing scope.
   await context.route('**/api/admin/users*', (route) =>
     route.fulfill({ json: [{ id: 'a0000000-0000-4000-8000-000000000001', name: 'Grace Hopper', email: 'g@x.test' }] }),
   );
@@ -162,7 +162,12 @@ test.describe('Job manager', () => {
     await expect(metric('Waiting & scheduled')).toHaveText('5');
     await expect(metric('Failed')).toHaveText('3');
 
-    await page.getByRole('button', { name: 'Open Thumbnails' }).click();
+    // The queue's name opens it; the row no longer carries a second "Open" button (finding 78).
+    await page
+      .getByRole('region', { name: 'Processing queues' })
+      .getByRole('button', { name: /^Thumbnails/ })
+      .first()
+      .click();
     await page.waitForURL('**/user-settings?area=processing&section=queues&queue=thumbnail-generation');
     await expect(page.getByRole('heading', { level: 1, name: 'Thumbnails' })).toBeVisible();
 
@@ -214,11 +219,14 @@ test.describe('Job manager', () => {
     await expect.poll(() => requests.retries).toEqual(['faceDetection']);
   });
 
-  test("narrows a queue to one account's work with the Account filter", async ({ page }) => {
-    await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
+  // The account is the command center's "Viewing" scope in the address; the page has no second
+  // account select (design review finding 65).
+  test("narrows a queue to one account's work from the Viewing scope", async ({ page }) => {
+    await page.goto(
+      `${jobManager}&queue=face-detection&tab=failed&scope=${encodeURIComponent('account:a0000000-0000-4000-8000-000000000001')}`,
+    );
     await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
-
-    await page.getByRole('combobox', { name: 'Account filter' }).selectOption({ label: 'Grace Hopper' });
+    await expect(page.getByRole('combobox', { name: 'Account filter' })).toHaveCount(0);
 
     await expect.poll(() => requests.ownerQueries).toContain('a0000000-0000-4000-8000-000000000001');
     await expect(page.getByText(/Counts and job details: Grace Hopper\./)).toBeVisible();

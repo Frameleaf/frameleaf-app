@@ -6,13 +6,15 @@
    * so plainly and offers the local account instead.
    */
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
+  import CloudPendingCode from '$lib/components/frameleaf/cloud/CloudPendingCode.svelte';
   import { dataRegionKey, displayHost } from '$lib/frameleaf/cloud';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { startFrameleaf } from '$lib/frameleaf/frameleaf-sign-in';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { CloudLinkRefusal, getPublicConfig } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCheckDecagram, mdiCloudOffOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCheck, mdiCloudOffOutline, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -29,6 +31,8 @@
   let signInAvailable = $state<boolean | null>(null);
   let busy = $state(false);
   let error = $state('');
+  /** Reported by the code block when its countdown reaches zero. */
+  let codeExpired = $state(false);
 
   onMount(() => {
     if (mode === 'link') {
@@ -76,12 +80,19 @@
     return key ? $t(key) : null;
   });
 
+  /** Why the last code did not link: declined on the approval page, or nobody approved it in time. */
+  const linkResult = $derived(
+    status?.state === 'unlinked' && (status.linkResult === 'denied' || status.linkResult === 'expired')
+      ? status.linkResult
+      : null,
+  );
+
   const start = () => run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', location)));
 </script>
 
 {#if linked || status?.state === 'linked'}
   <div class="frs-linked" role="status">
-    <span class="frs-linked-badge"><Icon icon={mdiCheckDecagram} size="22" aria-hidden={true} /></span>
+    <span class="frs-linked-badge fl-brand-frame fl-unfurl"><Icon icon={mdiCheck} size="22" aria-hidden={true} /></span>
     <div>
       <strong>
         {status?.account?.label
@@ -107,27 +118,37 @@
     {/if}
   </div>
 {:else if status?.state === 'pending' && status.pending}
-  <div class="frs-device" role="status">
-    <span
-      class="frs-device-code"
-      aria-label={$t('frameleaf_setup_code', { values: { code: status.pending.userCode } })}
-    >
-      {status.pending.userCode}
-    </span>
-    <div>
-      <strong>{$t('frameleaf_setup_approve', { values: { host: displayHost(status.pending.verificationUri) } })}</strong
+  <section
+    class="frs-device"
+    aria-label={$t('frameleaf_setup_approve', { values: { host: displayHost(status.pending.verificationUri) } })}
+  >
+    <CloudPendingCode
+      compact
+      pending={status.pending}
+      lastError={status.lastError}
+      pollError={!!cloudManager.pollError}
+      bind:expired={codeExpired}
+    />
+    <div class="frs-device-actions">
+      {#if codeExpired}
+        <span class="frs-device-status" role="status">{$t('frameleaf_cloud_code_expired')}</span>
+      {:else}
+        <span class="frs-device-status frs-waiting" role="status">{$t('frameleaf_cloud_waiting')}</span>
+      {/if}
+      <button
+        type="button"
+        class="button"
+        class:primary={codeExpired}
+        disabled={busy}
+        onclick={() => void run(() => cloudManager.startLink())}
       >
-      <span>
-        <a href={status.pending.verificationUriComplete} target="_blank" rel="noopener noreferrer">
-          {$t('frameleaf_setup_approve_open')}
-        </a>
-        <span class="frs-dots" aria-hidden="true"></span>
-      </span>
+        <Icon icon={mdiRefresh} size={ICON_SIZE.md} aria-hidden={true} />{$t('frameleaf_cloud_new_code')}
+      </button>
+      <button type="button" class="auth-link" disabled={busy} onclick={() => void run(() => cloudManager.cancelLink())}>
+        {$t('cancel')}
+      </button>
     </div>
-    <button type="button" class="auth-link" disabled={busy} onclick={() => void run(() => cloudManager.cancelLink())}>
-      {$t('cancel')}
-    </button>
-  </div>
+  </section>
 {:else if regionMismatch?.regionMismatch?.canContinue}
   <div class="frs-region-mismatch" role="alert">
     <strong>{$t('frameleaf_cloud_link_refusal_region_mismatch_title')}</strong>
@@ -148,6 +169,18 @@
     <p class="auth-error" role="alert">
       {regionMismatch.lastError || $t('frameleaf_cloud_link_refusal_region_mismatch_body')}
     </p>
+  {:else if linkResult}
+    <div class="frs-link-result" role="alert">
+      <Icon icon={mdiAlertCircleOutline} size={ICON_SIZE.lg} aria-hidden={true} />
+      <div>
+        <strong>
+          {linkResult === 'denied' ? $t('frameleaf_cloud_link_denied_title') : $t('frameleaf_cloud_link_expired_title')}
+        </strong>
+        <span>
+          {linkResult === 'denied' ? $t('frameleaf_cloud_link_denied_body') : $t('frameleaf_cloud_link_expired_body')}
+        </span>
+      </div>
+    </div>
   {/if}
   <button
     type="button"

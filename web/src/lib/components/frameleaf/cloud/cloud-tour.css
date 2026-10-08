@@ -3,52 +3,48 @@
  * (design/frameleaf/template/src/cloud-tour.css, c4a009f8b5). A sheet in the Apple "what's new"
  * pattern: a coloured icon tile, a short title, a grouped list and a quiet footer; phones get a
  * bottom sheet with 44pt controls. The sheet chrome is the Frameleaf `.dialog` (Dialog.svelte, whose
- * styles are scoped there): 22px continuous corners, a spring rise, a dimmed, blurred backdrop, and a
- * crossfade under Reduce Motion. Step changes are animated in CloudTour.svelte, gated in JavaScript.
+ * styles are scoped there): the sheet radius with continuous corners, the Sheet entrance, the shared
+ * scrim, and a crossfade under Reduce Motion. A Leaf Light hairline runs along the top edge: the tour
+ * is Frameleaf introducing Frameleaf Cloud (BRAND.md decision 3). Step changes are animated in CloudTour.svelte, gated in JavaScript.
  */
 .dialog.cloud-tour {
+  /* Centred in the window: the page reset zeroes the margin a modal dialog is centred by. */
+  margin: auto;
   width: 100%;
   max-height: calc(100dvh - 44px);
   color: var(--fl-text);
   background: var(--fl-panel);
   border: 1px solid var(--fl-border);
-  border-radius: var(--fl-radius-sheet, 22px);
-  box-shadow: 0 18px 80px rgb(0 0 0 / 47%);
+  border-radius: var(--fl-radius-sheet);
+  box-shadow: var(--fl-shadow-4);
   animation:
-    ct-sheet-fade 220ms ease both,
-    ct-sheet-rise 480ms var(--fl-spring) both;
+    fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+    fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
 }
+/*
+ * The shared scrim. The fallbacks repeat the token values for engines where ::backdrop does not
+ * inherit custom properties from its dialog (the same rule as Dialog.svelte).
+ */
 .dialog.cloud-tour::backdrop {
-  background: rgb(0 0 0 / 40%);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  animation: ct-sheet-fade 260ms ease both;
-}
-@keyframes ct-sheet-fade {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes ct-sheet-rise {
-  from {
-    translate: 0 40px;
-    scale: 0.96;
-  }
+  background: var(--fl-scrim, rgb(0 0 0 / 40%));
+  -webkit-backdrop-filter: var(--fl-scrim-blur, blur(12px));
+  backdrop-filter: var(--fl-scrim-blur, blur(12px));
+  animation: fl-fade-in var(--fl-duration-fade, 200ms) var(--fl-ease, ease) both;
 }
 @supports (corner-shape: squircle) {
   .dialog.cloud-tour {
     corner-shape: squircle;
-    border-radius: calc(var(--fl-radius-sheet, 22px) * 1.8);
+    border-radius: calc(var(--fl-radius-sheet) * 1.8);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .dialog.cloud-tour {
-    animation: ct-sheet-fade 200ms ease both !important;
+    animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
   }
 }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .dialog.cloud-tour::backdrop {
-    background: rgb(0 0 0 / 67%);
+    background: var(--fl-scrim, rgb(0 0 0 / 67%));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -69,11 +65,15 @@
   margin: 0;
   padding: 18px 24px 0;
   color: var(--fl-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font: var(--fl-type-micro);
+  letter-spacing: var(--fl-tracking-micro);
   text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: var(--fl-numeric);
+}
+/* Leaf Light along the top edge, inside the sheet's clipped corners. */
+.cloud-tour .ct-brand-line {
+  flex: none;
+  border-radius: 0;
 }
 .cloud-tour .ct-body {
   flex: 1;
@@ -88,9 +88,9 @@
   align-items: flex-start;
   margin: 0 0 18px;
   padding: 10px 12px;
-  border-radius: var(--fl-radius-card, 12px);
+  border-radius: var(--fl-radius-card);
   background: color-mix(in srgb, var(--fl-teal) 12%, var(--fl-raised));
-  font-size: 13px;
+  font-size: var(--fl-font-callout);
   line-height: 1.5;
 }
 .cloud-tour .ct-linked svg {
@@ -112,15 +112,36 @@
   width: 60px;
   height: 60px;
   margin-bottom: 6px;
-  border-radius: 15px;
-  color: #fff;
-  background: var(--tile, #8e8e93);
-  box-shadow: inset 0 0 0 0.5px #ffffff40;
+  border-radius: var(--fl-radius-card);
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  box-shadow: inset 0 0 0 1px var(--fl-border);
+}
+/* One role colour per step, each with the text colour that clears 4.5:1 on it. */
+.cloud-tour .ct-tile[data-tone='blue'] {
+  color: var(--fl-blue-text);
+  background: var(--fl-blue);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='teal'] {
+  color: var(--fl-teal-text);
+  background: var(--fl-teal);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='accent'] {
+  color: var(--fl-accent-text);
+  background: var(--fl-accent);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='ai'] {
+  color: var(--fl-ai-text);
+  background: var(--fl-ai);
+  box-shadow: none;
 }
 @supports (corner-shape: squircle) {
   .cloud-tour .ct-tile {
     corner-shape: squircle;
-    border-radius: 24px;
+    border-radius: calc(var(--fl-radius-card) * 1.6);
   }
 }
 /* the reserved AI mark: a sparkle on indigo */
@@ -133,21 +154,27 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--fl-ai, #5e5ce6);
+  color: var(--fl-ai-text);
+  background: var(--fl-ai);
   box-shadow: 0 0 0 3px var(--fl-panel);
 }
 .cloud-tour .ct-head h2 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  outline: none;
+  font: var(--fl-type-title);
+  letter-spacing: var(--fl-tracking-title);
+  text-wrap: balance;
+}
+/* The heading takes focus on each step so the step is read; only a keyboard move shows the ring. */
+.cloud-tour .ct-head h2:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+  border-radius: var(--fl-radius-xs);
 }
 .cloud-tour .ct-head p {
   max-width: 42ch;
   margin: 0;
   color: var(--fl-muted);
-  font-size: 14px;
+  font-size: var(--fl-font-size);
   line-height: 1.5;
   text-wrap: balance;
 }
@@ -156,7 +183,7 @@
   margin: 0 0 16px;
   padding: 0;
   list-style: none;
-  border-radius: var(--fl-radius-card, 12px);
+  border-radius: var(--fl-radius-card);
   background: var(--fl-raised);
 }
 .cloud-tour .ct-points li {
@@ -174,7 +201,7 @@
   color: var(--fl-accent);
 }
 .cloud-tour[data-step='processing'] .ct-points li > svg {
-  color: var(--fl-ai, #5e5ce6);
+  color: var(--fl-ai-ink);
 }
 .cloud-tour .ct-points span {
   display: grid;
@@ -182,12 +209,12 @@
   min-width: 0;
 }
 .cloud-tour .ct-points strong {
-  font-size: 14px;
+  font-size: var(--fl-font-size);
   font-weight: 600;
 }
 .cloud-tour .ct-points small {
   color: var(--fl-muted);
-  font-size: 13px;
+  font-size: var(--fl-font-callout);
   line-height: 1.45;
 }
 .cloud-tour .ct-where {
@@ -203,7 +230,7 @@
   align-items: center;
   margin: 0;
   color: var(--fl-muted);
-  font-size: 12px;
+  font-size: var(--fl-font-small);
 }
 .cloud-tour .ct-links {
   display: flex;
@@ -220,7 +247,7 @@
   background: none;
   color: var(--fl-accent);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fl-font-size);
   font-weight: 600;
   cursor: pointer;
 }
@@ -252,11 +279,11 @@
   content: '';
   width: 7px;
   height: 7px;
-  border-radius: 4px;
+  border-radius: var(--fl-radius-pill);
   background: color-mix(in srgb, var(--fl-text) 28%, transparent);
   transition:
-    width var(--fl-duration, 380ms) var(--fl-spring, ease),
-    background-color 160ms ease;
+    width var(--fl-duration) var(--fl-spring),
+    background-color var(--fl-motion) var(--fl-ease);
 }
 .cloud-tour .ct-dots button[aria-current='step']::before {
   width: 18px;
@@ -278,7 +305,7 @@
   background: none;
   color: var(--fl-muted);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fl-font-callout);
   cursor: pointer;
 }
 .cloud-tour .ct-skip:hover {
@@ -294,7 +321,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cloud-tour .ct-dots button::before {
-    transition: background-color 160ms ease;
+    transition: background-color var(--fl-duration-reduced) var(--fl-ease);
   }
 }
 
@@ -306,7 +333,7 @@
     margin: auto 0 0;
     max-height: calc(100dvh - 12px - env(safe-area-inset-top));
     border-bottom: 0;
-    border-radius: var(--fl-radius-sheet, 22px) var(--fl-radius-sheet, 22px) 0 0;
+    border-radius: var(--fl-radius-sheet) var(--fl-radius-sheet) 0 0;
   }
   .cloud-tour .ct-overline {
     padding-top: 16px;
@@ -315,7 +342,8 @@
     padding: 12px 18px 8px;
   }
   .cloud-tour .ct-head h2 {
-    font-size: 20px;
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
   }
   .cloud-tour .ct-where {
     flex-direction: column;
@@ -328,7 +356,7 @@
     justify-content: space-between;
     min-height: 44px;
     padding: 0 14px;
-    border-radius: var(--fl-radius-card, 12px);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
   }
   .cloud-tour .ct-link:hover {
@@ -349,7 +377,7 @@
 @supports (corner-shape: squircle) {
   @media (max-width: 700px) {
     .dialog.cloud-tour {
-      border-radius: calc(var(--fl-radius-sheet, 22px) * 1.8) calc(var(--fl-radius-sheet, 22px) * 1.8) 0 0;
+      border-radius: calc(var(--fl-radius-sheet) * 1.8) calc(var(--fl-radius-sheet) * 1.8) 0 0;
     }
   }
 }

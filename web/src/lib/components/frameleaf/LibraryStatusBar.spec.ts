@@ -8,30 +8,36 @@ beforeEach(() => {
 });
 
 describe('LibraryStatusBar', () => {
-  it('says how many items the view shows, how many are selected and that the view is kept', () => {
-    render(LibraryStatusBar, { count: 1284, selected: 3, saved: true });
+  it('is not drawn when it has nothing to add to the page', () => {
+    // The count is in the results toolbar, the selection is on the selection bar, the view was kept.
+    render(LibraryStatusBar, { count: 1284, total: 1284, saved: true });
+
+    expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+  });
+
+  it('never repeats the selected count or says the view was saved', () => {
+    render(LibraryStatusBar, { count: 12, total: 1284, saved: true });
     const bar = screen.getByTestId('library-status-bar');
 
-    expect(bar).toHaveTextContent('1,284 items');
-    expect(bar).toHaveTextContent('3 selected');
-    expect(screen.getByRole('status')).toHaveTextContent('Saved on this device');
+    expect(bar).not.toHaveTextContent('selected');
+    expect(bar).not.toHaveTextContent('Saved on this device');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('says so plainly when this device could not keep the view', () => {
-    render(LibraryStatusBar, { count: 1, selected: 0, saved: false });
+    render(LibraryStatusBar, { count: 1, saved: false });
 
     expect(screen.getByRole('status')).toHaveTextContent('Not saved · keep this tab open');
-    expect(screen.getByTestId('library-status-bar')).toHaveTextContent('1 item');
   });
 
   it('leaves the count out until it is known', () => {
-    render(LibraryStatusBar, { count: null, selected: 0, saved: true });
+    render(LibraryStatusBar, { count: null, total: 1284, saved: false });
 
     expect(screen.getByTestId('library-status-bar')).not.toHaveTextContent('items');
   });
 
   it('steps aside, out of reach, while the selection bar is open', () => {
-    render(LibraryStatusBar, { count: 4, selected: 2, saved: true, hidden: true });
+    render(LibraryStatusBar, { count: 4, total: 9, saved: true, hidden: true });
     const bar = screen.getByTestId('library-status-bar');
 
     expect(bar).toHaveClass('is-hidden');
@@ -40,19 +46,18 @@ describe('LibraryStatusBar', () => {
   });
 
   it('says how many of the whole scope the filter leaves, and what is selected outside it', () => {
-    render(LibraryStatusBar, { count: 12, total: 1284, selected: 3, outside: 2, saved: true });
+    render(LibraryStatusBar, { count: 12, total: 1284, outside: 2, saved: true });
     const bar = screen.getByTestId('library-status-bar');
 
     expect(bar).toHaveTextContent('12 of 1,284 items');
-    expect(bar).toHaveTextContent('3 selected');
-    expect(bar).toHaveTextContent('(2 outside these results)');
+    expect(bar).toHaveTextContent('2 selected items are outside these results');
   });
 
-  it('keeps it short when nothing is filtered out', () => {
-    render(LibraryStatusBar, { count: 40, total: 40, selected: 0, saved: true });
+  it('says only what is selected elsewhere when nothing is filtered out', () => {
+    render(LibraryStatusBar, { count: 40, total: 40, outside: 1, saved: true });
+    const bar = screen.getByTestId('library-status-bar');
 
-    expect(screen.getByTestId('library-status-bar')).toHaveTextContent('40 items');
-    expect(screen.getByTestId('library-status-bar')).not.toHaveTextContent('of');
-    expect(screen.getByTestId('library-status-bar')).not.toHaveTextContent('outside');
+    expect(bar).toHaveTextContent('1 selected item is outside these results');
+    expect(bar).not.toHaveTextContent('40');
   });
 });

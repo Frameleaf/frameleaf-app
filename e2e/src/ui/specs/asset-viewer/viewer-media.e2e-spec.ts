@@ -120,9 +120,9 @@ test.describe('viewer media sources', () => {
     await page.goto(`/photos/${video.id}`);
     await assetViewerUtils.waitForViewerLoad(page, video);
     const source = page.getByTestId('viewer-footer').getByRole('group', { name: 'Video source' });
-    await expect(source.getByRole('button', { name: 'Play encoded' })).toHaveAttribute('aria-pressed', 'true');
-    await source.getByRole('button', { name: 'Play original' }).click();
-    await expect(source.getByRole('button', { name: 'Play original' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(source.getByRole('button', { name: 'Optimized' })).toHaveAttribute('aria-pressed', 'true');
+    await source.getByRole('button', { name: 'Original' }).click();
+    await expect(source.getByRole('button', { name: 'Original' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('an original in a format the browser cannot play says so and offers the encoded rendition', async ({
@@ -141,12 +141,12 @@ test.describe('viewer media sources', () => {
     await page.goto(`/photos/${dto.id}`);
     await assetViewerUtils.waitForViewerLoad(page, video);
     const source = page.getByTestId('viewer-footer').getByRole('group', { name: 'Video source' });
-    await source.getByRole('button', { name: 'Play original' }).click();
+    await source.getByRole('button', { name: 'Original' }).click();
 
     const alert = page.getByRole('alert').filter({ hasText: "This browser can't play the original file's format." });
     await expect(alert).toBeVisible();
-    await alert.getByRole('button', { name: 'Play encoded' }).click();
-    await expect(source.getByRole('button', { name: 'Play encoded' })).toHaveAttribute('aria-pressed', 'true');
+    await alert.getByRole('button', { name: 'Play optimized version' }).click();
+    await expect(source.getByRole('button', { name: 'Optimized' })).toHaveAttribute('aria-pressed', 'true');
     await expect(alert).toHaveCount(0);
   });
 

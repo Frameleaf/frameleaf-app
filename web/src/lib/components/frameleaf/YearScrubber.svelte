@@ -32,6 +32,13 @@
     scrubberWidth?: number;
     /** Whether the track is being dragged; bound by the timeline to hold back thumbnails meanwhile. */
     dragging?: boolean;
+    /**
+     * Float over the photos' edge instead of taking a column (touch and narrow screens). It then
+     * shows only while `active`, while it is dragged and while it holds keyboard focus.
+     */
+    overlay?: boolean;
+    /** The library is being scrolled; only read in `overlay`. */
+    active?: boolean;
   };
 
   let {
@@ -44,6 +51,8 @@
     onJump,
     scrubberWidth = $bindable(),
     dragging = $bindable(false),
+    overlay = false,
+    active = true,
   }: Props = $props();
 
   const MIN_YEAR_LABEL_GAP = 18;
@@ -205,6 +214,8 @@
 
 <div
   class="fl-scrubber"
+  class:is-overlay={overlay}
+  class:is-idle={overlay && !active && !dragging}
   bind:clientWidth={scrubberWidth}
   style:height={height ? `${height}px` : undefined}
   data-testid="frameleaf-year-scrubber"
@@ -269,6 +280,33 @@
     width: 100%;
     cursor: ns-resize;
   }
+  /*
+   * Touch and narrow screens: the photos keep the full width. The scrubber is a slim frosted
+   * strip over their edge that fades in while the library scrolls and away again when it rests.
+   * The year labels are left out (the bubble names the month while dragging).
+   */
+  .fl-scrubber.is-overlay {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 4;
+    transition: opacity var(--fl-duration-fade) var(--fl-ease);
+  }
+  .fl-scrubber.is-overlay .fl-scrub-track {
+    border: 1px solid var(--fl-material-edge);
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-material);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+  }
+  .fl-scrubber.is-overlay .fl-scrub-year,
+  .fl-scrubber.is-overlay .fl-scrub-yeartick {
+    display: none;
+  }
+  .fl-scrubber.is-overlay.is-idle:not(:focus-within) {
+    opacity: 0;
+    pointer-events: none;
+  }
   .fl-scrub-yeartick {
     position: absolute;
     inset-inline-end: 4px;
@@ -281,7 +319,7 @@
     inset-inline-end: 20px;
     transform: translateY(-50%);
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
     font-variant-numeric: tabular-nums;
   }
   .fl-scrub-tick {
@@ -310,12 +348,12 @@
     transform: translateY(-50%);
     display: grid;
     padding: 4px 8px;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control-compact);
     background: var(--fl-raised);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
     white-space: nowrap;
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
   }
   .fl-scrub-bubble small {
     color: var(--fl-muted);

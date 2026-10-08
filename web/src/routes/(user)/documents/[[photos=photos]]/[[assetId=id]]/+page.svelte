@@ -171,7 +171,7 @@
   });
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={false}>
+<UserPageLayout scrollbar={false}>
   <section class="frameleaf documents m-4 mb-12">
     <ResultsView
       assets={timelineAssets}
@@ -283,8 +283,11 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
+  /* The field's own outline is off; the ring is drawn round the whole control instead. */
   .search:focus-within {
     border-color: var(--fl-accent);
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .search input {
     flex: 1;

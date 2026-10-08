@@ -43,7 +43,7 @@
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
-      <LibraryEmptyState icon={mdiArchiveOutline} message={$t('no_archived_assets_message')} />
+      <LibraryEmptyState icon={mdiArchiveOutline} message={$t('frameleaf_archive_empty')} />
     {/snippet}
 
     {#snippet viewer()}

@@ -13,6 +13,8 @@
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBackupRestoreSection from '$lib/components/frameleaf/cloud/CloudBackupRestoreSection.svelte';
   import CloudBackupSetupDialog from '$lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte';
@@ -277,9 +279,13 @@
   {/if}
 
   {#if !status}
-    <p class={loadError ? 'fc-notice is-error' : 'fc-muted'} role={loadError ? 'alert' : 'status'}>
-      {loadError ? $t('frameleaf_cloud_backup_load_failed') : $t('frameleaf_cloud_loading')}
-    </p>
+    {#if loadError}
+      <InlineError message={$t('frameleaf_cloud_backup_load_failed')} onRetry={load} />
+    {:else}
+      <div class="fc-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>
+        <Skeleton variant="block" height="168px" />
+      </div>
+    {/if}
   {:else if !status.configured}
     {@render gate()}
     <CloudCard

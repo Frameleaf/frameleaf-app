@@ -104,7 +104,7 @@ describe('SharingSettings — People & sharing (CC-52/53/54)', () => {
     render(SharingSettings);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_people_sharing.accounts_error);
-    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add partner' })).toBeEnabled());
   });
 });

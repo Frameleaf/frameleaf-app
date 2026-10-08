@@ -67,7 +67,26 @@ describe('SharedSpacesWorkspace', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Shared spaces' })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Family Space' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open Jamie’s library' })).toHaveAttribute('href', '/partners/jamie');
+    // FL-326: what a partner shares arrives as your own copies, so the card is a summary, not a
+    // link to a library that no longer exists; managing partners is in Settings.
+    const partners = screen.getByRole('region', { name: /Partners/ });
+    expect(within(partners).getByText('Jamie')).toBeInTheDocument();
+    expect(within(partners).getByText('Shares photos into your library')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Jamie/ })).toBeNull();
+    expect(within(partners).getByRole('link', { name: 'Manage partners' })).toHaveAttribute(
+      'href',
+      '/user-settings?isOpen=sharing',
+    );
+  });
+
+  it('says how far a partner’s library has been copied into yours', () => {
+    renderWithTooltips(SharedSpacesWorkspace, {
+      spaces: [],
+      partners: [{ ...partner, backfill: { state: 'running', total: 40, done: 12 } as never }],
+      onRefresh: vi.fn(),
+    });
+
+    expect(screen.getByText('Copying 12 of 40 items')).toBeInTheDocument();
   });
 
   it('shows the empty state with a create action when there are no shared spaces', () => {

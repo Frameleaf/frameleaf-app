@@ -14,6 +14,17 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+/* The title and its lead take the row; Back stays beside them and only drops under on a phone. */
+.buy-screen .buy-head > div:first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.buy-screen .buy-head p {
+  margin: 0;
+  max-width: 72ch;
+}
 .buy-screen .buy-section {
   display: grid;
   gap: 12px;
@@ -49,12 +60,12 @@
   border: 1px solid var(--fl-border);
 }
 .buy-screen .buy-card.recommended {
-  outline: 1px solid var(--fl-teal);
-  outline-offset: -1px;
+  outline: 1.5px solid var(--fl-accent);
+  outline-offset: var(--fl-focus-inset);
 }
 .buy-screen .buy-card.current {
   outline: 2px solid var(--fl-accent);
-  outline-offset: -2px;
+  outline-offset: var(--fl-focus-inset);
 }
 .buy-screen .buy-card h3 {
   display: flex;
@@ -62,15 +73,17 @@
   align-items: baseline;
   gap: 8px;
   margin: 0;
-  font-size: 17px;
+  font: var(--fl-type-headline);
+  letter-spacing: var(--fl-tracking-headline);
 }
+/* The same mark as "Recommended" in setup: the accent, soft. Teal is for status, not for a choice. */
 .buy-screen .buy-tag {
-  font-size: var(--fl-font-micro);
-  font-weight: 600;
-  color: var(--fl-teal);
-  border: 1px solid var(--fl-teal);
+  font: var(--fl-type-micro);
+  letter-spacing: 0;
+  color: var(--fl-accent);
+  background: var(--fl-accent-soft);
   border-radius: var(--fl-radius-pill);
-  padding: 1px 8px;
+  padding: 2px 8px;
   white-space: nowrap;
 }
 .buy-screen .buy-price {
@@ -81,14 +94,14 @@
   margin: 0;
 }
 .buy-screen .buy-price strong {
-  font-size: 30px;
-  letter-spacing: -0.8px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  color: var(--fl-text);
+  font: var(--fl-type-display);
+  letter-spacing: var(--fl-tracking-display);
+  font-variant-numeric: var(--fl-numeric);
 }
 .buy-screen .buy-price s {
   color: var(--fl-muted);
-  font-size: 18px;
+  font-size: var(--fl-font-headline);
 }
 .buy-screen .buy-price span {
   color: var(--fl-muted);
@@ -130,7 +143,7 @@
   min-width: 220px;
 }
 .buy-screen .buy-key-row input {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--fl-family-mono);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -143,14 +156,39 @@
   gap: 16px;
   align-items: center;
 }
+/*
+ * The thank-you mark: a done mark in the logo's frame, arriving with Unfurl (the element carries
+ * fl-brand-frame and fl-unfurl; base.css makes Unfurl a fade under Reduce Motion). BRAND.md
+ * decisions 3 and 6.
+ */
 .buy-screen .buy-badge {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: var(--fl-accent-soft);
+  --fl-brand-frame-size: 56px;
   color: var(--fl-accent);
+}
+/* The store is open in another tab. */
+.buy-screen .buy-waiting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2) var(--fl-space-3);
+  padding: var(--fl-space-3) var(--fl-space-4);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+  border: 1px solid var(--fl-border);
+  font-size: var(--fl-font-small);
+}
+.buy-screen .buy-waiting > span {
+  flex: 1;
+  min-width: 18ch;
+}
+.buy-screen .buy-waiting > svg {
+  color: var(--fl-blue);
+  flex-shrink: 0;
+}
+.buy-screen .buy-loading {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--fl-space-4);
 }
 .buy-screen .buy-active h3 {
   margin: 0 0 6px;
@@ -219,8 +257,9 @@
   font-size: var(--fl-font-small);
 }
 .buy-screen .buy-balance strong {
-  font-size: 26px;
-  letter-spacing: -0.6px;
+  font: var(--fl-type-display);
+  letter-spacing: var(--fl-tracking-display);
+  font-variant-numeric: var(--fl-numeric);
 }
 .buy-screen .buy-packs {
   display: grid;

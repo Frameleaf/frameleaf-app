@@ -18,6 +18,12 @@
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
+  import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
+  import { animateFlip, canAnimate, dock, leave } from '$lib/frameleaf/motion';
   import { OpenQueryParam } from '$lib/constants';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
@@ -25,7 +31,6 @@
     allSelected,
     deleteConfirmationPhrase,
     isStaleReview,
-    matchesDeleteConfirmation,
     mergeTrashPage,
     pruneSelection,
     remainingNames,
@@ -93,6 +98,8 @@
 
   let selected = $state<string[]>([]);
   let notice = $state('');
+  /** What the last restore put back, so it can be undone while its notice is shown. */
+  let undoIds = $state<string[] | null>(null);
   let error = $state('');
   let busy = $state(false);
 
@@ -118,7 +125,48 @@
   const filtered = $derived(appliedQuery.trim() !== '' || media !== 'all');
   const chosen = $derived(selectable.filter((row) => selected.includes(row.id)));
   const everythingChosen = $derived(allSelected(selected, selectable) && nextPage === null);
-  const canConfirm = $derived(!!review && matchesDeleteConfirmation(review, confirmation) && !busy);
+  /**
+   * Two tiers of confirmation (design review finding 74). A bounded set of the account's own
+   * selected items is confirmed with a clear summary and a danger button. Emptying the trash, or a
+   * large selection, also asks for the count to be typed; capitals do not matter.
+   */
+  const TYPED_CONFIRMATION_FROM = 50;
+  const typedConfirmation = $derived(
+    !!review && (review.action === TrashReviewAction.Empty || review.count >= TYPED_CONFIRMATION_FROM),
+  );
+  const canConfirm = $derived(
+    !!review && !busy && (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
+  );
+  let grid = $state<HTMLElement>();
+  /** Above this many rows at once, they are simply removed: a move that large is noise. */
+  const MOVING_ROWS_LIMIT = 24;
+  /**
+   * Takes rows off the page as one move: they fade, then the rest close the gap (design review
+   * finding 76). Without the Web Animations API, or for a large set, the rows are just removed.
+   * Under Reduce Motion the fade is the shared crossfade and nothing slides.
+   */
+  const removeRows = (ids: string[], apply: () => void) =>
+    new Promise<void>((resolve) => {
+      const rows = [...(grid?.querySelectorAll<HTMLElement>('article[data-row-id]') ?? [])];
+      const leaving = rows.filter((row) => ids.includes(row.dataset.rowId ?? ''));
+      const close = () => {
+        animateFlip(grid, apply, { selector: 'article[data-row-id]' });
+        resolve();
+      };
+      if (leaving.length === 0 || leaving.length > MOVING_ROWS_LIMIT || !canAnimate(leaving[0])) {
+        close();
+        return;
+      }
+      let pending = leaving.length;
+      for (const row of leaving) {
+        leave(row, 'pop', () => {
+          if (--pending === 0) {
+            close();
+          }
+        });
+      }
+    });
+
   const retentionValue = $derived(
     trashEnabled ? $t('frameleaf_trash_summary_days', { values: { count: days } }) : $t('frameleaf_trash_disabled'),
   );
@@ -227,6 +275,7 @@
     inspectOpen = false;
     error = '';
     notice = '';
+    undoIds = null;
     void refresh({ keep: false });
   };
 
@@ -258,9 +307,41 @@
   const failureMessage = (cause: unknown) =>
     isStaleReview(cause) ? $t('frameleaf_trash_error_changed') : $t('frameleaf_trash_error_unavailable');
 
+  /** Above this many items, restoring everything is not offered an Undo: listing them first would hold it up. */
+  const RESTORE_ALL_UNDO_LIMIT = 5000;
+  /**
+   * Every item "Restore all" will put back, when that can be known cheaply: the rows on the page if
+   * they are the whole trash, otherwise the trash read page by page. `null` when it cannot be known.
+   */
+  const everyRestorableId = async (onPage: string[], whole: boolean): Promise<string[] | null> => {
+    if (whole) {
+      return onPage;
+    }
+    if (actionable > RESTORE_ALL_UNDO_LIMIT) {
+      return null;
+    }
+    try {
+      const ids: string[] = [];
+      for (let page = 1; ; page++) {
+        const answer = await getTrashItems({ page, size: TRASH_MAX_PAGE_SIZE, sort: TrashItemSort.Recent });
+        ids.push(...answer.items.filter((row) => !row.isOffline).map((row) => row.id));
+        if (!answer.nextPage || ids.length > RESTORE_ALL_UNDO_LIMIT) {
+          break;
+        }
+      }
+      return ids.length > RESTORE_ALL_UNDO_LIMIT ? null : ids;
+    } catch {
+      return null;
+    }
+  };
+
   /**
    * Restore goes straight through its review, without a confirmation (as in the template): nothing is
    * lost by it, and the apply still refuses if the items changed in between.
+   *
+   * The items leave the page at once and come back, with the reason, if the restore fails (design
+   * review finding 76); that holds for "Restore all" too. The notice that follows offers Undo, which
+   * moves the same items back to the trash.
    */
   const restore = async (targets: string[] | null) => {
     if (busy || (targets !== null && targets.length === 0)) {
@@ -268,17 +349,54 @@
     }
     busy = true;
     error = '';
+    notice = '';
+    undoIds = null;
+    const before = { items, selected };
+    const leaving = targets ?? selectable.map((row) => row.id);
+    // Read before the page is cleared: "Restore all" covers the whole trash, whatever is filtered.
+    const restorable = targets ?? everyRestorableId(leaving, !filtered && nextPage === null);
+    inspectOpen = false;
+    await removeRows(leaving, () => {
+      items = withoutIds(items, leaving);
+      selected = targets === null ? [] : selected.filter((id) => !leaving.includes(id));
+    });
     try {
+      const restored = await restorable;
       const action = targets === null ? TrashReviewAction.RestoreAll : TrashReviewAction.Restore;
       const ids = targets ?? undefined;
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
       const { count } = await applyTrashReview({ trashApplyDto: { action, ids, token: reviewed.token } });
-      items = targets === null ? [] : withoutIds(items, targets);
-      selected = targets === null ? [] : selected.filter((id) => !targets.includes(id));
-      inspectOpen = false;
       notice = $t('frameleaf_trash_restored', { values: { count } });
+      // Undo is offered only when the items it would move back are exactly the ones restored.
+      undoIds = restored && restored.length === count && count > 0 ? restored : null;
     } catch (error_) {
+      items = before.items;
+      selected = before.selected;
       error = failureMessage(error_);
+    } finally {
+      busy = false;
+      void refresh();
+    }
+  };
+
+  /** Moves what the last restore put back into the trash again. */
+  const undoRestore = async () => {
+    const ids = undoIds;
+    if (!ids || busy) {
+      return;
+    }
+    busy = true;
+    error = '';
+    try {
+      const action = TrashReviewAction.Trash;
+      const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
+      const { count } = await applyTrashReview({ trashApplyDto: { action, ids, token: reviewed.token } });
+      undoIds = null;
+      notice = $t('frameleaf_trash_restore_undone', { values: { count } });
+    } catch {
+      undoIds = null;
+      notice = '';
+      error = $t('frameleaf_trash_restore_undo_failed');
     } finally {
       busy = false;
       void refresh();
@@ -324,11 +442,14 @@
         trashApplyDto: { action: current.action, ids: current.ids, token: current.token },
       });
       const removed = current.ids;
-      items = removed ? withoutIds(items, removed) : [];
-      selected = removed ? selected.filter((id) => !removed.includes(id)) : [];
+      await removeRows(removed ?? [], () => {
+        items = removed ? withoutIds(items, removed) : [];
+        selected = removed ? selected.filter((id) => !removed.includes(id)) : [];
+      });
       reviewOpen = false;
       review = null;
       notice = $t('frameleaf_trash_deleted', { values: { count } });
+      undoIds = null;
     } catch (error_) {
       reviewError = failureMessage(error_);
     } finally {
@@ -466,16 +587,29 @@
     <p role="alert" class="tm-error">{error}</p>
   {/if}
   {#if loadFailed}
-    <p role="alert" class="tm-error">
-      {$t('frameleaf_trash_error_load')}
-      <Button variant="quiet" onclick={() => void refresh()}>{$t('frameleaf_trash_try_again')}</Button>
-    </p>
+    <InlineError
+      compact
+      message={$t('frameleaf_trash_error_load')}
+      retryLabel={$t('frameleaf_trash_try_again')}
+      retrying={loading}
+      onRetry={() => void refresh()}
+    />
   {/if}
   {#if notice}
-    <div class="tm-notice" role="status">
+    <div class="tm-notice" role="status" in:dock={{ y: -8 }}>
       <Icon icon={mdiCheckCircleOutline} size="1rem" aria-hidden={true} />
       <span>{notice}</span>
-      <Button variant="quiet" label={$t('frameleaf_trash_dismiss')} onclick={() => (notice = '')}>
+      {#if undoIds}
+        <Button disabled={busy} onclick={() => void undoRestore()}>{$t('undo')}</Button>
+      {/if}
+      <Button
+        variant="quiet"
+        label={$t('frameleaf_trash_dismiss')}
+        onclick={() => {
+          notice = '';
+          undoIds = null;
+        }}
+      >
         <Icon icon={mdiClose} size="1rem" aria-hidden={true} />
       </Button>
     </div>
@@ -507,9 +641,9 @@
     {/if}
   </div>
 
-  <div class="tm-grid" aria-busy={loading}>
+  <div class="tm-grid" aria-busy={loading} bind:this={grid}>
     {#each items as row (row.id)}
-      <article class:selected={selected.includes(row.id)}>
+      <article class:selected={selected.includes(row.id)} class:offline={row.isOffline} data-row-id={row.id}>
         <div class="tm-photo">
           <button
             type="button"
@@ -545,6 +679,8 @@
           <span>{sizeText(row)} · {kindText(row)}</span>
           <small>{ageText(row)}</small>
           {#if row.isOffline}
+            <!-- No checkbox and no Restore here on purpose: the library scan owns this item. -->
+            <span class="tm-badge">{$t('frameleaf_trash_offline_badge')}</span>
             <small>{$t('frameleaf_trash_offline')}</small>
           {:else}
             <Button disabled={busy} onclick={() => void restore([row.id])}>
@@ -555,6 +691,15 @@
         </div>
       </article>
     {/each}
+    {#if loading && items.length === 0 && !loadFailed}
+      <!-- The grid's shape while the first page is read, so the page does not sit empty. -->
+      {#each [0, 1, 2, 3, 4, 5, 6, 7] as tile (tile)}
+        <div class="tm-placeholder">
+          <Skeleton variant="tile" aspect="4 / 3" />
+          <Skeleton variant="text" lines={2} />
+        </div>
+      {/each}
+    {/if}
   </div>
 
   {#if nextPage !== null}
@@ -565,17 +710,24 @@
     </div>
   {/if}
 
-  {#if !loading && !loadFailed && items.length === 0}
-    <div class="tm-empty">
-      <Icon icon={available > 0 || filtered ? mdiMagnify : mdiDeleteOutline} size="2.125rem" aria-hidden={true} />
-      <h2>{available > 0 || filtered ? $t('frameleaf_trash_no_matches') : $t('frameleaf_trash_empty_title')}</h2>
-      <p>
-        {available > 0 || filtered ? $t('frameleaf_trash_no_matches_help') : $t('frameleaf_trash_empty_help')}
-      </p>
-      {#if filtered}
-        <Button onclick={clearFilters}>{$t('frameleaf_trash_clear_filters')}</Button>
-      {/if}
-    </div>
+  {#if !loading && !loadFailed && !busy && items.length === 0}
+    <!-- An empty trash is a page with nothing on it, so it carries the brand's empty state; a
+         search or filter with no matches stays plain and offers the way back. -->
+    {#if available > 0 || filtered}
+      <EmptyState
+        compact
+        icon={mdiMagnify}
+        title={$t('frameleaf_trash_no_matches')}
+        message={$t('frameleaf_trash_no_matches_help')}
+        action={filtered ? { label: $t('frameleaf_trash_clear_filters'), onClick: clearFilters } : undefined}
+      />
+    {:else}
+      <EmptyState
+        icon={mdiDeleteOutline}
+        title={$t('frameleaf_trash_empty_title')}
+        message={$t('frameleaf_trash_empty_help')}
+      />
+    {/if}
   {/if}
 
   <div class="tm-all">
@@ -660,15 +812,13 @@
           })}
         </p>
       {/if}
-      <label class="tm-confirm">
-        {$t('frameleaf_trash_review_confirm', { values: { phrase: deleteConfirmationPhrase(review.count) } })}
-        <input
-          aria-label={$t('frameleaf_trash_review_confirm_label')}
+      {#if typedConfirmation}
+        <TypedConfirmation
+          label={$t('frameleaf_trash_review_confirm', { values: { phrase: deleteConfirmationPhrase(review.count) } })}
+          ariaLabel={$t('frameleaf_trash_review_confirm_label')}
           bind:value={confirmation}
-          autocomplete="off"
-          spellcheck="false"
         />
-      </label>
+      {/if}
       {#if reviewError}
         <p role="alert" class="tm-error">{reviewError}</p>
       {/if}
@@ -681,11 +831,9 @@
         >
           {$t('cancel')}
         </Button>
-        <span class="tm-danger">
-          <Button disabled={!canConfirm} onclick={() => void remove()}>
-            {$t('frameleaf_trash_review_submit', { values: { count: review.count } })}
-          </Button>
-        </span>
+        <Button variant="danger" disabled={!canConfirm} onclick={() => void remove()}>
+          {$t('frameleaf_trash_review_submit', { values: { count: review.count } })}
+        </Button>
       </div>
     </div>
   {/if}
@@ -711,7 +859,7 @@
     display: block;
     font-size: 25px;
     font-weight: 550;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .tm-summary span {
     display: block;
@@ -743,8 +891,7 @@
     flex: 1;
   }
   .trash-manager input:not([type='checkbox']),
-  .trash-manager select,
-  .tm-confirm input {
+  .trash-manager select {
     width: 100%;
     padding: 10px;
     font-size: var(--fl-font-small);
@@ -788,6 +935,30 @@
   .tm-grid article.selected {
     border-color: var(--fl-accent);
   }
+  /* An item the library scan manages reads as set aside, so its missing actions look intended. */
+  .tm-grid article.offline .tm-photo img {
+    opacity: 0.45;
+  }
+  .tm-badge {
+    align-self: flex-start;
+    padding: var(--fl-space-half) var(--fl-space-2);
+    color: var(--fl-warning);
+    background: color-mix(in srgb, var(--fl-warning) 12%, var(--fl-panel));
+    border-radius: var(--fl-radius-pill);
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+  }
+  .tm-placeholder {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding-bottom: var(--fl-space-3);
+    overflow: hidden;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .tm-placeholder > :global(.fl-skeleton-text) {
+    padding-inline: var(--fl-space-3);
+  }
   .tm-photo {
     position: relative;
   }
@@ -808,11 +979,17 @@
   .tm-photo > label {
     position: absolute;
     top: 8px;
-    left: 8px;
-    padding: 7px;
-    background: rgb(17 17 17 / 67%);
-    border-radius: var(--fl-radius-control);
+    inset-inline-start: 8px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    background: color-mix(in srgb, var(--fl-viewer-canvas) 73%, transparent);
+    border-radius: var(--fl-radius-control-compact);
     cursor: pointer;
+  }
+  .tm-photo > label input {
+    margin: 0;
   }
   .tm-photo > span {
     position: absolute;
@@ -823,8 +1000,8 @@
     gap: 5px;
     padding: 4px 6px;
     font-size: var(--fl-font-micro);
-    color: #fff;
-    background: rgb(17 17 17 / 73%);
+    color: var(--fl-viewer-text);
+    background: color-mix(in srgb, var(--fl-viewer-canvas) 73%, transparent);
     border-radius: var(--fl-radius-control);
   }
   .tm-detail {
@@ -867,21 +1044,6 @@
   .tm-all p {
     margin: 7px 0;
     font-size: var(--fl-font-micro);
-  }
-  .tm-empty {
-    padding: 50px 20px;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .tm-empty h2 {
-    margin-top: 18px;
-    font-size: 20px;
-    font-weight: 500;
-    color: var(--fl-text);
-  }
-  .tm-empty p {
-    max-width: 500px;
-    margin: 12px auto;
   }
   .tm-notice {
     display: flex;
@@ -935,11 +1097,6 @@
     line-height: 1.8;
     overflow-wrap: anywhere;
     background: var(--fl-canvas);
-  }
-  .tm-confirm {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
   }
   .tm-dialog-actions {
     display: flex;

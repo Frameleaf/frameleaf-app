@@ -91,7 +91,10 @@ describe('/auth/onboarding (FL-176)', () => {
         meta: { title: '' },
       } as never,
     });
-    expect(screen.getByText('Welcome to Frameleaf. Your library is safe.')).toBeInTheDocument();
+    // one heading, a sentence to a row: read as a whole by its name
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Welcome to Frameleaf. Your library is safe.' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_setup_new_care)).toBeInTheDocument();
   });
 });

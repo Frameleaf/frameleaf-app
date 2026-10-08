@@ -149,7 +149,13 @@
             <span>{$t('frameleaf_pet_photos_back')}</span>
           </a>
           <div class="identity">
-            <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} size={72} />
+            <PetThumbnail
+              assetId={pet.featuredAssetId}
+              cacheKey={pet.updatedAt}
+              size={72}
+              heroKey="pet:{pet.id}"
+              heroPage
+            />
             <div>
               <h1 class:unnamed={!pet.name}>{name}</h1>
               <p class="sub">

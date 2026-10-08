@@ -256,8 +256,8 @@
     object-fit: cover;
   }
   .swy-tile:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .swy-play {
     position: absolute;

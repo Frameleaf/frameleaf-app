@@ -1,7 +1,7 @@
 import type { ServerConfigDto } from '@frameleaf/sdk';
 import { getAllAlbums, getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { handleError } from '$lib/utils/handle-error';
@@ -90,8 +90,10 @@ describe('SharedLinkList', () => {
     expect(dialog).toHaveTextContent(
       'Anyone using the link for Rockies loses access immediately. Your photos and the album itself are not affected.',
     );
-    // "Delete link" takes focus first, and both buttons sit in the dialog's footer (SharedLinks.jsx:396-412).
-    expect(screen.getByRole('button', { name: en.delete_link })).toHaveFocus();
+    // As every Frameleaf confirmation: Cancel takes focus first, so Enter on open never deletes, the
+    // destructive action is the filled danger button, and both sit in the dialog's footer.
+    expect(within(dialog).getByRole('button', { name: en.cancel })).toHaveFocus();
+    expect(screen.getByRole('button', { name: en.delete_link })).toHaveClass('fl-danger');
     expect(screen.getByRole('button', { name: en.delete_link }).closest('footer')).not.toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: en.delete_link }));
 

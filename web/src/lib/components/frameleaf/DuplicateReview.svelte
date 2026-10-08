@@ -17,6 +17,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import DuplicateCompare from '$lib/components/frameleaf/DuplicateCompare.svelte';
   import DuplicateContactSheet from '$lib/components/frameleaf/DuplicateContactSheet.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import {
     buildDecisionGroups,
@@ -39,6 +40,8 @@
     type ReviewGroup,
   } from '$lib/frameleaf/duplicate-review';
   import { DuplicateReviewSession, type DuplicateReviewGateway } from '$lib/frameleaf/duplicate-review-session.svelte';
+  import { motionFade, prefersReducedMotion, reveal } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -52,10 +55,12 @@
   import {
     mdiAlertCircleOutline,
     mdiCheckCircleOutline,
-    mdiChevronDoubleLeft,
     mdiChevronDown,
+    mdiChevronLeft,
     mdiChevronRight,
     mdiClose,
+    mdiFilterOffOutline,
+    mdiImageMultipleOutline,
     mdiUndo,
   } from '@mdi/js';
   import { onDestroy, tick } from 'svelte';
@@ -76,6 +81,8 @@
     onOpenTrash: () => void;
     /** True while something else (the viewer) owns the keyboard. */
     keyboardPaused?: boolean;
+    /** Opens where duplicate detection is run, for an account that may run it. */
+    onRunDetection?: () => void;
   };
 
   let {
@@ -86,6 +93,7 @@
     onOpen,
     onOpenTrash,
     keyboardPaused = false,
+    onRunDetection,
   }: Props = $props();
 
   let query = $state('');
@@ -159,6 +167,40 @@
     Math.min(groups.length, visibleStart + Math.ceil(viewportHeight / DUPLICATE_QUEUE_ROW_HEIGHT) + 7),
   );
   const undoCount = $derived(session.undoable.length);
+  /**
+   * What this visit's decisions came to, for the "All reviewed" summary. It counts decisions made
+   * here; an undo clears it rather than guessing what the undone job had covered.
+   */
+  let tally = $state({ kept: 0, removed: 0, bytes: 0 });
+  const progressShare = $derived(
+    reviewed + eligible.length > 0 ? Math.round((reviewed / (reviewed + eligible.length)) * 100) : 0,
+  );
+  /**
+   * Why nothing is in front (design review finding 75): the search matched no group, every group
+   * has been reviewed, or the library has no duplicates at all. Each says what to do next.
+   */
+  const emptyReason = $derived.by((): 'filtered' | 'reviewed' | 'none' => {
+    if (
+      query.trim() &&
+      filterReviewGroups(session.allGroups, { query: '', filter, progress: progressView }).length > 0
+    ) {
+      return 'filtered';
+    }
+    return session.allGroups.length > 0 || reviewed > 0 ? 'reviewed' : 'none';
+  });
+  let groupElement = $state<HTMLElement>();
+  /**
+   * Shows, on the group that is leaving, which copies were kept and which were removed. The block
+   * is frozen while it leaves, so the marks are put on its cards directly.
+   */
+  const markDecision = (keptIds: Set<string>) => {
+    if (prefersReducedMotion()) {
+      return;
+    }
+    for (const card of groupElement?.querySelectorAll<HTMLElement>('[data-asset-id]') ?? []) {
+      card.classList.add(keptIds.has(card.dataset.assetId ?? '') ? 'fl-dr-kept' : 'fl-dr-removed');
+    }
+  };
   const allEligibleSelected = $derived(
     eligible.length > 0 && eligible.every((group) => selected.includes(group.duplicateId)),
   );
@@ -264,6 +306,19 @@
             ? $t('frameleaf_duplicates_notice_kept', { values: { kept, removed: photos - kept } })
             : $t('frameleaf_duplicates_notice_kept_deleted', { values: { kept, removed: photos - kept } });
 
+    const removes = decision !== 'stack' && decision !== 'keep-all';
+    if (removes) {
+      const keptIds = new Set(decisions.flatMap((group) => group.keepAssetIds));
+      const removedBytes = targets
+        .flatMap((group) => group.assets)
+        .filter((asset) => !keptIds.has(asset.id))
+        .reduce((sum, asset) => sum + (asset.exifInfo?.fileSizeInByte ?? 0), 0);
+      tally = { kept: tally.kept + kept, removed: tally.removed + photos - kept, bytes: tally.bytes + removedBytes };
+      if (active && targets.some((group) => group.duplicateId === active.duplicateId)) {
+        markDecision(keptIds);
+      }
+    }
+
     // move on at once; the group keeps its loader in the queue until the job has answered for it
     const previous = active?.duplicateId;
     const decided = new Set(decidedIds);
@@ -296,6 +351,7 @@
       if (await session.undo()) {
         notice = { message: $t('frameleaf_duplicates_notice_undoing') };
         error = '';
+        tally = { kept: 0, removed: 0, bytes: 0 };
       }
     } catch {
       error = $t('frameleaf_duplicates_error_undo');
@@ -465,6 +521,16 @@
       {$t('frameleaf_duplicates_shortcuts')} <kbd>?</kbd>
     </Button>
   </div>
+  <div
+    class="fl-dr-progress"
+    role="progressbar"
+    aria-label={$t('frameleaf_duplicates_progress_label')}
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={progressShare}
+  >
+    <span style:width="{progressShare}%"></span>
+  </div>
 
   {#if notice || error}
     <div class="fl-dr-live" class:error={!!error} role={error ? 'alert' : 'status'}>
@@ -610,137 +676,202 @@
     </aside>
 
     <div class="fl-dr-comparison">
-      {#if active && focused}
-        <div class="fl-dr-heading">
-          <div>
-            <h2 bind:this={heading} tabindex="-1">{groupTitle(active)}</h2>
-            <p>
-              {$t('frameleaf_duplicates_group_position', {
-                values: { index: currentIndex + 1, total: groups.length },
-              })} ·
-              {burst
-                ? $t('frameleaf_duplicates_frames', { values: { count: active.assets.length } })
-                : $t('frameleaf_duplicates_copies', { values: { count: active.assets.length } })} ·
-              {$t('frameleaf_duplicates_in_originals', {
-                values: { size: getByteUnitString(active.totalBytes, $locale) },
-              })}
-            </p>
-          </div>
-          <div>
-            <Button
-              label={$t('frameleaf_duplicates_previous_group')}
-              disabled={groups.length < 2}
-              onclick={() => move(-1)}
-            >
-              <Icon icon={mdiChevronDoubleLeft} size="18" aria-hidden={true} />
-            </Button>
-            <Button label={$t('frameleaf_duplicates_next_group')} disabled={groups.length < 2} onclick={() => move(1)}>
-              <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
-            </Button>
-          </div>
-        </div>
-
-        {#if !active.editable}
-          <p class="fl-dr-access">
-            {active.blockedReason === DuplicateGroupBlock.OtherOwner
-              ? active.otherOwnerNames?.length
-                ? // DuplicateReview.jsx:493-497: "Only A and B can decide what to keep in this group."
-                  $t('frameleaf_duplicates_blocked_owners', {
-                    values: {
-                      owners: new Intl.ListFormat($locale, { type: 'conjunction' }).format(active.otherOwnerNames),
-                    },
-                  })
-                : $t('frameleaf_duplicates_blocked_other_owner')
-              : $t('frameleaf_duplicates_blocked_hidden', { values: { count: active.hiddenMemberCount } })}
-          </p>
-        {:else if activeProgress?.state === 'pending'}
-          <p class="fl-dr-access" role="status">{$t('frameleaf_duplicates_processing_group')}</p>
-        {:else if activeProgress?.state === 'failed'}
-          <p class="fl-dr-access error" role="alert">{$t(activeProgress.reasonKey)}</p>
-        {/if}
-
-        {#if active.reviewRequiredReasons?.length}
-          <p role="status">{$t('frameleaf_duplicates_protected_content')}</p>
-        {/if}
-        {#if contactSheet}
-          <DuplicateContactSheet
-            group={active}
-            {actionable}
-            {suggestedId}
-            {keeperIds}
-            {focused}
-            {framePage}
-            onToggle={toggleKeeper}
-            onFocus={(asset) => (focusedId = asset.id)}
-            onSelectAll={() => (keeperIds = active.assets.map((asset) => asset.id))}
-            onClear={() => (keeperIds = [])}
-            onStack={() => decide('stack', [active])}
-            onOpen={(asset) => onOpen(asset, active)}
-            onPage={(page) => (framePage = page)}
-          />
-        {:else}
-          <DuplicateCompare
-            group={active}
-            {actionable}
-            {suggestedId}
-            onKeep={(asset) => decide('keeper', [active], asset.id)}
-            onOpen={(asset) => onOpen(asset, active)}
-          />
-        {/if}
-
-        <div class="fl-dr-decisions" class:sticky={contactSheet}>
-          {#if contactSheet}
-            <div>
-              <strong>
-                {keeperIds.length > 0
-                  ? $t(trashEnabled ? 'frameleaf_duplicates_keep_and_trash' : 'frameleaf_duplicates_keep_and_delete', {
-                      values: { kept: keeperIds.length, removed: active.assets.length - keeperIds.length },
-                    })
-                  : $t('frameleaf_duplicates_choose_keepers')}
-              </strong>
-              <small>
-                {keeperIds.length > 0 ? $t(unselectedKey) : $t('frameleaf_duplicates_nothing_removed')}
-              </small>
+      <!--
+        A decision moves the resolved group away and brings the next one in as a short crossfade, so
+        a fast keyboard session can see each decision register. A crossfade only under Reduce Motion.
+      -->
+      {#key activeKey}
+        <div
+          class="fl-dr-group"
+          bind:this={groupElement}
+          in:reveal={{ delay: DURATION.fast / 2 }}
+          out:motionFade={{ duration: DURATION.slow }}
+        >
+          {#if active && focused}
+            <div class="fl-dr-heading">
+              <div>
+                <h2 bind:this={heading} tabindex="-1">{groupTitle(active)}</h2>
+                <p>
+                  {$t('frameleaf_duplicates_group_position', {
+                    values: { index: currentIndex + 1, total: groups.length },
+                  })} ·
+                  {burst
+                    ? $t('frameleaf_duplicates_frames', { values: { count: active.assets.length } })
+                    : $t('frameleaf_duplicates_copies', { values: { count: active.assets.length } })} ·
+                  {$t('frameleaf_duplicates_in_originals', {
+                    values: { size: getByteUnitString(active.totalBytes, $locale) },
+                  })}
+                </p>
+              </div>
+              <div>
+                <Button
+                  label={$t('frameleaf_duplicates_previous_group')}
+                  disabled={groups.length < 2}
+                  onclick={() => move(-1)}
+                >
+                  <Icon icon={mdiChevronLeft} size="18" aria-hidden={true} />
+                </Button>
+                <Button
+                  label={$t('frameleaf_duplicates_next_group')}
+                  disabled={groups.length < 2}
+                  onclick={() => move(1)}
+                >
+                  <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
+                </Button>
+              </div>
             </div>
-            <Button
-              variant="primary"
-              disabled={!actionable || keeperIds.length === 0}
-              onclick={() => decide('keepers', [active])}
-            >
-              {$t('frameleaf_duplicates_keep_selected', { values: { count: keeperIds.length } })} <kbd>E</kbd>
-            </Button>
+
+            {#if !active.editable}
+              <p class="fl-dr-access">
+                {active.blockedReason === DuplicateGroupBlock.OtherOwner
+                  ? active.otherOwnerNames?.length
+                    ? // DuplicateReview.jsx:493-497: "Only A and B can decide what to keep in this group."
+                      $t('frameleaf_duplicates_blocked_owners', {
+                        values: {
+                          owners: new Intl.ListFormat($locale, { type: 'conjunction' }).format(active.otherOwnerNames),
+                        },
+                      })
+                    : $t('frameleaf_duplicates_blocked_other_owner')
+                  : $t('frameleaf_duplicates_blocked_hidden', { values: { count: active.hiddenMemberCount } })}
+              </p>
+            {:else if activeProgress?.state === 'pending'}
+              <p class="fl-dr-access" role="status">{$t('frameleaf_duplicates_processing_group')}</p>
+            {:else if activeProgress?.state === 'failed'}
+              <p class="fl-dr-access error" role="alert">{$t(activeProgress.reasonKey)}</p>
+            {/if}
+
+            {#if active.reviewRequiredReasons?.length}
+              <p role="status">{$t('frameleaf_duplicates_protected_content')}</p>
+            {/if}
+            {#if contactSheet}
+              <DuplicateContactSheet
+                group={active}
+                {actionable}
+                {suggestedId}
+                {keeperIds}
+                {focused}
+                {framePage}
+                onToggle={toggleKeeper}
+                onFocus={(asset) => (focusedId = asset.id)}
+                onSelectAll={() => (keeperIds = active.assets.map((asset) => asset.id))}
+                onClear={() => (keeperIds = [])}
+                onStack={() => decide('stack', [active])}
+                onOpen={(asset) => onOpen(asset, active)}
+                onPage={(page) => (framePage = page)}
+              />
+            {:else}
+              <DuplicateCompare
+                group={active}
+                {actionable}
+                {suggestedId}
+                onKeep={(asset) => decide('keeper', [active], asset.id)}
+                onOpen={(asset) => onOpen(asset, active)}
+              />
+            {/if}
+
+            <div class="fl-dr-decisions" class:sticky={contactSheet}>
+              {#if contactSheet}
+                <div>
+                  <strong>
+                    {keeperIds.length > 0
+                      ? $t(
+                          trashEnabled ? 'frameleaf_duplicates_keep_and_trash' : 'frameleaf_duplicates_keep_and_delete',
+                          {
+                            values: { kept: keeperIds.length, removed: active.assets.length - keeperIds.length },
+                          },
+                        )
+                      : $t('frameleaf_duplicates_choose_keepers')}
+                  </strong>
+                  <small>
+                    {keeperIds.length > 0 ? $t(unselectedKey) : $t('frameleaf_duplicates_nothing_removed')}
+                  </small>
+                </div>
+                <Button
+                  variant="primary"
+                  disabled={!actionable || keeperIds.length === 0}
+                  onclick={() => decide('keepers', [active])}
+                >
+                  {$t('frameleaf_duplicates_keep_selected', { values: { count: keeperIds.length } })} <kbd>E</kbd>
+                </Button>
+              {:else}
+                <Button
+                  variant="primary"
+                  disabled={!actionable || !suggestedId}
+                  onclick={() => decide('suggested', [active])}
+                >
+                  {$t('frameleaf_duplicates_keep_suggested')} <kbd>K</kbd>
+                </Button>
+              {/if}
+              <Button disabled={!actionable} onclick={() => decide('keep-all', [active])}>
+                {$t('frameleaf_duplicates_keep_all')} <kbd>A</kbd>
+              </Button>
+              <Button disabled={!actionable} onclick={() => decide('stack', [active], undefined)}>
+                {$t('frameleaf_duplicates_stack_together')} <kbd>S</kbd>
+              </Button>
+              <Button disabled={groups.length < 2} onclick={() => move(1)}>{$t('frameleaf_duplicates_skip')}</Button>
+            </div>
+            <p class="fl-dr-footnote">
+              {burst ? $t('frameleaf_duplicates_footnote_burst') : $t('frameleaf_duplicates_footnote_copies')}
+              {trashEnabled
+                ? $t('frameleaf_duplicates_footnote_storage')
+                : $t('frameleaf_duplicates_footnote_no_trash')}
+            </p>
+          {:else if emptyReason === 'filtered'}
+            <EmptyState
+              icon={mdiFilterOffOutline}
+              title={$t('frameleaf_duplicates_empty_filtered')}
+              message={$t('frameleaf_duplicates_empty_filtered_body')}
+              action={{ label: $t('frameleaf_duplicates_clear_filters'), onClick: () => (query = '') }}
+            />
+          {:else if emptyReason === 'none'}
+            <EmptyState
+              icon={mdiImageMultipleOutline}
+              title={$t('frameleaf_duplicates_empty_none')}
+              message={$t('frameleaf_duplicates_empty_none_body')}
+              action={onRunDetection
+                ? { label: $t('frameleaf_duplicates_run_detection'), onClick: onRunDetection }
+                : undefined}
+            />
           {:else}
-            <Button
-              variant="primary"
-              disabled={!actionable || !suggestedId}
-              onclick={() => decide('suggested', [active])}
-            >
-              {$t('frameleaf_duplicates_keep_suggested')} <kbd>K</kbd>
-            </Button>
+            <div class="fl-dr-done">
+              <Icon icon={mdiCheckCircleOutline} size="36" aria-hidden={true} />
+              <h2 bind:this={heading} tabindex="-1">{$t('frameleaf_duplicates_all_reviewed')}</h2>
+              <p>
+                {#if tally.kept + tally.removed > 0}
+                  {$t(
+                    trashEnabled
+                      ? 'frameleaf_duplicates_all_reviewed_tally'
+                      : 'frameleaf_duplicates_all_reviewed_tally_deleted',
+                    {
+                      values: { kept: tally.kept, removed: tally.removed },
+                    },
+                  )}
+                  {#if tally.bytes > 0}
+                    {$t('frameleaf_duplicates_all_reviewed_space', {
+                      values: { size: getByteUnitString(tally.bytes, $locale) },
+                    })}
+                  {/if}
+                {:else}
+                  {$t('frameleaf_duplicates_all_reviewed_body')}
+                {/if}
+              </p>
+              <div class="fl-dr-done-actions">
+                <Button disabled={undoCount === 0 || session.undoing} onclick={() => void undo()}>
+                  <Icon icon={mdiUndo} size="16" aria-hidden={true} />
+                  {$t('frameleaf_duplicates_undo_last')}
+                </Button>
+                {#if trashEnabled && tally.removed > 0}
+                  <Button onclick={onOpenTrash}>{$t('frameleaf_duplicates_view_trash')}</Button>
+                {/if}
+                {#if filter === 'open' && reviewed > 0}
+                  <Button variant="quiet" onclick={() => (filter = 'all')}>{$t('frameleaf_duplicates_show_all')}</Button
+                  >
+                {/if}
+              </div>
+            </div>
           {/if}
-          <Button disabled={!actionable} onclick={() => decide('keep-all', [active])}>
-            {$t('frameleaf_duplicates_keep_all')} <kbd>A</kbd>
-          </Button>
-          <Button disabled={!actionable} onclick={() => decide('stack', [active], undefined)}>
-            {$t('frameleaf_duplicates_stack_together')} <kbd>S</kbd>
-          </Button>
-          <Button disabled={groups.length < 2} onclick={() => move(1)}>{$t('frameleaf_duplicates_skip')}</Button>
         </div>
-        <p class="fl-dr-footnote">
-          {burst ? $t('frameleaf_duplicates_footnote_burst') : $t('frameleaf_duplicates_footnote_copies')}
-          {trashEnabled ? $t('frameleaf_duplicates_footnote_storage') : $t('frameleaf_duplicates_footnote_no_trash')}
-        </p>
-      {:else}
-        <div class="fl-dr-done">
-          <Icon icon={mdiCheckCircleOutline} size="36" aria-hidden={true} />
-          <h2 bind:this={heading} tabindex="-1">{$t('frameleaf_duplicates_complete')}</h2>
-          <p>{$t('frameleaf_duplicates_complete_body')}</p>
-          <Button disabled={undoCount === 0 || session.undoing} onclick={() => void undo()}>
-            <Icon icon={mdiUndo} size="16" aria-hidden={true} />
-            {$t('frameleaf_duplicates_undo_last')}
-          </Button>
-        </div>
-      {/if}
+      {/key}
     </div>
   </div>
 </section>
@@ -753,7 +884,8 @@
   <p class="fl-dr-confirm">{$t('frameleaf_duplicates_confirm_delete_body')}</p>
   <div class="fl-dr-confirm-actions">
     <Button onclick={() => (confirmOpen = false)}>{$t('frameleaf_duplicates_cancel')}</Button>
-    <Button variant="primary" onclick={confirmIrreversible}>{$t('frameleaf_duplicates_confirm_delete')}</Button>
+    <!-- A bounded, irreversible action: a clear summary and a danger button, as in Trash (finding 74). -->
+    <Button variant="danger" onclick={confirmIrreversible}>{$t('frameleaf_duplicates_confirm_delete')}</Button>
   </div>
 </Dialog>
 
@@ -965,8 +1097,46 @@
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
   }
+  /* The leaving group and the arriving one share one cell while they cross. */
   .fl-dr-comparison {
+    display: grid;
     min-width: 0;
+  }
+  .fl-dr-group {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+  /* Marks put on the leaving group's cards by `markDecision`. */
+  .fl-dr-group :global(.fl-dr-removed) {
+    opacity: 0;
+    transform: scale(0.96);
+    transition:
+      opacity var(--fl-motion) var(--fl-ease),
+      transform var(--fl-motion) var(--fl-ease);
+  }
+  .fl-dr-group :global(.fl-dr-kept) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  .fl-dr-progress {
+    height: 3px;
+    overflow: hidden;
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-pill);
+  }
+  .fl-dr-progress span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
+    border-radius: inherit;
+    transition: width var(--fl-duration) var(--fl-snappy);
+  }
+  .fl-dr-done-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-4);
   }
   .fl-dr-heading {
     display: flex;

@@ -497,7 +497,7 @@
     display: inline-flex;
     padding: 0.375rem;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: transparent;
     color: var(--fl-text);
   }
@@ -635,7 +635,7 @@
     font-size: 0.75rem;
   }
   .actions button.danger {
-    color: var(--fl-danger, #c0392b);
+    color: var(--fl-danger);
   }
   .actions button:disabled,
   .toggle:disabled {

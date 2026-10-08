@@ -1,4 +1,5 @@
 import { defaults, getBaseUrl } from '@frameleaf/sdk';
+import { PhotographyError } from './errors';
 import type { Watermark } from './workflow-api';
 
 export const shootStages = ['Imported', 'Selected', 'Edited', 'Proofing', 'Delivered'] as const;
@@ -48,11 +49,7 @@ const request = async <T>(path: string, method = 'GET', body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(
-      response.status === 409
-        ? 'Photography settings changed in another window. Reload before saving.'
-        : 'The request could not be completed. Try again.',
-    );
+    throw new PhotographyError(response.status === 409 ? 'settings_changed' : 'request_failed', response.status);
   }
   return response.status === 204 ? (undefined as T) : response.json();
 };

@@ -355,7 +355,7 @@
     right: 0;
     z-index: 3;
     height: 3px;
-    background: #ffffff14;
+    background: var(--fl-viewer-border);
     pointer-events: none;
   }
   .slideshow-progress :global(span) {

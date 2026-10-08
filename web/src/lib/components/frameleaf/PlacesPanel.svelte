@@ -14,6 +14,7 @@
    * search for the country.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { buildPlacesTree, filterPlacesTree, stateMapDots, type PlaceCity } from '$lib/frameleaf/places';
   import { Route } from '$lib/route';
   import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';
@@ -45,9 +46,13 @@
     counts: Map<string, number>;
     /** timeline items with no place, or null when unknown */
     unplaced: number | null;
+    /** The places could not be loaded: say so with a retry, never "no places yet". */
+    failed?: boolean;
+    onRetry?: () => unknown;
+    retrying?: boolean;
   }
 
-  let { places, counts, unplaced }: Props = $props();
+  let { places, counts, unplaced, failed = false, onRetry, retrying = false }: Props = $props();
 
   let search = $state('');
 
@@ -75,16 +80,18 @@
       : visible.cities.length,
   );
   const summary = $derived(
-    tree.cities.length === 0
-      ? $t('frameleaf_places_subtitle_empty')
-      : [
-          $t('frameleaf_places_summary', {
-            values: { places: tree.cities.length, items: tree.total },
-          }),
-          unplaced ? $t('frameleaf_places_unplaced', { values: { count: unplaced } }) : null,
-        ]
-          .filter(Boolean)
-          .join(' · '),
+    failed
+      ? ''
+      : tree.cities.length === 0
+        ? $t('frameleaf_places_subtitle_empty')
+        : [
+            $t('frameleaf_places_summary', {
+              values: { places: tree.cities.length, items: tree.total },
+            }),
+            unplaced ? $t('frameleaf_places_unplaced', { values: { count: unplaced } }) : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
   );
 
   const setGrouped = (value: boolean) =>
@@ -132,7 +139,7 @@
   <header class="dv-header">
     <div>
       <h1>{$t('places')}</h1>
-      <p>{summary}</p>
+      {#if summary}<p>{summary}</p>{/if}
     </div>
     <div class="dv-header-actions">
       <label class="dv-search">
@@ -157,7 +164,14 @@
     </div>
   </header>
 
-  {#if tree.cities.length === 0}
+  {#if failed}
+    <InlineError
+      title={$t('frameleaf_places_failed_title')}
+      message={$t('frameleaf_places_failed_body')}
+      {onRetry}
+      {retrying}
+    />
+  {:else if tree.cities.length === 0}
     <div class="dv-empty" role="status">
       <Icon icon={mdiMapMarkerOutline} size="30" />
       <strong>{$t('frameleaf_places_empty_title')}</strong>
@@ -322,8 +336,8 @@
     outline: none;
   }
   .dv-search:focus-within {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .dv-section {
     min-width: 0;

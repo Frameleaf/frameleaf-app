@@ -3,10 +3,13 @@
    * Revoke a render worker (FL-95). Revocation is immediate and permanent: every session the
    * worker holds ends, its next request is refused, and the claims it held lapse into recovery
    * rather than being trusted to finish. Like the maintenance restore (FL-81), the irreversible
-   * action is confirmed by typing the name rather than by a second click.
+   * action is confirmed by typing the name rather than by a second click, in the shared typed
+   * confirmation with the danger button (design review finding 74).
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
+  import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { handleRevokeRenderWorker } from '$lib/services/render-worker.service';
   import type { RenderWorkerDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
@@ -18,8 +21,7 @@
   let revoked = $state(false);
   let typed = $state('');
 
-  const confirmed = $derived(typed.trim() === worker.name);
-  const inputId = $props.id();
+  const confirmed = $derived(matchesTyped(worker.name, typed));
 
   $effect(() => {
     if (!open) {
@@ -51,13 +53,18 @@
 >
   <form onsubmit={submit}>
     <p>{$t('frameleaf_render_workers_revoke_body')}</p>
-    <label for={inputId}>
-      <span>{$t('frameleaf_render_workers_revoke_type_label')}</span>
-      <input id={inputId} type="text" autocomplete="off" bind:value={typed} />
-    </label>
+    <TypedConfirmation
+      label={$t('frameleaf_render_workers_revoke_type_label')}
+      placeholder={worker.name}
+      initialFocus
+      disabled={working}
+      bind:value={typed}
+    />
     <footer>
-      <Button variant="quiet" onclick={() => (open = false)}>{$t('frameleaf_render_workers_form_cancel')}</Button>
-      <Button type="submit" disabled={!confirmed || working}>{$t('frameleaf_render_workers_revoke_confirm')}</Button>
+      <Button disabled={working} onclick={() => (open = false)}>{$t('frameleaf_render_workers_form_cancel')}</Button>
+      <Button type="submit" variant="danger" disabled={!confirmed || working}>
+        {$t('frameleaf_render_workers_revoke_confirm')}
+      </Button>
     </footer>
   </form>
 </Dialog>
@@ -70,21 +77,6 @@
   }
   p {
     margin: 0;
-  }
-  label {
-    display: grid;
-    gap: 0.25rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  input {
-    padding: 0.4375rem 0.6875rem;
-    font: inherit;
-    font-size: var(--fl-font-size);
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
   }
   footer {
     display: flex;

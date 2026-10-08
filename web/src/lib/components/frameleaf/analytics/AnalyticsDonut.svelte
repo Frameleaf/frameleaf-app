@@ -94,7 +94,7 @@
     display: grid;
     place-content: center;
     font-weight: 650;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     text-align: center;
   }
   .center :global(strong) {
@@ -134,7 +134,7 @@
   }
   strong,
   small {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     text-align: end;
   }
   small {

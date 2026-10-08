@@ -38,7 +38,7 @@ export const memoryGalleryUtils = {
   },
 
   async scrollToGallery(page: Page) {
-    const showGalleryButton = page.getByLabel('Show gallery');
+    const showGalleryButton = page.getByLabel('Select items below');
     if (await showGalleryButton.isVisible()) {
       await showGalleryButton.click();
     }

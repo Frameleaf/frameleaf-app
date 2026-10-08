@@ -102,7 +102,7 @@
   overflow-wrap: anywhere;
 }
 .frameleaf-cloud code {
-  font-size: 12px;
+  font-size: var(--fl-font-small);
   overflow-wrap: anywhere;
 }
 .frameleaf-cloud .fc-actions {
@@ -237,7 +237,7 @@
 }
 .frameleaf-cloud .fc-chips li.is-on {
   color: var(--fl-text);
-  background: var(--fl-accent-soft, var(--fl-raised));
+  background: var(--fl-accent-soft);
   border-color: transparent;
 }
 .frameleaf-cloud .fc-chips li.is-on svg {
@@ -251,36 +251,7 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-.frameleaf-cloud .fc-device-code {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
-  align-items: start;
-}
-.frameleaf-cloud .fc-device-code p {
-  font-size: var(--fl-font-small);
-  line-height: 1.6;
-}
-.frameleaf-cloud .fc-overline {
-  margin: 0;
-  color: var(--fl-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: var(--fl-font-micro);
-}
-.frameleaf-cloud .fc-code {
-  margin: 4px 0 10px;
-  font:
-    600 34px/1.1 ui-monospace,
-    'SF Mono',
-    Menlo,
-    monospace;
-  letter-spacing: 0.12em;
-}
-.frameleaf-cloud .fc-code.is-expired {
-  color: var(--fl-muted);
-  text-decoration: line-through;
-}
+
 .frameleaf-cloud .fc-waiting {
   display: flex;
   align-items: center;
@@ -381,11 +352,7 @@
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
-  font:
-    500 14px/1.4 ui-monospace,
-    'SF Mono',
-    Menlo,
-    monospace;
+  font: 500 var(--fl-font-size) / 1.4 var(--fl-family-mono);
   letter-spacing: 0.04em;
 }
 .frameleaf-cloud .fc-input[aria-invalid='true'] {
@@ -430,17 +397,40 @@
 .frameleaf-cloud .fc-plan-grid h3 {
   margin: 0;
 }
+/* What a plan includes, each line with a tick (the page reset removes a list's own markers). */
 .frameleaf-cloud .fc-plan-grid ul {
+  list-style: none;
+  display: grid;
+  align-content: start;
+  gap: 4px;
   margin: 0 0 8px;
-  padding-inline-start: 18px;
+  padding: 0;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
-  line-height: 1.6;
+  line-height: 1.5;
   flex: 1;
+}
+.frameleaf-cloud .fc-plan-grid li {
+  position: relative;
+  padding-inline-start: 22px;
+}
+.frameleaf-cloud .fc-plan-grid li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 5px;
+  width: 9px;
+  height: 5px;
+  border-left: 1.5px solid var(--fl-teal); /* rtl: physical, draws the tick shape */
+  border-bottom: 1.5px solid var(--fl-teal);
+  transform: rotate(-45deg);
+}
+.frameleaf-cloud .fc-plan-grid + .fc-note {
+  margin-top: 12px;
 }
 .frameleaf-cloud .fc-price {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--fl-font-title);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -470,15 +460,18 @@
   .frameleaf-cloud .fc-card {
     padding: 16px;
   }
-  .frameleaf-cloud .fc-device-code {
-    grid-template-columns: minmax(0, 1fr);
-  }
+
   .frameleaf-cloud .fc-card-title {
     flex-wrap: wrap;
   }
-  .frameleaf-cloud .fc-code {
-    font-size: 28px;
+  /* The title keeps the row beside its icon; the status drops under it, in line with the text. */
+  .frameleaf-cloud .fc-card-title > div {
+    flex: 1 1 60%;
   }
+  .frameleaf-cloud .fc-card-icon ~ .fc-status {
+    margin-inline-start: 46px;
+  }
+
   .frameleaf-cloud .fc-facts {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;

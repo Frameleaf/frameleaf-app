@@ -37,7 +37,7 @@
     height: 30px;
     overflow: hidden;
     background: var(--an-cell);
-    border-radius: 9px;
+    border-radius: var(--fl-radius-control-compact);
   }
   span {
     display: grid;

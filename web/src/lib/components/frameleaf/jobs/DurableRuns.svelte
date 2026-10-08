@@ -6,6 +6,7 @@
     type DurableJobItem,
     type QueueName,
   } from '@frameleaf/sdk';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import { untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
@@ -148,7 +149,7 @@
             })}</time
           >{/if}
         {#each run.reasons as reason (reason)}<p>{$t(runReasonKey(reason))}</p>{/each}
-        <button type="button" onclick={() => inspect(run.id)}>{$t('frameleaf_job_runs_inspect')}</button>
+        <Button onclick={() => inspect(run.id)}>{$t('frameleaf_job_runs_inspect')}</Button>
         {#if selectedId === run.id}
           <section aria-label={$t('frameleaf_job_runs_items')}>
             {#if itemsUnavailable}<p role="status">{$t('frameleaf_job_runs_items_unavailable')}</p>{/if}
@@ -175,32 +176,34 @@
                 </li>
               {/each}
             </ol>
-            <button
-              type="button"
-              disabled={itemsLoading || itemOffset === 0}
-              onclick={() => void loadItems(run.id, Math.max(0, itemOffset - PAGE_SIZE))}
-              >{$t('frameleaf_job_runs_previous')}</button
-            >
-            <button type="button" disabled={itemsLoading} onclick={() => void loadItems(run.id, itemOffset)}
-              >{$t('frameleaf_job_runs_refresh')}</button
-            >
-            <button
-              type="button"
-              disabled={itemsLoading || !itemsHaveNext}
-              onclick={() => void loadItems(run.id, itemOffset + PAGE_SIZE)}>{$t('frameleaf_job_runs_next')}</button
-            >
+            <div class="pager">
+              <Button
+                disabled={itemsLoading || itemOffset === 0}
+                onclick={() => void loadItems(run.id, Math.max(0, itemOffset - PAGE_SIZE))}
+                >{$t('frameleaf_job_runs_previous')}</Button
+              >
+              <Button disabled={itemsLoading} onclick={() => void loadItems(run.id, itemOffset)}
+                >{$t('frameleaf_job_runs_refresh')}</Button
+              >
+              <Button
+                disabled={itemsLoading || !itemsHaveNext}
+                onclick={() => void loadItems(run.id, itemOffset + PAGE_SIZE)}>{$t('frameleaf_job_runs_next')}</Button
+              >
+            </div>
           </section>
         {/if}
       </li>
     {/each}
   </ol>
-  <button type="button" disabled={loading || offset === 0} onclick={() => void load(Math.max(0, offset - PAGE_SIZE))}
-    >{$t('frameleaf_job_runs_previous')}</button
-  >
-  <button type="button" disabled={loading} onclick={() => void load()}>{$t('frameleaf_job_runs_refresh')}</button>
-  <button type="button" disabled={loading || !hasNext} onclick={() => void load(offset + PAGE_SIZE)}
-    >{$t('frameleaf_job_runs_next')}</button
-  >
+  <div class="pager">
+    <Button disabled={loading || offset === 0} onclick={() => void load(Math.max(0, offset - PAGE_SIZE))}
+      >{$t('frameleaf_job_runs_previous')}</Button
+    >
+    <Button disabled={loading} onclick={() => void load()}>{$t('frameleaf_job_runs_refresh')}</Button>
+    <Button disabled={loading || !hasNext} onclick={() => void load(offset + PAGE_SIZE)}
+      >{$t('frameleaf_job_runs_next')}</Button
+    >
+  </div>
 </section>
 
 <style>
@@ -225,11 +228,15 @@
   dd {
     margin-inline-end: 0.75rem;
   }
-  button {
-    padding: 0.4rem 0.75rem;
-    text-decoration: underline;
+  p,
+  time {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
   }
-  button:disabled {
-    opacity: 0.5;
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-3);
   }
 </style>

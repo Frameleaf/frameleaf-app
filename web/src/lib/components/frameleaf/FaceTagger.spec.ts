@@ -17,6 +17,9 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import FaceTagger from './FaceTagger.svelte';
 
+const toast = vi.hoisted(() => ({ undo: vi.fn() }));
+vi.mock('$lib/frameleaf/toast', () => ({ TOAST_ACTION_TIMEOUT_MS: 8000, toastUndo: toast.undo }));
+
 /**
  * FL-38 (V-28): the face tagger dialog ported from FaceTagger.jsx. Existing faces load with
  * their provenance and revision and can be moved, resized, reassigned, unassigned or removed;
@@ -430,6 +433,43 @@ describe('FaceTagger', () => {
 
     await fireEvent.keyDown(screen.getByRole('heading', { name: en.frameleaf_face_tagger_title }), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('offers Undo for unsaved tags closed with Cancel, and brings them back when the tagger reopens', async () => {
+    const asset = assetFactory.build({ ownerId: owner.id, type: AssetTypeEnum.Image, originalFileName: 'beach.jpg' });
+    const onClose = vi.fn();
+    const onReopen = vi.fn();
+    const open = async () => {
+      const view = render(FaceTagger, { asset, onClose, onSaved: vi.fn(), onReopen });
+      const image = await screen.findByRole('img', { name: 'beach.jpg' });
+      Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
+      await fireEvent.load(image);
+      await screen.findByText(en.frameleaf_face_tagger_position_note);
+      return view;
+    };
+    const first = await open();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
+    expect(screen.getByText('2 faces')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(toast.undo).toHaveBeenCalledExactlyOnceWith(en.frameleaf_face_tagger_discarded, expect.any(Function));
+    first.unmount();
+
+    (toast.undo.mock.calls[0][1] as () => void)();
+    expect(onReopen).toHaveBeenCalledExactlyOnceWith(asset.id);
+    await open();
+    await waitFor(() => expect(screen.getByText('2 faces')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: en.undo })).toBeEnabled();
+  });
+
+  it('says nothing about discarding when nothing changed', async () => {
+    const asset = assetFactory.build({ ownerId: owner.id, type: AssetTypeEnum.Image, originalFileName: 'beach.jpg' });
+    render(FaceTagger, { asset, onClose: vi.fn(), onSaved: vi.fn(), onReopen: vi.fn() });
+    await screen.findByText(en.frameleaf_face_tagger_position_note);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(toast.undo).not.toHaveBeenCalled();
   });
 
   it('closes when nothing changed', async () => {

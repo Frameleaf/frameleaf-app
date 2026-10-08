@@ -169,14 +169,20 @@
   .shelf {
     margin-bottom: 28px;
     padding: 0;
-    border-radius: 16px;
+    border-radius: var(--fl-radius-card);
+    outline: 2px solid transparent;
+    outline-offset: var(--fl-space-1);
     transition:
       box-shadow var(--fl-motion) var(--fl-ease),
-      background var(--fl-motion) var(--fl-ease);
+      background var(--fl-motion) var(--fl-ease),
+      outline-color var(--fl-motion) var(--fl-ease);
   }
+  /* While an album is being dragged, every shelf it may land on carries a soft accent outline. */
   .shelf.accepts {
-    outline: 1px dashed var(--fl-border);
-    outline-offset: 4px;
+    outline-color: color-mix(in srgb, var(--fl-accent) 45%, transparent);
+  }
+  .shelf.drop-target {
+    outline-color: transparent;
   }
   .shelf.drop-target {
     background: color-mix(in srgb, var(--fl-accent), transparent 90%);

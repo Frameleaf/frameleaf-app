@@ -31,6 +31,24 @@
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <AlbumDirectory tree={data.tree} spaceInvitations={data.spaceInvitations} onRefresh={refresh} />
+    <!-- The page surface reaches the foot of the window however few albums there are. -->
+    <div class="fl-page-fill">
+      <AlbumDirectory tree={data.tree} spaceInvitations={data.spaceInvitations} onRefresh={refresh} />
+    </div>
   </Theme>
 </UserPageLayout>
+
+<style>
+  /*
+   * Everything below the top bar, less the layout's 8px gutter above and below, so the Frameleaf
+   * surface never stops short of the window with the page background showing under it.
+   */
+  .fl-page-fill {
+    min-height: calc(100dvh - var(--fl-topbar-height) - 1rem);
+  }
+  @media (max-width: 767px) {
+    .fl-page-fill {
+      min-height: calc(100dvh - var(--fl-topbar-height-phone) - 0.5rem - max(0.5rem, var(--fl-tabbar-space, 0px)));
+    }
+  }
+</style>

@@ -17,6 +17,7 @@
    */
   import './cloud-account.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
@@ -161,7 +162,9 @@
   {/if}
 
   {#if !license || !products}
-    <p class="fc-muted" role="status">{$t('frameleaf_cloud_loading')}</p>
+    <div class="fc-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>
+      <Skeleton variant="block" height="168px" />
+    </div>
   {:else}
     <CloudCard
       icon={mdiCreditCardOutline}

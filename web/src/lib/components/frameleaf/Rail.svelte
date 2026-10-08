@@ -35,7 +35,7 @@
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     min-width: 44px;
   }
 </style>

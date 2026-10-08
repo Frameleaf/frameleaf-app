@@ -88,6 +88,21 @@ describe('MapScreen (FL-193)', () => {
     await waitFor(() => expect(screen.queryByText(en.frameleaf_map_tiles_failed_title)).not.toBeInTheDocument());
   });
 
+  it('says the located items could not be loaded, with a retry, instead of an empty map', async () => {
+    sdkMock.getMapMarkers.mockRejectedValueOnce(new Error('offline'));
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+    // No "0 in view" before there is an answer
+    expect(screen.getByText(en.frameleaf_map_finding)).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_map_load_failed_title)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_map_empty_title)).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_try_again }));
+    await waitFor(() => expect(screen.queryByText(en.frameleaf_map_load_failed_title)).not.toBeInTheDocument());
+    expect(sdkMock.getMapMarkers).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(en.frameleaf_map_empty_title)).toBeInTheDocument();
+  });
+
   it('keeps the In view list in step with the view when the style never loads (FL-51)', async () => {
     sdkMock.getMapMarkers.mockResolvedValue([
       { id: 'a0000000-0000-4000-8000-000000000001', lat: 10, lon: 50, city: 'Here', state: null, country: null },

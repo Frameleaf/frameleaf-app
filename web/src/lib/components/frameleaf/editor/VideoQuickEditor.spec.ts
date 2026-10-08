@@ -375,7 +375,9 @@ describe('VideoQuickEditor', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
     await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_speed' }));
     await fireEvent.click(screen.getByRole('radio', { name: '0.5×' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+    // With an unsaved edit, More names what Studio will open on.
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_more_actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'frameleaf_editor_studio_without_edits' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.edit.speed).toBe(0.5);
     expect(editAsset).not.toHaveBeenCalled();

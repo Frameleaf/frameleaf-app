@@ -60,6 +60,8 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
     const detail = container.querySelector('.resource-detail');
     expect(detail).not.toBeNull();
-    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start' }));
+    await waitFor(() =>
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }),
+    );
   });
 });

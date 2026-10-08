@@ -42,12 +42,20 @@ export const CLOUD_TOUR_ENDINGS = Object.freeze(['finished', 'skipped', 'opened-
 export type CloudTourEnding = (typeof CLOUD_TOUR_ENDINGS)[number];
 
 export type CloudTourPoint = { id: string; icon: string };
-export type CloudTourLink = { id: string; area: SettingsAreaId; section?: string };
+export type CloudTourLink = {
+  id: string;
+  area: SettingsAreaId;
+  section?: string;
+  /** Extra address parameters, for a page that is one view of an area (Backup's Cloud backup view). */
+  params?: Record<string, string>;
+};
+/** The role colour of a step's icon tile (a token pair in cloud-tour.css), never a literal colour. */
+export type CloudTourTile = 'blue' | 'teal' | 'accent' | 'ai' | 'neutral';
 export type CloudTourStep = {
   id: CloudTourStepId;
   icon: string;
-  /** The icon tile's colour, as in the prototype. */
-  tile: string;
+  /** The icon tile's role colour. Indigo is for the AI step only (BRAND.md decision 8). */
+  tile: CloudTourTile;
   /** Carries the reserved AI mark (a sparkle on indigo). */
   ai?: boolean;
   points: readonly CloudTourPoint[];
@@ -63,7 +71,7 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
   {
     id: 'remote',
     icon: mdiEarth,
-    tile: '#0a84ff',
+    tile: 'blue',
     points: [
       { id: 'relay', icon: mdiTransitConnectionVariant },
       { id: 'direct', icon: mdiLightningBolt },
@@ -74,7 +82,7 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
   {
     id: 'address',
     icon: mdiWeb,
-    tile: '#30b0c7',
+    tile: 'teal',
     points: [
       { id: 'frameleaf', icon: mdiLinkVariant },
       { id: 'domain', icon: mdiDns },
@@ -85,7 +93,7 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
   {
     id: 'signin',
     icon: mdiShieldAccountOutline,
-    tile: '#5856d6',
+    tile: 'neutral',
     points: [
       { id: 'home', icon: mdiHomeOutline },
       { id: 'away', icon: mdiEarth },
@@ -96,7 +104,7 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
   {
     id: 'processing',
     icon: mdiCloudSyncOutline,
-    tile: '#5e5ce6',
+    tile: 'ai',
     ai: true,
     points: [
       { id: 'jobs', icon: mdiTextBoxOutline },
@@ -108,18 +116,19 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
   {
     id: 'backup',
     icon: mdiCloudUploadOutline,
-    tile: '#30d158',
+    tile: 'accent',
     points: [
       { id: 'changed', icon: mdiContentDuplicate },
       { id: 'restore', icon: mdiBackupRestore },
       { id: 'key', icon: mdiKeyOutline },
     ],
-    links: [{ id: 'backup', area: 'cloud', section: 'cloud-backup' }],
+    // Cloud backup is a view of the one Backup area (design review finding 66).
+    links: [{ id: 'backup', area: 'backups', params: { backupView: 'cloud' } }],
   },
   {
     id: 'plan',
     icon: mdiCloudCheckOutline,
-    tile: '#8e8e93',
+    tile: 'neutral',
     points: [
       { id: 'plan', icon: mdiCreditCardOutline },
       { id: 'license', icon: mdiCertificateOutline },

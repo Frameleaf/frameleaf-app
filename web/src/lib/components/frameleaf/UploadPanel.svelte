@@ -20,16 +20,24 @@
     mdiTrashCan,
     mdiVideoOutline,
   } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { quartInOut } from 'svelte/easing';
-  import { motionScale } from '$lib/frameleaf/motion';
+  import { dock } from '$lib/frameleaf/motion';
+  import { EXIT_DURATION } from '$lib/frameleaf/tokens';
+  import { Route } from '$lib/route';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 
   /**
    * Upload panel (FL-45), ported from the prototype's `UploadPanel` in
    * `design/frameleaf/template/src/UploadPanel.jsx` onto the real upload manager:
    * `uploadAssetsStore` carries per-file state and `uploadExecutionQueue` the concurrency,
    * exactly what the legacy `routes/UploadPanel.svelte` displayed. Nothing here is a timer
-   * simulation — every row reflects a real `fileUploadHandler` request.
+   * simulation: every row reflects a real `fileUploadHandler` request.
+   *
+   * The overall bar keeps its colour when a file fails: the failed share is a danger segment at
+   * its end and the count is in the header, so one bad file in five hundred does not read as a
+   * failed upload. The parallel-uploads tuning sits behind Options. On phones the panel starts as
+   * its pill so it never opens over the photos uninvited.
    */
 
   const { stats, isUploading, remainingUploads } = uploadAssetsStore;
@@ -47,9 +55,36 @@
 
   $effect(() => {
     if ($isUploading) {
-      minimized = false;
+      minimized = mediaQueryManager.maxMd;
     }
   });
+
+  /**
+   * Closing the panel (Close, Done, Show in Recently added): it leaves on the Dock exit with what
+   * it was showing, and the list is cleared once it has gone, so the last frame is never an empty
+   * panel. If more files were added in the meantime the panel simply comes back with them.
+   */
+  let leaving = $state(false);
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  const afterLeave = () => {
+    clearTimeout(leaveTimer);
+    if (!leaving) {
+      return;
+    }
+    leaving = false;
+    if ($remainingUploads === 0) {
+      uploadAssetsStore.reset();
+    }
+  };
+  const dismiss = () => {
+    if (leaving) {
+      return;
+    }
+    leaving = true;
+    // The exit normally reports its own end; this is for a browser that never does.
+    leaveTimer = setTimeout(afterLeave, EXIT_DURATION.dock + 150);
+  };
+  onDestroy(() => clearTimeout(leaveTimer));
 
   $effect(() => {
     if (active) {
@@ -73,6 +108,20 @@
     return sum;
   });
   const percent = $derived(totalBytes > 0 ? Math.round((weightedBytes / totalBytes) * 100) : 0);
+  /** The share of the batch, by size, that failed: drawn as the bar's danger segment. */
+  const failedPercent = $derived.by(() => {
+    if (totalBytes <= 0) {
+      return 0;
+    }
+    let failed = 0;
+    for (const item of $uploadAssetsStore) {
+      if (item.state === UploadState.ERROR) {
+        failed += item.file.size;
+      }
+    }
+    // A failure is always visible, however small its file was.
+    return failed > 0 ? Math.min(percent, Math.max(2, Math.round((failed / totalBytes) * 100))) : 0;
+  });
 
   /** `uploadSummary` (system-data.mjs:422-423): "Uploading 3 of 10" counts the file in flight. */
   const processed = $derived(Math.min($stats.total, $stats.total - $remainingUploads + 1));
@@ -141,14 +190,16 @@
   };
 </script>
 
-{#if $isUploading}
+{#if $isUploading && !leaving}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
     {#if minimized}
       <!-- UploadPanel.jsx:315-326: ring, label and overall percent. -->
       <button
         type="button"
         class="fl-pill"
-        in:motionScale={{ duration: 250, easing: quartInOut }}
+        in:dock|global
+        out:dock|global
+        onoutroend={afterLeave}
         aria-label={`${$t('frameleaf_transfer_show_uploads')}. ${label}. ${counts}`}
         onclick={() => (minimized = false)}
       >
@@ -160,10 +211,19 @@
       <section
         class="fl-panel"
         aria-label={$t('frameleaf_transfer_uploads')}
-        in:motionScale={{ duration: 250, easing: quartInOut }}
+        in:dock|global
+        out:dock|global
+        onoutroend={afterLeave}
       >
         <header class="fl-panel-head">
-          <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
+          {#if active || $stats.errors > 0}
+            <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
+          {:else}
+            <!-- Finished with nothing to look at: the done mark unfurls once (a fade under Reduce Motion). -->
+            <span class="fl-done-mark fl-unfurl" aria-hidden="true">
+              <Icon icon={mdiCloudCheckOutline} size="20" />
+            </span>
+          {/if}
           <div class="fl-panel-head-text">
             <strong aria-live="polite">{label}</strong>
             <span>{counts} · {getByteUnitString(totalBytes, $locale)}</span>
@@ -181,7 +241,7 @@
               type="button"
               class="fl-icon-button"
               aria-label={$t('frameleaf_transfer_close_uploads')}
-              onclick={() => uploadAssetsStore.reset()}
+              onclick={dismiss}
             >
               <Icon icon={mdiClose} size="18" aria-hidden="true" />
             </button>
@@ -197,7 +257,10 @@
           aria-valuemax={100}
           aria-valuenow={percent}
         >
-          <span style={`width: ${percent}%`}></span>
+          <span style={`width: ${percent - failedPercent}%`}></span>
+          {#if failedPercent > 0}
+            <span class="fl-progress-failed" style={`width: ${failedPercent}%`}></span>
+          {/if}
         </div>
 
         <ul class="fl-list">
@@ -258,18 +321,22 @@
         </ul>
 
         <footer class="fl-panel-foot">
-          <label class="fl-concurrency">
-            {$t('frameleaf_transfer_parallel_uploads')}
-            <input
-              type="range"
-              min="1"
-              max="10"
-              step="1"
-              bind:value={concurrency}
-              onchange={() => (uploadExecutionQueue.concurrency = concurrency)}
-            />
-            <output>{concurrency}</output>
-          </label>
+          <!-- Tuning, not something an upload should ask about: it waits behind Options. -->
+          <details class="fl-options">
+            <summary>{$t('frameleaf_transfer_options')}</summary>
+            <label class="fl-concurrency">
+              {$t('frameleaf_transfer_parallel_uploads')}
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                bind:value={concurrency}
+                onchange={() => (uploadExecutionQueue.concurrency = concurrency)}
+              />
+              <output>{concurrency}</output>
+            </label>
+          </details>
           <div class="fl-panel-actions">
             {#if $stats.errors > 0}
               <button type="button" class="fl-button" onclick={() => void retryFailedUploads()}>
@@ -291,8 +358,16 @@
               <button type="button" class="fl-button" onclick={() => cancelRemainingUploads()}>
                 {$t('frameleaf_transfer_cancel_remaining')}
               </button>
+            {:else if $stats.success > 0}
+              <!-- The photos that just arrived are one press away; Done only puts the panel away. -->
+              <button type="button" class="fl-button" onclick={dismiss}>
+                {$t('done')}
+              </button>
+              <a class="fl-button fl-button-primary" href={Route.recentlyAdded()} onclick={dismiss}>
+                {$t('frameleaf_transfer_show_recent')}
+              </a>
             {:else}
-              <button type="button" class="fl-button fl-button-primary" onclick={() => uploadAssetsStore.reset()}>
+              <button type="button" class="fl-button fl-button-primary" onclick={dismiss}>
                 {$t('done')}
               </button>
             {/if}
@@ -304,8 +379,24 @@
 {/if}
 
 <style>
+  /*
+   * The panel and its pill share one cell, anchored to the dock's corner, so minimising, restoring
+   * and Done are a handover in place: the one leaving sinks and fades (Dock exit, 200ms) under the
+   * one arriving, and nothing in the dock jumps while both are there.
+   */
   .fl-panel-wrap {
+    display: grid;
+    justify-items: end;
+    align-items: end;
     pointer-events: auto;
+  }
+  .fl-panel-wrap > :global(*) {
+    grid-area: 1 / 1;
+  }
+  .fl-done-mark {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--fl-accent);
   }
   .fl-panel {
     display: flex;
@@ -357,6 +448,7 @@
   }
   .fl-progress {
     position: relative;
+    display: flex;
     inline-size: 100%;
     block-size: 0.25rem;
     background: var(--fl-raised);
@@ -367,8 +459,25 @@
     background: var(--fl-teal);
     transition: width var(--fl-motion) var(--fl-ease);
   }
-  .fl-progress.has-errors span {
+  .fl-progress .fl-progress-failed {
     background: var(--fl-danger);
+  }
+  .fl-options {
+    flex: 1 1 100%;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .fl-options summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--fl-control-compact);
+    cursor: pointer;
+  }
+  .fl-options summary:hover {
+    color: var(--fl-text);
+  }
+  a.fl-button {
+    text-decoration: none;
   }
   .fl-list {
     list-style: none;
@@ -398,7 +507,7 @@
     justify-content: center;
     inline-size: 1.75rem;
     block-size: 1.75rem;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control-compact);
     overflow: hidden;
     color: var(--fl-muted);
     background: var(--fl-raised);
@@ -536,7 +645,7 @@
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     box-shadow: var(--fl-shadow-2);
   }
   .fl-pill:hover {

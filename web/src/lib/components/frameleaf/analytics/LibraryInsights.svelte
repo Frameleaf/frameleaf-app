@@ -712,7 +712,7 @@
   .an-year .value {
     color: var(--fl-muted);
     font-size: 10.5px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     opacity: 0;
     transition: opacity 160ms ease;
   }
@@ -724,7 +724,7 @@
     margin-top: 6px;
     color: var(--fl-muted);
     font-size: 11px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
 
   /* punchcard */
@@ -874,7 +874,7 @@
     background: var(--fl-raised);
     border-radius: var(--fl-radius-pill);
     font-size: 12px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .an-chips li :global(svg) {
     color: var(--fl-accent);
@@ -909,7 +909,7 @@
   .an-mini-stats dd {
     margin: 4px 0 0;
     font-size: 19px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 650;
   }
 
@@ -954,7 +954,7 @@
   }
   .an-record strong {
     font-size: 21px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 650;
     letter-spacing: -0.02em;
   }

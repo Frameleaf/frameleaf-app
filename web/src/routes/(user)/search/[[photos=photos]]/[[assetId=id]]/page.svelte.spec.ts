@@ -1,5 +1,5 @@
 import { SearchAskMode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
@@ -41,7 +41,6 @@ vi.mock('$lib/components/frameleaf/ResultsView.svelte', async () => ({
 vi.mock('$lib/components/frameleaf/ResultsAssetViewer.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/VideoMomentResults.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/SearchEntry.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/shared-components/ControlAppBar.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 const result = (ids: string[], nextCursor: string | null = null) =>
   ({
@@ -170,7 +169,7 @@ it('replaces a text request when its endpoint capability changes, without resett
   await old.promise;
   expect(screen.getAllByTestId('search-result')).toHaveLength(1);
   flushSync(() => setQuery({ city: 'Banff' }));
-  await screen.findByText('no_results');
+  await screen.findByText('frameleaf_search_results_empty_title');
   const count = vi.mocked(searchAssets).mock.calls.length;
   flushSync(() => {
     flags.smartSearch = false;
@@ -188,14 +187,46 @@ it('draws the palette-style chips on the results page and removes one condition 
   const chips = document.querySelector('#search-chips')!;
   expect(chips).toHaveClass('frameleaf');
   expect(chips.querySelectorAll('.search-chip')).toHaveLength(3);
-  const remove = [...chips.querySelectorAll(':scope .search-chip button')];
+  const remove = [...chips.querySelectorAll(':scope .search-chip button:not(.open)')];
   expect(remove).toHaveLength(3);
+  // The chips sit in the Library's row: left-aligned with Clear all, beside Filter and Save search.
+  expect(within(chips as HTMLElement).getByRole('button', { name: 'clear_all' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'frameleaf_search_results_filter' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'frameleaf_search_save_search' })).toBeInTheDocument();
   // Filter chips come first, in field order (city, isFavorite), then the text
   await fireEvent.click(remove[0]);
   const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
   const next = JSON.parse(url.searchParams.get('dq')!);
   expect(next.filter).toEqual({ isFavorite: { eq: true } });
   expect(next.text).toBe('IMG');
+});
+
+it('offers ways forward when nothing matches, and a retry (not "no matches") when loading fails', async () => {
+  addMessages('dev', en);
+  const query = emptyDiscoveryQuery();
+  query.text = 'IMG';
+  query.filter = { city: { eq: 'Banff' } };
+  state.url = new URL(discoveryUrl(query), 'http://localhost');
+  vi.mocked(searchAssets).mockRejectedValueOnce(new Error('offline')).mockResolvedValue(result([]));
+  render(SearchPage);
+
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t load these results');
+  expect(screen.queryByText('No matches')).toBeNull();
+  expect(handleError).not.toHaveBeenCalled();
+
+  await fireEvent.click(retry);
+  expect(await screen.findByText('No matches')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Edit search' })).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove filters' }));
+  const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
+  expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({ text: 'IMG', filter: {} });
+});
+
+it('is never blank without Ask: it offers the search palette', () => {
+  addMessages('dev', en);
+  render(SearchPage);
+  expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
 });
 
 // FL-31: the Ask panel on the empty search page.

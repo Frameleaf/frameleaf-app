@@ -52,7 +52,8 @@ test.describe('compact desktop share sheet', () => {
     page,
   }) => {
     const sheet = page.getByRole('dialog');
-    await expect(sheet).toHaveAccessibleName('Share Hiking with Jamie.jpg');
+    // The sheet is titled by what is shared, not by a file name.
+    await expect(sheet).toHaveAccessibleName('Share 1 photo');
     await expect
       .poll(() =>
         sheet

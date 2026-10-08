@@ -4,6 +4,7 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
   import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
+  import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
@@ -98,18 +99,13 @@
   });
 
   const unreadCount = $derived(notificationManager.notifications.length);
-  // FL-104: background jobs the viewer may see (queues too, for administrators) are in the panel.
-  const runningCount = $derived(runningJobsSession.activeCount);
-  // The prototype's bell: "Notifications, 3 unread", plus what is running when anything is.
+  // The bell is for notifications only ("Notifications, 3 unread"). Work in progress has one
+  // indicator in the bar, the activity ring beside it, so the two can never show different counts.
+  // The panel still lists what is running (FL-104), which is why the session is watched below.
   const bellLabel = $derived(
-    [
-      unreadCount > 0
-        ? $t('frameleaf_notifications_bell_unread', { values: { count: unreadCount } })
-        : $t('notifications'),
-      runningCount > 0 ? $t('frameleaf_running_bell', { values: { count: runningCount } }) : null,
-    ]
-      .filter(Boolean)
-      .join(', '),
+    unreadCount > 0
+      ? $t('frameleaf_notifications_bell_unread', { values: { count: unreadCount } })
+      : $t('notifications'),
   );
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The prototype's theme control is always present and names the theme it switches to.
@@ -205,8 +201,14 @@
       return;
     }
     isElevated = true;
+    // What the PIN reveals sharpens into view (AssetTile); the window restarts once the pages have
+    // reloaded, since that is when the revealed items are drawn.
+    markLocksRevealed();
     eventManager.emit('SessionAccessChanged', { isElevated: true });
     await invalidateAll();
+    if (isElevated) {
+      markLocksRevealed();
+    }
   };
 
   const lockSession = (): Promise<void> => {
@@ -215,6 +217,7 @@
     }
     sessionRevision++;
     isElevated = false;
+    clearLocksRevealed();
     isSessionLoading = true;
     unlockDialogOpen = false;
     lockFlight = requestSessionLock().finally(() => {
@@ -245,58 +248,61 @@
 >
   <SkipLink text={$t('skip_to_content')} />
   <div class="fl-topbar-grid">
-    <div class="fl-topbar-lead">
-      {#if hasRail}
-        <!-- The id matches `menuButtonId` exported by NavigationBar.svelte, which the
+    <!-- Brand and workspaces share the bar's leading track; on phones they sit in the grid directly. -->
+    <div class="fl-topbar-start">
+      <div class="fl-topbar-lead">
+        {#if hasRail}
+          <!-- The id matches `menuButtonId` exported by NavigationBar.svelte, which the
              sidebar focuses when it closes. It is repeated rather than imported so the
              two shells never import each other. -->
-        <IconButton
-          id="top-menu-button"
-          shape="round"
-          color="secondary"
-          variant="ghost"
-          size="medium"
-          aria-label={$t('main_menu')}
-          icon={mdiMenu}
-          onclick={() => sidebarStore.toggle()}
-          onmousedown={(event: MouseEvent) => {
-            if (sidebarStore.isOpen) {
-              // Stop the event reaching the sidebar's click-outside handler.
-              event.stopPropagation();
-            }
-          }}
-          class="sidebar:hidden"
-        />
-      {/if}
-      <!-- App.jsx `.brand`: the button is named "Frameleaf" whatever it shows. -->
-      <a
-        class="fl-topbar-brand"
-        data-sveltekit-preload-data="hover"
-        href={Route.photos()}
-        aria-label={$t('frameleaf_brand_name')}
-      >
-        <FrameleafLogo
-          variant={mediaQueryManager.isFullSidebar && !phone.current ? 'inline' : 'icon'}
-          theme={appTheme}
-          decorative
-          class="h-8"
-        />
-      </a>
-    </div>
-
-    <!-- The prototype's `.primary-nav`: the three workspaces, text only, in this order. -->
-    <nav class="fl-primary-nav" aria-label={$t('frameleaf_primary_navigation')}>
-      {#each primaryDestinations as destination (destination.id)}
+          <IconButton
+            id="top-menu-button"
+            shape="round"
+            color="secondary"
+            variant="ghost"
+            size="medium"
+            aria-label={$t('main_menu')}
+            icon={mdiMenu}
+            onclick={() => sidebarStore.toggle()}
+            onmousedown={(event: MouseEvent) => {
+              if (sidebarStore.isOpen) {
+                // Stop the event reaching the sidebar's click-outside handler.
+                event.stopPropagation();
+              }
+            }}
+            class="sidebar:hidden"
+          />
+        {/if}
+        <!-- App.jsx `.brand`: the button is named "Frameleaf" whatever it shows. -->
         <a
-          href={destination.href}
+          class="fl-topbar-brand"
           data-sveltekit-preload-data="hover"
-          class:fl-current={currentPrimary === destination.id}
-          aria-current={currentPrimary === destination.id ? 'page' : undefined}
+          href={Route.photos()}
+          aria-label={$t('frameleaf_brand_name')}
         >
-          {$t(destination.labelKey)}
+          <FrameleafLogo
+            variant={mediaQueryManager.isFullSidebar && !phone.current ? 'inline' : 'icon'}
+            theme={appTheme}
+            decorative
+            class="h-8"
+          />
         </a>
-      {/each}
-    </nav>
+      </div>
+
+      <!-- The prototype's `.primary-nav`: the three workspaces, text only, in this order. -->
+      <nav class="fl-primary-nav" aria-label={$t('frameleaf_primary_navigation')}>
+        {#each primaryDestinations as destination (destination.id)}
+          <a
+            href={destination.href}
+            data-sveltekit-preload-data="hover"
+            class:fl-current={currentPrimary === destination.id}
+            aria-current={currentPrimary === destination.id ? 'page' : undefined}
+          >
+            {$t(destination.labelKey)}
+          </a>
+        {/each}
+      </nav>
+    </div>
 
     <!--
       FL-49: exactly one search entry for the whole library, at every width. It opens the
@@ -315,10 +321,8 @@
         <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
       {/if}
 
-      <!-- The activity indicator is desktop only; phones keep the bar to its fixed grid. -->
-      <div class="hidden md:flex">
-        <ActivityIndicator />
-      </div>
+      <!-- The one "work in progress" indicator, at every width; on phones it is the ring alone. -->
+      <ActivityIndicator />
 
       <div
         use:clickOutside={{
@@ -339,10 +343,6 @@
           <Icon icon={mdiBellOutline} size="20" aria-hidden="true" />
           {#if unreadCount > 0}
             <span class="fl-notif-count" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>
-          {/if}
-          {#if runningCount > 0}
-            <!-- Jobs are running: a small turning ring at the bell's foot, still for reduced motion. -->
-            <span class="fl-bell-running" aria-hidden="true"></span>
           {/if}
         </button>
 
@@ -426,12 +426,26 @@
   .fl-no-border {
     border-bottom: 0;
   }
+  /*
+   * Three tracks: brand and workspaces, search, actions. The outer two share the spare width
+   * equally, so the search field sits in the true centre whenever both sides fit; when they do
+   * not, each side keeps the width of its content and the search field is what gives way. It can
+   * never run under the Upload button.
+   */
   .fl-topbar-grid {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) minmax(0, 30rem) minmax(max-content, 1fr);
     align-items: center;
-    gap: 1.125rem;
+    column-gap: 1.125rem;
     height: 100%;
     padding: 0 max(1.5rem, var(--fl-safe-right)) 0 max(1.125rem, var(--fl-safe-left));
+  }
+  .fl-topbar-start {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: 1.125rem;
+    min-width: 0;
   }
   .fl-topbar-lead {
     display: flex;
@@ -476,14 +490,10 @@
     background: var(--fl-accent);
   }
   .fl-topbar-search {
-    flex: 1;
     min-width: 0;
-    max-width: 30rem;
-    margin-inline-start: auto;
   }
   .fl-topbar-actions {
     display: flex;
-    flex-shrink: 0;
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
@@ -496,32 +506,32 @@
     z-index: 40;
     padding-top: 0.5rem;
   }
+  /* From laptop width up the search field keeps a usable floor, whatever the actions hold. */
+  @media (min-width: 62.5625rem) {
+    .fl-topbar-grid {
+      grid-template-columns: minmax(max-content, 1fr) minmax(12rem, 30rem) minmax(max-content, 1fr);
+    }
+  }
   @media (max-width: 80rem) {
     .fl-topbar-grid {
-      gap: 0.75rem;
+      column-gap: 0.75rem;
       padding-inline-end: 1rem;
+    }
+    .fl-topbar-start {
+      gap: 0.75rem;
     }
     .fl-primary-nav {
       gap: 0.125rem;
     }
   }
   @media (max-width: 62.5rem) {
-    .fl-topbar-grid {
+    .fl-topbar-grid,
+    .fl-topbar-start {
+      column-gap: 0.5rem;
       gap: 0.5rem;
     }
-  }
-  /* apple-style.css "top bar": the search field sits in the true centre on wide screens. */
-  @media (min-width: 1200px) {
-    .fl-topbar-search {
-      position: absolute;
-      left: 50%;
-      translate: -50% 0;
-      width: min(480px, calc(100vw - 940px));
-      max-width: none;
-      margin: 0;
-    }
-    .fl-topbar-actions {
-      margin-inline-start: auto;
+    .fl-topbar-lead {
+      min-width: 0;
     }
   }
   /* Phones: the prototype's fixed two-row grid. */
@@ -535,6 +545,9 @@
         'primary search search';
       column-gap: 0.3125rem;
       padding: 0.1875rem max(0.5rem, var(--fl-safe-right)) 0.5rem max(0.5rem, var(--fl-safe-left));
+    }
+    .fl-topbar-start {
+      display: contents;
     }
     .fl-topbar-lead {
       grid-area: lead;
@@ -554,8 +567,6 @@
     }
     .fl-topbar-search {
       grid-area: search;
-      max-width: none;
-      margin-inline-start: 0;
     }
     .fl-topbar-actions {
       grid-area: actions;
@@ -667,29 +678,5 @@
     text-align: center;
     box-shadow: 0 0 0 2px var(--fl-panel);
     pointer-events: none;
-  }
-  .fl-bell-running {
-    position: absolute;
-    right: 2px;
-    bottom: 2px;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--fl-border);
-    border-top-color: var(--fl-accent);
-    border-radius: 50%;
-    background: var(--fl-panel);
-    pointer-events: none;
-    animation: fl-bell-spin 900ms linear infinite;
-  }
-  @keyframes fl-bell-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .fl-bell-running {
-      border-color: var(--fl-accent);
-      animation: none;
-    }
   }
 </style>

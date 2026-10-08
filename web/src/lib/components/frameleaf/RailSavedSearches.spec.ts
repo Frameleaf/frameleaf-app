@@ -1,9 +1,11 @@
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
 import RailSavedSearches from './RailSavedSearches.svelte';
 
 const state = vi.hoisted(() => ({ url: new URL('http://localhost/photos') }));
@@ -41,8 +43,57 @@ describe('RailSavedSearches', () => {
     });
   });
 
+  it('offers Undo after a delete, and Undo saves the search back', async () => {
+    const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({}) as never);
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [lisbon, jamie], revision: 'r1' } as never);
+    sdkMock.updateMyPreferences.mockResolvedValueOnce({ savedSearches: [jamie], revision: 'r2' } as never);
+    // The store is shared: read the account's list afresh for this test.
+    await savedSearchesStore.load(true);
+    render(RailSavedSearches);
+    await screen.findByRole('link', { name: 'Lisbon' });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete saved search Lisbon' }));
+    await waitFor(() => expect(show).toHaveBeenCalledOnce());
+    const toast = show.mock.calls[0][0] as { description: string; button: { label: string; onclick: () => void } };
+    expect(toast.description).toBe('Deleted “Lisbon”');
+    expect(toast.button.label).toBe('Undo');
+
+    sdkMock.updateMyPreferences.mockResolvedValueOnce({ savedSearches: [jamie, lisbon], revision: 'r3' } as never);
+    toast.button.onclick();
+    expect(await screen.findByRole('link', { name: 'Lisbon' })).toBeInTheDocument();
+    const saved = sdkMock.updateMyPreferences.mock.lastCall![0].userPreferencesUpdateDto;
+    expect(saved.expectedRevision).toBe('r2');
+    expect((saved.savedSearches ?? []).map((search) => search.name).sort()).toEqual(['Jamie', 'Lisbon']);
+  });
+
+  it('says so, and offers no Undo, when the delete did not go through', async () => {
+    const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({}) as never);
+    const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => ({}) as never);
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [lisbon], revision: 'r1' } as never);
+    sdkMock.updateMyPreferences.mockRejectedValue(new Error('stale'));
+    // The store is shared: read the account's list afresh for this test.
+    await savedSearchesStore.load(true);
+    render(RailSavedSearches);
+    await screen.findByRole('link', { name: 'Lisbon' });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete saved search Lisbon' }));
+    await waitFor(() => expect(warning).toHaveBeenCalledWith('Couldn’t delete that saved search. Try again.'));
+    expect(show).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Lisbon' })).toBeInTheDocument();
+  });
+
+  it('labels the list, so a saved search is not taken for an album', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [lisbon], revision: 'r1' } as never);
+    // The store is shared: read the account's list afresh for this test.
+    await savedSearchesStore.load(true);
+    render(RailSavedSearches);
+    await screen.findByRole('link', { name: 'Lisbon' });
+    expect(screen.getByText('Saved searches')).toBeInTheDocument();
+  });
+
   it('reloads on a lock, so a search naming something Locked is not listed while locked', async () => {
     sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [lisbon, jamie], revision: 'r1' } as never);
+    await savedSearchesStore.load(true);
     render(RailSavedSearches);
     await screen.findByRole('link', { name: 'Jamie' });
     // A locked session's preferences leave out the search naming the Locked person

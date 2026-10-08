@@ -1,8 +1,11 @@
 <script lang="ts">
+  /**
+   * "Permanently delete" confirmation, on the Frameleaf Dialog so it is the same sheet as every
+   * other confirmation. Cancel takes first focus; the destructive action is the danger button.
+   */
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
-  import { Button, Checkbox, HStack, Label, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
-  import { mdiDeleteForeverOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -16,56 +19,78 @@
 
   let { size, suppressible = true, assetName, onClose: onCloseParent }: Props = $props();
 
+  let open = $state(true);
   let checked = $state(false);
+  let confirmed = false;
 
-  const onClose = (confirmed: boolean) => {
+  const onClosed = () => {
     if (confirmed && suppressible && checked) {
       $showDeleteModal = false;
     }
 
     onCloseParent(confirmed);
   };
+
+  const confirm = () => {
+    confirmed = true;
+    open = false;
+  };
 </script>
 
-<Modal
+<Dialog
+  bind:open
   title={assetName
     ? $t('frameleaf_viewer_delete_permanently_title')
     : $t('permanently_delete_assets_count', { values: { count: size } })}
-  icon={mdiDeleteForeverOutline}
-  size="small"
-  onClose={() => onClose(false)}
-  focusOnOpen
+  closeLabel={$t('close')}
+  {onClosed}
 >
-  <ModalBody>
-    {#if assetName}
-      <p>{$t('frameleaf_viewer_delete_permanently_prompt', { values: { name: assetName } })}</p>
-    {:else}
-      <p>
-        <FormatMessage key="permanently_delete_assets_prompt" values={{ count: size }}>
-          {#snippet children({ message })}
-            <b>{message}</b>
-          {/snippet}
-        </FormatMessage>
-      </p>
-      <p><b>{$t('cannot_undo_this_action')}</b></p>
-    {/if}
+  {#if assetName}
+    <p>{$t('frameleaf_viewer_delete_permanently_prompt', { values: { name: assetName } })}</p>
+  {:else}
+    <p>
+      <FormatMessage key="permanently_delete_assets_prompt" values={{ count: size }}>
+        {#snippet children({ message })}
+          <b>{message}</b>
+        {/snippet}
+      </FormatMessage>
+    </p>
+    <p><b>{$t('cannot_undo_this_action')}</b></p>
+  {/if}
 
-    {#if suppressible}
-      <div class="flex items-center justify-center gap-2 pt-4">
-        <Checkbox id="confirm-deletion-input" bind:checked color="secondary" />
-        <Label label={$t('do_not_show_again')} for="confirm-deletion-input" />
-      </div>
-    {/if}
-  </ModalBody>
+  {#if suppressible}
+    <label class="suppress">
+      <input id="confirm-deletion-input" type="checkbox" bind:checked />
+      {$t('do_not_show_again')}
+    </label>
+  {/if}
 
-  <ModalFooter>
-    <HStack fullWidth>
-      <Button shape="round" color="secondary" fullWidth onclick={() => onClose(false)}>
-        {assetName ? $t('frameleaf_viewer_delete_keep') : $t('cancel')}
-      </Button>
-      <Button shape="round" color="danger" fullWidth onclick={() => onClose(true)}>
-        {assetName ? $t('frameleaf_viewer_delete_permanently') : $t('delete')}
-      </Button>
-    </HStack>
-  </ModalFooter>
-</Modal>
+  {#snippet actions()}
+    <button type="button" class="button" data-initial-focus onclick={() => (open = false)}>
+      {assetName ? $t('frameleaf_viewer_delete_keep') : $t('cancel')}
+    </button>
+    <button type="button" class="button fl-danger" onclick={confirm}>
+      {assetName ? $t('frameleaf_viewer_delete_permanently') : $t('delete')}
+    </button>
+  {/snippet}
+</Dialog>
+
+<style>
+  p {
+    margin: 0 0 var(--fl-space-2);
+    line-height: 1.5;
+  }
+  .suppress {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: var(--fl-control-height);
+    margin-top: var(--fl-space-2);
+    color: var(--fl-muted);
+  }
+  .suppress input {
+    min-height: 0;
+    width: var(--fl-icon-lg);
+    height: var(--fl-icon-lg);
+  }
+</style>

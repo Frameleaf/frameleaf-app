@@ -3,6 +3,7 @@
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
   import { originOwnerName } from '$lib/frameleaf/partner-sharing';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
@@ -32,6 +33,8 @@
     actions?: Snippet;
     /** Where the tile opens. Defaults to the album view; a shared space opens its own page. */
     href?: string;
+    /** Just moved by Move earlier / Move later: the tile shows a ring that fades, so the eye finds it. */
+    moved?: boolean;
   }
 
   let {
@@ -46,6 +49,7 @@
     onReorderDrop,
     actions,
     href: hrefOverride,
+    moved = false,
   }: Props = $props();
 
   let over = $state(false);
@@ -113,6 +117,7 @@
   class="tile {layout}"
   class:dragging
   class:drop-before={over && acceptsReorder}
+  class:moved
   aria-label={name}
   {draggable}
   ondragstart={handleDragStart}
@@ -127,27 +132,36 @@
 >
   <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
     {#if cover}
-      <img src={cover} alt="" loading="lazy" draggable="false" />
+      <img src={cover} alt="" loading="lazy" draggable="false" data-fl-shared="album:{album.id}" />
     {:else}
       <span class="cover-empty" aria-hidden="true">
         <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />
       </span>
     {/if}
-    {#if album.isSmart}
-      <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
-        <Icon icon={mdiAutoFix} size="13" />
-      </span>
-    {/if}
-    {#if album.kind === AlbumKind.Space}
-      <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
-        <Icon icon={mdiAccountMultipleOutline} size="13" />
-      </span>
-    {/if}
-    {#if originLabel}
-      <span class="mark origin" role="img" title={originLabel} aria-label={originLabel} data-testid="album-origin-mark">
-        <Icon icon={mdiAccountArrowLeftOutline} size="13" aria-hidden />
-      </span>
-    {/if}
+    <!-- Bottom leading corner: the top trailing corner belongs to the "…" button. -->
+    <span class="marks">
+      {#if album.isSmart}
+        <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
+          <Icon icon={mdiAutoFix} size={ICON_SIZE.xs} />
+        </span>
+      {/if}
+      {#if album.kind === AlbumKind.Space}
+        <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
+          <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.xs} />
+        </span>
+      {/if}
+      {#if originLabel}
+        <span
+          class="mark origin"
+          role="img"
+          title={originLabel}
+          aria-label={originLabel}
+          data-testid="album-origin-mark"
+        >
+          <Icon icon={mdiAccountArrowLeftOutline} size={ICON_SIZE.xs} aria-hidden />
+        </span>
+      {/if}
+    </span>
   </a>
   <div class="text">
     <a class="name" {href}>{name}</a>
@@ -221,28 +235,35 @@
     justify-content: center;
     color: var(--fl-muted);
   }
-  .mark {
+  .marks {
     position: absolute;
-    top: 0.375rem;
-    inset-inline-start: 0.375rem;
+    bottom: var(--fl-space-2);
+    inset-inline-start: var(--fl-space-2);
+    display: inline-flex;
+    gap: var(--fl-space-1);
+    pointer-events: none;
+  }
+  .mark {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 1.375rem;
     height: 1.375rem;
     border-radius: 50%;
-    background: rgb(0 0 0 / 55%);
-    color: #fff;
+    /* A dark chip in both themes: it sits on a photo, like the viewer chrome. */
+    background: color-mix(in srgb, var(--fl-viewer-canvas), transparent 40%);
+    color: var(--fl-viewer-text);
+    pointer-events: auto;
   }
-  .mark.space {
-    inset-inline-start: auto;
-    inset-inline-end: 0.375rem;
-  }
-  /* collections.css .al-origin-mark: copied from a partner (FL-326) */
-  .mark.origin {
-    inset-inline-start: auto;
-    inset-inline-end: 0.375rem;
-    color: #fff3d6;
+  /* Move earlier / Move later: a ring around the tile that fades, so the eye lands on what moved. */
+  .tile.moved::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: calc(var(--fl-radius-card) + 4px);
+    box-shadow: 0 0 0 2px var(--fl-accent);
+    pointer-events: none;
+    animation: fl-fade-out calc(var(--fl-motion-slow) * 2.5) var(--fl-ease) both;
   }
   .text {
     display: flex;
@@ -272,7 +293,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    min-height: 20px;
+    min-height: 28px; /* the shared-with avatars: every tile keeps one baseline */
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
@@ -287,7 +308,7 @@
     top: 0.25rem;
     inset-inline-end: 0.25rem;
     opacity: 0;
-    transition: opacity 120ms;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
   .tile:hover .actions,
   .tile:focus-within .actions {
@@ -315,6 +336,18 @@
   .tile.list .actions {
     position: static;
     opacity: 1;
+  }
+  .tile.list .marks {
+    bottom: 2px;
+    inset-inline-start: 2px;
+  }
+  .tile.list .mark {
+    width: 1rem;
+    height: 1rem;
+  }
+  .tile.list.moved::after {
+    inset: 0;
+    border-radius: var(--fl-radius-control);
   }
   @media (pointer: coarse) {
     .actions {

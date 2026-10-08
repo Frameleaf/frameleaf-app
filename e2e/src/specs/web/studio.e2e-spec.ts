@@ -13,7 +13,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
 /**
  * FL-88 (STU-201): the Studio route against a real server. The vendored engine is not part of
  * this build, so the route must mount its chrome, say plainly that the editor is unavailable and
- * name the missing workers, keep the header working (rename, Library, Activity) and leave cleanly.
+ * name the missing workers, keep the way back and project review working and leave cleanly.
  * Design: design/frameleaf/template/src/Studio.jsx:2584-2647 (September 24, 2026).
  */
 const envelope = (version: number) => ({
@@ -42,29 +42,27 @@ test.describe('Studio', () => {
     await page.goto(`/studio?assets=${asset.id}`);
     const studio = page.getByRole('region', { name: 'Studio' });
     await expect(studio).toBeVisible();
-    await expect(studio.getByText('Editing as', { exact: false })).toBeVisible();
     await expect(page.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable');
-    // No render worker is admitted in the e2e stack, so the state lists what is missing.
-    await expect(page.getByRole('list', { name: /missing/i })).toBeVisible();
-    // The editor's mode switch needs the engine, so it is not offered.
+    // Nothing opened, so the header shows no project controls the unavailable state would contradict.
+    await expect(studio.getByText('Editing as', { exact: false })).toHaveCount(0);
+    await expect(studio.getByText('All changes saved', { exact: true })).toHaveCount(0);
+    await expect(studio.getByRole('textbox', { name: 'Project name' })).toHaveCount(0);
+    // No render worker is admitted in the e2e stack; what is missing is listed for whoever runs the server.
+    await page.getByText('Details for your administrator', { exact: true }).click();
+    await expect(page.getByRole('list', { name: 'Details for your administrator' })).toBeVisible();
+    // The editor does not read a Basic or Advanced choice yet, so no switch is offered.
     await expect(page.getByRole('radiogroup', { name: 'Editing mode' })).toHaveCount(0);
   });
 
-  test('renames the draft from the header and goes back to the library', async ({ page }) => {
+  test('goes back to the project list from the header', async ({ page }) => {
     await page.goto('/studio');
-    const name = page.getByRole('textbox', { name: 'Project name' });
-    await name.fill('Lake trip');
-    await name.press('Enter');
-    await expect(name).toHaveValue('Lake trip');
-
-    // The header's back button (Studio.jsx:2793-2796); the top bar's "Search your library" also
-    // contains "Library", so the click is scoped to Studio and matched exactly.
+    // Both the header and the unavailable state offer the way back; the header's comes first.
     await page
       .getByRole('region', { name: 'Studio' })
-      .getByRole('button', { name: 'Library', exact: true })
+      .getByRole('button', { name: 'Projects', exact: true })
       .first()
       .click();
-    await expect(page).toHaveURL(/\/photos/);
+    await expect(page).toHaveURL(/\/studio\/projects/);
   });
 
   test('FL-144 preserves the former writer’s graph as a copy after lease takeover and a history restore', async ({
@@ -107,9 +105,9 @@ test.describe('Studio', () => {
 
     await page.goto(`/studio?project=${project.id}`);
     const studio = page.getByRole('region', { name: 'Studio', exact: true });
-    await expect(studio.getByText('All changes saved', { exact: true })).toBeVisible();
     await studio.getByRole('button', { name: 'Review', exact: true }).click();
-    const history = page.getByRole('complementary', { name: 'History', exact: true });
+    const history = page.getByRole('complementary', { name: 'Review', exact: true });
+    await history.getByRole('radio', { name: 'Versions', exact: true }).click();
     await expect(history.locator('ol strong')).toHaveText(
       Array.from({ length: 20 }, (_, index) => `Version ${21 - index}`),
     );
@@ -142,7 +140,8 @@ test.describe('Studio', () => {
         .getByRole('region', { name: 'Studio', exact: true })
         .getByRole('button', { name: 'Review', exact: true })
         .click();
-      const otherHistory = other.getByRole('complementary', { name: 'History', exact: true });
+      const otherHistory = other.getByRole('complementary', { name: 'Review', exact: true });
+      await otherHistory.getByRole('radio', { name: 'Versions', exact: true }).click();
       const version20 = otherHistory
         .getByRole('listitem')
         .filter({ has: other.getByText('Version 20', { exact: true }) });
@@ -151,17 +150,17 @@ test.describe('Studio', () => {
           new URL(response.url()).pathname === `/api/studio/projects/${project.id}/restore` &&
           response.request().method() === 'POST',
       );
-      await version20.getByRole('button', { name: 'Restore', exact: true }).click();
+      await version20.getByRole('button', { name: 'Go back to this version', exact: true }).click();
       const restoredResponse = await restored;
       expect(restoredResponse.status()).toBe(201);
       await expect(otherHistory.getByText('Version 22', { exact: true })).toBeVisible();
-      await expect(otherHistory.getByText('Restored from version 20', { exact: true })).toBeVisible();
+      await expect(otherHistory.getByText('Copy of version 20', { exact: true })).toBeVisible();
 
       // The former writer keeps its version-21 document when the real renewal is refused.
       const banner = page.getByTestId('studio-save-banner');
       await expect(banner).toHaveAttribute('data-status', 'lease-lost', { timeout: 45_000 });
       await expect(history.getByText('Version 21', { exact: true })).toBeVisible();
-      await expect(history.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
+      await expect(history.getByRole('button', { name: 'Go back to this version', exact: true })).toHaveCount(0);
       const copied = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === '/api/studio/projects' && response.request().method() === 'POST',
@@ -221,9 +220,9 @@ test.describe('Studio', () => {
 
     await page.goto(`/studio?project=${project.id}`);
     const studio = page.getByRole('region', { name: 'Studio', exact: true });
-    await expect(studio.getByText('All changes saved', { exact: true })).toBeVisible();
     await studio.getByRole('button', { name: 'Review', exact: true }).click();
-    const history = page.getByRole('complementary', { name: 'History', exact: true });
+    const history = page.getByRole('complementary', { name: 'Review', exact: true });
+    await history.getByRole('radio', { name: 'Versions', exact: true }).click();
     await expect(history.locator('ol strong')).toHaveText(['Version 3', 'Version 2', 'Version 1']);
 
     // The restore reaches the real server and commits; only its response is lost on the way back.
@@ -241,7 +240,7 @@ test.describe('Studio', () => {
     await history
       .getByRole('listitem')
       .filter({ has: page.getByText('Version 1', { exact: true }) })
-      .getByRole('button', { name: 'Restore', exact: true })
+      .getByRole('button', { name: 'Go back to this version', exact: true })
       .click();
     await expect.poll(() => delivered).toBe(true);
     const committed = await getStudioProject({ id: project.id }, options);
@@ -257,11 +256,11 @@ test.describe('Studio', () => {
     // Without the release on unload this is a 409 from the page's own previous instance.
     const reacquiredResponse = await reacquired;
     expect(reacquiredResponse.status()).toBeLessThan(300);
-    await expect(studio.getByText('All changes saved', { exact: true })).toBeVisible();
     await expect(page.getByTestId('studio-save-banner')).toHaveCount(0);
     await studio.getByRole('button', { name: 'Review', exact: true }).click();
+    await history.getByRole('radio', { name: 'Versions', exact: true }).click();
     await expect(history.locator('ol strong')).toHaveText(['Version 4', 'Version 3', 'Version 2', 'Version 1']);
-    await expect(history.getByText('Restored from version 1', { exact: true })).toHaveCount(1);
+    await expect(history.getByText('Copy of version 1', { exact: true })).toHaveCount(1);
     const stored = await getStudioProject({ id: project.id }, options);
     expect(stored.revision).toBe(4);
     expect(stored.envelope?.graph).toEqual(envelope(1).graph);

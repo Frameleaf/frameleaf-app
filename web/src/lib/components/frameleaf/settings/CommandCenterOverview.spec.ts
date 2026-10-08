@@ -1,5 +1,5 @@
 import { AnalyticsScopeKind, AnalyticsVolumePart, type AnalyticsVolumeBreakdownDto } from '@frameleaf/sdk';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
@@ -82,16 +82,19 @@ describe('Command Center measured Overview', () => {
     await screen.findByRole('link', { name: /All accounts.*100/ });
     expect(screen.getByText('60 GiB')).toBeInTheDocument();
     expect(screen.getByText('3.2.0')).toBeInTheDocument();
-    expect(screen.getByText('immich-db-backup-20260923T120000-v3.sql.gz')).toBeInTheDocument();
-    expect(screen.queryByText('z-immich-db-backup-20260921T120000-v3.sql.gz')).not.toBeInTheDocument();
+    // The latest backup reads as a time and a date; its file name is the tooltip (design review finding 77).
+    const latest = screen.getByTitle('immich-db-backup-20260923T120000-v3.sql.gz');
+    expect(latest).toHaveTextContent(/12:00/);
+    expect(latest).toHaveTextContent(/23/);
+    expect(screen.queryByTitle('z-immich-db-backup-20260921T120000-v3.sql.gz')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Review failed jobs/ })).toHaveAttribute(
       'href',
       '/user-settings?area=processing&section=queues',
     );
-    // The template's links: the latest backup opens Database backups, the ML endpoint Compute & jobs.
+    // The latest backup opens Backup → Backups & restore (finding 66), the ML endpoint Compute & jobs.
     expect(screen.getByRole('link', { name: /Latest database backup/ })).toHaveAttribute(
       'href',
-      '/user-settings?area=backup&section=backup',
+      '/user-settings?area=maintenance&section=backups',
     );
     expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveAttribute('href', '/user-settings?area=processing');
     expect(screen.getByText('GPU Studio')).toBeInTheDocument();
@@ -148,6 +151,24 @@ describe('Command Center measured Overview', () => {
     expect(storageRow(en.frameleaf_cc_derivatives)).toBe(en.frameleaf_cc_not_yet_measured);
     expect(storageRow(en.frameleaf_cc_other)).toBe(en.frameleaf_cc_not_yet_measured);
   });
+  it('takes a new snapshot on returning to the window, at most twice a minute (finding 77)', async () => {
+    const start = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      render(CommandCenterOverview);
+      await screen.findByRole('link', { name: /All accounts.*100/ });
+      expect(sdk.getAnalyticsReport).toHaveBeenCalledTimes(1);
+
+      await fireEvent.focus(globalThis as never);
+      expect(sdk.getAnalyticsReport).toHaveBeenCalledTimes(1);
+
+      now.mockReturnValue(start + 31_000);
+      await fireEvent.focus(globalThis as never);
+      await waitFor(() => expect(sdk.getAnalyticsReport).toHaveBeenCalledTimes(2));
+    } finally {
+      now.mockRestore();
+    }
+  });
   it('never turns failed subsystem requests into zero usage or no backups', async () => {
     sdk.getStorage.mockRejectedValue(new Error('unavailable'));
     sdk.listDatabaseBackups.mockRejectedValue(new Error('unavailable'));
@@ -179,7 +200,7 @@ describe('Command Center measured Overview', () => {
     render(CommandCenterOverview);
     await screen.findByRole('alert');
     expect(screen.queryByText('100')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await screen.findByRole('link', { name: /All accounts.*100/ });
   });
 
@@ -201,11 +222,11 @@ describe('Command Center measured Overview', () => {
       });
       render(CommandCenterOverview);
 
-      expect(await screen.findByRole('link', { name: /Verify local database recovery/ })).toHaveTextContent(
+      expect(await screen.findByRole('link', { name: /Prove your backup can restore/ })).toHaveTextContent(
         'Metadata is backed up. Original-file verification has not been recorded.',
       );
-      expect(screen.getByRole('link', { name: /Check worker compatibility/ })).toHaveTextContent(
-        /No qualified GPU worker for .*,/,
+      expect(screen.getByRole('link', { name: /Check what your computers can run/ })).toHaveTextContent(
+        /No computer is set up to run .*,/,
       );
       expect(screen.getByText('Original-file restore drill overdue')).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Compatibility check needed');
@@ -227,7 +248,7 @@ describe('Command Center measured Overview', () => {
 
       await waitFor(() => expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveTextContent('Reachable'));
       expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Qualified');
-      expect(screen.queryByRole('link', { name: /Check worker compatibility/ })).toBeNull();
+      expect(screen.queryByRole('link', { name: /Check what your computers can run/ })).toBeNull();
     });
   });
 

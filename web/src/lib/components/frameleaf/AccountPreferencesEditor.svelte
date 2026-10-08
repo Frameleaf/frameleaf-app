@@ -778,11 +778,11 @@
   .account-preferences :focus-visible,
   .ap-tabs button:focus-visible,
   .ap-leave button:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .ap-error {
-    color: var(--fl-danger, #d95d53);
+    color: var(--fl-danger);
     line-height: 1.6;
   }
   .ap-notice {

@@ -116,6 +116,64 @@ describe('Studio export dialog', () => {
     });
   });
 
+  it('lists video formats first, keeps stills in their own group, and never offers a video its "original" size', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      onExport: vi.fn(),
+    });
+
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const groups = within(format).getAllByRole('group');
+    expect(groups.map((group) => group.getAttribute('label'))).toEqual([
+      'frameleaf_studio_export_video_group',
+      'frameleaf_studio_export_stills_group',
+    ]);
+    expect(within(groups[0]).getAllByRole('option')[0]).toHaveValue(StudioExportFormat.Mp4HevcMain10);
+    expect(within(groups[1]).getAllByRole('option')).toHaveLength(3);
+
+    const sizes = within(screen.getByLabelText('frameleaf_studio_export_resolution')).getAllByRole('option');
+    expect(sizes.map((option) => (option as HTMLOptionElement).value)).not.toContain(StudioExportResolution.Original);
+    expect(screen.getByTestId('studio-export-summary')).toHaveTextContent('frameleaf_studio_export_summary');
+  });
+
+  it('starts from a preset, leaves unsupported ones disabled, and keeps the rare choices under Advanced', async () => {
+    const onExport = vi.fn();
+    const { container } = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      onExport,
+    });
+
+    const advanced = container.querySelector('details.advanced') as HTMLDetailsElement;
+    expect(advanced.open).toBe(false);
+    expect(advanced).toContainElement(screen.getByLabelText('frameleaf_studio_export_color'));
+    expect(advanced).toContainElement(screen.getByLabelText('frameleaf_studio_export_range'));
+    expect(advanced).not.toContainElement(screen.getByLabelText('frameleaf_studio_export_format'));
+
+    // The defaults are the Best quality preset; no worker here has a ProRes encoder for Archive.
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_best' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_archive' })).toBeDisabled();
+
+    await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_share' }));
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: StudioExportFormat.Mp4H264,
+        resolution: StudioExportResolution.$1080P,
+        quality: StudioExportQuality.High,
+      }),
+    );
+
+    // A partial range that cannot be exported opens Advanced, so the reason is never folded away.
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_range'), { target: { value: 'frames' } });
+    await fireEvent.input(screen.getByLabelText('frameleaf_studio_export_range_end'), { target: { value: '0' } });
+    await waitFor(() => expect(advanced.open).toBe(true));
+    expect(screen.getByText('frameleaf_studio_export_range_invalid')).toBeInTheDocument();
+  });
+
   it.each([StudioExportColor.Hdr10, StudioExportColor.Preserve])(
     'requires chosen display limits for %s PQ export (FL-107)',
     async (color) => {

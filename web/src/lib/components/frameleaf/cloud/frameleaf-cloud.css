@@ -22,6 +22,19 @@
 .frameleaf[data-theme='light'] .fc-card {
   border: 1px solid var(--fl-border);
 }
+/*
+ * The link-to-Cloud card carries Leaf Light as a hairline along its top edge: Frameleaf offering
+ * Frameleaf Cloud (BRAND.md decision 3). Never a wash, never on any other card.
+ */
+.fc-card.is-brand {
+  position: relative;
+  overflow: hidden;
+}
+.fc-card > .fc-card-brand {
+  position: absolute;
+  inset: 0 0 auto;
+  border-radius: 0;
+}
 .fc-card-title {
   display: flex;
   align-items: flex-start;
@@ -34,8 +47,8 @@
 }
 .fc-card-title h2 {
   margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--fl-type-headline);
+  letter-spacing: var(--fl-tracking-headline);
 }
 .fc-card-title p {
   margin: 0;
@@ -107,7 +120,7 @@
 .fc-facts code,
 .fc-card code,
 .fc-disclosure code {
-  font-size: 12px;
+  font-size: var(--fl-font-small);
   overflow-wrap: anywhere;
 }
 .fc-actions {
@@ -224,7 +237,7 @@
 }
 .fc-chips li.is-on {
   color: var(--fl-text);
-  background: var(--fl-accent-soft, var(--fl-raised));
+  background: var(--fl-accent-soft);
   border-color: transparent;
 }
 .fc-chips li.is-on svg {
@@ -238,36 +251,7 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-.fc-device-code {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
-  align-items: start;
-}
-.fc-device-code p {
-  font-size: var(--fl-font-small);
-  line-height: 1.6;
-}
-.fc-overline {
-  margin: 0;
-  color: var(--fl-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: var(--fl-font-micro);
-}
-.fc-code {
-  margin: 4px 0 10px;
-  font:
-    600 34px/1.1 ui-monospace,
-    'SF Mono',
-    Menlo,
-    monospace;
-  letter-spacing: 0.12em;
-}
-.fc-code.is-expired {
-  color: var(--fl-muted);
-  text-decoration: line-through;
-}
+
 .fc-waiting {
   display: flex;
   align-items: center;
@@ -307,13 +291,7 @@
 .fc-disclosure[open] summary {
   margin-bottom: 12px;
 }
-.fc-preview {
-  background: transparent;
-  border: 1px dashed var(--fl-border);
-}
-.frameleaf[data-theme='light'] .fc-preview {
-  border-style: dashed;
-}
+
 .fc-consequences {
   margin: 0 0 14px;
   padding-inline-start: 20px;
@@ -391,10 +369,7 @@
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
 }
-.fc-copy-status {
-  color: var(--fl-muted);
-  font-size: var(--fl-font-micro);
-}
+
 .fc-refusal,
 .fc-ok {
   display: flex;
@@ -469,7 +444,7 @@
   color: var(--fl-text);
   border-radius: var(--fl-radius-control);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--fl-font-callout);
   min-width: 0;
 }
 .fc-stack {
@@ -529,17 +504,40 @@
 .fc-plan-grid h3 {
   margin: 0;
 }
+/* What a plan includes, each line with a tick (the page reset removes a list's own markers). */
 .fc-plan-grid ul {
+  list-style: none;
+  display: grid;
+  align-content: start;
+  gap: 4px;
   margin: 0 0 8px;
-  padding-inline-start: 18px;
+  padding: 0;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
-  line-height: 1.6;
+  line-height: 1.5;
   flex: 1;
+}
+.fc-plan-grid li {
+  position: relative;
+  padding-inline-start: 22px;
+}
+.fc-plan-grid li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 5px;
+  width: 9px;
+  height: 5px;
+  border-left: 1.5px solid var(--fl-teal); /* rtl: physical, draws the tick shape */
+  border-bottom: 1.5px solid var(--fl-teal);
+  transform: rotate(-45deg);
+}
+.fc-plan-grid + .fc-note {
+  margin-top: 12px;
 }
 .fc-price {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--fl-font-title);
   font-weight: 600;
 }
 .fc-price small {
@@ -638,31 +636,21 @@
 .fc-form .cc-error {
   grid-column: 1 / -1;
 }
-.fc-key-card,
-.fc-key-needed {
+.fc-key-card {
   margin-top: 14px;
   padding: 14px;
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
   font-size: var(--fl-font-small);
 }
-.fc-key-needed p {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-}
+
 .fc-kit {
   margin: 0;
   padding: 14px;
   border-radius: var(--fl-radius-control);
   background: var(--fl-canvas);
   border: 1px solid var(--fl-border);
-  font:
-    12px/1.6 ui-monospace,
-    'SF Mono',
-    Menlo,
-    monospace;
+  font: var(--fl-font-small)/1.6 var(--fl-family-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -709,16 +697,20 @@
   .fc-grid,
   .fc-form,
   .fc-wallet,
-  .fc-device-code,
   .fc-address {
     grid-template-columns: minmax(0, 1fr);
   }
   .fc-card-title {
     flex-wrap: wrap;
   }
-  .fc-code {
-    font-size: 28px;
+  /* The title keeps the row beside its icon; the status drops under it, in line with the text. */
+  .fc-card-title > div {
+    flex: 1 1 60%;
   }
+  .fc-card-icon ~ .fc-status {
+    margin-inline-start: 46px;
+  }
+
   .fc-facts {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
@@ -800,8 +792,8 @@
   cursor: not-allowed;
 }
 .fc-segmented button:focus-visible {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: 2px;
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
 }
 .fc-choices label.is-disabled {
   opacity: 0.6;
@@ -871,7 +863,7 @@
   width: 105px;
 }
 .fc-input-unit > span {
-  font-size: 11px;
+  font-size: var(--fl-font-micro);
   color: var(--fl-muted);
 }
 

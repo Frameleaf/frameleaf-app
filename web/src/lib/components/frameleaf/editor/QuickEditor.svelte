@@ -43,6 +43,14 @@
   import NativeRawEditor from '$lib/components/frameleaf/editor/NativeRawEditor.svelte';
   import { isRawName } from '$lib/frameleaf/library-care';
   import VideoQuickEditor from '$lib/components/frameleaf/editor/VideoQuickEditor.svelte';
+  import { discardWithUndo } from '$lib/components/frameleaf/editor/discarded-draft';
+  import {
+    clearRender,
+    markRenderReady,
+    setRenderProgress,
+  } from '$lib/components/frameleaf/editor/pending-render.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -103,6 +111,7 @@
     tonePreviewRecipe,
     type EditorMask,
   } from '$lib/frameleaf/photo-tools';
+  import { nativePublicationState } from '$lib/frameleaf/native-editor-state';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -139,11 +148,14 @@
     mdiDotsVertical,
     mdiFlipHorizontal,
     mdiFlipVertical,
+    mdiHdr,
+    mdiHdrOff,
     mdiHistory,
     mdiImageFilterVintage,
     mdiImageOutline,
     mdiOpenInApp,
     mdiPlay,
+    mdiRaw,
     mdiRedo,
     mdiRestore,
     mdiRotateLeft,
@@ -169,11 +181,17 @@
     asset,
     onClose,
     onRendered,
+    onReopen,
   }: {
     asset: AssetResponseDto;
     /** `refreshAsset` is true when a saved version changed what the viewer should show. */
     onClose: (refreshAsset?: boolean) => void;
     onRendered?: (assetId: string) => void;
+    /**
+     * Opens the editor on this item again, for Undo after Cancel or Escape. Without it, discarded
+     * edits are only announced.
+     */
+    onReopen?: (assetId: string) => void;
   } = $props();
 
   const isVideo = isVideoAsset(asset);
@@ -661,36 +679,44 @@
   };
 
   /* Top bar actions ------------------------------------------------------- */
-  /** Cancel drops unsaved edits at once and says so, the way the prototype does; nothing was written. */
-  const discardAndClose = () => {
-    if (dirty) {
+  const draftRecord = () => ({
+    assetId: asset.id,
+    kind: 'photo' as const,
+    draft: $state.snapshot(draft),
+    base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
+    tool,
+    playhead: { num: 0, den: 1 },
+  });
+  /**
+   * Cancel and Escape close at once, as the prototype does; nothing was written. Unsaved edits are
+   * not lost with them: the toast that says they were discarded offers Undo, which reopens the
+   * editor on the same draft (see `discarded-draft.ts`).
+   */
+  const cancel = () => {
+    const discarded = dirty;
+    const record =
+      discarded && onReopen && privateStateGeneration === getPrivateBrowserStateGeneration() ? draftRecord() : null;
+    draftReady = false;
+    clearEditorContinuity(asset.id);
+    if (record && onReopen) {
+      discardWithUndo(record, $t('frameleaf_editor_edits_discarded'), onReopen);
+    } else if (discarded) {
       toastManager.primary($t('frameleaf_editor_edits_discarded'));
     }
     onClose(saveChangedCurrent);
   };
-  const cancel = () => {
-    draftReady = false;
-    clearEditorContinuity(asset.id);
-    discardAndClose();
-  };
   /**
-   * Open in Studio keeps the draft (FL-113; App.jsx `openStudio` only switches screens): it is carried
-   * to Studio and offered back when the person returns, instead of being discarded.
+   * Open in Studio keeps the draft (FL-113; App.jsx `openStudio` only switches screens): Studio
+   * opens the saved photo, and the draft waits here until the person returns. With unsaved edits
+   * that is said in so many words as Studio opens, because Studio does not show them.
    */
   const openStudio = () => {
-    const base = continuityBase({ ownerId: asset.ownerId, edit: opened });
-    if (
-      privateStateGeneration === getPrivateBrowserStateGeneration() &&
-      (dirty || draft.undo.length > 0 || draft.redo.length > 0)
-    ) {
-      saveEditorContinuity({
-        assetId: asset.id,
-        kind: 'photo',
-        draft: $state.snapshot(draft),
-        base,
-        tool,
-        playhead: { num: 0, den: 1 },
-      });
+    const carrying = dirty || draft.undo.length > 0 || draft.redo.length > 0;
+    if (privateStateGeneration === getPrivateBrowserStateGeneration() && carrying) {
+      saveEditorContinuity(draftRecord());
+    }
+    if (dirty) {
+      toastManager.primary($t('frameleaf_editor_studio_edits_waiting'));
     }
     onClose(saveChangedCurrent);
     void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id }));
@@ -710,8 +736,10 @@
     change(settingsClipboard);
     toastManager.primary($t('frameleaf_editor_settings_pasted'));
   };
-  const saveVersion = async () => {
-    if (saving) {
+  /** The version being finished before Studio opens on it ("Save version, then open in Studio"). */
+  let studioAfter = $state<string | null>(null);
+  const saveVersion = async (thenStudio = false) => {
+    if (saving || studioAfter) {
       return;
     }
     saving = true;
@@ -757,6 +785,13 @@
       announce = saveOnly
         ? $t('frameleaf_editor_version_saved_newer_renderer')
         : $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
+      if (thenStudio && !saveOnly) {
+        // Studio shows the saved photo, so it opens once this version is the one on show.
+        announce = $t('frameleaf_editor_studio_finishing');
+        toastManager.primary(announce);
+        finishThenStudio(revision.id);
+        return;
+      }
       toastManager.primary(announce);
       if (!saveOnly) {
         followAfterClose(revision.id);
@@ -769,19 +804,74 @@
     }
   };
   /**
+   * "Save version, then open in Studio": the editor stays, showing the progress, until the saved
+   * version is the one on show (the renderer publishes its files just before it makes the version
+   * current, so both are waited for); then Studio opens on it. A failed or cancelled version stays here.
+   */
+  const finishThenStudio = (revisionId: string) => {
+    studioAfter = revisionId;
+    let waits = 0;
+    stopFollowing?.();
+    stopFollowing = followDevelop(
+      asset.id,
+      (next) => {
+        develop = next;
+        const after = next.revisions.find((revision) => revision.id === revisionId);
+        if (
+          !after ||
+          isRevisionBusy(after.status) ||
+          (nativePublicationState(next, revisionId).awaitingPublication && ++waits < 10)
+        ) {
+          return;
+        }
+        stopFollowing?.();
+        studioAfter = null;
+        if (after.status === AssetDevelopRevisionStatus.Rendered && next.currentRevisionId === revisionId) {
+          saveChangedCurrent = true;
+          onClose(true);
+          void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id }));
+        } else if (after.status === AssetDevelopRevisionStatus.Failed) {
+          toastManager.danger(
+            $t('frameleaf_editor_version_failed', { values: { revision: after.revision, error: after.error ?? '' } }),
+          );
+        } else if (after.status === AssetDevelopRevisionStatus.Rendered) {
+          toastManager.danger($t('frameleaf_editor_versions_error'));
+        }
+      },
+      {
+        onError: (error) => {
+          studioAfter = null;
+          handleError(error, $t('frameleaf_editor_versions_error'));
+        },
+        continueWhile: (next) => nativePublicationState(next, revisionId).awaitingPublication && waits < 10,
+      },
+    );
+  };
+  /**
    * Save version closes the editor (App.jsx `saveVersion`), so the render it queued is followed
    * outside the component: this poller is not stopped on destroy, and it only announces the
    * outcome of that one revision. The formatter is captured while still mounted.
    */
   const followAfterClose = (revisionId: string) => {
     const translate = $t;
+    const assetId = asset.id;
     let stop = () => {};
     let renderedBeforeCurrent = 0;
+    // The viewer shows this on the photo while the edit is on its way (pending-render.svelte.ts).
+    setRenderProgress(assetId, null);
     stop = followDevelop(
       asset.id,
       (next) => {
         const after = next.revisions.find((revision) => revision.id === revisionId);
-        if (!after || isRevisionBusy(after.status)) {
+        if (!after) {
+          clearRender(assetId);
+          return;
+        }
+        if (isRevisionBusy(after.status)) {
+          setRenderProgress(
+            assetId,
+            after.status === AssetDevelopRevisionStatus.Rendering ? (after.progress ?? null) : null,
+          );
           return;
         }
         // The renderer publishes files/status just before setCurrent. Wait for the current flag
@@ -789,17 +879,22 @@
         if (after.status === AssetDevelopRevisionStatus.Rendered && next.currentRevisionId !== revisionId) {
           if (++renderedBeforeCurrent >= 10) {
             stop();
+            clearRender(assetId);
             toastManager.danger(translate('frameleaf_editor_versions_error'));
           }
           return;
         }
         stop();
         if (after.status === AssetDevelopRevisionStatus.Rendered) {
+          markRenderReady(assetId);
           toastManager.primary(
             translate('frameleaf_editor_version_rendered', { values: { revision: after.revision } }),
           );
           onRendered?.(asset.id);
-        } else if (after.status === AssetDevelopRevisionStatus.Failed) {
+          return;
+        }
+        clearRender(assetId);
+        if (after.status === AssetDevelopRevisionStatus.Failed) {
           toastManager.danger(
             translate('frameleaf_editor_version_failed', {
               values: { revision: after.revision, error: after.error ?? '' },
@@ -808,13 +903,12 @@
         }
       },
       {
-        onError: (error) => handleError(error, translate('frameleaf_editor_versions_error')),
+        onError: (error) => {
+          clearRender(assetId);
+          handleError(error, translate('frameleaf_editor_versions_error'));
+        },
         continueWhile: (next) =>
-          next.revisions.some(
-            (revision) => revision.id === revisionId && revision.status === AssetDevelopRevisionStatus.Rendered,
-          ) &&
-          next.currentRevisionId !== revisionId &&
-          renderedBeforeCurrent < 10,
+          nativePublicationState(next, revisionId).awaitingPublication && renderedBeforeCurrent < 10,
       },
     );
   };
@@ -988,6 +1082,11 @@
       onSelect: () => (tool = 'versions'),
     },
   ]);
+  /*
+   * More holds everything that is not history, compare, versions or Save: the settings clipboard,
+   * Reset all edits, RAW development, how HDR is shown on this screen, and the way to Studio. Each
+   * lives in one place at every width.
+   */
   const moreItems = $derived.by((): EditorMenuItem[] => [
     { id: 'copy', label: $t('frameleaf_editor_copy_settings'), icon: mdiContentCopy, onSelect: copySettings },
     {
@@ -997,8 +1096,78 @@
       disabled: !settingsClipboard,
       onSelect: pasteSettings,
     },
-    { id: 'revert', label: $t('frameleaf_editor_revert_draft'), icon: mdiRestore, onSelect: revertDraft },
-    { id: 'studio', label: $t('frameleaf_editor_open_in_studio'), icon: mdiOpenInApp, onSelect: openStudio },
+    { id: 'revert', label: $t('frameleaf_editor_reset_all'), icon: mdiRestore, onSelect: revertDraft },
+    // The Versions popover leaves the phone's single row; its list is one step away here.
+    ...(mediaQueryManager.maxMd
+      ? [
+          {
+            id: 'versions',
+            label: $t('frameleaf_editor_tool_versions'),
+            icon: mdiHistory,
+            separated: true,
+            onSelect: () => (tool = 'versions'),
+          },
+        ]
+      : []),
+    ...(isRawName(asset.originalFileName)
+      ? [
+          {
+            id: 'raw',
+            label: $t('frameleaf_editor_raw_development'),
+            icon: mdiRaw,
+            separated: true,
+            onSelect: () => (nativeOpen = true),
+          },
+        ]
+      : []),
+    ...(hdrEditing
+      ? [
+          {
+            id: 'display-hdr',
+            label: $t('frameleaf_editor_display_hdr'),
+            icon: mdiHdr,
+            checked: $imageViewingPreference === 'auto',
+            separated: true,
+            onSelect: () => imageViewingPreference.set('auto'),
+          },
+          {
+            id: 'display-sdr',
+            label: $t('frameleaf_editor_display_sdr'),
+            icon: mdiHdrOff,
+            checked: $imageViewingPreference === 'sdr',
+            onSelect: () => imageViewingPreference.set('sdr'),
+          },
+        ]
+      : []),
+    // With unsaved edits the person chooses what Studio opens on, since Studio does not show a draft.
+    ...(dirty
+      ? [
+          {
+            id: 'studio-save',
+            label: $t('frameleaf_editor_studio_save_first'),
+            icon: mdiOpenInApp,
+            separated: true,
+            disabled: saving || !!developError || !!studioAfter,
+            onSelect: () => void saveVersion(true),
+          },
+          {
+            id: 'studio',
+            label: $t('frameleaf_editor_studio_without_edits'),
+            icon: mdiImageOutline,
+            title: $t('frameleaf_editor_studio_without_edits_title'),
+            onSelect: openStudio,
+          },
+        ]
+      : [
+          {
+            id: 'studio',
+            label: $t('frameleaf_editor_open_in_studio'),
+            icon: mdiOpenInApp,
+            separated: true,
+            disabled: !!studioAfter,
+            onSelect: openStudio,
+          },
+        ]),
   ]);
   const statusLabel = (revision: AssetDevelopRevisionResponseDto) => {
     switch (revision.status) {
@@ -1037,201 +1206,156 @@
 >
   {#if isVideo}
     <!-- Editor.jsx is one editor for photos and clips; the clip half lives in VideoQuickEditor (VE-1 … VE-12). -->
-    <VideoQuickEditor bind:this={videoQuickEditor} {asset} {onClose} />
+    <VideoQuickEditor bind:this={videoQuickEditor} {asset} {onClose} {onReopen} />
   {:else if nativeOpen}
     <NativeRawEditor {asset} {onClose} {onRendered} onLegacy={() => (nativeOpen = false)} />
   {:else}
     <div class="ed-shell">
-      <header class="ed-top">
-        <button
-          type="button"
-          class="ed-tool labelled compact"
-          onclick={cancel}
-          title={$t('frameleaf_editor_cancel_title')}
-        >
-          <Icon icon={mdiClose} size="20" />
-          <span>{$t('cancel')}</span>
-        </button>
-        <div class="ed-title">
-          <strong>{asset.originalFileName}</strong>
-          <span>
-            {$t('frameleaf_editor_kind_photo')}{dimensions ? ` · ${dimensions}` : ''}{dirty
-              ? ` · ${$t('frameleaf_editor_edited')}`
-              : ''}{currentRevision
-              ? ` · ${$t('frameleaf_editor_showing_version', { values: { revision: currentRevision.revision } })}`
-              : ''}
-            {#if peopleNames.length > 0}
-              <span class="people">
-                · {$t('frameleaf_editor_with_people', { values: { names: peopleNames.join(', ') } })}
-              </span>
-            {/if}
-          </span>
+      <!--
+        The top bar, grouped by intent: leaving and what is open on the left, history and compare in
+        the middle, versions, More and Save on the right. A phone keeps one row: Cancel, Undo, Redo,
+        Compare, More, Save.
+      -->
+      <header class="ed-top grouped">
+        <div class="ed-top-start">
+          <button
+            type="button"
+            class="ed-tool labelled compact"
+            onclick={cancel}
+            title={$t('frameleaf_editor_cancel_title')}
+          >
+            <Icon icon={mdiClose} size={ICON_SIZE.xl} />
+            <span>{$t('cancel')}</span>
+          </button>
+          <div class="ed-title">
+            <strong>
+              <span class="ed-name">{asset.originalFileName}</span>
+              {#if dirty}
+                <span class="ed-edited">{$t('frameleaf_editor_edited')}</span>
+              {/if}
+            </strong>
+            <span>
+              {$t('frameleaf_editor_kind_photo')}{dimensions ? ` · ${dimensions}` : ''}{currentRevision
+                ? ` · ${$t('frameleaf_editor_showing_version', { values: { revision: currentRevision.revision } })}`
+                : ''}
+              {#if peopleNames.length > 0}
+                <span class="people">
+                  · {$t('frameleaf_editor_with_people', { values: { names: peopleNames.join(', ') } })}
+                </span>
+              {/if}
+            </span>
+          </div>
         </div>
-        <button
-          type="button"
-          class="ed-tool"
-          aria-label={$t('undo')}
-          title={$t('undo')}
-          disabled={draft.undo.length === 0}
-          onclick={() => (draft = undoDraft(draft))}
-        >
-          <Icon icon={mdiUndo} size="20" />
-        </button>
-        <button
-          type="button"
-          class="ed-tool"
-          aria-label={$t('frameleaf_editor_redo')}
-          title={$t('frameleaf_editor_redo')}
-          disabled={draft.redo.length === 0}
-          onclick={() => (draft = redoDraft(draft))}
-        >
-          <Icon icon={mdiRedo} size="20" />
-        </button>
-        <span class="ed-sep" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="ed-tool"
-          aria-label={$t('frameleaf_editor_hold_before')}
-          title={$t('frameleaf_editor_hold_before')}
-          aria-pressed={before}
-          onpointerdown={(event) => {
-            if (event.pointerType !== 'mouse' || event.button === 0) {
-              before = true;
-            }
-          }}
-          onpointerup={() => (before = false)}
-          onpointerleave={() => (before = false)}
-          onpointercancel={() => (before = false)}
-          onkeydown={(event) => {
-            if (!(event.key === ' ' || event.key === 'Enter')) {
-              return;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-            before = true;
-          }}
-          onkeyup={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              before = false;
-            }
-          }}
-          onclick={(event) => event.preventDefault()}
-        >
-          <Icon icon={mdiCompare} size="20" />
-        </button>
-        <button
-          type="button"
-          class="ed-tool"
-          aria-label={$t('frameleaf_editor_split_view')}
-          title={$t('frameleaf_editor_split_view')}
-          aria-pressed={split}
-          onclick={() => (split = !split)}
-        >
-          <Icon icon={mdiCompareHorizontal} size="20" />
-        </button>
-        {#if isRawName(asset.originalFileName)}
-          <button type="button" class="ed-tool labelled" onclick={() => (nativeOpen = true)}>RAW development</button>
-        {/if}
-        <span class="ed-sep ed-wide" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="ed-tool labelled ed-wide"
-          title={$t('frameleaf_editor_copy_settings')}
-          onclick={copySettings}
-        >
-          <Icon icon={mdiContentCopy} size="20" />
-          <span>{$t('frameleaf_editor_copy')}</span>
-        </button>
-        <button
-          type="button"
-          class="ed-tool labelled ed-wide"
-          title={$t('frameleaf_editor_paste_settings')}
-          disabled={!settingsClipboard}
-          onclick={pasteSettings}
-        >
-          <Icon icon={mdiContentDuplicate} size="20" />
-          <span>{$t('frameleaf_editor_paste')}</span>
-        </button>
-        <button
-          type="button"
-          class="ed-tool labelled ed-wide"
-          title={$t('frameleaf_editor_revert_draft')}
-          onclick={revertDraft}
-        >
-          <Icon icon={mdiRestore} size="20" />
-          <span>{$t('frameleaf_editor_revert')}</span>
-        </button>
-        <EditorMenu
-          label={$t('frameleaf_editor_tool_versions')}
-          text={$t('frameleaf_editor_tool_versions')}
-          heading={$t('frameleaf_editor_tool_versions')}
-          icon={mdiHistory}
-          items={versionItems}
-        >
-          {#if developError}
-            <p role="alert">{developError}</p>
-          {:else if develop && revisions.length === 0}
-            <p>{$t('frameleaf_editor_no_versions')}</p>
-          {/if}
-        </EditorMenu>
-        <EditorMenu
-          label={$t('frameleaf_editor_more_actions')}
-          icon={mdiDotsVertical}
-          class="ed-narrow"
-          items={moreItems}
-        />
-        <button
-          type="button"
-          class="ed-tool labelled ed-wide"
-          onclick={openStudio}
-          title={$t('frameleaf_editor_open_in_studio')}
-        >
-          <Icon icon={mdiOpenInApp} size="20" />
-          <span>{$t('frameleaf_editor_open_in_studio')}</span>
-        </button>
-        {#if hdrEditing}
-          <button
-            type="button"
-            class="ed-tool labelled"
-            aria-pressed={$imageViewingPreference === 'auto'}
-            onclick={() => imageViewingPreference.set('auto')}
-          >
-            {$t('frameleaf_image_display_auto')}
-          </button>
-          <button
-            type="button"
-            class="ed-tool labelled"
-            aria-pressed={$imageViewingPreference === 'sdr'}
-            onclick={() => imageViewingPreference.set('sdr')}
-          >
-            {$t('frameleaf_image_display_sdr')}
-          </button>
-        {/if}
-        {#if busyRevision}
-          <span class="ed-progress" role="status">
-            <progress max="100" value={busyRevision.progress}></progress>
-            {statusLabel(busyRevision)}
+        <div class="ed-top-center">
+          <div class="ed-cluster" role="group" aria-label={$t('frameleaf_editor_group_history')}>
             <button
               type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_editor_cancel_render')}
-              title={$t('frameleaf_editor_cancel_render')}
-              onclick={() => cancelRender(busyRevision)}
+              class="ed-tool"
+              aria-label={$t('undo')}
+              title={$t('undo')}
+              disabled={draft.undo.length === 0}
+              onclick={() => (draft = undoDraft(draft))}
             >
-              <Icon icon={mdiCloseCircleOutline} size="18" />
+              <Icon icon={mdiUndo} size={ICON_SIZE.xl} />
             </button>
+            <button
+              type="button"
+              class="ed-tool"
+              aria-label={$t('frameleaf_editor_redo')}
+              title={$t('frameleaf_editor_redo')}
+              disabled={draft.redo.length === 0}
+              onclick={() => (draft = redoDraft(draft))}
+            >
+              <Icon icon={mdiRedo} size={ICON_SIZE.xl} />
+            </button>
+          </div>
+          <div class="ed-cluster" role="group" aria-label={$t('frameleaf_editor_group_compare')}>
+            <button
+              type="button"
+              class="ed-tool"
+              aria-label={$t('frameleaf_editor_hold_before')}
+              title={$t('frameleaf_editor_hold_before')}
+              aria-pressed={before}
+              onpointerdown={(event) => {
+                if (event.pointerType !== 'mouse' || event.button === 0) {
+                  before = true;
+                }
+              }}
+              onpointerup={() => (before = false)}
+              onpointerleave={() => (before = false)}
+              onpointercancel={() => (before = false)}
+              onkeydown={(event) => {
+                if (!(event.key === ' ' || event.key === 'Enter')) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                before = true;
+              }}
+              onkeyup={(event) => {
+                if (event.key === ' ' || event.key === 'Enter') {
+                  before = false;
+                }
+              }}
+              onclick={(event) => event.preventDefault()}
+            >
+              <Icon icon={mdiCompare} size={ICON_SIZE.xl} />
+            </button>
+            <button
+              type="button"
+              class="ed-tool ed-desk"
+              aria-label={$t('frameleaf_editor_split_view')}
+              title={$t('frameleaf_editor_split_view')}
+              aria-pressed={split}
+              onclick={() => (split = !split)}
+            >
+              <Icon icon={mdiCompareHorizontal} size={ICON_SIZE.xl} />
+            </button>
+          </div>
+        </div>
+        <div class="ed-top-end">
+          {#if busyRevision}
+            <span class="ed-progress" role="status">
+              <progress max="100" value={busyRevision.progress}></progress>
+              <span class="ed-desk">{statusLabel(busyRevision)}</span>
+              <button
+                type="button"
+                class="ed-icon"
+                aria-label={$t('frameleaf_editor_cancel_render')}
+                title={$t('frameleaf_editor_cancel_render')}
+                onclick={() => cancelRender(busyRevision)}
+              >
+                <Icon icon={mdiCloseCircleOutline} size={ICON_SIZE.lg} />
+              </button>
+            </span>
+          {/if}
+          <span class="ed-desk ed-contents">
+            <EditorMenu
+              label={$t('frameleaf_editor_tool_versions')}
+              text={$t('frameleaf_editor_tool_versions')}
+              heading={$t('frameleaf_editor_tool_versions')}
+              icon={mdiHistory}
+              items={versionItems}
+            >
+              {#if developError}
+                <p role="alert">{developError}</p>
+              {:else if develop && revisions.length === 0}
+                <p>{$t('frameleaf_editor_no_versions')}</p>
+              {/if}
+            </EditorMenu>
           </span>
-        {/if}
-        <button
-          type="button"
-          class="ed-tool primary labelled"
-          disabled={saving || !!developError}
-          onclick={saveVersion}
-          title={$t('frameleaf_editor_save_version_title')}
-        >
-          <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
-        </button>
+          <EditorMenu label={$t('frameleaf_editor_more_actions')} icon={mdiDotsVertical} items={moreItems} />
+          <button
+            type="button"
+            class="ed-tool primary labelled"
+            disabled={saving || !!developError || !!studioAfter}
+            onclick={() => saveVersion()}
+            title={$t('frameleaf_editor_save_version_title')}
+          >
+            <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
+          </button>
+        </div>
       </header>
 
       <div class="ed-stage-wrap">
@@ -1596,9 +1720,9 @@
                       {revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision)}
                     </span>
                     <small>
-                      {new Date(revision.createdAt).toLocaleString($locale)}{revision.rendererVersion
-                        ? ` · ${revision.rendererVersion}`
-                        : ''}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
+                      {new Date(revision.createdAt).toLocaleString($locale)}{revision.width && revision.height
+                        ? ` · ${revision.width} × ${revision.height}`
+                        : ''}
                     </small>
                     {#if revision.kind === AssetDevelopRevisionKind.External}
                       <small>
@@ -1607,15 +1731,28 @@
                         })}{revision.software ? ` · ${revision.software}` : ''}
                       </small>
                     {/if}
-                    {#if revision.sourceChecksum}
-                      <small>
-                        {$t('frameleaf_editor_version_lineage', {
-                          values: {
-                            original: shortChecksum(revision.sourceChecksum),
-                            master: shortChecksum(revision.renditionChecksum),
-                          },
-                        })}
-                      </small>
+                    <!-- What made the version and the file fingerprints are for support, not for choosing a version. -->
+                    {#if revision.rendererVersion || revision.sourceChecksum}
+                      <details class="ed-version-details">
+                        <summary>{$t('frameleaf_editor_version_details')}</summary>
+                        {#if revision.rendererVersion}
+                          <small>
+                            {$t('frameleaf_editor_version_made_with', {
+                              values: { version: revision.rendererVersion },
+                            })}
+                          </small>
+                        {/if}
+                        {#if revision.sourceChecksum}
+                          <small>
+                            {$t('frameleaf_editor_version_lineage', {
+                              values: {
+                                original: shortChecksum(revision.sourceChecksum),
+                                master: shortChecksum(revision.renditionChecksum),
+                              },
+                            })}
+                          </small>
+                        {/if}
+                      </details>
                     {/if}
                     {#if revision.error}
                       <small>

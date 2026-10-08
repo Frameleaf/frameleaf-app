@@ -488,8 +488,8 @@
   .fl-enrichment {
     margin: 16px 16px 0;
     padding: 12px;
-    border-radius: 12px;
-    background: #ffffff0a;
+    border-radius: var(--fl-radius-card);
+    background: color-mix(in srgb, var(--fl-viewer-text) 4%, transparent);
   }
 
   .fl-enrich-head {
@@ -512,21 +512,22 @@
     display: inline-grid;
     flex: none;
     place-items: center;
-    color: #fff;
+    color: var(--fl-viewer-text);
   }
 
   .fl-ai-mark {
     width: 22px;
     height: 22px;
     border-radius: 7px;
-    background: var(--fl-ai, #5e5ce6);
+    background: var(--fl-ai);
+    color: var(--fl-ai-text);
   }
 
   .fl-enrich-list {
     display: grid;
     overflow: hidden;
     border-radius: 10px;
-    background: #ffffff0a;
+    background: color-mix(in srgb, var(--fl-viewer-text) 4%, transparent);
   }
 
   .fl-enrich-row {
@@ -539,30 +540,34 @@
   }
 
   .fl-enrich-row + .fl-enrich-row {
-    border-top: 1px solid #ffffff14;
+    border-top: 1px solid var(--fl-viewer-border);
   }
 
   .fl-enrich-icon {
     width: 28px;
     height: 28px;
     border-radius: 8px;
-    background: #636366;
+    background: color-mix(in srgb, var(--fl-viewer-text) 28%, transparent);
   }
 
   .fl-enrich-icon.ai {
-    background: var(--fl-ai, #5e5ce6);
+    background: var(--fl-ai);
+    color: var(--fl-ai-text);
   }
 
   .fl-enrich-icon.teal {
-    background: #30b0c7;
+    background: var(--fl-teal);
+    color: var(--fl-teal-text);
   }
 
   .fl-enrich-icon.warning {
-    background: #ff9f0a;
+    background: var(--fl-warning);
+    color: var(--fl-warning-text);
   }
 
   .fl-enrich-icon.blue {
-    background: #0a84ff;
+    background: var(--fl-blue);
+    color: var(--fl-blue-text);
   }
 
   .fl-enrich-text {
@@ -581,7 +586,7 @@
   }
 
   .fl-enrich-text span {
-    color: #c7c7cc;
+    color: var(--fl-on-material-muted);
     font-size: 11px;
     line-height: 1.4;
     overflow-wrap: anywhere;
@@ -591,16 +596,16 @@
     margin-top: 4px;
     padding: 6px 8px;
     border-radius: 8px;
-    background: #ffffff0f;
-    color: #f1f1f2;
+    background: color-mix(in srgb, var(--fl-viewer-text) 6%, transparent);
+    color: var(--fl-viewer-text);
   }
 
   .fl-enrich-text .fl-enrich-error {
-    color: #ff8a80;
+    color: var(--fl-danger);
   }
 
   .fl-enrich-text .fl-enrich-stale {
-    color: #ffd479;
+    color: var(--fl-warning);
   }
 
   .fl-enrich-actions {
@@ -618,14 +623,14 @@
     min-height: 30px;
     padding: 4px 10px;
     border: 0;
-    border-radius: 999px;
-    background: #ffffff1a;
-    color: #f1f1f2;
+    border-radius: var(--fl-radius-pill);
+    background: color-mix(in srgb, var(--fl-viewer-text) 10%, transparent);
+    color: var(--fl-viewer-text);
     font: inherit;
     font-size: 11px;
     font-weight: 550;
     cursor: pointer;
-    transition: background-color 150ms ease;
+    transition: background-color var(--fl-motion-fast) var(--fl-ease);
   }
 
   .fl-enrich-actions button.fl-icon {
@@ -633,7 +638,7 @@
   }
 
   .fl-enrich-actions button:hover:not(:disabled) {
-    background: #ffffff2e;
+    background: color-mix(in srgb, var(--fl-viewer-text) 18%, transparent);
   }
 
   .fl-enrich-actions button:disabled {
@@ -642,8 +647,8 @@
   }
 
   .fl-enrich-actions button:focus-visible {
-    outline: 2px solid var(--fl-viewer-focus, #a5d4ef);
-    outline-offset: 2px;
+    outline: 2px solid var(--fl-viewer-focus);
+    outline-offset: var(--fl-focus-offset);
   }
 
   .fl-pill {
@@ -658,23 +663,23 @@
   }
 
   .fl-pill.teal {
-    background: color-mix(in srgb, #30b0c7 22%, transparent);
-    color: #9ee7f2;
+    background: color-mix(in srgb, var(--fl-teal) 22%, transparent);
+    color: color-mix(in srgb, var(--fl-teal) 45%, var(--fl-viewer-text));
   }
 
   .fl-pill.blue {
-    background: color-mix(in srgb, #0a84ff 22%, transparent);
-    color: #a8d1ff;
+    background: color-mix(in srgb, var(--fl-blue) 22%, transparent);
+    color: color-mix(in srgb, var(--fl-blue) 45%, var(--fl-viewer-text));
   }
 
   .fl-pill.warning {
-    background: color-mix(in srgb, #ff9f0a 22%, transparent);
-    color: #ffd08a;
+    background: color-mix(in srgb, var(--fl-warning) 22%, transparent);
+    color: color-mix(in srgb, var(--fl-warning) 45%, var(--fl-viewer-text));
   }
 
   .fl-pill.neutral {
-    background: #ffffff1a;
-    color: #d1d1d6;
+    background: color-mix(in srgb, var(--fl-viewer-text) 10%, transparent);
+    color: var(--fl-on-material-muted);
   }
 
   @media (max-width: 700px) {

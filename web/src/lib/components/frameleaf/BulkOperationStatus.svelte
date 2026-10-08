@@ -171,7 +171,7 @@
     background: var(--fl-raised);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     padding: 0 0.75rem;
     font-size: 0.8125rem;
   }

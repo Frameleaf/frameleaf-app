@@ -1,6 +1,8 @@
 import { getAssetDevelop } from '@frameleaf/sdk';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import en from '$i18n/en.json';
 import { syncNativeRecipes, cancelNativeSync } from '$lib/frameleaf/native-sync';
 import PhotographyNativeSync from './PhotographyNativeSync.svelte';
 
@@ -13,6 +15,7 @@ vi.mock('$lib/frameleaf/native-sync', async (original) => ({
   syncNativeRecipes: vi.fn(),
   cancelNativeSync: vi.fn(),
 }));
+beforeAll(() => addMessages('dev', en));
 it('keeps failures visible and cancels only admitted exact revision jobs from the selected batch', async () => {
   vi.mocked(getAssetDevelop).mockResolvedValue({
     revisions: [{ isCurrent: true, recipe: { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0 } }],

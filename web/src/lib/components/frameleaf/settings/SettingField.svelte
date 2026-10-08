@@ -225,7 +225,7 @@
     border-radius: var(--fl-radius-control);
     font: inherit;
     font-size: 13px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   input:disabled {
     color: var(--fl-muted);

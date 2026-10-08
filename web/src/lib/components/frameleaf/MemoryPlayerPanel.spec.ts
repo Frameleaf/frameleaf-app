@@ -103,7 +103,7 @@ describe('MemoryPlayerPanel (FL-62)', () => {
       'aria-current',
       'true',
     );
-    expect(screen.getByRole('button', { name: 'Close gallery' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Hide all items' })).toHaveAttribute('aria-pressed', 'true');
 
     await fireEvent.keyDown(document.body, { key: 'm' });
     expect(screen.getByRole('button', { name: 'Mute soundtrack' })).toHaveAttribute('aria-pressed', 'true');

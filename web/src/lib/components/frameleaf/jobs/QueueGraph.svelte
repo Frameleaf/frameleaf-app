@@ -4,7 +4,7 @@
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import type { QueueSnapshot } from '$lib/types';
   import type { QueueResponseDto } from '@frameleaf/sdk';
-  import { LoadingSpinner, Theme, themeManager } from '@frameleaf/ui';
+  import { LoadingSpinner, themeManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import uPlot, { type AlignedData, type Axis } from 'uplot';
@@ -56,18 +56,31 @@
   const data = $derived(normalizeData(queueManager.snapshots));
 
   let chartElement: HTMLDivElement | undefined = $state();
-  let isDark = $derived(themeManager.value === Theme.Dark);
   let plot: uPlot | undefined;
 
+  /**
+   * The chart is drawn on a canvas, so it reads the Frameleaf tokens off its element. They are
+   * read once and read again when the theme changes; no colours are kept in this file.
+   */
+  const tokens = new Map<string, string>();
+  const token = (name: string) => {
+    let value = tokens.get(name);
+    if (value === undefined && chartElement) {
+      value = getComputedStyle(chartElement).getPropertyValue(name).trim() || 'gray';
+      tokens.set(name, value);
+    }
+    return value ?? 'gray';
+  };
+
   const axisOptions: Axis = {
-    stroke: () => (isDark ? '#ccc' : 'black'),
+    stroke: () => token('--fl-muted'),
     ticks: {
       show: false,
-      stroke: () => (isDark ? '#444' : '#ddd'),
+      stroke: () => token('--fl-border'),
     },
     grid: {
       show: true,
-      stroke: () => (isDark ? '#444' : '#ddd'),
+      stroke: () => token('--fl-border'),
     },
   };
 
@@ -103,15 +116,15 @@
     series: [
       {},
       {
-        stroke: '#d94a4a',
+        stroke: () => token('--fl-danger'),
         ...seriesOptions,
       },
       {
-        stroke: '#4250af',
+        stroke: () => token('--fl-accent'),
         ...seriesOptions,
       },
       {
-        stroke: '#1075db',
+        stroke: () => token('--fl-blue'),
         ...seriesOptions,
       },
     ],
@@ -137,7 +150,12 @@
     ],
   };
 
-  const onThemeChange = () => plot?.redraw(false);
+  const onThemeChange = () => {
+    tokens.clear();
+    plot?.redraw(false);
+    // The theme may reach the document just after the store changes; the next draw reads again.
+    setTimeout(() => tokens.clear(), 0);
+  };
 
   $effect(() => themeManager.value && onThemeChange());
 

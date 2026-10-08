@@ -165,13 +165,12 @@ test.describe('Libraries (FL-78)', () => {
       }),
     ).toBeVisible();
 
-    // stage two: the typed name and the acknowledgement
+    await expect(dialog.getByText('1 indexed item is removed from the library', { exact: true })).toBeVisible();
+
+    // stage two: the typed name unlocks the removal (one ritual, no separate acknowledgement)
     const confirm = dialog.getByRole('button', { name: 'Remove library', exact: true });
-    await dialog.getByLabel('Type the library name to confirm').fill(name);
     await expect(confirm).toBeDisabled();
-    await dialog
-      .getByRole('checkbox', { name: 'I understand that 1 indexed items will be removed from the library.' })
-      .check();
+    await dialog.getByLabel('Type the library name to confirm').fill(name);
     await expect(confirm).toBeEnabled();
     await confirm.click();
 

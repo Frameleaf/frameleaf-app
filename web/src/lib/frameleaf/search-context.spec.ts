@@ -97,7 +97,7 @@ describe('search context chips (FL-48)', () => {
       { key: 'spaceId', labelKey: 'frameleaf_search_kind_space', value: null },
     ]);
     expect(discoveryContextChips({ ...emptyDiscoveryQuery(), text: 'dog', mode: 'smart' })).toEqual([
-      { key: 'text', labelKey: 'context', value: 'dog' },
+      { key: 'text', labelKey: 'frameleaf_search_chip_text', value: 'dog' },
     ]);
     expect(discoveryContextChips({ ...emptyDiscoveryQuery(), text: 'IMG' })[0].labelKey).toBe('file_name_text');
     expect(discoveryContextChips(emptyDiscoveryQuery())).toEqual([]);

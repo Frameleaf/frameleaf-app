@@ -27,6 +27,7 @@
   import { goto } from '$app/navigation';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { faceProvenance, type FaceProvenance } from '$lib/frameleaf/face-tags';
@@ -283,7 +284,9 @@
             <p class="fl-face-picker-empty">{$t('no_people_found')}</p>
           {:else}
             {#each matches.slice(0, 8) as candidate (candidate.id)}
+              <!-- The same face-and-name row as the face tagger's list, so one choice looks one way. -->
               <MenuItem onSelect={() => reassignTo(candidate)} disabled={isBusy}>
+                <PersonAvatar person={candidate} size={24} />
                 {candidate.name}
               </MenuItem>
             {/each}

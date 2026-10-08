@@ -39,7 +39,6 @@
     csvFileName,
     historyNotice,
     inventoryRows,
-    scopeLabel,
     type AnalyticsTable,
     type GrowthMetric,
     type Translate,
@@ -49,18 +48,15 @@
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import {
-    AnalyticsRange,
-    AnalyticsScopeKind,
-    type AnalyticsReportResponseDto,
-    type AnalyticsScopeOptionDto,
-  } from '@frameleaf/sdk';
+  import { AnalyticsRange, AnalyticsScopeKind, type AnalyticsReportResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiDownload } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 
-  type Props = { scopes: AnalyticsScopeOptionDto[]; report: AnalyticsReportResponseDto };
-  let { scopes, report }: Props = $props();
+  // The account or library is chosen once, in the command center's "Viewing" picker above this
+  // page; a second scope select here wrote the same address (design review finding 65).
+  type Props = { report: AnalyticsReportResponseDto };
+  let { report }: Props = $props();
 
   const range = $derived(report.range);
   const scope = $derived(report.scope);
@@ -102,12 +98,12 @@
   const settingsArea = (area: SettingsAreaId) => commandCenterUrl(area);
 
   /** The route's load reads the report for the new address; this page never fetches on its own. */
-  const load = async (next: { scope?: string; range?: AnalyticsRange }) => {
+  const load = async (next: { range?: AnalyticsRange }) => {
     loading = true;
     exportStatus = '';
     try {
       const url = new URL(page.url);
-      url.searchParams.set('scope', next.scope ?? scope);
+      url.searchParams.set('scope', scope);
       url.searchParams.set('range', next.range ?? range);
       await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
     } catch (error) {
@@ -186,14 +182,6 @@
       >
         <option value={AnalyticsRange.$90Days}>{$t('frameleaf_analytics_range_90days')}</option>
         <option value={AnalyticsRange.Year}>{$t('frameleaf_analytics_range_year')}</option>
-      </select>
-    </label>
-    <label>
-      {$t('frameleaf_analytics_library_scope')}
-      <select value={scope} disabled={loading} onchange={(event) => load({ scope: event.currentTarget.value })}>
-        {#each scopes as option (option.value)}
-          <option value={option.value}>{scopeLabel(option, tr)}</option>
-        {/each}
       </select>
     </label>
     <label>
@@ -660,7 +648,7 @@
   .stat-strip dd:not(.note) {
     margin: 7px 0;
     font-size: clamp(21px, 2.1vw, 30px);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 550;
     letter-spacing: -0.7px;
   }
@@ -752,7 +740,7 @@
   .growth figcaption strong {
     color: var(--fl-muted);
     font-size: 12px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 450;
   }
   .growth figcaption small {
@@ -784,7 +772,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 11px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   caption {
     padding: 10px 0;
@@ -837,8 +825,8 @@
     line-height: 1.7;
   }
   :is(button, select, a, [tabindex]):focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   @container (max-width: 850px) {
     .controls p {

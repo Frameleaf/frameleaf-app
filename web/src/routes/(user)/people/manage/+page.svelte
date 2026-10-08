@@ -286,14 +286,14 @@
 
 <UserPageLayout>
   <Theme {theme}>
-    <section class="pm-page" aria-label={$t('show_and_hide_people')}>
+    <section class="pm-page" aria-label={$t('frameleaf_people_choose_who_appears')}>
       <header class="pm-header">
         <div class="pm-title">
           <FrameleafButton label={$t('frameleaf_people_back')} onclick={leave} disabled={saving}>
             <Icon icon={mdiArrowLeft} size="18" />
           </FrameleafButton>
           <div>
-            <h1>{$t('show_and_hide_people')}</h1>
+            <h1>{$t('frameleaf_people_choose_who_appears')}</h1>
             <p>{$t('frameleaf_people_manage_description')}</p>
           </div>
         </div>

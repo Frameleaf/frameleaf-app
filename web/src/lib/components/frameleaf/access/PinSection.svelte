@@ -6,6 +6,7 @@
    * made anywhere on this page.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import type { PinDialogMode } from '$lib/frameleaf/personal-access';
@@ -46,7 +47,7 @@
         {#if failed}
           {$t('frameleaf_access_pin_unknown')}
         {:else if pinEnabled === undefined}
-          {$t('loading')}
+          <Skeleton variant="text" width="9rem" />
         {:else}
           {pinEnabled ? $t('frameleaf_access_pin_enabled') : $t('frameleaf_access_pin_disabled')}
         {/if}

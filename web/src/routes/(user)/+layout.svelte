@@ -1,13 +1,24 @@
 <script lang="ts">
+  import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
+  import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { Snippet } from 'svelte';
   interface Props {
     children?: Snippet;
   }
 
   let { children }: Props = $props();
+
+  // First-run setup hands off into the app: the administrator who arrives that way is offered the
+  // library's one-time "Next steps" card (LibraryNextSteps), wherever setup sent them first.
+  afterNavigate(({ from }) => {
+    if (arrivedFromSetup(from) && authManager.authenticated && authManager.user.isAdmin) {
+      offerNextSteps(authManager.user.id);
+    }
+  });
 
   // $page.data.asset is loaded by route specific +page.ts loaders if that
   // route contains the assetId path.

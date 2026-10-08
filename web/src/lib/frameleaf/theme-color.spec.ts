@@ -10,25 +10,28 @@ describe('theme-color', () => {
   });
 
   it('uses each theme canvas from the design tokens', () => {
-    expect(themeColor('dark')).toBe(tokens.dark.canvas);
-    expect(themeColor('light')).toBe(tokens.light.canvas);
-    expect(FRAMELEAF_THEME_COLORS).toEqual({ dark: '#101416', light: '#f4f6f7' });
+    expect(themeColor('dark')).toBe(tokens.color.dark.canvas);
+    expect(themeColor('light')).toBe(tokens.color.light.canvas);
+    expect(FRAMELEAF_THEME_COLORS).toEqual({ dark: tokens.color.dark.canvas, light: tokens.color.light.canvas });
   });
 
   it('updates the existing theme-color meta, or adds one', () => {
     applyThemeColor('light');
     const metas = document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
     expect(metas).toHaveLength(1);
-    expect(metas[0].content).toBe('#f4f6f7');
+    expect(metas[0].content).toBe(tokens.color.light.canvas);
     applyThemeColor('dark');
     expect(document.head.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
-    expect(metas[0].content).toBe('#101416');
+    expect(metas[0].content).toBe(tokens.color.dark.canvas);
   });
 
   it('ships a static dark default that the pre-paint script switches for the light theme', () => {
     const html = readFileSync('src/app.html', 'utf8');
-    expect(html).toContain('<meta name="theme-color" content="#101416" />');
-    expect(html).toContain(`?.setAttribute('content', '#f4f6f7')`);
+    expect(html).toContain(`<meta name="theme-color" content="${tokens.color.dark.canvas}" />`);
+    expect(html).toContain(`?.setAttribute('content', '${tokens.color.light.canvas}')`);
+    // The first paint is each theme's canvas too, so nothing flashes before the stylesheet loads.
+    expect(html).toMatch(new RegExp(String.raw`html\.dark {\s*background-color: ${tokens.color.dark.canvas};`));
+    expect(html).toMatch(new RegExp(String.raw`html\.light {\s*background-color: ${tokens.color.light.canvas};`));
     expect(html).not.toMatch(/name="theme-color"[^>]*media=/);
   });
 

@@ -29,11 +29,11 @@
 </script>
 
 {#if href}
-  <a {href} class={variant} aria-label={label} aria-current={pressed ? 'true' : undefined} {onclick}>
+  <a {href} class="fl-control {variant}" aria-label={label} aria-current={pressed ? 'true' : undefined} {onclick}>
     <span aria-hidden="true">{@render children()}</span>
   </a>
 {:else}
-  <button {type} {disabled} class={variant} aria-label={label} aria-pressed={pressed} {onclick}>
+  <button {type} {disabled} class="fl-control {variant}" aria-label={label} aria-pressed={pressed} {onclick}>
     <span aria-hidden="true">{@render children()}</span>
   </button>
 {/if}
@@ -46,15 +46,38 @@
     justify-content: center;
     flex-shrink: 0;
     /* Matches the 44px floor the token sheet sets for every control. */
-    min-width: 44px;
+    min-width: var(--fl-control-height);
     padding: 0.375rem;
     color: var(--fl-text);
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--fl-radius-control);
+    /* The Press pattern (base.css): settle on the spring, colours on the ease curve. */
     transition:
-      background var(--fl-motion-fast) var(--fl-ease),
+      transform var(--fl-duration) var(--fl-spring),
+      background-color var(--fl-motion-fast) var(--fl-ease),
       color var(--fl-motion-fast) var(--fl-ease);
+  }
+  a:active,
+  button:active:not(:disabled) {
+    transform: scale(0.96);
+    transition-duration: var(--fl-duration-press);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    a:active,
+    button:active:not(:disabled) {
+      transform: none;
+    }
+  }
+  /* A link has no height floor from the token sheet, so it takes the control height here. */
+  a {
+    min-height: var(--fl-control-height);
+  }
+  @media (pointer: coarse) {
+    a {
+      min-width: var(--fl-control-height-touch);
+      min-height: var(--fl-control-height-touch);
+    }
   }
   span {
     display: inline-flex;
@@ -80,7 +103,13 @@
   }
   a.primary:hover,
   button.primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
+    background: var(--fl-accent-hover);
+    border-color: var(--fl-accent-hover);
+  }
+  a.primary:active,
+  button.primary:active:not(:disabled) {
+    background: var(--fl-accent-pressed);
+    border-color: var(--fl-accent-pressed);
   }
   /* After the variants so a pressed control of any variant still reads as pressed. */
   a[aria-current='true']:not(.primary),

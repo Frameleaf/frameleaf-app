@@ -20,6 +20,7 @@
   import { updateStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { Button, Icon, modalManager } from '@frameleaf/ui';
   import { mdiCrownOutline, mdiLayersTripleOutline } from '@mdi/js';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -32,8 +33,9 @@
 
   let { stack, asset, onAction, onSelect, onPreview }: Props = $props();
 
-  const thumbnailSize = 60;
-  const selectedThumbnailSize = 65;
+  // One tile for every strip in the viewer (see ViewerFilmstrip).
+  const tileWidth = 76;
+  const tileHeight = 56;
 
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
   const isPrimary = $derived(stack.primaryAssetId === asset.id);
@@ -77,9 +79,9 @@
   };
 </script>
 
-<div class="flex w-fit max-w-full flex-col items-start gap-1" data-testid="viewer-stack-strip">
-  <div class="dark flex items-center gap-2 px-2 text-xs text-white">
-    <Icon icon={mdiLayersTripleOutline} size="15" aria-hidden />
+<div class="fl-stack" data-testid="viewer-stack-strip">
+  <div class="fl-stack-head dark">
+    <Icon icon={mdiLayersTripleOutline} size={ICON_SIZE.sm} aria-hidden />
     <span>{$t('frameleaf_viewer_stack_count', { values: { count: stack.assets.length } })}</span>
     {#if isOwner}
       <Button size="tiny" color="secondary" variant="ghost" disabled={busy} onclick={handleKeepThis}>
@@ -93,35 +95,27 @@
     {/if}
   </div>
 
-  <div class="no-wrap horizontal-scrollbar relative flex flex-row overflow-x-auto overflow-y-hidden">
+  <div class="fl-strip">
     {#each stack.assets as stackedAsset (stackedAsset.id)}
       {@const isCurrent = stackedAsset.id === asset.id}
-      <div class="relative inline-block px-1 pb-2 transition-all" style:bottom={isCurrent ? '0' : '-10px'}>
+      <div class="fl-strip-tile" class:current={isCurrent} aria-current={isCurrent ? 'true' : undefined}>
         <Thumbnail
-          imageClass={isCurrent ? 'border-2 border-white' : 'brightness-70'}
           brokenAssetClass="text-xs"
           asset={toTimelineAsset(stackedAsset)}
           onClick={() => onSelect(stackedAsset)}
           onMouseEvent={({ isMouseOver }) => onPreview(isMouseOver ? stackedAsset : undefined)}
           readonly
-          thumbnailSize={isCurrent ? selectedThumbnailSize : thumbnailSize}
+          thumbnailWidth={tileWidth}
+          thumbnailHeight={tileHeight}
           showStackedIcon={false}
           disableLinkMouseOver
         />
 
         {#if stack.primaryAssetId === stackedAsset.id}
-          <span
-            class="pointer-events-none absolute inset-s-1 top-0 flex items-center gap-0.5 rounded-ss-sm rounded-ee-sm bg-black/70 px-1 text-[10px] text-white"
-          >
-            <Icon icon={mdiCrownOutline} size="12" aria-hidden />
+          <span class="fl-stack-primary">
+            <Icon icon={mdiCrownOutline} size={ICON_SIZE.xs} aria-hidden />
             {$t('frameleaf_viewer_stack_primary')}
           </span>
-        {/if}
-
-        {#if isCurrent}
-          <div class="flex w-full place-content-center place-items-center">
-            <div class="mt-0.5 flex size-2 rounded-full bg-white"></div>
-          </div>
         {/if}
       </div>
     {/each}
@@ -129,23 +123,69 @@
 </div>
 
 <style>
-  .horizontal-scrollbar::-webkit-scrollbar {
-    width: 8px;
-    height: 10px;
+  .fl-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: fit-content;
+    max-width: 100%;
   }
 
-  .horizontal-scrollbar::-webkit-scrollbar-track {
-    background: #000000;
-    border-radius: 16px;
+  .fl-stack-head {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-1) var(--fl-space-3) 0;
+    color: var(--fl-viewer-text);
+    font: var(--fl-type-caption);
   }
 
-  .horizontal-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(159, 159, 159, 0.408);
-    border-radius: 16px;
+  .fl-strip {
+    display: flex;
+    gap: var(--fl-space-2);
+    max-width: 100%;
+    padding: var(--fl-space-2) var(--fl-space-3);
+    overflow: auto hidden;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--fl-viewer-text) 28%, transparent) transparent;
   }
 
-  .horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #adcbfa;
-    border-radius: 16px;
+  /* The same tile as the filmstrip: the open item at full strength inside an accent ring. */
+  .fl-strip-tile {
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: var(--fl-radius-control);
+    opacity: 0.72;
+    box-shadow: 0 0 0 2px transparent;
+    transition:
+      opacity var(--fl-duration-fade) var(--fl-ease),
+      box-shadow var(--fl-duration-fade) var(--fl-ease);
+  }
+
+  .fl-strip-tile:hover,
+  .fl-strip-tile:focus-within {
+    opacity: 1;
+  }
+
+  .fl-strip-tile.current {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--fl-accent);
+  }
+
+  .fl-stack-primary {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-half);
+    padding: 1px var(--fl-space-1);
+    border-end-end-radius: var(--fl-radius-sm);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 82%, transparent);
+    color: var(--fl-viewer-text);
+    font: var(--fl-type-micro);
+    pointer-events: none;
   }
 </style>

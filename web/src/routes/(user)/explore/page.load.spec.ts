@@ -1,6 +1,8 @@
 import {
   AssetTypeEnum,
   AssetVisibility,
+  getAlbumTree,
+  getAllPeople,
   getAssetStatistics,
   getTimeBuckets,
   searchAssets,
@@ -78,6 +80,20 @@ describe('the Explore loader', () => {
 
     expect(getTimeBuckets).toHaveBeenCalledWith({ isFavorite: true, withStacked: true });
     expect(getAssetStatistics).not.toHaveBeenCalled();
+    expect(data.shortcutCounts.favorites).toBe(5);
+  });
+
+  it('still opens when a section fails, and says which sections could not load', async () => {
+    vi.mocked(getAllPeople).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(getAlbumTree).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(searchFacets).mockRejectedValueOnce(new Error('offline'));
+
+    const data = await open();
+
+    expect(data.failed).toEqual({ people: true, places: true, memories: false, albums: true, recents: false });
+    expect(data.peopleCards).toEqual([]);
+    expect(data.albums).toEqual([]);
+    expect(data.libraryTotal).toBeNull();
     expect(data.shortcutCounts.favorites).toBe(5);
   });
 

@@ -62,7 +62,7 @@
     display: block;
     flex-shrink: 0;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: var(--fl-radius-control-compact);
     background: var(--fl-raised);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-text), transparent 90%);
   }
@@ -122,7 +122,7 @@
     font-weight: 600;
   }
   .unavailable:has(img) .unavailable-label {
-    color: #f3f5f6;
+    color: var(--fl-viewer-text);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
   .cell .unavailable-label span,
@@ -138,8 +138,8 @@
     width: 1.375rem;
     height: 1.375rem;
     border-radius: 50%;
-    background: color-mix(in srgb, #0b0f12, transparent 30%);
-    color: #fff;
+    background: color-mix(in srgb, var(--fl-viewer-canvas), transparent 30%);
+    color: var(--fl-viewer-text);
   }
   .cell .kind {
     width: 1rem;

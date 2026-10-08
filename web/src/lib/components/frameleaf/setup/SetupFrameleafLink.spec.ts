@@ -66,6 +66,20 @@ describe('SetupFrameleafLink region-mismatch (FC-18)', () => {
     expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
   });
 
+  it('says why the last code did not link, with a fresh start below', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue({
+      ...refused(false),
+      linkRefusal: null,
+      regionMismatch: null,
+      lastError: null,
+      linkResult: 'expired',
+    } as CloudStatusResponseDto);
+    render(SetupFrameleafLink, { mode: 'link', linked: false, onLinked: vi.fn() });
+
+    expect(await screen.findByText('The code expired')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in with Frameleaf/ })).toBeInTheDocument();
+  });
+
   it('shows the message above a fresh start when the approval was not kept', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(refused(false));
     render(SetupFrameleafLink, { mode: 'link', linked: false, onLinked: vi.fn() });

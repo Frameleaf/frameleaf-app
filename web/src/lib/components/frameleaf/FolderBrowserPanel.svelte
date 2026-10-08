@@ -19,10 +19,13 @@
   import { goto, invalidateAll } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import DiscoveryTree from '$lib/components/frameleaf/DiscoveryTree.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+  import { findInTree, nameMatchesFind } from '$lib/frameleaf/discovery-find';
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import {
     FOLDER_ROOT_PATH,
     captureDay,
@@ -53,9 +56,10 @@
     mdiFolderOpenOutline,
     mdiFolderOutline,
     mdiHarddisk,
+    mdiMagnify,
     mdiTimelineClockOutline,
   } from '@mdi/js';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
@@ -65,9 +69,11 @@
     path: string;
     /** The open folder's own files. */
     assets: AssetResponseDto[];
+    /** The open folder's files could not be loaded; the tree and its counts still show. */
+    assetsFailed?: boolean;
   }
 
-  let { tree, path, assets }: Props = $props();
+  let { tree, path, assets, assetsFailed = false }: Props = $props();
 
   interface FolderView {
     id: string;
@@ -103,6 +109,46 @@
     void folder.path;
     untrack(() => librarySession.clearSelection());
   });
+
+  // Find narrows the tree to the matching folders and the branches that lead to them, as on Tags.
+  let search = $state('');
+  let searchInput = $state<HTMLInputElement>();
+  let treePane = $state<HTMLElement>();
+  const query = $derived(search.trim());
+  // The top row stands for the whole library ("All folders"), so it is the path to a match and never one itself.
+  const found = $derived(
+    query
+      ? findInTree(roots, (view) => view.node.path !== FOLDER_ROOT_PATH && nameMatchesFind(view.name, query))
+      : null,
+  );
+  const clearSearch = () => {
+    search = '';
+    searchInput?.focus();
+  };
+  $effect(() => {
+    const id = found?.firstMatchId;
+    if (!id) {
+      return;
+    }
+    void tick().then(() => {
+      for (const row of treePane?.querySelectorAll<HTMLElement>('[data-tree-id]') ?? []) {
+        if (row.dataset.treeId === id) {
+          row.scrollIntoView?.({ block: 'nearest', behavior: motionScrollBehavior() });
+          return;
+        }
+      }
+    });
+  });
+
+  let retrying = $state(false);
+  const retryFiles = async () => {
+    retrying = true;
+    try {
+      await invalidateAll();
+    } finally {
+      retrying = false;
+    }
+  };
 
   const toggle = (view: FolderView) => {
     if (expanded.has(view.id)) {
@@ -179,6 +225,21 @@
       <p>{$t('frameleaf_folders_subtitle')}</p>
     </div>
     <div class="dv-header-actions">
+      {#if hasFolders}
+        <label class="dv-search">
+          <Icon icon={mdiMagnify} size="16" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder={$t('frameleaf_folders_find')}
+            aria-label={$t('frameleaf_folders_find')}
+            bind:value={search}
+            bind:this={searchInput}
+          />
+        </label>
+        <span class="dv-find-count" role="status">
+          {#if found}{$t('frameleaf_folders_find_count', { values: { count: found.matches } })}{/if}
+        </span>
+      {/if}
       <label class="dv-select">
         {$t('frameleaf_folders_sort')}
         <select bind:value={sort} aria-label={$t('frameleaf_folders_sort_label')}>
@@ -223,23 +284,33 @@
     </div>
   {:else}
     <div class="dv-split">
-      <nav class="dv-pane dv-tree-pane" aria-label={$t('frameleaf_folders_tree_label')}>
-        <DiscoveryTree
-          {roots}
-          label={$t('folders')}
-          {expanded}
-          selectedId={folder.path}
-          bind:focusedId
-          count={(view) => view.node.count}
-          expandLabel={(view) => $t('frameleaf_folders_expand_node', { values: { name: view.name } })}
-          collapseLabel={(view) => $t('frameleaf_folders_collapse_node', { values: { name: view.name } })}
-          onChoose={(view) => void open(view.node)}
-          onToggle={toggle}
-        >
-          {#snippet lead(_, selected)}
-            <Icon icon={selected ? mdiFolderOpenOutline : mdiFolderOutline} size="16" aria-hidden="true" />
-          {/snippet}
-        </DiscoveryTree>
+      <nav class="dv-pane dv-tree-pane" aria-label={$t('frameleaf_folders_tree_label')} bind:this={treePane}>
+        {#if found && found.matches === 0}
+          <div class="dv-empty compact">
+            <span class="dv-empty-icon"><Icon icon={mdiMagnify} size="26" aria-hidden="true" /></span>
+            <strong>{$t('frameleaf_folders_find_none_title', { values: { query } })}</strong>
+            <p>{$t('frameleaf_discovery_find_none_help')}</p>
+            <Button onclick={clearSearch}>{$t('frameleaf_discovery_find_clear')}</Button>
+          </div>
+        {:else}
+          <DiscoveryTree
+            roots={found?.roots ?? roots}
+            label={$t('folders')}
+            expanded={found?.expanded ?? expanded}
+            selectedId={folder.path}
+            bind:focusedId
+            count={(view) => view.node.count}
+            isMatch={(view) => !!found && view.node.path !== FOLDER_ROOT_PATH && nameMatchesFind(view.name, query)}
+            expandLabel={(view) => $t('frameleaf_folders_expand_node', { values: { name: view.name } })}
+            collapseLabel={(view) => $t('frameleaf_folders_collapse_node', { values: { name: view.name } })}
+            onChoose={(view) => void open(view.node)}
+            onToggle={toggle}
+          >
+            {#snippet lead(_, selected)}
+              <Icon icon={selected ? mdiFolderOpenOutline : mdiFolderOutline} size="16" aria-hidden="true" />
+            {/snippet}
+          </DiscoveryTree>
+        {/if}
       </nav>
 
       <section
@@ -268,7 +339,9 @@
           </ul>
         {/if}
 
-        {#if files.length > 0}
+        {#if assetsFailed}
+          <InlineError compact message={$t('frameleaf_folders_files_failed')} onRetry={retryFiles} {retrying} />
+        {:else if files.length > 0}
           <div
             class="dv-file-grid-host"
             role="region"
@@ -290,11 +363,13 @@
               {/snippet}
             </ResultsView>
           </div>
+        {:else if folder.children.length > 0}
+          <!-- The subfolders above are the content; a second empty state under them would contradict it. -->
+          <p class="dv-note">{$t('frameleaf_folders_subfolders_only')}</p>
         {:else}
           <div class="dv-empty compact" role="status">
             <span class="dv-empty-icon"><Icon icon={mdiFolderOpenOutline} size="26" aria-hidden="true" /></span>
             <strong>{$t('frameleaf_folders_no_files_title')}</strong>
-            <p>{$t('frameleaf_folders_no_files_description')}</p>
           </div>
         {/if}
 

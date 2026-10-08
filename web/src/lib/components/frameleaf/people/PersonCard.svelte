@@ -62,10 +62,11 @@
   <button
     type="button"
     class="pl-face"
+    style:--pl-face-size="{size}px"
     aria-label={$t('frameleaf_people_open_person', { values: { name } })}
     onclick={onOpen}
   >
-    <PersonAvatar {person} {size} />
+    <PersonAvatar {person} {size} fluid heroKey="person:{person.id}" />
     {#if person.isFavorite}
       <span class="pl-badge favorite" title={$t('favorite')}>
         <Icon icon={mdiHeart} size="14" aria-hidden="true" />
@@ -156,7 +157,9 @@
   }
   .pl-face {
     position: relative;
-    display: inline-flex;
+    display: flex;
+    /* The face shrinks with a narrow column (two-up on a small phone) instead of overflowing it. */
+    width: min(var(--pl-face-size), 100%);
     padding: 0;
     background: none;
     border: 0;
@@ -227,6 +230,7 @@
     border-color: var(--fl-border);
   }
   .pl-count {
+    font-variant-numeric: var(--fl-numeric);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
@@ -268,6 +272,10 @@
   @media (max-width: 700px) {
     .pl-card {
       padding: 14px 8px 12px;
+    }
+    /* People.jsx avatarSize: 128px on phones. */
+    .pl-face {
+      width: min(128px, 100%);
     }
     .pl-menu {
       top: 6px;

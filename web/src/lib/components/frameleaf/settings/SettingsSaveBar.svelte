@@ -14,7 +14,8 @@
   import { beforeNavigate, goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { SETTINGS_AREAS, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
+  import SaveBarFrame from '$lib/components/frameleaf/settings/SaveBarFrame.svelte';
+  import { presentedAreaForSection, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import {
     configPathLabel,
     reviewValue,
@@ -74,11 +75,12 @@
   const placeOf = (change: ConfigChange) => {
     const key = sectionForConfigPath(change.path);
     const section = sections.find((item) => item.key === key);
-    const area = SETTINGS_AREAS.find((item) => key !== undefined && item.sections.includes(key));
+    // The area the page is shown in (a backup page is shown under Backup).
+    const area = key === undefined ? undefined : presentedAreaForSection(key);
     if (!section) {
       return $t('frameleaf_settings_draft_other');
     }
-    return area ? `${areaTitles[area.id] ?? ''} · ${section.title}` : section.title;
+    return area ? `${areaTitles[area] ?? ''} · ${section.title}` : section.title;
   };
 
   const subtitle = $derived.by(() => {
@@ -146,26 +148,26 @@
 </script>
 
 {#if count > 0}
-  <div class="savebar" role="region" aria-label={$t('frameleaf_settings_draft_bar_label')}>
+  <SaveBarFrame
+    alert={!!pendingNavigation}
+    label={$t('frameleaf_settings_draft_bar_label')}
+    title={pendingNavigation
+      ? $t('frameleaf_settings_draft_leave', { values: { count } })
+      : $t('frameleaf_settings_draft_unsaved', { values: { count } })}
+    subtitle={pendingNavigation ? $t('frameleaf_settings_draft_leave_help') : subtitle}
+    tick={count}
+  >
     {#if pendingNavigation}
-      <span class="summary" role="alert">
-        <strong>{$t('frameleaf_settings_draft_leave', { values: { count } })}</strong>
-        <small>{$t('frameleaf_settings_draft_leave_help')}</small>
-      </span>
       <Button onclick={keepEditing}>{$t('frameleaf_settings_draft_keep_editing')}</Button>
       <Button variant="primary" onclick={discardAndLeave}>{$t('frameleaf_settings_draft_discard_leave')}</Button>
     {:else}
-      <span class="summary">
-        <strong>{$t('frameleaf_settings_draft_unsaved', { values: { count } })}</strong>
-        <small>{subtitle}</small>
-      </span>
       <Button disabled={store.saving} onclick={() => store.discard()}>{$t('frameleaf_settings_draft_discard')}</Button>
       <Button variant="primary" disabled={disabled || store.saving || store.stale} onclick={() => (reviewing = true)}>
         {$t('frameleaf_settings_draft_review')}
         <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} />
       </Button>
     {/if}
-  </div>
+  </SaveBarFrame>
 {/if}
 
 <Dialog
@@ -196,34 +198,6 @@
 </Dialog>
 
 <style>
-  .savebar {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1.25rem;
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    box-shadow: var(--fl-shadow-2);
-  }
-  .summary {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-inline-end: auto;
-    min-width: 0;
-  }
-  .summary strong {
-    font-weight: 500;
-    font-size: var(--fl-font-small);
-  }
-  .summary small {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
   .intro {
     margin-top: 0;
     color: var(--fl-muted);
@@ -270,15 +244,5 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1rem;
-  }
-  @media (max-width: 40rem) {
-    .savebar {
-      flex-wrap: wrap;
-      padding: 0.75rem 0.875rem;
-      gap: 0.625rem;
-    }
-    .summary {
-      width: 100%;
-    }
   }
 </style>

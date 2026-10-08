@@ -1,5 +1,5 @@
 import { AssetOrder, AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { SvelteURL } from 'svelte/reactivity';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -598,7 +598,12 @@ describe('LibraryView', () => {
       librarySession.dispatch({ type: 'selection', ids: ['a'] });
       await tick();
 
-      expect(screen.getByTestId('selection-leading-compare')).toBeDisabled();
+      // It stays reachable so it can say why it is not offered.
+      const compare = screen.getByTestId('selection-leading-compare');
+      expect(compare).toHaveAttribute('aria-disabled', 'true');
+      expect(compare).toHaveAttribute('title', 'frameleaf_selection_compare_needs_two');
+      await fireEvent.click(compare);
+      expect(librarySession.state.view).not.toBe('compare');
     });
 
     it('keeps the private library actions and the status bar off a public shared-link page', async () => {
@@ -665,11 +670,29 @@ describe('LibraryView', () => {
       librarySession.clearSelection();
     });
 
-    it('shows the Frameleaf empty state, not the legacy upload card (T-10)', async () => {
+    it('gives a brand-new library a way forward and holds back the chrome that needs photos', async () => {
       await setupLibrary();
       const empty = await screen.findByTestId('frameleaf-library-empty');
+      expect(within(empty).getByRole('status')).toBeInTheDocument();
+      expect(empty).toHaveTextContent('frameleaf_library_first_run_title');
+      expect(screen.getByRole('button', { name: 'frameleaf_library_first_run_upload' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'frameleaf_transfer_upload_folder' })).toBeInTheDocument();
+      // Nothing to arrange yet: no layout switch, results toolbar or status capsule.
+      expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('keeps the plain empty state, with no upload offer, on any other empty view (T-10)', async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      const empty = await screen.findByTestId('frameleaf-library-empty');
       // the Frameleaf copy (TimelineLibrary.jsx `.tl-empty`): a status message, no upload card or button
-      expect(empty).toHaveAttribute('role', 'status');
+      expect(within(empty).getByRole('status')).toBeInTheDocument();
       expect(empty.querySelector(':scope p')).toHaveTextContent('frameleaf_library_empty');
       expect(empty.querySelector(':scope button')).toBeNull();
     });
@@ -687,6 +710,7 @@ describe('LibraryView', () => {
     });
 
     it('orders the timeline by the chosen sort where the page leaves ordering to it (S-15)', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
       await setupLibrary();
       const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
       await fireEvent.change(sort, { target: { value: 'captured-asc' } });
@@ -741,14 +765,16 @@ describe('LibraryView', () => {
     });
 
     it('shows the information panel toggle in every layout and opens More library actions', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
       await setupLibrary();
       expect(librarySession.layout).toBe('browse');
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
 
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
-      expect(await screen.findByRole('heading', { name: 'frameleaf_library_actions_title' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'frameleaf_library_compare_selected' })).toBeDisabled();
+      expect(await screen.findByRole('heading', { name: 'frameleaf_library_view_actions_title' })).toBeInTheDocument();
+      // Compare lives on the selection bar only; the sheet does not repeat it.
+      expect(screen.queryByRole('button', { name: 'frameleaf_library_compare_selected' })).not.toBeInTheDocument();
     });
 
     it('opens the Frameleaf shortcuts sheet on ?, with Done', async () => {

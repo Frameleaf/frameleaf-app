@@ -337,8 +337,8 @@
     opacity: 0.6;
   }
   .stage:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .stage img {
     width: 100%;

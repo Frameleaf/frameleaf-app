@@ -199,8 +199,8 @@
     font-size: 12px;
   }
   .jm-enrichment-form select:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .jm-enrichment-form p {
     font-size: 12px;

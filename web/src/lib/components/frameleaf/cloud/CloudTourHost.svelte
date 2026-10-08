@@ -37,7 +37,7 @@
 
   type Props = {
     /** Opens a settings page (the Command Center's own navigation). */
-    navigate: (area: SettingsAreaId, section?: string) => Promise<void> | void;
+    navigate: (area: SettingsAreaId, section?: string, params?: Record<string, string>) => Promise<void> | void;
     /** Shows (or, with '', clears) the "Take the tour again" notice under the page heading. */
     onNotice: (text: string) => void;
   };
@@ -135,7 +135,7 @@
     void record(ending);
     onNotice(ending === 'skipped' ? $t('frameleaf_cloud_tour_again') : '');
     if (link) {
-      await navigate(link.area, link.section);
+      await (link.params ? navigate(link.area, link.section, link.params) : navigate(link.area, link.section));
       return;
     }
     if (page.url.searchParams.has('tour')) {

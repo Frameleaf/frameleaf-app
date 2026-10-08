@@ -10,11 +10,18 @@
     trackSessionUnlock,
   } from '$lib/frameleaf/session-access.svelte';
   import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { resetPinCode, setupPinCode, unlockAuthSession } from '@frameleaf/sdk';
-  import { mdiAlertCircleOutline, mdiInformationOutline, mdiBackspaceOutline, mdiShieldLockOutline } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiBackspaceOutline,
+    mdiCheckCircleOutline,
+    mdiInformationOutline,
+    mdiShieldLockOutline,
+  } from '@mdi/js';
   import { Icon } from '@frameleaf/ui';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -33,6 +40,12 @@
   let relockFailed = $state(false);
   let resetPassword = $state('');
   let pinCard: HTMLDivElement;
+  let keypad = $state<HTMLDivElement>();
+  /**
+   * The on-screen keypad is showing (touch devices, auth.css). Then its taps must not focus the
+   * hidden input, or the system number pad slides up over it, and the input asks for no keyboard.
+   */
+  const keypadVisible = $derived(!!keypad && getComputedStyle(keypad).display !== 'none');
   let active = true;
   let revision = 0;
   let pendingRequest = 0;
@@ -48,6 +61,8 @@
   const copy = $derived(hasPinCode ? $t('frameleaf_pin_unlock_body') : $t('frameleaf_pin_create_body'));
 
   const focusPin = () => pinCard?.querySelector<HTMLInputElement>('.pin-input')?.focus();
+  /** Long enough to see the cells turn to the accent colour before the page moves on. */
+  const showSuccess = () => new Promise<void>((resolve) => setTimeout(resolve, DURATION.fade));
   const clear = () => {
     pinCode = '';
     errorMessage = '';
@@ -220,6 +235,10 @@
       isVerified = true;
       pinCode = '';
       eventManager.emit('SessionAccessChanged', { isElevated: true });
+      await showSuccess();
+      if (!active) {
+        return;
+      }
       await goto(data.continueUrl);
     } catch (error) {
       isVerified = false;
@@ -248,7 +267,9 @@
     const next = digit === 'back' ? pinCode.slice(0, -1) : (pinCode + digit).replaceAll(/\D/g, '').slice(0, 6);
     pinCode = next;
     errorMessage = '';
-    focusPin();
+    if (!keypadVisible) {
+      focusPin();
+    }
     if (next.length === 6) {
       void complete(next);
     }
@@ -307,8 +328,9 @@
       </p>
     {/if}
     {#if isVerified}
-      <p class="auth-info" role="status">
-        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_unlocked')}</span>
+      <PinCells value="" success disabled label={heading} softKeyboard={false} />
+      <p class="auth-info auth-success" role="status">
+        <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_pin_unlocked')}</span>
       </p>
     {:else if resetting}
       <form class="auth-form" onsubmit={reset} novalidate>
@@ -348,6 +370,7 @@
         disabled={working || relockFailed}
         label={heading}
         describedBy={errorMessage && !relockFailed ? 'pin-prompt-hint pin-prompt-error' : 'pin-prompt-hint'}
+        softKeyboard={!keypadVisible}
         oncomplete={complete}
       />
       <p id="pin-prompt-hint" class="sr-only">{$t('frameleaf_pin_hint')}</p>
@@ -357,7 +380,7 @@
       {:else}<p class="auth-field-hint">
           {stage === 'confirm' && !hasPinCode ? $t('frameleaf_pin_hint_confirm') : $t('frameleaf_pin_hint_auto')}
         </p>{/if}
-      <div class="pin-keypad">
+      <div class="pin-keypad" bind:this={keypad}>
         {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as digit (digit)}
           <button
             type="button"
@@ -382,7 +405,8 @@
         >
       </div>
       <div class="pin-actions">
-        <button type="button" class="button" onclick={cancel}>{$t('cancel')}</button>
+        <!-- Hidden while the keypad shows: it has its own Cancel (auth.css). -->
+        <button type="button" class="button pin-cancel" onclick={cancel}>{$t('cancel')}</button>
         {#if hasPinCode && data.hasPassword}<button
             type="button"
             class="auth-link"

@@ -6,12 +6,15 @@
     parseDiscoveryQueryText,
     type DiscoveryQuery,
   } from '$lib/components/discovery/query';
+  import { motionSlide } from '$lib/frameleaf/motion';
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import '$lib/frameleaf/tokens.css';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
-  import { Icon } from '@frameleaf/ui';
+  import { toastUndo } from '$lib/frameleaf/toast';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiClose, mdiFilterOutline } from '@mdi/js';
   import { onMount } from 'svelte';
+  import { cubicOut } from 'svelte/easing';
   import { t } from 'svelte-i18n';
 
   /**
@@ -47,13 +50,45 @@
     return parsed?.ok ? JSON.stringify(parsed.query) : undefined;
   });
   const isCurrent = (query: DiscoveryQuery) => currentQuery === JSON.stringify(query);
+
+  /** How long a deleted row takes to fold away (review finding 14). */
+  const ROW_COLLAPSE_MS = 220;
+  /**
+   * The names this person just deleted. Only those rows fold away: a list that changes for another
+   * reason (a lock dropping a search that names something Locked) loses its rows at once.
+   */
+  const deleted = new Set<string>();
+
+  /** Delete at once, and offer to put it back: one press must not cost a carefully built search. */
+  const remove = async (entry: { name: string; query: DiscoveryQuery }) => {
+    deleted.add(entry.name);
+    const removed = await savedSearchesStore.remove(entry.name);
+    // The row has started to fold by now; the name is free again for an Undo.
+    setTimeout(() => deleted.delete(entry.name), ROW_COLLAPSE_MS);
+    if (!removed) {
+      toastManager.warning($t('frameleaf_search_saved_delete_failed'));
+      return;
+    }
+    toastUndo(
+      $t('frameleaf_search_saved_deleted', { values: { name: entry.name } }),
+      () => void savedSearchesStore.save(entry.name, entry.query),
+    );
+  };
 </script>
 
 {#if entries.length > 0}
   <div class="frameleaf-saved-searches" role="group" aria-label={$t('frameleaf_search_saved_searches')}>
+    <!-- Their own label, so a saved search is not taken for an album with an odd icon. -->
+    {#if !iconOnly}
+      <p class="heading fl-rail-text" aria-hidden="true">{$t('frameleaf_search_saved_searches')}</p>
+    {/if}
     {#each entries as entry (entry.name)}
       {@const current = isCurrent(entry.query)}
-      <div class="row">
+      <!-- A deleted search folds away (220ms; a short fade under Reduce Motion) while its Undo toast rises. -->
+      <div
+        class="row"
+        out:motionSlide|global={{ duration: deleted.has(entry.name) ? ROW_COLLAPSE_MS : 0, easing: cubicOut }}
+      >
         <a
           href={entry.href}
           class="fl-link"
@@ -70,9 +105,9 @@
         {#if !iconOnly}
           <button
             type="button"
-            class="remove"
+            class="remove fl-rail-text"
             aria-label={$t('frameleaf_search_delete_saved', { values: { name: entry.name } })}
-            onclick={() => void savedSearchesStore.remove(entry.name)}
+            onclick={() => void remove(entry)}
           >
             <Icon icon={mdiClose} size="0.875em" aria-hidden={true} />
           </button>
@@ -84,10 +119,26 @@
 
 <style>
   /* The rail's link look (LibraryRail.svelte .fl-link), so the list sits in the rail unchanged. */
+  .frameleaf-saved-searches {
+    margin-top: var(--fl-space-2);
+    padding-top: var(--fl-space-2);
+    border-top: 1px solid var(--fl-border);
+  }
+  .heading {
+    margin: 0;
+    padding: var(--fl-space-1) 22px var(--fl-space-1) 42px;
+    color: var(--fl-muted);
+    font: var(--fl-type-micro);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
   .row {
     position: relative;
     display: flex;
     align-items: center;
+    /* Clipped while it folds away after a delete. */
+    overflow: hidden;
   }
   .fl-link {
     display: flex;
@@ -97,7 +148,7 @@
     gap: 11px;
     min-height: 34px;
     padding: 7px 22px;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     color: var(--fl-text);
     text-decoration: none;
   }
@@ -130,8 +181,10 @@
     place-items: center;
     width: 28px;
     height: 28px;
+    min-width: 0;
+    min-height: 0;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     background: transparent;
     color: var(--fl-muted);
     opacity: 0;
@@ -141,8 +194,14 @@
     opacity: 1;
   }
   @media (hover: none) {
+    /* Always shown on touch, at a full-size target, with room so the name does not run under it. */
     .remove {
+      width: var(--fl-control-height);
+      height: var(--fl-control-height);
       opacity: 1;
+    }
+    .fl-nested {
+      padding-inline-end: var(--fl-control-height);
     }
   }
   .remove:hover {

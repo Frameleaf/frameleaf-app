@@ -14,12 +14,31 @@ const styles = (file: string) => {
 };
 
 describe('September 24 sheet chrome', () => {
+  it('plays an exit before a dialog or menu goes (review finding 118)', () => {
+    // Both leave through the shared helper, which finishes at once where nothing can animate.
+    const dialog = readFileSync('src/lib/components/frameleaf/Dialog.svelte', 'utf8');
+    expect(dialog).toContain("leave(dialog, 'sheet', finish, { backdrop: true })");
+    const menu = readFileSync('src/lib/components/frameleaf/Menu.svelte', 'utf8');
+    expect(menu).toContain("leave(menu, 'pop', () => (leaving = false))");
+    // A menu that is fading out cannot be reached.
+    expect(menu).toContain('inert={leaving && !open}');
+  });
+
   it('gives dialogs 22px continuous corners, a spring rise and a blurred backdrop', () => {
     const css = styles('Dialog.svelte');
     expect(css).toMatch(/\.dialog {[^}]*border-radius: var\(--fl-radius-sheet\);/);
-    expect(css).toMatch(/fl-sheet-rise 480ms var\(--fl-spring\)/);
-    expect(css).toMatch(/@keyframes fl-sheet-rise {\s*from {\s*translate: 0 40px;\s*scale: 0\.96;/);
-    expect(css).toMatch(/\.dialog::backdrop {[^}]*background: rgb\(0 0 0 \/ 40%\);[^}]*backdrop-filter: blur\(12px\);/);
+    // The Sheet pattern: the shared keyframes (base.css) on the token durations, 480ms on the spring.
+    expect(css).toMatch(/fl-sheet-in var\(--fl-duration-sheet\) var\(--fl-spring\) both/);
+    const baseline = readFileSync('src/lib/frameleaf/base.css', 'utf8');
+    expect(baseline).toMatch(/@keyframes fl-sheet-in {\s*from {\s*translate: 0 40px;\s*scale: 0\.96;/);
+    const tokens = readFileSync('src/lib/frameleaf/tokens.css', 'utf8');
+    expect(tokens).toContain('--fl-duration-sheet: 480ms;');
+    // The one scrim, with the token values repeated as fallbacks for ::backdrop.
+    expect(css).toMatch(
+      /\.dialog::backdrop {[^}]*background: var\(--fl-scrim, rgb\(0 0 0 \/ 40%\)\);[^}]*backdrop-filter: var\(--fl-scrim-blur, blur\(12px\)\);/,
+    );
+    expect(tokens).toContain('--fl-scrim: rgb(0 0 0 / 40%);');
+    expect(tokens).toContain('--fl-scrim-blur: blur(12px);');
     // The continuous corner comes from app.css through `fl-continuous-corners`; the dialog grows its radius.
     expect(css).toMatch(
       /@supports \(corner-shape: squircle\) {\s*\.dialog {\s*border-radius: calc\(var\(--fl-radius-sheet\) \* 1\.8\);/,
@@ -64,7 +83,7 @@ describe('September 24 sheet chrome', () => {
   it('turns the dialog rise into a crossfade under Reduce Motion and drops the blur for Increase Contrast', () => {
     const css = styles('Dialog.svelte');
     expect(css).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) {\s*\.dialog {\s*animation: fl-sheet-fade 200ms ease both !important;/,
+      /@media \(prefers-reduced-motion: reduce\) {\s*\.dialog {\s*animation: fl-fade-in var\(--fl-duration-reduced\) var\(--fl-ease\) both !important;/,
     );
     expect(css).toMatch(
       /@media \(prefers-contrast: more\), \(prefers-reduced-transparency: reduce\) {\s*\.dialog::backdrop {[^}]*backdrop-filter: none;/,
@@ -73,13 +92,17 @@ describe('September 24 sheet chrome', () => {
 
   it('opens menus on the spring and crossfades them under Reduce Motion', () => {
     const css = styles('Menu.svelte');
-    expect(css).toMatch(/animation: fl-menu-in 320ms var\(--fl-spring\);/);
+    // The Pop pattern: a short fade while the popup grows from 0.9 on the 320ms spring.
+    expect(css).toMatch(/fl-pop-in var\(--fl-duration-pop\) var\(--fl-spring\) both;/);
+    expect(readFileSync('src/lib/frameleaf/tokens.css', 'utf8')).toContain('--fl-duration-pop: 320ms;');
     // Logical origin: the corner the popup hangs from flips in right-to-left layouts.
     expect(css).toMatch(/\[role='menu'\]:dir\(rtl\) {\s*transform-origin: top right;/);
     expect(css).toMatch(/\[role='menu'\]\.end:dir\(rtl\) {\s*transform-origin: top left;/);
-    expect(css).toMatch(/@keyframes fl-menu-in {\s*from {\s*opacity: 0;\s*scale: 0\.9;/);
+    expect(readFileSync('src/lib/frameleaf/base.css', 'utf8')).toMatch(
+      /@keyframes fl-pop-in {\s*from {\s*scale: 0\.9;/,
+    );
     expect(css).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) {\s*\[role='menu'\] {\s*animation: fl-menu-fade 150ms ease !important;/,
+      /@media \(prefers-reduced-motion: reduce\) {\s*\[role='menu'\] {\s*animation: fl-fade-in var\(--fl-duration-reduced\) var\(--fl-ease\) both !important;/,
     );
   });
 

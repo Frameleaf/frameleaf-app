@@ -17,6 +17,7 @@
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo } from '@frameleaf/sdk';
+  import { invalidateAll } from '$app/navigation';
   import Portal from '$lib/elements/Portal.svelte';
   import type { PageData } from './$types';
   import type { Snapshot } from '@sveltejs/kit';
@@ -27,16 +28,18 @@
 
   let { data }: Props = $props();
 
-  // Kept `$state` (not read straight off `data`) so a thumbnail-ready event can bump a
-  // person's `updatedAt` in place and the avatar picks up the freshly generated image
-  // without a full reload — the same cache-busting the legacy page relied on.
-  let peopleCards = $state(data.peopleCards);
+  // Follows the loader (so "Try again" fills in a section that failed) and can be replaced in
+  // place: a thumbnail-ready event bumps a person's `updatedAt` so the avatar picks up the freshly
+  // generated image without a full reload.
+  let peopleCards = $derived(data.peopleCards);
   const onPersonThumbnailReady = ({ id }: { id: string }) => {
-    for (const card of peopleCards) {
-      if (card.person.id === id) {
-        card.person.updatedAt = new Date().toISOString();
-      }
+    if (peopleCards.every((card) => card.person.id !== id)) {
+      return;
     }
+    const updatedAt = new Date().toISOString();
+    peopleCards = peopleCards.map((card) =>
+      card.person.id === id ? { ...card, person: { ...card.person, updatedAt } } : card,
+    );
   };
 
   let memories = $derived(
@@ -49,6 +52,17 @@
       count: memory.assets.length,
     })),
   );
+
+  // A section that could not load offers "Try again", which re-runs the loader for the whole page.
+  let retrying = $state(false);
+  const onRetry = async () => {
+    retrying = true;
+    try {
+      await invalidateAll();
+    } finally {
+      retrying = false;
+    }
+  };
 
   const onViewAsset = async (id: string) => {
     const asset = await getAssetInfo({ ...authManager.params, id });
@@ -104,7 +118,7 @@
 
 <OnEvents {onPersonThumbnailReady} />
 
-<UserPageLayout title={data.meta.title} use={[captureScroller]}>
+<UserPageLayout use={[captureScroller]}>
   <ExplorePanel
     people={peopleCards}
     places={data.places}
@@ -115,6 +129,9 @@
     albums={data.albums}
     bestPhotos={data.bestPhotosPreview}
     shortcutCounts={data.shortcutCounts}
+    failed={data.failed}
+    {onRetry}
+    {retrying}
     {onViewAsset}
   />
 </UserPageLayout>

@@ -5,6 +5,7 @@
 
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
@@ -15,7 +16,7 @@
     type AssetEditsCreateDto,
     type AssetResponseDto,
   } from '@frameleaf/sdk';
-  import { Button, ConfirmModal, HStack, Icon, IconButton, modalManager, toastManager } from '@frameleaf/ui';
+  import { Button, HStack, Icon, IconButton, toastManager } from '@frameleaf/ui';
   import {
     mdiClockOutline,
     mdiClose,
@@ -1043,10 +1044,11 @@
 
     isShowingConfirmDialog = true;
 
-    const confirmed = await modalManager.show(ConfirmModal, {
+    const confirmed = await confirmFrameleaf({
       title: $t('editor_discard_edits_title'),
       prompt: $t('editor_discard_edits_prompt'),
       confirmText: $t('editor_discard_edits_confirm'),
+      danger: true,
     });
 
     isShowingConfirmDialog = false;
