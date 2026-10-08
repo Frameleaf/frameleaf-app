@@ -177,7 +177,11 @@ describe('QuickEditor', () => {
         {
           id: photo.id,
           assetDevelopPreviewDto: {
-            recipe: expect.objectContaining({ version: 4, hdr: expect.objectContaining({ intent: 'preserve' }) }),
+            recipe: expect.objectContaining({
+              version: 6,
+              renderer: 'frameleaf-develop-hdr/4',
+              hdr: expect.objectContaining({ intent: 'preserve', version: 4 }),
+            }),
             size: 1280,
             dynamicRange: 'auto',
           },
