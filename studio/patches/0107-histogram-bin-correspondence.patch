@@ -1,0 +1,58 @@
+diff --git a/src/infrastructure/gpu-scopes/histogram-scope.ts b/src/infrastructure/gpu-scopes/histogram-scope.ts
+--- a/src/infrastructure/gpu-scopes/histogram-scope.ts
++++ b/src/infrastructure/gpu-scopes/histogram-scope.ts
+@@ -46,7 +46,7 @@
+   let b = min(u32(bn * 255.0), 255u);
+   let kg = 1.0 - params.kr - params.kb;
+   let luma = normRange(params.kr * pixel.r + kg * pixel.g + params.kb * pixel.b, params.rangeMin, params.rangeMax);
+-  let l = min(u32(luma * 255.0), 255u);
++  let l = min(u32(floor(luma * 255.0 + 0.5)), 255u);
+   atomicAdd(&histR[r], 1u);
+   atomicAdd(&histG[g], 1u);
+   atomicAdd(&histB[b], 1u);
+diff --git a/src/infrastructure/gpu-scopes/histogram-scope.test.ts b/src/infrastructure/gpu-scopes/histogram-scope.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-scopes/histogram-scope.test.ts
+@@ -0,0 +1,41 @@
++import source from './histogram-scope.ts?raw'
++import { describe, expect, it } from 'vite-plus/test'
++import { BT709_COEFFICIENTS, histogramBins } from '@/features/preview/utils/scope-math'
++
++// Source-expression control only: real GPU bin correspondence is checked by browser readback.
++const expression = source.match(/let l = (.+);/)![1]!.replaceAll('255u', '255')
++const evaluate = new Function('luma', 'u32', 'floor', 'min', `return ${expression}`) as (
++  luma: number, u32: typeof Math.floor, floor: typeof Math.floor, min: typeof Math.min,
++) => number
++const bin = (luma: number) => evaluate(luma, Math.floor, Math.floor, Math.min)
++
++const bars = [
++  [255, 0, 0], [255, 0, 255], [0, 0, 255],
++  [0, 255, 255], [0, 255, 0], [255, 255, 0],
++  [191, 0, 0], [191, 0, 191], [0, 0, 191],
++  [0, 191, 191], [0, 191, 0], [191, 191, 0],
++] as const
++
++describe('histogram luma bin correspondence', () => {
++  it('the shader expression and CPU fallback match independent rational BT.709 nearest bins', () => {
++    for (const [r, g, b] of bars) {
++      const numerator = 2126 * r + 7152 * g + 722 * b
++      const expected = Math.floor((numerator + 5000) / 10000)
++      const cpu = histogramBins({ width: 1, height: 1, data: new Uint8ClampedArray([r, g, b, 255]) }, BT709_COEFFICIENTS)
++      expect(bin(numerator / (10000 * 255))).toBe(expected)
++      expect([...cpu.counts.entries()].filter(([, count]) => count > 0)).toEqual([[expected, 1]])
++    }
++  })
++
++  it('uses upward half ties and preserves the black/white endpoints', () => {
++    expect(bin(0)).toBe(0)
++    expect(bin(1)).toBe(255)
++    expect(bin(72.5 / 255)).toBe(73)
++  })
++
++  it('rejects the former truncation for saturated magenta', () => {
++    const scaledLuma = (2126 * 255 + 722 * 255) / 10000
++    expect(Math.floor(scaledLuma)).toBe(72)
++    expect(bin(scaledLuma / 255)).toBe(73)
++  })
++})
