@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { probeBaseRaster, validateBaseRaster } from './geometry-raster-calibration.mjs';
 import { probeGeometryCoordinates, validateGeometryCalibration } from './geometry-device-calibration.mjs';
 import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
+import { COMPOSITION_SOURCES, compositionInputSha, observeGeometryComposition, geometryCompositionReference } from './geometry-composition-reference.mjs';
 import { testedSource } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
@@ -17,6 +18,8 @@ const envelopes=JSON.parse(envelopeBytes);
 const quadText=await readFile(new URL('../engine/src/infrastructure/gpu-shared/fullscreen-quad.ts',import.meta.url),'utf8');
 const quad=quadText.slice(quadText.indexOf('`',quadText.indexOf('export const FULLSCREEN_QUAD_WGSL'))+1,quadText.lastIndexOf('`'));
 const quadSha256=createHash('sha256').update(quadText).digest('hex');
+const sourceHashes=Object.fromEntries(await Promise.all(Object.keys(COMPOSITION_SOURCES).map(async path=>[path,createHash('sha256').update(await readFile(new URL('../engine/'+path,import.meta.url))).digest('hex')])));
+assert.deepEqual(sourceHashes,COMPOSITION_SOURCES);
 const W = 8, H = 6;
 const input = Array.from({ length: W * H }, (_, i) => {
   const x = i % W, y = Math.floor(i / W), alpha = [0,.25,.5,1][(x+y)%4];
@@ -35,13 +38,21 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
 </script>` }));
   await page.goto(origin + '/hdr-geometry');
   await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__);
-  const report = await page.evaluate(async ({ W, H, input, cases, probeSource, baseProbeSource, baseValidateSource, quad, envelopes, binding }) => {
+  const report = await page.evaluate(async ({ W, H, input, cases, probeSource, baseProbeSource, baseValidateSource, observerSource, quad, envelopes, binding }) => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/index.ts');
     const { createCompositionRenderer } = await import('/src/features/export/utils/client-render-engine.ts');
+    const {MediaRenderPipeline}=await import('/src/infrastructure/gpu-media/media-render-pipeline.ts');
+    const {CompositorPipeline}=await import('/src/infrastructure/gpu-compositor/compositor-pipeline.ts');
+    const {ColorOutputPipeline}=await import('/src/infrastructure/gpu-color/color-output-pipeline.ts');
+    const {HdrRasterSources}=await import('/src/features/export/utils/hdr-raster-sources.ts');
+    const cachedDevice=await EffectsPipeline.requestCachedDevice();
+    if(!cachedDevice)throw Error('WebGPU unavailable');
+    const observer=(0,eval)('('+observerSource+')')(cachedDevice,{EffectsPipeline,MediaRenderPipeline,CompositorPipeline,ColorOutputPipeline,HdrRasterSources});
     const pipeline = await EffectsPipeline.create();
     if (!pipeline) throw new Error('WebGPU unavailable');
     pipeline.setWorkingRange('hdr');
     const device = pipeline.getDevice();
+    if(device!==cachedDevice)throw Error('COMPOSITION_DEVICE_CHANGED');
     const rasterCapture=await (0,eval)('('+baseProbeSource+')')(device,W,H,quad);
     const raster=(0,eval)('('+baseValidateSource+')')(rasterCapture,envelopes,binding);
     const probe = (0,eval)('(' + probeSource + ')');
@@ -101,6 +112,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
           colorManagement: { workingRange: 'hdr', referenceWhiteNits: 203, masteringPeakNits: 1000, sdrMonitoring: 'none' },
           tracks: [{ id: 'track', name: 'Photo', order: 0, visible: true, muted: false, solo: false, locked: false, height: 60, items: [image] }],
           keyframes: [], transitions: [] };
+        observer.begin();
         const canvas = new OffscreenCanvas(W, H);
         const renderer = await createCompositionRenderer(composition, canvas, canvas.getContext('2d'), {
           mode: 'export', hdrRasters: { image: { width: W, height: H, transfer: 'linear', rgba: new Float32Array(input), gamut: 0, referenceWhite: 203 } },
@@ -110,16 +122,18 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
           const frame = await renderer.renderFrameSignal(0, 'pq');
           if (await EffectsPipeline.requestCachedDevice() !== device) throw Error('COMPOSITION_CALIBRATION_DEVICE_CHANGED');
           const pixels = Array.from(frame.rgba);
+          const audit=observer.end();observer.begin();
           const repeated = await renderer.renderFrameSignal(0, 'pq');
           if (JSON.stringify(pixels) !== JSON.stringify(Array.from(repeated.rgba))) throw new Error('Repeated seek changed geometry export');
-          compositions.push({ ...entry, width: frame.width, height: frame.height, pixels, repeatedSeek: true });
+          const repeatedAudit=observer.end();
+          compositions.push({ ...entry, width: frame.width, height: frame.height, pixels, declaration:composition, audit, repeatedAudit, repeatedSeek: true });
         } finally { renderer.dispose(); }
       }
       return { adapter: device.adapterInfo, rasterCapture, raster, calibration, rows, compositions, halfCoverage, compositionUsesCalibratedDevice:true };
     } finally {
-      original.destroy(); output.destroy(); buffer.destroy(); pipeline.destroy();
+      original.destroy(); output.destroy(); buffer.destroy(); pipeline.destroy(); observer.dispose();
     }
-  }, { W, H, input, cases, probeSource:probeGeometryCoordinates.toString(),baseProbeSource:probeBaseRaster.toString(),baseValidateSource:validateBaseRaster.toString(),quad,envelopes,binding:{quadSha256,browser:browser.version(),sourceSha256:source.sourceSha256,backendArgs:chromeLaunchArgs()} });
+  }, { W, H, input, cases, probeSource:probeGeometryCoordinates.toString(),baseProbeSource:probeBaseRaster.toString(),baseValidateSource:validateBaseRaster.toString(),observerSource:observeGeometryComposition.toString(),quad,envelopes,binding:{quadSha256,browser:browser.version(),sourceSha256:source.sourceSha256,backendArgs:chromeLaunchArgs()} });
   if (process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT + '.raw.json', JSON.stringify({source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), qualification:'pending assertions'},null,2));
   try {
   const validated = report.calibration.map((row,i) => validateGeometryCalibration(row,W,H,cases[i],i,report.raster));
@@ -165,14 +179,26 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     return ((3424 / 4096 + (2413 / 4096) * 32 * light) / (1 + (2392 / 4096) * 32 * light)) ** ((2523 / 4096) * 128);
   };
   const bt2020 = [[.627404, .329282, .043314], [.069097, .91954, .011361], [.016392, .088013, .895595]];
+  report.compositionNegativeControls=[];
   assert.equal(report.compositions.length, cases.length);
   for (const [index,row] of report.compositions.entries()) {
     assert.deepEqual({type:row.type,params:row.params},cases[index],'composition/calibration case binding');
     assert.equal(row.pixels.length,input.length);
     assert.deepEqual([row.width, row.height], [W, H]);
-    const filtered = geometryReference(input, W, H, row.type, row.params, validated[index].coordinates);
+    const contract={inputSha256:compositionInputSha(input),sourceHashes,entry:cases[index],binding:{quadSha256,browser:browser.version(),sourceSha256:source.sourceSha256,backendArgs:chromeLaunchArgs()},caseIndex:index,declaration:row.declaration,audit:row.audit};
+    const full=geometryCompositionReference(input,W,H,cases[index],report.rasterCapture,report.calibration[index],contract);
+    geometryCompositionReference(input,W,H,cases[index],report.rasterCapture,report.calibration[index],{...contract,audit:row.repeatedAudit});
+    row.fullPathPolicy=full.arithmeticPolicy;
+    for(const [name,mutate]of [
+      ['omitted-media',c=>c.audit.operations.splice(1,1)],['omitted-compositor',c=>c.audit.operations.splice(3,1)],
+      ['stage-order',c=>c.audit.operations.reverse()],['swapped-source-output',c=>{const o=c.audit.operations[1];[o.input,o.output]=[o.output,o.input];}],
+      ['authored-params',c=>{c.entry.params={};}],['source-hash',c=>c.sourceHashes[Object.keys(COMPOSITION_SOURCES)[0]]='0'.repeat(64)],
+      ['raster-state',c=>c.audit.draws[0].pipeline.alphaToCoverageEnabled=true],['input-checksum',c=>c.inputSha256='0'.repeat(64)],
+    ]) { const forged=structuredClone(contract);mutate(forged);assert.throws(()=>geometryCompositionReference(input,W,H,cases[index],report.rasterCapture,report.calibration[index],forged));report.compositionNegativeControls.push({index,control:name,refused:true}); }
+
+    const filtered=full.composite;
     for (let i = 0; i < W * H; ++i) {
-      const rgb = filtered.slice(i * 4, i * 4 + 3).map(v => v * filtered[i * 4 + 3]);
+      const rgb = filtered.slice(i * 4, i * 4 + 3);
       for (let c = 0; c < 3; ++c) {
         const expected = pq(bt2020[c].reduce((sum, value, at) => sum + value * rgb[at] * 203, 0));
         assert(Math.abs(row.pixels[i * 4 + c] - expected) < .004, `${row.type} full export pixel ${i} channel ${c}`);
@@ -185,7 +211,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
   assert.deepEqual(report.halfCoverage.pixels,tinyExpected,'binary16 coverage boundary must clear underflow RGB and preserve the minimum positive coverage');
   assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
   if (process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT,
-    JSON.stringify({ source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), oracle: 'independent admitted same-device f32 coordinate witness and premultiplied sampler; unchanged thresholds; linear BT.709, straight-alpha output, 203 nits reference white' }, null, 2));
+    JSON.stringify({ source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), oracle: 'independent admitted same-device raster and geometry witnesses; checksum/source/parameter-bound media premultiplied placement, geometry rounded coverage, straight compositor and PQ; unchanged thresholds; 203 nits reference white' }, null, 2));
   console.log(JSON.stringify({ check: 'HDR alpha-aware Twirl/Wave/Bulge', cases: report.rows.length, compositionExports: report.compositions.length, channels: report.rows.length * input.length }));
   } catch(error) {
     if(process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT+'.failed.json',JSON.stringify({source,...report,backendArgs:chromeLaunchArgs(),result:'failed',failure:{name:error.name,message:error.message}},null,2));
