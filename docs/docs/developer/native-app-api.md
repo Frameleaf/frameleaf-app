@@ -293,7 +293,7 @@ codec’s tone mapper. HDR output regenerates a gain map or writes ten-bit PQ HE
 Every still is sanitized again on the server and verified before publication.
 
 HDR documents admit brightness, contrast, exposure, saturation, temperature and tint,
-Gaussian blur, box blur, motion blur, and normal straight-alpha compositing in the linear BT.709
+grayscale, invert, sepia, Gaussian blur, box blur, motion blur, and normal straight-alpha compositing in the linear BT.709
 working domain (1.0 = 203 cd/m²). Spatial filters accumulate premultiplied light
 and coverage, then return straight alpha. Unreviewed effects, transitions and
 non-normal blends fail with `HdrRenderUnavailableError`; clients must retain
