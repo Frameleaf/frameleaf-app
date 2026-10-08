@@ -40,7 +40,7 @@ const setup = async () => {
       },
     },
   };
-  await metadata.set(SystemMetadataKey.SystemConfig, config);
+  await metadata.withConfigTransaction((bound) => bound.set(SystemMetadataKey.SystemConfig, config));
   const manifest = await index.createManifest({
     bucket: identity.bucketRef,
     key: identity.manifestKey,
@@ -149,26 +149,32 @@ describe('owner restore current publication authority (FL-234)', () => {
         break;
       }
       case 'disabled': {
-        await metadata.set(SystemMetadataKey.SystemConfig, {
-          frameleafCloud: { cloudBackup: { ...config.frameleafCloud.cloudBackup, enabled: false } },
-        });
+        await metadata.withConfigTransaction((bound) =>
+          bound.set(SystemMetadataKey.SystemConfig, {
+            frameleafCloud: { cloudBackup: { ...config.frameleafCloud.cloudBackup, enabled: false } },
+          }),
+        );
         break;
       }
       case 'changed-target': {
-        await metadata.set(SystemMetadataKey.SystemConfig, {
-          frameleafCloud: { cloudBackup: { ...config.frameleafCloud.cloudBackup, target: 'off' } },
-        });
+        await metadata.withConfigTransaction((bound) =>
+          bound.set(SystemMetadataKey.SystemConfig, {
+            frameleafCloud: { cloudBackup: { ...config.frameleafCloud.cloudBackup, target: 'off' } },
+          }),
+        );
         break;
       }
       case 'changed-bucket': {
-        await metadata.set(SystemMetadataKey.SystemConfig, {
-          frameleafCloud: {
-            cloudBackup: {
-              ...config.frameleafCloud.cloudBackup,
-              s3: { ...config.frameleafCloud.cloudBackup.s3, bucket: 'replacement' },
+        await metadata.withConfigTransaction((bound) =>
+          bound.set(SystemMetadataKey.SystemConfig, {
+            frameleafCloud: {
+              cloudBackup: {
+                ...config.frameleafCloud.cloudBackup,
+                s3: { ...config.frameleafCloud.cloudBackup.s3, bucket: 'replacement' },
+              },
             },
-          },
-        });
+          }),
+        );
         break;
       }
       case 'changed-key': {
@@ -218,7 +224,9 @@ describe('owner restore current publication authority (FL-234)', () => {
       await expect(
         database.transaction().execute(async (trx) => {
           await sql`SET LOCAL lock_timeout = '50ms'`.execute(trx);
-          await new SystemMetadataRepository(trx).set(SystemMetadataKey.SystemConfig, {});
+          await new SystemMetadataRepository(trx).withConfigTransaction((bound) =>
+            bound.set(SystemMetadataKey.SystemConfig, {}),
+          );
         }),
       ).rejects.toThrow(/lock timeout/);
       return 'published';

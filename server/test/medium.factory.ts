@@ -105,7 +105,7 @@ import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.servic
 import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
-import { getConfig, updateConfig } from 'src/utils/config.js';
+import { getConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
@@ -155,6 +155,9 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
 
   /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
   private setMockDefaults() {
+    if (this.options.mock.includes(SystemMetadataRepository)) {
+      this.getMock(SystemMetadataRepository).getEffectiveConfigEpoch.mockResolvedValue(null);
+    }
     if (this.options.mock.includes(MlDestinationRepository)) {
       const mlDestination = this.getMock(MlDestinationRepository);
       mlDestination.getRoute.mockImplementation((workload) =>
@@ -420,13 +423,13 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async updateConfig(config: SystemConfig) {
-    return updateConfig(
+    return withEffectiveConfigWrite(
       {
         configRepo: this.get(ConfigRepository),
         metadataRepo: this.get(SystemMetadataRepository),
         logger: this.get(LoggingRepository),
       },
-      config,
+      (repos) => updateConfig(repos, config),
     );
   }
 }

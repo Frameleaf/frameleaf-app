@@ -68,10 +68,12 @@ it('releases a restored prepared import once with a real admin and effective set
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'ddddeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
     process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION = original;
-    await metadata.set(SystemMetadataKey.SystemConfig, {
-      machineLearning: { enabled: false, urls: ['http://restored-local:3003'] },
-      trash: { days: 17 },
-    });
+    await metadata.withConfigTransaction((bound) =>
+      bound.set(SystemMetadataKey.SystemConfig, {
+        machineLearning: { enabled: false, urls: ['http://restored-local:3003'] },
+        trash: { days: 17 },
+      }),
+    );
     const settings = await setup.sut.getAdminConfigWithRevision();
     await sql`INSERT INTO frameleaf_immich_import(source_fingerprint,config_fingerprint,source_version,status)
       VALUES (${source},${fingerprint},'frozen-fixture','activated')`.execute(db);
@@ -117,13 +119,17 @@ it('releases a restored prepared import once with a real admin and effective set
     );
     const { user } = await setup.ctx.newUser({ isAdmin: true });
     // Matching identity alone is insufficient: actual restored configuration must validate.
-    await metadata.set(SystemMetadataKey.SystemConfig, { machineLearning: { enabled: 'invalid' } } as never);
+    await metadata.withConfigTransaction((bound) =>
+      bound.set(SystemMetadataKey.SystemConfig, { machineLearning: { enabled: 'invalid' } } as never),
+    );
     await make().begin();
     expect((await make().status()).regeneration?.reasons).toEqual(['settings_not_ready']);
-    await metadata.set(SystemMetadataKey.SystemConfig, {
-      machineLearning: { enabled: false, urls: ['http://restored-local:3003'] },
-      trash: { days: 17 },
-    });
+    await metadata.withConfigTransaction((bound) =>
+      bound.set(SystemMetadataKey.SystemConfig, {
+        machineLearning: { enabled: false, urls: ['http://restored-local:3003'] },
+        trash: { days: 17 },
+      }),
+    );
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
       db,
     );

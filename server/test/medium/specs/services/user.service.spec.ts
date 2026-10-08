@@ -387,11 +387,11 @@ describe(UserService.name, () => {
 
   describe.sequential('handleUserDeleteCheck', () => {
     beforeEach(async () => {
-      const { sut } = setup();
+      const { sut, ctx } = setup();
       // These tests specifically have to be sequential otherwise we hit race conditions with config changes applying in incorrect tests
       const config = await sut.getConfig({ withCache: false });
       config.user.deleteDelay = 7;
-      await sut.updateConfig(config);
+      await ctx.updateConfig(config);
     });
 
     it('should work when there are no deleted users', async () => {
@@ -427,7 +427,7 @@ describe(UserService.name, () => {
       jobMock.queueAll.mockResolvedValue(void 0);
       const config = await sut.getConfig({ withCache: false });
       config.user.deleteDelay = 30;
-      await sut.updateConfig(config);
+      await ctx.updateConfig(config);
       await expect(sut.handleUserDeleteCheck()).resolves.toEqual(JobStatus.Success);
       expect(jobMock.queueAll).toHaveBeenCalledExactlyOnceWith([]);
     });
