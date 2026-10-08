@@ -251,7 +251,14 @@ type ResolvedManifest =
 
 const artifactInputDigestOf = (operation: MediaOperation, manifest: StudioAuthorizedManifest): string => {
   const sources = manifest.entries
-    .map(({ key, id, checksum }) => ({ key, id, checksum }))
+    .map(({ key, kind, id, ownerId, sourceAccess, checksum }) => ({
+      key,
+      kind,
+      id,
+      ownerId: ownerId ?? null,
+      sourceAccess,
+      checksum,
+    }))
     // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const mastering = asObject(asObject(asObject(operation.snapshot).contract).video).mastering;
@@ -828,12 +835,13 @@ export class RenderWorkerService {
                   graph: resolved.graph,
                   // Public closure identity only. Credentials, owners and host paths stay server-side.
                   resources: resolved.studio.entries.map(
-                    ({ key, kind, id, family, source, graphPath, checksum, grant }) => ({
+                    ({ key, kind, id, family, source, sourceAccess, graphPath, checksum, grant }) => ({
                       key,
                       kind,
                       id,
                       family,
                       source,
+                      sourceAccess,
                       graphPath,
                       checksum,
                       grant,

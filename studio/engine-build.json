@@ -419,7 +419,12 @@
       "path": "patches/0087-preview-track-gain.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "51cf183c97dc3dde68257df4cab21976d9d2527c090a9895a37279219925e8c0"
+    },
+    {
+      "path": "patches/0088-source-monitor-linked-partitions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a3825c6f063230e0403d3e91f6d83302ee6729adc5fc229e048b291920c28a73"
     }
   ],
-  "sourceSha256": "6547c4e703e1c6c747f4e49dbf55a1fd313c26a9203eb5b70af8e47b01ef046f"
+  "sourceSha256": "a9778e71a22f0969c6a5271bdd49ef693cd78772524a5b99e800d8e38a6e186a"
 }

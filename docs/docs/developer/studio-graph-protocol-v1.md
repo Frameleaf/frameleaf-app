@@ -499,7 +499,7 @@ Two kinds of native rule appear. **Refuse** means the engine accepts an edit who
 | The surviving tail of a clip whose head a ripple or an overwrite removes has a new id (12.2.3, 12.5.4).                                                       | Reproduce the ids. Do not assume an id names the same footage after such an edit.                                  |
 | `clip.overwrite` removes every caption attached to a clip when the part that keeps the clip's id is covered (12.5.4).                                         | Reproduce.                                                                                                         |
 | `clip.overwrite` clamps in and out points to the extent the timeline has in the middle of the edit (12.5.4).                                                  | Clamp after the covered parts are removed, then again at the end.                                                  |
-| `clip.insert` cuts a linked clip on a locked track with its group and then leaves it behind (12.5.3).                                                         | Do not insert across a linked group that has a clip on a locked track. Reproduce.                                  |
+| `clip.insert` refuses when a linked member it would cut or move is locked (12.5.3).                                                                          | Refuse atomically; do not cut or move the unlocked member alone.                                  |
 | `clip.setSpeed` stores a speed derived from the rounded length in floating point, not the payload's rate (12.4.5).                                            | Compute it in doubles in the stated order.                                                                         |
 | `clip.setSpeed` ripples its own tracks and linked clips but not sync-locked tracks, and does not lock-check what it pushes (12.4.5).                          | Reproduce.                                                                                                         |
 | `clip.add` places a video whose rate has no exact reading (12.3.1).                                                                                           | Do not place such media.                                                                                           |
@@ -1080,7 +1080,7 @@ Places a marked range of library media at a time and pushes everything from ther
 
 and for `clip.insert` only:
 
-9. A clip that spans `at` on a destination track has a linked group that does not wholly span `at`: `failed`.
+9. A clip that spans `at` on a destination track has a linked group whose members do not have the same `from` and `durationInFrames`, or a linked member that would be cut or moved is locked: `failed`. Validate every affected original group before cutting or moving any member.
 10. Later clips could not make room, any two clips anywhere on the timeline now share a frame, or a placed clip did not land at `at`: `failed`.
 
 **The placed clips** (shared with `clip.overwrite`). The fields are those of `clip.add` (12.3.1), except:
@@ -1098,8 +1098,8 @@ and for `clip.insert` only:
 
 **Consequences**
 
-- **Linked:** a linked group is cut together (refusal 9). Linked clips follow their clip: by sync lock on a sync-enabled track, by step 2 on a track without sync lock (`clip.insert/companion-follows-without-sync-lock`). A linked clip on a locked track stays behind.
-- **Locks:** refusals 3 and 8. A locked track elsewhere is not rippled and does not refuse the edit (`clip.insert/locked-track-elsewhere-is-not-rippled`). Step 1 is not checked: a linked clip on a locked track is cut with its group and then left behind (`clip.insert/cuts-linked-clip-on-locked-track`).
+- **Linked:** an aligned linked group is cut together (refusal 9). Linked clips follow their clip: by sync lock on a sync-enabled track, by step 2 on a track without sync lock (`clip.insert/companion-follows-without-sync-lock`). A locked affected companion refuses the complete edit before any cut or move.
+- **Locks:** refusals 3, 8 and 9. A locked track elsewhere is not rippled and does not refuse the edit (`clip.insert/locked-track-elsewhere-is-not-rippled`). A locked affected companion refuses, including the historical `clip.insert/cuts-linked-clip-on-locked-track` refusal fixture.
 - **Sync lock:** step 3 (`clip.insert/sync-locked-track-opens-gap`, `clip.insert/sync-lock-off`).
 - **Overlap:** refusal 10.
 - **Transitions:** the clips step 2 moved and the clips sync lock cut or moved in step 3 are changed, then the placed clips. The left halves of step 1's cuts are not changed. A transition at a cut that the insert opens is removed (`clip.insert/breaks-transition`).
@@ -1112,23 +1112,23 @@ Places a marked range of library media at a time, replacing whatever it covers. 
 
 9. A covered clip could not be cut, or two clips on a destination track still share a frame: `failed`.
 
-**Effect.** The placed clips cover `[at, at + length)` on each destination track. On each destination track, video track first, for each clip that shares a frame with that range, in `timeline.items` order:
+**Effect.** The placed clips cover `[at, at + length)` on the destination tracks. Before mutation, examine every original linked group with a destination member that shares a frame with this interval, including a member wholly covered by it. Every linked member must be on an unlocked destination track and have the same `from` and `durationInFrames`. Otherwise refuse as `failed`; no track, clip, transition or history state is published. Unrelated locked tracks do not refuse. A clip touching only a boundary is unaffected.
 
-1. If the clip starts before the range, it is split at the range's start. The right part is the covered part.
-2. If the covered part ends after the range, it is split at the range's end. The left part is the covered part.
-3. The covered part is removed, with linked selection **off**: its linked clips on other tracks stay as they are.
+1. Split groups crossing the start boundary, per original group in `timeline.items` anchor order. Apply the split bookkeeping of 12.2.5 separately to each group.
+2. Split groups crossing the end boundary in the resulting `timeline.items` anchor order, again with bookkeeping per group.
+3. Remove all destination parts wholly inside the interval with linked selection **off**, then append the placed clips. Repair transitions after removal and placement.
 
-These splits are plain, without the bookkeeping of 12.2.5: both halves keep the clip's `linkedGroupId`, no linked group is re-made, and transitions are not remapped, so every transition of the clip stays with the half that keeps its id (`clip.overwrite/transition-stays-with-the-id`). Then the placed clips are appended.
+Each surviving temporal segment has an independent linked group: head, replacement and tail are separate aligned audio/video pairs. Incoming transitions stay with the left split segment; outgoing transitions remap to the right segment. Do not combine unrelated original groups into one bookkeeping call. The historical `clip.overwrite/transition-stays-with-the-id` fixture now records outgoing remapping.
 
 **Consequences**
 
-- **Linked:** linked clips on tracks the edit does not write to are left alone and stay linked to what survives (`clip.overwrite/leaves-linked-clips-on-other-tracks`). Attached captions follow the clip's **id**: when the part that keeps the id is removed, every caption attached to the clip is removed, even one that lies over a surviving part (`clip.overwrite/attached-captions`).
+- **Linked:** partial linked edits refuse before mutation, including fully covered members whose companions are on an unwritten destination (`clip.overwrite/leaves-linked-clips-on-other-tracks` is now a refusal fixture). Attached captions follow the clip's **id**: when the part that keeps the id is removed, every caption attached to the clip is removed, even one that lies over a surviving part (`clip.overwrite/attached-captions`).
 - **Locks:** refusals 3 and 8.
 - **Sync lock:** none. Nothing ripples.
 - **Overlap:** refusal 9. The command exists to replace what overlaps.
 - **Transitions:** transitions of removed parts are removed. Every clip on a destination track is changed, then the placed clips.
 
-**Draws:** the placed clips' draws as in `clip.insert`, then one id per split, in the order above. A split whose new half is the covered part draws an id that is not kept.
+**Draws:** the placed clips' draws as in `clip.insert`; then all start-boundary groups followed by all end-boundary groups, in the anchor order above. Within each group draw one right-half id per member, followed by the left/right linked-group ids of 12.2.5. Covered parts and their group ids may consume draws that do not survive removal. No draws from refused batches are published.
 
 **Implementation-defined.** Removing the covered part of the timeline's last clip shortens the timeline before the new clip lengthens it again, and in and out points are clamped in between (12.2.7). They can end up clamped to an extent the timeline no longer has (`clip.overwrite/clamps-in-out-points-mid-edit`). **Native rule:** clamp the points to the extent after step 3 and before the placed clips are appended, then again to the final extent.
 

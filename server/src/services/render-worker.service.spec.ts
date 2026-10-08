@@ -741,6 +741,50 @@ describe(RenderWorkerService.name, () => {
         expect(digests[0]).not.toBe(digests[1]);
       });
 
+      it('binds server-resolved owner and classification with canonical nullable owner and order', async () => {
+        const digests: string[] = [];
+        const initial = studioManifestStub();
+        for (const change of ['original', 'reordered', 'owner', 'classification', 'null', 'undefined']) {
+          const manifest = structuredClone(initial);
+          switch (change) {
+            case 'reordered': {
+              manifest.entries.reverse();
+              break;
+            }
+            case 'owner': {
+              manifest.entries[0].ownerId = 'different-owner';
+              break;
+            }
+            case 'classification': {
+              manifest.entries[0].sourceAccess = 'deployment';
+              break;
+            }
+            case 'null': {
+              manifest.entries[0].ownerId = null as never;
+              break;
+            }
+            case 'undefined': {
+              manifest.entries[0].ownerId = undefined as never;
+              break;
+            }
+          }
+          studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+          vi.mocked(workers.peekQueued)
+            .mockReset()
+            .mockResolvedValueOnce([studioOp] as never)
+            .mockResolvedValue([]);
+          const claim = await sut.claim(SESSION_A, {} as never);
+          expect(claim).toBeDefined();
+          digests.push(claim!.artifactInputDigest!);
+        }
+        expect(digests[0]).toMatch(/^[a-f0-9]{64}$/);
+        expect(digests[0]).toBe(digests[1]);
+        expect(digests[2]).not.toBe(digests[0]);
+        expect(digests[3]).not.toBe(digests[0]);
+        expect(digests[4]).toBe(digests[5]);
+        expect(digests[4]).not.toBe(digests[0]);
+      });
+
       it('treats a resolver precondition failure (cloud without consent) as an incomplete manifest', async () => {
         studioResources.resolveProjectResources.mockRejectedValue(
           new Error('A cloud destination requires explicit consent'),
@@ -812,21 +856,24 @@ describe(RenderWorkerService.name, () => {
           expect(storedOp.snapshot.studio).not.toHaveProperty('graph');
           const resources = (claim?.snapshot.studio as Record<string, unknown>).resources;
           expect(resources).toEqual(
-            studioManifestStub().entries.map(({ key, kind, id, family, source, graphPath, checksum, grant }) => ({
-              key,
-              kind,
-              id,
-              family,
-              source,
-              graphPath,
-              checksum,
-              grant,
-            })),
+            studioManifestStub().entries.map(
+              ({ key, kind, id, family, source, sourceAccess, graphPath, checksum, grant }) => ({
+                key,
+                kind,
+                id,
+                family,
+                source,
+                sourceAccess,
+                graphPath,
+                checksum,
+                grant,
+              }),
+            ),
           );
           for (const entry of resources as Array<Record<string, unknown>>) {
             expect(entry).not.toHaveProperty('path');
             expect(entry).not.toHaveProperty('ownerId');
-            expect(entry).not.toHaveProperty('sourceAccess');
+            expect(entry).toHaveProperty('sourceAccess');
           }
           expect(storedOp.snapshot.studio).not.toHaveProperty('resources');
 
@@ -1349,7 +1396,14 @@ describe(RenderWorkerService.name, () => {
       vi.mocked(workers.getClaimed).mockResolvedValue(exportJob as never);
       studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
       const sources = studioManifestStub()
-        .entries.map(({ key, id, checksum }) => ({ key, id, checksum }))
+        .entries.map(({ key, kind, id, ownerId, sourceAccess, checksum }) => ({
+          key,
+          kind,
+          id,
+          ownerId: ownerId ?? null,
+          sourceAccess,
+          checksum,
+        }))
         // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
         .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
       const digest = createHash('sha256')
@@ -1369,6 +1423,19 @@ describe(RenderWorkerService.name, () => {
           endTicks: '300',
         }) as never;
 
+      const legacySources = studioManifestStub()
+        .entries.map(({ key, id, checksum }) => ({ key, id, checksum }))
+        // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Historical digest order must not depend on locale.
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      const legacyDigest = createHash('sha256')
+        .update(JSON.stringify({ revisionId: exportJob.revisionId, sources: legacySources }))
+        .digest('hex');
+      await expect(
+        sut.planCheckpoint(SESSION_A, claimedByA.id, {
+          ...(plan('1001/30000') as Record<string, unknown>),
+          inputDigest: legacyDigest,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan('1/1000'))).rejects.toBeInstanceOf(
         BadRequestException,
       );
@@ -1950,7 +2017,14 @@ describe(RenderWorkerService.name, () => {
       studioExports.stagingFolder.mockReturnValue(folder);
       studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
       const sources = studioManifestStub()
-        .entries.map(({ key, id, checksum }) => ({ key, id, checksum }))
+        .entries.map(({ key, kind, id, ownerId, sourceAccess, checksum }) => ({
+          key,
+          kind,
+          id,
+          ownerId: ownerId ?? null,
+          sourceAccess,
+          checksum,
+        }))
         // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
         .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
       const inputDigest = createHash('sha256')

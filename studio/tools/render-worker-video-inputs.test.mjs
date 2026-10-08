@@ -49,6 +49,7 @@ function fixture() {
     operationId: randomUUID(),
     claimToken: randomUUID(),
     revisionId: "bound-video",
+    artifactInputDigest: "a".repeat(64),
     snapshot: {
       studio: {
         graph: {

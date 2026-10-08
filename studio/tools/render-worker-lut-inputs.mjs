@@ -17,6 +17,11 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
     prepared.operationId && prepared.claimToken && prepared.revisionId,
     "CLAIM_BINDING_REQUIRED",
   );
+  assert.ok(
+    typeof prepared.artifactInputDigest === "string" &&
+      /^[a-f0-9]{64}$/.test(prepared.artifactInputDigest),
+    "INPUT_DIGEST_REQUIRED",
+  );
   const original = prepared.snapshot.studio.graph;
   const serialized = JSON.stringify(original);
   assert.ok(
@@ -189,7 +194,6 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
     resources.push({
       key,
       id: entry.id,
-      ownerId: entry.ownerId,
       sourceAccess: entry.sourceAccess,
       checksum: entry.checksum,
       source: uses[0].source,
@@ -215,6 +219,7 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
       operationId: prepared.operationId,
       claimToken: prepared.claimToken,
       revisionId: prepared.revisionId,
+      artifactInputDigest: prepared.artifactInputDigest,
       originalSha256: sha(serialized),
       executionSha256: sha(execution),
       resources,

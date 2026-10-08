@@ -39404,7 +39404,7 @@
         "status": "rejected",
         "index": 1,
         "reason": "failed",
-        "detail": "clip.insert: linked clips of \"bb9df995-6ea6-4812-80b8-694930c9b606\" are not all cut at that time"
+        "detail": "clip.insert: linked clips must share the cut partition"
       }
     },
     {
@@ -39759,256 +39759,10 @@
         }
       ],
       "expect": {
-        "status": "applied",
-        "digest": "565c12df92e690e320f80e96717e0950d9e7c95e9f2ae8f121b637dec62a3694",
-        "envelopeDigest": "3083ebbec2231d2aa5a0042428210aa16edc7618c8328cb95ad3032885b4c8ab",
-        "fixedPoint": true,
-        "clockIndependent": true,
-        "draws": [
-          [
-            {
-              "draw": 0,
-              "id": "6a692e8a-094f-434c-b5a1-70f0e0dfdcda",
-              "at": [
-                "timeline.tracks[2].id"
-              ]
-            }
-          ],
-          [],
-          [
-            {
-              "draw": 0,
-              "id": "0fa550af-549c-4945-a2b3-a4ac901276f1",
-              "at": [
-                "timeline.items[4].originId"
-              ]
-            },
-            {
-              "draw": 1,
-              "id": "c26cc734-5a44-4073-b518-0b94b20afb7e",
-              "at": [
-                "timeline.items[4].id"
-              ]
-            },
-            {
-              "draw": 2,
-              "id": "47982dc5-bb09-4638-b22d-277c659c3ce1",
-              "at": [
-                "timeline.items[2].id"
-              ]
-            },
-            {
-              "draw": 3,
-              "id": "ce5f589d-6453-4602-97e5-fd2acde2d620",
-              "at": [
-                "timeline.items[3].id"
-              ]
-            },
-            {
-              "draw": 4,
-              "id": "3c2459ee-bf59-4c1f-be4a-604ef708242f",
-              "at": [
-                "timeline.items[0].linkedGroupId",
-                "timeline.items[1].linkedGroupId"
-              ]
-            },
-            {
-              "draw": 5,
-              "id": "2a1eab2d-eb3c-4534-a92e-cce0c26d6341",
-              "at": [
-                "timeline.items[2].linkedGroupId",
-                "timeline.items[3].linkedGroupId"
-              ]
-            }
-          ]
-        ],
-        "graph": {
-          "id": "fl-graph-protocol",
-          "name": "Graph protocol",
-          "description": "",
-          "createdAt": 0,
-          "updatedAt": 0,
-          "duration": 0,
-          "schemaVersion": 15,
-          "metadata": {
-            "width": 1920,
-            "height": 1080,
-            "fps": 30,
-            "frameRate": {
-              "num": 30,
-              "den": 1
-            }
-          },
-          "timeline": {
-            "tracks": [
-              {
-                "id": "v1",
-                "name": "V1",
-                "kind": "video",
-                "height": 100,
-                "locked": false,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 0,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              },
-              {
-                "id": "a1",
-                "name": "A1",
-                "kind": "audio",
-                "height": 100,
-                "locked": true,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 1,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              },
-              {
-                "id": "track-6a692e8a-094f-434c-b5a1-70f0e0dfdcda",
-                "name": "A2",
-                "kind": "audio",
-                "height": 100,
-                "locked": false,
-                "syncLock": true,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "volume": 0,
-                "order": 2,
-                "items": []
-              }
-            ],
-            "items": [
-              {
-                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
-                "trackId": "v1",
-                "from": 0,
-                "durationInFrames": 30,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
-                "linkedGroupId": "3c2459ee-bf59-4c1f-be4a-604ef708242f",
-                "sourceStart": 0,
-                "sourceEnd": 30,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
-                "trackId": "a1",
-                "from": 0,
-                "durationInFrames": 30,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
-                "linkedGroupId": "3c2459ee-bf59-4c1f-be4a-604ef708242f",
-                "sourceStart": 0,
-                "sourceEnd": 30,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              },
-              {
-                "id": "47982dc5-bb09-4638-b22d-277c659c3ce1",
-                "trackId": "v1",
-                "from": 60,
-                "durationInFrames": 90,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
-                "linkedGroupId": "2a1eab2d-eb3c-4534-a92e-cce0c26d6341",
-                "sourceStart": 30,
-                "sourceEnd": 120,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "ce5f589d-6453-4602-97e5-fd2acde2d620",
-                "trackId": "a1",
-                "from": 30,
-                "durationInFrames": 90,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
-                "linkedGroupId": "2a1eab2d-eb3c-4534-a92e-cce0c26d6341",
-                "sourceStart": 30,
-                "sourceEnd": 120,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              },
-              {
-                "id": "c26cc734-5a44-4073-b518-0b94b20afb7e",
-                "trackId": "v1",
-                "from": 30,
-                "durationInFrames": 30,
-                "label": "drone.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
-                "originId": "0fa550af-549c-4945-a2b3-a4ac901276f1",
-                "sourceStart": 0,
-                "sourceEnd": 30,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              }
-            ],
-            "masterBusDb": 0,
-            "masterBusMuted": false,
-            "currentFrame": 0,
-            "zoomLevel": 1,
-            "scrollPosition": 0
-          }
-        }
+        "status": "rejected",
+        "index": 2,
+        "reason": "failed",
+        "detail": "clip.insert: a clip it would change is on a locked track"
       }
     },
     {
@@ -40786,8 +40540,8 @@
       ],
       "expect": {
         "status": "applied",
-        "digest": "29bffa3087412732bce19531cc9a470befde297c7b53b673f5e37afeb771ea85",
-        "envelopeDigest": "9e780de5de4ed053a26f706db255aba1678e4f66de15d9a9afe51e75a0c63278",
+        "digest": "4c8f3b05daf349853c40f590519911ffac9a83532fc9a63df7b0124f562253fc",
+        "envelopeDigest": "feae19f5b19aba92a66d4131902a8ade4722e310dcc738fb22f859c5bb35c6ba",
         "fixedPoint": true,
         "clockIndependent": true,
         "draws": [
@@ -40830,20 +40584,46 @@
             {
               "draw": 5,
               "id": "cd55af28-9481-4311-aa8d-6316b03180f4",
+              "at": []
+            },
+            {
+              "draw": 6,
+              "id": "7100904e-3bd7-47c7-98c7-5f0b1496fc2d",
+              "at": [
+                "timeline.items[0].linkedGroupId",
+                "timeline.items[1].linkedGroupId"
+              ]
+            },
+            {
+              "draw": 7,
+              "id": "87436c22-fbdb-465c-9421-d3998c6dfe6c",
+              "at": []
+            },
+            {
+              "draw": 8,
+              "id": "8cc6ce34-58e5-475b-8287-caeb03cceb54",
               "at": [
                 "timeline.items[4].id"
               ]
             },
             {
-              "draw": 6,
-              "id": "7100904e-3bd7-47c7-98c7-5f0b1496fc2d",
+              "draw": 9,
+              "id": "6f18483a-0888-4bea-90c8-f150a9b05d82",
+              "at": [
+                "timeline.items[5].id"
+              ]
+            },
+            {
+              "draw": 10,
+              "id": "3068ed3e-9b42-45c2-a756-40f48fad13cf",
               "at": []
             },
             {
-              "draw": 7,
-              "id": "87436c22-fbdb-465c-9421-d3998c6dfe6c",
+              "draw": 11,
+              "id": "544f2fd0-436d-40f1-a4e9-210c7ea18b7f",
               "at": [
-                "timeline.items[5].id"
+                "timeline.items[4].linkedGroupId",
+                "timeline.items[5].linkedGroupId"
               ]
             }
           ]
@@ -40905,7 +40685,7 @@
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "932b0d96-6e8a-4bf6-9170-525ebe3b852a",
+                "linkedGroupId": "7100904e-3bd7-47c7-98c7-5f0b1496fc2d",
                 "sourceStart": 0,
                 "sourceEnd": 30,
                 "sourceDuration": 240,
@@ -40932,7 +40712,7 @@
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "932b0d96-6e8a-4bf6-9170-525ebe3b852a",
+                "linkedGroupId": "7100904e-3bd7-47c7-98c7-5f0b1496fc2d",
                 "sourceStart": 0,
                 "sourceEnd": 30,
                 "sourceDuration": 240,
@@ -40988,14 +40768,14 @@
                 "src": ""
               },
               {
-                "id": "cd55af28-9481-4311-aa8d-6316b03180f4",
+                "id": "8cc6ce34-58e5-475b-8287-caeb03cceb54",
                 "trackId": "v1",
                 "from": 90,
                 "durationInFrames": 30,
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "c584ddad-8d5a-4b33-b621-cd601f494e7a",
+                "linkedGroupId": "544f2fd0-436d-40f1-a4e9-210c7ea18b7f",
                 "sourceStart": 90,
                 "sourceEnd": 120,
                 "sourceDuration": 240,
@@ -41015,14 +40795,14 @@
                 }
               },
               {
-                "id": "87436c22-fbdb-465c-9421-d3998c6dfe6c",
+                "id": "6f18483a-0888-4bea-90c8-f150a9b05d82",
                 "trackId": "a1",
                 "from": 90,
                 "durationInFrames": 30,
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "c584ddad-8d5a-4b33-b621-cd601f494e7a",
+                "linkedGroupId": "544f2fd0-436d-40f1-a4e9-210c7ea18b7f",
                 "sourceStart": 90,
                 "sourceEnd": 120,
                 "sourceDuration": 240,
@@ -41120,259 +40900,10 @@
         }
       ],
       "expect": {
-        "status": "applied",
-        "digest": "cee020300539617e3c7d5c0d601cb906e5f6f503f1fe6369d68c1775462afea8",
-        "envelopeDigest": "f5be04f9a0deedd21303cf2e01927903b1e1ec745aa72053d88a8a98b8c1f6ac",
-        "fixedPoint": true,
-        "clockIndependent": true,
-        "draws": [
-          [
-            {
-              "draw": 0,
-              "id": "23fc7475-1c69-41c2-990f-8b732d5ad5b4",
-              "at": [
-                "timeline.items[6].originId"
-              ]
-            },
-            {
-              "draw": 1,
-              "id": "952aff59-9131-4f97-8377-4b70c0de4a77",
-              "at": [
-                "timeline.items[6].id"
-              ]
-            },
-            {
-              "draw": 2,
-              "id": "2c9c7079-1e28-462a-9f32-1885a248c0ed",
-              "at": []
-            },
-            {
-              "draw": 3,
-              "id": "6f54b316-d486-4f4f-b615-b25a15e60630",
-              "at": [
-                "timeline.items[5].id"
-              ]
-            }
-          ]
-        ],
-        "graph": {
-          "id": "fl-graph-protocol",
-          "name": "Graph protocol",
-          "description": "",
-          "createdAt": 0,
-          "updatedAt": 0,
-          "duration": 0,
-          "schemaVersion": 15,
-          "metadata": {
-            "width": 1920,
-            "height": 1080,
-            "fps": 30,
-            "frameRate": {
-              "num": 30,
-              "den": 1
-            }
-          },
-          "timeline": {
-            "tracks": [
-              {
-                "id": "v1",
-                "name": "V1",
-                "kind": "video",
-                "height": 100,
-                "locked": false,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 0,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              },
-              {
-                "id": "a1",
-                "name": "A1",
-                "kind": "audio",
-                "height": 100,
-                "locked": false,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 1,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              }
-            ],
-            "items": [
-              {
-                "id": "c823e933-aa0b-4d44-836b-93c765c61080",
-                "trackId": "v1",
-                "from": 0,
-                "durationInFrames": 30,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "932b0d96-6e8a-4bf6-9170-525ebe3b852a",
-                "sourceStart": 0,
-                "sourceEnd": 30,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "49d1b3b7-7afa-4b67-b4fd-40d129fcf8ce",
-                "trackId": "a1",
-                "from": 0,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "932b0d96-6e8a-4bf6-9170-525ebe3b852a",
-                "sourceStart": 0,
-                "sourceEnd": 60,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              },
-              {
-                "id": "a8ff1708-cc2d-4003-8c1a-03099682d1d9",
-                "trackId": "a1",
-                "from": 60,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "c584ddad-8d5a-4b33-b621-cd601f494e7a",
-                "sourceStart": 60,
-                "sourceEnd": 120,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              },
-              {
-                "id": "c51c30e4-5be4-4243-a459-b8889a9038a1",
-                "trackId": "v1",
-                "from": 120,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "f059fc15-98b1-430b-a777-0f5bef755dca",
-                "sourceStart": 120,
-                "sourceEnd": 180,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "72d17764-35d5-422c-ac99-b10f08bbbf88",
-                "trackId": "a1",
-                "from": 120,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "f059fc15-98b1-430b-a777-0f5bef755dca",
-                "sourceStart": 120,
-                "sourceEnd": 180,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              },
-              {
-                "id": "6f54b316-d486-4f4f-b615-b25a15e60630",
-                "trackId": "v1",
-                "from": 90,
-                "durationInFrames": 30,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "6d5767f2-492f-48cc-9053-9da9178c42d2",
-                "linkedGroupId": "c584ddad-8d5a-4b33-b621-cd601f494e7a",
-                "sourceStart": 90,
-                "sourceEnd": 120,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "952aff59-9131-4f97-8377-4b70c0de4a77",
-                "trackId": "v1",
-                "from": 30,
-                "durationInFrames": 60,
-                "label": "drone.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
-                "originId": "23fc7475-1c69-41c2-990f-8b732d5ad5b4",
-                "sourceStart": 0,
-                "sourceEnd": 60,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              }
-            ],
-            "masterBusDb": 0,
-            "masterBusMuted": false,
-            "currentFrame": 0,
-            "zoomLevel": 1,
-            "scrollPosition": 0
-          }
-        }
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "clip.overwrite: linked clips must share unlocked destination partitions"
       }
     },
     {
@@ -42216,8 +41747,8 @@
       ],
       "expect": {
         "status": "applied",
-        "digest": "9f7baf3164d9782a4b521db9e4634f2e41a38f3143acf3f3d9cc6d1e05902672",
-        "envelopeDigest": "ebb354df3fad8c943dfe40e0f505ee157442b2edd075932b473f4b01c634442a",
+        "digest": "a89a4aad7d937de6fa79479376a606ee61c72d166a10c3f42adb33009cc1b138",
+        "envelopeDigest": "829deb438b161847d66664a2b621ee66b2c4063269a8fbb6085b54226446c606",
         "fixedPoint": true,
         "clockIndependent": true,
         "draws": [
@@ -42240,7 +41771,8 @@
               "draw": 2,
               "id": "798c6710-a135-444e-98bc-dc7d6a793959",
               "at": [
-                "timeline.items[2].id"
+                "timeline.items[2].id",
+                "timeline.transitions[0].leftClipId"
               ]
             }
           ]
@@ -42403,7 +41935,20 @@
             "masterBusMuted": false,
             "currentFrame": 0,
             "zoomLevel": 1,
-            "scrollPosition": 0
+            "scrollPosition": 0,
+            "transitions": [
+              {
+                "id": "c038f076-86ee-4672-b704-fbee8e67d458",
+                "leftClipId": "798c6710-a135-444e-98bc-dc7d6a793959",
+                "rightClipId": "77214bf3-04a4-4d1a-87f5-85311acd634c",
+                "trackId": "v1",
+                "type": "crossfade",
+                "durationInFrames": 20,
+                "presentation": "dissolve",
+                "timing": "linear",
+                "alignment": 0.5
+              }
+            ]
           }
         }
       }
@@ -58363,8 +57908,8 @@
       ],
       "expect": {
         "status": "applied",
-        "digest": "fb24b2da87cc2d4e0f17d47f0e663b6c51a2e721c79ba624fb327fee97b3a422",
-        "envelopeDigest": "87155a32ae47cfa56eb146b58d42e3761e9b249b5df02a8bf3315a643f38b33c",
+        "digest": "8fda7308e68ddd80445771d5bb4d23c82e9659c31ddfcd8a86eed38e70796cc1",
+        "envelopeDigest": "78e791dace57b69dda3b69d8221643919f34b6b19e9841071bd9b413c6e84537",
         "fixedPoint": true,
         "clockIndependent": true,
         "draws": [
@@ -58407,20 +57952,46 @@
             {
               "draw": 5,
               "id": "b7bd2318-e52b-4301-a892-89545fbd5397",
+              "at": []
+            },
+            {
+              "draw": 6,
+              "id": "47a91a57-807c-4d24-9b67-2445705c36e0",
+              "at": [
+                "timeline.items[0].linkedGroupId",
+                "timeline.items[1].linkedGroupId"
+              ]
+            },
+            {
+              "draw": 7,
+              "id": "dd83eff1-68e9-488e-af48-973ab7ff8e09",
+              "at": []
+            },
+            {
+              "draw": 8,
+              "id": "309a1504-f564-41c5-b0ae-7a02a7f677c2",
               "at": [
                 "timeline.items[4].id"
               ]
             },
             {
-              "draw": 6,
-              "id": "47a91a57-807c-4d24-9b67-2445705c36e0",
+              "draw": 9,
+              "id": "8f5c9a92-2b3c-471b-8c6b-9acd8969b689",
+              "at": [
+                "timeline.items[5].id"
+              ]
+            },
+            {
+              "draw": 10,
+              "id": "c8df6479-57d8-4142-9a7f-f72c12fd6f95",
               "at": []
             },
             {
-              "draw": 7,
-              "id": "dd83eff1-68e9-488e-af48-973ab7ff8e09",
+              "draw": 11,
+              "id": "9d302053-431a-49b4-8445-a3198e3fd2a6",
               "at": [
-                "timeline.items[5].id"
+                "timeline.items[4].linkedGroupId",
+                "timeline.items[5].linkedGroupId"
               ]
             }
           ]
@@ -58496,7 +58067,7 @@
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "a3c82775-3fef-4adc-95b0-304e2f340151",
-                "linkedGroupId": "477915a0-79ea-4289-b8f7-126e1b6b5879",
+                "linkedGroupId": "47a91a57-807c-4d24-9b67-2445705c36e0",
                 "sourceStart": 0,
                 "sourceEnd": 15,
                 "sourceDuration": 240,
@@ -58523,7 +58094,7 @@
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "a3c82775-3fef-4adc-95b0-304e2f340151",
-                "linkedGroupId": "477915a0-79ea-4289-b8f7-126e1b6b5879",
+                "linkedGroupId": "47a91a57-807c-4d24-9b67-2445705c36e0",
                 "sourceStart": 0,
                 "sourceEnd": 15,
                 "sourceDuration": 240,
@@ -58586,14 +58157,14 @@
                 }
               },
               {
-                "id": "b7bd2318-e52b-4301-a892-89545fbd5397",
+                "id": "309a1504-f564-41c5-b0ae-7a02a7f677c2",
                 "trackId": "v1",
                 "from": 135,
                 "durationInFrames": 45,
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "a3c82775-3fef-4adc-95b0-304e2f340151",
-                "linkedGroupId": "b4ba3df7-b473-4aae-a7ae-1fc876dc6d7c",
+                "linkedGroupId": "9d302053-431a-49b4-8445-a3198e3fd2a6",
                 "sourceStart": 135,
                 "sourceEnd": 180,
                 "sourceDuration": 240,
@@ -58613,14 +58184,14 @@
                 }
               },
               {
-                "id": "dd83eff1-68e9-488e-af48-973ab7ff8e09",
+                "id": "8f5c9a92-2b3c-471b-8c6b-9acd8969b689",
                 "trackId": "a1",
                 "from": 135,
                 "durationInFrames": 45,
                 "label": "surf.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000001",
                 "originId": "a3c82775-3fef-4adc-95b0-304e2f340151",
-                "linkedGroupId": "b4ba3df7-b473-4aae-a7ae-1fc876dc6d7c",
+                "linkedGroupId": "9d302053-431a-49b4-8445-a3198e3fd2a6",
                 "sourceStart": 135,
                 "sourceEnd": 180,
                 "sourceDuration": 240,
@@ -62676,8 +62247,8 @@
       ],
       "expect": {
         "status": "applied",
-        "digest": "3a18fb0bcd14ddc1591348dfe1452c7e7067f9ba7ee9a2fd5479cab07d7f4084",
-        "envelopeDigest": "f5c16dc1fb9b22d8c05c6ae2e9cf54bf27abe84d6f9e15bd605ad57d6f0bbf02",
+        "digest": "6ee7a0e34f0356fb6fb5bda7f9b7f4a0f9c7ea82b7acfd8ce28619e271b6cc21",
+        "envelopeDigest": "c80c9a75cb92c5936d9b61f00356c01ead679e3189b082221ffd364043f786d6",
         "fixedPoint": true,
         "clockIndependent": true,
         "draws": [
@@ -62720,20 +62291,46 @@
             {
               "draw": 5,
               "id": "23782efc-e6b5-4830-9589-7e0d6afc4c38",
+              "at": []
+            },
+            {
+              "draw": 6,
+              "id": "6291bf27-653c-4b79-81eb-505d96c543bd",
+              "at": [
+                "timeline.items[0].linkedGroupId",
+                "timeline.items[1].linkedGroupId"
+              ]
+            },
+            {
+              "draw": 7,
+              "id": "1020c5f0-bcec-4611-b83f-7ae5aefcf91c",
+              "at": []
+            },
+            {
+              "draw": 8,
+              "id": "41e39eec-d77e-4249-b69b-59835b43862d",
               "at": [
                 "timeline.items[2].id"
               ]
             },
             {
-              "draw": 6,
-              "id": "6291bf27-653c-4b79-81eb-505d96c543bd",
+              "draw": 9,
+              "id": "1dc32447-4e7e-4ee1-95ad-9d51ab1d8c7b",
+              "at": [
+                "timeline.items[3].id"
+              ]
+            },
+            {
+              "draw": 10,
+              "id": "4266a3b7-474c-40c7-8430-6968e4a7f4e3",
               "at": []
             },
             {
-              "draw": 7,
-              "id": "1020c5f0-bcec-4611-b83f-7ae5aefcf91c",
+              "draw": 11,
+              "id": "d60256ec-f3a1-4604-85b9-fdef86ea73ab",
               "at": [
-                "timeline.items[3].id"
+                "timeline.items[2].linkedGroupId",
+                "timeline.items[3].linkedGroupId"
               ]
             }
           ]
@@ -62795,7 +62392,7 @@
                 "label": "interview.mov",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000003",
                 "originId": "b8f2f345-30cc-4eae-a973-f919db163898",
-                "linkedGroupId": "157404df-eb77-4b04-a006-60bc22cd3f9d",
+                "linkedGroupId": "6291bf27-653c-4b79-81eb-505d96c543bd",
                 "sourceStart": 0,
                 "sourceEnd": 45,
                 "sourceDuration": 300,
@@ -62822,7 +62419,7 @@
                 "label": "interview.mov",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000003",
                 "originId": "b8f2f345-30cc-4eae-a973-f919db163898",
-                "linkedGroupId": "157404df-eb77-4b04-a006-60bc22cd3f9d",
+                "linkedGroupId": "6291bf27-653c-4b79-81eb-505d96c543bd",
                 "sourceStart": 0,
                 "sourceEnd": 45,
                 "sourceDuration": 300,
@@ -62833,14 +62430,14 @@
                 "src": ""
               },
               {
-                "id": "23782efc-e6b5-4830-9589-7e0d6afc4c38",
+                "id": "41e39eec-d77e-4249-b69b-59835b43862d",
                 "trackId": "v1",
                 "from": 95,
                 "durationInFrames": 25,
                 "label": "interview.mov",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000003",
                 "originId": "b8f2f345-30cc-4eae-a973-f919db163898",
-                "linkedGroupId": "157404df-eb77-4b04-a006-60bc22cd3f9d",
+                "linkedGroupId": "d60256ec-f3a1-4604-85b9-fdef86ea73ab",
                 "sourceStart": 95,
                 "sourceEnd": 120,
                 "sourceDuration": 300,
@@ -62860,14 +62457,14 @@
                 }
               },
               {
-                "id": "1020c5f0-bcec-4611-b83f-7ae5aefcf91c",
+                "id": "1dc32447-4e7e-4ee1-95ad-9d51ab1d8c7b",
                 "trackId": "a1",
                 "from": 95,
                 "durationInFrames": 25,
                 "label": "interview.mov",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000003",
                 "originId": "b8f2f345-30cc-4eae-a973-f919db163898",
-                "linkedGroupId": "157404df-eb77-4b04-a006-60bc22cd3f9d",
+                "linkedGroupId": "d60256ec-f3a1-4604-85b9-fdef86ea73ab",
                 "sourceStart": 95,
                 "sourceEnd": 120,
                 "sourceDuration": 300,
