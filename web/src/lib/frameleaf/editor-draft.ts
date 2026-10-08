@@ -240,8 +240,8 @@ export function openingRecipe(
     recipe.version === 5
       ? { renderer: 'frameleaf-develop-hdr/3', version: 3, toneMapper: 'libultrahdr/2.0.2-frameleaf.3' }
       : recipe.version === 4
-      ? { renderer: 'frameleaf-develop-hdr/2', version: 2, toneMapper: 'libultrahdr/2.0.2-frameleaf.2' }
-      : { renderer: 'frameleaf-develop-hdr/1', version: 1, toneMapper: 'libultrahdr/2.0.2' };
+        ? { renderer: 'frameleaf-develop-hdr/2', version: 2, toneMapper: 'libultrahdr/2.0.2-frameleaf.2' }
+        : { renderer: 'frameleaf-develop-hdr/1', version: 1, toneMapper: 'libultrahdr/2.0.2' };
   const legacyPolicy =
     (wire.renderer === undefined || wire.renderer === previous.renderer) &&
     (policy.version === undefined || policy.version === previous.version) &&

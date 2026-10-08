@@ -215,17 +215,21 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       const entry = { id: definition.id, category: definition.category, cases: [] };
       if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
       if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
-      if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) entry.hdrAffine = {cases:[],invalid:[],uniformSize:definition.uniformSize,packedDefault:definition.packUniforms(getGpuEffectDefaultParams(definition.id))};
+      if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) {
+        const packedDefault = definition.packUniforms(getGpuEffectDefaultParams(definition.id));
+        // Classic WebDriver cannot serialize typed arrays across Firefox's boundary.
+        entry.hdrAffine = {cases:[],invalid:[],uniformSize:definition.uniformSize,packedDefault:packedDefault===null?null:Array.from(packedDefault)};
+      }
       const hdr = entry.hdr ?? entry.hdrSpatial ?? entry.hdrAffine;
       const hdrInput = entry.hdrAffine ? affineTexture : inputs.rgba16float;
       for (const { name, params } of cases(definition)) {
         const effect = [instance(definition.id, params)];
         // SDR project: Freecut's reference behaviour on both routes.
         pipeline.setWorkingRange('sdr');
-        const floatSdr = await render(inputs.rgba16float, effect);
-        const sdrFloat = await render(sdrFloatInput, effect);
-        const sdr = await render(inputs.rgba8unorm, effect);
-        const again = await render(sdrFloatInput, effect);
+        const [floatSdr, sdrFloat, sdr, again] = await Promise.all([
+          render(inputs.rgba16float, effect), render(sdrFloatInput, effect),
+          render(inputs.rgba8unorm, effect), render(sdrFloatInput, effect),
+        ]);
         entry.cases.push({ name, params, again, floatSdr, sdrFloat, sdr });
         if (hdr) {
           pipeline.setWorkingRange('hdr');
@@ -491,10 +495,10 @@ for (const effect of report.effects) {
       if (result.pixels) want.forEach((v,i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i]-v) <= (effect.id === 'gpu-temperature' ? (i%4 === 3 ? 0 : halfUlp(v) + Math.max(1,Math.abs(v))*2**-22 + (propagated[i] ?? 0)) : photometricTolerance(v,i)), `${label}: independent channel ${i}`));
     };
     check(effect.hdr.cases.length === (effect.id === 'gpu-temperature' ? 10 : effect.id === 'gpu-exposure' ? 7 : 3), `${effect.id} requires default/min/max HDR cases`);
-    if (effect.id === 'gpu-exposure') check(JSON.stringify(effect.hdr.cases.map(e=>e.params)) === JSON.stringify([
+    if (effect.id === 'gpu-exposure') assert.deepEqual(effect.hdr.cases.map(e=>e.params), [
       {exposure:0,offset:0,gamma:1},{exposure:-3,offset:0,gamma:1},{exposure:3,offset:0,gamma:1},
       {exposure:0,offset:-.5,gamma:1},{exposure:0,offset:.5,gamma:1},{exposure:0,offset:0,gamma:.2},{exposure:0,offset:0,gamma:3},
-    ]),'HDR exposure must retain declared EV/offset/gamma defaults and limits');
+    ],'HDR exposure must retain declared EV/offset/gamma defaults and limits');
     for (const entry of effect.hdr.cases) pixels(entry, expected(entry.params), `HDR ${effect.id} ${entry.name}`);
     for (const frame of [0,5,10]) {
       const entry = effect.hdr.animation.frames[frame];
