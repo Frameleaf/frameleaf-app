@@ -62,7 +62,7 @@ jobs:
         working-directory: server
         env:
           STUDIO_LIFECYCLE_REPORT: ${{ runner.temp }}/studio-lifecycle-report.json
-        run: pnpm exec vitest --config test/vitest.config.medium.mjs --run test/medium/specs/services/studio-project-lifecycle.service.spec.ts
+        run: pnpm test:medium run test/medium/specs/services/studio-project-lifecycle.service.spec.ts
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: studio-lifecycle-report
