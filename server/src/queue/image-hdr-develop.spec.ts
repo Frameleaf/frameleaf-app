@@ -233,3 +233,30 @@ it.each([
   expect(pixels[0]).toBeGreaterThan(1);
   expect(pixels[4]).toBeGreaterThan(1);
 });
+
+it('applies the keystone correction in linear light with the same mapping as the SDR renderer (v4)', () => {
+  const width = 8;
+  const height = 8;
+  const pixels = new Float32Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      // a bright HDR column at x = 0
+      pixels.set(x === 0 ? [6, 6, 6, 1] : [0, 0, 0, 1], i);
+    }
+  }
+  const image = {
+    data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+    width,
+    height,
+    gamut: 1 as const,
+    referenceWhite: 203 as const,
+  };
+  const recipe = { ...defaultDevelopRecipe(), perspective: { vertical: 100, horizontal: 0 } };
+  const result = transformHdrGeometry(image, planDevelopGeometry(recipe, width, height), 1 << 20);
+  const output = new Float32Array(result.data.buffer, result.data.byteOffset, result.data.length / 4);
+  expect([result.width, result.height]).toEqual([width, height]);
+  // the widened top samples away from the column; the bottom keeps most of its unclipped value
+  expect(output[0]).toBeLessThan(1);
+  expect(output[(height - 1) * width * 4]).toBeGreaterThan(4);
+});
