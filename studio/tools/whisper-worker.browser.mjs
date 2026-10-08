@@ -12,6 +12,36 @@ import { createHarness } from './lib/cross-browser-harness.mjs';
 import { inventory } from './engine.mjs';
 import { ownerApproval, approvalRowDigest } from '../../scripts/frameleaf-studio-rights.mjs';
 
+export async function fetchWhisperPayload(url, exact, fetchPayload) {
+  assert.ok(exact.has(url), 'Unapproved Whisper payload');
+  const initial = new URL(url);
+  assert.equal(initial.origin, 'https://huggingface.co', 'Unapproved Whisper origin');
+  const signal = AbortSignal.timeout(120000);
+  const redirects = [];
+  let target = initial;
+  for (let hop = 0; hop <= 5; hop++) {
+    const response = await fetchPayload(target.href, { method: 'GET', credentials: 'omit', redirect: 'manual', signal });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        assert.equal(response.status, 200, 'Whisper payload response');
+      }
+      return { response, redirects };
+    }
+    await response.body?.cancel();
+    assert.ok(hop < 5, 'Whisper redirect limit');
+    const location = response.headers.get('location');
+    assert.ok(location, 'Whisper redirect location missing');
+    const next = new URL(location, target);
+    assert.ok(next.protocol === 'https:' && !next.username && !next.password && !next.port && !next.hash
+      && ['huggingface.co', 'us.aws.cdn.hf.co'].includes(next.hostname), 'Whisper redirect destination refused');
+    const safe = parsed => parsed.origin + parsed.pathname;
+    redirects.push({ from: safe(target), to: safe(next),
+      targetSha256: createHash('sha256').update(next.href).digest('hex') });
+    target = next;
+  }
+}
+
 export async function cleanupWhisperRun(report, closes, removeCache, persistReport) {
   const priorError=Object.hasOwn(report,'error');
   const cleanup=[];
@@ -70,6 +100,7 @@ const payloads = new Map();
 const replayPaths = new Map();
 const report = { schemaVersion: 1, kind: 'production-whisper-worker-controlled-approved-byte-replay', status: 'failed',
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceSha256,
+  qualificationRunnerSha256: hash(await readFile(import.meta.filename)),
   registeredSourceSha256: config.sourceSha256, candidateRuntimeSha256: runtimeSha256,
   registeredSourceQualified: sourceSha256 === config.sourceSha256,
   workerSha256: hash(await readFile(path.join(engine, 'src/features/media-library/transcription/workers/whisper.worker.ts'))),
@@ -77,6 +108,8 @@ const report = { schemaVersion: 1, kind: 'production-whisper-worker-controlled-a
   fixtureSha256: hash(wav), evidenceSha256: hash(evidenceBytes), downloads: [], requests: [], workerEvents: [],
   directBrowserHuggingFaceTLS: 'unmeasured-separate-required-gate', fullFL111Acceptance: false };
 let server, harness, browser, context;
+let modelNetworkOffline = false;
+let modelPhase = 'cold';
 try {
   const { createServer } = await import(require.resolve('vite'));
   server = await createServer({root: engine, configFile: path.join(engine,'vite.config.ts'), server:{host:'127.0.0.1',port:0,strictPort:false},logLevel:'error'});
@@ -104,16 +137,17 @@ try {
   const failures = [];
   await context.route('https://**/*', async route => {
     const request = route.request(); const url = request.url(); const file = exact.get(url);
-    report.requests.push({url:new URL(url).origin+new URL(url).pathname,method:request.method(),body:request.postDataBuffer()?.length??0,approved:!!file});
+    report.requests.push({url:new URL(url).origin+new URL(url).pathname,method:request.method(),body:request.postDataBuffer()?.length??0,approved:!!file,phase:modelPhase});
     if (!file || !['GET','HEAD'].includes(request.method()) || request.postDataBuffer()) { failures.push('Unapproved or uploading browser request'); await route.abort('blockedbyclient'); return; }
+    if (modelNetworkOffline) { await route.abort('internetdisconnected'); return; }
     try {
       let entry = payloads.get(url);
       if (!entry) {
         entry = (async()=>{
-          const response=await nativeFetch(url,{method:'GET',signal:AbortSignal.timeout(120000)});
+          const {response,redirects}=await fetchWhisperPayload(url,exact,nativeFetch);
           assert.equal(response.status,200);const bytes=await verifyResourceBytes(url,new Uint8Array(await response.arrayBuffer()));
           assert.equal(hash(bytes),file.sha256);const location=path.join(cache,file.path.replaceAll('/','_'));
-          await writeFile(location,bytes);report.downloads.push({url,finalOrigin:new URL(response.url).origin,bytes:bytes.length,sha256:hash(bytes),approvedSha256:file.sha256});
+          await writeFile(location,bytes);report.downloads.push({url,finalOrigin:new URL(response.url).origin,redirects,bytes:bytes.length,sha256:hash(bytes),approvedSha256:file.sha256});
           console.log(`Approved ${file.path}: ${bytes.length} bytes`);
           return {bytes,headers:{'content-type':response.headers.get('content-type')??'application/octet-stream','content-length':String(bytes.length)}};
         })();payloads.set(url,entry);
@@ -132,7 +166,11 @@ try {
   report.browser=await page.evaluate(()=>navigator.userAgent);
   report.environment=await page.evaluate(async()=>({crossOriginIsolated,webgpu:!!navigator.gpu,
     adapter: navigator.gpu ? !!await navigator.gpu.requestAdapter() : false}));
+  await page.exposeFunction('__fl111SetModelTransport', (phase, offline) => {
+    modelPhase = phase; modelNetworkOffline = offline;
+  });
   const measured=await page.evaluate(async()=>{
+    const rawCache = await caches.open('transformers-cache');
     const {Bridge}=await import('/src/features/media-library/transcription/lib/bridge.ts');
     const pool=await import('/src/features/media-library/transcription/lib/transcription-worker-pool.ts');
     const bytes=await (await fetch('/__fl111__/whisper.wav')).arrayBuffer();
@@ -144,6 +182,18 @@ try {
         onDone:()=>{clearTimeout(deadline);resolve()},onError:message=>{clearTimeout(deadline);reject(Error(message))}});
       bridge.start(file,'whisper-tiny','en','hybrid','whisper').catch(reject);
     });
+    const transcribe = () => new Promise((resolve, reject) => {
+      const row = { segments: [], progress: [], runtime: [] };
+      const deadline = setTimeout(() => { bridge.terminate(); reject(Error('Offline worker timeout')); }, 600000);
+      const failed = message => { clearTimeout(deadline); bridge.terminate(); resolve({ ...row, error: String(message) }); };
+      const bridge = new Bridge({ onSegment: segment => row.segments.push(segment), onProgress: event => row.progress.push(event),
+        onRuntimeInfo: event => row.runtime.push(event), onDone: () => { clearTimeout(deadline); resolve(row); }, onError: failed });
+      bridge.start(file, 'whisper-tiny', 'en', 'hybrid', 'whisper').catch(failed);
+    });
+    pool.disposeTranscriptionWorker('whisper');
+    await window.__fl111SetModelTransport('warm-cache-provider-offline', true);
+    const offline = await transcribe();
+    if (offline.error) throw Error('Verified warm cache failed: ' + offline.error);
     const coldWorker=pool.acquireTranscriptionWorker('whisper');
     const cancel={triggered:false,segments:[],done:false};
     await new Promise((resolve,reject)=>{
@@ -155,6 +205,21 @@ try {
     await new Promise(resolve=>setTimeout(resolve,300));
     const freshWorker=pool.acquireTranscriptionWorker('whisper');
     cancel.poolRecreated=freshWorker!==coldWorker;pool.disposeTranscriptionWorker('whisper');
+    const configUrl = (await rawCache.keys()).map(request => request.url).find(url => url.endsWith('/config.json'));
+    if (!configUrl) throw Error('Approved configuration not cached');
+    const originalConfig = await rawCache.match(configUrl);
+    const unavailable = {};
+    for (const kind of ['corrupt', 'missing']) {
+      pool.disposeTranscriptionWorker('whisper');
+      if (kind === 'corrupt') await rawCache.put(configUrl, new Response('intentionally corrupt local cache fixture'));
+      else await rawCache.delete(configUrl);
+      await window.__fl111SetModelTransport(kind + '-cache-provider-offline', true);
+      unavailable[kind] = await transcribe();
+      if (!unavailable[kind].error || unavailable[kind].segments.length)
+        throw Error('Unavailable model must refuse without output: ' + kind);
+      if (await rawCache.match(configUrl)) throw Error('Invalid/missing cache fixture persisted: ' + kind);
+      await rawCache.put(configUrl, originalConfig.clone());
+    }
     const bucket=await caches.open('transformers-cache');
     const stored=[];
     for(const request of await bucket.keys()) {
@@ -163,7 +228,7 @@ try {
       stored.push({url:request.url,bytes:body.byteLength,sha256});
     }
     await caches.delete('transformers-cache');
-    return {segments,progress,runtime,cancel,stored};
+    return {segments,progress,runtime,cancel,stored,offline,unavailable};
   });
   report.measured=measured;
   // Termination events cross the browser protocol asynchronously. Require the actual
@@ -177,6 +242,15 @@ try {
   const tolerance=0.06;
   for(const [index,word] of words.entries()) {const expected=evidence.expected[index].timestamp;assert.ok(Math.abs(word.start-expected[0])<=tolerance&&Math.abs(word.end-expected[1])<=tolerance,`${word.text}: ${word.start},${word.end} vs ${expected}`)}
   for(const [start,end] of evidence.pauses)for(const word of words)assert.ok(!(word.start<start-tolerance&&word.end>end+tolerance),'Word spans measured pause');
+  const offlineWords=measured.offline.segments.flatMap(segment=>segment.words??[]);
+  assert.deepEqual(offlineWords,words,'Fresh worker reproduces words and timings from verified cache with provider unavailable');
+  assert.ok(measured.offline.runtime.some(event=>['wasm','webgpu'].includes(event.backend)));
+  assert.equal(report.requests.filter(request=>request.phase==='warm-cache-provider-offline').length,0,'Warm model cache must not attempt provider transport');
+  for (const kind of ['corrupt','missing']) {
+    assert.ok(measured.unavailable[kind].error);assert.deepEqual(measured.unavailable[kind].segments,[]);
+    assert.ok(report.requests.some(request=>request.phase===kind+'-cache-provider-offline'&&request.approved),'Missing/corrupt cache attempts only approved transport, which is refused');
+  }
+
   assert.ok(measured.progress.some(e=>e.stage==='preparing'&&e.progress===1));assert.ok(measured.runtime.some(e=>['wasm','webgpu'].includes(e.backend)));
   assert.equal(measured.cancel.triggered,true);assert.equal(measured.cancel.poolRecreated,true);assert.equal(measured.cancel.done,false);assert.deepEqual(measured.cancel.segments,[]);
   assert.equal(measured.stored.length,7);for(const entry of measured.stored){assert.ok(exact.has(entry.url));assert.equal(entry.sha256,exact.get(entry.url).sha256)}
