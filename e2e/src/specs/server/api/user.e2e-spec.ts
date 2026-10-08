@@ -109,7 +109,7 @@ describe('/users', () => {
         privacy: { suppression: { tagIds: [tagId] } },
       });
       expect(status).toBe(403);
-      expect(body).toEqual(errorDto.badRequest('Unlock with your PIN before changing Locked rules'));
+      expect(body).toEqual(errorDto.forbidden('Unlock with your PIN before changing Locked rules'));
     });
 
     // FL-67: an unlocked session saves against the current revision; a save against a stale revision
@@ -137,7 +137,7 @@ describe('/users', () => {
       });
       expect(conflict.status).toBe(409);
       expect(conflict.body).toEqual(
-        errorDto.badRequest(
+        errorDto.conflict(
           'These preferences changed after they were loaded. Load the latest preferences and try again.',
         ),
       );
