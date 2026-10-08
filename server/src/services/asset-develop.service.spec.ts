@@ -717,13 +717,16 @@ describe(AssetDevelopService.name, () => {
       expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
       vi.unstubAllEnvs();
     });
-    it('exports the paired tone-mapped SDR master without re-encoding it', async () => {
-      developRepository.get.mockResolvedValue(published());
-      const file = await sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'hdr', 'sdr-jpeg');
-      expect(file).toMatchObject({ path: '/data/sdr.jpeg', contentType: 'image/jpeg' });
-      expect(file.fileName).toContain('_still_sdr.jpg');
-      expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
-    });
+    it.each([3, 4, 5, 6] as const)(
+      'exports recipe v%i paired tone-mapped SDR master without re-encoding it',
+      async (recipeVersion) => {
+        developRepository.get.mockResolvedValue({ ...published(), recipeVersion });
+        const file = await sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Master, 'hdr', 'sdr-jpeg');
+        expect(file).toMatchObject({ path: '/data/sdr.jpeg', contentType: 'image/jpeg' });
+        expect(file.fileName).toContain('_still_sdr.jpg');
+        expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
+      },
+    );
     it('refuses unavailable HDR HEIC rather than exporting JPEG or SDR', async () => {
       developRepository.get.mockResolvedValue(published());
       await expect(

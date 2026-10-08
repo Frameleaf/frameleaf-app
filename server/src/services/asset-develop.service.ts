@@ -380,7 +380,8 @@ export class AssetDevelopService {
       (format === 'sdr-jpeg' &&
         revision.recipeVersion !== 3 &&
         revision.recipeVersion !== 4 &&
-        revision.recipeVersion !== 5)
+        revision.recipeVersion !== 5 &&
+        revision.recipeVersion !== 6)
     ) {
       const heic = format === 'hdr-heic';
       if (!heic && revision.kind === AssetDevelopRevisionKind.External) {
