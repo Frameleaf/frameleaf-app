@@ -87,6 +87,18 @@ reset. The legacy response view does not delete or narrow stored checkpoints: so
 stream resume still uses the full ACK and tag state. No native app changes are part of this
 server API repair.
 
+## Develop and push additions (October 8)
+
+Server branch `aj/native-api-gaps-2`. Definitions are in the [develop recipe protocol](../features/develop-recipe-protocol.md) (renderer `frameleaf-develop/4`) and the [push envelope](./push-envelope-v1.md).
+
+| Journey                    | operationIds / fields                                                                                                                      | Change                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Edit: perspective          | `KnownAssetDevelopRecipe.perspective` (`AssetDevelopPerspective`: `vertical`, `horizontal`, −100..100)                                     | Keystone correction after quarter turns and flips, before straighten; rendered by the server (SDR and HDR) and previewed by the web editor |
+| Edit: Live Photo key frame | `KnownAssetDevelopRecipe.keyFrame` (`AssetDevelopKeyFrame`: `timeMs`)                                                                      | The still renders from the motion clip at `timeMs`; version 1 recipes only                                                                 |
+| Clean Up Remove            | `generateAssetDevelopFill` (`POST /assets/{id}/develop/fills/generate`, `AssetDevelopFillGenerateDto`) → `AssetDevelopArtifactResponseDto` | Server fill on the local ML worker; 503 `develop_inpaint_unavailable` until an inpainting model is chosen (owner-gated)                    |
+| Subject and sky masks      | `proposeAssetDevelopMask` with `coordinates: "original"` (`AssetDevelopProposalCoordinates`)                                               | Any still; mask artifact covering the whole original for version 1 recipes. Omitted keeps the RAW sensor-canvas behaviour                  |
+| Job notifications          | push `data.job`, `data.jobType`, `data.jobActions`                                                                                         | Retry and Pause targets for Studio renders and cloud backup runs                                                                           |
+
 ## Server issues found by the live tests
 
 ### FL-330: default smart-search model missing from the model mirror

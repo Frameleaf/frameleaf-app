@@ -4291,6 +4291,16 @@ export type AssetDevelopCrop = {
     y: number;
     [key: string]: any;
 };
+export type AssetDevelopPerspective = {
+    /** Positive widens the right side of the picture, negative the left side */
+    horizontal?: number;
+    /** Positive widens the top of the picture (verticals converging upwards), negative the bottom */
+    vertical?: number;
+};
+export type AssetDevelopKeyFrame = {
+    /** Offset into the motion clip, in milliseconds, of the frame the still is rendered from */
+    timeMs: number;
+};
 export type AssetDevelopRecipeDto = {
     version: Version;
     exposure?: number;
@@ -4315,6 +4325,10 @@ export type AssetDevelopRecipeDto = {
     rotation?: number;
     flipHorizontal?: boolean;
     flipVertical?: boolean;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
+    /** Live and Motion Photos: the frame of the motion clip the still is rendered from */
+    keyFrame?: AssetDevelopKeyFrame;
     preset?: AssetDevelopPreset;
     presetStrength?: number;
     masks?: {
@@ -4426,6 +4440,29 @@ export type DevelopExportResponseDto = {
     /** SHA-256 (hex) of the original when it was exported */
     sourceChecksum: string;
 };
+export type AssetDevelopRegion = {
+    /** Height as a fraction of the original */
+    h: number;
+    /** Width as a fraction of the original */
+    w: number;
+    /** Left edge as a fraction of the original image width */
+    x: number;
+    /** Top edge as a fraction of the original image height */
+    y: number;
+};
+export type AssetDevelopStroke = {
+    /** Erase from the mask instead of painting it (brush masks only) */
+    erase?: boolean;
+    points: number[][];
+    /** Stroke radius as a fraction of the original image's shorter side */
+    radius: number;
+};
+export type AssetDevelopFillGenerateDto = {
+    /** Softness of the area's edge, as a percentage */
+    feather?: number;
+    region?: AssetDevelopRegion;
+    strokes?: AssetDevelopStroke[];
+};
 export type AssetDevelopImportDto = {
     /** The export this file was developed from */
     exportId?: string;
@@ -4441,6 +4478,9 @@ export type AssetDevelopImportDto = {
     sourceChecksum?: string;
 };
 export type AssetDevelopSemanticMaskDto = {
+    /** Omitted or `sensor-active`: a RAW original only, the mask covers the unrotated sensor canvas, for version 2 recipes. `original`: any still, the mask covers the whole original image (EXIF orientation applied), for subject, sky and background masks of version 1 recipes */
+    coordinates?: AssetDevelopProposalCoordinates;
+    /** What the proposed mask selects */
     target: Target;
 };
 export type AssetDevelopPreviewDto = {
@@ -14633,23 +14673,6 @@ export type WorkflowShareResponseDto = {
     /** Workflow trigger type */
     trigger: string;
 };
-export type AssetDevelopRegion = {
-    /** Height as a fraction of the original */
-    h: number;
-    /** Width as a fraction of the original */
-    w: number;
-    /** Left edge as a fraction of the original image width */
-    x: number;
-    /** Top edge as a fraction of the original image height */
-    y: number;
-};
-export type AssetDevelopStroke = {
-    /** Erase from the mask instead of painting it (brush masks only) */
-    erase?: boolean;
-    points: number[][];
-    /** Stroke radius as a fraction of the original image's shorter side */
-    radius: number;
-};
 export type AssetDevelopCleanup = {
     /** Pixelate: block size as a fraction of the original image's shorter side */
     blockSize?: number;
@@ -14752,6 +14775,8 @@ export type HdrAssetDevelopRecipe = {
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
     preset?: AssetDevelopPreset;
     /** How much of the preset is applied, as a percentage */
     presetStrength?: number;
@@ -14812,6 +14837,8 @@ export type HdrAssetDevelopRecipeV4 = {
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
     preset?: AssetDevelopPreset;
     /** How much of the preset is applied, as a percentage */
     presetStrength?: number;
@@ -14872,6 +14899,8 @@ export type HdrAssetDevelopRecipeV5 = {
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
     preset?: AssetDevelopPreset;
     /** How much of the preset is applied, as a percentage */
     presetStrength?: number;
@@ -14932,6 +14961,8 @@ export type HdrAssetDevelopRecipeV6 = {
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
     preset?: AssetDevelopPreset;
     /** How much of the preset is applied, as a percentage */
     presetStrength?: number;
@@ -14982,10 +15013,14 @@ export type KnownAssetDevelopRecipe = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Live and Motion Photos: the frame of the motion clip the still is rendered from */
+    keyFrame?: AssetDevelopKeyFrame;
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
+    /** Keystone correction, applied after the quarter turns and flips and before straightening */
+    perspective?: AssetDevelopPerspective;
     preset?: AssetDevelopPreset;
     /** How much of the preset is applied, as a percentage */
     presetStrength?: number;
@@ -18761,6 +18796,22 @@ export function createAssetDevelopExport({ id }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Generate a Clean Up Remove fill
+ */
+export function generateAssetDevelopFill({ id, assetDevelopFillGenerateDto }: {
+    id: string;
+    assetDevelopFillGenerateDto: AssetDevelopFillGenerateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopArtifactResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/fills/generate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopFillGenerateDto
+    })));
 }
 /**
  * Bring back a file developed elsewhere
@@ -29175,6 +29226,10 @@ export enum AssetDevelopRevisionStatus {
 export enum AssetDevelopArtifactKind {
     Mask = "mask",
     Fill = "fill"
+}
+export enum AssetDevelopProposalCoordinates {
+    SensorActive = "sensor-active",
+    Original = "original"
 }
 export enum Target {
     Subject = "subject",
