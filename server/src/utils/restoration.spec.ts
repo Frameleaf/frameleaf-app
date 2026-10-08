@@ -322,6 +322,7 @@ const deps = (overrides: {
   const rows = [destination, ...(overrides.others ?? [])];
   const find = (id: string) => Promise.resolve(rows.find((row) => row.id === id));
   const mlDestinationRepository = {
+    assertRecoveryAuthority: vi.fn().mockResolvedValue(undefined),
     getById: vi.fn().mockImplementation(find),
     getSpend: vi.fn().mockResolvedValue(0),
     recordProbe: vi.fn().mockResolvedValue(undefined),
@@ -344,6 +345,22 @@ const refusalOf = async (promise: Promise<unknown>) => {
 };
 
 describe('selectRestorationDestination (FL-114)', () => {
+  it('refuses revoked recovery authority before probing the chosen worker', async () => {
+    const d = deps({});
+    vi.mocked(d.mlDestinationRepository.assertRecoveryAuthority).mockRejectedValue(new Error('quarantined'));
+
+    expect(
+      await refusalOf(
+        selectRestorationDestination(d, {
+          mode: AssetRestorationMode.Faithful,
+          destinationId: mlDestinationStub.lan.id,
+          acknowledgeCloudUpload: false,
+        }),
+      ),
+    ).toBe(MlAdmissionRefusal.DestinationDisabled);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
   it('admits the LAN worker the person chose and records the admission', async () => {
     const d = deps({});
 
@@ -451,7 +468,7 @@ describe('selectRestorationDestination (FL-114)', () => {
       workload: MlWorkload.RestorationCreative,
     });
     // FL-159: Frameleaf Cloud resolves to its sentinel; its check comes from the cloud processing service.
-    expect(selection.endpoint).toEqual(FRAMELEAF_CLOUD_ENDPOINT);
+    expect(selection.endpoint).toEqual({ ...FRAMELEAF_CLOUD_ENDPOINT, assertAuthority: expect.any(Function) });
     expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
   });
 

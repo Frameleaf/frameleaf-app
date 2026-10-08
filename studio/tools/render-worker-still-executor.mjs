@@ -233,24 +233,32 @@ export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
 export async function renderStillImage(context, consume) {
   const { claim, engineInputs, isLeaseActive, heartbeat, elapsedMs, registerRelease } = context;
   const recipe = stillRecipe(claim);
-  const assertLive = () => {
+  let abort;
+  const assertLive = async () => {
+    if (context.leaseAuthority) {
+      do { await context.leaseAuthority.wait(abort?.signal); } while (context.leaseAuthority.isPending());
+      context.leaseAuthority.assertActive();
+    }
     assert.ok(isLeaseActive(), 'LEASE_LOST');
     assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
   };
-  assertLive();
+  await assertLive();
   assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
   assert.equal(context.prepared?.artifactInputDigest, claim.artifactInputDigest, 'INPUT_DIGEST_CHANGED');
   const build = JSON.parse(await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'));
+  await assertLive();
   assert.equal(process.versions.node, build.node, 'PINNED_NODE_REQUIRED');
   assert.equal(engineInputs.sourceSha256, build.sourceSha256, 'ENGINE_BINDING_MISMATCH');
   // The retained build must carry an independently verified complete artifact inventory.
   const report = JSON.parse(await readFile(path.join(engine, 'frameleaf-build.json'), 'utf8'));
+  await assertLive();
   assert.equal(report.sourceSha256, build.sourceSha256, 'BUILD_SOURCE_MISMATCH');
   assert.equal(report.node, `v${build.node}`, 'BUILD_NODE_MISMATCH');
   assert.equal(report.npm, build.npm, 'BUILD_NPM_MISMATCH');
   assert.equal(report.lockfileSha256, build.lockfileSha256, 'BUILD_LOCK_MISMATCH');
   assert.equal(report.upstreamCommit, build.upstreamCommit, 'BUILD_REVISION_MISMATCH');
   const files = await inventory(await realpath(path.join(engine, 'dist')));
+  await assertLive();
   assert.equal(digest(JSON.stringify(files)), report.artifactSha256, 'BUILT_ARTIFACT_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
   assert.deepEqual(engineInputs.input.project, claim.snapshot.studio.graph, 'IMMUTABLE_GRAPH_CHANGED');
@@ -260,9 +268,9 @@ export async function renderStillImage(context, consume) {
   let executionProject = engineInputs.input.project;
   if (engineInputs.fileLuts) {
     assert.deepEqual(context.prepared.snapshot.studio, claim.snapshot.studio, 'INPUT_SNAPSHOT_CHANGED');
-    executionProject = await verifyClaimFileLuts(context.prepared, engineInputs.fileLuts, isLeaseActive);
+    executionProject = await verifyClaimFileLuts(context.prepared, engineInputs.fileLuts, isLeaseActive, assertLive);
   } else assert.ok(!claim.snapshot.studio.resources?.some(resource => resource.kind === 'lut'), 'FILE_LUT_EXECUTION_REQUIRED');
-  const vectors = await deriveClaimVectors(context.prepared, isLeaseActive);
+  const vectors = await deriveClaimVectors(context.prepared, isLeaseActive, assertLive);
   try {
     assert.equal(engineInputs.vectors?.digest ?? null, vectors.digest, 'VECTOR_EXECUTION_CHANGED');
     assert.deepEqual(engineInputs.vectors?.resources ?? [], vectors.resources, 'VECTOR_RESOURCE_CLOSURE_CHANGED');
@@ -281,7 +289,7 @@ export async function renderStillImage(context, consume) {
   }
   const sharp = require('sharp');
   for (const input of recipe.photo ? [] : context.prepared.inputs.values()) {
-    assertLive();
+    await assertLive();
     assert.equal(digest(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
     if (input.kind === 'lut') continue; // Recomputed checksum-bound materialization above; never treat LUT bytes as media.
     if (vectors.resources.includes(`${input.kind}:${input.resourceId}`)) continue;
@@ -292,6 +300,7 @@ export async function renderStillImage(context, consume) {
       continue; // The same byte snapshot passed native packet and explicit SDR admission.
     }
     const metadata = await sharp(input.bytes).metadata();
+    await assertLive();
     assert.ok(
       metadata.format === 'png' &&
         metadata.depth === 'uchar' &&
@@ -314,9 +323,11 @@ export async function renderStillImage(context, consume) {
   }
   const { chromium } = require('playwright');
   const { chromeLaunchArgs } = await import(pathToFileURL(path.join(engine, 'headless/lib/cli.mjs')).href);
+  await assertLive();
   const { renderJob } = await import(pathToFileURL(path.join(engine, 'headless/lib/render-core.mjs')).href);
+  await assertLive();
   const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-still-export-'));
-  const abort = new AbortController();
+  abort = new AbortController();
   let browser;
   let pool;
   let timer;
@@ -326,6 +337,7 @@ export async function renderStillImage(context, consume) {
   let failure;
   let lastBeat = performance.now();
   const release = async () => {
+    context.leaseAuthority?.terminate(new Error('ADAPTER_DISPOSED'));
     abort.abort();
     await Promise.allSettled([browser?.close(), pool?.close()]);
   };
@@ -338,19 +350,21 @@ export async function renderStillImage(context, consume) {
       },
       Math.max(1, recipe.maxMs - elapsedMs()),
     );
-    assertLive();
+    await assertLive();
     browser = await chromium.launch({
       headless: true,
       args: chromeLaunchArgs(),
       downloadsPath: folder,
     });
     const harness = await engineInputs.createHarness();
+    await assertLive();
     const page = await browser.newPage({ acceptDownloads: true });
+    await assertLive();
     const origin = new URL(harness.harnessUrl).origin;
     await page.route('**/*', (route) =>
       new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
     );
-    assertLive();
+    await assertLive();
     timer = setInterval(async () => {
       if (monitoring || failure) return;
       monitoring = true;
@@ -364,7 +378,7 @@ export async function renderStillImage(context, consume) {
           await heartbeat();
           lastBeat = performance.now();
         }
-        assertLive();
+        await assertLive();
         const total = await ownedOutputBytes(folder);
         assert.ok(
           total <= recipe.maxBytes + (recipe.photo ? recipe.photo.width * recipe.photo.height * 16 : 0),
@@ -379,7 +393,9 @@ export async function renderStillImage(context, consume) {
       }
     }, 100);
     await page.goto(harness.harnessUrl);
+    await assertLive();
     await page.waitForFunction(() => Boolean(window.freecut?.ready), { timeout: 10_000 });
+    await assertLive();
     const gpu = await page.evaluate(async () => {
       const adapter = await navigator.gpu?.requestAdapter();
       return adapter
@@ -458,7 +474,7 @@ export async function renderStillImage(context, consume) {
       const downloadedPath = await downloaded.path();
       assert.ok(downloadedPath && path.dirname(downloadedPath) === folder, 'UNEXPECTED_DOWNLOAD_PATH');
       await rename(downloadedPath, rawPath);
-      assertLive();
+      await assertLive();
       const pixels = recipe.photo.width * recipe.photo.height;
       const rawStat = await stat(rawPath);
       assert.ok(rawStat.isFile() && rawStat.size === pixels * 16, 'STILL_SIGNAL_LENGTH_CHANGED');
@@ -518,7 +534,7 @@ export async function renderStillImage(context, consume) {
       } finally {
         encoded.fill(0);
       }
-      assertLive();
+      await assertLive();
       const encoding = await pool.run('inspectImageEncoding', [outputPath], abort.signal);
       assert.equal(encoding.dynamicRange, recipe.photo.dynamicRange, 'STILL_OUTPUT_RANGE_CHANGED');
       if (recipe.photo.dynamicRange === 'hdr') {
@@ -552,7 +568,7 @@ export async function renderStillImage(context, consume) {
     clearInterval(timer);
     await monitoringDone;
     if (failure) throw failure;
-    assertLive();
+    await assertLive();
     if (!recipe.photo) {
       assert.equal(result.ok, true, 'RENDER_REFUSED');
       assert.equal(result.warnings.length, 0, 'RENDER_WARNING_REFUSED');
@@ -562,13 +578,19 @@ export async function renderStillImage(context, consume) {
       assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
     }
     const file = await stat(result.outputPath);
+    await assertLive();
     assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
     const probe = recipe.photo ? result.encoding : probeStillOutput(result.outputPath, recipe);
     const bytes = await readFile(result.outputPath);
-    const checksum = digest(bytes);
-    bytes.fill(0);
+    let checksum;
+    try {
+      await assertLive();
+      checksum = digest(bytes);
+    } finally {
+      bytes.fill(0);
+    }
     await heartbeat();
-    assertLive();
+    await assertLive();
     timer = setInterval(async () => {
       if (monitoring || failure) return;
       monitoring = true;
@@ -578,7 +600,7 @@ export async function renderStillImage(context, consume) {
       });
       try {
         await heartbeat();
-        assertLive();
+        await assertLive();
       } catch (error) {
         failure = error;
         await release();

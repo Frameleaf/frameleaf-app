@@ -7,6 +7,7 @@ import {
   ICloudIdentityRow,
   ICloudInventoryItem,
 } from 'src/repositories/icloud-identity.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ICloudIdentityService, connectionHealth } from 'src/services/icloud-identity.service.js';
 
 const MASTER = 'AQohY6yKZR0+tXlMi9FUQ82zySGo';
@@ -553,5 +554,60 @@ describe(ICloudIdentityService.name, () => {
         scope: { kind: 'albums', albums: ['library:album'] },
       });
     });
+  });
+});
+
+describe('explicit original-revert durable wake boundary', () => {
+  it('awaits the postcommit wake before returning the existing decision acknowledgement', async () => {
+    const decision = {
+      decisionId: randomUUID(),
+      generation: 2,
+      versionId: randomUUID(),
+      evidenceType: 'administrative' as const,
+    };
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const repository = { acceptEditBaseline: vi.fn().mockResolvedValue(decision) };
+    const relations = {
+      enqueue: vi.fn(async () => {
+        entered.resolve();
+        await release.promise;
+      }),
+    };
+    const service = new ICloudIdentityService(
+      repository as never,
+      {} as never,
+      LoggingRepository.create(),
+      relations as never,
+    );
+    let settled = false;
+    const pending = service.acceptEditBaseline(auth, {} as never).finally(() => {
+      settled = true;
+    });
+    await entered.promise;
+    expect(settled).toBe(false);
+    release.resolve();
+    expect(await pending).toEqual(decision);
+  });
+  it('propagates a failed durable wake; an identical replay can retry the wake', async () => {
+    const decision = {
+      decisionId: randomUUID(),
+      generation: 2,
+      versionId: randomUUID(),
+      evidenceType: 'administrative' as const,
+    };
+    const repository = { acceptEditBaseline: vi.fn().mockResolvedValue(decision) };
+    const relations = {
+      enqueue: vi.fn().mockRejectedValueOnce(new Error('fixed queue wake failure')).mockResolvedValue(undefined),
+    };
+    const service = new ICloudIdentityService(
+      repository as never,
+      {} as never,
+      LoggingRepository.create(),
+      relations as never,
+    );
+    await expect(service.acceptEditBaseline(auth, {} as never)).rejects.toThrow('fixed queue wake failure');
+    expect(await service.acceptEditBaseline(auth, {} as never)).toEqual(decision);
+    expect(relations.enqueue).toHaveBeenCalledTimes(2);
   });
 });

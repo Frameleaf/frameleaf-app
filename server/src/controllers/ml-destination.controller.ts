@@ -118,8 +118,12 @@ export class MlDestinationController {
     summary: 'Update a machine-learning destination',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  update(@Param() { id }: UUIDParamDto, @Body() dto: MlDestinationUpdateDto): Promise<MlDestinationResponseDto> {
-    return this.service.update(id, dto);
+  update(
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: MlDestinationUpdateDto,
+    @Auth() auth: AuthDto,
+  ): Promise<MlDestinationResponseDto> {
+    return this.service.update(id, dto, auth);
   }
 
   @Delete(':id')

@@ -10,7 +10,6 @@ import {
   AssetLockReason,
   AssetMetadataKey,
   AssetPathType,
-  AssetStatus,
   AssetType,
   AssetVisibility,
   JobName,
@@ -980,12 +979,18 @@ describe(AssetService.name, () => {
     it('should soft delete a batch of assets', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset1', 'asset2']));
 
+      mocks.trash.applyReviewed.mockResolvedValue(['asset1', 'asset2']);
       await sut.deleteAll(authStub.user1, { ids: ['asset1', 'asset2'], force: false });
 
-      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset1', 'asset2'], {
-        deletedAt: expect.any(Date),
-        status: AssetStatus.Trashed,
-      });
+      expect(mocks.trash.applyReviewed).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        'trash',
+        ['asset1', 'asset2'],
+        expect.any(Object),
+        expect.any(Function),
+        authStub.user1,
+        expect.any(Function),
+      );
       expect(mocks.job.queue.mock.calls).toEqual([]);
     });
   });

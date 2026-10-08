@@ -5,6 +5,7 @@ import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -83,10 +84,10 @@ afterAll(async () => {
 
 /** An owner with a saved two-revision project shared with a space, a reviewer in that space, and a stranger. */
 const setup = async () => {
-  // The resource service is never reached by the lifecycle; the medium context builds a real one.
+  // Reading lifecycle responses resolves project resources against real source epochs.
   const { sut: resources, ctx } = newMediumService(StudioResourceService, {
     database,
-    real: [AccessRepository, AssetRepository, CryptoRepository],
+    real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
     mock: [LoggingRepository],
   });
   const projects = new StudioProjectRepository(database);

@@ -52,6 +52,7 @@ const deps = (overrides: {
   choices?: Record<string, string>;
 }) => {
   const mlDestinationRepository = {
+    assertRecoveryAuthority: vi.fn().mockResolvedValue(undefined),
     getById: vi.fn().mockResolvedValue('destination' in overrides ? overrides.destination : mlDestinationStub.local),
     getSpend: vi.fn().mockResolvedValue(overrides.spend ?? 0),
     recordProbe: vi.fn().mockResolvedValue(undefined),
@@ -511,13 +512,14 @@ describe('selectMlDestination', () => {
       workload: MlWorkload.RestorationFaithful,
       destinationId: mlDestinationStub.frameleafCloudConsented.id,
     });
-    expect(selection.endpoint).toBe(FRAMELEAF_CLOUD_ENDPOINT);
-    expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(FRAMELEAF_CLOUD_ENDPOINT, {
+    expect(selection.endpoint).toMatchObject(FRAMELEAF_CLOUD_ENDPOINT);
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(expect.objectContaining(FRAMELEAF_CLOUD_ENDPOINT), {
       maxAgeMs: expect.any(Number),
     });
     expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledWith(
       mlDestinationStub.frameleafCloudConsented.id,
       expect.objectContaining({ cloud: mlProbeStub.frameleafCloud.cloud }),
+      mlDestinationStub.frameleafCloudConsented,
     );
   });
 
@@ -627,7 +629,9 @@ describe('selectMlDestination', () => {
       workload: MlWorkload.Face,
       endpoint,
     });
-    expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(endpoint, { maxAgeMs: expect.any(Number) });
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(expect.objectContaining(endpoint), {
+      maxAgeMs: expect.any(Number),
+    });
     expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
 
     selection.record({ bytesSent: 1024, bytesReceived: 64, durationMs: 40, outcome: 'success' });
@@ -682,6 +686,7 @@ describe('selectMlDestination', () => {
     expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledWith(
       'ml-destination-local',
       expect.objectContaining({ health: MlDestinationHealth.Unhealthy, workloads: null }),
+      mlDestinationStub.local,
     );
   });
 

@@ -3,14 +3,24 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BuddySettings, BuddyState } from 'src/repositories/buddy-backup.repository.js';
+import { defaults } from 'src/config.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { recoveryAuthorityDigest, recoveryMlConfigOf } from 'src/utils/recovery-ml-authority.js';
 
-const fixture = vi.hoisted(() => ({ reset: vi.fn(), media: '', rows: [] as unknown[] }));
+const fixture = vi.hoisted(() => ({ reset: vi.fn(), media: '', rows: [] as unknown[], authority: {} as any }));
+// These tests isolate real file/publication barriers; canonical PG tests exercise the authority helpers.
+vi.mock('src/utils/buddy-recovery-ml.js', () => ({
+  captureReplacementMl: () => Promise.resolve(fixture.authority),
+  readReplacementMl: () => Promise.resolve(fixture.authority),
+  preserveHistoricalMl: async () => {},
+  admitReplacementMl: async () => {},
+  verifyCommittedReplacementMl: async () => {},
+}));
 vi.mock('src/queue/store.js', () => ({ resetQueueAfterRestore: fixture.reset }));
 vi.mock('src/constants.js', () => ({ serverVersion: '2.6.0' }));
 vi.mock('src/cores/storage.core.js', () => ({ StorageCore: { getMediaLocation: () => fixture.media } }));
@@ -62,6 +72,19 @@ describe('Buddy recovery crash barriers', () => {
         library: { database: { key: 'dump.sql.gz' } },
         settings: { system: { version: 'restored' }, users: [], fork: [] },
       },
+    };
+    fixture.authority = {
+      binding: {
+        format: 1,
+        recoveryId: id,
+        preparedPlanDigest: recoveryAuthorityDigest(plan),
+        replacementIdentity: 'a'.repeat(64),
+      },
+      config: recoveryMlConfigOf(defaults),
+      epoch: 1,
+      destinations: [],
+      routes: [],
+      modelChoices: [],
     };
     // Real filesystem crash barriers here; canonical PG authority is covered separately.
     const metadata = new Map<string, unknown>([[SystemMetadataKey.SystemConfig, { version: 'original' }]]);

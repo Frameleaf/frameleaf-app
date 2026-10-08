@@ -19,7 +19,7 @@
   } from '$lib/frameleaf/timeline-cards';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import { websocketEvents } from '$lib/stores/websocket';
+  import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, getTimelineHighlights, TimelineHighlightGrouping } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -59,7 +59,21 @@
   /** Bumped (debounced) by uploads, deletes, trash and restore, and edits such as a rating change. */
   let revision = $state(0);
   const refresh = debounce(() => revision++, REFRESH_DELAY_MS);
+  const localSequences = new Map<string, bigint>();
+  const onLocalEffects = (bundle: AssetLocalEffectsV1) => {
+    if (!/^[1-9][0-9]{0,18}$/.test(bundle.sequence)) {
+      return;
+    }
+    const sequence = BigInt(bundle.sequence);
+    if ((localSequences.get(bundle.streamEpoch) ?? 0n) >= sequence) {
+      return;
+    }
+    localSequences.set(bundle.streamEpoch, sequence);
+    request++;
+    refresh();
+  };
   const unsubscribers = [
+    websocketEvents.on('AssetLocalEffectsV1', onLocalEffects),
     websocketEvents.on('on_upload_success', refresh),
     websocketEvents.on('on_asset_delete', refresh),
     websocketEvents.on('on_asset_trash', refresh),

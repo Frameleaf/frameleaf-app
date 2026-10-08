@@ -55,6 +55,12 @@ import {
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
+import {
+  AssetLocalEffectCursorTable,
+  AssetLocalEffectStreamTable,
+  AssetLocalEffectTable,
+  AssetSourceEpochTable,
+} from 'src/schema/tables/asset-local-effect.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
@@ -205,6 +211,10 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    AssetLocalEffectStreamTable,
+    AssetLocalEffectTable,
+    AssetLocalEffectCursorTable,
+    AssetSourceEpochTable,
     ICloudEditAuthorityTable,
     ICloudEditVersionTable,
     ICloudEditAliasTable,
@@ -398,6 +408,10 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  asset_local_effect_stream: AssetLocalEffectStreamTable;
+  asset_local_effect: AssetLocalEffectTable;
+  asset_local_effect_cursor: AssetLocalEffectCursorTable;
+  asset_source_epoch: AssetSourceEpochTable;
   icloud_edit_authority: ICloudEditAuthorityTable;
   icloud_edit_version: ICloudEditVersionTable;
   icloud_edit_alias: ICloudEditAliasTable;

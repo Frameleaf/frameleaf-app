@@ -28,16 +28,20 @@ export class StackService extends BaseService {
   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.assetIds });
 
-    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
+    let sequenced = false;
+    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds, auth, (value) => {
+      sequenced = value;
+    });
     // a stack that holds a Locked photo became Locked as a whole (FL-53)
     if (stack.lockedAssetIds.length > 0) {
-      await this.afterAssetsLocked(stack.lockedAssetIds);
+      await this.afterAssetsLocked(stack.lockedAssetIds, sequenced);
       // push a real-time update for every asset the new stack carried into the Locked folder, so an
       // open web client reflects the whole stack at once, not only the photo that was already Locked
-      await this.notifyAssetsUpdated(stack.lockedAssetIds, auth.user.id);
+      if (!sequenced) await this.notifyAssetsUpdated(stack.lockedAssetIds, auth.user.id);
     }
 
-    await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
     return mapStack(stack, { auth });
   }
@@ -57,25 +61,34 @@ export class StackService extends BaseService {
 
     const options = this.readOptions(auth);
     const update = { id, primaryAssetId: dto.primaryAssetId };
-    const updatedStack = options
-      ? await this.stackRepository.update(id, update, options)
-      : await this.stackRepository.update(id, update);
-
-    await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
+    let sequenced = false;
+    const updatedStack = await this.stackRepository.update(id, update, options, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
 
     return mapStack(updatedStack, { auth });
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.StackDelete, ids: [id] });
-    await this.stackRepository.delete(id);
-    await this.eventRepository.emit('StackDelete', { stackId: id, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.delete(id, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackDelete', { stackId: id, userId: auth.user.id });
   }
 
   async deleteAll(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.StackDelete, ids: dto.ids });
-    await this.stackRepository.deleteAll(dto.ids);
-    await this.eventRepository.emit('StackDeleteAll', { stackIds: dto.ids, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.deleteAll(dto.ids, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackDeleteAll', { stackIds: dto.ids, userId: auth.user.id });
   }
 
   async removeAsset(auth: AuthDto, dto: UUIDAssetIDParamDto): Promise<void> {
@@ -92,8 +105,12 @@ export class StackService extends BaseService {
       throw new BadRequestException("Cannot remove stack's primary asset");
     }
 
-    await this.assetRepository.update({ id: assetId, stackId: null });
-    await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.removeMember(stackId, assetId, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
   }
 
   private findOrFail(id: string, options?: HiddenContentQueryOptions & LockedVisibilityOptions) {

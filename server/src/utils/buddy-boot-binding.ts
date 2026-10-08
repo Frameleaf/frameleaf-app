@@ -418,6 +418,32 @@ export const loadBuddyBootBinding = async () => {
 };
 
 /** Finalize an explicit local request only after verified fenced publication completed. */
+export const verifyBuddyRecoveryBootBinding = async (root: string, id: string, assert: () => Promise<void>) => {
+  const path = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
+  await assert();
+  if (path === undefined) return;
+  try {
+    await withBootBindingLock(path, async () => {
+      const original = await readPrivateBootFile(path);
+      const binding = await readBootBinding(path, original);
+      const local = await replacementBootIdentity(path, process.env);
+      if (
+        binding.state === 'revoked' ||
+        binding.recoveryId !== id ||
+        binding.recoveryDirectory !== join(root, 'recovery', id) ||
+        local.identity !== binding.replacementIdentity ||
+        (local.marker && local.marker.action?.buddyRecoveryId !== id)
+      )
+        throw refusal();
+      await bindingEvidence(binding, false);
+      await assert();
+      if (!(await readPrivateBootFile(path)).equals(original)) throw refusal();
+    });
+  } catch {
+    throw refusal();
+  }
+};
+
 export const finalizeBuddyBootBinding = async (root: string, id: string, assert: () => Promise<void>) => {
   const path = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
   if (path === undefined) return;

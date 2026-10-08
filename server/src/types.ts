@@ -1428,7 +1428,10 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
     sourceKind: 'database' | 'file';
     digest: string;
     trashEnabled: boolean;
+    recoveryMl?: import('src/utils/recovery-ml-authority.js').RecoveryMlOverlay;
+    recoveryMlBinding?: import('src/utils/recovery-ml-authority.js').RecoveryMlBinding;
   };
+  [SystemMetadataKey.FrameleafRecoveryMlAuthority]: import('src/utils/recovery-ml-authority.js').RecoveryMlRegistry;
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;
   [SystemMetadataKey.VersionCheckState]: VersionCheckMetadata;
   [SystemMetadataKey.MemoriesState]: MemoriesState;

@@ -477,11 +477,11 @@ export class BaseService {
    * face was on them, or on another photo of their stacks, get a thumbnail from the face that replaced
    * it, and profile pictures copied from a photo now Locked are replaced.
    */
-  protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
+  protected async afterAssetsLocked(assetIds: string[], sequenced = false): Promise<void> {
     await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
     await this.replaceLockedProfileImages();
     // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
-    await this.eventRepository.emit('AssetLocked', { assetIds });
+    if (!sequenced) await this.eventRepository.emit('AssetLocked', { assetIds });
   }
 
   /**

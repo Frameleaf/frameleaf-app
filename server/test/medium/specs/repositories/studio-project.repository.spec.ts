@@ -13,6 +13,7 @@ import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -853,6 +854,27 @@ describe(StudioProjectRepository.name, () => {
       expect(await sut.listOrphanImportProjects()).toEqual([]);
       expect(await sut.getImportBytes(user.id)).toBe(100);
     });
+
+    it('admits every numeric import count through the exact limit and refuses only a new id at capacity', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Complete dependency closure' });
+      const first = item(project.id, user.id);
+      await sut.registerImport(first);
+      for (let count = 1; count < STUDIO_IMPORT_MAX_PER_PROJECT; count++) {
+        const next = item(project.id, user.id, { sizeBytes: 1 });
+        await expect(sut.registerImport(next)).resolves.toMatchObject({ id: next.id });
+      }
+      expect(await sut.listImports(project.id)).toHaveLength(STUDIO_IMPORT_MAX_PER_PROJECT);
+      await expect(sut.registerImport(first)).resolves.toMatchObject({ id: first.id, checksum: first.checksum });
+      const refused = item(project.id, user.id);
+      await expect(sut.registerImport(refused)).rejects.toThrow('The project has too many imports');
+      await expect(sut.getImport(project.id, refused.id)).resolves.toBeUndefined();
+      expect(await sut.listImports(project.id)).toHaveLength(STUDIO_IMPORT_MAX_PER_PROJECT);
+      await expect(sut.registerImport({ ...first, checksum: 'ef'.repeat(32) })).rejects.toThrow(
+        'Project import ids cannot be rebound to another file',
+      );
+    }, 30_000);
 
     it("refuses imports into someone else's project and invalid declarations", async () => {
       const { ctx, sut } = setup();

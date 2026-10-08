@@ -59,7 +59,7 @@ export class ICloudIdentityController {
   @Endpoint({
     summary: 'Accept an administrative edit-owner baseline',
     description:
-      'Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access.',
+      'Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access. Optional original-revert intent explicitly changes local primary against the current immutable publication with the selected retention policy; without intent this remains administrative and cannot reinterpret an existing publication.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   acceptICloudEditBaseline(
@@ -75,7 +75,7 @@ export class ICloudIdentityController {
   @Endpoint({
     summary: 'Accept verified bytes as an administrative edit successor',
     description:
-      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Unsupported or unsafe supersede decisions require review.',
+      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Supersede explicitly binds the current local publication, verified eligible render set, effective config and owner-local policy sequence; first publication refuses changed policy, privacy or authority. Accepted decisions, committed bytes, queued effects and delivered effects are distinct.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   acceptICloudEditSuccessor(

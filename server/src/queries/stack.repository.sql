@@ -123,9 +123,13 @@ where
   )
 
 -- StackRepository.delete
-delete from "stack"
+select
+  "id",
+  "ownerId"
+from
+  "stack"
 where
-  "id" = $1::uuid
+  "id" in ($1)
 
 -- StackRepository.getById
 select
@@ -279,71 +283,9 @@ where
   "asset"."id" = $1
 
 -- StackRepository.merge
-begin
-update "asset"
-set
-  "stackId" = $1
-where
-  "asset"."stackId" = $2
 select
-  member.id
+  "ownerId"
 from
-  asset as member
+  "stack"
 where
-  member."stackId" = any ($1::uuid[])
-union
-select
-  member."livePhotoVideoId"
-from
-  asset as member
-where
-  member."stackId" = any ($2::uuid[])
-  and member."livePhotoVideoId" is not null
-with
-  source as (
-    select distinct
-      on (asset."stackId") asset."stackId",
-      asset_lock."reason",
-      asset_lock."lockedBy"
-    from
-      asset_lock
-      inner join asset on asset.id = asset_lock."assetId"
-      inner join stack on stack.id = asset."stackId"
-    where
-      asset."stackId" = any ($1::uuid[])
-    order by
-      asset."stackId",
-      (asset.id = stack."primaryAssetId") desc,
-      asset_lock."lockedAt"
-  ),
-  target as (
-    select
-      member.id,
-      source."reason",
-      source."lockedBy"
-    from
-      asset as member
-      inner join source on source."stackId" = member."stackId"
-    union
-    select
-      member."livePhotoVideoId" as id,
-      source."reason",
-      source."lockedBy"
-    from
-      asset as member
-      inner join source on source."stackId" = member."stackId"
-    where
-      member."livePhotoVideoId" is not null
-  )
-insert into
-  asset_lock ("assetId", "reason", "lockedBy")
-select
-  target.id,
-  target."reason",
-  target."lockedBy"
-from
-  target
-on conflict ("assetId") do nothing
-returning
-  "assetId"
-commit
+  "id" = $1

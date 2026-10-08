@@ -48,6 +48,27 @@ export class StudioRevocationService {
     this.logger.setContext(StudioRevocationService.name);
   }
 
+  @OnEvent({ name: 'AssetLocalEffects', priority: -1 })
+  async onAssetLocalEffects(bundle: ArgOf<'AssetLocalEffects'>): Promise<void> {
+    const removed = await this.operations.listRevokedSourceAdmissions(bundle.revocations);
+    const admissions = new Map(
+      [...removed, ...(bundle.lockedCascade?.interactiveAdmissions ?? [])].map((row) => [row.id, row]),
+    )
+      .values()
+      .toArray();
+    if (bundle.lockedCascade)
+      this.projects.forgetInteractiveAdmissions(
+        bundle.ownerId,
+        bundle.streamEpoch,
+        bundle.sequence,
+        bundle.lockedCascade.assetIds,
+      );
+    this.projects.forgetSourceAdmissions(bundle.revocations);
+    await this.previews.revokeAdmissions(admissions.map((row) => row.id));
+    await this.streams.revokeAdmissions(admissions);
+    for (const admission of admissions) await this.operations.requestCancel(admission.id, admission.ownerId);
+  }
+
   @OnEvent({ name: 'AssetTrash' })
   async onAssetTrash({ assetId }: ArgOf<'AssetTrash'>): Promise<void> {
     await this.sourcesRemoved([assetId]);

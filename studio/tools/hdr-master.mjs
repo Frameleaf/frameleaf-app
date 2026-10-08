@@ -88,7 +88,8 @@ export function toRgb48(frame) {
 export function encoderArgs({ width, height, fps, transfer, light, mastering, output, lossless = false, timeline, audio }) {
   const trc = transfer === 'pq' ? 'smpte2084' : 'arib-std-b67';
   const x265 = [
-    'profile=main10', ...(timeline ? ['bframes=0'] : []), 'repeat-headers=1', 'colorprim=bt2020', `transfer=${trc}`,
+    // Short diagnostic sequences must not depend on x265's reorder delay for valid timestamps.
+    'profile=main10', 'bframes=0', 'repeat-headers=1', 'colorprim=bt2020', `transfer=${trc}`,
     'colormatrix=bt2020nc', 'range=limited',
     // Verification masters isolate the colour conversion from compression loss.
     ...(lossless ? ['lossless=1'] : []),

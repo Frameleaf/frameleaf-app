@@ -25,6 +25,12 @@ export type MediaRecoveryInput = RecoveryAuthority & {
   scheduledVerified?: Extract<MediaIntegrityResult, { status: 'healthy' }>;
 };
 
+export class LocalEffectsPendingError extends Error {
+  constructor() {
+    super('local_effects_pending');
+  }
+}
+
 @Injectable()
 export class MediaRecoveryService {
   constructor(
@@ -85,14 +91,28 @@ export class MediaRecoveryService {
       if (verified.status !== 'healthy') {
         return { outcome: verified.status === 'unsupported' ? 'needs-review' : 'retry', reason: verified.reason };
       }
-      return await this.repository.commitVerifiedReuse({
+      const committed = await this.repository.commitVerifiedReuse({
         ...input,
         weeklyReuse: reuse.context,
         candidate,
         verified,
         verifyFinal: validate,
       });
+      if (
+        committed.assetId &&
+        ['reused', 'imported', 'repaired-missing', 'repaired-corrupt'].includes(committed.outcome) &&
+        resource.auditRequestId === null &&
+        ['edited-image', 'edited-video'].includes(resource.role)
+      ) {
+        try {
+          await this.repository.enqueueLocalEffects();
+        } catch {
+          throw new LocalEffectsPendingError();
+        }
+      }
+      return committed;
     } catch (error) {
+      if (error instanceof LocalEffectsPendingError) throw error;
       const reason = editAuthorityReviewReason(error);
       return reason ? { outcome: 'needs-review', reason } : { outcome: 'retry', reason: 'reuse_not_committed' };
     }
@@ -270,7 +290,7 @@ export class MediaRecoveryService {
           }
         }
       }
-      return await this.repository.commit({
+      const committed = await this.repository.commit({
         ...input,
         originalFileName: basename(input.originalFileName),
         reservation,
@@ -286,7 +306,21 @@ export class MediaRecoveryService {
                 deep: true,
               }),
       });
+      if (
+        committed.assetId &&
+        ['reused', 'imported', 'repaired-missing', 'repaired-corrupt'].includes(committed.outcome) &&
+        resource.auditRequestId === null &&
+        ['edited-image', 'edited-video'].includes(resource.role)
+      ) {
+        try {
+          await this.repository.enqueueLocalEffects();
+        } catch {
+          throw new LocalEffectsPendingError();
+        }
+      }
+      return committed;
     } catch (error) {
+      if (error instanceof LocalEffectsPendingError) throw error;
       const reason = editAuthorityReviewReason(error);
       if (reason) {
         return { outcome: 'needs-review', reason };
