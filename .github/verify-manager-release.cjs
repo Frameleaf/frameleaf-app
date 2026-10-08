@@ -9,6 +9,9 @@ const {
   COSIGN_PUBLIC_KEY,
 } = require("./frameleaf-release.cjs");
 const { verifyAttestedPredicate } = require("./verify-release-bundle.cjs");
+const {
+  validateInstallerBinding,
+} = require("../packaging/nas/manager-installers.cjs");
 const TYPE = "https://frameleaf.net/attestations/manager-release/v1";
 const IMAGE = "ghcr.io/frameleaf/frameleaf-manager";
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
@@ -82,6 +85,7 @@ async function verifyManagerRelease(file, { run, request = github } = {}) {
     run,
   );
   verifyAttestedPredicate(manifest.image, TYPE, manifest, run);
+  if (manifest.installers !== undefined) validateInstallerBinding(manifest);
   return manifest;
 }
 module.exports = { verifyManagerRelease, TYPE, IMAGE };

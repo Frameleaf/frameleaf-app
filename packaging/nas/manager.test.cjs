@@ -36,6 +36,14 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     await fs.writeFile(file, JSON.stringify(manifest));
     const output = path.join(directory, 'valid');
     await buildManager(file, output, { run, request });
+    manifest.installers = { schemaVersion: 1, sourceCommit, tag: manifest.tag, image: manifest.image,
+      files: ['frameleaf-manager.xml', 'frameleaf-manager.compose.yaml'].map(name => ({ name, sha256: '0'.repeat(64) })) };
+    await fs.writeFile(file, JSON.stringify(manifest));
+    const staleOutput = path.join(directory, 'stale-authenticated-templates');
+    await assert.rejects(buildManager(file, staleOutput, { run, request }), /installer/i);
+    await assert.rejects(fs.stat(staleOutput), { code: 'ENOENT' });
+    delete manifest.installers;
+    await fs.writeFile(file, JSON.stringify(manifest));
     const xml = await fs.readFile(path.join(output, 'unraid/templates/frameleaf-manager.xml'), 'utf8');
     assert(xml.includes(`<Repository>${manifest.image}</Repository>`));
     assert(xml.includes('MANAGER_PLATFORM'));
