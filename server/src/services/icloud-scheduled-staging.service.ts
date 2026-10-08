@@ -692,7 +692,9 @@ export class ICloudScheduledStagingService {
         released = true;
         const cleanup = Promise.allSettled(pending)
           .then(async () => {
-            await Promise.all(files.map(({ handle }) => handle.close()));
+            const closed = await Promise.allSettled(files.map(({ handle }) => Promise.try(() => handle.close())));
+            const failures = closed.filter((close) => close.status === 'rejected').map((close) => close.reason);
+            if (failures.length > 0) throw new AggregateError(failures, 'scheduled_audit_close_failed');
             await this.repository.finishPrivateWork(input, privateWork);
           })
           .finally(() => this.cleanups.delete(cleanup));
