@@ -13,6 +13,7 @@
    * for Best Photos.
    */
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import type {
     ExploreBestPhotosPreview,
@@ -36,6 +37,9 @@
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  /** The sections that load on their own request and can therefore fail on their own. */
+  export type ExploreSection = 'people' | 'places' | 'things' | 'memories' | 'albums' | 'recents';
+
   export interface ExploreMemoryCard {
     id: string;
     title: string;
@@ -57,6 +61,10 @@
     shortcutCounts: ExploreShortcutCounts;
     /** Items the account can see in the library, when known; 0 shows the empty state. */
     libraryTotal?: number | null;
+    /** Sections whose request failed: each shows its heading and a retry instead of vanishing. */
+    failed?: Partial<Record<ExploreSection, boolean>>;
+    onRetry?: () => unknown;
+    retrying?: boolean;
     onViewAsset: (id: string) => void;
   }
 
@@ -70,14 +78,21 @@
     bestPhotos,
     shortcutCounts,
     libraryTotal = null,
+    failed = {},
+    onRetry,
+    retrying = false,
     onViewAsset,
   }: Props = $props();
 
   const shortcuts = $derived(buildExploreShortcuts(shortcutCounts));
 
+  // A failed section is never "an empty library": the empty state is only for a library that
+  // answered and has nothing in it.
+  const anyFailed = $derived(Object.values(failed).some(Boolean));
   const hasAnything = $derived(
     libraryTotal === null
-      ? people.length > 0 ||
+      ? anyFailed ||
+          people.length > 0 ||
           places.length > 0 ||
           things.length > 0 ||
           recents.length > 0 ||
@@ -101,6 +116,13 @@
       </a>
     {/if}
   </div>
+{/snippet}
+
+{#snippet failure(section: ExploreSection, title: string, index: number)}
+  <section class="el-section el-rise" style="--i: {index}" aria-labelledby="explore-{section}-heading">
+    {@render heading(`explore-${section}-heading`, title)}
+    <InlineError compact message={$t('frameleaf_explore_section_failed')} {onRetry} {retrying} />
+  </section>
 {/snippet}
 
 {#snippet cover(assetId: string | null | undefined)}
@@ -129,8 +151,10 @@
       <p>{$t('frameleaf_explore_empty_body')}</p>
     </div>
   {:else}
-    {#if people.length > 0}
-      <section class="el-section" aria-labelledby="explore-people-heading">
+    {#if failed.people && people.length === 0}
+      {@render failure('people', $t('people'), 0)}
+    {:else if people.length > 0}
+      <section class="el-section el-rise" style="--i: 0" aria-labelledby="explore-people-heading">
         {@render heading('explore-people-heading', $t('people'), Route.people())}
         <div class="el-people">
           {#each people as item (item.id)}
@@ -144,7 +168,7 @@
       </section>
     {/if}
 
-    <section class="el-section" aria-label={$t('frameleaf_explore_highlights_label')}>
+    <section class="el-section el-rise" style="--i: 1" aria-label={$t('frameleaf_explore_highlights_label')}>
       <div class="el-highlights">
         <a class="el-best fl-continuous-corners" href={Route.bestPhotos()}>
           {@render cover(bestPhotos.cover?.id)}
@@ -154,10 +178,12 @@
               ><Icon icon={mdiStarOutline} size="16" aria-hidden="true" /> {$t('best_photos')}</span
             >
             <strong>{$t('frameleaf_explore_highlight_copy')}</strong>
+            <!--
+              The page's data has arrived by the time this renders, so a missing total is a count
+              that could not be read, never one still loading: the card keeps its invitation.
+            -->
             <small>
-              {#if bestPhotos.total === null}
-                {$t('frameleaf_explore_highlight_loading')}
-              {:else if bestPhotos.total > 0}
+              {#if bestPhotos.total !== null && bestPhotos.total > 0}
                 {$t('frameleaf_explore_highlight_ready', { values: { count: bestPhotos.total } })}
               {:else}
                 {$t('frameleaf_explore_highlight_empty')}
@@ -172,9 +198,9 @@
               <span class="el-shortcut-icon"><Icon icon={shortcut.icon} size="20" aria-hidden="true" /></span>
               <span>
                 <strong>{$t(shortcut.labelKey)}</strong>
-                <small>
-                  {shortcut.count === null ? $t('frameleaf_explore_highlight_loading') : countLabel(shortcut.count)}
-                </small>
+                {#if shortcut.count !== null}
+                  <small>{countLabel(shortcut.count)}</small>
+                {/if}
               </span>
               <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
             </a>
@@ -183,8 +209,10 @@
       </div>
     </section>
 
-    {#if places.length > 0}
-      <section class="el-section" aria-labelledby="explore-places-heading">
+    {#if failed.places}
+      {@render failure('places', $t('places'), 2)}
+    {:else if places.length > 0}
+      <section class="el-section el-rise" style="--i: 2" aria-labelledby="explore-places-heading">
         {@render heading('explore-places-heading', $t('places'), Route.places())}
         <div class="el-places">
           {#each places as place (place.id)}
@@ -201,13 +229,15 @@
       </section>
     {/if}
 
-    {#if memories.length > 0}
-      <section class="el-section" aria-labelledby="explore-memories-heading">
+    {#if failed.memories}
+      {@render failure('memories', $t('frameleaf_explore_days_to_revisit'), 3)}
+    {:else if memories.length > 0}
+      <section class="el-section el-rise" style="--i: 3" aria-labelledby="explore-memories-heading">
         {@render heading('explore-memories-heading', $t('frameleaf_explore_days_to_revisit'), Route.memories())}
         <div class="el-memory-row">
           {#each memories as memory (memory.id)}
-            <a href={memory.href}>
-              <img src={memory.src} alt={memory.alt} loading="lazy" />
+            <a href={memory.href} class="el-memory">
+              <img src={memory.src} alt={memory.alt} loading="lazy" data-fl-shared="memory:{memory.id}" />
               <span class="el-cover-shade"></span>
               <span class="el-memory-copy">
                 <strong>{memory.title}</strong>
@@ -219,8 +249,10 @@
       </section>
     {/if}
 
-    {#if things.length > 0}
-      <section class="el-section" aria-labelledby="explore-things-heading">
+    {#if failed.things}
+      {@render failure('things', $t('frameleaf_explore_things'), 4)}
+    {:else if things.length > 0}
+      <section class="el-section el-rise" style="--i: 4" aria-labelledby="explore-things-heading">
         {@render heading('explore-things-heading', $t('frameleaf_explore_things'))}
         <div class="el-things">
           {#each things as thing (thing.id)}
@@ -237,8 +269,10 @@
       </section>
     {/if}
 
-    {#if albums.length > 0}
-      <section class="el-section" aria-labelledby="explore-albums-heading">
+    {#if failed.albums}
+      {@render failure('albums', $t('frameleaf_explore_from_your_albums'), 5)}
+    {:else if albums.length > 0}
+      <section class="el-section el-rise" style="--i: 5" aria-labelledby="explore-albums-heading">
         {@render heading('explore-albums-heading', $t('frameleaf_explore_from_your_albums'))}
         <div class="el-collections">
           {#each albums as album (album.id)}
@@ -255,8 +289,10 @@
       </section>
     {/if}
 
-    {#if recents.length > 0}
-      <section class="el-section" aria-labelledby="explore-recent-heading">
+    {#if failed.recents}
+      {@render failure('recents', $t('frameleaf_explore_recent_captures'), 6)}
+    {:else if recents.length > 0}
+      <section class="el-section el-rise" style="--i: 6" aria-labelledby="explore-recent-heading">
         {@render heading('explore-recent-heading', $t('frameleaf_explore_recent_captures'))}
         <div class="el-recent">
           {#each recents as asset (asset.id)}
@@ -314,8 +350,8 @@
     cursor: pointer;
   }
   .explore-library :focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 4px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .explore-library h1 {
     margin: 0;
@@ -530,7 +566,7 @@
     overflow-x: auto;
     padding-bottom: 6px;
   }
-  .el-memory-row a {
+  .el-memory {
     position: relative;
     display: block;
     min-height: 205px;
@@ -539,7 +575,7 @@
     background: var(--fl-raised);
     text-align: start;
   }
-  .el-memory-row img {
+  .el-memory > img {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -697,6 +733,67 @@
   .explore-library a:hover,
   .explore-library button:hover {
     filter: brightness(1.08);
+  }
+
+  /*
+   * Press and hover (apple-style.css "#2 / #4 motion"): a card settles back on the spring after a
+   * press, and the cover inside eases forward a touch while the pointer is over it. Movement only;
+   * Reduce Motion keeps the brightness change and drops the scale.
+   */
+  :is(.el-best, .el-place, .el-person, .el-shortcut, .el-memory, .el-things a, .el-collections a, .el-recent button) {
+    transition:
+      transform var(--fl-duration) var(--fl-spring),
+      filter var(--fl-motion) var(--fl-ease);
+  }
+  :is(
+    .el-best,
+    .el-place,
+    .el-person,
+    .el-shortcut,
+    .el-memory,
+    .el-things a,
+    .el-collections a,
+    .el-recent button
+  ):active {
+    transform: scale(0.98);
+    transition-duration: var(--fl-duration-press);
+  }
+  :is(.el-best, .el-place, .el-memory) > img {
+    transition: transform var(--fl-duration-hero) var(--fl-ease);
+  }
+  :is(.el-best, .el-place, .el-memory):is(:hover, :focus-visible) > img {
+    transform: scale(1.03);
+  }
+
+  /* First paint: sections rise in order, top to bottom, the last few together. */
+  .el-rise {
+    animation: el-rise var(--fl-duration) var(--fl-spring) backwards;
+    animation-delay: calc(min(var(--i, 0), 6) * var(--fl-stagger));
+  }
+  @keyframes el-rise {
+    from {
+      opacity: 0;
+      transform: translateY(var(--fl-space-2));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(
+      .el-best,
+      .el-place,
+      .el-person,
+      .el-shortcut,
+      .el-memory,
+      .el-things a,
+      .el-collections a,
+      .el-recent button
+    ):active,
+    :is(.el-best, .el-place, .el-memory):is(:hover, :focus-visible) > img {
+      transform: none;
+    }
+    .el-rise {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) backwards !important;
+      animation-delay: 0s !important;
+    }
   }
 
   /* apple-style.css "#5 snapping carousels" */

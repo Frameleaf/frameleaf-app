@@ -9,7 +9,11 @@
   import { page } from '$app/state';
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
   import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { accountLifecycle } from '$lib/frameleaf/accounts';
@@ -23,7 +27,8 @@
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { CommandPaletteDefaultProvider, toastManager } from '@frameleaf/ui';
+  import { CommandPaletteDefaultProvider, Icon, toastManager } from '@frameleaf/ui';
+  import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { loadUserDetail, type UserDetailData } from './loaders';
 
@@ -104,9 +109,19 @@
 {#if data}
   {@render detail(data)}
 {:else if data === null}
-  <p role="alert">{$t('frameleaf_cc_load_failed')}</p>
+  <InlineError
+    message={$t('frameleaf_cc_section_load_failed')}
+    onRetry={() => {
+      data = undefined;
+      reload++;
+    }}
+  />
 {:else}
-  <p role="status">{$t('loading')}</p>
+  <div class="detail-loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="circle" />
+    <Skeleton variant="text" lines={2} width="16rem" />
+  </div>
 {/if}
 
 {#snippet detail({
@@ -137,7 +152,9 @@
       {#if accountLifecycle(user) === 'active'}
         <Button onclick={() => void goto(Route.editUser(user))}>{$t('frameleaf_users_edit_account')}</Button>
       {/if}
-      <Button label={$t('frameleaf_users_close_details')} onclick={() => void goto(Route.users())}>×</Button>
+      <IconButton label={$t('frameleaf_users_close_details')} onclick={() => void goto(Route.users())}>
+        <Icon icon={mdiClose} size={ICON_SIZE.lg} />
+      </IconButton>
     </div>
   </header>
 
@@ -169,3 +186,12 @@
     <AccountFormDialog {user} onClose={() => goto(Route.viewUser(user))} />
   {/if}
 {/snippet}
+
+<style>
+  .detail-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-4);
+    padding: var(--fl-space-4) 0;
+  }
+</style>

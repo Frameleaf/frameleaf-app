@@ -22,7 +22,6 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
     getAlbumMapMarkers,
@@ -100,6 +99,10 @@
   let map = $state<Map>();
   let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
   let loaded = $state(false);
+  /** The located items could not be loaded: its own card with Try again, never "nothing here". */
+  let loadFailed = $state(false);
+  /** Bumped by Try again: asks for the same markers once more. */
+  let attempt = $state(0);
   let inView = $state<MapMarkerResponseDto[]>([]);
   /**
    * FL-139: the in-view list draws its rows a page at a time as it is scrolled, so a zoomed-out map of
@@ -186,6 +189,7 @@
 
   $effect(() => {
     const query: unknown = JSON.parse(filterKey);
+    void attempt;
     abort?.abort();
     const controller = new AbortController();
     abort = controller;
@@ -196,15 +200,49 @@
       .then((result) => {
         loadedMarkers = result;
         loaded = true;
+        loadFailed = false;
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (controller.signal.aborted) {
           return;
         }
 
-        loaded = true;
-        handleError(error, $t('errors.unable_to_load_map'));
+        loadFailed = true;
       });
+  });
+  const retryMarkers = () => {
+    loadFailed = false;
+    attempt += 1;
+  };
+
+  /**
+   * A hovered cluster shows one of its own items and where it is, rather than a blank tile over raw
+   * coordinates. The cluster's first item is read from the map's own index when the pointer arrives.
+   */
+  let clusterPreview = $state<{ cluster: number; id: string; place: string }>();
+  $effect(() => {
+    const cluster = hoveredCluster?.properties?.cluster_id as number | undefined;
+    if (cluster === undefined || !map) {
+      return;
+    }
+    const source = map.getSource('geojson') as GeoJSONSource | undefined;
+    if (!source) {
+      return;
+    }
+    let stale = false;
+    source
+      .getClusterLeaves(cluster, 1, 0)
+      .then(([leaf]) => {
+        if (!stale && leaf?.properties?.id) {
+          clusterPreview = { cluster, id: leaf.properties.id as string, place: leaf.properties.place as string };
+        }
+      })
+      .catch(() => {
+        // the card falls back to the count and the coordinates
+      });
+    return () => {
+      stale = true;
+    };
   });
 
   onDestroy(() => abort?.abort());
@@ -479,11 +517,17 @@
             >
               {count.toLocaleString($locale)}
               {#if hoveredCluster?.properties?.cluster_id === feature.properties?.cluster_id}
+                {@const preview =
+                  clusterPreview?.cluster === feature.properties?.cluster_id ? clusterPreview : undefined}
                 <span class="card" aria-hidden="true">
-                  <span class="card-empty"><Icon icon={mdiImageOutline} size="20" /></span>
+                  {#if preview}
+                    <img src={getAssetMediaUrl({ id: preview.id, size: AssetMediaSize.Thumbnail })} alt="" />
+                  {:else}
+                    <span class="card-empty"><Icon icon={mdiImageOutline} size="20" /></span>
+                  {/if}
                   <span class="card-copy">
                     <strong>{$t('frameleaf_map_items', { values: { count } })}</strong>
-                    <small>{coordinatesOf(feature)}</small>
+                    <small>{preview?.place || coordinatesOf(feature)}</small>
                   </span>
                 </span>
               {/if}
@@ -535,11 +579,19 @@
     <p id="fl-map-help" class="sr-only">{$t('frameleaf_map_help')}</p>
 
     <div class="overlay top-left">
-      <span class="chip">
-        <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
-        {$t('frameleaf_map_in_view', { values: { count: inView.length } })}
-        <small>· {$t('frameleaf_map_located', { values: { count: markers.length } })}</small>
-      </span>
+      {#if loaded}
+        <span class="chip">
+          <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
+          {$t('frameleaf_map_in_view', { values: { count: inView.length } })}
+          <small>· {$t('frameleaf_map_located', { values: { count: markers.length } })}</small>
+        </span>
+      {:else if !loadFailed}
+        <!-- No counts until there is an answer: "0 in view" would read as an empty map. -->
+        <span class="chip finding" role="status">
+          <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
+          {$t('frameleaf_map_finding')}
+        </span>
+      {/if}
     </div>
 
     {#if changed && onSearchArea}
@@ -598,6 +650,17 @@
           {#if !offline}
             <Button onclick={retryTiles}>{$t('frameleaf_map_try_again')}</Button>
           {/if}
+        </div>
+      </div>
+    {/if}
+
+    {#if loadFailed}
+      <div class="offline" role="alert">
+        <Icon icon={mdiMapMarkerOffOutline} size="24" />
+        <strong>{$t('frameleaf_map_load_failed_title')}</strong>
+        <p>{$t('frameleaf_map_load_failed_help')}</p>
+        <div class="offline-actions">
+          <Button onclick={retryMarkers}>{$t('frameleaf_map_try_again')}</Button>
         </div>
       </div>
     {/if}
@@ -742,13 +805,15 @@
             <li class="list-more" aria-hidden="true" bind:this={listEnd}></li>
           {/if}
         </ul>
-      {:else}
+      {:else if loaded}
         <p class="list-empty" role="status">{$t('frameleaf_map_list_empty')}</p>
+      {:else if !loadFailed}
+        <p class="list-empty" role="status">{$t('frameleaf_map_finding')}</p>
       {/if}
     </aside>
   {/if}
 
-  {#if loaded && markers.length === 0}
+  {#if loaded && !loadFailed && markers.length === 0}
     <div class="empty" role="status">
       <Icon icon={mdiMapMarkerOutline} size="30" />
       <!-- MapView.jsx has one empty state for both scopes: the settings sheet narrows an album too. -->
@@ -888,6 +953,13 @@
     box-shadow: var(--fl-shadow-2);
     text-align: center;
     color: var(--fl-muted);
+  }
+  /* On a phone the card is as wide as the map, so it sits below the control column, not under it. */
+  @media (max-width: 640px) {
+    .offline {
+      top: auto;
+      bottom: 72px;
+    }
   }
   .offline strong {
     color: var(--fl-text);
@@ -1099,7 +1171,7 @@
     flex-shrink: 0;
     width: 32px;
     height: 18px;
-    border-radius: 12px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-border);
     transition: background var(--fl-motion) var(--fl-ease);
   }
@@ -1284,7 +1356,56 @@
     white-space: nowrap;
     border: 0;
   }
+  /*
+   * Entrances (map-view.css map-card-in, map-list-in, map-sheet-in): the hover card lifts into
+   * place, the list slides in from its edge, and the settings sheet rises. Under Reduce Motion each
+   * is the short crossfade. The "finding" chip breathes until the located items arrive.
+   */
+  .card {
+    animation: map-card-in var(--fl-motion) var(--fl-ease) both;
+  }
+  .list {
+    animation: map-list-in var(--fl-motion) var(--fl-ease) both;
+  }
+  .settings {
+    animation: map-sheet-in var(--fl-motion-slow) var(--fl-ease) both;
+  }
+  .chip.finding {
+    animation: fl-skeleton-pulse var(--fl-duration-pulse) var(--fl-ease) infinite alternate;
+  }
+  @keyframes map-card-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--fl-space-1);
+    }
+  }
+  @keyframes map-list-in {
+    from {
+      opacity: 0;
+      translate: var(--fl-space-3) 0;
+    }
+  }
+  @keyframes map-sheet-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--fl-space-4);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card,
+    .list,
+    .settings {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+    }
+    .chip.finding {
+      animation: none !important;
+    }
+  }
   @media (max-width: 720px) {
+    .list {
+      animation-name: map-sheet-in;
+      animation-duration: var(--fl-motion-slow);
+    }
     .fl-map.with-list {
       flex-direction: column;
     }

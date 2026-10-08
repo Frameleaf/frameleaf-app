@@ -1,3 +1,4 @@
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
@@ -38,6 +39,15 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    // `resetAllMocks` clears the shared setup's matchMedia; the toolbar asks it for the phone layout.
+    vi.mocked(matchMedia).mockImplementation(((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as never);
   });
 
   it('keeps the toolbar to the prototype and offers Correction history in the … menu (FL-146 PD-9)', async () => {
@@ -78,6 +88,7 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     sdkMock.updatePerson.mockResolvedValue(hidden);
     const announced = vi.fn();
     const stop = eventManager.on({ PersonUpdate: announced });
+    const toast = vi.spyOn(toastManager, 'show');
     render(PersonHero, view);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
@@ -85,7 +96,23 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     await waitFor(() => expect(view.onPersonChange).toHaveBeenCalledWith(hidden));
     expect(sdkMock.updatePerson).toHaveBeenCalledWith({ id: 'ada', personUpdateDto: { isHidden: true } });
     expect(announced).toHaveBeenCalledWith(hidden);
-    expect(screen.getByRole('status').textContent).toContain('Ada is hidden from the People page');
+    // said in a toast that offers Undo, not in a line at the top of the page
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining('Ada is hidden from the People page'),
+        button: expect.objectContaining({ label: 'Undo' }),
+      }),
+      expect.anything(),
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+
+    // Undo puts the person back with one more update
+    const { button } = toast.mock.calls[0][0] as { button: { onclick: () => void } };
+    sdkMock.updatePerson.mockResolvedValue(view.person);
+    button.onclick();
+    await waitFor(() =>
+      expect(sdkMock.updatePerson).toHaveBeenLastCalledWith({ id: 'ada', personUpdateDto: { isHidden: false } }),
+    );
     stop();
   });
 

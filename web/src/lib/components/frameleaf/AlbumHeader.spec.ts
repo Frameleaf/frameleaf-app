@@ -85,7 +85,7 @@ describe('AlbumHeader', () => {
     expect(add.getByRole('menuitem', { name: /Upload from computer/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Shared links' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
 
     const more = await openMore();
@@ -101,7 +101,7 @@ describe('AlbumHeader', () => {
     expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Shared links' })).toBeNull();
-    expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
 
     const more = await openMore();
     expect(more.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
@@ -117,7 +117,7 @@ describe('AlbumHeader', () => {
     expect(screen.queryByRole('button', { name: 'Shared links' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit title' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
     expect(screen.getByText(/View only/)).toBeInTheDocument();
 
     const more = await openMore();
@@ -152,7 +152,7 @@ describe('AlbumHeader', () => {
 
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {
     renderHeader(albumAs(AlbumUserRole.Viewer, { isActivityEnabled: false }));
-    expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
   });
 
   it('shows no separator above Leave when a viewer has nothing else in the menu', async () => {
@@ -190,13 +190,15 @@ describe('AlbumHeader', () => {
       const toolbar = screen.getByRole('toolbar');
       expect(within(toolbar).getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
       expect(within(toolbar).getByRole('button', { name: 'Share' })).toBeInTheDocument();
-      for (const name of ['Shared links', 'Slideshow', 'Download', /^Activity/]) {
+      for (const name of ['Shared links', 'Slideshow', 'Download', /^Likes & comments/]) {
         expect(within(toolbar).queryByRole('button', { name })).toBeNull();
       }
 
       const menu = await openMore();
-      for (const name of ['Shared links', 'Slideshow', 'Download', 'Activity']) {
-        expect(menu.getByRole(name === 'Activity' ? 'menuitemcheckbox' : 'menuitem', { name })).toBeInTheDocument();
+      for (const name of ['Shared links', 'Slideshow', 'Download', 'Likes & comments']) {
+        expect(
+          menu.getByRole(name === 'Likes & comments' ? 'menuitemcheckbox' : 'menuitem', { name }),
+        ).toBeInTheDocument();
       }
       expect(menu.getByRole('menuitem', { name: 'Delete album' })).toBeInTheDocument();
     });
@@ -252,7 +254,7 @@ describe('AlbumHeader', () => {
       });
 
       const menu = await openMore();
-      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Activity (3)' }));
+      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Likes & comments (3)' }));
       expect(onToggleActivity).toHaveBeenCalledOnce();
     });
   });
@@ -282,7 +284,8 @@ describe('AlbumHeader', () => {
       await fireEvent.click(await screen.findByRole('button', { name: 'Use as cover' }));
 
       await waitFor(() => expect(onAlbumChange).toHaveBeenCalledWith(expect.objectContaining({ coverFollowsNewest })));
-      expect(screen.getByRole('status')).toHaveTextContent(message);
+      // said in a toast, not in the line under the toolbar
+      expect(await screen.findByText(message)).toBeInTheDocument();
     });
   });
 });

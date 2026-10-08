@@ -1096,7 +1096,7 @@
     font-size: var(--fl-font-small, 0.75rem);
   }
   .error {
-    color: var(--fl-danger-text, var(--fl-danger));
+    color: var(--fl-danger);
   }
   .progress {
     width: 100%;
@@ -1203,7 +1203,7 @@
     font-size: var(--fl-font-small, 0.75rem);
   }
   .name small.error {
-    color: var(--fl-danger-text, var(--fl-danger));
+    color: var(--fl-danger);
     white-space: normal;
   }
   .finding {

@@ -235,7 +235,7 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-panel-radius);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
+    box-shadow: var(--fl-shadow-2);
   }
   .chooser.inline {
     width: 100%;
@@ -261,12 +261,13 @@
     color: var(--fl-text);
     font: inherit;
   }
+  /* The field is the whole capsule, so the capsule wears the one focus ring in the input's place. */
   .search input:focus-visible {
     outline: none;
   }
-  .search:focus-within {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+  .search:has(input:focus-visible) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .scroll {
     overflow-y: auto;

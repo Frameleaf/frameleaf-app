@@ -1,8 +1,11 @@
+import { SharedLinkType } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
+import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import {
   canCopyImageToClipboard,
   copyAssetImageToClipboard,
@@ -14,6 +17,12 @@ import ShareSheet from './ShareSheet.svelte';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'me', name: 'Taylor' }, params: {} },
+}));
+
+vi.mock('$lib/services/shared-link.service', () => ({
+  asUrl: (link: { slug?: string | null }) => `https://frameleaf.local/s/${link.slug}`,
+  handleCreateSharedLink: vi.fn(),
+  handleUpdateSharedLink: vi.fn(),
 }));
 
 vi.mock(import('$lib/utils/asset-utils'), async (original) => ({
@@ -84,8 +93,11 @@ describe('ShareSheet', () => {
       await fireEvent.click(jamie);
       expect(jamie).toHaveAttribute('aria-pressed', 'false');
       await fireEvent.click(jamie);
+      // one person gains the items: the button names that change
+      expect(screen.getByRole('button', { name: 'Share with Jamie' })).toBeEnabled();
       await fireEvent.click(sam);
-      await fireEvent.click(screen.getByRole('button', { name: 'Share with Jamie' }));
+      // someone gains and someone loses them
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
       await waitFor(() =>
         expect(sdkMock.shareItems).toHaveBeenCalledWith({
@@ -113,18 +125,20 @@ describe('ShareSheet', () => {
       const sam = screen.getByRole('button', { name: 'Sam' });
       await fireEvent.click(jamie);
       await fireEvent.click(sam);
-      const save = screen.getByRole('button', { name: 'Share with Jamie' });
+      const save = screen.getByRole('button', { name: 'Save changes' });
       await fireEvent.click(save);
 
       await waitFor(() => expect(sdkMock.unshareItems).toHaveBeenCalledTimes(1));
       expect(danger).toHaveBeenCalledWith(en.frameleaf_sharing.sharing_save_failed);
-      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Share 1 item' })).toBeInTheDocument();
       expect(jamie).toHaveAttribute('aria-pressed', 'true');
       expect(sam).toHaveAttribute('aria-pressed', 'false');
       await waitFor(() => expect(save).toBeEnabled());
+      // the share was saved; only the revoke is left, and the button says so
+      expect(save).toHaveTextContent('Stop sharing with Sam');
 
       await fireEvent.click(save);
-      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Share item' })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Share 1 item' })).toBeNull());
       expect(sdkMock.shareItems).toHaveBeenCalledTimes(1);
       expect(sdkMock.unshareItems).toHaveBeenCalledTimes(2);
       expect(sdkMock.unshareItems).toHaveBeenLastCalledWith({
@@ -147,7 +161,7 @@ describe('ShareSheet', () => {
       const sam = screen.getByRole('button', { name: 'Sam' });
       await fireEvent.click(jamie);
       await fireEvent.click(sam);
-      await fireEvent.click(screen.getByRole('button', { name: 'Share with Jamie' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
       await waitFor(() => expect(sdkMock.shareItems).toHaveBeenCalledTimes(1));
       expect(jamie).toBeDisabled();
 
@@ -160,12 +174,12 @@ describe('ShareSheet', () => {
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1'], userIds: ['sam'] },
       });
-      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Share 1 item' })).toBeInTheDocument();
       expect(alex).toHaveAttribute('aria-pressed', 'true');
       await waitFor(() => expect(alex).toBeEnabled());
 
       await fireEvent.click(alex);
-      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Alex' }));
       await waitFor(() => expect(sdkMock.unshareItems).toHaveBeenCalledTimes(2));
       expect(sdkMock.unshareItems).toHaveBeenLastCalledWith({
         itemShareChangeDto: { assetIds: ['b1'], userIds: ['alex'] },
@@ -184,7 +198,7 @@ describe('ShareSheet', () => {
       const jamie = await screen.findByRole('button', { name: /Jamie, shared with some selected items/ });
       expect(jamie).toHaveAttribute('aria-pressed', 'mixed');
       await fireEvent.click(jamie);
-      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Jamie' }));
 
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1', 'a2'], userIds: ['jamie'] },
@@ -204,7 +218,7 @@ describe('ShareSheet', () => {
       const jamie = await screen.findByRole('button', { name: 'Jamie' });
       expect(jamie).toHaveAttribute('aria-pressed', 'true');
       await fireEvent.click(jamie);
-      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Jamie' }));
 
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1'], userIds: ['jamie'] },
@@ -223,7 +237,7 @@ describe('ShareSheet', () => {
       const jamie = await screen.findByRole('button', { name: 'Jamie' });
       expect(jamie).toHaveAttribute('aria-pressed', 'true');
       await fireEvent.click(jamie);
-      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Jamie' }));
 
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1'], userIds: ['jamie'] },
@@ -313,8 +327,11 @@ describe('ShareSheet', () => {
       expect(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing })).toBeDisabled();
 
       await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_error_retry }));
-      expect(await screen.findByRole('button', { name: 'Jamie' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing })).toBeEnabled();
+      const jamie = await screen.findByRole('button', { name: 'Jamie' });
+      // nothing to save until the chosen people differ from who already has the item
+      expect(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing })).toBeDisabled();
+      await fireEvent.click(jamie);
+      expect(screen.getByRole('button', { name: 'Share with Jamie' })).toBeEnabled();
       expect(sdkMock.getItemShares).toHaveBeenCalledTimes(2);
     });
 
@@ -326,15 +343,29 @@ describe('ShareSheet', () => {
     });
   });
 
-  it('opens the real shared-link form for the selection', async () => {
+  it('makes a public link in the sheet itself, ending on Link ready, without a second dialog', async () => {
+    vi.mocked(handleCreateSharedLink).mockResolvedValue(
+      sharedLinkFactory.build({ type: SharedLinkType.Individual, slug: 'beach-day', password: null }),
+    );
     render(ShareSheet, { open: true, assetIds: ['a1', 'a2'] });
-    expect(screen.queryByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title })).toBeNull();
+    expect(screen.queryByLabelText(en.frameleaf_sharing.custom_address)).toBeNull();
     await switchToLink();
+
+    // the link's own settings take the place of the people list
+    expect(screen.getByLabelText(en.frameleaf_sharing.custom_address)).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.create_public_link }));
 
-    expect(
-      await screen.findByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: en.frameleaf_sharing.link_ready_title })).toBeInTheDocument();
+    expect(handleCreateSharedLink).toHaveBeenCalledWith(
+      expect.objectContaining({ type: SharedLinkType.Individual, assetIds: ['a1', 'a2'] }),
+      expect.anything(),
+    );
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByLabelText(en.frameleaf_sharing.link_address)).toHaveValue('https://frameleaf.local/s/beach-day');
+    // nothing left to choose once the link exists: the sheet offers Done only
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.getByRole('button', { name: en.done })).toBeInTheDocument();
   });
 
   it('reports once when the sheet closes, so the viewer can open it through the modal manager (AL-33)', async () => {
@@ -358,23 +389,28 @@ describe('ShareSheet', () => {
       expect(screen.getByText('3 items · 2 photos, 1 video')).toBeInTheDocument();
     });
 
-    it('names a single item in the title and keeps the count beside the collage', () => {
+    it('titles the sheet by what is shared, not a file name, and keeps the count beside the collage', () => {
       const view = render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
-      expect(screen.getByRole('dialog', { name: 'Share a1.jpg' })).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Share 1 photo' })).toBeInTheDocument();
       expect(document.querySelector('.ss-strip')).toHaveTextContent(/^1 item$/);
       view.unmount();
 
-      render(ShareSheet, { open: true, assetIds: ['a1'] });
-      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
+      const unknown = render(ShareSheet, { open: true, assetIds: ['a1'] });
+      expect(screen.getByRole('dialog', { name: 'Share 1 item' })).toBeInTheDocument();
+      unknown.unmount();
+
+      render(ShareSheet, { open: true, assetIds: ['a1', 'v1'], assets: [photo('a1'), video('v1')] });
+      expect(screen.getByRole('dialog', { name: 'Share 2 items' })).toBeInTheDocument();
     });
 
     it('copies the image only when exactly one photo is shared', async () => {
       const first = render(ShareSheet, { open: true, assetIds: ['a1', 'a2'], assets: [photo('a1'), photo('a2')] });
-      expect(screen.getByRole('button', { name: en.frameleaf_sharing.copy_image })).toBeDisabled();
+      // left out, not shown disabled, when it cannot apply
+      expect(screen.queryByRole('button', { name: en.frameleaf_sharing.copy_image })).toBeNull();
       first.unmount();
 
       const second = render(ShareSheet, { open: true, assetIds: ['v1'], assets: [video('v1')] });
-      expect(screen.getByRole('button', { name: en.frameleaf_sharing.copy_image })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: en.frameleaf_sharing.copy_image })).toBeNull();
       second.unmount();
 
       render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });

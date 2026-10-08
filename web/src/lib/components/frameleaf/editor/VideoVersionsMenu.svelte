@@ -9,6 +9,8 @@
    * lists its render status, and ready masters (saved or exported) can be downloaded. Export master
    * queues a separate render of the current version's master; the playback proxy is never offered.
    */
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { leave } from '$lib/frameleaf/motion';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import {
@@ -21,7 +23,7 @@
     type AssetResponseDto,
     type VideoEditVersionResponseDto,
   } from '@frameleaf/sdk';
-  import { ConfirmModal, Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiDownload, mdiExport, mdiHistory, mdiImageOutline, mdiRestore } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -45,6 +47,9 @@
   let error = $state(false);
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
+  // True while the closed popover is still fading out; it stays in place, inert, until the exit ends.
+  let leaving = $state(false);
+  let cancelLeave: (() => void) | undefined;
   let request = 0;
   let disposed = false;
 
@@ -134,6 +139,7 @@
     });
     return () => {
       disposed = true;
+      cancelLeave?.();
       request++;
       unsubscribeReady();
       unsubscribeFailed();
@@ -145,19 +151,45 @@
   ];
 
   async function toggle() {
-    open = !open;
     if (open) {
-      void refresh();
-      await tick();
-      (items().find((item) => item.getAttribute('aria-checked') === 'true') ?? items()[0])?.focus();
+      close(false);
+      return;
     }
+    cancelLeave?.();
+    cancelLeave = undefined;
+    leaving = false;
+    open = true;
+    void refresh();
+    await tick();
+    (items().find((item) => item.getAttribute('aria-checked') === 'true') ?? items()[0])?.focus();
   }
 
   function close(restoreFocus: boolean) {
-    open = false;
     if (restoreFocus) {
       trigger?.focus();
     }
+    if (!open) {
+      return;
+    }
+    open = false;
+    // The Pop exit: a short fade (a crossfade under Reduce Motion). Without animations it just hides.
+    leaving = true;
+    cancelLeave?.();
+    cancelLeave = leave(menu, 'pop', () => {
+      leaving = false;
+      cancelLeave?.();
+      cancelLeave = undefined;
+    });
+  }
+
+  /** Escape with the popover open closes it and goes no further: the editor behind treats Escape as Cancel. */
+  function onKeyDown(event: KeyboardEvent) {
+    if (!open || event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    close(true);
   }
 
   function onMenuKeyDown(event: KeyboardEvent) {
@@ -193,10 +225,11 @@
     close(true);
     const confirmed =
       !hasUnsavedChanges ||
-      (await modalManager.show(ConfirmModal, {
+      (await confirmFrameleaf({
         title: $t('editor_discard_edits_title'),
         prompt: $t('editor_discard_edits_prompt'),
         confirmText: $t('editor_discard_edits_confirm'),
+        danger: true,
       }));
     if (confirmed) {
       onApply(edits);
@@ -253,12 +286,19 @@
 <svelte:window onpointerdown={onWindowPointerDown} />
 
 {#if draftRecipe !== '[]'}
-  <button type="button" class="ed-tool labelled" title={$t('editor_video_revert_original')} onclick={() => choose([])}>
+  <!-- A shortcut for wide screens; on a phone the same choice is "Original" in the list. -->
+  <button
+    type="button"
+    class="ed-tool labelled ed-desk"
+    title={$t('editor_video_revert_original')}
+    onclick={() => choose([])}
+  >
     <Icon icon={mdiRestore} size="20" />
     <span>{$t('frameleaf_editor_revert')}</span>
   </button>
 {/if}
-<div class="ed-menu">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="ed-menu" onkeydown={onKeyDown}>
   <button
     bind:this={trigger}
     type="button"
@@ -272,7 +312,13 @@
     <Icon icon={mdiHistory} size="20" />
     <span>{$t('frameleaf_editor_tool_versions')}</span>
   </button>
-  <div bind:this={menu} class="ed-menu-popover" hidden={!open}>
+  <div
+    bind:this={menu}
+    class="ed-menu-popover"
+    hidden={!open && !leaving}
+    inert={leaving && !open}
+    aria-hidden={leaving && !open ? 'true' : undefined}
+  >
     <h3 id="{menuId}-title">{$t('editor_video_versions')}</h3>
     {#if error}
       <p role="alert">{$t('editor_video_versions_error')}</p>

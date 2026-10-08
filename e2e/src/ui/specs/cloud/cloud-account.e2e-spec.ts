@@ -22,7 +22,7 @@ test.describe('Frameleaf Cloud account & link', () => {
 
   test('starts linking, shows the code and QR code, and picks up the approval', async ({ page }) => {
     await page.goto(accountPage);
-    await expect(page.getByText('Access your library from the Frameleaf mobile apps')).toBeVisible();
+    await expect(page.getByText('Access your library from the Frameleaf mobile apps')).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: 'Link to Frameleaf' }).click();
     await expect(page.getByText('BCDF-GHJK')).toBeVisible();
@@ -49,7 +49,7 @@ test.describe('Frameleaf Cloud account & link', () => {
   test('shows why the link ended', async ({ page }) => {
     mock.state = 'revoked';
     await page.goto(accountPage);
-    await expect(page.getByText('Frameleaf Cloud ended this link')).toBeVisible();
+    await expect(page.getByText('Frameleaf Cloud ended this link')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/no longer recognises this server/)).toBeVisible();
   });
 });

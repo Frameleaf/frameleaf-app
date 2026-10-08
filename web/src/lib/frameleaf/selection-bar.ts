@@ -11,6 +11,11 @@ export type SelectionBarLeadingAction = {
   icon: string;
   onClick: () => void;
   disabled?: boolean;
+  /**
+   * Why the action is unavailable, already translated ("Select two or more to compare"). With it a
+   * disabled action stays focusable and says so, instead of being a dead control.
+   */
+  disabledReason?: string;
   /** The one accented action (Open in Studio in the prototype). */
   primary?: boolean;
 };

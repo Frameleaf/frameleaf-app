@@ -12,6 +12,8 @@
   import { QueryParameter } from '$lib/constants';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
+  import { toastAction, toastUndo } from '$lib/frameleaf/toast';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
   import { websocketEvents } from '$lib/stores/websocket';
   import { handlePromiseError } from '$lib/utils';
@@ -32,7 +34,7 @@
     type PersonResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
+  import { mdiEyeOffOutline, mdiEyeOutline, mdiTuneVariant } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
@@ -42,7 +44,7 @@
   /**
    * The Frameleaf People library (FL-37), ported from `PeopleLibrary` in
    * design/frameleaf/template/src/People.jsx:651-979: summary line, "Find a person", the
-   * Name / Photo count / Recently seen sort, Show hidden, "Show and hide people", per-card
+   * Name / Photo count / Recently seen sort, a Hidden (N) switch, "Choose who appears", per-card
    * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
    * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
    * people is read up front rather than on scroll.
@@ -60,21 +62,34 @@
   let sort: PeopleGridSort = $state('name');
   let showHidden = $state(false);
   let editingId: string | undefined = $state();
-  let status = $state('');
   let librarySize: number | undefined = $state();
   let dialog: { type: 'merge' | 'birthday'; person: PeopleListItemDto } | undefined = $state();
   let dialogOpen = $state(false);
 
   const nameOf = (person: { name: string }) => (isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
 
-  const visible = $derived(people.filter((person) => showHidden || !person.isHidden));
-  const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));
+  /**
+   * What an action did: said in a toast at the foot of the page, where the person is looking. The
+   * toast is a live region, so screen readers hear it once. `undo` puts the change back.
+   */
+  const announce = (message: string, undo?: () => unknown) => {
+    if (undo) {
+      toastUndo(message, undo);
+    } else {
+      toastManager.primary(message);
+    }
+  };
+
   const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
+  // The switch is only offered while somebody is hidden, so it cannot stay on with nothing to show.
+  const showingHidden = $derived(showHidden && hiddenCount > 0);
+  const visible = $derived(people.filter((person) => showingHidden || !person.isHidden));
+  const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));
   const summary = $derived(
     [
       $t('frameleaf_people_count', { values: { count: visible.length } }),
       librarySize === undefined ? '' : $t('frameleaf_people_library_size', { values: { count: librarySize } }),
-      hiddenCount > 0 && !showHidden ? $t('frameleaf_people_hidden_count', { values: { count: hiddenCount } }) : '',
+      hiddenCount > 0 && !showingHidden ? $t('frameleaf_people_hidden_count', { values: { count: hiddenCount } }) : '',
     ]
       .filter(Boolean)
       .join(' · '),
@@ -195,6 +210,15 @@
     }
   };
 
+  /** A merge is kept in the survivor's correction history, which is where it can be taken back. */
+  const announceMerge = (merged: { name: string }, survivor: { id: string; name: string }) => {
+    const message = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
+    toastAction(message, {
+      label: $t('frameleaf_people_merged_open'),
+      onAction: () => goto(Route.viewPerson(survivor, { previousRoute: Route.people() })),
+    });
+  };
+
   // FL-57: "Yes, merge" answers `same`: the server merges (the named person survives) and keeps
   // the merge in the survivor's correction history.
   const handleAcceptSuggestion = async (suggestion: PersonMergeSuggestionDto) => {
@@ -216,7 +240,7 @@
       );
       // as the merge dialog does: open viewers, search chips and person pages follow the merge
       eventManager.emit('PersonFacesChange', { personIds: [survivorId, mergedId], removedPersonIds: [mergedId] });
-      status = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
+      announceMerge(merged, survivor);
       await reloadPeople();
     } catch (error) {
       handleError(error, $t('errors.unable_to_merge_people'));
@@ -256,44 +280,49 @@
         : verdict === PersonMergeVerdict.Ignore
           ? $t('frameleaf_people_merge_suggestion_ignored_toast', { values: { name: nameOf(suggestion.person) } })
           : $t('frameleaf_people_merge_suggestion_later_toast');
-    status = message;
 
     const undo = async () => {
       try {
         await deleteMergeVerdict({ personMergeVerdictDeleteDto: pair });
         mergeSuggestions = [...removed, ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key)];
-        status = $t('frameleaf_people_verdict_undone');
+        toastManager.primary($t('frameleaf_people_verdict_undone'));
       } catch (error) {
         handleError(error, $t('frameleaf_people_verdict_error'));
       }
     };
-    toastManager.primary(
-      { description: message, button: { label: $t('undo'), color: 'secondary', onclick: () => void undo() } },
-      { timeout: 5000 },
-    );
+    toastUndo(message, () => void undo());
   };
 
-  const handleToggleHidden = async (person: PeopleListItemDto) => {
+  /** Hide, show and favorite are one field each, so their toast can put the old value back. */
+  const setHidden = async (person: PeopleListItemDto, isHidden: boolean, undoable = true) => {
     try {
-      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isHidden: !person.isHidden } }));
-      status = person.isHidden
-        ? $t('frameleaf_people_shown_status', { values: { name: nameOf(person) } })
-        : $t('frameleaf_people_hidden_status', { values: { name: nameOf(person) } });
+      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isHidden } }));
+      announce(
+        isHidden
+          ? $t('frameleaf_people_hidden_status', { values: { name: nameOf(person) } })
+          : $t('frameleaf_people_shown_status', { values: { name: nameOf(person) } }),
+        undoable ? () => void setHidden(person, !isHidden, false) : undefined,
+      );
     } catch (error) {
       handleError(error, $t('errors.unable_to_hide_person'));
     }
   };
+  const handleToggleHidden = (person: PeopleListItemDto) => setHidden(person, !person.isHidden);
 
-  const handleToggleFavorite = async (person: PeopleListItemDto) => {
+  const setFavorite = async (person: PeopleListItemDto, isFavorite: boolean, undoable = true) => {
     try {
-      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isFavorite: !person.isFavorite } }));
-      status = person.isFavorite
-        ? $t('frameleaf_people_unfavorited_status', { values: { name: nameOf(person) } })
-        : $t('frameleaf_people_favorited_status', { values: { name: nameOf(person) } });
+      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isFavorite } }));
+      announce(
+        isFavorite
+          ? $t('frameleaf_people_favorited_status', { values: { name: nameOf(person) } })
+          : $t('frameleaf_people_unfavorited_status', { values: { name: nameOf(person) } }),
+        undoable ? () => void setFavorite(person, !isFavorite, false) : undefined,
+      );
     } catch (error) {
-      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: person.isFavorite } }));
+      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: !isFavorite } }));
     }
   };
+  const handleToggleFavorite = (person: PeopleListItemDto) => setFavorite(person, !person.isFavorite);
 
   const openDialog = (type: 'merge' | 'birthday', person: PeopleListItemDto) => {
     dialog = { type, person };
@@ -310,15 +339,20 @@
 
   // FL-57: a rename commits immediately. If the new name matches another person, that pair
   // goes to the front of the merge-suggestion banner instead of a separate merge prompt.
-  const onNameChangeSubmit = async (name: string, person: PeopleListItemDto) => {
+  const onNameChangeSubmit = async (name: string, person: PeopleListItemDto, undoable = true) => {
     if (name === person.name) {
       return;
     }
     try {
       replacePerson(await updatePerson({ id: person.id, personUpdateDto: { name } }));
-      status = isUnnamedPerson(person)
-        ? $t('frameleaf_people_named_status', { values: { name } })
-        : $t('frameleaf_people_renamed_status', { values: { from: person.name, to: name } });
+      announce(
+        name
+          ? isUnnamedPerson(person)
+            ? $t('frameleaf_people_named_status', { values: { name } })
+            : $t('frameleaf_people_renamed_status', { values: { from: person.name, to: name } })
+          : $t('frameleaf_people_name_removed_status'),
+        undoable ? () => void onNameChangeSubmit(person.name, { ...person, name }, false) : undefined,
+      );
       if (!name) {
         return;
       }
@@ -351,7 +385,8 @@
   description={summary}
   use={[[scrollMemory, { routeStartsWith: Route.people(), beforeScroll: () => allLoaded }]]}
 >
-  {#snippet buttons()}
+  <section class="pl-page" aria-label={$t('frameleaf_people_library_label')}>
+    <!-- In the page, as on Pets: the layout's title bar is one fixed row and cannot hold four controls on a phone. -->
     <div class="pl-toolbar">
       <input
         type="search"
@@ -364,18 +399,18 @@
         <option value="count">{$t('frameleaf_people_sort_count')}</option>
         <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
       </select>
-      <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
-        <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size="18" aria-hidden="true" />
-        {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
-      </FrameleafButton>
+      {#if hiddenCount > 0}
+        <!-- A view switch, named for what it reveals; it is not offered when nobody is hidden. -->
+        <FrameleafButton pressed={showingHidden} onclick={() => (showHidden = !showingHidden)}>
+          <Icon icon={showingHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_hidden_toggle', { values: { count: hiddenCount } })}
+        </FrameleafButton>
+      {/if}
       <FrameleafButton onclick={() => goto('/people/manage')}>
-        <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden="true" />
-        {$t('frameleaf_people_show_and_hide')}
+        <Icon icon={mdiTuneVariant} size={ICON_SIZE.lg} aria-hidden="true" />
+        {$t('frameleaf_people_choose_who_appears')}
       </FrameleafButton>
     </div>
-  {/snippet}
-
-  <section class="pl-page" aria-label={$t('frameleaf_people_library_label')}>
     {#if mergeSuggestions.length > 0}
       <MergeSuggestionBanner
         suggestion={mergeSuggestions[0]}
@@ -387,7 +422,6 @@
         onIgnore={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Ignore)}
       />
     {/if}
-    <p class="pl-status" role="status" aria-live="polite">{status}</p>
     {#if truncated}
       <p class="pl-status" role="status">{$t('frameleaf_people_truncated', { values: { count: people.length } })}</p>
     {/if}
@@ -431,9 +465,7 @@
     candidates={people}
     bind:open={dialogOpen}
     onMerged={async (target) => {
-      status = $t('frameleaf_people_merged_status', {
-        values: { from: nameOf(dialog!.person), into: nameOf(target) },
-      });
+      announceMerge(dialog!.person, target);
       await reloadPeople();
     }}
   />
@@ -443,9 +475,11 @@
     bind:open={dialogOpen}
     onSaved={(updated, birthDate) => {
       replacePerson(updated);
-      status = birthDate
-        ? $t('frameleaf_people_birthday_saved_for', { values: { name: nameOf(updated) } })
-        : $t('frameleaf_people_birthday_removed_for', { values: { name: nameOf(updated) } });
+      announce(
+        birthDate
+          ? $t('frameleaf_people_birthday_saved_for', { values: { name: nameOf(updated) } })
+          : $t('frameleaf_people_birthday_removed_for', { values: { name: nameOf(updated) } }),
+      );
     }}
   />
 {/if}
@@ -456,12 +490,36 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--fl-space-2);
+    padding-top: var(--fl-space-2);
   }
   .pl-toolbar input,
   .pl-toolbar select {
-    min-height: 44px;
+    min-height: var(--fl-control-height);
+    border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: var(--fl-type-body);
+  }
+  .pl-toolbar input {
+    flex: 1;
+    min-width: 12rem;
+    max-width: 24rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
+  }
+  .pl-toolbar input::placeholder {
+    color: var(--fl-muted);
+  }
+  .pl-toolbar select {
+    padding: 0 var(--fl-space-3);
+    /* Pushes the buttons to the far side on a wide page. */
+    margin-inline-end: auto;
+  }
+  .pl-toolbar input:focus-visible,
+  .pl-toolbar select:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .pl-page {
     display: flex;
@@ -474,20 +532,15 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
-  .pl-status:empty {
-    display: none;
-  }
   .people-empty {
     padding: 3rem 1rem;
     color: var(--fl-muted);
     text-align: center;
   }
   @media (max-width: 700px) {
-    .pl-toolbar {
-      width: 100%;
-    }
     .pl-toolbar input {
       flex: 1 1 100%;
+      max-width: none;
     }
   }
 </style>

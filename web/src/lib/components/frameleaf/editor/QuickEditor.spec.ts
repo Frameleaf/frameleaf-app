@@ -22,6 +22,8 @@ import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+const toast = vi.hoisted(() => ({ undo: vi.fn() }));
+vi.mock('$lib/frameleaf/toast', () => ({ TOAST_ACTION_TIMEOUT_MS: 8000, toastUndo: toast.undo }));
 const features = vi.hoisted(() => ({
   value: { imageCapabilities: { experimentalEnabled: true, export: [] as string[] } },
 }));
@@ -120,6 +122,12 @@ describe('QuickEditor', () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
   });
+
+  /** Everything that is not history, compare, versions or Save lives in the More menu. */
+  const chooseMore = async (name: string) => {
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_more_actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name }));
+  };
 
   /** The editor loads the asset's develop state on mount and only then adopts it as the draft. */
   const ready = async () => {
@@ -302,7 +310,7 @@ describe('QuickEditor', () => {
     vi.mocked(saveAssetDevelop).mockResolvedValueOnce(revision({ status: AssetDevelopRevisionStatus.Queued }));
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
     await ready();
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_revert' }));
+    await chooseMore('frameleaf_editor_reset_all');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
     await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(1));
     const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto;
@@ -565,7 +573,7 @@ describe('QuickEditor', () => {
     expect(await screen.findAllByRole('button', { name: 'frameleaf_editor_cancel_render' })).toHaveLength(2);
   });
 
-  it('offers the phone More actions menu and names the people in the photo', async () => {
+  it('keeps the settings clipboard, Reset all edits and Studio in More, and names the people in the photo', async () => {
     const withPeople = assetFactory.build({
       ...photo,
       people: [{ id: 'p1', name: 'Anna' } as never, { id: 'p2', name: '' } as never],
@@ -579,15 +587,57 @@ describe('QuickEditor', () => {
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'frameleaf_editor_copy_settings',
       'frameleaf_editor_paste_settings',
-      'frameleaf_editor_revert_draft',
+      'frameleaf_editor_reset_all',
       'frameleaf_editor_open_in_studio',
     ]);
     expect(items[1]).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('offers Open in Studio in the top bar', () => {
+  it('groups the top bar: history and compare in the middle, no loose settings buttons', async () => {
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
-    expect(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' })).toBeInTheDocument();
+    await ready();
+    const history = screen.getByRole('group', { name: 'frameleaf_editor_group_history' });
+    expect(within(history).getAllByRole('button')).toHaveLength(2);
+    const compare = screen.getByRole('group', { name: 'frameleaf_editor_group_compare' });
+    expect(within(compare).getByRole('button', { name: 'frameleaf_editor_split_view' })).toBeInTheDocument();
+    for (const name of ['frameleaf_editor_copy', 'frameleaf_editor_paste', 'frameleaf_editor_revert']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: 'frameleaf_editor_open_in_studio' })).not.toBeInTheDocument();
+  });
+
+  it('offers Undo for edits discarded by Cancel, and reopens on the same draft', async () => {
+    const onClose = vi.fn();
+    const onReopen = vi.fn();
+    render(QuickEditor, { asset: photo, onClose, onReopen });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '35' },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+
+    expect(onClose).toHaveBeenCalledWith(false);
+    expect(toast.undo).toHaveBeenCalledExactlyOnceWith('frameleaf_editor_edits_discarded', expect.any(Function));
+    // Discarded means discarded: nothing is left for a reload or a later visit to pick up by itself.
+    expect(readEditorContinuity(photo.id)).toBeNull();
+
+    (toast.undo.mock.calls[0][1] as () => void)();
+    expect(onReopen).toHaveBeenCalledExactlyOnceWith(photo.id);
+    expect(readEditorContinuity<{ recipe: { contrast: number } }>(photo.id)?.draft.recipe.contrast).toBe(35);
+  });
+
+  it('closes the More menu on Escape without discarding the draft', async () => {
+    const onClose = vi.fn();
+    render(QuickEditor, { asset: photo, onClose });
+    await ready();
+    const more = screen.getByRole('button', { name: 'frameleaf_editor_more_actions' });
+    await fireEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    more.focus();
+    await fireEvent.keyDown(more, { key: 'Escape' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   describe('continuity with Studio (FL-113)', () => {
@@ -601,15 +651,42 @@ describe('QuickEditor', () => {
         target: { value: '40' },
       });
 
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+      // With unsaved edits the menu says what Studio will open on, and the handoff says where the edits went.
+      await chooseMore('frameleaf_editor_studio_without_edits');
 
       expect(toastManager.primary).not.toHaveBeenCalledWith('frameleaf_editor_edits_discarded');
+      expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_studio_edits_waiting');
       expect(onClose).toHaveBeenCalled();
       expect(goto).toHaveBeenCalledWith(`/studio?assets=${photo.id}&from=${photo.id}`);
       const carried = readEditorContinuity<{ recipe: { contrast: number }; undo: unknown[] }>(photo.id);
       expect(carried).toMatchObject({ kind: 'photo', tool: 'adjust' });
       expect(carried?.draft.recipe.contrast).toBe(40);
       expect(carried?.draft.undo.length).toBeGreaterThan(0);
+    });
+
+    it('saves first, then opens Studio once the saved version is the one on show', async () => {
+      const onClose = vi.fn();
+      const queued = revision({ id: 'rev-9', status: AssetDevelopRevisionStatus.Queued, progress: 0 });
+      vi.mocked(saveAssetDevelop).mockResolvedValueOnce(queued);
+      render(QuickEditor, { asset: photo, onClose });
+      await ready();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '40' },
+      });
+      vi.mocked(getAssetDevelop).mockResolvedValue({
+        assetId: photo.id,
+        currentRevisionId: 'rev-9',
+        revisions: [{ ...queued, status: AssetDevelopRevisionStatus.Rendered, progress: 100, isCurrent: true }],
+      });
+
+      await chooseMore('frameleaf_editor_studio_save_first');
+
+      await waitFor(() => expect(goto).toHaveBeenCalledWith(`/studio?assets=${photo.id}&from=${photo.id}`));
+      expect(saveAssetDevelop).toHaveBeenCalledTimes(1);
+      expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_studio_finishing');
+      expect(onClose).toHaveBeenCalledExactlyOnceWith(true);
+      // Nothing is left behind: the edit was saved, so there is no draft to come back to.
+      expect(readEditorContinuity(photo.id)).toBeNull();
     });
 
     it('opens on the draft left before Studio, with its undo history', async () => {
@@ -708,7 +785,7 @@ describe('QuickEditor', () => {
       await waitFor(() => expect(getAssetEdits).toHaveBeenCalledWith({ id: video.id }));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+      await chooseMore('frameleaf_editor_open_in_studio');
 
       expect(goto).toHaveBeenCalledWith(`/studio?assets=${video.id}&from=${video.id}&at=0%2F1`);
     });

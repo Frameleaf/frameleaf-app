@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
@@ -441,7 +442,7 @@
     {/each}
   </ul>
   {#if loading}
-    <p class="note" role="status">{$t('loading')}</p>
+    <p class="note"><Spinner /></p>
   {:else if rows.length === 0}
     <p class="note">{$t('frameleaf_people_fix_empty')}</p>
   {:else if hasMore}
@@ -540,6 +541,7 @@
     font-size: 17px;
     font-weight: 600;
   }
+  /* The heading takes focus from script when the panel opens (tabindex -1); it is never a tab stop. */
   .pd-fix-header h2:focus {
     outline: none;
   }

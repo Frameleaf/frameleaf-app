@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -98,10 +100,14 @@
 <Dialog title={$t('frameleaf_album_cover_title')} closeLabel={$t('close')} bind:open>
   <div class="cover">
     {#if loading}
-      <Status message={$t('loading')} busy />
+      <div class="loading"><Spinner /></div>
     {:else if failed}
-      <Status message={$t('frameleaf_album_cover_load_failed')} />
-      <button type="button" class="retry" onclick={() => void load()}>{$t('retry')}</button>
+      <InlineError
+        message={$t('frameleaf_album_cover_load_failed')}
+        retryLabel={$t('retry')}
+        onRetry={() => void load()}
+        compact
+      />
     {:else if assets.length === 0}
       <Status message={$t('frameleaf_album_cover_empty')} />
     {:else}
@@ -196,8 +202,7 @@
     justify-content: flex-end;
     gap: 0.5rem;
   }
-  .buttons button,
-  .retry {
+  .buttons button {
     padding: 0 1rem;
     min-height: 44px;
     color: var(--fl-text);
@@ -212,5 +217,11 @@
   }
   .buttons button:disabled {
     opacity: 0.6;
+  }
+  .loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-6) 0;
+    color: var(--fl-muted);
   }
 </style>

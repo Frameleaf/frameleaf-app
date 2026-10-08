@@ -294,7 +294,7 @@
     place-items: center;
     width: 34px;
     height: 34px;
-    border-radius: 10px;
+    border-radius: var(--fl-radius-control-compact);
     background: var(--fl-raised);
     color: var(--fl-blue);
   }

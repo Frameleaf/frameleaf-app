@@ -50,14 +50,14 @@
   id="sidebar"
   aria-label={ariaLabel}
   tabindex="-1"
-  class="frameleaf fl-sidebar relative z-1 w-0 immich-scrollbar overflow-x-hidden overflow-y-auto transition-all duration-200 sidebar:w-(--sidebar-width)"
+  class="frameleaf fl-sidebar relative z-1 w-0 immich-scrollbar overflow-x-hidden overflow-y-auto sidebar:w-(--sidebar-width)"
   data-theme={appTheme}
   class:shadow-2xl={isExpanded}
   class:dark:border-e-immich-dark-gray={isExpanded}
   class:border-e={isExpanded}
   class:w-[min(100vw,16rem)]={sidebarStore.isOpen}
   class:is-collapsed={isCollapsed}
-  class:transition-none={sidebarStore.isResizing}
+  class:is-resizing={sidebarStore.isResizing}
   data-testid="sidebar-parent"
   inert={isHidden}
   use:clickOutside={{ onOutclick: closeSidebar, onEscape: closeSidebar }}
@@ -88,6 +88,22 @@
     background: var(--fl-panel);
     border-inline-end: 1px solid var(--fl-border);
     padding-block: 18px 14px;
+    /*
+     * Collapsing and opening the rail is one move (review finding 126): only the width animates,
+     * on the same duration and curve as the page grid beside it (UserPageLayout). The curve has
+     * no overshoot, because a width that springs would make the photo grid wobble.
+     */
+    transition: width var(--fl-duration) var(--fl-snappy);
+  }
+  /* Dragging the resize handle follows the pointer exactly. */
+  .fl-sidebar.is-resizing {
+    transition: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* The rail takes its new width at once. */
+    .fl-sidebar {
+      transition: none;
+    }
   }
   /* A hidden (narrow-screen, closed) rail is zero wide: its edge must not leave a 1px hairline. */
   .fl-sidebar[inert] {
@@ -97,7 +113,7 @@
      chevron buttons. Album tree, recent albums, group headers and bottom info are
      hidden by UserSidebar itself (it owns those components). */
   :global(#sidebar.is-collapsed .nav-items span.truncate),
-  :global(#sidebar.is-collapsed .nav-items button) {
+  :global(#sidebar.is-collapsed .nav-items button:not(.fl-rail button)) {
     display: none;
   }
 </style>

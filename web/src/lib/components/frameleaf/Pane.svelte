@@ -12,7 +12,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     min-width: 0;
-    padding: 18px;
+    padding: var(--fl-space-4);
   }
   @supports (corner-shape: squircle) {
     section {

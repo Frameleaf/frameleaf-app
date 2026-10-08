@@ -11,13 +11,15 @@
   import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import PersonNameField from '$lib/components/frameleaf/people/PersonNameField.svelte';
   import { ageInYears, isUnnamedPerson } from '$lib/frameleaf/people';
+  import { toastUndo } from '$lib/frameleaf/toast';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { normalizeSearchString } from '$lib/utils/string-utils';
   import { searchPerson, updatePerson, type PersonResponseDto, type PersonStatisticsResponseDto } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiArrowLeft,
@@ -37,13 +39,13 @@
   } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
 
   /**
    * The person page hero (FL-37, PD-1/PD-2/PD-7/PD-8), ported from `PersonHeader` in
    * design/frameleaf/template/src/PersonDetail.jsx:214-499: back button, featured-face avatar
    * (opens the featured photo dialog), inline name editor, facts line (count, date of birth
-   * with age or "Add date of birth", "Hidden from People"), the seven-button toolbar and a
-   * status line. The dialogs and the "Fix incorrect match" panel are the Frameleaf ports.
+   * with age or "Add date of birth", "Hidden from People") and the seven-button toolbar. The dialogs and the "Fix incorrect match" panel are the Frameleaf ports.
    *
    * The count reads "N photos · N videos" (PersonDetail.jsx:257-264) from the person statistics.
    * Every change here is announced: `PersonUpdate` for an edit, `PersonFacesChange` when faces
@@ -52,6 +54,11 @@
    *
    * "Correction history" is not in the prototype (PD-9). Owner decision 2026-09-29: it lives in a
    * "…" menu after the toolbar, so the toolbar itself is exactly the prototype's.
+   *
+   * On a phone the seven buttons do not fit one row. Favorite, Merge and Fix incorrect match stay
+   * visible and the rest join the "…" menu, so nothing sits in a row that has to be scrolled
+   * sideways to be found. What an action did is said in a toast (with Undo for hide and favorite),
+   * which is also what a screen reader hears.
    */
   interface Props {
     person: PersonResponseDto;
@@ -77,8 +84,11 @@
     onOpenRecognitionGroups,
   }: Props = $props();
 
+  /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
+  const phone = new MediaQuery('max-width: 700px');
+  const compact = $derived(phone.current);
+
   let editing = $state(false);
-  let status = $state('');
   let featuredOpen = $state(false);
   let mergeOpen = $state(false);
   let mergeChoice: string | null = $state(null);
@@ -104,16 +114,26 @@
       : undefined,
   );
 
+  /** Says what happened in a toast (a live region); `undo` offers to put it back. */
+  const announce = (message: string, undo?: () => unknown) => {
+    if (undo) {
+      toastUndo(message, undo);
+    } else {
+      toastManager.primary(message);
+    }
+  };
+
   const update = async (
     personUpdateDto: Parameters<typeof updatePerson>[0]['personUpdateDto'],
     message: string,
     errorMessage: string,
+    undo?: () => unknown,
   ) => {
     try {
       const updated = await updatePerson({ id: person.id, personUpdateDto });
       eventManager.emit('PersonUpdate', updated);
       onPersonChange(updated);
-      status = message;
+      announce(message, undo);
       return updated;
     } catch (error) {
       handleError(error, errorMessage);
@@ -129,23 +149,27 @@
     onFacesChanged();
   };
 
-  const toggleHidden = () =>
+  const setHidden = (isHidden: boolean, undoable = true) =>
     update(
-      { isHidden: !person.isHidden },
-      person.isHidden
-        ? $t('frameleaf_people_unhidden_detail_status', { values: { name } })
-        : $t('frameleaf_people_hidden_detail_status', { values: { name } }),
+      { isHidden },
+      isHidden
+        ? $t('frameleaf_people_hidden_detail_status', { values: { name } })
+        : $t('frameleaf_people_unhidden_detail_status', { values: { name } }),
       $t('errors.unable_to_hide_person'),
+      undoable ? () => void setHidden(!isHidden, false) : undefined,
     );
+  const toggleHidden = () => setHidden(!person.isHidden);
 
-  const toggleFavorite = () =>
+  const setFavorite = (isFavorite: boolean, undoable = true) =>
     update(
-      { isFavorite: !person.isFavorite },
-      person.isFavorite
-        ? $t('frameleaf_people_unfavorited_status', { values: { name } })
-        : $t('frameleaf_people_favorited_status', { values: { name } }),
-      $t('errors.unable_to_add_remove_favorites', { values: { favorite: person.isFavorite } }),
+      { isFavorite },
+      isFavorite
+        ? $t('frameleaf_people_favorited_status', { values: { name } })
+        : $t('frameleaf_people_unfavorited_status', { values: { name } }),
+      $t('errors.unable_to_add_remove_favorites', { values: { favorite: !isFavorite } }),
+      undoable ? () => void setFavorite(!isFavorite, false) : undefined,
     );
+  const toggleFavorite = () => setFavorite(!person.isFavorite);
 
   // A rename to another person's exact name offers the Frameleaf merge dialog with that
   // person already chosen, replacing the legacy `PersonMergeSuggestionModal`.
@@ -199,7 +223,7 @@
       disabled={assetCount === 0}
       onclick={() => (featuredOpen = true)}
     >
-      <PersonAvatar {person} size={128} />
+      <PersonAvatar {person} size={128} heroKey="person:{person.id}" heroPage />
       <span class="pd-avatar-edit" aria-hidden="true"><Icon icon={mdiCameraOutline} size="16" /></span>
       {#if person.isFavorite}
         <span class="pd-badge" title={$t('favorite')}><Icon icon={mdiHeart} size="14" aria-hidden="true" /></span>
@@ -254,46 +278,71 @@
       </div>
     </div>
     <div class="pd-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name } })}>
-      <Button disabled={assetCount === 0} onclick={() => (featuredOpen = true)}>
-        <Icon icon={mdiImageOutline} size="18" aria-hidden="true" />
-        {$t('frameleaf_people_featured_photo')}
-      </Button>
+      {#if !compact}
+        <Button disabled={assetCount === 0} onclick={() => (featuredOpen = true)}>
+          <Icon icon={mdiImageOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_featured_photo')}
+        </Button>
+      {/if}
       <Button onclick={openMerge}>
-        <Icon icon={mdiCallMerge} size="18" aria-hidden="true" />
+        <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
         {$t('merge_people')}
       </Button>
-      <Button onclick={() => (birthdayOpen = true)}>
-        <Icon icon={mdiCakeVariantOutline} size="18" aria-hidden="true" />
-        {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
-      </Button>
-      <Button onclick={() => void toggleHidden()}>
-        <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size="18" aria-hidden="true" />
-        {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
-      </Button>
+      {#if !compact}
+        <Button onclick={() => (birthdayOpen = true)}>
+          <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
+        </Button>
+        <Button onclick={() => void toggleHidden()}>
+          <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
+        </Button>
+      {/if}
       <Button onclick={() => void toggleFavorite()}>
-        <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size="18" aria-hidden="true" />
+        <span class="pd-favorite" class:is-on={person.isFavorite}>
+          <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+        </span>
         {person.isFavorite ? $t('unfavorite') : $t('favorite')}
       </Button>
       <Button disabled={assetCount === 0} pressed={fixOpen} onclick={() => (fixOpen = true)}>
-        <Icon icon={mdiFaceRecognition} size="18" aria-hidden="true" />
+        <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
         {$t('fix_incorrect_match')}
       </Button>
-      <Button onclick={onOpenRecognitionGroups}>
-        <Icon icon={mdiAccountGroupOutline} size="18" aria-hidden="true" />
-        {$t('frameleaf_people_recognition_groups')}
-      </Button>
+      {#if !compact}
+        <Button onclick={onOpenRecognitionGroups}>
+          <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_recognition_groups')}
+        </Button>
+      {/if}
       <Menu label={$t('frameleaf_people_more_actions_for', { values: { name } })} align="end">
         {#snippet trigger()}
-          <Icon icon={mdiDotsHorizontal} size="18" aria-hidden="true" />
+          <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden="true" />
         {/snippet}
+        {#if compact}
+          <MenuItem disabled={assetCount === 0} onSelect={() => (featuredOpen = true)}>
+            <Icon icon={mdiImageOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            {$t('frameleaf_people_featured_photo')}
+          </MenuItem>
+          <MenuItem onSelect={() => (birthdayOpen = true)}>
+            <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
+          </MenuItem>
+          <MenuItem onSelect={() => void toggleHidden()}>
+            <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
+          </MenuItem>
+          <MenuItem onSelect={onOpenRecognitionGroups}>
+            <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            {$t('frameleaf_people_recognition_groups')}
+          </MenuItem>
+        {/if}
         <MenuItem onSelect={() => (historyOpen = true)}>
-          <Icon icon={mdiHistory} size="18" aria-hidden="true" />
+          <Icon icon={mdiHistory} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('frameleaf_people_correction_history')}
         </MenuItem>
       </Menu>
     </div>
   </div>
-  <p class="pd-status" role="status" aria-live="polite">{status}</p>
 </section>
 
 <FeaturedPhotoDialog
@@ -301,7 +350,7 @@
   bind:open={featuredOpen}
   onSelected={(updated) => {
     onPersonChange(updated);
-    status = $t('frameleaf_people_featured_updated');
+    announce($t('frameleaf_people_featured_updated'));
   }}
 />
 <MergePeopleDialog
@@ -315,7 +364,7 @@
   bind:open={birthdayOpen}
   onSaved={(updated, birthDate) => {
     onPersonChange(updated);
-    status = birthDate ? $t('frameleaf_people_birthday_saved') : $t('frameleaf_people_birthday_removed');
+    announce(birthDate ? $t('frameleaf_people_birthday_saved') : $t('frameleaf_people_birthday_removed'));
   }}
 />
 {#if fixOpen}
@@ -406,6 +455,18 @@
   }
   .pd-avatar:disabled {
     cursor: default;
+  }
+  /* Touch has no hover to reveal it: the camera mark stays, so the avatar reads as a control. */
+  @media (hover: none) {
+    .pd-avatar:not(:disabled) .pd-avatar-edit {
+      opacity: 1;
+    }
+  }
+  .pd-favorite {
+    display: inline-flex;
+  }
+  .pd-favorite.is-on {
+    color: var(--fl-danger);
   }
   .pd-badge {
     position: absolute;
@@ -499,23 +560,9 @@
     grid-area: actions;
     gap: 8px;
   }
-  .pd-status {
-    position: relative;
-    z-index: 1;
-    margin: 0;
-    padding: 0 32px 12px;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .pd-status:empty {
-    display: none;
-  }
   @media (max-width: 1000px) {
     .pd-hero-content {
       padding: 20px 22px 18px;
-    }
-    .pd-status {
-      padding: 0 22px 12px;
     }
   }
   @media (max-width: 700px) {
@@ -535,16 +582,6 @@
     .pd-name h1 {
       font-size: 20px;
       white-space: normal;
-    }
-    .pd-actions {
-      flex-wrap: nowrap;
-      margin: 0 -16px;
-      padding: 2px 16px;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-    .pd-status {
-      padding: 0 16px 10px;
     }
   }
 </style>

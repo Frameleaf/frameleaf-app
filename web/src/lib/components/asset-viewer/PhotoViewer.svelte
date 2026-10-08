@@ -24,7 +24,6 @@
   import { type SharedLinkResponseDto } from '@frameleaf/sdk';
   import { toastManager } from '@frameleaf/ui';
   import { onDestroy, untrack } from 'svelte';
-  import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import type { AssetCursor } from './AssetViewer.svelte';
 
@@ -34,10 +33,11 @@
     sharedLink?: SharedLinkResponseDto;
     onReady?: () => void;
     onError?: () => void;
-    onSwipe?: (event: SwipeCustomEvent) => void;
+    /** The preview address is not settled yet: show the thumbnail and wait before asking for more. */
+    holdFullSize?: boolean;
   };
 
-  let { cursor, element = $bindable(), sharedLink, onReady, onError, onSwipe }: Props = $props();
+  let { cursor, element = $bindable(), sharedLink, onReady, onError, holdFullSize = false }: Props = $props();
 
   const { slideshowState, slideshowLook, slideshowTransition } = slideshowStore;
   const asset = $derived(cursor.current);
@@ -257,15 +257,14 @@
   bind:clientWidth={containerWidth}
   bind:clientHeight={containerHeight}
   role="presentation"
-  ondblclick={onZoom}
   use:zoomImageAction={{ zoomTarget: adaptiveImage }}
-  {...useSwipe((event) => onSwipe?.(event))}
 >
   <AdaptiveImage
     dynamicRange={$imageViewingPreference}
     {asset}
     {sharedLink}
     {container}
+    {holdFullSize}
     objectFit={$slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.Cover ? 'cover' : 'contain'}
     {onUrlChange}
     onImageReady={() => {
@@ -317,7 +316,7 @@
           {#if isActive && boundingbox.name}
             <div
               aria-hidden="true"
-              class="absolute rounded-sm bg-white/90 px-2 py-1 text-sm font-medium whitespace-nowrap text-black shadow-lg"
+              class="fl-face-label"
               style="top: {boundingbox.height + 4}px; {assetViewerManager.imgRef
                 ? boundingbox.left >= 0
                   ? `right: ${Math.max(boundingbox.left + boundingbox.width - assetViewerManager.imgRef.clientWidth, 0)}px;`
@@ -344,8 +343,8 @@
         >
           <polygon
             points={documentHighlight.points.map((point) => `${point.x},${point.y}`).join(' ')}
-            fill="rgb(14 165 160 / 18%)"
-            stroke="#0ea5a0"
+            style:fill="color-mix(in srgb, var(--fl-teal) 18%, transparent)"
+            style:stroke="var(--fl-teal)"
             stroke-width="2"
             stroke-dasharray="6 4"
           />
@@ -354,3 +353,27 @@
     {/snippet}
   </AdaptiveImage>
 </div>
+
+<style>
+  /* A small dark glass chip, like the Live badge: the viewer has no light surfaces. */
+  .fl-face-label {
+    position: absolute;
+    padding: var(--fl-space-1) var(--fl-space-2);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-sm);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 82%, transparent);
+    backdrop-filter: var(--fl-material-blur);
+    box-shadow: var(--fl-shadow-1);
+    color: var(--fl-viewer-text);
+    font: var(--fl-type-caption);
+    font-weight: 550;
+    white-space: nowrap;
+  }
+
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .fl-face-label {
+      background: var(--fl-viewer-panel);
+      backdrop-filter: none;
+    }
+  }
+</style>

@@ -23,7 +23,7 @@ const review = (overrides: Partial<LibraryRemovalReviewDto> = {}): LibraryRemova
   ...overrides,
 });
 
-const ack = (count: number) => `I understand that ${count} indexed items will be removed from the library.`;
+const items = (count: number) => `${count} indexed items are removed from the library`;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -36,6 +36,9 @@ describe('LibraryRemoveDialog (FL-78)', () => {
     render(LibraryRemoveDialog, { libraryId: 'lib-1', onRemoved: vi.fn(), onClose: vi.fn() });
 
     expect(await screen.findByText('3 albums lose items')).toBeInTheDocument();
+    expect(screen.getByText(items(42))).toBeInTheDocument();
+    // one ritual: the typed name, no separate acknowledgement (design review finding 74)
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.getByText('1 shared link loses items')).toBeInTheDocument();
     expect(screen.getByText('7 detected faces are removed')).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_libraries_remove_scan)).toBeInTheDocument();
@@ -54,7 +57,6 @@ describe('LibraryRemoveDialog (FL-78)', () => {
     await fireEvent.input(await screen.findByLabelText(en.frameleaf_libraries_remove_confirm_name), {
       target: { value: 'Family photo archive' },
     });
-    await fireEvent.click(screen.getByLabelText(ack(42)));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_remove }));
 
     expect(sdkMock.removeLibrary).toHaveBeenCalledWith({
@@ -64,17 +66,32 @@ describe('LibraryRemoveDialog (FL-78)', () => {
     expect(onRemoved).toHaveBeenCalled();
   });
 
+  it('accepts the name in any capitals and sends it as the library spells it', async () => {
+    sdkMock.getLibraryRemovalReview.mockResolvedValue(review());
+    sdkMock.removeLibrary.mockResolvedValue(undefined as never);
+    render(LibraryRemoveDialog, { libraryId: 'lib-1', onRemoved: vi.fn(), onClose: vi.fn() });
+
+    await fireEvent.input(await screen.findByLabelText(en.frameleaf_libraries_remove_confirm_name), {
+      target: { value: '  family PHOTO archive ' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_remove }));
+
+    expect(sdkMock.removeLibrary).toHaveBeenCalledWith({
+      id: 'lib-1',
+      libraryRemovalDto: { reviewToken: 'token-1', confirmName: 'Family photo archive' },
+    });
+  });
+
   it('refuses a name that does not match', async () => {
     sdkMock.getLibraryRemovalReview.mockResolvedValue(review());
     render(LibraryRemoveDialog, { libraryId: 'lib-1', onRemoved: vi.fn(), onClose: vi.fn() });
 
     await fireEvent.input(await screen.findByLabelText(en.frameleaf_libraries_remove_confirm_name), {
-      target: { value: 'family photo archive' },
+      target: { value: 'Family photos' },
     });
-    await fireEvent.click(screen.getByLabelText(ack(42)));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_remove }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(en.frameleaf_libraries_remove_name_mismatch);
+    expect(screen.getByRole('button', { name: en.frameleaf_libraries_remove })).toBeDisabled();
     expect(sdkMock.removeLibrary).not.toHaveBeenCalled();
   });
 
@@ -89,12 +106,12 @@ describe('LibraryRemoveDialog (FL-78)', () => {
     await fireEvent.input(await screen.findByLabelText(en.frameleaf_libraries_remove_confirm_name), {
       target: { value: 'Family photo archive' },
     });
-    await fireEvent.click(screen.getByLabelText(ack(42)));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_remove }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_libraries_remove_stale);
-    // the new consequences must be acknowledged again
-    await waitFor(() => expect(screen.getByLabelText(ack(50))).not.toBeChecked());
+    // the new consequences must be confirmed again: the name is asked for anew
+    expect(await screen.findByText(items(50))).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(en.frameleaf_libraries_remove_confirm_name)).toHaveValue(''));
     expect(screen.getByRole('button', { name: en.frameleaf_libraries_remove })).toBeDisabled();
     expect(onRemoved).not.toHaveBeenCalled();
     expect(sdkMock.getLibraryRemovalReview).toHaveBeenCalledTimes(2);

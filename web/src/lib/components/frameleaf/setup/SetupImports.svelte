@@ -1,11 +1,9 @@
 <script lang="ts">
   /**
    * "Bring everything together" (FL-176): where Google Photos and iCloud Photos imports live, as
-   * links only. Neutral icons, no service logos; nothing starts during setup.
+   * pointers only. Neutral icons, no service logos; nothing starts during setup.
    */
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import { Route } from '$lib/route';
   import { Icon } from '@frameleaf/ui';
   import { mdiArrowRightThin, mdiClockOutline, mdiCloudOutline, mdiImageMultipleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -18,7 +16,6 @@
       body: 'frameleaf_setup_import_google_body',
       where: 'frameleaf_setup_import_google_where',
       icon: mdiImageMultipleOutline,
-      href: commandCenterUrl('backup', 'takeout'),
     },
     {
       id: 'icloud',
@@ -27,7 +24,6 @@
       body: 'frameleaf_setup_import_icloud_body',
       where: 'frameleaf_setup_import_icloud_where',
       icon: mdiCloudOutline,
-      href: Route.icloudSyncUtility(),
     },
   ] as const;
 </script>
@@ -47,9 +43,10 @@
       <div class="frs-import-copy">
         <h2>{$t(source.title)} <small>{$t(source.via)}</small></h2>
         <p>{$t(source.body)}</p>
-        <a class="frs-later" href={source.href}>
+        <!-- Plain text: until setup finishes, any link out of it only leads back here. -->
+        <p class="frs-later">
           <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(source.where)}
-        </a>
+        </p>
       </div>
     </article>
   {/each}

@@ -20,6 +20,7 @@
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
   import {
     bumpPlaybackRevision,
+    currentDevelopPlaybackRevision,
     markDevelopPlaybackUnresolved,
     playbackCacheKey,
     setDevelopPlaybackRevision,
@@ -61,11 +62,26 @@
   } from '@frameleaf/sdk';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import { CommandPaletteDefaultProvider } from '@frameleaf/ui';
+  import { CommandPaletteDefaultProvider, Icon } from '@frameleaf/ui';
+  import { mdiCheck, mdiClose } from '@mdi/js';
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
-  import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
-  import { motionFly } from '$lib/frameleaf/motion';
+  import { dock, motionFade, motionFly, motionSlide, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { pendingRender } from '$lib/components/frameleaf/editor/pending-render.svelte';
+  import { DURATION, EXIT_DURATION, ICON_SIZE } from '$lib/frameleaf/tokens';
+  import { languageManager } from '$lib/managers/language-manager.svelte';
+  import {
+    arriveFrom,
+    captureHoldover,
+    fadeAway,
+    infoCardIn,
+    isPhoneSheet,
+    neighbourThumbnail,
+    SWIPE_GAP,
+    ViewerSwipe,
+    type HoldoverBox,
+    type SwipeOrder,
+  } from './viewer-motion';
   import { isGestureExempt, ViewerGesture, type DismissDrag } from '$lib/frameleaf/viewer-gesture';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import ActivityStatus from './ActivityStatus.svelte';
@@ -158,30 +174,48 @@
   let stack: StackResponseDto | null = $state(null);
 
   const asset = $derived(previewStackedAsset ?? cursor.current);
-  let developReadyFor = $state<string | null>(null);
   let developLookupGeneration = 0;
   let viewerAlive = true;
+  /**
+   * The owner's photo may have a saved edit, and the address of its preview follows that edit. The
+   * photo is on screen from the first frame all the same (its thumbhash and thumbnail never depend on
+   * the edit, and the viewer's opening zoom needs somewhere to land); this lookup only settles which
+   * preview address is current. A photo with no saved edit keeps the address it started with, so
+   * nothing reloads; one with an edit swaps its preview once.
+   */
+  const hasDevelopLookup = (current: AssetResponseDto) =>
+    current.type === AssetTypeEnum.Image &&
+    authManager.authenticated &&
+    !authManager.isSharedLink &&
+    current.ownerId === authManager.user.id;
+  // The item whose preview address is settled: its lookup answered, failed, or took too long to wait for.
+  let previewSettledFor = $state<string>();
+  /**
+   * Until then the photo shows its thumbnail and does not ask for the preview, so a photo with a
+   * saved edit never requests (or flashes a cached copy of) the preview from before the edit.
+   */
+  const holdPreview = $derived(hasDevelopLookup(asset) && previewSettledFor !== asset.id);
+  // A slow lookup stops holding the preview back: it loads at the address known so far and swaps if needed.
+  const PREVIEW_HOLD_MS = 400;
   $effect(() => {
     const current = asset;
     const generation = ++developLookupGeneration;
-    if (
-      current.type !== AssetTypeEnum.Image ||
-      !authManager.authenticated ||
-      authManager.isSharedLink ||
-      current.ownerId !== authManager.user.id
-    ) {
-      developReadyFor = current.id;
+    if (!hasDevelopLookup(current)) {
       return;
     }
-    developReadyFor = null;
     let active = true;
+    const holdTimer = setTimeout(() => (previewSettledFor = current.id), PREVIEW_HOLD_MS);
+    const settle = () => {
+      clearTimeout(holdTimer);
+      previewSettledFor = current.id;
+    };
     void getAssetDevelop({ id: current.id })
       .then((develop) => {
         if (!active || generation !== developLookupGeneration) {
           return;
         }
         setDevelopPlaybackRevision(current.id, develop.currentRevisionId);
-        developReadyFor = current.id;
+        settle();
       })
       .catch(() => {
         if (!active || generation !== developLookupGeneration) {
@@ -190,10 +224,11 @@
         // A fresh key still reaches the media route, which chooses the current version itself.
         markDevelopPlaybackUnresolved(current.id);
         bumpPlaybackRevision(current.id);
-        developReadyFor = current.id;
+        settle();
       });
     return () => {
       active = false;
+      clearTimeout(holdTimer);
     };
   });
   const nextAsset = $derived(cursor.nextAsset);
@@ -218,6 +253,7 @@
   /** FL-148: see `pendingNavigation`'s doc comment; ~1.5s is long enough to ride out a normal bucket
    * fetch but short enough that a press this stale no longer reads as "the same interaction". */
   const PENDING_NAVIGATION_TTL_MS = 1500;
+  const PEEK_SELECTOR = { next: '[data-viewer-peek="next"]', previous: '[data-viewer-peek="previous"]' } as const;
 
   /**
    * FL-148: a second arrow press (or click) that arrives while the first navigation is still in
@@ -411,6 +447,8 @@
 
   onDestroy(() => {
     viewerAlive = false;
+    resetSwipe();
+    stopHoldoverFade?.();
     activityManager.reset();
     assetViewerManager.resetPanelState();
     syncAssetViewerOpenClass(false);
@@ -429,6 +467,8 @@
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
     if (refreshAsset) {
+      // What the photo shows is about to change: the current picture stays until the new one has loaded.
+      holdCurrentPhoto('ready');
       bumpPlaybackRevision(asset.id);
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
@@ -448,14 +488,16 @@
       return;
     }
     const generation = ++developLookupGeneration;
-    developReadyFor = null;
     try {
       const develop = await getAssetDevelop({ id: assetId });
       if (!viewerAlive || asset.id !== assetId || generation !== developLookupGeneration) {
         return;
       }
+      // The photo on screen stays as a still until the finished edit has loaded, then fades into it.
+      if (currentDevelopPlaybackRevision(asset) !== develop.currentRevisionId) {
+        holdCurrentPhoto('ready');
+      }
       setDevelopPlaybackRevision(assetId, develop.currentRevisionId);
-      developReadyFor = assetId;
       const refreshedAsset = await getAssetInfo({ id: assetId });
       if (!viewerAlive || asset.id !== assetId || generation !== developLookupGeneration) {
         return;
@@ -466,11 +508,40 @@
       if (viewerAlive && asset.id === assetId && generation === developLookupGeneration) {
         markDevelopPlaybackUnresolved(assetId);
         bumpPlaybackRevision(assetId);
-        developReadyFor = assetId;
         handleError(error, $t('frameleaf_editor_versions_error'));
       }
     }
   };
+
+  /**
+   * Undo after Cancel or Escape in the editor: the draft is back where the editor looks for it, so
+   * opening the editor on that item resumes it. The viewer may have moved on, or closed, since.
+   */
+  const reopenEditor = (assetId: string) => {
+    if (!viewerAlive) {
+      handlePromiseError(navigate({ targetRoute: 'current', assetId }));
+      return;
+    }
+    if (asset.id === assetId) {
+      assetViewerManager.openEditor();
+      return;
+    }
+    // Arriving on the item reopens its draft (the resume effect above).
+    handlePromiseError(goToAsset({ id: assetId }));
+  };
+
+  /** Undo after closing the face tagger with unsaved tags: it opens on that item again and picks them up. */
+  const reopenFaceTagger = (assetId: string) => {
+    const arrive = viewerAlive
+      ? asset.id === assetId
+        ? undefined
+        : goToAsset({ id: assetId })
+      : navigate({ targetRoute: 'current', assetId });
+    handlePromiseError(Promise.resolve(arrive).then(() => assetViewerManager.openFaceEditMode()));
+  };
+
+  /** An edit saved for the open item that is still being finished, or has just arrived. */
+  const editInProgress = $derived(pendingRender(asset.id));
 
   // FL-38: after the face tagger saves, re-read the asset and its faces, as closeEditor does.
   const refreshFaces = async () => {
@@ -503,6 +574,7 @@
     }
 
     slideshowDirection = order;
+    arriving = { order, at: Date.now() };
     preloadManager.cancelBeforeNavigation(order);
 
     if ($slideshowState !== SlideshowState.PlaySlideshow) {
@@ -841,16 +913,19 @@
   );
 
   /**
-   * FL-35: the filmstrip is a client preference, needs a real list of neighbours, and
-   * stays out of the way of the slideshow, the editor and the stack strip.
+   * FL-35: the filmstrip is a client preference, needs a real list of neighbours, and stays out of
+   * the way of the slideshow and the editor. It is the collection's strip and never changes meaning:
+   * a stacked photo shows its stack as a second row above it, so the filmstrip button always does
+   * what it says.
    */
   const showFilmstripStrip = $derived(
     $showFilmstrip &&
       filmstripAssets.length > 1 &&
       $slideshowState === SlideshowState.None &&
-      !assetViewerManager.isShowEditor &&
-      !(stack && withStacked),
+      !assetViewerManager.isShowEditor,
   );
+  /** The strips' height, so the information card ends above them however many rows there are. */
+  let stripsHeight = $state(0);
 
   /**
    * FL-35 hands-on viewer (apple-style.css:366-407, MediaViewer.jsx:197-199 and 524-578): a tap on the
@@ -867,7 +942,207 @@
       dismissDrag = null;
       onClose?.(stack?.primaryAssetId ?? asset.id);
     },
-    onTap: () => (chromeHidden = !chromeHidden),
+    onTap: () => {
+      // On a phone the information sheet covers the button that opened it: a tap on the photo closes it.
+      if (showDetailPanel && isPhoneSheet()) {
+        assetViewerManager.closeDetailPanel();
+        return;
+      }
+      chromeHidden = !chromeHidden;
+    },
+  });
+
+  /**
+   * The still of the photo that was on screen, kept over the incoming one so the canvas never goes
+   * black: between two items it fades at once; when a finished edit arrives it waits for the new
+   * render to load first.
+   */
+  type Holdover = HoldoverBox & { key: number; until: 'now' | 'ready' };
+  /** How long a still waits for a finished edit before it gives way anyway. */
+  const HOLDOVER_LIMIT_MS = 8000;
+  let holdover = $state<Holdover | null>(null);
+  let holdoverElement = $state<HTMLImageElement>();
+  let holdoverKey = 0;
+  // The loader the still was taken from: the still gives way once a different one has loaded.
+  let holdoverLoader: unknown;
+  let stopHoldoverFade: (() => void) | undefined;
+
+  const showHoldover = (box: HoldoverBox | null, until: Holdover['until']) => {
+    stopHoldoverFade?.();
+    stopHoldoverFade = undefined;
+    holdoverLoader = assetViewerManager.imageLoaderStatus;
+    holdover = box ? { ...box, key: ++holdoverKey, until } : null;
+  };
+
+  const holdCurrentPhoto = (until: Holdover['until']) => {
+    // A slideshow brings its own transition between items.
+    if ($slideshowState !== SlideshowState.None) {
+      return;
+    }
+    showHoldover(captureHoldover(assetViewerManager.imgRef, assetViewerHtmlElement), until);
+  };
+
+  const releaseHoldover = (duration?: number) => {
+    if (!holdover || stopHoldoverFade) {
+      return;
+    }
+    const { key } = holdover;
+    stopHoldoverFade = fadeAway(
+      holdoverElement,
+      () => {
+        stopHoldoverFade = undefined;
+        if (holdover?.key === key) {
+          holdover = null;
+        }
+      },
+      duration,
+    );
+  };
+
+  $effect(() => {
+    const current = holdover;
+    if (!current || !holdoverElement) {
+      return;
+    }
+    if (current.until === 'now') {
+      untrack(() => releaseHoldover());
+      return;
+    }
+    const status = assetViewerManager.imageLoaderStatus;
+    const arrived =
+      !!status &&
+      status !== holdoverLoader &&
+      (status.quality.preview === 'success' || status.quality.original === 'success' || status.hasError);
+    if (arrived) {
+      untrack(() => releaseHoldover(DURATION.spring));
+      return;
+    }
+    // Zooming in is asking to look at the real picture: the still never sits over that.
+    if (assetViewerManager.zoom > 1) {
+      untrack(() => releaseHoldover(DURATION.fast));
+      return;
+    }
+    const timer = setTimeout(() => releaseHoldover(DURATION.spring), HOLDOVER_LIMIT_MS);
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Swiping sideways at normal zoom: the photo follows the finger with the neighbour beside it, and
+   * moves on past a quarter of the width or on a flick. Under Reduce Motion nothing follows; the
+   * swipe still moves on, with the crossfade.
+   */
+  let canvasElement = $state<HTMLElement>();
+  let stageElement = $state<HTMLElement>();
+  let swipeX = $state<number | null>(null);
+  /**
+   * following: the finger is down. settling: springing back after a short drag. leaving: sliding off
+   * after a release. snapping: the next item is in place, with no animation.
+   */
+  let swipePhase = $state<'following' | 'settling' | 'leaving' | 'snapping' | null>(null);
+  let swipeCommit: { order: SwipeOrder; timer: ReturnType<typeof setTimeout> } | undefined;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const SWIPE_ORDERS: SwipeOrder[] = ['previous', 'next'];
+  const neighbour = (order: SwipeOrder) => (order === 'next' ? nextAsset : previousAsset);
+  const resetSwipe = () => {
+    if (swipeCommit) {
+      clearTimeout(swipeCommit.timer);
+      swipeCommit = undefined;
+    }
+    clearTimeout(settleTimer);
+    swipePhase = null;
+    swipeX = null;
+  };
+
+  /** Back to rest on the spring; the neighbours stay beside the photo until it has settled. */
+  const settleSwipe = () => {
+    const moved = swipeX !== null;
+    resetSwipe();
+    if (moved) {
+      swipePhase = 'settling';
+      settleTimer = setTimeout(() => {
+        if (swipePhase === 'settling') {
+          swipePhase = null;
+        }
+      }, DURATION.spring);
+    }
+  };
+
+  const commitSwipe = (order: SwipeOrder) => {
+    if (swipeX === null || !stageElement) {
+      resetSwipe();
+      navigateAsset(order);
+      return;
+    }
+    const travel = stageElement.clientWidth + SWIPE_GAP;
+    swipePhase = 'leaving';
+    swipeX = order === 'next' ? -travel : travel;
+    const move = () => {
+      navigateAsset(order);
+      // The item did not change (the move was refused or is still loading): put the photo back.
+      swipeCommit = { order, timer: setTimeout(settleSwipe, PENDING_NAVIGATION_TTL_MS) };
+    };
+    swipeCommit = { order, timer: setTimeout(move, DURATION.slow) };
+  };
+
+  /** The neighbour the swipe brought to the middle becomes the still over the item now loading in its place. */
+  const finishSwipe = () => {
+    const order = swipeCommit?.order;
+    const peek = order ? canvasElement?.querySelector<HTMLImageElement>(PEEK_SELECTOR[order]) : null;
+    resetSwipe();
+    showHoldover(captureHoldover(peek, assetViewerHtmlElement), 'now');
+    swipePhase = 'snapping';
+    // Once the page shows the new item at rest, with easing still off, easing comes back.
+    void tick().then(() => {
+      void canvasElement?.getBoundingClientRect();
+      if (swipePhase === 'snapping') {
+        swipePhase = null;
+      }
+    });
+  };
+
+  const swipe = new ViewerSwipe({
+    canGo: (order) => showNavigation && !!neighbour(order),
+    onEngage: () => {
+      gesture.cancel();
+      clearTimeout(settleTimer);
+      swipePhase = 'following';
+    },
+    onDrag: (x) => {
+      if (!prefersReducedMotion()) {
+        swipeX = x;
+      }
+    },
+    onRelease: settleSwipe,
+    onCommit: commitSwipe,
+  });
+
+  /** Which way the last arrow key, button or swipe was heading, for the incoming item's settle. */
+  let arriving: { order: SwipeOrder; at: number } | undefined;
+  let shownAssetId: string | undefined;
+  $effect.pre(() => {
+    const id = asset.id;
+    if (id === shownAssetId) {
+      return;
+    }
+    const first = shownAssetId === undefined;
+    shownAssetId = id;
+    if (first) {
+      return;
+    }
+    // Before the page updates: the outgoing photo is still there to take a still of.
+    untrack(() => {
+      const heading = arriving;
+      arriving = undefined;
+      if (swipeCommit) {
+        finishSwipe();
+        return;
+      }
+      holdCurrentPhoto('now');
+      if (heading && Date.now() - heading.at < PENDING_NAVIGATION_TTL_MS && $slideshowState === SlideshowState.None) {
+        arriveFrom(canvasElement, (heading.order === 'next') === languageManager.rtl ? -1 : 1);
+      }
+    });
   });
 
   const gesturesEnabled = $derived(
@@ -898,6 +1173,9 @@
       return;
     }
     gesture.start(event.pointerId, event.clientX, event.clientY);
+    if (!swipeCommit) {
+      swipe.start(event.pointerId, event.clientX, event.clientY, stageElement?.clientWidth || innerWidth);
+    }
   };
 
   // A second finger anywhere (a pinch) ends the gesture; the canvas handler covers the canvas itself.
@@ -905,14 +1183,26 @@
     if (gesture.active && gesture.pointerId !== event.pointerId) {
       gesture.cancel();
     }
+    if (swipe.active && swipe.pointerId !== event.pointerId) {
+      swipe.cancel();
+    }
   };
 
   const onWindowPointerMove = (event: PointerEvent) => {
-    if (gesture.active && assetViewerManager.zoom > 1) {
-      gesture.cancel();
+    if (assetViewerManager.zoom > 1) {
+      swipe.cancel();
+      if (gesture.active) {
+        gesture.cancel();
+      }
       return;
     }
     gesture.move(event.pointerId, event.clientX, event.clientY);
+    // One drag is either the downward close or the sideways move, never both.
+    if (gesture.dragging) {
+      swipe.cancel();
+      return;
+    }
+    swipe.move(event.pointerId, event.clientX, event.clientY);
   };
 
   // The chrome comes back whenever something else takes over the screen.
@@ -922,6 +1212,7 @@
     }
     chromeHidden = false;
     gesture.cancel();
+    untrack(() => swipe.cancel());
   });
 
   // FL-36: a slideshow hides the chrome while it plays; ending it brings the chrome back.
@@ -934,7 +1225,9 @@
   const canvasTransform = $derived(
     dismissDrag
       ? `translate(${dismissDrag.x}px, ${dismissDrag.y}px) scale(${1 - dismissDrag.progress * 0.25})`
-      : undefined,
+      : swipeX === null
+        ? undefined
+        : `translateX(${swipeX}px)`,
   );
 
   /** V-13: the footer's full-screen toggle (MediaViewer.jsx:1799-1806). */
@@ -981,6 +1274,110 @@
     }
   };
 
+  /**
+   * The information card: a glass card that arrives from the side from 761px, a bottom sheet on
+   * phones. Both leave faster than they arrive, and both are a crossfade under Reduce Motion.
+   */
+  /** Share of the sheet's height a downward drag must pass to close it, or a flick this fast (px per ms). */
+  const SHEET_DISMISS_RATIO = 0.3;
+  const SHEET_FLICK_VELOCITY = 0.5;
+  let infoElement = $state<HTMLElement>();
+  let infoBody = $state<HTMLElement>();
+  let sheetDrag = $state<number | null>(null);
+  /** The finger is on the sheet: it moves without easing. */
+  let sheetFollowing = $state(false);
+  let sheetPointer: { id: number; y: number; lastY: number; lastTime: number; velocity: number } | undefined;
+
+  const infoOut = (node: Element) => {
+    if (!isPhoneSheet()) {
+      return motionFly(node, { x: languageManager.rtl ? -8 : 8, duration: EXIT_DURATION.sheet });
+    }
+    const from = sheetDrag;
+    if (from === null || prefersReducedMotion()) {
+      return dock(node, { y: 24 }, { direction: 'out' });
+    }
+    // Dragged away: the sheet carries on down from where the finger left it.
+    const rest = Math.max(0, (node as HTMLElement).offsetHeight - from);
+    return {
+      duration: EXIT_DURATION.dock,
+      css: (t: number, u: number) => `opacity: ${t}; translate: 0 ${from + u * rest}px`,
+    };
+  };
+
+  const onSheetPointerDown = (event: PointerEvent) => {
+    if (!isPhoneSheet() || event.button > 0 || (event.target as Element).closest('button')) {
+      return;
+    }
+    sheetPointer = {
+      id: event.pointerId,
+      y: event.clientY,
+      lastY: event.clientY,
+      lastTime: event.timeStamp,
+      velocity: 0,
+    };
+    sheetFollowing = true;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  };
+
+  const onSheetPointerMove = (event: PointerEvent) => {
+    if (!sheetPointer || sheetPointer.id !== event.pointerId) {
+      return;
+    }
+    if (event.timeStamp > sheetPointer.lastTime) {
+      sheetPointer.velocity = (event.clientY - sheetPointer.lastY) / (event.timeStamp - sheetPointer.lastTime);
+      sheetPointer.lastY = event.clientY;
+      sheetPointer.lastTime = event.timeStamp;
+    }
+    const travel = Math.max(0, event.clientY - sheetPointer.y);
+    // Under Reduce Motion the sheet does not follow; the release still decides.
+    sheetDrag = prefersReducedMotion() ? null : travel;
+  };
+
+  const onSheetPointerEnd = (event: PointerEvent) => {
+    const pointer = sheetPointer;
+    if (!pointer || pointer.id !== event.pointerId) {
+      return;
+    }
+    sheetPointer = undefined;
+    sheetFollowing = false;
+    const travel = Math.max(0, event.clientY - pointer.y);
+    const height = infoElement?.offsetHeight ?? 0;
+    const dismissed =
+      event.type === 'pointerup' &&
+      ((height > 0 && travel > height * SHEET_DISMISS_RATIO) ||
+        (travel > 24 && pointer.velocity > SHEET_FLICK_VELOCITY));
+    if (dismissed) {
+      // `infoOut` reads the drag to carry on from it; it is cleared once the sheet has gone.
+      assetViewerManager.closeDetailPanel();
+      return;
+    }
+    sheetDrag = null;
+  };
+
+  $effect(() => {
+    if (showDetailPanel) {
+      return;
+    }
+    sheetDrag = null;
+    sheetPointer = undefined;
+    sheetFollowing = false;
+  });
+
+  // Moving to another item with the card open: the card stays put and only its contents blink over.
+  let infoAssetId: string | undefined;
+  $effect(() => {
+    const id = asset.id;
+    const body = infoBody;
+    if (!body) {
+      infoAssetId = undefined;
+      return;
+    }
+    if (infoAssetId !== undefined && infoAssetId !== id && typeof body.animate === 'function') {
+      body.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: DURATION.fast, easing: 'ease-out' });
+    }
+    infoAssetId = id;
+  });
+
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
 
   // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
@@ -998,22 +1395,6 @@
     infoHadFocus = false;
     assetViewerHtmlElement?.querySelector<HTMLElement>(':scope [data-viewer-chrome] [data-viewer-info]')?.focus();
   });
-
-  const onSwipe = (event: SwipeCustomEvent) => {
-    if (assetViewerManager.zoom > 1) {
-      return;
-    }
-
-    if (ocrManager.showOverlay) {
-      return;
-    }
-
-    if (event.detail.direction === 'left') {
-      navigateAsset('next');
-    } else if (event.detail.direction === 'right') {
-      navigateAsset('previous');
-    }
-  };
 </script>
 
 <CommandPaletteDefaultProvider name={$t('assets')} actions={[Tag, TagPeople]} />
@@ -1027,11 +1408,15 @@
   onpointercancelcapture={releasePointer}
   onpointerdown={onWindowPointerDown}
   onpointermove={onWindowPointerMove}
-  onpointerup={(event) => gesture.end(event.pointerId, event.clientX, event.clientY)}
+  onpointerup={(event) => {
+    swipe.end(event.pointerId, event.clientX);
+    gesture.end(event.pointerId, event.clientX, event.clientY);
+  }}
   onpointercancel={(event) => {
     if (gesture.pointerId === event.pointerId) {
       gesture.cancel();
     }
+    swipe.cancel();
   }}
 />
 
@@ -1058,6 +1443,8 @@
   class:chrome-hidden={chromeHidden}
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
+  class:info-open={showDetailPanel}
+  style:--fl-viewer-strips-height="{stripsHeight}px"
   style:background-color={dismissDrag ? `rgb(0 0 0 / ${1 - dismissDrag.progress})` : undefined}
   data-theme="dark"
   use:focusTrap
@@ -1120,7 +1507,10 @@
     data-viewer-content
     class="fl-viewer-canvas relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1"
     class:fl-viewer-video={VIDEO_VIEWERS.has(viewerKind)}
+    class:following={swipePhase === 'following' || swipePhase === 'snapping'}
+    class:leaving={swipePhase === 'leaving'}
     style:transform={canvasTransform}
+    bind:this={canvasElement}
     onpointerdown={onCanvasPointerDown}
     {@attach slideshowStage(
       () => ({
@@ -1134,54 +1524,72 @@
       () => $slideshowState === SlideshowState.PauseSlideshow || $slideshowSettingsOpen,
     )}
   >
-    {#if viewerKind === 'StackVideoViewer'}
-      <VideoViewer
-        asset={previewStackedAsset!}
-        cacheKey={previewStackedAsset!.thumbhash}
-        projectionType={previewStackedAsset!.exifInfo?.projectionType}
-        loopVideo={true}
-        onPreviousAsset={() => navigateAsset('previous')}
-        onNextAsset={() => navigateAsset('next')}
-        onClose={closeViewer}
-        onVideoEnded={() => navigateAsset()}
-        onVideoStarted={handleVideoStarted}
-        playOriginalVideo={isPlayingOriginalVideo}
-        onPlayEncoded={() => setPlayOriginalVideo(false)}
-      />
-    {:else if viewerKind === 'LiveVideoViewer'}
-      <VideoViewer
-        {asset}
-        assetId={asset.livePhotoVideoId!}
-        cacheKey={asset.thumbhash}
-        projectionType={asset.exifInfo?.projectionType}
-        loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
-        onPreviousAsset={() => navigateAsset('previous')}
-        onNextAsset={() => navigateAsset('next')}
-        onVideoEnded={() => (assetViewerManager.isPlayingMotionPhoto = false)}
-        playOriginalVideo={isPlayingOriginalVideo}
-      />
-    {:else if viewerKind === 'ImagePanaramaViewer'}
-      <ImagePanoramaViewer {asset} />
-    {:else if viewerKind === 'PhotoViewer'}
-      {#if developReadyFor === asset.id}
-        <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
+    <div class="fl-viewer-stage" bind:this={stageElement}>
+      {#if viewerKind === 'StackVideoViewer'}
+        <VideoViewer
+          asset={previewStackedAsset!}
+          cacheKey={previewStackedAsset!.thumbhash}
+          projectionType={previewStackedAsset!.exifInfo?.projectionType}
+          loopVideo={true}
+          onPreviousAsset={() => navigateAsset('previous')}
+          onNextAsset={() => navigateAsset('next')}
+          onClose={closeViewer}
+          onVideoEnded={() => navigateAsset()}
+          onVideoStarted={handleVideoStarted}
+          playOriginalVideo={isPlayingOriginalVideo}
+          onPlayEncoded={() => setPlayOriginalVideo(false)}
+        />
+      {:else if viewerKind === 'LiveVideoViewer'}
+        <VideoViewer
+          {asset}
+          assetId={asset.livePhotoVideoId!}
+          cacheKey={asset.thumbhash}
+          projectionType={asset.exifInfo?.projectionType}
+          loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
+          onPreviousAsset={() => navigateAsset('previous')}
+          onNextAsset={() => navigateAsset('next')}
+          onVideoEnded={() => (assetViewerManager.isPlayingMotionPhoto = false)}
+          playOriginalVideo={isPlayingOriginalVideo}
+        />
+      {:else if viewerKind === 'ImagePanaramaViewer'}
+        <ImagePanoramaViewer {asset} />
+      {:else if viewerKind === 'PhotoViewer'}
+        <!-- On screen from the first frame: the opening zoom lands on its fitted box, and moving between items never blanks. -->
+        <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} holdFullSize={holdPreview} />
+      {:else if viewerKind === 'VideoViewer'}
+        <VideoViewer
+          {asset}
+          cacheKey={videoCacheKey}
+          projectionType={asset.exifInfo?.projectionType}
+          loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
+          extendedControls
+          onPreviousAsset={() => navigateAsset('previous')}
+          onNextAsset={() => navigateAsset('next')}
+          onClose={closeViewer}
+          onVideoEnded={() => navigateAsset()}
+          onVideoStarted={handleVideoStarted}
+          playOriginalVideo={isPlayingOriginalVideo}
+          onPlayEncoded={() => setPlayOriginalVideo(false)}
+        />
       {/if}
-    {:else if viewerKind === 'VideoViewer'}
-      <VideoViewer
-        {asset}
-        cacheKey={videoCacheKey}
-        projectionType={asset.exifInfo?.projectionType}
-        loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
-        extendedControls
-        onPreviousAsset={() => navigateAsset('previous')}
-        onNextAsset={() => navigateAsset('next')}
-        onClose={closeViewer}
-        onVideoEnded={() => navigateAsset()}
-        onVideoStarted={handleVideoStarted}
-        playOriginalVideo={isPlayingOriginalVideo}
-        onPlayEncoded={() => setPlayOriginalVideo(false)}
-      />
-    {/if}
+
+      <!-- The neighbours, beside the photo while a swipe drags it. -->
+      {#if (swipeX !== null || swipePhase === 'settling') && showNavigation}
+        {#each SWIPE_ORDERS as order (order)}
+          {@const url = neighbourThumbnail(neighbour(order))}
+          {#if url}
+            <img
+              class="fl-viewer-peek"
+              data-viewer-peek={order}
+              src={url}
+              alt=""
+              aria-hidden="true"
+              draggable="false"
+            />
+          {/if}
+        {/each}
+      {/if}
+    </div>
 
     <!-- V-16: a Live Photo plays its clip from the on-photo badge (MediaViewer.jsx:1522-1543). -->
     {#if asset.livePhotoVideoId && (viewerKind === 'PhotoViewer' || viewerKind === 'LiveVideoViewer') && !isPanorama(asset) && !assetViewerManager.isShowEditor}
@@ -1198,11 +1606,7 @@
     {/if}
 
     {#if showActivityStatus}
-      <div
-        class="absolute inset-e-0 bottom-0 me-8 mb-20"
-        style:bottom="var(--fl-viewer-toolbar-offset)"
-        data-viewer-chrome
-      >
+      <div class="fl-viewer-float absolute inset-e-0 me-8 mb-20" data-viewer-chrome>
         <ActivityStatus
           disabled={!album?.isActivityEnabled}
           isLiked={activityManager.isLiked}
@@ -1215,8 +1619,7 @@
 
     {#if showOcrButton}
       <div
-        class="absolute inset-e-0 bottom-0 me-6 mb-6 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)]"
-        style:bottom="var(--fl-viewer-toolbar-offset)"
+        class="fl-viewer-float absolute inset-e-0 me-6 mb-6 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)]"
         data-viewer-chrome
       >
         <OcrButton />
@@ -1229,8 +1632,31 @@
     {/if}
   </div>
 
+  <!-- The photo that was on screen, as a still over the one arriving (see `holdover`). -->
+  {#if holdover}
+    {#key holdover.key}
+      <img
+        bind:this={holdoverElement}
+        class="fl-viewer-holdover"
+        src={holdover.src}
+        alt=""
+        aria-hidden="true"
+        decoding="sync"
+        draggable="false"
+        data-testid="viewer-holdover"
+        style:left="{holdover.left}px"
+        style:top="{holdover.top}px"
+        style:width="{holdover.width}px"
+        style:height="{holdover.height}px"
+      />
+    {/key}
+  {/if}
+
   {#if $slideshowState === SlideshowState.None && showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && nextAsset}
-    <div class="col-span-1 col-start-4 row-span-full row-start-1 my-auto justify-self-end" data-viewer-chrome>
+    <div
+      class="fl-viewer-next col-span-1 col-start-4 row-span-full row-start-1 my-auto justify-self-end"
+      data-viewer-chrome
+    >
       <NextAssetAction onNextAsset={() => navigateAsset('next')} />
     </div>
   {/if}
@@ -1244,11 +1670,35 @@
     <div
       id="detail-panel"
       class="fl-viewer-info fl-continuous-corners dark"
+      class:sheet-dragging={sheetFollowing}
       translate="yes"
+      style:translate={sheetDrag === null ? undefined : `0 ${sheetDrag}px`}
+      bind:this={infoElement}
+      in:infoCardIn
+      out:infoOut
       onfocusin={() => (infoHadFocus = true)}
       onfocusout={infoFocusOut}
     >
-      <span class="fl-viewer-sheet-handle" aria-hidden="true"></span>
+      <!-- The header stays put above the scrolling details, so Close is always in reach; on phones it is also the grab area. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <header
+        class="fl-viewer-info-head"
+        onpointerdown={onSheetPointerDown}
+        onpointermove={onSheetPointerMove}
+        onpointerup={onSheetPointerEnd}
+        onpointercancel={onSheetPointerEnd}
+      >
+        <span class="fl-viewer-sheet-handle" aria-hidden="true"></span>
+        <h2>{$t('frameleaf_viewer_information_heading')}</h2>
+        <button
+          type="button"
+          class="fl-viewer-info-close"
+          aria-label={$t('close')}
+          onclick={() => assetViewerManager.closeDetailPanel()}
+        >
+          <Icon icon={mdiClose} size={ICON_SIZE.xl} aria-hidden />
+        </button>
+      </header>
       <!--
           FL-35 stops at the viewer's media sources, navigation and actions. FL-36 rebuilt
           the panel itself — the inline description, date and timezone, location, tag and
@@ -1256,7 +1706,9 @@
           place, so there is no second panel and no opt-in switch between them. The people
           and face edits are FL-38 and continue to live inside DetailPanel.
         -->
-      <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
+      <div class="fl-viewer-info-body" bind:this={infoBody}>
+        <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
+      </div>
     </div>
   {/if}
 
@@ -1266,45 +1718,89 @@
     production video editor's commands inside the same frame.
   -->
   {#if assetViewerManager.isShowEditor && authManager.authenticated && !authManager.isSharedLink && asset.ownerId === authManager.user.id}
-    <QuickEditor {asset} onClose={closeEditor} onRendered={refreshRenderedPhoto} />
+    <!-- The editor and the viewer crossfade into each other; leaving is the shorter of the two. -->
+    <div in:motionFade={{ duration: DURATION.fade }} out:motionFade={{ duration: EXIT_DURATION.sheet }}>
+      <QuickEditor {asset} onClose={closeEditor} onRendered={refreshRenderedPhoto} onReopen={reopenEditor} />
+    </div>
+  {/if}
+
+  <!--
+    A saved edit that is still being finished: said on the photo, so the unchanged picture is not
+    read as a save that did not work. It ends with a tick as the new picture fades in.
+  -->
+  {#if editInProgress && !assetViewerManager.isShowEditor && $slideshowState === SlideshowState.None}
+    <div
+      class="fl-viewer-edit-status"
+      class:ready={editInProgress.ready}
+      role="status"
+      data-viewer-chrome
+      data-testid="viewer-edit-status"
+      in:dock={{ y: -8 }}
+      out:dock={{ y: -8 }}
+    >
+      {#if editInProgress.ready}
+        <Icon icon={mdiCheck} size={ICON_SIZE.md} aria-hidden />
+        <span>{$t('frameleaf_viewer_edit_ready')}</span>
+      {:else}
+        <span>
+          {editInProgress.progress === null
+            ? $t('frameleaf_viewer_edit_finishing')
+            : $t('frameleaf_viewer_edit_finishing_progress', {
+                values: { progress: Math.round(editInProgress.progress) },
+              })}
+        </span>
+        <span class="fl-viewer-edit-bar" class:waiting={editInProgress.progress === null} aria-hidden="true">
+          <span style:width="{editInProgress.progress ?? 100}%"></span>
+        </span>
+      {/if}
+    </div>
   {/if}
 
   <!-- FL-38: the face tagger is a modal dialog over the viewer (FaceTagger.jsx), for photos and videos alike. -->
   {#if assetViewerManager.isFaceEditMode}
     {#key asset.id}
-      <FaceTagger {asset} onClose={() => assetViewerManager.closeFaceEditMode()} onSaved={refreshFaces} />
+      <FaceTagger
+        {asset}
+        onClose={() => assetViewerManager.closeFaceEditMode()}
+        onSaved={refreshFaces}
+        onReopen={reopenFaceTagger}
+      />
     {/key}
   {/if}
 
-  <!-- FL-35: the stack strip carries keep-this and set-primary beside the members. -->
-  {#if showStackStrip && stack}
+  <!--
+    FL-35: the strips above the footer. The filmstrip (shown only when the caller supplied the
+    neighbours) is the collection; a stacked photo adds its stack, with keep-this and set-primary,
+    as a row above it.
+  -->
+  {#if (showStackStrip && stack) || showFilmstripStrip}
     <div
-      id="stack-slideshow"
-      class="fl-viewer-strip absolute bottom-0 col-span-4 col-start-1 w-fit max-w-full"
+      class="fl-viewer-strip absolute inset-x-0 bottom-0 col-span-4 col-start-1"
       data-viewer-chrome="footer"
+      bind:clientHeight={stripsHeight}
     >
-      <ViewerStackStrip
-        {stack}
-        {asset}
-        onAction={handleAction}
-        onSelect={(stackedAsset) => {
-          cursor = { ...cursor, current: stackedAsset };
-          notifyAssetUpdate?.(stackedAsset);
-          previewStackedAsset = undefined;
-        }}
-        onPreview={(stackedAsset) => (previewStackedAsset = stackedAsset)}
-      />
-    </div>
-  {/if}
-
-  <!-- FL-35: the filmstrip, shown only when the caller supplied the neighbours. -->
-  {#if showFilmstripStrip}
-    <div class="fl-viewer-strip absolute inset-x-0 bottom-0 col-span-4 col-start-1" data-viewer-chrome="footer">
-      <ViewerFilmstrip
-        assets={filmstripAssets}
-        currentAssetId={asset.id}
-        onSelect={(selected) => handlePromiseError(goToAsset(selected))}
-      />
+      {#if showStackStrip && stack}
+        <div id="stack-slideshow" transition:motionSlide={{ duration: DURATION.slow }}>
+          <ViewerStackStrip
+            {stack}
+            {asset}
+            onAction={handleAction}
+            onSelect={(stackedAsset) => {
+              cursor = { ...cursor, current: stackedAsset };
+              notifyAssetUpdate?.(stackedAsset);
+              previewStackedAsset = undefined;
+            }}
+            onPreview={(stackedAsset) => (previewStackedAsset = stackedAsset)}
+          />
+        </div>
+      {/if}
+      {#if showFilmstripStrip}
+        <ViewerFilmstrip
+          assets={filmstripAssets}
+          currentAssetId={asset.id}
+          onSelect={(selected) => handlePromiseError(goToAsset(selected))}
+        />
+      {/if}
     </div>
   {/if}
 
@@ -1355,21 +1851,113 @@
   #immich-asset-viewer {
     contain: layout;
     /* apple-style.css:366-370: a pure black canvas in both themes. */
-    background: #000;
-    color: #fff;
+    background: var(--fl-viewer-canvas);
+    color: var(--fl-viewer-text);
     /*
      * What sits along the bottom edge: the 60px footer (V-13) and, on phones, the bottom toolbar above
      * it (AssetViewerNavBar, apple-style.css:756-763). Strips, badges and video controls clear both.
      */
     --fl-viewer-footer-height: calc(60px + env(safe-area-inset-bottom));
     --fl-viewer-toolbar-offset: var(--fl-viewer-footer-height);
+    --fl-viewer-info-width: 340px;
   }
 
   .fl-viewer-canvas {
     isolation: isolate;
     transition:
-      transform 460ms var(--fl-spring),
-      opacity 300ms ease;
+      transform var(--fl-duration) var(--fl-spring),
+      opacity var(--fl-motion-slow) var(--fl-ease),
+      padding-inline-end var(--fl-duration) var(--fl-snappy);
+  }
+
+  .fl-viewer-stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* A swipe: the finger moves the photo directly; a committed swipe leaves without overshoot. */
+  .fl-viewer-canvas.following {
+    transition: none;
+  }
+
+  .fl-viewer-canvas.leaving {
+    transition: transform var(--fl-motion-slow) var(--fl-snappy);
+  }
+
+  .fl-viewer-peek {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .fl-viewer-peek[data-viewer-peek='next'] {
+    left: calc(100% + var(--fl-space-4));
+  }
+
+  .fl-viewer-peek[data-viewer-peek='previous'] {
+    right: calc(100% + var(--fl-space-4));
+  }
+
+  /* A saved edit on its way: a small frosted pill under the header. */
+  .fl-viewer-edit-status {
+    position: absolute;
+    top: calc(64px + env(safe-area-inset-top, 0px) + var(--fl-space-3));
+    inset-inline: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    width: fit-content;
+    max-width: calc(100% - var(--fl-space-8));
+    min-height: 34px;
+    margin-inline: auto;
+    padding: var(--fl-space-1) var(--fl-space-3);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-pill);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 82%, transparent);
+    backdrop-filter: var(--fl-material-blur);
+    color: var(--fl-viewer-text);
+    font: var(--fl-type-caption);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  .fl-viewer-edit-status.ready {
+    color: var(--fl-on-material-accent);
+  }
+
+  .fl-viewer-edit-bar {
+    width: 56px;
+    height: 3px;
+    overflow: hidden;
+    border-radius: var(--fl-radius-pill);
+    background: color-mix(in srgb, var(--fl-viewer-text) 18%, transparent);
+  }
+
+  .fl-viewer-edit-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--fl-accent);
+    transition: width var(--fl-motion-slow) var(--fl-ease);
+  }
+
+  /* Waiting its turn: no number yet, so the bar breathes instead of filling. */
+  .fl-viewer-edit-bar.waiting span {
+    animation: fl-skeleton-pulse var(--fl-duration-pulse) var(--fl-ease) infinite;
+  }
+
+  .fl-viewer-holdover {
+    position: absolute;
+    z-index: -1;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
   }
 
   /* A video keeps its controls clear of the phone toolbar. */
@@ -1384,8 +1972,9 @@
   /* #13 tap hides the controls (apple-style.css:383-403). */
   [data-viewer-chrome] {
     transition:
-      opacity 260ms ease,
-      translate 420ms var(--fl-spring);
+      opacity var(--fl-motion-slow) var(--fl-ease),
+      translate var(--fl-duration-dock) var(--fl-spring),
+      margin-inline-end var(--fl-duration) var(--fl-snappy);
   }
 
   .chrome-hidden [data-viewer-chrome] {
@@ -1407,7 +1996,7 @@
   .fl-viewer-strip {
     isolation: isolate;
     bottom: var(--fl-viewer-toolbar-offset);
-    border-top: 1px solid #ffffff14;
+    border-top: 1px solid var(--fl-viewer-border);
   }
 
   .fl-viewer-strip::before {
@@ -1415,8 +2004,18 @@
     position: absolute;
     inset: 0;
     z-index: -1;
-    background: #1c1c1e99;
+    /* The same material as the header and footer it sits between. */
+    background: color-mix(in srgb, var(--fl-viewer-panel) 60%, transparent);
     backdrop-filter: var(--fl-material-blur);
+  }
+
+  /* What floats on the photo's bottom corner (text recognition, likes) sits above the footer and any strips. */
+  .fl-viewer-float {
+    bottom: var(--fl-viewer-toolbar-offset);
+  }
+
+  .with-footer .fl-viewer-float {
+    bottom: calc(var(--fl-viewer-toolbar-offset) + var(--fl-viewer-strips-height, 0px));
   }
 
   .fl-viewer-sheet-handle {
@@ -1427,30 +2026,87 @@
   .fl-viewer-info {
     position: absolute;
     top: max(76px, calc(env(safe-area-inset-top) + 68px));
-    right: max(16px, env(safe-area-inset-right));
+    inset-inline-end: max(var(--fl-space-4), env(safe-area-inset-right));
     bottom: 76px;
     z-index: 5;
-    width: 340px;
+    display: flex;
+    flex-direction: column;
+    width: var(--fl-viewer-info-width);
     max-width: calc(100vw - 32px);
+    overflow: hidden;
+    border: 1px solid var(--fl-material-edge);
+    border-radius: var(--fl-radius-sheet);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 72%, transparent);
+    backdrop-filter: blur(36px) saturate(180%);
+    box-shadow: var(--fl-shadow-4);
+    color: var(--fl-viewer-text);
+  }
+
+  /* media-viewer.css:958-972: the heading and Close stay; only the details scroll. */
+  .fl-viewer-info-head {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-2);
+    padding-inline-start: var(--fl-space-5);
+    border-bottom: 1px solid var(--fl-viewer-border);
+  }
+
+  .fl-viewer-info-head h2 {
+    margin: 0;
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
+  }
+
+  .fl-viewer-info-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--fl-control-height);
+    height: var(--fl-control-height);
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: background-color var(--fl-motion-fast) var(--fl-ease);
+  }
+
+  .fl-viewer-info-close:hover {
+    background: color-mix(in srgb, var(--fl-viewer-text) 10%, transparent);
+  }
+
+  .fl-viewer-info-close:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-inset);
+  }
+
+  .fl-viewer-info-body {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    border: 1px solid #ffffff1f;
-    border-radius: 20px;
-    background: color-mix(in srgb, #1c1c1e 72%, transparent);
-    backdrop-filter: blur(36px) saturate(180%);
-    box-shadow: 0 24px 80px #000a;
-    color: #f1f1f2;
-    animation: fl-card-in 420ms var(--fl-spring) both;
   }
 
   /* Clear of the filmstrip or stack strip (apple-style.css:540-542). */
   .with-footer .fl-viewer-info {
-    bottom: 168px;
+    bottom: calc(76px + var(--fl-viewer-strips-height, 0px) + var(--fl-space-3));
   }
 
-  @supports (corner-shape: squircle) {
-    .fl-viewer-info {
-      border-radius: 36px;
+  /*
+   * With the card open the photo and the Next arrow move aside by its width, so the photo sits in
+   * the free space and Next is never under the card.
+   */
+  @media (min-width: 761px) {
+    .info-open .fl-viewer-canvas {
+      padding-inline-end: calc(var(--fl-viewer-info-width) + var(--fl-space-4) * 2);
+    }
+
+    .info-open .fl-viewer-next {
+      margin-inline-end: calc(var(--fl-viewer-info-width) + var(--fl-space-4));
     }
   }
 
@@ -1464,17 +2120,31 @@
       max-height: min(74%, calc(100% - 72px));
       padding-bottom: env(safe-area-inset-bottom);
       border-width: 1px 0 0;
-      border-radius: 16px 16px 0 0;
-      animation: fl-sheet-in 240ms var(--fl-spring) both;
+      border-radius: var(--fl-radius-capsule) var(--fl-radius-capsule) 0 0;
+      transition: translate var(--fl-duration) var(--fl-spring);
+    }
+
+    /* The finger moves the sheet directly. */
+    .fl-viewer-info.sheet-dragging {
+      transition: none;
+    }
+
+    .fl-viewer-info-head {
+      padding-top: var(--fl-space-4);
+      cursor: grab;
+      touch-action: none;
     }
 
     .fl-viewer-sheet-handle {
+      position: absolute;
+      top: var(--fl-space-2);
+      left: 50%;
       display: block;
       width: 40px;
       height: 4px;
-      margin: 7px auto 0;
-      border-radius: 2px;
-      background: #ffffff24;
+      border-radius: var(--fl-radius-pill);
+      background: color-mix(in srgb, var(--fl-viewer-text) 24%, transparent);
+      translate: -50% 0;
     }
   }
 
@@ -1484,35 +2154,15 @@
     }
   }
 
-  @keyframes fl-card-in {
-    from {
-      opacity: 0;
-      translate: 16px 0;
-      scale: 0.98;
-    }
-  }
-
-  @keyframes fl-sheet-in {
-    from {
-      opacity: 0;
-      translate: 0 24px;
-    }
-  }
-
-  @keyframes fl-fade-in {
-    from {
-      opacity: 0;
-    }
-  }
-
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
     .fl-viewer-strip::before {
-      background: #1c1c1e;
+      background: var(--fl-viewer-panel);
       backdrop-filter: none;
     }
 
-    .fl-viewer-info {
-      background: #1c1c1e;
+    .fl-viewer-info,
+    .fl-viewer-edit-status {
+      background: var(--fl-viewer-panel);
       backdrop-filter: none;
     }
   }
@@ -1520,19 +2170,15 @@
   /* Reduce Motion: crossfades instead of movement (apple-style.css:466-490, 553-557). */
   @media (prefers-reduced-motion: reduce) {
     .fl-viewer-canvas {
-      transition: opacity 150ms ease;
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease);
     }
 
     [data-viewer-chrome] {
-      transition: opacity 150ms ease;
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease);
     }
 
     .chrome-hidden [data-viewer-chrome] {
       translate: none !important;
-    }
-
-    .fl-viewer-info {
-      animation: fl-fade-in 200ms ease both;
     }
   }
 </style>

@@ -179,7 +179,8 @@ export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object
   analytics: '#bf5af2',
   backups: '#30b0c7',
   storage: '#8e8e93',
-  backup: '#30b0c7',
+  // Import & protection no longer shares Backup's teal tile (design review finding 66).
+  backup: '#64d2ff',
   intelligence: '#5e5ce6',
   editing: '#ff9f0a',
   sharing: '#0a84ff',
@@ -227,6 +228,56 @@ export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.fr
 });
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
+
+/**
+ * The one Backup area's pages (design review finding 66). Backups used to be reached from four
+ * places: the Backup screen, a "Database backups" form under Import & protection, a second
+ * "Database backups" manager under Maintenance, and Cloud backup under Frameleaf Cloud. They are
+ * now shown as pages of Backup. Every page keeps the address it always had, so older links, the
+ * old administration redirects and the command palette still open it; only where it is listed and
+ * which area is highlighted changed.
+ */
+export type BackupPageId = 'destinations' | 'schedule' | 'restore';
+export const BACKUP_PAGES: readonly { id: BackupPageId; area: SettingsAreaId; section?: string }[] = Object.freeze([
+  { id: 'destinations', area: 'backups' },
+  { id: 'schedule', area: 'backup', section: 'backup' },
+  { id: 'restore', area: 'maintenance', section: 'backups' },
+]);
+
+/** Addresses in other areas that are shown as part of Backup, as `<area>:<section>`. */
+const BACKUP_ADDRESSES: Readonly<Record<string, BackupPageId>> = Object.freeze({
+  'backup:backup': 'schedule',
+  'maintenance:backups': 'restore',
+  // Cloud backup is one of the off-site destinations.
+  'cloud:cloud-backup': 'destinations',
+});
+
+/** The Backup page an address shows, if it is one. */
+export const backupPageFor = (area: SettingsAreaId, section?: string | null): BackupPageId | undefined =>
+  area === 'backups' && !section ? 'destinations' : BACKUP_ADDRESSES[`${area}:${section ?? ''}`];
+
+/** Whether a section is listed under Backup instead of the area its address names. */
+export const isBackupSection = (area: SettingsAreaId, section: string) =>
+  Object.hasOwn(BACKUP_ADDRESSES, `${area}:${section}`);
+
+/** The area a page is shown in: Backup for its pages, otherwise the area of its address. */
+export const presentedArea = (area: SettingsAreaId, section?: string | null): SettingsAreaId =>
+  section && isBackupSection(area, section) ? 'backups' : area;
+
+/** The area a server section is shown in (its address may name another; see `BACKUP_PAGES`). */
+export const presentedAreaForSection = (sectionKey: string): SettingsAreaId | undefined => {
+  const area = SETTINGS_AREAS.find((item) => item.sections.includes(sectionKey))?.id;
+  return area ? presentedArea(area, sectionKey) : undefined;
+};
+
+/**
+ * Areas whose pages read the "Viewing" scope (`?scope=`): Overview, Library analytics, Library care
+ * and the Job manager. Everywhere else a setting applies to the whole server, so the picker is not
+ * offered there (design review finding 65).
+ */
+export const SCOPED_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'care']);
+export const honoursScope = (area: SettingsAreaId, section?: string | null) =>
+  SCOPED_AREAS.includes(area) || (area === 'processing' && section === 'queues');
 
 /** Whether an account may open an area at all. Section-level gating is the caller's section list. */
 export const isAreaAvailable = (area: SettingsAreaDefinition, isAdmin: boolean) =>

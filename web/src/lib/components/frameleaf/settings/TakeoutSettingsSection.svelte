@@ -3,6 +3,8 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import TakeoutWizard from '$lib/components/frameleaf/TakeoutWizard.svelte';
   import { Route } from '$lib/route';
   import {
@@ -88,7 +90,10 @@
     <div class="roots">
       <h4>{$t('frameleaf_takeout_settings_roots')}</h4>
       {#if roots === undefined}
-        <p class="note">{$t('loading')}</p>
+        <div role="status" aria-busy="true">
+          <span class="sr-only">{$t('loading')}</span>
+          <Skeleton variant="text" lines={2} />
+        </div>
       {:else if roots.length === 0}
         <p class="note">{$t('frameleaf_takeout_settings_roots_none')}</p>
       {:else}
@@ -114,9 +119,12 @@
          wizard starts from the server's state, never the last one's. -->
     <TakeoutWizard imports={loaded.imports} current={loaded.current} onClose={close} />
   {:else if failed}
-    <p class="note" role="alert">{$t('frameleaf_takeout_error_generic')}</p>
+    <InlineError message={$t('frameleaf_takeout_error_generic')} />
   {:else}
-    <p class="note">{$t('loading')}</p>
+    <div role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="12rem" />
+    </div>
   {/if}
 </Dialog>
 

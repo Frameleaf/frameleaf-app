@@ -1,3 +1,7 @@
+<script lang="ts" module>
+  const wholePercent = (value: number) => `${Math.round(value)}%`;
+</script>
+
 <script lang="ts">
   /**
    * The Library analytics hero (FL-79), the template's `LibraryHero` (AnalyticsDashboard.jsx:216-290):
@@ -7,6 +11,7 @@
    * before any video stream has been read) is left out rather than shown as zero.
    */
   import AnalyticsRing from '$lib/components/frameleaf/analytics/AnalyticsRing.svelte';
+  import CountUp from '$lib/components/frameleaf/CountUp.svelte';
   import AnalyticsSparkline from '$lib/components/frameleaf/analytics/AnalyticsSparkline.svelte';
   import { analyticsFormats, captureSpan, type Translate } from '$lib/frameleaf/analytics';
   import { locale } from '$lib/stores/preferences.store';
@@ -57,7 +62,7 @@
 <section class="an-hero fl-continuous-corners" aria-label={$t('frameleaf_analytics_hero_label')}>
   <div class="main">
     <p class="an-kicker">{kicker}</p>
-    <p class="number">{f.number(report.summary.items)}</p>
+    <p class="number"><CountUp value={report.summary.items} format={f.number} /></p>
     <p class="line">
       {#if span}
         {$t('frameleaf_analytics_hero_before')}
@@ -78,7 +83,7 @@
   <div class="kpis">
     <div class="kpi">
       <span>{$t('frameleaf_analytics_added_period')}</span>
-      <strong>+{f.number(added)}</strong>
+      <strong>+<CountUp value={added} format={f.number} /></strong>
       <AnalyticsSparkline
         values={report.series.map((row) => row.photos + row.videos)}
         label={$t('frameleaf_analytics_sparkline_label', { values: { count: report.series.length } })}
@@ -96,7 +101,7 @@
           value={used}
           label={$t('frameleaf_analytics_volume_ring', { values: { percent: Math.round(used) } })}
         >
-          {Math.round(used)}%
+          <CountUp value={used} format={wholePercent} />
         </AnalyticsRing>
         <div>
           <span>{$t('frameleaf_analytics_kpi_volume_used')}</span>
@@ -161,7 +166,7 @@
     margin: 0;
     font-size: clamp(48px, 7cqi, 88px);
     font-weight: 700;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     letter-spacing: -0.045em;
     line-height: 0.95;
   }
@@ -189,7 +194,7 @@
     background: var(--fl-raised);
     border-radius: var(--fl-radius-pill);
     font-size: 12px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .an-facts li :global(svg) {
     color: var(--fl-accent);
@@ -215,7 +220,7 @@
   }
   .kpi strong {
     font-size: 24px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 650;
     letter-spacing: -0.02em;
   }

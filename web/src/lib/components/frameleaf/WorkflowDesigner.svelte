@@ -13,6 +13,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import WorkflowParameter, { type ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import '$lib/frameleaf/workflow-designer.css';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import {
     cloneJson,
     draftFromDocument,
@@ -248,9 +249,29 @@
     }
   };
 
-  const cancel = () => {
-    if ((!dirty && !jsonPending && !parametersPending) || confirm($t('frameleaf_workflows.discard_prompt'))) {
+  /** Closing with unsaved work asks first, in the Frameleaf confirmation (design review finding 74). */
+  let askingToDiscard = false;
+  const cancel = async () => {
+    if (!dirty && !jsonPending && !parametersPending) {
       open = false;
+      return;
+    }
+    if (askingToDiscard) {
+      return;
+    }
+    askingToDiscard = true;
+    try {
+      const discard = await confirmFrameleaf({
+        title: $t('frameleaf_workflows.discard_prompt'),
+        confirmText: $t('frameleaf_workflows.discard_confirm'),
+        cancelText: $t('frameleaf_workflows.discard_keep'),
+        danger: true,
+      });
+      if (discard) {
+        open = false;
+      }
+    } finally {
+      askingToDiscard = false;
     }
   };
 

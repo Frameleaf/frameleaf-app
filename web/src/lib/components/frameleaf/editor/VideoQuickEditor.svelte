@@ -22,6 +22,7 @@
   import CropOverlay from '$lib/components/frameleaf/editor/CropOverlay.svelte';
   import DevelopGroup from '$lib/components/frameleaf/editor/DevelopGroup.svelte';
   import EditorMenu, { type EditorMenuItem } from '$lib/components/frameleaf/editor/EditorMenu.svelte';
+  import { discardWithUndo } from '$lib/components/frameleaf/editor/discarded-draft';
   import EditorSlider from '$lib/components/frameleaf/editor/EditorSlider.svelte';
   import Histogram from '$lib/components/frameleaf/editor/Histogram.svelte';
   import PresetStrip from '$lib/components/frameleaf/editor/PresetStrip.svelte';
@@ -143,10 +144,13 @@
   let {
     asset,
     onClose,
+    onReopen,
   }: {
     asset: AssetResponseDto;
     /** `refreshAsset` is true when a saved version changed what the viewer should show. */
     onClose: (refreshAsset?: boolean) => void;
+    /** Opens the editor on this item again, for Undo after Cancel or Escape. */
+    onReopen?: (assetId: string) => void;
   } = $props();
   const privateStateGeneration = getPrivateBrowserStateGeneration();
 
@@ -859,18 +863,36 @@
   };
 
   /* Top bar actions (Editor.jsx:976-1077) ------------------------------------ */
+  const draftRecord = (playhead: number) => ({
+    assetId: asset.id,
+    kind: 'video' as const,
+    draft: $state.snapshot(draft),
+    base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
+    tool,
+    playhead: secondsToRational(playhead),
+  });
+  /**
+   * Cancel and Escape close at once; nothing was written. Unsaved edits stay recoverable for as long
+   * as the toast offers Undo, which reopens the editor on the same draft and playhead.
+   */
   const cancel = () => {
-    if (dirty) {
-      toastManager.primary($t('frameleaf_editor_edits_discarded'));
-    }
+    const discarded = dirty;
+    const record =
+      discarded && onReopen && privateStateGeneration === getPrivateBrowserStateGeneration() ? draftRecord(time) : null;
     closing = true;
     draftReady = false;
     clearEditorContinuity(asset.id);
+    if (record && onReopen) {
+      discardWithUndo(record, $t('frameleaf_editor_edits_discarded'), onReopen);
+    } else if (discarded) {
+      toastManager.primary($t('frameleaf_editor_edits_discarded'));
+    }
     onClose(saveChangedCurrent);
   };
   /**
    * Open in Studio keeps the draft and the playhead (FL-113; App.jsx `openStudio` only switches
-   * screens): Studio starts at the same instant, and the draft is offered back when the person returns.
+   * screens): Studio starts at the same instant on the saved clip, and the draft waits here until the
+   * person returns. With unsaved edits that is said as Studio opens, because Studio does not show them.
    */
   const openStudio = () => {
     const playhead = secondsToRational(time);
@@ -878,14 +900,10 @@
       privateStateGeneration === getPrivateBrowserStateGeneration() &&
       (dirty || draft.undo.length > 0 || draft.redo.length > 0 || time > 0)
     ) {
-      saveEditorContinuity({
-        assetId: asset.id,
-        kind: 'video',
-        draft: $state.snapshot(draft),
-        base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
-        tool,
-        playhead,
-      });
+      saveEditorContinuity(draftRecord(time));
+    }
+    if (dirty) {
+      toastManager.primary($t('frameleaf_editor_studio_edits_waiting'));
     }
     onClose(saveChangedCurrent);
     void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id, at: playhead }));
@@ -1010,9 +1028,23 @@
       disabled: !videoSettingsClipboard,
       onSelect: pasteSettings,
     },
-    { id: 'revert', label: $t('frameleaf_editor_revert_draft'), icon: mdiRestore, onSelect: revert },
-    { id: 'frame', label: $t('frameleaf_video_editor_export_frame_title'), icon: mdiCameraIris, onSelect: exportFrame },
-    { id: 'studio', label: $t('frameleaf_editor_open_in_studio'), icon: mdiOpenInApp, onSelect: openStudio },
+    { id: 'revert', label: $t('frameleaf_editor_reset_all'), icon: mdiRestore, onSelect: revert },
+    {
+      id: 'frame',
+      label: $t('frameleaf_video_editor_export_frame_title'),
+      icon: mdiCameraIris,
+      separated: true,
+      onSelect: exportFrame,
+    },
+    // With unsaved edits the entry says what Studio will open on, since Studio does not show a draft.
+    {
+      id: 'studio',
+      label: dirty ? $t('frameleaf_editor_studio_without_edits') : $t('frameleaf_editor_open_in_studio'),
+      icon: mdiOpenInApp,
+      separated: true,
+      title: dirty ? $t('frameleaf_editor_studio_without_edits_title') : undefined,
+      onSelect: openStudio,
+    },
   ]);
 
   /* Keyboard (Editor.jsx:1080-1117), called by the hosting dialog -------------------- */
@@ -1112,138 +1144,120 @@
 </script>
 
 <div class="ed-shell">
-  <header class="ed-top">
-    <button type="button" class="ed-tool labelled compact" onclick={cancel} title={$t('frameleaf_editor_cancel_title')}>
-      <Icon icon={mdiClose} size="20" />
-      <span>{$t('cancel')}</span>
-    </button>
-    <div class="ed-title">
-      <strong>{asset.originalFileName}</strong>
-      <span>
-        {$t('frameleaf_editor_kind_video')}{dimensions ? ` · ${dimensions}` : ''}{duration
-          ? ` · ${rulerTime(duration)}`
-          : ''}{dirty ? ` · ${$t('frameleaf_editor_edited')}` : ''}
-        {#if peopleNames.length > 0}
-          <span class="people"
-            >· {$t('frameleaf_editor_with_people', { values: { names: peopleNames.join(', ') } })}</span
-          >
-        {/if}
-      </span>
+  <!-- The same grouped top bar as the photo editor: leave and title, history and compare, versions, More and Save. -->
+  <header class="ed-top grouped">
+    <div class="ed-top-start">
+      <button
+        type="button"
+        class="ed-tool labelled compact"
+        onclick={cancel}
+        title={$t('frameleaf_editor_cancel_title')}
+      >
+        <Icon icon={mdiClose} size="20" />
+        <span>{$t('cancel')}</span>
+      </button>
+      <div class="ed-title">
+        <strong>
+          <span class="ed-name">{asset.originalFileName}</span>
+          {#if dirty}
+            <span class="ed-edited">{$t('frameleaf_editor_edited')}</span>
+          {/if}
+        </strong>
+        <span>
+          {$t('frameleaf_editor_kind_video')}{dimensions ? ` · ${dimensions}` : ''}{duration
+            ? ` · ${rulerTime(duration)}`
+            : ''}
+          {#if peopleNames.length > 0}
+            <span class="people"
+              >· {$t('frameleaf_editor_with_people', { values: { names: peopleNames.join(', ') } })}</span
+            >
+          {/if}
+        </span>
+      </div>
     </div>
-    <button
-      type="button"
-      class="ed-tool"
-      aria-label={$t('undo')}
-      title={$t('undo')}
-      disabled={draft.undo.length === 0}
-      onclick={() => (draft = travelVideoDraft(draft, 'undo'))}
-    >
-      <Icon icon={mdiUndo} size="20" />
-    </button>
-    <button
-      type="button"
-      class="ed-tool"
-      aria-label={$t('frameleaf_editor_redo')}
-      title={$t('frameleaf_editor_redo')}
-      disabled={draft.redo.length === 0}
-      onclick={() => (draft = travelVideoDraft(draft, 'redo'))}
-    >
-      <Icon icon={mdiRedo} size="20" />
-    </button>
-    <span class="ed-sep" aria-hidden="true"></span>
-    <button
-      type="button"
-      class="ed-tool"
-      aria-label={$t('frameleaf_editor_hold_before')}
-      title={$t('frameleaf_editor_hold_before')}
-      aria-pressed={before}
-      onpointerdown={(event) => {
-        if (event.pointerType !== 'mouse' || event.button === 0) {
-          before = true;
-        }
-      }}
-      onpointerup={() => (before = false)}
-      onpointerleave={() => (before = false)}
-      onpointercancel={() => (before = false)}
-      onkeydown={(event) => {
-        if (!(event.key === ' ' || event.key === 'Enter')) {
-          return;
-        }
+    <div class="ed-top-center">
+      <div class="ed-cluster" role="group" aria-label={$t('frameleaf_editor_group_history')}>
+        <button
+          type="button"
+          class="ed-tool"
+          aria-label={$t('undo')}
+          title={$t('undo')}
+          disabled={draft.undo.length === 0}
+          onclick={() => (draft = travelVideoDraft(draft, 'undo'))}
+        >
+          <Icon icon={mdiUndo} size="20" />
+        </button>
+        <button
+          type="button"
+          class="ed-tool"
+          aria-label={$t('frameleaf_editor_redo')}
+          title={$t('frameleaf_editor_redo')}
+          disabled={draft.redo.length === 0}
+          onclick={() => (draft = travelVideoDraft(draft, 'redo'))}
+        >
+          <Icon icon={mdiRedo} size="20" />
+        </button>
+      </div>
+      <div class="ed-cluster" role="group" aria-label={$t('frameleaf_editor_group_compare')}>
+        <button
+          type="button"
+          class="ed-tool"
+          aria-label={$t('frameleaf_editor_hold_before')}
+          title={$t('frameleaf_editor_hold_before')}
+          aria-pressed={before}
+          onpointerdown={(event) => {
+            if (event.pointerType !== 'mouse' || event.button === 0) {
+              before = true;
+            }
+          }}
+          onpointerup={() => (before = false)}
+          onpointerleave={() => (before = false)}
+          onpointercancel={() => (before = false)}
+          onkeydown={(event) => {
+            if (!(event.key === ' ' || event.key === 'Enter')) {
+              return;
+            }
 
-        event.preventDefault();
-        event.stopPropagation();
-        before = true;
-      }}
-      onkeyup={(event) => {
-        if (event.key === ' ' || event.key === 'Enter') {
-          before = false;
-        }
-      }}
-      onclick={(event) => event.preventDefault()}
-    >
-      <Icon icon={mdiCompare} size="20" />
-    </button>
-    <button
-      type="button"
-      class="ed-tool"
-      aria-label={$t('frameleaf_editor_split_view')}
-      title={$t('frameleaf_editor_split_view')}
-      aria-pressed={split}
-      onclick={() => (split = !split)}
-    >
-      <Icon icon={mdiCompareHorizontal} size="20" />
-    </button>
-    <span class="ed-sep ed-wide" aria-hidden="true"></span>
-    <button
-      type="button"
-      class="ed-tool labelled ed-wide"
-      title={$t('frameleaf_editor_copy_settings')}
-      onclick={copySettings}
-    >
-      <Icon icon={mdiContentCopy} size="20" />
-      <span>{$t('frameleaf_editor_copy')}</span>
-    </button>
-    <button
-      type="button"
-      class="ed-tool labelled ed-wide"
-      title={$t('frameleaf_editor_paste_settings')}
-      disabled={!videoSettingsClipboard}
-      onclick={pasteSettings}
-    >
-      <Icon icon={mdiContentDuplicate} size="20" />
-      <span>{$t('frameleaf_editor_paste')}</span>
-    </button>
-    <button type="button" class="ed-tool labelled ed-wide" title={$t('frameleaf_editor_revert_draft')} onclick={revert}>
-      <Icon icon={mdiRestore} size="20" />
-      <span>{$t('frameleaf_editor_revert')}</span>
-    </button>
-    {#key asset.id}
-      <VideoVersionsMenu {asset} draftKey={recipeKey} hasUnsavedChanges={dirty} onApply={applyVersion} />
-    {/key}
-    <EditorMenu
-      label={$t('frameleaf_editor_more_actions')}
-      icon={mdiDotsVertical}
-      class="ed-narrow"
-      items={moreItems}
-    />
-    <button
-      type="button"
-      class="ed-tool labelled ed-wide"
-      onclick={openStudio}
-      title={$t('frameleaf_editor_open_in_studio')}
-    >
-      <Icon icon={mdiOpenInApp} size="20" />
-      <span>{$t('frameleaf_editor_open_in_studio')}</span>
-    </button>
-    <button
-      type="button"
-      class="ed-tool primary labelled"
-      disabled={saving || !source || cannotSave}
-      onclick={saveVersion}
-      title={cannotSave ? unsupportedMessage : $t('frameleaf_video_editor_save_title')}
-    >
-      <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
-    </button>
+            event.preventDefault();
+            event.stopPropagation();
+            before = true;
+          }}
+          onkeyup={(event) => {
+            if (event.key === ' ' || event.key === 'Enter') {
+              before = false;
+            }
+          }}
+          onclick={(event) => event.preventDefault()}
+        >
+          <Icon icon={mdiCompare} size="20" />
+        </button>
+        <button
+          type="button"
+          class="ed-tool ed-desk"
+          aria-label={$t('frameleaf_editor_split_view')}
+          title={$t('frameleaf_editor_split_view')}
+          aria-pressed={split}
+          onclick={() => (split = !split)}
+        >
+          <Icon icon={mdiCompareHorizontal} size="20" />
+        </button>
+      </div>
+    </div>
+    <div class="ed-top-end">
+      {#key asset.id}
+        <VideoVersionsMenu {asset} draftKey={recipeKey} hasUnsavedChanges={dirty} onApply={applyVersion} />
+      {/key}
+      <EditorMenu label={$t('frameleaf_editor_more_actions')} icon={mdiDotsVertical} items={moreItems} />
+      <button
+        type="button"
+        class="ed-tool primary labelled"
+        disabled={saving || !source || cannotSave}
+        onclick={saveVersion}
+        title={cannotSave ? unsupportedMessage : $t('frameleaf_video_editor_save_title')}
+      >
+        <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
+      </button>
+    </div>
   </header>
 
   <div class="ed-stage-wrap">

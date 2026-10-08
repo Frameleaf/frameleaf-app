@@ -182,8 +182,8 @@
     border-color: var(--fl-accent);
   }
   label:has(input:focus-visible) {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   input {
     position: absolute;

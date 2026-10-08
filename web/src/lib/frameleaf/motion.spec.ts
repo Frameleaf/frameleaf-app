@@ -12,8 +12,27 @@ vi.mock('$lib/stores/media-query-manager.svelte', () => ({
 }));
 
 const {
+  HERO_PAGE_ATTRIBUTE,
+  HERO_SHARED_ATTRIBUTE,
+  SECTION_TRANSITION_ATTRIBUTE,
+  armHero,
+  heroNavigation,
+  installHeroIntent,
+  unfurl,
+  unfurlEasing,
+  routeSection,
+  sectionCrossfade,
   REDUCED_MOTION_FADE_MS,
+  REVEAL_MS,
   animateFlip,
+  canAnimate,
+  countUp,
+  dock,
+  leave,
+  pop,
+  reveal,
+  sheet,
+  springEasing,
   motionFade,
   motionFlip,
   motionFly,
@@ -113,6 +132,67 @@ describe('Frameleaf motion', () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
+  it('applies a second change at once while a transition is running, and never leaves a rejection unhandled', async () => {
+    let finish: () => void = () => {};
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    // A skipped transition rejects `ready`; nothing here may surface it.
+    const ready = Promise.reject(new DOMException('skipped', 'AbortError'));
+    const start = vi.fn((callback: () => Promise<void>) => {
+      void callback();
+      return { ready, finished, updateCallbackDone: Promise.resolve() };
+    });
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    const first = vi.fn();
+    const second = vi.fn();
+    await withViewTransition(first);
+    // Still running: the next change does not start another transition and cut this one short.
+    await withViewTransition(second);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const third = vi.fn();
+    await withViewTransition(third);
+    expect(start).toHaveBeenCalledTimes(2);
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('still applies the change, once, when the browser refuses to start a transition', async () => {
+    const update = vi.fn();
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: () => {
+        throw new Error('busy');
+      },
+    });
+    await withViewTransition(update);
+    expect(update).toHaveBeenCalledTimes(1);
+    // And the guard is released for the next one.
+    const start = vi.fn((callback: () => Promise<void>) => void callback());
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+    await withViewTransition(update);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes on an error thrown by the update itself', async () => {
+    const start = vi.fn((callback: () => Promise<void>) => void callback().catch(() => {}));
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+    await expect(
+      withViewTransition(() => {
+        throw new Error('no');
+      }),
+    ).rejects.toThrow('no');
+  });
+
   describe('animateFlip', () => {
     const setup = () => {
       const container = document.createElement('div');
@@ -155,6 +235,427 @@ describe('Frameleaf motion', () => {
       const apply = vi.fn();
       animateFlip(undefined, apply);
       expect(apply).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('motion vocabulary', () => {
+    const node = () => {
+      const element = document.createElement('div');
+      document.body.append(element);
+      return element;
+    };
+
+    it('follows the spring: overshoots once and settles on 1', () => {
+      expect(springEasing(0)).toBe(0);
+      expect(springEasing(1)).toBe(1);
+      expect(springEasing(-1)).toBe(0);
+      expect(springEasing(2)).toBe(1);
+      const samples = Array.from({ length: 101 }, (_, index) => springEasing(index / 100));
+      expect(Math.max(...samples)).toBeGreaterThan(1.1);
+      expect(Math.max(...samples)).toBeLessThan(1.2);
+      expect(samples.every((value) => Number.isFinite(value))).toBe(true);
+    });
+
+    for (const [name, transition, enterMs, exitMs, moves] of [
+      ['pop', pop, 320, 120, /scale: 0\.9/],
+      ['sheet', sheet, 480, 180, /translate: 0 40px; scale: 0\.96/],
+      ['dock', dock, 420, 200, /translate: 0 12px/],
+    ] as const) {
+      it(`${name}: springs in, leaves faster without the spring, and crossfades under Reduce Motion`, () => {
+        const element = node();
+        const entering = transition(element, {}, { direction: 'in' });
+        expect(entering.duration).toBe(enterMs);
+        // Starts transparent and displaced, ends opaque and at rest.
+        expect(entering.css?.(0, 1)).toMatch(/opacity: 0;/);
+        expect(entering.css?.(0, 1)).toMatch(moves);
+        expect(entering.css?.(1, 0)).toMatch(/opacity: 1;/);
+        // The fade is done well before the spring settles.
+        expect(entering.css?.(0.5, 0.5)).toMatch(/opacity: 1;/);
+
+        const leaving = transition(element, {}, { direction: 'out' });
+        expect(leaving.duration).toBe(exitMs);
+        expect(leaving.css?.(0, 1)).toMatch(/opacity: 0/);
+
+        media.reducedMotion = true;
+        for (const direction of ['in', 'out'] as const) {
+          const reduced = transition(element, { delay: 30 }, { direction });
+          expect(reduced.duration).toBe(REDUCED_MOTION_FADE_MS);
+          expect(reduced.delay).toBe(30);
+          expect(reduced.css?.(0.5, 0.5)).toMatch(/^opacity: [\d.]+$/);
+        }
+        element.remove();
+      });
+    }
+
+    it('pop grows from the corner it is given; dock travels the distance it is given', () => {
+      const element = node();
+      expect(pop(element, { origin: 'top right' }, { direction: 'in' }).css?.(0, 1)).toMatch(
+        /^transform-origin: top right; /,
+      );
+      expect(dock(element, { y: -16 }, { direction: 'in' }).css?.(0, 1)).toMatch(/translate: 0 -16px/);
+      element.remove();
+    });
+
+    it('reveal fades in 180ms and staggers at most eight items', () => {
+      const element = node();
+      expect(REVEAL_MS).toBe(180);
+      const first = reveal(element, {}, { direction: 'in' });
+      expect(first.duration).toBe(180);
+      expect(first.delay).toBe(0);
+      expect(first.css?.(0.5, 0.5)).toBe('opacity: 0.5');
+      expect(reveal(element, { index: 3 }, { direction: 'in' }).delay).toBe(90);
+      expect(reveal(element, { index: 40 }, { direction: 'in' }).delay).toBe(240);
+      media.reducedMotion = true;
+      // One crossfade, no stagger.
+      expect(reveal(element, { index: 3 }, { direction: 'in' }).delay ?? 0).toBe(0);
+      expect(reveal(element, { index: 3 }, { direction: 'in' }).duration).toBe(REDUCED_MOTION_FADE_MS);
+      element.remove();
+    });
+
+    describe('leave', () => {
+      const animatable = () => {
+        const element = node();
+        let finish: () => void = () => {};
+        const animation = {
+          cancel: vi.fn(),
+          finished: new Promise<void>((resolve) => (finish = resolve)),
+        };
+        const animate = vi.fn(() => animation);
+        element.animate = animate as never;
+        element.getAnimations = (() => []) as never;
+        return { element, animate, animation, finish: () => finish() };
+      };
+
+      it('finishes at once where nothing can animate, so callers keep their instant close', () => {
+        const element = node();
+        // The unit-test setup gives every element an `animate` that finishes at once, and says so.
+        expect(typeof element.animate).toBe('function');
+        expect(typeof element.getAnimations).toBe('function');
+        expect(canAnimate(element)).toBe(false);
+        const done = vi.fn();
+        leave(element, 'sheet', done);
+        expect(done).toHaveBeenCalledTimes(1);
+        leave(undefined, 'pop', done);
+        expect(done).toHaveBeenCalledTimes(2);
+        element.remove();
+      });
+
+      it('gives unit tests animations that finish at once, so exits and list moves complete', async () => {
+        // src/test-data/setup.ts: Svelte removes an `out:` element when `onfinish` runs, and
+        // `animate:` asks for running animations first.
+        const element = node();
+        const animation = element.animate([], 200);
+        const finished = vi.fn();
+        animation.onfinish = finished;
+        expect(finished).not.toHaveBeenCalled();
+        await Promise.resolve();
+        expect(finished).toHaveBeenCalledOnce();
+        await expect(animation.finished).resolves.toBeUndefined();
+        expect(element.getAnimations()).toEqual([]);
+        // A handler replaced before the microtask runs is the one that is called.
+        const first = vi.fn();
+        const second = vi.fn();
+        const other = element.animate([], 200);
+        other.onfinish = first;
+        other.onfinish = second;
+        await Promise.resolve();
+        expect(first).not.toHaveBeenCalled();
+        expect(second).toHaveBeenCalledOnce();
+        element.remove();
+      });
+
+      it('plays the pattern exit, then reports', async () => {
+        const { element, animate, finish } = animatable();
+        const done = vi.fn();
+        leave(element, 'sheet', done, { backdrop: true });
+        expect(done).not.toHaveBeenCalled();
+        const [[frames, timing], [backdropFrames, backdropTiming]] = animate.mock.calls as unknown as [
+          [Keyframe[], KeyframeAnimationOptions],
+          [Keyframe[], KeyframeAnimationOptions],
+        ];
+        expect(frames.at(-1)).toEqual({ opacity: 0, translate: '0 12px', scale: 0.98 });
+        expect(timing.duration).toBe(180);
+        expect(timing.fill).toBe('forwards');
+        expect(backdropFrames.at(-1)).toEqual({ opacity: 0 });
+        expect(backdropTiming.pseudoElement).toBe('::backdrop');
+        finish();
+        await vi.waitFor(() => expect(done).toHaveBeenCalledTimes(1));
+        element.remove();
+      });
+
+      it('fades without moving under Reduce Motion', () => {
+        media.reducedMotion = true;
+        const { element, animate } = animatable();
+        leave(element, 'dock', vi.fn());
+        const [frames, timing] = animate.mock.calls[0] as unknown as [Keyframe[], KeyframeAnimationOptions];
+        expect(frames.at(-1)).toEqual({ opacity: 0 });
+        expect(timing.duration).toBe(REDUCED_MOTION_FADE_MS);
+        element.remove();
+      });
+
+      it('can be cancelled for a surface reopened mid-exit, without reporting', async () => {
+        const { element, animation, finish } = animatable();
+        const done = vi.fn();
+        const cancel = leave(element, 'pop', done);
+        cancel();
+        expect(animation.cancel).toHaveBeenCalledTimes(1);
+        finish();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(done).not.toHaveBeenCalled();
+        element.remove();
+      });
+    });
+
+    describe('countUp', () => {
+      it('reports the value at once under Reduce Motion', () => {
+        media.reducedMotion = true;
+        const onValue = vi.fn();
+        countUp(0, 1200, onValue);
+        expect(onValue).toHaveBeenCalledExactlyOnceWith(1200);
+      });
+
+      it('eases from the old value to the new one and can be stopped', () => {
+        const frames: FrameRequestCallback[] = [];
+        const request = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+          frames.push(callback);
+          return frames.length;
+        });
+        const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+        const values: number[] = [];
+        const stop = countUp(
+          100,
+          200,
+          (value) => {
+            values.push(value);
+          },
+          { duration: 1000 },
+        );
+        frames.shift()?.(0);
+        frames.shift()?.(500);
+        frames.shift()?.(1000);
+        expect(values[0]).toBe(100);
+        // Ease-out: past half-way at half time.
+        expect(values[1]).toBeGreaterThan(150);
+        expect(values[1]).toBeLessThan(200);
+        expect(values[2]).toBe(200);
+        expect(frames).toHaveLength(0);
+        stop();
+        expect(cancelFrame).toHaveBeenCalled();
+        request.mockRestore();
+        cancelFrame.mockRestore();
+      });
+    });
+  });
+
+  describe('unfurl, the signature', () => {
+    it('opens a mark out of its lower inline-start corner with one soft overshoot', () => {
+      const node = document.createElement('span');
+      document.body.append(node);
+      const config = unfurl(node);
+      expect(config.duration).toBe(440);
+      const start = config.css?.(0, 1) ?? '';
+      expect(start).toContain('transform-origin: bottom left');
+      expect(start).toContain('opacity: 0');
+      expect(start).toContain('scale: 0.86');
+      expect(start).toContain('rotate: -8deg');
+      const end = config.css?.(1, 0) ?? '';
+      expect(end).toContain('opacity: 1');
+      expect(end).toContain('scale: 1;');
+      // Past the resting value once, by less than a tenth of the travel, and home at the end.
+      const samples = Array.from({ length: 101 }, (_, index) => unfurlEasing(index / 100));
+      expect(Math.max(...samples)).toBeGreaterThan(1.03);
+      expect(Math.max(...samples)).toBeLessThan(1.1);
+      expect(unfurlEasing(0)).toBe(0);
+      expect(unfurlEasing(1)).toBe(1);
+      node.remove();
+    });
+
+    it('mirrors in a right-to-left page, leaves with a short fade, and crossfades under Reduce Motion', () => {
+      const node = document.createElement('span');
+      node.style.direction = 'rtl';
+      document.body.append(node);
+      const mirrored = unfurl(node).css?.(0, 1) ?? '';
+      expect(mirrored).toContain('transform-origin: bottom right');
+      expect(mirrored).toContain('rotate: 8deg');
+
+      const exit = unfurl(node, {}, { direction: 'out' });
+      expect(exit.duration).toBe(120);
+      expect(exit.css?.(0.5, 0.5)).toBe('opacity: 0.5');
+
+      media.reducedMotion = true;
+      const reduced = unfurl(node);
+      expect(reduced.duration).toBe(REDUCED_MOTION_FADE_MS);
+      expect(reduced.css?.(0.5, 0.5) ?? '').not.toMatch(/scale|rotate|translate/);
+      node.remove();
+    });
+  });
+
+  describe('heroNavigation: a card that opens a page', () => {
+    const onScreen = (element: HTMLElement) => {
+      element.getBoundingClientRect = () => rect(10, 10, 100);
+      return element;
+    };
+    const mark = (key: string, page = false) => {
+      const element = onScreen(document.createElement('img'));
+      element.setAttribute(HERO_SHARED_ATTRIBUTE, key);
+      if (page) {
+        element.setAttribute(HERO_PAGE_ATTRIBUTE, '');
+      }
+      return element;
+    };
+    const startable = () => {
+      let finish: () => void = () => {};
+      const finished = new Promise<void>((resolve) => (finish = resolve));
+      let updated: Promise<void> = Promise.resolve();
+      const start = vi.fn((update: () => Promise<void>) => {
+        updated = update();
+        return { finished, ready: Promise.resolve() };
+      });
+      Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+      return { start, finish: () => finish(), updated: () => updated };
+    };
+    let removeIntent: () => void = () => {};
+
+    beforeEach(() => {
+      document.body.replaceChildren();
+      removeIntent();
+      removeIntent = installHeroIntent();
+      Object.defineProperties(globalThis, {
+        innerWidth: { configurable: true, value: 1200 },
+        innerHeight: { configurable: true, value: 800 },
+      });
+    });
+
+    it('pairs the pressed card with the same key on the page that arrives', async () => {
+      const { start, finish, updated } = startable();
+      const link = document.createElement('a');
+      const cover = mark('album:1');
+      link.append(cover);
+      document.body.append(link);
+      // A press anywhere inside the link arms the card's key.
+      link.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+      let arrive: () => void = () => {};
+      const complete = new Promise<void>((resolve) => (arrive = resolve));
+      const pending = heroNavigation({ complete });
+      expect(pending).toBeInstanceOf(Promise);
+      expect(cover.style.getPropertyValue('view-transition-name')).toBe('fl-hero');
+      expect(document.documentElement.getAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe('shared');
+      await pending;
+      expect(start).toHaveBeenCalledTimes(1);
+
+      // The album page renders with the same key on its header.
+      const header = mark('album:1', true);
+      document.body.replaceChildren(header);
+      arrive();
+      await updated();
+      expect(cover.style.getPropertyValue('view-transition-name')).toBe('');
+      expect(header.style.getPropertyValue('view-transition-name')).toBe('fl-hero');
+
+      finish();
+      await vi.waitFor(() => expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false));
+      expect(header.style.getPropertyValue('view-transition-name')).toBe('');
+    });
+
+    it('goes back from the element the page marked as its own', async () => {
+      const { start, finish, updated } = startable();
+      const header = mark('person:7', true);
+      document.body.append(header, mark('person:8'));
+      const pending = heroNavigation({ complete: Promise.resolve() });
+      expect(header.style.getPropertyValue('view-transition-name')).toBe('fl-hero');
+      await pending;
+      await updated();
+      expect(start).toHaveBeenCalledTimes(1);
+      finish();
+      await vi.waitFor(() => expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false));
+    });
+
+    it('leaves every other navigation alone', () => {
+      const { start } = startable();
+      // Cards on the page, none pressed, none marked as the page: nothing to pair.
+      document.body.append(mark('album:1'), mark('album:2'));
+      expect(heroNavigation({ complete: Promise.resolve() })).toBeUndefined();
+      // An armed key whose card is not on screen.
+      armHero('album:404');
+      expect(heroNavigation({ complete: Promise.resolve() })).toBeUndefined();
+      // Reduce Motion.
+      armHero('album:1');
+      media.reducedMotion = true;
+      expect(heroNavigation({ complete: Promise.resolve() })).toBeUndefined();
+      media.reducedMotion = false;
+      // The press was spent on the navigation above, so the next one is not paired either.
+      expect(heroNavigation({ complete: Promise.resolve() })).toBeUndefined();
+      expect(start).not.toHaveBeenCalled();
+      expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false);
+    });
+
+    it('does nothing without the View Transitions API', () => {
+      Object.defineProperty(document, 'startViewTransition', { configurable: true, value: undefined });
+      document.body.append(mark('album:1'));
+      armHero('album:1');
+      expect(heroNavigation({ complete: Promise.resolve() })).toBeUndefined();
+    });
+  });
+
+  describe('sectionCrossfade', () => {
+    const navigation = (from: string | null, to: string | null) => ({
+      from: from ? { route: { id: from } } : null,
+      to: to ? { route: { id: to } } : null,
+      complete: Promise.resolve(),
+    });
+    const startable = () => {
+      let finish: () => void = () => {};
+      const finished = new Promise<void>((resolve) => (finish = resolve));
+      const start = vi.fn((update: () => Promise<void>) => {
+        void update();
+        return { finished };
+      });
+      Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+      return { start, finish: () => finish() };
+    };
+
+    it('names the section of a route, ignoring layout groups', () => {
+      expect(routeSection('/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]')).toBe('albums');
+      expect(routeSection('/(user)/photos/[[assetId=id]]')).toBe('photos');
+      expect(routeSection('/admin/system-settings')).toBe('admin');
+      expect(routeSection('/')).toBe('');
+      expect(routeSection(null)).toBe('');
+    });
+
+    it('crossfades between sections and clears its mark when the transition ends', async () => {
+      const { start, finish } = startable();
+      const pending = sectionCrossfade(navigation('/(user)/photos/[[assetId=id]]', '/(user)/albums'));
+      expect(pending).toBeInstanceOf(Promise);
+      await pending;
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.getAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe('section');
+      finish();
+      await vi.waitFor(() => expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false));
+    });
+
+    it('stays instant within a section, on first load, under Reduce Motion and without the API', () => {
+      expect(sectionCrossfade(navigation('/(user)/photos', '/(user)/albums'))).toBeUndefined();
+      const { start } = startable();
+      expect(
+        sectionCrossfade(navigation('/(user)/albums', '/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]')),
+      ).toBeUndefined();
+      expect(sectionCrossfade(navigation(null, '/(user)/albums'))).toBeUndefined();
+      media.reducedMotion = true;
+      expect(sectionCrossfade(navigation('/(user)/photos', '/(user)/albums'))).toBeUndefined();
+      expect(start).not.toHaveBeenCalled();
+      expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false);
+    });
+
+    it('lets the navigation go ahead if the transition cannot start', async () => {
+      Object.defineProperty(document, 'startViewTransition', {
+        configurable: true,
+        value: () => {
+          throw new Error('busy');
+        },
+      });
+      await expect(sectionCrossfade(navigation('/(user)/photos', '/(user)/people'))).resolves.toBeUndefined();
+      expect(document.documentElement.hasAttribute(SECTION_TRANSITION_ATTRIBUTE)).toBe(false);
     });
   });
 

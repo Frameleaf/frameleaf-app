@@ -16,7 +16,10 @@
    * choosing a playback version never does, and the original is never replaced.
    */
   import './editor/editor.css';
-  import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import RestorationCompare from '$lib/components/frameleaf/editor/RestorationCompare.svelte';
   import RestorationPanel, {
     type RestorationCompareRequest,
@@ -57,6 +60,12 @@
   let loupe = $state(false);
   let body = $state<HTMLElement>();
   const fieldId = $props.id();
+  /** Bumped by Try again, so the same source is asked for once more. */
+  let attempt = $state(0);
+  const retryLoad = () => {
+    loadFailed = false;
+    attempt += 1;
+  };
 
   // A later request (another clip, another command) moves the panel to that source.
   $effect(() => {
@@ -70,6 +79,7 @@
 
   $effect(() => {
     const id = chosenId ?? sources[0]?.id ?? null;
+    void attempt;
     untrack(() => {
       compare = null;
       if (!id) {
@@ -107,10 +117,10 @@
   data-testid="studio-restore-panel"
 >
   <header>
-    <h2>{$t('frameleaf_studio_restore_title')}</h2>
-    <Button variant="quiet" label={$t('close')} onclick={onClose}>
-      <Icon icon={mdiClose} size="18" aria-hidden={true} />
-    </Button>
+    <h2 tabindex="-1" data-drawer-focus>{$t('frameleaf_studio_restore_title')}</h2>
+    <IconButton label={$t('close')} onclick={onClose}>
+      <Icon icon={mdiClose} size={ICON_SIZE.lg} />
+    </IconButton>
   </header>
 
   {#if sources.length === 0}
@@ -147,9 +157,9 @@
           />
         {/key}
       {:else if loadFailed}
-        <p class="ed-empty">{$t('frameleaf_restoration_load_error')}</p>
+        <InlineError compact message={$t('frameleaf_restoration_load_error')} onRetry={retryLoad} />
       {:else}
-        <p class="rs-help" aria-busy="true">{$t('loading')}</p>
+        <div aria-busy="true"><Skeleton variant="text" lines={4} /></div>
       {/if}
     </div>
   {/if}
@@ -163,10 +173,10 @@
     z-index: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--fl-space-3);
     width: min(24rem, 100vw);
     height: 100%;
-    padding: 0.75rem;
+    padding: var(--fl-space-2) var(--fl-space-4) var(--fl-space-4);
     overflow: auto;
     background: var(--fl-panel);
     border-inline-start: 1px solid var(--fl-border);
@@ -187,14 +197,18 @@
   }
   h2 {
     margin: 0;
-    font-size: 0.9375rem;
+    font-size: var(--fl-font-size);
     font-weight: 600;
+  }
+  /* The heading takes focus when the drawer opens, for the keyboard's sake; it is not a control. */
+  h2:focus {
+    outline: none;
   }
   .fl-studio-restore-compare {
     position: relative;
     aspect-ratio: 16 / 9;
     overflow: hidden;
     border-radius: var(--fl-radius-control);
-    background: #000;
+    background: var(--fl-viewer-canvas);
   }
 </style>

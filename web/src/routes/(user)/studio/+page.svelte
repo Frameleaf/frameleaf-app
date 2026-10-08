@@ -14,6 +14,8 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
   import StudioExportDialog, { type StudioExportChoice } from '$lib/components/frameleaf/StudioExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -32,6 +34,8 @@
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
+  import { isStudioExportJobSettled, takeStudioOpening, type StudioExportJob } from '$lib/frameleaf/studio/chrome';
+  import { studioBundlePollMs } from '$lib/frameleaf/studio/project-library';
   import { createStudioRestorationHandlers } from '$lib/frameleaf/studio/restoration-jobs';
   import type { StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
@@ -47,7 +51,6 @@
     type StudioHostServices,
     type StudioProjectHandle,
     type StudioProjectImportRef,
-    type StudioWorkspaceMode,
     type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
   import { loadStudioProjectImports, uploadStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
@@ -74,12 +77,13 @@
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
-  import { reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
+  import { readEditorContinuity, reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetRestorationMode,
     createStudioExport,
+    getMediaOperation,
     getStudioRestoredVersion,
     isHttpError,
     type StudioRestoredVersionDto,
@@ -102,8 +106,10 @@
   let accessLost = $state(false);
   let preview = $state<StudioPreviewView>(idleStudioPreviewView());
   let sessionState = $state<StudioProjectSessionState | null>(null);
-  /** Bundle and export jobs this session handed to Activity (FL-91, FL-106). */
+  /** Project-file and restoration jobs this session handed to Activity (FL-91, FL-115). */
   let queuedJobs = $state(0);
+  /** The card this project was opened from in the project list, for the opening screen. */
+  const opening = takeStudioOpening(untrack(() => data.projectId));
   /** Where the engine's playhead is, for pinning review comments (`Studio.jsx:1759`). */
   let playhead = $state<Rational | null>(null);
   /** Open review comments on the project, for the Review button's count. */
@@ -685,10 +691,10 @@
   };
 
   /**
-   * Back to the library, as the prototype's header does (`Studio.jsx:2586-2588`). The project
-   * library stays one click away under Tools > Studio in the rail.
+   * Back to the project list, where a film is opened from. The photo library stays one click away
+   * in the top bar.
    */
-  const onBack = () => void goto(Route.photos());
+  const onBack = () => void goto(Route.studioProjects());
 
   /**
    * Back to the quick editor that opened Studio (FL-113). Studio's playhead goes with the person, and
@@ -702,6 +708,11 @@
         void goto(`${Route.viewAsset({ id: returnTo })}?edit=1`);
       }
     : undefined;
+  /**
+   * The quick editor's draft is not what Studio shows (it opens the saved picture or clip). When one
+   * is waiting for this item, Studio says so once, beside the way back. Read once, as Studio opens.
+   */
+  const quickEditWaiting = returnTo ? readEditorContinuity(returnTo) !== null : false;
   const onOpenActivity = () => void goto(Route.activity());
 
   /** Only an owner's saved project can be exported, so the header offers nothing otherwise. */
@@ -744,29 +755,6 @@
     return renamed;
   };
 
-  /* Basic and Advanced (`Studio.jsx:2626-2633`): remembered per project in this browser. */
-  const modeKey = $derived(`frameleaf.studio.mode.${project.id}`);
-  let mode = $state<StudioWorkspaceMode>('basic');
-  $effect(() => {
-    const key = modeKey;
-    untrack(() => {
-      try {
-        mode = globalThis.localStorage?.getItem(key) === 'advanced' ? 'advanced' : 'basic';
-      } catch {
-        mode = 'basic';
-      }
-    });
-  });
-  $effect(() => {
-    const value = mode;
-    const key = untrack(() => modeKey);
-    try {
-      globalThis.localStorage?.setItem(key, value);
-    } catch {
-      // A private window without storage keeps the choice for this page only.
-    }
-  });
-
   /* Review count (`Studio.jsx:2640-2643`): open comments, re-read when the head moves. */
   $effect(() => {
     const saved = storedRevision;
@@ -787,6 +775,42 @@
   /* Video export (FL-106 server; `Studio.jsx` ExportDialog): the owner's saved, writable project. */
   let videoExportOpen = $state(false);
   let exporting = $state(false);
+  /**
+   * The newest export this session started, followed in the header until it is done: its progress,
+   * then the way to the finished video. Activity keeps the full list; this is the one just asked for.
+   */
+  let exportJob = $state<StudioExportJob | null>(null);
+  let exportTimer: ReturnType<typeof setTimeout> | undefined;
+  const followExport = (id: string, attempt = 0) => {
+    clearTimeout(exportTimer);
+    exportTimer = setTimeout(
+      () =>
+        void (async () => {
+          if (exportJob?.id !== id) {
+            return;
+          }
+          try {
+            const next = await getMediaOperation({ id });
+            if (exportJob?.id !== id) {
+              return;
+            }
+            exportJob = next;
+            if (isStudioExportJobSettled(next)) {
+              return;
+            }
+          } catch {
+            // A lost poll is asked again; the render carries on regardless on the server.
+          }
+          followExport(id, attempt + 1);
+        })(),
+      studioBundlePollMs(attempt),
+    );
+  };
+  const onOpenExport = () => {
+    if (exportJob?.resultAssetId) {
+      void goto(Route.viewAsset({ id: exportJob.resultAssetId }));
+    }
+  };
   const canExportVideo = $derived(canExportBundle && writable);
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
@@ -803,7 +827,7 @@
     }
     exporting = true;
     try {
-      await createStudioExport({
+      const { operation } = await createStudioExport({
         id: project.id,
         studioExportCreateDto: {
           ...choice,
@@ -812,7 +836,8 @@
         },
       });
       videoExportOpen = false;
-      queuedJobs += 1;
+      exportJob = operation;
+      followExport(operation.id);
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
     } catch (error) {
       // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
@@ -892,6 +917,8 @@
       // Nothing may be exported for a session that no longer has the project.
       exportDialogOpen = false;
       settleExportChoice(null);
+      clearTimeout(exportTimer);
+      exportJob = null;
       void previewClient.dispose();
       preview = idleStudioPreviewView();
       // The streamed picture goes with the access, at once.
@@ -923,6 +950,7 @@
   });
 
   onDestroy(() => {
+    clearTimeout(exportTimer);
     settleExportChoice(null);
     releaseCommandEngine();
     void previewClient.dispose();
@@ -930,19 +958,58 @@
     void session.dispose();
   });
 
+  /**
+   * Leaving with unsaved work. The engine, or the session's draft, holds changes that are not stored
+   * anywhere, so the navigation is held and the person is asked in the app's own dialog: stay, leave
+   * without saving, or (when this window may write) save first and then leave.
+   */
+  let leaveOpen = $state(false);
+  let leaveBusy = $state(false);
+  let leaveTarget: URL | null = null;
+  /** Set once the person has decided, so the navigation they asked for is not held a second time. */
+  let leaveDecided = false;
+  const canSaveAndLeave = $derived(writable && sessionState?.hasDraft === true);
+
   beforeNavigate((navigation) => {
-    if (accessLost || forbidden) {
+    if (leaveDecided || accessLost || forbidden) {
       return;
     }
     if (!dirty && !sessionState?.hasDraft) {
       return;
     }
-    // The engine, or the session's draft, holds work that is not persisted anywhere. Confirm
-    // before it is lost.
-    if (!confirm($t('frameleaf_studio_unsaved_confirm'))) {
-      navigation.cancel();
+    navigation.cancel();
+    // Closing the tab or reloading can only be confirmed by the browser's own prompt.
+    if (navigation.willUnload || !navigation.to) {
+      return;
     }
+    leaveTarget = navigation.to.url;
+    leaveOpen = true;
   });
+
+  const leaveNow = async () => {
+    const target = leaveTarget;
+    leaveOpen = false;
+    if (!target) {
+      return;
+    }
+    leaveDecided = true;
+    if (target.origin === location.origin) {
+      await goto(target);
+    } else {
+      location.assign(target);
+    }
+  };
+  const saveAndLeave = async () => {
+    leaveBusy = true;
+    try {
+      await session.flush();
+      await leaveNow();
+    } catch (error) {
+      handleError(error, $t('frameleaf_studio_save_failed'));
+    } finally {
+      leaveBusy = false;
+    }
+  };
 </script>
 
 <!--
@@ -972,14 +1039,17 @@
   {services}
   {onBack}
   {onBackToEditor}
+  {quickEditWaiting}
   handoffPlayhead={data.at}
   draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
   onRename={canRename ? onRename : undefined}
-  bind:mode
   {workspace}
+  {opening}
+  {exportJob}
+  onOpenExport={exportJob?.resultAssetId ? onOpenExport : undefined}
   {unresolvedComments}
   {playhead}
   {queuedJobs}
@@ -1024,3 +1094,26 @@
   projectName={project.name}
   onConfirm={(includeMedia) => void onConfirmExport(includeMedia)}
 />
+
+<Dialog bind:open={leaveOpen} title={$t('frameleaf_studio_leave_title')} closeLabel={$t('close')}>
+  <p class="fl-studio-leave">{$t('frameleaf_studio_unsaved_confirm')}</p>
+  {#snippet actions()}
+    <Button initialFocus onclick={() => (leaveOpen = false)}>{$t('frameleaf_studio_leave_stay')}</Button>
+    <Button variant="danger" disabled={leaveBusy} onclick={() => void leaveNow()}>
+      {$t('frameleaf_studio_leave_discard')}
+    </Button>
+    {#if canSaveAndLeave}
+      <Button variant="primary" disabled={leaveBusy} onclick={() => void saveAndLeave()}>
+        {$t('frameleaf_studio_leave_save')}
+      </Button>
+    {/if}
+  {/snippet}
+</Dialog>
+
+<style>
+  .fl-studio-leave {
+    margin: var(--fl-space-3) 0 0;
+    max-width: 28rem;
+    color: var(--fl-muted);
+  }
+</style>

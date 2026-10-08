@@ -1,7 +1,7 @@
 <script lang="ts">
   import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
   import { readingKey } from '$lib/frameleaf/reading-direction';
-  import { motionScrollBehavior } from '$lib/frameleaf/motion';
+  import { motionScrollBehavior, reveal } from '$lib/frameleaf/motion';
   /**
    * The Job manager (FL-71): the design template's `JobsManager.jsx` (`jobs-manager.css`) in
    * Compute & jobs → Queues & jobs, on the server's real queues. It replaces Immich's queue cards
@@ -29,6 +29,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBackgroundWork from '$lib/components/frameleaf/cloud/CloudBackgroundWork.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
@@ -89,6 +90,7 @@
     createJob,
     deferImageDescriptionRequeue,
     getImageDescriptionRequeueEstimate,
+    getAnalyticsScopes,
     getQueueJobs,
     getQueueOwnerStatistics,
     QueueCommand,
@@ -137,7 +139,34 @@
 
   // ---- the template's Account filter (JobsManager.jsx 341-355) ----------------------------------
 
-  let owner = $state('all');
+  // The account is chosen once, in the command center's "Viewing" picker (`?scope=`), which this
+  // page reads; its own second Account select is gone (design review finding 65). A library scope
+  // filters by the account that owns the library, since queues are tracked per account.
+  const scopeParam = $derived(page.url.searchParams.get('scope') ?? 'all');
+  let libraryOwners = $state<Record<string, string>>({});
+  $effect(() => {
+    const scope = scopeParam;
+    if (!scope.startsWith('library:') || untrack(() => libraryOwners[scope])) {
+      return;
+    }
+    let cancelled = false;
+    void getAnalyticsScopes()
+      .then(({ scopes }) => {
+        const userId = scopes.find((option) => option.value === scope)?.userId;
+        if (!cancelled && userId) {
+          libraryOwners = { ...libraryOwners, [scope]: userId };
+        }
+      })
+      .catch(() => {
+        // Without the library's owner the page shows every account's work, and says so.
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+  const owner = $derived(
+    scopeParam.startsWith('account:') ? scopeParam.slice('account:'.length) : (libraryOwners[scopeParam] ?? 'all'),
+  );
   let accounts = $state<UserAdminResponseDto[]>([]);
   let ownerStats = $state(new Map<QueueName, QueueOwnerStatisticsResponseDto>());
   onMount(() => {
@@ -179,6 +208,14 @@
   const draft = getSystemConfigDraft();
 
   const queues = $derived(queueManager.queues);
+  /**
+   * The server has not answered yet, or its last answer failed. Neither is "no queue matches the
+   * filters", so the table says which it is instead of offering to clear filters nobody set.
+   */
+  const queuesPending = $derived(queueManager.snapshots.length === 0);
+  const queuesUnavailable = $derived(
+    queues.length === 0 && queueManager.snapshots.length > 0 && queueManager.snapshots.at(-1)?.snapshot === undefined,
+  );
   const byName = $derived(new Map(queues.map((queue) => [queue.name, queue])));
   /** The catalogue's queues the server reports, in the template's order. */
   const rows = $derived(
@@ -303,14 +340,26 @@
     ),
   );
 
+  /** A Job manager address that keeps the "Viewing" scope, which is this page's account filter. */
+  const scoped = (href: string) =>
+    scopeParam === 'all' ? href : `${href}${href.includes('?') ? '&' : '?'}scope=${encodeURIComponent(scopeParam)}`;
   const open = async (name?: QueueName, next?: JobTab) => {
     query = '';
-    await goto(name ? Route.viewQueue({ name, tab: next }) : Route.queues(), { keepFocus: true, noScroll: !name });
+    await goto(scoped(name ? Route.viewQueue({ name, tab: next }) : Route.queues()), {
+      keepFocus: true,
+      noScroll: !name,
+    });
     if (name) {
       main?.scrollIntoView({ block: 'start', behavior: motionScrollBehavior() });
     }
   };
   let main: HTMLElement | undefined = $state();
+  /** A click anywhere on a queue's row opens it, except on the row's own controls. */
+  const openFromRow = (event: MouseEvent, name: QueueName) => {
+    if (!(event.target instanceof Element) || !event.target.closest('button, a, input, select')) {
+      void open(name);
+    }
+  };
 
   // ---- the template's "Queue action history": the commands sent from this device -----------------
 
@@ -722,7 +771,10 @@
 
   const selectTab = (next: JobTab) => {
     if (selected) {
-      void goto(Route.viewQueue({ name: selected.definition.name, tab: next }), { keepFocus: true, noScroll: true });
+      void goto(scoped(Route.viewQueue({ name: selected.definition.name, tab: next })), {
+        keepFocus: true,
+        noScroll: true,
+      });
     }
   };
   const onTabKey = (event: KeyboardEvent) => {
@@ -816,7 +868,25 @@
         ]
       : [],
   );
+
+  /**
+   * Coming back to the window reads the queues, counts and job list again at once (a background
+   * tab's timers are slowed, so what is on screen may be minutes old). At most every few seconds.
+   */
+  const RETURN_REFRESH_MS = 5000;
+  let lastReturn = Date.now();
+  const refreshOnReturn = () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastReturn < RETURN_REFRESH_MS) {
+      return;
+    }
+    lastReturn = Date.now();
+    void queueManager.refresh();
+    jobsReload++;
+  };
 </script>
+
+<svelte:window onfocus={refreshOnReturn} />
+<svelte:document onvisibilitychange={refreshOnReturn} />
 
 <CommandPaletteDefaultProvider name={$t('frameleaf_jobs_title')} actions={pageActions} />
 {#if selected}
@@ -837,21 +907,16 @@
           {$t('frameleaf_jobs_all_queues')}
         </Button>
       {/if}
-      {#if pausedQueues.length > 0}
-        <Button onclick={() => request('resume-all')}>
-          <Icon icon={mdiPlay} size="1rem" aria-hidden={true} />
-          {$t('frameleaf_jobs_resume_paused', { values: { count: pausedQueues.length } })}
-        </Button>
-      {/if}
+      <!-- One primary action, one secondary; the occasional ones sit quieter (design review finding 78). -->
+      <Button variant="quiet" onclick={openEnrichmentTasks}>
+        <Icon icon={mdiImageSearchOutline} size="1rem" aria-hidden={true} />
+        {$t('frameleaf_jobs_enrichment_tasks')}
+      </Button>
       <Button onclick={() => (concurrencyOpen = true)}>
         <Icon icon={mdiTuneVariant} size="1rem" aria-hidden={true} />
         {pendingConcurrency > 0
           ? $t('frameleaf_jobs_concurrency_pending', { values: { count: pendingConcurrency } })
           : $t('frameleaf_jobs_concurrency')}
-      </Button>
-      <Button onclick={openEnrichmentTasks}>
-        <Icon icon={mdiImageSearchOutline} size="1rem" aria-hidden={true} />
-        {$t('frameleaf_jobs_enrichment_tasks')}
       </Button>
       <Button variant="primary" onclick={() => (createOpen = true)}>
         <Icon icon={mdiPlus} size="1rem" aria-hidden={true} />
@@ -866,11 +931,21 @@
         <Icon icon={metric.icon} size="22px" aria-hidden={true} />
         <div>
           <span>{metric.label}</span>
-          <strong>{count(metric.value)}</strong>
+          <strong>{@render changing(count(metric.value))}</strong>
         </div>
       </div>
     {/each}
   </div>
+  {#if pausedQueues.length > 0}
+    <!-- Paused queues are a state to notice, not a fifth header button. -->
+    <div class="jm-paused" role="status">
+      <Icon icon={mdiPause} size="16px" aria-hidden={true} />
+      <Button onclick={() => request('resume-all')}>
+        <Icon icon={mdiPlay} size="1rem" aria-hidden={true} />
+        {$t('frameleaf_jobs_resume_paused', { values: { count: pausedQueues.length } })}
+      </Button>
+    </div>
+  {/if}
 
   {#if descriptionReminder}
     <div class="jm-message">
@@ -910,15 +985,6 @@
           : $t('frameleaf_jobs_search_queues_placeholder')}
         bind:value={query}
       />
-    </label>
-    <label>
-      <span>{$t('frameleaf_jobs_account')}</span>
-      <select aria-label={$t('frameleaf_jobs_account_filter')} bind:value={owner}>
-        <option value="all">{$t('frameleaf_jobs_review_all_accounts')}</option>
-        {#each accounts as account (account.id)}
-          <option value={account.id}>{account.name}</option>
-        {/each}
-      </select>
     </label>
     {#if !selected}
       <label>
@@ -978,7 +1044,8 @@
             {@const { definition, queue } = row}
             {@const rowCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
             {@const name = title(definition)}
-            <tr>
+            <!-- The whole row opens the queue for a pointer; the queue's name is the button a keyboard uses. -->
+            <tr class="jm-row" onclick={(event) => openFromRow(event, definition.name)}>
               <th scope="row">
                 <button type="button" class="jm-queue-name" onclick={() => void open(definition.name)}>
                   <span class="jm-queue-icon"><Icon icon={definition.icon} size="17px" aria-hidden={true} /></span>
@@ -996,8 +1063,8 @@
                 </button>
               </th>
               <td>{@render queueStatus(jobQueueStatus(queue))}</td>
-              <td>{count(rowCounts.active, definition.name)}</td>
-              <td>{count(rowCounts.pending, definition.name)}</td>
+              <td>{@render changing(count(rowCounts.active, definition.name))}</td>
+              <td>{@render changing(count(rowCounts.pending, definition.name))}</td>
               <td>
                 <button
                   type="button"
@@ -1042,20 +1109,15 @@
                 >
                   <Icon icon={queue.isPaused ? mdiPlay : mdiPause} size="1rem" aria-hidden={true} />
                 </button>
-                <button
-                  type="button"
-                  class="jm-icon-button"
-                  aria-label={$t('frameleaf_jobs_open_queue', { values: { name } })}
-                  onclick={() => void open(definition.name)}
-                >
-                  <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} />
-                </button>
+                <span class="jm-row-chevron"><Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></span>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
-      {#if visibleRows.length === 0}
+      {#if queuesUnavailable}
+        <InlineError message={$t('frameleaf_jobs_queues_load_failed')} onRetry={() => void queueManager.refresh()} />
+      {:else if visibleRows.length === 0 && !queuesPending}
         <div class="jm-empty">
           <Icon icon={mdiMagnify} size="28px" aria-hidden={true} />
           <h3>{$t('frameleaf_jobs_no_queues')}</h3>
@@ -1315,7 +1377,15 @@
 {/snippet}
 
 {#snippet queueStatus(value: JobQueueStatus | QueueJobStatus)}
-  <span class="jm-status" data-status={value}><i></i>{statusLabel(value)}</span>
+  <!-- Keyed, so a status that changes while the page is open (a queue starting work) fades in. -->
+  {#key value}
+    <span class="jm-status" data-status={value} in:reveal><i></i>{statusLabel(value)}</span>
+  {/key}
+{/snippet}
+
+<!-- A live figure: when it changes, the new value fades in so the change is seen (finding 78). -->
+{#snippet changing(value: string)}
+  {#key value}<span class="jm-changing" in:reveal>{value}</span>{/key}
 {/snippet}
 
 <Dialog title={review?.title ?? ''} closeLabel={$t('close')} bind:open={reviewOpen}>
@@ -1325,7 +1395,11 @@
       <dl>
         <div>
           <dt>{$t('frameleaf_jobs_review_scope')}</dt>
-          <dd>{$t('frameleaf_jobs_review_all_accounts')}</dd>
+          <dd>
+            {owner === 'all'
+              ? $t('frameleaf_jobs_review_all_accounts')
+              : $t('frameleaf_jobs_review_every_account', { values: { name: ownerName } })}
+          </dd>
         </div>
         <div>
           <dt>{$t('frameleaf_jobs_review_affected')}</dt>
@@ -1338,7 +1412,9 @@
       {#if review.error}
         <p class="jm-review-error" role="alert">{review.error}</p>
       {/if}
-      <p class="jm-muted">{$t('frameleaf_jobs_review_filter_note')}</p>
+      {#if owner !== 'all'}
+        <p class="jm-muted">{$t('frameleaf_jobs_review_filter_note')}</p>
+      {/if}
       {#if review.dangerous}
         <label class="jm-confirm">
           <input type="checkbox" bind:checked={acknowledged} />
@@ -1347,8 +1423,9 @@
       {/if}
       <footer>
         <Button variant="quiet" onclick={() => (reviewOpen = false)}>{$t('frameleaf_jobs_review_keep')}</Button>
+        <!-- A destructive command takes the danger button, as every other one does (finding 74). -->
         <Button
-          variant="primary"
+          variant={review.dangerous ? 'danger' : 'primary'}
           disabled={working || !!review.error || (review.dangerous && !acknowledged)}
           onclick={() => void confirm()}
         >
@@ -1437,8 +1514,8 @@
   /* The template's `jobs-manager.css`, on the Frameleaf tokens. */
   .jobs-manager {
     --jm-green: var(--fl-accent);
-    --jm-red: var(--fl-danger, #bc7765);
-    --jm-amber: var(--fl-warning, #b89c65);
+    --jm-red: var(--fl-danger);
+    --jm-amber: var(--fl-warning);
     color: var(--fl-text);
     min-width: 0;
     padding: 4px 0 20px;
@@ -1499,6 +1576,33 @@
     padding: 18px 20px;
     color: var(--fl-muted);
   }
+  .jm-paused {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-3);
+    padding: var(--fl-space-2) var(--fl-space-3);
+    color: var(--fl-warning);
+    background: color-mix(in srgb, var(--fl-warning) 10%, var(--fl-panel));
+    border: 1px solid color-mix(in srgb, var(--fl-warning) 35%, var(--fl-border));
+    border-radius: var(--fl-radius-control);
+    width: fit-content;
+  }
+  .jm-changing {
+    display: inline-block;
+  }
+  .jm-row {
+    cursor: pointer;
+  }
+  .jm-row:hover {
+    background: var(--fl-raised);
+  }
+  .jm-row-chevron {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: var(--fl-space-2);
+    color: var(--fl-muted);
+  }
   .jm-metric + .jm-metric {
     border-inline-start: 1px solid var(--fl-border);
   }
@@ -1506,7 +1610,7 @@
   .jm-metric.warning strong {
     color: var(--jm-red);
   }
-  .jm-metric span {
+  .jm-metric div > span {
     display: block;
     color: var(--fl-muted);
     font-size: 11px;
@@ -1517,7 +1621,7 @@
     font-size: 25px;
     font-weight: 600;
     line-height: 1.4;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .jm-filterbar {
     display: flex;
@@ -1544,7 +1648,7 @@
     border-radius: var(--fl-radius-control);
     min-height: 35px;
     padding: 6px 9px;
-    outline-offset: 3px;
+    outline-offset: var(--fl-focus-offset);
   }
   .jm-search {
     display: flex;
@@ -1564,12 +1668,12 @@
     min-width: 0;
     width: 100%;
     padding: 8px 0;
-    outline-offset: 0;
   }
   .jm-search:focus-within {
-    outline: 2px solid var(--jm-green);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
+  /* The ring is drawn on the field's frame (:focus-within above), not on the bare input. */
   .jm-search input:focus-visible {
     outline: 0;
   }
@@ -1600,6 +1704,7 @@
   }
   .jobs-manager th {
     font-weight: 500;
+    text-align: start;
   }
   .jobs-manager thead th {
     font-size: 11px;
@@ -1616,7 +1721,7 @@
     background: color-mix(in srgb, var(--fl-muted) 5%, transparent);
   }
   .jm-queues td {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .jm-row-actions {
     white-space: nowrap;
@@ -1774,7 +1879,7 @@
     background: var(--fl-panel);
     border-radius: var(--fl-radius-pill);
     padding: 1px 5px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .jm-tab-actions {
     display: flex;

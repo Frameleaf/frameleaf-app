@@ -32,6 +32,16 @@
     return () => document.documentElement.classList.remove('session-concealed');
   });
 
+  // When the shield lifts, the page fades back in (the Fade pattern) instead of snapping into view.
+  let revealing = $state(false);
+  let wasActive = false;
+  $effect(() => {
+    if (wasActive && !active) {
+      revealing = true;
+    }
+    wasActive = active;
+  });
+
   $effect(() => {
     if (!shieldDialog) {
       return;
@@ -44,7 +54,18 @@
   });
 </script>
 
-<div class="session-lock-content" class:session-lock-content-hidden={active} inert={active} aria-hidden={active}>
+<div
+  class="session-lock-content"
+  class:session-lock-content-hidden={active}
+  class:session-lock-content-revealing={revealing && !active}
+  inert={active}
+  aria-hidden={active}
+  onanimationend={(event) => {
+    if (event.target === event.currentTarget) {
+      revealing = false;
+    }
+  }}
+>
   {@render children()}
 </div>
 
@@ -75,6 +96,10 @@
 <style>
   .session-lock-content-hidden {
     display: none;
+  }
+  /* No fill after the end: a lasting opacity would keep the whole app in its own stacking context. */
+  .session-lock-content-revealing {
+    animation: fl-fade-in var(--fl-duration-fade) var(--fl-ease) backwards;
   }
   /* A hidden unlocked tab: nothing of it (portals and top-layer dialogs included) is painted. */
   :global(html.session-concealed body) {

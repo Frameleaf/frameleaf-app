@@ -8,6 +8,7 @@
    * statement by the administrator, not a check the server runs, and the dialog says so.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
@@ -104,7 +105,10 @@
       </p>
     {/if}
   {:else}
-    <p role="status">{$t('loading')}</p>
+    <div role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="text" lines={2} />
+    </div>
   {/if}
 </section>
 

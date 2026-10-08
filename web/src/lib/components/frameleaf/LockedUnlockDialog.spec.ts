@@ -107,6 +107,9 @@ describe('LockedUnlockDialog', () => {
       );
       expect(onUnlocked).toHaveBeenCalledOnce();
     });
+    // a quiet success moment: the sheet says so, then leaves by itself
+    expect(screen.getByText(en.frameleaf_locked_revealed)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('dialog', { hidden: true })).not.toHaveAttribute('open'));
   });
 
   it.each(['Cancel', 'close', 'unmount', 'local lock', 'remote lock'])(
@@ -242,9 +245,11 @@ describe('LockedUnlockDialog', () => {
 
     expect(await screen.findByText(en.frameleaf_locked_dialog_no_pin)).toBeInTheDocument();
     expect(screen.queryByLabelText(en.frameleaf_locked_dialog_pin_label)).toBeNull();
-    expect(screen.getByRole('link', { name: en.frameleaf_locked_dialog_pin_settings })).toHaveAttribute(
+    // the one way forward is the primary action, and it lands on the PIN section itself
+    expect(screen.getByRole('heading', { name: en.frameleaf_locked_dialog_set_up_pin })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: en.frameleaf_locked_dialog_set_up_pin })).toHaveAttribute(
       'href',
-      '/user-settings',
+      '/user-settings?isOpen=user-pin-code-settings',
     );
   });
 

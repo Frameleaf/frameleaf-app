@@ -4,6 +4,8 @@
    * loaded the same data in their route loaders; the Command Center page loads none of it, so moving
    * between sections never fetches another section's data.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -38,25 +40,20 @@
 {#if data}
   {@render children(data.value)}
 {:else if failed}
-  <p class="state" role="alert">
-    {$t('frameleaf_cc_load_failed')}
-    <button type="button" onclick={() => attempt++}>{$t('retry')}</button>
-  </p>
+  <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={() => attempt++} />
 {:else}
-  <p class="state" role="status">{$t('loading')}</p>
+  <div class="loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="block" height="4.5rem" />
+    <Skeleton variant="block" height="4.5rem" />
+    <Skeleton variant="block" height="4.5rem" />
+  </div>
 {/if}
 
 <style>
-  .state {
-    margin: 0;
-    padding: 16px 0;
-    color: var(--fl-muted);
-  }
-  .state button {
-    margin-inline-start: 8px;
-    color: var(--fl-accent);
-    background: none;
-    border: 0;
-    cursor: pointer;
+  .loading {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-4) 0;
   }
 </style>

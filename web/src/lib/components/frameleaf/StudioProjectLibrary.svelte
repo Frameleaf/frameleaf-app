@@ -1,13 +1,40 @@
+<script lang="ts" module>
+  /** Poster-shaped placeholders for the first read of a shelf. */
+  const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
+  /** How many projects one request reads; Show more asks for the next page. */
+  const PAGE = 60;
+
+  const focusOnMount = (node: HTMLInputElement) => {
+    node.focus();
+    node.select();
+  };
+</script>
+
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, onNavigate } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import { armHero } from '$lib/frameleaf/motion';
+  import {
+    rememberStudioOpening,
+    studioExportPercent,
+    studioProjectSharedKey,
+    studioRelativeTime,
+  } from '$lib/frameleaf/studio/chrome';
+  import { toastUndo } from '$lib/frameleaf/toast';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
   import {
     isStudioBundleSettled,
-    recentStudioProjects,
     reviewStudioBundle,
     STUDIO_LIBRARY_SHELVES,
     STUDIO_LIBRARY_SORTS,
@@ -50,7 +77,15 @@
     type StudioProjectDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiFilmstrip, mdiImport, mdiPlus } from '@mdi/js';
+  import {
+    mdiArchiveOutline,
+    mdiDotsHorizontal,
+    mdiFilmstrip,
+    mdiImport,
+    mdiMagnify,
+    mdiPlus,
+    mdiTrashCanOutline,
+  } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
@@ -59,8 +94,13 @@
    *
    * Beyond the prototype, which kept a single project in local storage. Three shelves: the
    * projects a person owns or reviews, their archive, and their trash. Opening, renaming,
-   * duplicating, archiving, trashing, restoring and deleting for good all go to the server, and
+   * duplicating, archiving, trashing, recovering and deleting for good all go to the server, and
    * the list is re-read afterwards rather than patched, so what is shown is what the server holds.
+   *
+   * A project is a card: its poster, its name and when it was last edited. The whole card opens it,
+   * and everything else a person may do with it is in the card's one menu. A shelf that is still
+   * being read shows poster-shaped placeholders, one that could not be read says so with Try again,
+   * and an empty one says what to do next; the three are never mistaken for each other.
    *
    * Bundles are durable jobs. Export and import both start here and can be followed either here or
    * in Activity; closing this page does not stop them. Deleting a project, even for good, never
@@ -73,8 +113,9 @@
   let sort = $state<StudioLibrarySort>('updated');
   let items = $state<StudioProjectDto[]>([]);
   let total = $state(0);
-  let recent = $state<StudioProjectDto[]>([]);
   let loading = $state(true);
+  let loadingMore = $state(false);
+  let failed = $state(false);
   let busyId = $state<string | null>(null);
   let renamingId = $state<string | null>(null);
   let renameValue = $state('');
@@ -112,35 +153,77 @@
   };
 
   const review = $derived(upload ? reviewStudioBundle(upload) : null);
-  const dateFormat = $derived(new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium' }));
+
+  /** Answers from before the newest request are dropped, so a slow shelf never lands on another. */
+  let generation = 0;
+
+  const read = (skip: number) =>
+    searchStudioProjects({
+      shelf: shelfEnum[shelf],
+      sort: sortEnum[sort],
+      query: query.trim() || undefined,
+      skip: skip || undefined,
+      take: PAGE,
+    });
 
   const load = async () => {
+    const gen = ++generation;
     loading = true;
     try {
-      const term = query.trim();
-      const [list, recents] = await Promise.all([
-        searchStudioProjects({
-          shelf: shelfEnum[shelf],
-          sort: sortEnum[sort],
-          query: term || undefined,
-          take: 60,
-        }),
-        shelf === 'active' && !term
-          ? searchStudioProjects({ shelf: StudioProjectShelf.Active, sort: StudioProjectSort.Recent, take: 12 })
-          : Promise.resolve(null),
-      ]);
-      if (disposed) {
+      const list = await read(0);
+      if (disposed || gen !== generation) {
         return;
       }
       items = list.items;
       total = list.total;
-      recent = recents ? recentStudioProjects(recents.items) : [];
+      failed = false;
+    } catch (error) {
+      if (disposed || gen !== generation) {
+        return;
+      }
+      failed = true;
+      // With cards on screen the page keeps them and says so in a toast; an empty page says it inline.
+      if (items.length > 0) {
+        handleError(error, $t('frameleaf_studio_library_load_failed'));
+      }
+    } finally {
+      if (gen === generation) {
+        loading = false;
+      }
+    }
+  };
+
+  const loadMore = async () => {
+    const gen = generation;
+    loadingMore = true;
+    try {
+      const list = await read(items.length);
+      if (!disposed && gen === generation) {
+        const seen = new Set(items.map((item) => item.id));
+        items = [...items, ...list.items.filter((item) => !seen.has(item.id))];
+        total = list.total;
+      }
     } catch (error) {
       handleError(error, $t('frameleaf_studio_library_load_failed'));
     } finally {
-      loading = false;
+      loadingMore = false;
     }
   };
+
+  /*
+   * Opening a project (finding 58): the card's poster and name go with the person to the editor's
+   * opening screen. Where the browser can, the poster travels there: the card and the opening screen
+   * mark it with the same `data-fl-shared` key and the root layout pairs the two (the card-to-page
+   * Hero in `$lib/frameleaf/motion`). Under Reduce Motion, or without view transitions, it simply opens.
+   */
+  onNavigate((navigation) => {
+    const to = navigation.to;
+    const id = to?.route.id === '/(user)/studio' ? to.url.searchParams.get('project') : null;
+    const project = id ? items.find((item) => item.id === id) : undefined;
+    if (project) {
+      rememberStudioOpening({ projectId: project.id, name: project.name, posterUrl: posterUrl(project) });
+    }
+  });
 
   // FL-195 follow-up: a poster whose item is Locked shows only to the unlocked session, so a lock or an
   // unlock reads the shelf again (the server then sends the placeholder, or the poster, as it should)
@@ -169,16 +252,40 @@
   });
 
   const setShelf = (next: StudioLibraryShelf) => {
+    if (next === shelf) {
+      return;
+    }
+    // Another shelf's cards must not sit under this shelf's heading while it is read.
+    items = [];
+    total = 0;
+    failed = false;
+    loading = true;
     shelf = next;
     void goto(Route.studioProjects({ shelf: next }), { replaceState: true, keepFocus: true, noScroll: true });
   };
 
-  const run = async (project: StudioProjectDto, action: () => Promise<unknown>, doneKey: Translations) => {
+  const run = async (
+    project: StudioProjectDto,
+    action: () => Promise<unknown>,
+    doneKey: Translations,
+    undo?: () => Promise<unknown>,
+  ) => {
     busyId = project.id;
     try {
       await action();
       announcement = $t(doneKey, { values: { name: project.name } });
-      toastManager.primary(announcement);
+      if (undo) {
+        toastUndo(announcement, async () => {
+          try {
+            await undo();
+            await load();
+          } catch (error) {
+            handleError(error, $t('frameleaf_studio_library_action_failed'));
+          }
+        });
+      } else {
+        toastManager.primary(announcement);
+      }
       await load();
     } catch (error) {
       handleError(error, $t('frameleaf_studio_library_action_failed'));
@@ -208,6 +315,7 @@
   const act = (project: StudioProjectDto, action: StudioProjectAction) => {
     switch (action) {
       case 'open': {
+        armHero(studioProjectSharedKey(project.id));
         void goto(Route.studio({ projectId: project.id }));
         break;
       }
@@ -242,8 +350,14 @@
         break;
       }
       case 'trash': {
-        // Reversible for the whole retention period, so no confirmation: Restore is one click away.
-        void run(project, () => deleteStudioProject({ id: project.id }), 'frameleaf_studio_library_trashed');
+        // Reversible for the whole retention period, so no confirmation: Undo is on the toast, and
+        // Recover stays in the trash afterwards.
+        void run(
+          project,
+          () => deleteStudioProject({ id: project.id }),
+          'frameleaf_studio_library_trashed',
+          () => restoreStudioProjectFromTrash({ id: project.id }),
+        );
         break;
       }
       case 'restore': {
@@ -425,10 +539,10 @@
 
   const metaLine = (project: StudioProjectDto) =>
     [
-      project.revision > 0
-        ? $t('frameleaf_studio_history_version', { values: { revision: project.revision } })
-        : $t('frameleaf_studio_library_unsaved'),
-      $t('frameleaf_studio_library_changed', { values: { date: dateFormat.format(new Date(project.updatedAt)) } }),
+      $t('frameleaf_studio_library_changed', {
+        values: { date: studioRelativeTime(project.updatedAt, $locale ?? undefined) },
+      }),
+      project.revision > 0 ? null : $t('frameleaf_studio_library_unsaved'),
       project.access === StudioProjectAccess.Reviewer ? $t('frameleaf_studio_read_only') : null,
       project.importedFromBundle ? $t('frameleaf_studio_library_imported') : null,
     ]
@@ -441,17 +555,19 @@
 
   <header class="head">
     <div>
-      <p class="eyebrow">{$t('frameleaf_studio_title')}</p>
+      <p class="fl-type-overline kicker">{$t('frameleaf_studio_title')}</p>
       <h1 id="fl-studio-library-title">{$t('frameleaf_studio_library_title')}</h1>
-      <p class="summary">{$t('frameleaf_studio_library_summary', { values: { count: total } })}</p>
+      {#if !failed && !(loading && items.length === 0)}
+        <p class="summary">{$t('frameleaf_studio_library_summary', { values: { count: total } })}</p>
+      {/if}
     </div>
     <div class="head-actions">
       <Button onclick={chooseBundle} disabled={uploading}>
-        <Icon icon={mdiImport} size="16" />
+        <Icon icon={mdiImport} size={ICON_SIZE.md} />
         {uploading ? $t('frameleaf_studio_bundle_uploading') : $t('frameleaf_studio_bundle_import')}
       </Button>
       <Button variant="primary" onclick={() => void goto(Route.studio())}>
-        <Icon icon={mdiPlus} size="16" />
+        <Icon icon={mdiPlus} size={ICON_SIZE.md} />
         {$t('frameleaf_studio_library_new')}
       </Button>
       <input
@@ -466,14 +582,14 @@
     </div>
   </header>
 
-  <nav class="toolbar" aria-label={$t('frameleaf_studio_library_shelves')}>
-    <div class="shelves">
-      {#each STUDIO_LIBRARY_SHELVES as option (option.id)}
-        <Button variant="quiet" pressed={shelf === option.id} onclick={() => setShelf(option.id)}>
-          {$t(option.labelKey)}
-        </Button>
-      {/each}
-    </div>
+  <div class="toolbar">
+    <!-- The three shelves and the order are the app's own segmented control, not a browser menu. -->
+    <SegmentedControl
+      label={$t('frameleaf_studio_library_shelves')}
+      options={STUDIO_LIBRARY_SHELVES.map((option) => ({ value: option.id, label: $t(option.labelKey) }))}
+      value={shelf}
+      onChange={(next) => setShelf(next as StudioLibraryShelf)}
+    />
     <div class="filters">
       <input
         class="search"
@@ -482,16 +598,17 @@
         aria-label={$t('frameleaf_studio_library_search')}
         bind:value={query}
       />
-      <select aria-label={$t('frameleaf_studio_library_sort')} bind:value={sort}>
-        {#each STUDIO_LIBRARY_SORTS as option (option.id)}
-          <option value={option.id}>{$t(option.labelKey)}</option>
-        {/each}
-      </select>
+      <SegmentedControl
+        label={$t('frameleaf_studio_library_sort')}
+        options={STUDIO_LIBRARY_SORTS.map((option) => ({ value: option.id, label: $t(option.labelKey) }))}
+        value={sort}
+        onChange={(next) => (sort = next as StudioLibrarySort)}
+      />
       {#if shelf === 'trashed' && items.length > 0}
         <Button onclick={() => (confirmEmptyOpen = true)}>{$t('frameleaf_studio_library_empty_trash')}</Button>
       {/if}
     </div>
-  </nav>
+  </div>
 
   {#if shelf === 'trashed'}
     <p class="note">{$t('frameleaf_studio_library_trash_note')}</p>
@@ -499,82 +616,119 @@
     <p class="note">{$t('frameleaf_studio_library_archive_note')}</p>
   {/if}
 
-  {#if recent.length > 0}
-    <section aria-labelledby="fl-studio-recent">
-      <h2 id="fl-studio-recent">{$t('frameleaf_studio_library_recent')}</h2>
-      <ul class="recent">
-        {#each recent as project (project.id)}
-          <li>
-            <a href={Route.studio({ projectId: project.id })}>
-              <Icon icon={mdiFilmstrip} size="16" />
-              <span>{project.name}</span>
-            </a>
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
-
-  {#if loading && items.length === 0}
-    <p class="note" aria-busy="true">{$t('frameleaf_studio_library_loading')}</p>
+  {#if failed && items.length === 0}
+    <!-- A list that could not be read is not an empty one: say so, and offer the way to ask again. -->
+    <InlineError message={$t('frameleaf_studio_library_load_failed')} onRetry={() => void load()} retrying={loading} />
+  {:else if loading && items.length === 0}
+    <ul class="grid" aria-busy="true" aria-label={$t('frameleaf_studio_library_loading')}>
+      {#each SKELETON_CARDS as index (index)}
+        <li class="placeholder">
+          <Skeleton variant="block" aspect="16 / 9" />
+          <div class="body"><Skeleton variant="text" lines={2} /></div>
+        </li>
+      {/each}
+    </ul>
   {:else if items.length === 0}
-    <p class="note">
-      {query.trim() ? $t('frameleaf_studio_library_no_match') : $t(`frameleaf_studio_library_empty_${shelf}`)}
-    </p>
+    {#if query.trim()}
+      <EmptyState compact icon={mdiMagnify} message={$t('frameleaf_studio_library_no_match')} />
+    {:else if shelf === 'active'}
+      <EmptyState
+        icon={mdiFilmstrip}
+        title={$t('frameleaf_studio_library_empty_title')}
+        message={$t('frameleaf_studio_library_empty_active')}
+        action={{ label: $t('frameleaf_studio_library_new'), href: Route.studio(), icon: mdiPlus }}
+        secondaryAction={{ label: $t('frameleaf_studio_library_pick_photos'), href: Route.photos() }}
+      />
+    {:else}
+      <EmptyState
+        compact
+        icon={shelf === 'trashed' ? mdiTrashCanOutline : mdiArchiveOutline}
+        message={$t(`frameleaf_studio_library_empty_${shelf}`)}
+      />
+    {/if}
   {:else}
-    <ul class="grid">
-      {#each items as project (project.id)}
+    <!-- While a new order or search is on its way the cards dim rather than vanish. -->
+    <ul class="grid" class:stale={loading} aria-busy={loading}>
+      {#each items as project, index (project.id)}
         {@const poster = posterUrl(project)}
         {@const days = studioDaysUntilPurge(project)}
-        <li class="card" aria-busy={busyId === project.id}>
-          <div class="poster">
+        {@const openable = project.shelf !== StudioProjectShelf.Trashed}
+        {@const actions = studioProjectActions(project).filter((action) => action !== 'open')}
+        <li class="card fl-reveal" class:openable style="--i: {index}" aria-busy={busyId === project.id}>
+          <div class="poster" data-fl-shared={poster && openable ? studioProjectSharedKey(project.id) : undefined}>
             {#if poster}
               <img src={poster} alt="" loading="lazy" />
             {:else}
-              <Icon icon={mdiFilmstrip} size="32" />
+              <Icon icon={mdiFilmstrip} size={ICON_SIZE.hero} />
             {/if}
           </div>
           <div class="body">
-            {#if renamingId === project.id}
-              <input
-                class="rename"
-                aria-label={$t('frameleaf_studio_library_rename_label')}
-                bind:value={renameValue}
-                maxlength={200}
-                onblur={() => commitRename(project)}
-                onkeydown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitRename(project);
-                  } else if (event.key === 'Escape') {
-                    renamingId = null;
-                  }
-                }}
-              />
-            {:else if project.shelf === StudioProjectShelf.Trashed}
-              <h3>{project.name}</h3>
-            {:else}
-              <h3><a href={Route.studio({ projectId: project.id })}>{project.name}</a></h3>
+            <div class="text">
+              {#if renamingId === project.id}
+                <input
+                  class="rename"
+                  aria-label={$t('frameleaf_studio_library_rename_label')}
+                  bind:value={renameValue}
+                  maxlength={200}
+                  use:focusOnMount
+                  onblur={() => commitRename(project)}
+                  onkeydown={(event) => {
+                    if (event.key === 'Enter') {
+                      commitRename(project);
+                    } else if (event.key === 'Escape') {
+                      renamingId = null;
+                    }
+                  }}
+                />
+              {:else if openable}
+                <!-- The whole card opens the project: the link's hit area is stretched over it. -->
+                <h3>
+                  <!-- The link is beside the poster, not around it, so it names the poster that travels. -->
+                  <a
+                    class="open"
+                    href={Route.studio({ projectId: project.id })}
+                    onclick={() => armHero(studioProjectSharedKey(project.id))}>{project.name}</a
+                  >
+                </h3>
+              {:else}
+                <h3>{project.name}</h3>
+              {/if}
+              <p class="meta">{metaLine(project)}</p>
+              {#if days !== null}
+                <p class="meta warning">{$t('frameleaf_studio_library_purge_in', { values: { count: days } })}</p>
+              {/if}
+            </div>
+            {#if actions.length > 0}
+              <div class="more">
+                <Menu label={$t('frameleaf_studio_library_actions', { values: { name: project.name } })} align="end">
+                  {#snippet trigger()}
+                    <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} />
+                  {/snippet}
+                  {#each actions as action (action)}
+                    {#if action === 'trash' || action === 'delete-permanently'}
+                      <div class="separator" role="separator"></div>
+                    {/if}
+                    <MenuItem disabled={busyId === project.id} onSelect={() => act(project, action)}>
+                      <span class:danger={action === 'trash' || action === 'delete-permanently'}>
+                        {$t(actionLabelKey[action])}
+                      </span>
+                    </MenuItem>
+                  {/each}
+                </Menu>
+              </div>
             {/if}
-            <p class="meta">{metaLine(project)}</p>
-            {#if days !== null}
-              <p class="meta warning">{$t('frameleaf_studio_library_purge_in', { values: { count: days } })}</p>
-            {/if}
-          </div>
-          <div class="actions">
-            {#each studioProjectActions(project).filter((action) => action !== 'open') as action (action)}
-              <Button
-                variant={action === 'delete-permanently' ? 'default' : 'quiet'}
-                disabled={busyId === project.id}
-                label={`${$t(actionLabelKey[action])}: ${project.name}`}
-                onclick={() => act(project, action)}
-              >
-                {$t(actionLabelKey[action])}
-              </Button>
-            {/each}
           </div>
         </li>
       {/each}
     </ul>
+    {#if items.length < total}
+      <div class="more-row">
+        <Button onclick={() => void loadMore()} disabled={loadingMore}>
+          {#if loadingMore}<Spinner size="md" decorative />{/if}
+          {$t('frameleaf_studio_library_show_more')}
+        </Button>
+      </div>
+    {/if}
   {/if}
 </main>
 
@@ -597,9 +751,10 @@
   />
 {/if}
 
+<!-- The count is the whole trash, not only the cards on screen: that is what the server empties. -->
 <BulkConfirmDialog
   bind:open={confirmEmptyOpen}
-  count={items.length}
+  count={total}
   labelKey="frameleaf_studio_library_empty_trash"
   messageKey="frameleaf_studio_library_empty_trash_confirm"
   onConfirm={async () => {
@@ -612,6 +767,23 @@
     }
   }}
 />
+
+{#snippet jobProgress(job: StudioBundleOperationDto)}
+  <p role="status">{$t(studioBundleJobStatusKey(job))}</p>
+  {#if !isStudioBundleSettled(job)}
+    <!-- The job reports counted work, so the bar is real progress, not a spinner in disguise. -->
+    <div
+      class="progress"
+      role="progressbar"
+      aria-label={$t(studioBundleJobStatusKey(job))}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={studioExportPercent(job)}
+    >
+      <span style:transform="scaleX({studioExportPercent(job) / 100})"></span>
+    </div>
+  {/if}
+{/snippet}
 
 <Dialog bind:open={exportOpen} title={$t('frameleaf_studio_bundle_export_title')} closeLabel={$t('close')}>
   <div class="dialog-body">
@@ -629,7 +801,7 @@
         </Button>
       </footer>
     {:else}
-      <p role="status">{$t(studioBundleJobStatusKey(exportJob))}</p>
+      {@render jobProgress(exportJob)}
       {#if exportJob.status === MediaOperationStatus.Failed}
         <p class="error">{$t(studioBundleErrorKey(exportJob.errorCode))}</p>
       {/if}
@@ -697,7 +869,7 @@
           </Button>
         </footer>
       {:else}
-        <p role="status">{$t(studioBundleJobStatusKey(importJob))}</p>
+        {@render jobProgress(importJob)}
         {#if importJob.status === MediaOperationStatus.Failed}
           <p class="error">{$t(studioBundleErrorKey(importJob.errorCode))}</p>
         {/if}
@@ -731,8 +903,9 @@
 <style>
   .fl-studio-library {
     display: grid;
-    gap: 1rem;
-    padding: 1.5rem 1rem;
+    align-content: start;
+    gap: var(--fl-space-4);
+    padding: var(--fl-space-6) var(--fl-space-4);
     max-width: 72rem;
     margin-inline: auto;
     color: var(--fl-text);
@@ -744,137 +917,223 @@
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--fl-space-3);
   }
-  .eyebrow {
+  .toolbar {
+    align-items: center;
+  }
+  /* Not `overline`: that is a Tailwind utility, and draws a line over the text. */
+  .kicker {
     margin: 0;
-    font-size: var(--fl-font-small);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--fl-muted);
   }
   h1 {
-    margin: 0.125rem 0 0;
-    font-size: 1.375rem;
-    font-weight: 600;
-  }
-  h2 {
-    margin: 0 0 0.5rem;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
+    margin: var(--fl-space-half) 0 0;
+    font: var(--fl-type-title);
+    letter-spacing: var(--fl-tracking-title);
   }
   h3 {
     margin: 0;
     font-size: var(--fl-font-size);
     font-weight: 600;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  h3 a {
+  .open {
     color: inherit;
     text-decoration: none;
   }
-  h3 a:hover,
-  h3 a:focus-visible {
-    text-decoration: underline;
+  /* The stretched link: one target the size of the card, named by the project. */
+  .open::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--fl-radius-card);
+  }
+  .open:focus-visible {
+    outline: none;
+  }
+  .card:has(.open:focus-visible) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .summary,
   .meta,
   .note {
-    margin: 0.25rem 0 0;
+    margin: var(--fl-space-1) 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  .note {
+    margin: 0;
+  }
   .warning {
-    color: var(--fl-warning, var(--fl-muted));
+    color: var(--fl-warning);
   }
   .error {
     margin: 0;
-    color: var(--fl-danger, var(--fl-text));
+    color: var(--fl-danger);
+  }
+  .danger {
+    color: var(--fl-danger);
   }
   .head-actions,
-  .shelves,
   .filters {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
+  }
+  .filters {
+    justify-content: flex-end;
+  }
+  @media (max-width: 640px) {
+    .filters {
+      justify-content: flex-start;
+      width: 100%;
+    }
+    .search {
+      flex: 1 1 100%;
+    }
   }
   .search,
-  select,
   .rename,
   .field input {
-    min-height: 2.25rem;
-    padding: 0 0.625rem;
+    min-height: var(--fl-control-height-compact);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     font: inherit;
   }
+  /* A definite width: a percentage here made the row measure itself narrow and wrap early. */
   .search {
-    width: min(16rem, 100%);
+    width: 16rem;
+    max-width: 100%;
   }
-  .recent {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .recent a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    text-decoration: none;
+  .rename {
+    position: relative;
+    z-index: 1;
+    width: 100%;
   }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: 0.75rem;
+    gap: var(--fl-space-4);
     margin: 0;
     padding: 0;
     list-style: none;
+    transition: opacity var(--fl-motion) var(--fl-ease);
+  }
+  .grid.stale {
+    opacity: 0.5;
   }
   .card {
+    position: relative;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-1);
+    transition:
+      box-shadow var(--fl-motion) var(--fl-ease),
+      transform var(--fl-duration) var(--fl-spring);
+  }
+  /* Not a `.card`: a placeholder is the shape of one, with nothing to open or act on. */
+  .placeholder {
     overflow: hidden;
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .card.openable:hover {
+    box-shadow: var(--fl-shadow-2);
+  }
+  .card:has(.open:active) {
+    transform: scale(0.98);
+    transition-duration: var(--fl-motion), var(--fl-duration-press);
+  }
+  /* The card whose menu is open sits above its neighbours, so the menu is never cut off by them. */
+  .card:focus-within {
+    z-index: 2;
   }
   .poster {
     display: grid;
     place-items: center;
     aspect-ratio: 16 / 9;
+    overflow: hidden;
     background: var(--fl-raised);
     color: var(--fl-muted);
+    border-radius: calc(var(--fl-radius-card) - 1px) calc(var(--fl-radius-card) - 1px) 0 0;
   }
   .poster img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: transform var(--fl-motion-slow) var(--fl-ease);
+  }
+  .card.openable:hover .poster img {
+    transform: scale(1.02);
   }
   .body {
-    padding: 0.625rem 0.75rem 0;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+    min-width: 0;
+    padding: var(--fl-space-3) var(--fl-space-2) var(--fl-space-3) var(--fl-space-3);
+  }
+  .text {
+    flex: 1 1 auto;
     min-width: 0;
   }
-  .actions {
+  /* Above the stretched link. Quiet until the card is pointed at or focused; always there on touch. */
+  .more {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .card:hover .more,
+  .card:focus-within .more {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .more {
+      opacity: 1;
+    }
+  }
+  .separator {
+    height: 1px;
+    margin: var(--fl-space-1) 0;
+    background: var(--fl-border);
+  }
+  .more-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    padding: 0.5rem 0.5rem 0.625rem;
+    justify-content: center;
+  }
+  .progress {
+    height: var(--fl-space-1);
+    overflow: hidden;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+  }
+  .progress span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
+    transform-origin: left center;
+    transition: transform var(--fl-motion-slow) linear;
+  }
+  :global([dir='rtl']) .progress span {
+    transform-origin: right center;
   }
   .dialog-body {
     display: grid;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--fl-space-3);
+    margin-top: var(--fl-space-3);
     min-width: min(28rem, 100%);
   }
   .dialog-body p {
@@ -884,7 +1143,7 @@
   .field {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   .field {
     flex-direction: column;
@@ -892,7 +1151,7 @@
   }
   .sources {
     display: grid;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     max-height: 16rem;
     overflow: auto;
     margin: 0;
@@ -903,7 +1162,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
   }
   .source-name {
@@ -917,7 +1176,7 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   .sr-only {
     position: absolute;
@@ -926,5 +1185,11 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card:has(.open:active),
+    .card.openable:hover .poster img {
+      transform: none;
+    }
   }
 </style>

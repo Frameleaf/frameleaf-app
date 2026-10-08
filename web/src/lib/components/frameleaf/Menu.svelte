@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { canAnimate, leave } from '$lib/frameleaf/motion';
+  import { untrack, type Snippet } from 'svelte';
   /**
    * A keyboard-complete popup menu: the trigger opens it with click, Enter, Space or the
    * arrow keys, focus roves through the items with Arrow/Home/End, Escape closes and
@@ -7,8 +8,10 @@
    *
    * Items are supplied by the caller as MenuItem components. Listeners are attached to the
    * popup imperatively so the container carries only its ARIA role and no handlers. It opens
-   * on the September 24 spring (apple-style.css:322-332), growing from the corner it hangs
-   * from, and crossfades instead under Reduce Motion (apple-style.css:488-490).
+   * and closes on the Pop motion pattern (BRAND.md; apple-style.css:322-332): it grows on the
+   * spring from the corner it hangs from and fades out when dismissed, with a crossfade both
+   * ways under Reduce Motion (apple-style.css:488-490). While it fades out the popup is inert
+   * and hidden from assistive technology; focus has already gone back to the trigger.
    *
    * Activating an item closes the popup and returns focus to the trigger, unless that
    * MenuItem was given `keepOpen` (FL-38: a "Reassign…" command that swaps the popup's
@@ -36,6 +39,33 @@
   let menuElement: HTMLDivElement | undefined = $state();
   // Deliberately not $state: it steers the next open only and must not re-run the effect.
   let pendingFocus: 'first' | 'last' = 'first';
+  // True while the closed popup is still fading out; it stays mounted, inert, until the exit ends.
+  let leaving = $state(false);
+  let cancelLeave: (() => void) | undefined;
+  // Deliberately not $state: whether the last run of the effect below saw the popup open.
+  let wasOpen = false;
+
+  // Before the DOM updates, so the popup is still there to fade when `open` turns false.
+  $effect.pre(() => {
+    if (open) {
+      cancelLeave?.();
+      cancelLeave = undefined;
+      leaving = false;
+      wasOpen = true;
+      return;
+    }
+    if (!wasOpen) {
+      return;
+    }
+    wasOpen = false;
+    const menu = untrack(() => menuElement);
+    // Without the Web Animations API (and in unit tests) the popup simply unmounts.
+    if (!canAnimate(menu) || !menu.isConnected) {
+      return;
+    }
+    leaving = true;
+    cancelLeave = leave(menu, 'pop', () => (leaving = false));
+  });
 
   const itemsOf = (menu: HTMLElement) => [
     ...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"]):not(:disabled)'),
@@ -166,8 +196,17 @@
   >
     {#if trigger}{@render trigger()}{:else}{label}{/if}
   </button>
-  {#if open}
-    <div bind:this={menuElement} id={menuId} role="menu" aria-label={label} tabindex="-1" class:end={align === 'end'}>
+  {#if open || leaving}
+    <div
+      bind:this={menuElement}
+      id={menuId}
+      role="menu"
+      aria-label={label}
+      aria-hidden={leaving && !open ? 'true' : undefined}
+      inert={leaving && !open}
+      tabindex="-1"
+      class:end={align === 'end'}
+    >
       {@render children()}
     </div>
   {/if}
@@ -198,7 +237,7 @@
     position: absolute;
     top: calc(100% + 0.375rem);
     inset-inline-start: 0;
-    z-index: 30;
+    z-index: var(--fl-z-popover);
     min-width: 11.25rem;
     max-width: min(20rem, calc(100vw - 2rem));
     padding: 0.375rem;
@@ -208,7 +247,9 @@
     box-shadow: var(--fl-shadow-2);
     /* Grows from the inline-start (or, for `end`, inline-end) corner it hangs from. */
     transform-origin: top left;
-    animation: fl-menu-in 320ms var(--fl-spring);
+    animation:
+      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+      fl-pop-in var(--fl-duration-pop) var(--fl-spring) both;
   }
   [role='menu']:dir(rtl) {
     transform-origin: top right;
@@ -221,24 +262,13 @@
   [role='menu'].end:dir(rtl) {
     transform-origin: top left;
   }
-  @keyframes fl-menu-in {
-    from {
-      opacity: 0;
-      scale: 0.9;
-    }
-  }
-  @keyframes fl-menu-fade {
-    from {
-      opacity: 0;
-    }
-  }
   /*
    * Beats the tokens.css clamp (same !important, higher specificity) so the popup still
    * crossfades rather than snapping in; nothing moves.
    */
   @media (prefers-reduced-motion: reduce) {
     [role='menu'] {
-      animation: fl-menu-fade 150ms ease !important;
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
     }
   }
 </style>

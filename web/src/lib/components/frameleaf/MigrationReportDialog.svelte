@@ -307,7 +307,7 @@
   }
   dd {
     margin: 0;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     text-align: end;
   }
   .toolbar {

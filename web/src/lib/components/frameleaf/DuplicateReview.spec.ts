@@ -1,5 +1,5 @@
 import { DuplicateGroupBlock, DuplicateGroupKind } from '@frameleaf/sdk';
-import { mdiChevronDoubleLeft, mdiChevronRight } from '@mdi/js';
+import { mdiChevronLeft, mdiChevronRight } from '@mdi/js';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -46,6 +46,23 @@ const setup = (blocked: Partial<ReviewGroup> = {}) => {
   });
 };
 
+/** A review of a library with no duplicate groups. */
+const empty = (onRunDetection?: () => void) =>
+  render(DuplicateReview, {
+    groups: [],
+    history: { recent: [], active: [] },
+    gateway: {
+      getReview: vi.fn().mockResolvedValue([]),
+      getHistory: vi.fn().mockResolvedValue({ recent: [], active: [] }),
+      submit: vi.fn(),
+      getOperation: vi.fn(),
+    } as unknown as DuplicateReviewGateway,
+    trashEnabled: true,
+    onOpen: vi.fn(),
+    onOpenTrash: vi.fn(),
+    onRunDetection,
+  });
+
 describe('DuplicateReview', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
@@ -58,12 +75,45 @@ describe('DuplicateReview', () => {
     }
   });
 
-  it('uses the prototype group navigation icons (UT-21)', () => {
+  // Design review finding 75: previous and next are a matching pair (the prototype mixed a double and a single chevron).
+  it('uses a matching pair of group navigation icons', () => {
     setup();
     const previous = screen.getByRole('button', { name: 'Previous duplicate group' });
     const next = screen.getByRole('button', { name: 'Next duplicate group' });
-    expect(previous.querySelector('path')?.getAttribute('d')).toBe(mdiChevronDoubleLeft);
+    expect(previous.querySelector('path')?.getAttribute('d')).toBe(mdiChevronLeft);
     expect(next.querySelector('path')?.getAttribute('d')).toBe(mdiChevronRight);
+  });
+
+  describe('when no group is in front (design review finding 75)', () => {
+    it('says the library has no duplicates, and offers detection only to an account that may run it', async () => {
+      const { unmount } = empty();
+      expect(screen.getByRole('heading', { name: 'No duplicates found' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open duplicate detection' })).toBeNull();
+      unmount();
+
+      const onRunDetection = vi.fn();
+      empty(onRunDetection);
+      await userEvent.click(screen.getByRole('button', { name: 'Open duplicate detection' }));
+      expect(onRunDetection).toHaveBeenCalled();
+    });
+
+    it('says a search matched nothing and clears it', async () => {
+      setup();
+      const search = screen.getByRole('searchbox');
+      await userEvent.type(search, 'zzzz');
+      expect(screen.getByRole('heading', { name: 'No groups match' })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+      expect(search).toHaveValue('');
+      expect(screen.getByText(/Group 1 of 2/)).toBeInTheDocument();
+    });
+  });
+
+  it('shows how far the review has come as a progress bar', () => {
+    setup();
+    expect(screen.getByRole('progressbar', { name: 'Duplicate groups reviewed' })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
+    );
   });
 
   it('moves between groups with the arrow keys', async () => {

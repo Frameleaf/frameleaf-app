@@ -436,8 +436,7 @@
     field.status === DocumentFieldStatus.Dismissed ? 'font-medium break-words opacity-60' : 'font-medium break-words';
 
   /** Kept apart from the markup so a long class list never decides how the template wraps. */
-  const inputClass =
-    'rounded-md border border-gray-300 bg-transparent px-2 py-1 text-sm text-black dark:border-gray-600 dark:text-white';
+  const inputClass = 'rounded-md border border-(--fl-border-strong) bg-transparent px-2 py-1 text-sm text-(--fl-text)';
 
   const fieldBadgeColor = (field: DocumentFieldResponseDto) =>
     field.status === DocumentFieldStatus.Suggested
@@ -468,7 +467,7 @@
     </div>
 
     <p
-      class="rounded-md bg-gray-100 px-3 py-2 wrap-break-word whitespace-pre-wrap select-text dark:bg-gray-800"
+      class="rounded-md bg-(--fl-raised) px-3 py-2 wrap-break-word whitespace-pre-wrap select-text"
       bind:this={textElement}
       data-testid="frameleaf-document-text-body"
     >
@@ -503,7 +502,7 @@
       {/if}
     </div>
     {#if canEdit && recognition && !canReadAgain}
-      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      <p class="mt-1 text-xs text-(--fl-muted)">
         {#if !recognition.enabled}
           {$t('frameleaf_documents_read_again_disabled')}
         {:else if authManager.authenticated && authManager.user.isAdmin}
@@ -520,21 +519,21 @@
 
     {#if canEdit}
       <details class="mt-3" data-testid="frameleaf-document-lines">
-        <summary class="cursor-pointer py-1 text-xs text-gray-500 dark:text-gray-400">
+        <summary class="cursor-pointer py-1 text-xs text-(--fl-muted)">
           {$t('frameleaf_documents_review_lines', { values: { count: lines.length } })}
         </summary>
         <ol class="mt-2 flex flex-col gap-2">
           {#each lines as line (line.id)}
             {@const isBusy = busy === `line:${line.id}`}
             <li
-              class="rounded-md border border-gray-200 p-2 dark:border-gray-700"
+              class="rounded-md border border-(--fl-border) p-2"
               onpointerenter={() => point(line.region)}
               onpointerleave={unpoint}
               onfocusin={() => point(line.region)}
               onfocusout={unpoint}
             >
               {#if editing?.kind === 'line' && editing.id === line.id}
-                <label class="flex flex-col gap-1 text-xs text-gray-500 dark:text-gray-400">
+                <label class="flex flex-col gap-1 text-xs text-(--fl-muted)">
                   {$t('frameleaf_documents_correction_label', { values: { text: line.recognizedText ?? line.text } })}
                   <!-- svelte-ignore a11y_autofocus -->
                   <input
@@ -571,16 +570,16 @@
                   </Badge>
                 </div>
                 {#if line.status === DocumentLineStatus.Recognized && confidencePercent(line.confidence) !== null}
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                  <p class="text-xs text-(--fl-muted)">
                     {$t('frameleaf_documents_confidence', { values: { percent: confidencePercent(line.confidence) } })}
                   </p>
                 {/if}
                 {#if line.evidenceChanged && line.recognizedText !== null}
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                  <p class="text-xs text-(--fl-muted)">
                     {$t('frameleaf_documents_read_differently', { values: { text: line.recognizedText } })}
                   </p>
                 {:else if line.status === DocumentLineStatus.Kept}
-                  <p class="text-xs text-gray-500 dark:text-gray-400">{$t('frameleaf_documents_kept_note')}</p>
+                  <p class="text-xs text-(--fl-muted)">{$t('frameleaf_documents_kept_note')}</p>
                 {/if}
                 <div class="mt-1 flex flex-wrap gap-1">
                   {#if line.status === DocumentLineStatus.Recognized || line.status === DocumentLineStatus.Corrected}
@@ -642,13 +641,13 @@
     {#if fields.length > 0}
       <div class="mt-4" data-testid="frameleaf-document-fields">
         <Text color="muted">{$t('frameleaf_documents_fields')}</Text>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{$t('frameleaf_documents_fields_note')}</p>
+        <p class="mt-1 text-xs text-(--fl-muted)">{$t('frameleaf_documents_fields_note')}</p>
         <ul class="mt-2 flex flex-col gap-2">
           {#each fields as field (field.field)}
             {@const isBusy = busy === `field:${field.field}`}
             {@const others = otherCandidates(field)}
             <li
-              class="rounded-md border border-gray-200 p-2 dark:border-gray-700"
+              class="rounded-md border border-(--fl-border) p-2"
               onpointerenter={() => point(field.region)}
               onpointerleave={unpoint}
               onfocusin={() => point(field.region)}
@@ -656,7 +655,7 @@
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">{$t(documentFieldLabelKey(field.field))}</p>
+                  <p class="text-xs text-(--fl-muted)">{$t(documentFieldLabelKey(field.field))}</p>
                   {#if editing?.kind === 'field' && editing.field === field.field}
                     <input
                       class={`mt-1 w-full ${inputClass}`}
@@ -679,7 +678,7 @@
                 </Badge>
               </div>
 
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p class="mt-1 text-xs text-(--fl-muted)">
                 {#if field.status === DocumentFieldStatus.Suggested && confidencePercent(field.confidence) !== null}
                   {$t('frameleaf_documents_confidence', { values: { percent: confidencePercent(field.confidence) } })}
                 {:else if field.status === DocumentFieldStatus.Suggested}
@@ -771,11 +770,11 @@
 
               {#if others.length > 0 && !(editing?.kind === 'field' && editing.field === field.field)}
                 <div class="mt-2 flex flex-wrap items-center gap-1 text-xs">
-                  <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_documents_other_readings')}</span>
+                  <span class="text-(--fl-muted)">{$t('frameleaf_documents_other_readings')}</span>
                   {#each others as candidate (`${candidate.lineId}:${candidate.value}`)}
                     <button
                       type="button"
-                      class="rounded-full bg-gray-100 px-2 py-0.5 hover:bg-gray-200 disabled:opacity-60 dark:bg-gray-700 dark:hover:bg-gray-600"
+                      class="rounded-full bg-(--fl-raised) px-2 py-0.5 hover:bg-(--fl-border) disabled:opacity-60"
                       disabled={isBusy}
                       title={$t('frameleaf_documents_use_value', { values: { value: candidate.value } })}
                       onpointerenter={() => point(candidate.region)}

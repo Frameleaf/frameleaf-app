@@ -80,7 +80,7 @@
 }
 .pc :where(button, a, input, textarea):focus-visible {
   outline: 2px solid var(--pc-accent, #496e53);
-  outline-offset: 4px;
+  outline-offset: var(--fl-focus-offset);
 }
 .pc-download-choices,
 .pc-version-outputs {
@@ -239,7 +239,7 @@
 .pc-eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  font-size: 11px;
+  font-size: var(--fl-font-micro);
 }
 .pc-cover-copy a {
   margin-top: 26px;
@@ -331,7 +331,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 14px 0;
-  font-size: 12px;
+  font-size: var(--fl-font-small);
 }
 .pc-photo-caption small {
   display: block;
@@ -462,7 +462,7 @@
   padding: 12px;
   border: 1px solid var(--fl-border);
   background: var(--fl-canvas);
-  border-radius: 4px;
+  border-radius: var(--fl-radius-xs);
   resize: vertical;
 }
 .pc-comparison {
@@ -494,7 +494,7 @@
 }
 .pc-access h1 {
   font-family: Georgia, serif;
-  font-size: 40px;
+  font-size: var(--fl-font-hero);
 }
 .pc-access form {
   display: flex;
@@ -528,7 +528,7 @@
   .pc-header nav {
     gap: 12px;
     flex-wrap: wrap;
-    font-size: 12px;
+    font-size: var(--fl-font-small);
   }
   .pc-cover {
     display: block;
@@ -569,5 +569,50 @@
 @media (prefers-reduced-motion: reduce) {
   .pc-image img {
     transition: none;
+  }
+}
+
+/* Favourites and the photograph dialog (design review finding 101). */
+/* Favourite: a heart that settles on the spring when it is chosen (colour only under Reduce Motion). */
+.pc-heart {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+.pc-heart[aria-pressed='true'] {
+  color: var(--pc-accent);
+}
+.pc-heart.is-fresh svg {
+  animation: pc-heart-pop var(--fl-motion-slow) var(--fl-spring);
+}
+@keyframes pc-heart-pop {
+  0% {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+}
+/* Previous and next inside the photograph dialog. */
+.pc-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fl-font-callout);
+}
+.pc-stepper button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+.pc-stepper button:disabled {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-heart.is-fresh svg {
+    animation: none;
   }
 }

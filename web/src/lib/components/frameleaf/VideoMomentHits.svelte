@@ -119,8 +119,8 @@
     background: rgb(0 0 0 / 20%);
   }
   button:focus-visible {
-    outline: 2px solid var(--fl-accent, #3fb68b);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   img {
     width: 100%;

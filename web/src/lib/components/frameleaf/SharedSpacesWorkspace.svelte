@@ -4,9 +4,13 @@
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import SharedSpaceInvitations from '$lib/components/frameleaf/SharedSpaceInvitations.svelte';
-  import Status from '$lib/components/frameleaf/Status.svelte';
+  import { OpenQueryParam } from '$lib/constants';
   import { isOwner, canEdit, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
+  import { backfillProgress } from '$lib/frameleaf/partner-sharing';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -28,7 +32,7 @@
     type PartnerResponseDto,
     type SharedSpacePreviewResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
@@ -53,6 +57,10 @@
    * and menu reuse the exact primitives and services the Albums page uses for every
    * other album kind. This page owns none of that behaviour; it only narrows the album
    * directory down to `spaces` and surfaces partners, who have no album to sit in.
+   *
+   * A partner is shown as a summary, not a link (FL-326): what a partner shares arrives as your
+   * own copies in your own library, so there is no partner library to open. The card says that and
+   * how far the copy has come; managing partners is in Settings.
    */
   interface Props {
     spaces: AlbumResponseDto[];
@@ -76,7 +84,23 @@
   let editDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
   let shareDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
   let busy = $state(false);
-  let status = $state('');
+
+  /** What a partner card says under the name: how far their library has been copied into yours. */
+  const partnerSummary = (partner: PartnerResponseDto) => {
+    const progress = backfillProgress(partner.backfill);
+    if (progress?.state === 'running') {
+      return $t('frameleaf_partner_sharing.progress_running', {
+        values: { done: progress.done, total: progress.total },
+      });
+    }
+    if (progress?.state === 'queued') {
+      return $t('frameleaf_partner_sharing.progress_queued');
+    }
+    if (progress?.state === 'done' && progress.total > 0) {
+      return $t('frameleaf_spaces_partner_copied', { values: { count: progress.total } });
+    }
+    return $t('frameleaf_spaces_partner_shares');
+  };
 
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
 
@@ -118,7 +142,7 @@
     }
     const deleted = await handleDeleteAlbum(space, { notify: false });
     if (deleted) {
-      status = $t('frameleaf_albums_deleted', { values: { name: nameOf(space) } });
+      toastManager.primary($t('frameleaf_albums_deleted', { values: { name: nameOf(space) } }));
     }
     await refresh();
   };
@@ -131,7 +155,7 @@
     }
     const left = await handleLeaveAlbum(space);
     if (left) {
-      status = $t('frameleaf_albums_left', { values: { name: nameOf(space) } });
+      toastManager.primary($t('frameleaf_albums_left', { values: { name: nameOf(space) } }));
     }
     await refresh();
   };
@@ -144,7 +168,7 @@
     }
     const saved = await handleEditAlbumDetails(space, draft);
     if (saved) {
-      status = $t('frameleaf_albums_saved', { values: { name: nameOf(saved) } });
+      toastManager.primary($t('frameleaf_albums_saved', { values: { name: nameOf(saved) } }));
     }
     return !!saved;
   };
@@ -155,37 +179,37 @@
   {@const editor = canEdit(space, currentUserId)}
   <!-- The Frameleaf Menu the Albums page uses for every album kind (AlbumDirectory.svelte), AL-45. -->
   <Menu label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(space) } })} align="end">
-    {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
+    {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden={true} />{/snippet}
     <MenuItem onSelect={() => goto(Route.viewSharedSpace({ id: space.id }))}>
-      <Icon icon={mdiFolderOpenOutline} size="18" aria-hidden={true} />{$t('open')}
+      <Icon icon={mdiFolderOpenOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('open')}
     </MenuItem>
     <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
-      <Icon icon={mdiImageMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_spaces_open_photos')}
+      <Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('frameleaf_spaces_open_photos')}
     </MenuItem>
     {#if editor}
       <MenuItem onSelect={() => (editDialog = { open: true, space })}>
-        <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
+        <Icon icon={mdiPencilOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('edit')}
       </MenuItem>
       <MenuItem onSelect={() => void openFileUploadDialog({ albumId: space.id })}>
-        <Icon icon={mdiUpload} size="18" aria-hidden={true} />{$t('frameleaf_albums_upload')}
+        <Icon icon={mdiUpload} size={ICON_SIZE.lg} aria-hidden={true} />{$t('frameleaf_albums_upload')}
       </MenuItem>
     {/if}
     <div class="menu-separator" role="separator"></div>
     <MenuItem onSelect={() => (shareDialog = { open: true, space })}>
-      <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" aria-hidden={true} />
+      <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden={true} />
       {owner ? $t('share') : $t('frameleaf_albums_members')}
     </MenuItem>
     <MenuItem disabled={space.assetCount === 0} onSelect={() => handleDownloadAlbum(space)}>
-      <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('download')}
+      <Icon icon={mdiDownloadOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('download')}
     </MenuItem>
     <div class="menu-separator" role="separator"></div>
     {#if owner}
       <MenuItem onSelect={() => (deleteDialog = { open: true, space })}>
-        <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
+        <Icon icon={mdiDeleteOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('delete')}
       </MenuItem>
     {:else}
       <MenuItem onSelect={() => (leaveDialog = { open: true, space })}>
-        <Icon icon={mdiLogoutVariant} size="18" aria-hidden={true} />{$t('leave')}
+        <Icon icon={mdiLogoutVariant} size={ICON_SIZE.lg} aria-hidden={true} />{$t('leave')}
       </MenuItem>
     {/if}
   </Menu>
@@ -197,34 +221,35 @@
       <h1 id="frameleaf-spaces-heading">{$t('frameleaf_spaces_title')}</h1>
       <p>{$t('frameleaf_spaces_intro')}</p>
     </div>
-    <button type="button" class="primary" onclick={() => (createOpen = true)}>
-      <Icon icon={mdiPlus} size="16" aria-hidden={true} />
+    <button type="button" class="primary" disabled={busy} onclick={() => (createOpen = true)}>
+      <Icon icon={mdiPlus} size={ICON_SIZE.md} aria-hidden={true} />
       {$t('frameleaf_spaces_new')}
     </button>
   </header>
 
-  <Status message={status} {busy} />
-
   <SharedSpaceInvitations {invitations} onAnswered={refresh} />
 
   {#if partners.length > 0}
-    <section class="partners" aria-label={$t('partners')}>
-      <h2>{$t('partners')}<small>{$t('frameleaf_spaces_partners_hint')}</small></h2>
-      <div class="partner-row">
+    <section class="partners" aria-labelledby="frameleaf-spaces-partners-heading">
+      <div class="partners-head">
+        <h2 id="frameleaf-spaces-partners-heading">
+          {$t('partners')}<small>{$t('frameleaf_spaces_partners_hint')}</small>
+        </h2>
+        <a class="partners-manage" href={Route.userSettings({ isOpen: OpenQueryParam.SHARING })}>
+          {$t('frameleaf_spaces_partners_manage')}
+        </a>
+      </div>
+      <ul class="partner-row">
         {#each partners as partner (partner.id)}
-          <a
-            class="partner"
-            href={Route.viewPartner(partner)}
-            aria-label={$t('frameleaf_spaces_open_partner', { values: { name: partner.name } })}
-          >
+          <li class="partner">
             <UserAvatar user={partner} size="lg" />
             <span class="partner-text">
               <strong>{partner.name}</strong>
-              <small>{partner.email}</small>
+              <small>{partnerSummary(partner)}</small>
             </span>
-          </a>
+          </li>
         {/each}
-      </div>
+      </ul>
     </section>
   {/if}
 
@@ -232,18 +257,25 @@
     {#if spaces.length > 0}
       <div class="grid">
         {#each spaces as space (space.id)}
-          <AlbumTile album={space} {currentUserId} href={Route.viewSharedSpace({ id: space.id })}>
-            {#snippet actions()}{@render menu(space)}{/snippet}
-          </AlbumTile>
+          <div
+            class="cell"
+            animate:listFlip={{ count: spaces.length }}
+            in:listEnter={{ count: spaces.length }}
+            out:listLeave={{ count: spaces.length }}
+          >
+            <AlbumTile album={space} {currentUserId} href={Route.viewSharedSpace({ id: space.id })}>
+              {#snippet actions()}{@render menu(space)}{/snippet}
+            </AlbumTile>
+          </div>
         {/each}
       </div>
     {:else}
-      <div class="empty">
-        <Icon icon={mdiAccountMultipleOutline} size="36" />
-        <h2>{$t('frameleaf_spaces_empty_title')}</h2>
-        <p>{$t('frameleaf_spaces_empty_text')}</p>
-        <button type="button" class="primary" onclick={() => (createOpen = true)}>{$t('frameleaf_spaces_new')}</button>
-      </div>
+      <EmptyState
+        icon={mdiAccountMultipleOutline}
+        title={$t('frameleaf_spaces_empty_title')}
+        message={$t('frameleaf_spaces_empty_text')}
+        action={{ label: $t('frameleaf_spaces_new'), onClick: () => (createOpen = true), icon: mdiPlus }}
+      />
     {/if}
   </section>
 </section>
@@ -323,20 +355,39 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0 1rem;
-    min-height: 36px;
+    min-height: var(--fl-control-height);
     border: 1px solid var(--fl-accent);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: var(--fl-accent);
     color: var(--fl-accent-text);
     font-weight: 600;
   }
+  .partners-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+    margin: 0 0 0.75rem;
+  }
   .partners h2 {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 0.5rem;
-    margin: 0 0 0.75rem;
+    margin: 0;
     font-size: 1rem;
     font-weight: 600;
+  }
+  .partners-manage {
+    color: var(--fl-accent);
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .partners-manage:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .partners h2 small {
     color: var(--fl-muted);
@@ -347,20 +398,21 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
+  /* A summary, not a control: no hover, no pointer. */
   .partner {
     display: flex;
     align-items: center;
     gap: 0.625rem;
+    min-width: 0;
     padding: 0.5rem 0.875rem 0.5rem 0.5rem;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
     color: var(--fl-text);
-    text-decoration: none;
-  }
-  .partner:hover {
-    background: var(--fl-raised);
   }
   .partner-text {
     display: flex;
@@ -393,24 +445,8 @@
     gap: 18px 12px;
     align-items: start;
   }
-  .empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 3rem 1rem;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .empty h2 {
-    margin: 0;
-    color: var(--fl-text);
-    font-size: 1.125rem;
-  }
-  .empty p {
-    margin: 0;
-    font-size: 0.875rem;
-    max-width: 26rem;
+  .cell {
+    min-width: 0;
   }
   @media (max-width: 640px) {
     .spaces {

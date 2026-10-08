@@ -150,6 +150,6 @@ describe('SearchSaveDialog', () => {
 
   it('notes that a smart-text smart album follows its threshold, not the ranking', () => {
     setup({ ...emptyDiscoveryQuery(), mode: 'smart', text: 'sunset' });
-    expect(screen.getByRole('button', { name: /Smart album/ })).toHaveTextContent("rule's threshold");
+    expect(screen.getByRole('button', { name: /Smart album/ })).toHaveTextContent('matches closely enough');
   });
 });

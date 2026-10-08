@@ -25,6 +25,7 @@ import {
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import JobsManager from '$lib/components/frameleaf/JobsManager.svelte';
+import { queueManager } from '$lib/managers/queue-manager.svelte';
 import en from '../../../../../i18n/en.json';
 
 const state = vi.hoisted(() => ({ url: new URL('https://example.test/user-settings?area=processing&section=queues') }));
@@ -380,7 +381,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   });
 
   it("narrows the counts and the jobs to one account's items (JobsManager.jsx 341-355, 838-840)", async () => {
-    at('&queue=face-detection&tab=failed');
+    // The account comes from the command center's "Viewing" scope (design review finding 65).
+    at('&queue=face-detection&tab=failed&scope=account:grace');
     vi.mocked(getQueueOwnerStatistics).mockResolvedValue({
       active: 0,
       completed: 0,
@@ -391,10 +393,6 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
       truncated: true,
     });
     render(JobsManager);
-
-    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
-    await screen.findByRole('option', { name: 'Grace Hopper' });
-    await fireEvent.change(filter, { target: { value: 'grace' } });
 
     await waitFor(() =>
       expect(getQueueOwnerStatistics).toHaveBeenCalledWith({ name: QueueName.FaceDetection, ownerId: 'grace' }),
@@ -416,11 +414,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
 
   it("shows a dash, not 0, while an account's counts load", async () => {
     vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
+    at('&scope=account:grace');
     render(JobsManager);
-
-    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
-    await screen.findByRole('option', { name: 'Grace Hopper' });
-    await fireEvent.change(filter, { target: { value: 'grace' } });
 
     const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
     expect(failed).toHaveTextContent('—');
@@ -436,11 +431,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         ? Promise.reject(new Error('down'))
         : Promise.resolve({ active: 1, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 2, truncated: false }),
     );
+    at('&scope=account:grace');
     render(JobsManager);
-
-    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
-    await screen.findByRole('option', { name: 'Grace Hopper' });
-    await fireEvent.change(filter, { target: { value: 'grace' } });
 
     expect(
       await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
@@ -452,6 +444,25 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(within(thumbnails).getByText('2')).toBeInTheDocument();
     // The totals would be partial, so they are unknown too.
     expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
+  });
+});
+
+describe('Job manager on returning to the window', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reads the queues again, but not more than once every few seconds', async () => {
+    const start = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    render(JobsManager);
+    vi.mocked(queueManager.refresh).mockClear();
+
+    await fireEvent.focus(globalThis as never);
+    expect(queueManager.refresh).not.toHaveBeenCalled();
+
+    now.mockReturnValue(start + 6000);
+    await fireEvent.focus(globalThis as never);
+    await fireEvent(document, new Event('visibilitychange'));
+    expect(queueManager.refresh).toHaveBeenCalledTimes(1);
   });
 });
 

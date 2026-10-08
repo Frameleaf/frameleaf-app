@@ -1,6 +1,7 @@
 <script lang="ts">
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import type { ErrorPageAction } from '$lib/frameleaf/error-page';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
@@ -37,8 +38,8 @@
 </svelte:head>
 
 {#snippet card()}
-  <section class="fl-error-card" aria-labelledby="frameleaf-error-title">
-    <span class="fl-error-icon" aria-hidden="true"><Icon {icon} size="32" /></span>
+  <section class="fl-error-card fl-reveal fl-continuous-corners" aria-labelledby="frameleaf-error-title">
+    <span class="fl-error-icon" aria-hidden="true"><Icon {icon} size={ICON_SIZE.hero} /></span>
     <h1 id="frameleaf-error-title">{title}</h1>
     <p class="fl-error-message">{message}</p>
     {#if actions.length > 0}
@@ -68,7 +69,7 @@
     {@render card()}
   </main>
 {:else}
-  <div class="fl-error-inline">
+  <div class="frameleaf fl-error-inline" data-theme={appTheme}>
     {@render card()}
   </div>
 {/if}
@@ -79,9 +80,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: var(--fl-space-8);
     min-height: 100dvh;
-    padding: 1.5rem 1rem;
+    padding: var(--fl-space-6) var(--fl-space-4);
     color: var(--fl-text);
     background: var(--fl-canvas);
   }
@@ -91,21 +92,28 @@
   .fl-error-inline {
     display: flex;
     justify-content: center;
-    padding: 3rem 1rem;
+    padding: var(--fl-space-12) var(--fl-space-4);
     color: var(--fl-text);
+    /* Inside the app shell the page behind shows through: only the card is a surface. */
+    background: transparent;
   }
   .fl-error-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--fl-space-3);
     width: min(28rem, 100%);
-    padding: 1.75rem 1.5rem;
+    padding: var(--fl-space-8) var(--fl-space-6);
     text-align: center;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card, var(--fl-radius));
-    box-shadow: var(--fl-shadow-1, none);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-1);
+  }
+  @supports (corner-shape: squircle) {
+    .fl-error-card {
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
   }
   .fl-error-icon {
     display: inline-flex;
@@ -113,47 +121,54 @@
   }
   h1 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 700;
+    font: var(--fl-type-title);
+    letter-spacing: var(--fl-tracking-title);
   }
   .fl-error-message {
     margin: 0;
     color: var(--fl-muted);
-    font-size: 0.9375rem;
-    line-height: 1.5;
+    font: var(--fl-type-body);
   }
   .fl-error-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.5rem;
-    margin-block-start: 0.5rem;
+    gap: var(--fl-space-2);
+    margin-block-start: var(--fl-space-2);
   }
   .fl-error-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
-    padding: 0 1rem;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-4);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
     color: var(--fl-text);
-    font: inherit;
-    font-size: 0.875rem;
+    font: var(--fl-type-body);
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
+    transition:
+      transform var(--fl-duration) var(--fl-spring),
+      background-color var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-error-action:hover {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
   .fl-error-action.primary {
     border-color: var(--fl-accent);
     background: var(--fl-accent);
     color: var(--fl-accent-text);
   }
+  .fl-error-action.primary:hover {
+    background: var(--fl-accent-hover);
+  }
   .fl-error-code {
-    margin: 0.25rem 0 0;
+    margin: var(--fl-space-1) 0 0;
     color: var(--fl-muted);
-    font-size: 0.75rem;
+    font: var(--fl-type-caption);
   }
   @media (max-width: 480px) {
     .fl-error-actions {

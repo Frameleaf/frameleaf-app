@@ -1,5 +1,7 @@
 <script lang="ts">
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import { motionFade, motionScale, springEasing } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
   import type { PersonResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -15,6 +17,7 @@
     label,
     removeLabel,
     onRemove,
+    onOpen,
     exclude = false,
     title,
     person,
@@ -23,6 +26,8 @@
     label?: string;
     removeLabel: string;
     onRemove: () => void;
+    /** Makes the label a button that opens the filters at this chip's section, as the Library's chips do. */
+    onOpen?: () => void;
     exclude?: boolean;
     title?: string;
     person?: PersonResponseDto;
@@ -31,11 +36,20 @@
   } = $props();
 </script>
 
-<span class="search-chip fl-continuous-corners" class:exclude {title}>
+<!-- A chip settles in on the spring and leaves on a short fade; Reduce Motion makes both a crossfade. -->
+<span
+  class="search-chip fl-continuous-corners"
+  class:exclude
+  {title}
+  in:motionScale={{ start: 0.9, duration: DURATION.slow, easing: springEasing }}
+  out:motionFade={{ duration: DURATION.fast }}
+>
   {#if person}
     <PersonAvatar {person} size={18} />
   {/if}
-  {#if children}{@render children()}{:else}{label}{/if}
+  {#if onOpen}
+    <button type="button" class="open" onclick={onOpen}>{label}</button>
+  {:else if children}{@render children()}{:else}{label}{/if}
   <button type="button" aria-label={removeLabel} onclick={onRemove}>
     <Icon icon={mdiClose} size="12" aria-hidden={true} />
   </button>
@@ -61,9 +75,9 @@
     }
   }
   .exclude {
-    background: color-mix(in srgb, #ff453a 22%, transparent);
+    background: color-mix(in srgb, var(--fl-danger) 22%, transparent);
     text-decoration: line-through;
-    text-decoration-color: #ff453a99;
+    text-decoration-color: color-mix(in srgb, var(--fl-danger) 60%, transparent);
   }
   button {
     display: inline-grid;
@@ -80,5 +94,13 @@
   }
   button:hover {
     background: color-mix(in srgb, var(--fl-text) 10%, transparent);
+  }
+  .open {
+    display: inline;
+    min-width: 0;
+    padding: 0 2px;
+    font: inherit;
+    text-align: start;
+    overflow-wrap: anywhere;
   }
 </style>

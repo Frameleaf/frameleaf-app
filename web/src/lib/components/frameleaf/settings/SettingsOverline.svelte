@@ -41,8 +41,8 @@
     color: var(--fl-accent);
   }
   .cc-overline :global(button:focus-visible) {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .cc-overline :global(svg) {
     flex-shrink: 0;

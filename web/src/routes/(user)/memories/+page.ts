@@ -7,10 +7,16 @@ export const load = (async ({ url }) => {
   const user = await authenticate(url);
   const $t = await getFormatter();
 
-  await memoryManager.applyPreferences();
+  // The memories are the page's one section: if they cannot load, the page still opens inside the
+  // app and the index offers a retry.
+  const loadFailed = await memoryManager
+    .applyPreferences()
+    .then(() => false)
+    .catch(() => true);
 
   return {
     user,
+    loadFailed,
     meta: {
       title: $t('memories'),
     },

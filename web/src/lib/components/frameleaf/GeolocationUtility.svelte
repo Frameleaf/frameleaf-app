@@ -1,5 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import type MapComponent from '$lib/components/shared-components/map/Map.svelte';
@@ -339,9 +340,10 @@
       </article>
     {/each}
   </div>
-  {#if loading}<p role="status">{$t('loading')}</p>{:else if nextPage !== null}<Button onclick={() => void load()}
-      >{$t('load_more')}</Button
-    >{/if}
+  {#if loading}<div role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="3rem" />
+    </div>{:else if nextPage !== null}<Button onclick={() => void load()}>{$t('load_more')}</Button>{/if}
   {#if !loading && assets.length === 0 && !error}<p role="status">{$t('no_assets_to_show')}</p>{/if}
 </div>
 
@@ -418,7 +420,7 @@
   }
   input:focus-visible,
   select:focus-visible {
-    outline: 2px solid var(--fl-accent);
+    outline: var(--fl-focus-ring);
   }
   .location {
     display: grid;
@@ -465,8 +467,8 @@
     padding: 0.625rem 0.875rem 0;
   }
   .map:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: -2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-inset);
   }
   .map-note {
     margin: 0;

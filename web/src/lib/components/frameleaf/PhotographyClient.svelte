@@ -1,5 +1,16 @@
 <script lang="ts">
+  /**
+   * The client's private gallery: a photographer's customer opens an invitation, favourites
+   * photographs, leaves notes, sends selections, approves edits and downloads.
+   *
+   * Favourites and notes save by themselves a moment after the last change, with a quiet status
+   * beside the count; there is no Save button to find, and leaving with something unsaved asks first.
+   * "Send selections" stays the one deliberate action. Everything shown is translated.
+   */
   import { onMount, onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiChevronLeft, mdiChevronRight, mdiHeart, mdiHeartOutline } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
   import {
     galleryRequest,
@@ -12,6 +23,7 @@
     type PresentationBlock,
   } from '$lib/frameleaf/photography/workflow-api';
   import Dialog from './Dialog.svelte';
+  import PhotographyStatus, { photographyErrorKey, photographyLabelKey } from './PhotographyStatus.svelte';
   import '$lib/frameleaf/photography/gallery.css';
   let { galleryId }: { galleryId: string } = $props();
   let gallery = $state<GuestGallery | null>(null);
@@ -22,6 +34,17 @@
   let error = $state('');
   let notice = $state('');
   let dirty = $state(false);
+  // Autosave: `edits` counts changes, so a save knows whether more arrived while it was away.
+  const AUTOSAVE_MS = 800;
+  let saveState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let saveRunning: Promise<boolean> | null = null;
+  /** The tab is being hidden or closed: saves ask the browser to finish them after the page goes. */
+  let leaving = false;
+  /** A request that outlives the page may carry 64 KB at most; a larger save goes the normal way. */
+  const KEEPALIVE_LIMIT = 60_000;
+  let edits = 0;
+  let justFavorited = $state('');
   let expiresAt = $state('');
   let choices = $state<string[]>([]);
   let notes = $state<Record<string, string>>({});
@@ -142,8 +165,10 @@
     comparison = {};
     compareOpen = false;
   };
-  function endAccess(message = 'This invitation has expired or access has ended.') {
+  function endAccess(message = $t('frameleaf_photography_client_access_expired')) {
     generation++;
+    clearTimeout(saveTimer);
+    saveState = 'idle';
     clearImages();
     gallery = null;
     session = '';
@@ -161,7 +186,7 @@
   }
   function failure(cause: unknown) {
     const status = (cause as { status?: number })?.status;
-    const message = cause instanceof Error ? cause.message : 'Please try again in a moment.';
+    const message = $t(photographyErrorKey(cause));
     if ([401, 403, 410].includes(status ?? 0)) {
       endAccess(message);
     } else {
@@ -365,46 +390,79 @@
       }
     }
   }
-  async function saveChoices() {
-    if (!gallery || busy) {
-      return;
+  /** A favourite, note or marked area changed: save it a moment after the last change. */
+  function changed() {
+    edits++;
+    dirty = true;
+    leaving = false;
+    notice = '';
+    saveState = 'saving';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void saveChoices(), AUTOSAVE_MS);
+  }
+  /**
+   * Saves favourites and notes now, without locking the page. One save runs at a time; changes made
+   * while it is away are kept and saved straight after. Resolves true once nothing is left unsaved.
+   */
+  async function saveChoices(options: { leaving?: boolean } = {}): Promise<boolean> {
+    clearTimeout(saveTimer);
+    // Once the page is on its way out, every save in this run is allowed to outlive it.
+    leaving ||= !!options.leaving;
+    if (saveRunning) {
+      return saveRunning;
     }
-    const current = ++generation;
-    busy = true;
-    error = '';
+    saveRunning = (async () => {
+      while (gallery && session && dirty && !disposed) {
+        const access = session;
+        const saving = edits;
+        saveState = 'saving';
+        try {
+          const body = {
+            expectedRevision: gallery.revision,
+            captureIds: choices,
+            notes: [...new Set([...Object.keys(notes), ...Object.keys(annotations)])]
+              .filter((id) => notes[id]?.trim() || (annotations[id]?.length ?? 0) > 0)
+              .map((captureId) => ({
+                captureId,
+                text: notes[captureId] ?? '',
+                ...(annotations[captureId]?.length && { annotations: $state.snapshot(annotations[captureId]) }),
+              })),
+          };
+          const result = await (leaving && JSON.stringify(body).length < KEEPALIVE_LIMIT
+            ? galleryRequest<GuestGallery>(galleryId, session, '/choices', 'PUT', body, { keepalive: true })
+            : galleryRequest<GuestGallery>(galleryId, session, '/choices', 'PUT', body));
+          if (disposed || session !== access) {
+            return false;
+          }
+          if (edits === saving) {
+            accept(result);
+            saveState = 'saved';
+            return true;
+          }
+          // More changed while this was saving: keep it, and save again with the new revision.
+          accept(result, true);
+        } catch (error_) {
+          if (!disposed && session === access) {
+            saveState = 'error';
+            failure(error_);
+          }
+          return false;
+        }
+      }
+      return !dirty;
+    })();
     try {
-      const result = await galleryRequest<GuestGallery>(galleryId, session, '/choices', 'PUT', {
-        expectedRevision: gallery.revision,
-        captureIds: choices,
-        notes: [...new Set([...Object.keys(notes), ...Object.keys(annotations)])]
-          .filter((id) => notes[id]?.trim() || (annotations[id]?.length ?? 0) > 0)
-          .map((captureId) => ({
-            captureId,
-            text: notes[captureId] ?? '',
-            ...(annotations[captureId]?.length && { annotations: $state.snapshot(annotations[captureId]) }),
-          })),
-      });
-      if (disposed || current !== generation) {
-        return;
-      }
-      accept(result);
-      notice = 'Your favourites and notes are saved.';
-    } catch (error_) {
-      if (!disposed && current === generation) {
-        failure(error_);
-      }
+      return await saveRunning;
     } finally {
-      if (!disposed && current === generation) {
-        busy = false;
-      }
+      saveRunning = null;
     }
   }
   async function submit() {
     if (!gallery || busy) {
       return;
     }
-    await saveChoices();
-    if (error || !gallery || !session) {
+    error = '';
+    if (!(await saveChoices()) || !gallery || !session) {
       return;
     }
     const current = ++generation;
@@ -418,7 +476,7 @@
       }
       accept(result);
       confirmSubmit = false;
-      notice = 'Your selections have been sent to the studio.';
+      notice = $t('frameleaf_photography_client_selections_sent');
     } catch (error_) {
       if (!disposed && current === generation) {
         failure(error_);
@@ -430,9 +488,32 @@
     }
   }
   function favorite(id: string) {
-    choices = choices.includes(id) ? choices.filter((value) => value !== id) : [...choices, id];
-    notice = 'Unsaved selections';
-    dirty = true;
+    const adding = !choices.includes(id);
+    choices = adding ? [...choices, id] : choices.filter((value) => value !== id);
+    justFavorited = adding ? id : '';
+    changed();
+  }
+  /** Previous or next photograph in the current view, without closing the dialog. */
+  function step(direction: number) {
+    const next = filtered[filtered.findIndex((photo) => photo.id === opened?.id) + direction];
+    if (opened && next) {
+      void openPhoto(next);
+    }
+  }
+  const neighbour = (direction: number) =>
+    opened ? filtered[filtered.findIndex((photo) => photo.id === opened?.id) + direction] : undefined;
+  function onDialogKey(event: KeyboardEvent) {
+    if (!opened || marking || compareOpen || confirmSubmit || event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))) {
+      return;
+    }
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      step(event.key === 'ArrowRight' ? 1 : -1);
+    }
   }
   async function openPhoto(photo: GuestPhoto) {
     closePhoto();
@@ -492,7 +573,7 @@
     }
     annotations[opened.id] ??= [];
     annotations[opened.id].push({ x: 0.25, y: 0.25, width: 0.5, height: 0.5, text: '' });
-    dirty = true;
+    changed();
   }
   function point(event: PointerEvent) {
     const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -527,7 +608,7 @@
     if (opened && annotationDraft && annotationDraft.width > 0.005 && annotationDraft.height > 0.005) {
       annotations[opened.id] ??= [];
       annotations[opened.id].push(annotationDraft);
-      dirty = true;
+      changed();
     }
     annotationStart = null;
     annotationDraft = null;
@@ -546,7 +627,7 @@
             ? 1 - annotation.x
             : 1 - annotation.y;
     annotation[field] = Math.round(Math.max(0, Math.min(maximum, value / 100)) * 10_000) / 10_000;
-    dirty = true;
+    changed();
   }
   async function compare() {
     if (compareIds.length !== 2) {
@@ -660,7 +741,9 @@
         return;
       }
       accept(result);
-      notice = approved ? 'Photograph approved.' : 'Your revision request has been sent.';
+      notice = approved
+        ? $t('frameleaf_photography_client_approved')
+        : $t('frameleaf_photography_client_revision_sent');
     } catch (error_) {
       if (!disposed && current === generation) {
         failure(error_);
@@ -687,7 +770,8 @@
       );
       const url = new URL(result.url);
       if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com') {
-        throw new Error('The checkout link could not be verified. Contact the studio.');
+        error = $t('frameleaf_photography_client_checkout_unverified');
+        return;
       }
       if (!disposed) {
         location.assign(url.href);
@@ -721,7 +805,7 @@
         return;
       }
       accept(result);
-      notice = 'Order accepted. The studio will prepare your photographs.';
+      notice = $t('frameleaf_photography_client_order_accepted');
     } catch (error_) {
       if (!disposed && current === generation) {
         failure(error_);
@@ -752,22 +836,66 @@
       }
     }
     const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        leaving = false;
+      }
       if (document.visibilityState === 'visible' && session) {
         void reload();
+      } else if (dirty) {
+        // Leaving the tab: save now, without waiting for the pause, in a request that survives a close.
+        void saveChoices({ leaving: true });
       }
     };
+    // Closing with something unsaved asks first, and the save is started straight away.
+    const guard = (event: BeforeUnloadEvent) => {
+      if (!dirty) {
+        return;
+      }
+      void saveChoices({ leaving: true });
+      event.preventDefault();
+    };
     document.addEventListener('visibilitychange', refresh);
-    return () => document.removeEventListener('visibilitychange', refresh);
+    addEventListener('beforeunload', guard);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      removeEventListener('beforeunload', guard);
+    };
   });
   onDestroy(() => {
     disposed = true;
     generation++;
     clearImages();
     clearTimeout(expiryTimer);
+    clearTimeout(saveTimer);
     password = '';
     invitation = '';
   });
+  const photoState = (code: string) => {
+    const key = photographyLabelKey('photo', code);
+    return key ? $t(key) : code;
+  };
+  const orderState = (code: string) => {
+    const key = photographyLabelKey('order', code);
+    return key ? $t(key) : code;
+  };
+  // The "Choose your files" list can hold thousands of rows, so the words they share are read once
+  // and each row only fills in its number.
+  const fileWords = $derived({
+    fullResolution: $t('frameleaf_photography_full_resolution'),
+    branded: $t('frameleaf_photography_client_studio_branding'),
+    clean: $t('frameleaf_photography_client_clean_edit'),
+    photo: $t('frameleaf_photography_photo_number', { values: { number: '\u{1}' } }).split('\u{1}'),
+  });
+  const photoLabel = (number: number) => fileWords.photo.join(String(number));
+  const outputSummary = (output: NonNullable<GuestPhoto['outputs']>[number]) =>
+    `${
+      output.kind === 'print'
+        ? fileWords.fullResolution
+        : $t('frameleaf_photography_pixels', { values: { count: output.exportSpec.maxEdge } })
+    } · ${output.branded ? fileWords.branded : fileWords.clean}`;
 </script>
+
+<svelte:window onkeydown={onDialogKey} />
 
 <svelte:head
   ><meta name="robots" content="noindex,nofollow,noarchive" /><meta
@@ -788,39 +916,42 @@
       <a href="#collection" class="pc-studio"
         >{#if logo}<img src={logo} alt="" />{/if}{gallery.brand.name}</a
       >
-      <nav aria-label="Collection">
-        <a href="#photographs">Photographs</a><a href="#your-order">Your order</a><button
-          type="button"
-          disabled={busy}
-          onclick={reload}>Refresh</button
-        >
+      <nav aria-label={$t('frameleaf_photography_client_collection')}>
+        <a href="#photographs">{$t('frameleaf_photography_client_photographs')}</a><a href="#your-order"
+          >{$t('frameleaf_photography_client_your_order')}</a
+        ><button type="button" disabled={busy} onclick={reload}>{$t('frameleaf_photography_refresh')}</button>
       </nav>
     </header>
     <section class="pc-cover" id="collection" data-treatment={gallery.presentation.coverTreatment}>
       {#if cover && (coverPreview || thumbnails[cover.id]) && gallery.presentation.coverTreatment !== 'quiet'}<img
           src={coverPreview || thumbnails[cover.id]}
-          alt="Collection cover"
+          alt={$t('frameleaf_photography_client_cover_alt')}
           style={`object-position:center ${gallery.presentation.coverFocal}%`}
         />{/if}
       <div class="pc-cover-copy">
         <span>{gallery.brand.tagline}</span>
         <h1>{gallery.title}</h1>
-        <p>{gallery.presentation.introduction || 'A collection of moments, just for you.'}</p>
-        <a href="#photographs">Explore the collection ↓</a>
+        <p>{gallery.presentation.introduction || $t('frameleaf_photography_client_intro_default')}</p>
+        <a href="#photographs">{$t('frameleaf_photography_client_explore')} ↓</a>
       </div>
     </section>
     <main id="photographs" class="pc-main">
       {#if error}<div class="pc-notice" role="alert">
-          {error}<button type="button" disabled={busy} onclick={reload}>Try again</button>
+          {error}<button type="button" disabled={busy} onclick={reload}>{$t('frameleaf_error_retry')}</button>
         </div>{/if}
       {#if notice}<p class="pc-notice" role="status">{notice}</p>{/if}
       <div class="pc-toolbar">
         <div>
-          <h2>{favoritesOnly ? 'Your favourites' : 'The photographs'}</h2>
+          <h2>
+            {favoritesOnly
+              ? $t('frameleaf_photography_client_your_favourites')
+              : $t('frameleaf_photography_client_the_photographs')}
+          </h2>
           <p>
-            {gallery.photos.length} photographs · {choices.length}
-            {choices.length === 1 ? 'favourite' : 'favourites'}{gallery.pricing.selectionDeadline
-              ? ` · Choose by ${new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale)}`
+            {$t('frameleaf_photography_client_counts', {
+              values: { photos: gallery.photos.length, favourites: choices.length },
+            })}{gallery.pricing.selectionDeadline
+              ? ` · ${$t('frameleaf_photography_client_choose_by', { values: { date: new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale) } })}`
               : ''}
           </p>
         </div>
@@ -831,18 +962,25 @@
             onclick={() => {
               favoritesOnly = !favoritesOnly;
               void prepareThumbnails();
-            }}>Favourites {choices.length}</button
-          ><button type="button" disabled={busy} onclick={saveChoices}>Save favourites</button><button
+            }}>{$t('frameleaf_photography_client_favourites_count', { values: { count: choices.length } })}</button
+          ><PhotographyStatus
+            state={saveState}
+            savingLabel={$t('frameleaf_photography_saving')}
+            savedLabel={$t('frameleaf_photography_client_saved')}
+            errorLabel={$t('frameleaf_photography_client_not_saved')}
+            retryLabel={$t('frameleaf_error_retry')}
+            onRetry={() => void saveChoices()}
+          /><button
             type="button"
             class="pc-primary"
             disabled={busy || choices.length === 0}
-            onclick={() => (confirmSubmit = true)}>Send selections</button
+            onclick={() => (confirmSubmit = true)}>{$t('frameleaf_photography_client_send_selections')}</button
           >
         </div>
       </div>
       {#if gallery.presentation.showChapters && gallery.chapters.length > 0}<nav
           class="pc-chapters"
-          aria-label="Photo chapters"
+          aria-label={$t('frameleaf_photography_client_chapters')}
         >
           <button
             type="button"
@@ -851,7 +989,7 @@
               chapter = '';
               limit = 80;
               void prepareThumbnails();
-            }}>All photographs</button
+            }}>{$t('frameleaf_photography_client_all_photographs')}</button
           >{#each gallery.chapters as row (row.id)}<button
               type="button"
               aria-pressed={chapter === row.id}
@@ -867,54 +1005,61 @@
           <p>{gallery.chapters.find((row) => row.id === chapter)?.description}</p>
         </div>{/if}
       {#if compareIds.length}<div class="pc-compare-tools">
-          <span>{compareIds.length} of 2 photographs to compare</span><button
-            type="button"
-            disabled={compareIds.length !== 2}
-            onclick={compare}>Compare</button
-          ><button type="button" onclick={() => (compareIds = [])}>Clear</button>
+          <span>{$t('frameleaf_photography_client_compare_count', { values: { count: compareIds.length } })}</span
+          ><button type="button" disabled={compareIds.length !== 2} onclick={compare}
+            >{$t('frameleaf_photography_compare')}</button
+          ><button type="button" onclick={() => (compareIds = [])}>{$t('frameleaf_photography_client_clear')}</button>
         </div>{/if}
       {#snippet photoCard(photo: GuestPhoto)}<article class="pc-photo">
           <button
             type="button"
             class="pc-image"
-            aria-label={`View photo ${photo.number}`}
+            aria-label={$t('frameleaf_photography_client_view_photo', { values: { number: photo.number } })}
             onclick={() => openPhoto(photo)}
             >{#if thumbnails[photo.id]}<img
                 src={thumbnails[photo.id]}
-                alt={`Photo ${photo.number}`}
+                alt={$t('frameleaf_photography_photo_number', { values: { number: photo.number } })}
                 loading="lazy"
-              />{:else}<span>Preparing photograph…</span>{/if}</button
+              />{:else}<span>{$t('frameleaf_photography_client_preparing')}</span>{/if}</button
           >
           <div class="pc-photo-caption">
             <div>
               {#if gallery?.presentation.showNumbers}<span>#{String(photo.number).padStart(3, '0')}</span>{/if}<small
-                >{photo.status}</small
+                >{photoState(photo.status)}</small
               >
             </div>
             <div class="pc-actions">
               <button
                 type="button"
-                aria-label={`${choices.includes(photo.id) ? 'Remove' : 'Add'} photo ${photo.number} ${choices.includes(photo.id) ? 'from' : 'to'} favourites`}
+                class="pc-heart"
+                class:is-fresh={justFavorited === photo.id}
+                aria-label={choices.includes(photo.id)
+                  ? $t('frameleaf_photography_client_remove_favourite_photo', { values: { number: photo.number } })
+                  : $t('frameleaf_photography_client_add_favourite_photo', { values: { number: photo.number } })}
                 aria-pressed={choices.includes(photo.id)}
-                disabled={busy}
-                onclick={() => favorite(photo.id)}>{choices.includes(photo.id) ? '♥' : '♡'}</button
+                onclick={() => favorite(photo.id)}
+                ><Icon
+                  icon={choices.includes(photo.id) ? mdiHeart : mdiHeartOutline}
+                  size="20"
+                  aria-hidden={true}
+                /></button
               ><label
                 ><input
                   type="checkbox"
-                  aria-label={`Compare photo ${photo.number}`}
+                  aria-label={$t('frameleaf_photography_client_compare_photo', { values: { number: photo.number } })}
                   checked={compareIds.includes(photo.id)}
                   disabled={!compareIds.includes(photo.id) && compareIds.length === 2}
                   onchange={(event) =>
                     (compareIds = event.currentTarget.checked
                       ? [...compareIds, photo.id]
                       : compareIds.filter((id) => id !== photo.id))}
-                />Compare</label
+                />{$t('frameleaf_photography_compare')}</label
               >{#if photo.outputs?.some((output) => output.canDownload)}<button
                   type="button"
                   disabled={busy}
-                  onclick={() => openPhoto(photo)}>Download options</button
+                  onclick={() => openPhoto(photo)}>{$t('frameleaf_photography_client_download_options')}</button
                 >{:else if photo.canDownload}<button type="button" disabled={busy} onclick={() => download(photo)}
-                  >Download</button
+                  >{$t('frameleaf_photography_client_download')}</button
                 >{/if}
             </div>
           </div>
@@ -923,7 +1068,10 @@
         {#each gallery.presentation.blocks as block (block.id)}{@const photos = blockPhotos(block)}
           <section class="pc-block" data-kind={block.type}>
             {#if block.type === 'chapter'}<div class="pc-chapter-intro">
-                <h2>{gallery.chapters.find((row) => row.id === block.chapterId)?.title ?? 'The collection'}</h2>
+                <h2>
+                  {gallery.chapters.find((row) => row.id === block.chapterId)?.title ??
+                    $t('frameleaf_photography_client_the_collection')}
+                </h2>
                 <p>{block.text || gallery.chapters.find((row) => row.id === block.chapterId)?.description}</p>
               </div>
             {:else if block.type === 'caption'}<p class="pc-story-caption">{block.text}</p>
@@ -939,14 +1087,14 @@
                     onclick={() => {
                       slideIndexes[block.id] = slide - 1;
                       void prepareThumbnails();
-                    }}>Previous photograph</button
+                    }}>{$t('frameleaf_photography_client_previous')}</button
                   ><span>{slide + 1} / {photos.length}</span><button
                     type="button"
                     disabled={slide >= photos.length - 1}
                     onclick={() => {
                       slideIndexes[block.id] = slide + 1;
                       void prepareThumbnails();
-                    }}>Next photograph</button
+                    }}>{$t('frameleaf_photography_client_next')}</button
                   >
                 </div>{/if}
             {:else}<div class="pc-grid">
@@ -957,50 +1105,65 @@
               </p>{/if}
           </section>{/each}
       {:else}<div class="pc-grid">
-          {#each visible as photo (photo.id)}{@render photoCard(photo)}{:else}<p>No photographs in this view.</p>{/each}
+          {#each visible as photo (photo.id)}{@render photoCard(photo)}{:else}<p>
+              {$t('frameleaf_photography_client_none_in_view')}
+            </p>{/each}
         </div>{/if}
       {#if limit < gallery.photos.length}<button
           type="button"
           onclick={() => {
             limit += 80;
             void prepareThumbnails();
-          }}>Show more photographs</button
+          }}>{$t('frameleaf_photography_client_show_more')}</button
         >{/if}
       <section id="your-order" class="pc-orders">
         <div>
-          <span class="pc-eyebrow">Your collection</span>
-          <h2>Selections & delivery</h2>
+          <span class="pc-eyebrow">{$t('frameleaf_photography_client_your_collection')}</span>
+          <h2>{$t('frameleaf_photography_section_orders')}</h2>
           <p>
-            {gallery.pricing.includedCount} photographs included · {money(
-              gallery.pricing.additionalPrice,
-              gallery.pricing.currency,
-            )} per additional photograph
+            {$t('frameleaf_photography_client_pricing', {
+              values: {
+                count: gallery.pricing.includedCount,
+                price: money(gallery.pricing.additionalPrice, gallery.pricing.currency),
+              },
+            })}
           </p>
           <p>{gallery.pricing.terms}</p>
         </div>
         <div>
           {#each gallery.rounds as round (round.id)}<p>
-              {round.captureIds.length} selections sent · {new Date(round.createdAt).toLocaleDateString($locale)}
+              {$t('frameleaf_photography_client_round_sent', {
+                values: { count: round.captureIds.length, date: new Date(round.createdAt).toLocaleDateString($locale) },
+              })}
             </p>{/each}{#each gallery.orders as order (order.id)}<article class="pc-order">
-              <strong>{order.captureIds.length} photographs · {money(order.total, order.currency)}</strong>
+              <strong
+                >{$t('frameleaf_photography_photographs_count', { values: { count: order.captureIds.length } })} · {money(
+                  order.total,
+                  order.currency,
+                )}</strong
+              >
               <p>
-                {order.status} · {order.paymentTiming === 'before-editing'
-                  ? 'Payment before editing'
-                  : 'Payment after approval'}
+                {orderState(order.status)} · {order.paymentTiming === 'before-editing'
+                  ? $t('frameleaf_photography_payment_before_editing')
+                  : $t('frameleaf_photography_payment_after_approval')}
               </p>
               {#if order.status === 'quoted'}<p>{order.terms}</p>
                 <button type="button" class="pc-primary" disabled={busy} onclick={() => acceptOrder(order.id)}
-                  >Accept order & terms</button
+                  >{$t('frameleaf_photography_client_accept_order')}</button
                 >{:else if order.status === 'accepted' && order.total > 0 && gallery.checkoutAvailable}<button
                   type="button"
                   disabled={busy}
-                  onclick={() => checkout(order.id)}>Pay securely</button
-                >{:else if order.status === 'accepted' && order.total > 0}<p>Contact the studio to arrange payment.</p>
-                {#if gallery.brand.email}<a href={`mailto:${gallery.brand.email}`}>Contact the studio</a>{/if}{/if}
+                  onclick={() => checkout(order.id)}>{$t('frameleaf_photography_client_pay')}</button
+                >{:else if order.status === 'accepted' && order.total > 0}<p>
+                  {$t('frameleaf_photography_client_arrange_payment')}
+                </p>
+                {#if gallery.brand.email}<a href={`mailto:${gallery.brand.email}`}
+                    >{$t('frameleaf_photography_client_contact_studio')}</a
+                  >{/if}{/if}
             </article>{:else}<p>
-              Your studio will confirm the order after you send your selections.
+              {$t('frameleaf_photography_client_order_pending')}
             </p>{/each}{#if readyOutputs.length > 0}<div class="pc-download-choices">
-              <h3>Choose your files</h3>
+              <h3>{$t('frameleaf_photography_client_choose_files')}</h3>
               {#each readyOutputs as item (item.output.id)}<label
                   ><input
                     type="checkbox"
@@ -1010,27 +1173,29 @@
                         ? [...downloadChoices, item.output.id]
                         : downloadChoices.filter((id) => id !== item.output.id);
                     }}
-                  />Photo {item.photo.number} · {item.output.label} · {item.output.kind === 'print'
-                    ? 'Full resolution'
-                    : `${item.output.exportSpec.maxEdge}px`} · {item.output.branded
-                    ? 'Studio branding'
-                    : 'Clean edit'}</label
+                  />{photoLabel(item.photo.number)} · {item.output.label} · {outputSummary(item.output)}</label
                 >{/each}
-            </div>{:else if downloads.length}<p>{downloads.length} approved photographs ready to download.</p>
+            </div>{:else if downloads.length}<p>
+              {$t('frameleaf_photography_client_ready_downloads', { values: { count: downloads.length } })}
+            </p>
           {/if}
           {#if readyOutputs.length || downloads.length}
             {#if archiveParts > 1}<p>
-                {archiveCount} files in {archiveParts} ZIP parts. Download each part separately.
+                {$t('frameleaf_photography_client_zip_parts', { values: { files: archiveCount, parts: archiveParts } })}
               </p>
               {#each Array.from({ length: archiveParts }, (_, part) => part) as part (part)}<button
                   type="button"
                   class="pc-primary"
                   disabled={busy}
                   onclick={() => zip(part)}
-                  >Download part {part + 1} ({Math.min(1000, archiveCount - part * 1000)} files)</button
+                  >{$t('frameleaf_photography_client_download_part', {
+                    values: { part: part + 1, files: Math.min(1000, archiveCount - part * 1000) },
+                  })}</button
                 >{/each}
             {:else}<button type="button" class="pc-primary" disabled={busy || archiveCount === 0} onclick={() => zip()}
-                >{readyOutputs.length > 0 ? 'Download selected files' : 'Download edited collection'}</button
+                >{readyOutputs.length > 0
+                  ? $t('frameleaf_photography_client_download_selected')
+                  : $t('frameleaf_photography_client_download_collection')}</button
               >{/if}
           {/if}
         </div>
@@ -1046,19 +1211,42 @@
     </footer>
     <Dialog
       open={!!opened}
-      title={opened ? `Photo ${opened.number}` : 'Photograph'}
-      closeLabel="Close photograph"
+      title={opened
+        ? $t('frameleaf_photography_photo_number', { values: { number: opened.number } })
+        : $t('frameleaf_photography_client_photograph')}
+      closeLabel={$t('close')}
       wide
       onRequestClose={closePhoto}
       >{#if opened}<div class="pc-dialog">
           {#if error}<p role="alert">{error}</p>{/if}
           {#if notice}<p role="status">{notice}</p>{/if}
-          {#if openedOutput}<p>{openedOutput.label} · Review this version</p>{/if}
+          {#if openedOutput}<p>{openedOutput.label} · {$t('frameleaf_photography_client_review_version')}</p>{/if}
+          <div class="pc-stepper">
+            <button
+              type="button"
+              aria-label={$t('frameleaf_photography_client_previous')}
+              disabled={!neighbour(-1)}
+              onclick={() => step(-1)}><Icon icon={mdiChevronLeft} size="20" aria-hidden={true} /></button
+            >
+            <span
+              >{$t('frameleaf_photography_client_position', {
+                values: { index: filtered.findIndex((photo) => photo.id === opened?.id) + 1, count: filtered.length },
+              })}</span
+            >
+            <button
+              type="button"
+              aria-label={$t('frameleaf_photography_client_next')}
+              disabled={!neighbour(1)}
+              onclick={() => step(1)}><Icon icon={mdiChevronRight} size="20" aria-hidden={true} /></button
+            >
+          </div>
           {#if preview}<button
               type="button"
               class="pc-annotated-image"
               class:marking
-              aria-label={marking ? 'Drag to mark an area, or press Enter to add an area' : `Photo ${opened.number}`}
+              aria-label={marking
+                ? $t('frameleaf_photography_client_marking_label')
+                : $t('frameleaf_photography_photo_number', { values: { number: opened.number } })}
               onpointerdown={beginAnnotation}
               onpointermove={drawAnnotation}
               onpointerup={finishAnnotation}
@@ -1077,7 +1265,7 @@
               }}
               ><img
                 src={preview}
-                alt={`Photo ${opened.number}`}
+                alt={$t('frameleaf_photography_photo_number', { values: { number: opened.number } })}
               />{#each annotations[opened.id] ?? [] as area, index (index)}<span
                   class="pc-annotation"
                   style={`left:${area.x * 100}%;top:${area.y * 100}%;width:${area.width * 100}%;height:${area.height * 100}%`}
@@ -1086,16 +1274,13 @@
                   class="pc-annotation"
                   style={`left:${annotationDraft.x * 100}%;top:${annotationDraft.y * 100}%;width:${annotationDraft.width * 100}%;height:${annotationDraft.height * 100}%`}
                 ></span>{/if}</button
-            >{:else}<p role="status">Loading photograph…</p>{/if}<label
-            >Note for the studio<textarea
+            >{:else}<p role="status">{$t('frameleaf_photography_client_loading_photo')}</p>{/if}<label
+            >{$t('frameleaf_photography_client_note_label')}<textarea
               maxlength="2000"
               rows="3"
               bind:value={notes[opened.id]}
-              oninput={() => {
-                dirty = true;
-                notice = 'Unsaved notes';
-              }}
-              placeholder="Tell us what you love or what you would like adjusted."></textarea></label
+              oninput={changed}
+              placeholder={$t('frameleaf_photography_client_note_placeholder')}></textarea></label
           >
           <div class="pc-actions">
             <button
@@ -1104,27 +1289,31 @@
               aria-pressed={marking}
               onclick={() => {
                 marking = !marking;
-              }}>Mark an area</button
+              }}>{$t('frameleaf_photography_client_mark_area')}</button
             ><button
               type="button"
               disabled={busy || !preview || (annotations[opened.id]?.length ?? 0) >= 20}
-              onclick={addAnnotation}>Add area with controls</button
+              onclick={addAnnotation}>{$t('frameleaf_photography_client_add_area')}</button
             >
           </div>
-          {#if marking}<p role="status">Drag over the photograph to mark an area.</p>{/if}
+          {#if marking}<p role="status">{$t('frameleaf_photography_client_marking_hint')}</p>{/if}
           {#each annotations[opened.id] ?? [] as area, index (index)}<div class="pc-area-controls">
               <label
-                >Area {index + 1} note<textarea
+                >{$t('frameleaf_photography_client_area_note', { values: { number: index + 1 } })}<textarea
                   maxlength="500"
                   rows="2"
                   bind:value={area.text}
-                  oninput={() => {
-                    dirty = true;
-                  }}></textarea></label
+                  oninput={changed}></textarea></label
               >
               <div class="pc-area-bounds">
                 {#each ['x', 'y', 'width', 'height'] as field (field)}<label
-                    >{field === 'x' ? 'Left' : field === 'y' ? 'Top' : field === 'width' ? 'Width' : 'Height'} (%)<input
+                    >{field === 'x'
+                      ? $t('frameleaf_photography_client_area_left')
+                      : field === 'y'
+                        ? $t('frameleaf_photography_client_area_top')
+                        : field === 'width'
+                          ? $t('frameleaf_photography_client_area_width')
+                          : $t('frameleaf_photography_client_area_height')}<input
                       type="number"
                       min="0"
                       max="100"
@@ -1145,50 +1334,57 @@
                 disabled={busy}
                 onclick={() => {
                   annotations[opened!.id].splice(index, 1);
-                  dirty = true;
-                }}>Remove area {index + 1}</button
+                  changed();
+                }}>{$t('frameleaf_photography_client_remove_area', { values: { number: index + 1 } })}</button
               >
             </div>{/each}
           <div class="pc-actions">
             <button type="button" aria-pressed={choices.includes(opened.id)} onclick={() => favorite(opened!.id)}
-              >{choices.includes(opened.id) ? 'Remove favourite' : 'Add favourite'}</button
-            ><button type="button" disabled={busy} onclick={saveChoices}>Save note</button>{#if approvalRevision}<button
+              >{choices.includes(opened.id)
+                ? $t('frameleaf_photography_client_remove_favourite')
+                : $t('frameleaf_photography_client_add_favourite')}</button
+            ><PhotographyStatus
+              state={saveState}
+              savingLabel={$t('frameleaf_photography_saving')}
+              savedLabel={$t('frameleaf_photography_client_saved')}
+              errorLabel={$t('frameleaf_photography_client_not_saved')}
+              retryLabel={$t('frameleaf_error_retry')}
+              onRetry={() => void saveChoices()}
+            />{#if approvalRevision}<button
                 type="button"
                 disabled={busy || !preview}
-                onclick={() => approval(opened!, true)}>Approve photograph</button
+                onclick={() => approval(opened!, true)}>{$t('frameleaf_photography_client_approve')}</button
               ><button
                 type="button"
                 disabled={busy || !preview || !notes[opened.id]?.trim()}
-                onclick={() => approval(opened!, false)}>Request adjustment</button
+                onclick={() => approval(opened!, false)}>{$t('frameleaf_photography_client_request_adjustment')}</button
               >{/if}{#if (opened.outputs?.length ?? 0) === 0 && opened.canDownload}<button
                 type="button"
                 disabled={busy}
-                onclick={() => download(opened!)}>Download edited photograph</button
+                onclick={() => download(opened!)}>{$t('frameleaf_photography_client_download_edited')}</button
               >{/if}
           </div>
           {#if opened.outputs?.length}<div class="pc-version-outputs">
-              <h3>Edited files</h3>
+              <h3>{$t('frameleaf_photography_client_edited_files')}</h3>
               {#each opened.outputs as output (output.id)}<div class="pc-output">
-                  <strong>{output.label}</strong><span
-                    >{output.kind === 'print' ? 'Full resolution' : `${output.exportSpec.maxEdge}px`} · {output.branded
-                      ? 'Studio branding'
-                      : 'Clean edit'}</span
-                  >{#if output.canDownload}<button
+                  <strong>{output.label}</strong><span>{outputSummary(output)}</span>{#if output.canDownload}<button
                       type="button"
                       disabled={busy}
-                      onclick={() => download(opened!, output)}>Download {output.label}</button
+                      onclick={() => download(opened!, output)}
+                      >{$t('frameleaf_photography_client_download_named', { values: { name: output.label } })}</button
                     >{:else}<span
                       >{output.blockedReason === 'payment'
-                        ? 'Available after payment'
+                        ? $t('frameleaf_photography_client_blocked_payment')
                         : output.blockedReason === 'approval'
-                          ? 'Awaiting approval'
+                          ? $t('frameleaf_photography_client_blocked_approval')
                           : output.blockedReason === 'render'
-                            ? 'Preparing this file'
-                            : 'The studio will confirm availability'}</span
+                            ? $t('frameleaf_photography_client_blocked_render')
+                            : $t('frameleaf_photography_client_blocked_other')}</span
                     >{/if}{#if output.approvalPreviewUrl}<button
                       type="button"
                       disabled={busy}
-                      onclick={() => openOutput(opened!, output)}>Review {output.label}</button
+                      onclick={() => openOutput(opened!, output)}
+                      >{$t('frameleaf_photography_client_review_named', { values: { name: output.label } })}</button
                     >{/if}
                 </div>{/each}
             </div>{/if}
@@ -1196,8 +1392,8 @@
     >
     <Dialog
       bind:open={compareOpen}
-      title="Find your favourite"
-      closeLabel="Close comparison"
+      title={$t('frameleaf_photography_client_compare_title')}
+      closeLabel={$t('close')}
       wide
       onRequestClose={() => (compareOpen = false)}
       ><div class="pc-comparison">
@@ -1205,46 +1401,65 @@
         {#each compareIds as id (id)}<div>
             {#if comparison[id]}<img
                 src={comparison[id]}
-                alt={`Photo ${gallery.photos.find((photo) => photo.id === id)?.number}`}
-              />{:else}<p role="status">Loading…</p>{/if}<button
+                alt={$t('frameleaf_photography_photo_number', {
+                  values: { number: gallery.photos.find((photo) => photo.id === id)?.number ?? '' },
+                })}
+              />{:else}<p role="status">{$t('loading')}</p>{/if}<button
               type="button"
               aria-pressed={choices.includes(id)}
-              onclick={() => favorite(id)}>{choices.includes(id) ? 'Favourite ♥' : 'Choose favourite'}</button
+              onclick={() => favorite(id)}
+              ><Icon
+                icon={choices.includes(id) ? mdiHeart : mdiHeartOutline}
+                size="18"
+                aria-hidden={true}
+              />{choices.includes(id)
+                ? $t('frameleaf_photography_client_favourite')
+                : $t('frameleaf_photography_client_choose_favourite')}</button
             >
           </div>{/each}
       </div></Dialog
     >
     <Dialog
       bind:open={confirmSubmit}
-      title="Send your selections?"
-      closeLabel="Close selection confirmation"
+      title={$t('frameleaf_photography_client_send_title')}
+      closeLabel={$t('close')}
       onRequestClose={() => (confirmSubmit = false)}
       ><div class="pc-dialog">
-        <p>{choices.length} photographs selected.</p>
         <p>
-          {money(selectedPrice, gallery.pricing.currency)} in additional selections, before any studio-confirmed package or
-          bundle.
+          {$t('frameleaf_photography_client_selected_count', { values: { count: choices.length } })}
+        </p>
+        <p>
+          {$t('frameleaf_photography_client_additional_price', {
+            values: { price: money(selectedPrice, gallery.pricing.currency) },
+          })}
         </p>
         <p>{gallery.pricing.terms}</p>
-        <p>The studio will confirm your order. You can send another selection round later.</p>
-        <button type="button" class="pc-primary" disabled={busy} onclick={submit}>Send selections to studio</button>
+        <p>{$t('frameleaf_photography_client_send_note')}</p>
+        {#if error}<p role="alert">{error}</p>{/if}
+        <button type="button" class="pc-primary" disabled={busy} onclick={submit}
+          >{busy
+            ? $t('frameleaf_photography_client_sending')
+            : $t('frameleaf_photography_client_send_to_studio')}</button
+        >
       </div></Dialog
     >
   </div>
 {:else}
   <main class="pc-access">
-    <span class="pc-eyebrow">Your photography collection</span>
-    <h1>A collection for you</h1>
+    <span class="pc-eyebrow">{$t('frameleaf_photography_client_access_eyebrow')}</span>
+    <h1>{$t('frameleaf_photography_client_access_title')}</h1>
     {#if error}<p role="alert">{error}</p>{/if}{#if invitation}<form onsubmit={enter}>
         <label
-          >Gallery password (if provided)<input
+          >{$t('frameleaf_photography_client_password')}<input
             type="password"
             autocomplete="current-password"
             bind:value={password}
           /></label
-        ><button type="submit" disabled={busy}>{busy ? 'Opening…' : 'Open collection'}</button>
-      </form>{:else if busy}<p role="status">Opening your collection…</p>{:else}<p>
-        Open the private invitation your studio sent you.
+        ><button type="submit" disabled={busy}
+          >{busy ? $t('frameleaf_photography_client_opening') : $t('frameleaf_photography_client_open')}</button
+        >
+      </form>{:else if busy}<p role="status">{$t('frameleaf_photography_client_opening_yours')}</p>{:else}<p>
+        {$t('frameleaf_photography_client_open_invitation')}
       </p>{/if}
   </main>
 {/if}

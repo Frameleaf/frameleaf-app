@@ -11,6 +11,9 @@
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
   import AccountTable from '$lib/components/frameleaf/AccountTable.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import { dock, motionScrollBehavior } from '$lib/frameleaf/motion';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import '$lib/frameleaf/libraries.css';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -40,7 +43,8 @@
   let failed = $state(false);
 
   // What the old `/admin/users` layout loaded: the server's storage info and every account.
-  onMount(() => {
+  const loadUsers = () => {
+    failed = false;
     void requestServerInfo()
       .then(() => searchUsersAdmin({ withDeleted: true }))
       .then((result) => {
@@ -48,6 +52,9 @@
         loaded = true;
       })
       .catch(() => (failed = true));
+  };
+  onMount(() => {
+    loadUsers();
     void getServerStatistics()
       .then((statistics) => (usage = statistics.usageByUser))
       .catch(() => {
@@ -78,7 +85,7 @@
   let detailElement: HTMLElement | undefined = $state();
   $effect(() => {
     if (selected && detailElement) {
-      detailElement.scrollIntoView?.({ block: 'start' });
+      detailElement.scrollIntoView?.({ block: 'start', behavior: motionScrollBehavior() });
     }
   });
 </script>
@@ -107,21 +114,34 @@
   </header>
 
   {#if loaded}
-    <AccountTable {users} {usage} />
+    <AccountTable {users} {usage} selectedId={selected} />
   {:else if failed}
-    <p role="alert">{$t('frameleaf_cc_load_failed')}</p>
+    <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={loadUsers} />
   {:else}
-    <p role="status">{$t('loading')}</p>
+    <div class="users-loading" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="2.75rem" />
+      <Skeleton variant="block" height="12rem" />
+    </div>
   {/if}
 
   <!-- As in the template, one account's detail opens below the list, which stays in view above it. -->
   {#if selected}
-    <div class="resource-detail" bind:this={detailElement}>
-      <UserDetail id={selected} />
-    </div>
+    {#key selected}
+      <div class="resource-detail" bind:this={detailElement} in:dock>
+        <UserDetail id={selected} />
+      </div>
+    {/key}
   {/if}
 </section>
 
 {#if creating}
   <AccountFormDialog onClose={onCreateClose} />
 {/if}
+
+<style>
+  .users-loading {
+    display: grid;
+    gap: var(--fl-space-3);
+  }
+</style>

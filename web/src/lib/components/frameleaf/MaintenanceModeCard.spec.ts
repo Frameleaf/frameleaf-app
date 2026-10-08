@@ -37,7 +37,7 @@ describe('MaintenanceModeCard (FL-81 CC-14/15/16)', () => {
     expect(screen.getByRole('group', { name: 'What people see during maintenance' })).toHaveTextContent(
       'Frameleaf is being looked after',
     );
-    expect(screen.getByRole('link', { name: 'Database backups' })).toHaveAttribute('href', '/b');
+    expect(screen.getByRole('link', { name: 'Backups & restore' })).toHaveAttribute('href', '/b');
     expect(screen.getByRole('link', { name: 'Integrity checks' })).toHaveAttribute('href', '/i');
   });
 

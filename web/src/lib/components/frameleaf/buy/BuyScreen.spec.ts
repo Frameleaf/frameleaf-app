@@ -112,6 +112,23 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(within(dialog).getByText(/payment details are entered only on that site/)).toBeInTheDocument();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
     expect(open).toHaveBeenCalledWith(`${store}?product=supporter-server`, '_blank', 'noopener,noreferrer');
+    // the page says it is waiting, and reads the licence again when the person comes back
+    expect(await screen.findByText('Finish in the Frameleaf store tab, then come back here.')).toBeInTheDocument();
+    sdkMock.getMyUser.mockResolvedValue(
+      user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+    );
+    await fireEvent.focus(globalThis as never);
+    expect(await screen.findByText('Your purchase is active on this server.')).toBeInTheDocument();
+    expect(screen.queryByText('Finish in the Frameleaf store tab, then come back here.')).not.toBeInTheDocument();
+  });
+
+  it('offers to try again when plans and prices cannot be loaded', async () => {
+    sdkMock.getLicenseProducts.mockRejectedValueOnce(new Error('offline'));
+    render(BuyScreen);
+
+    expect(await screen.findByText(/Plans and prices did not load/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('$99.90')).toBeInTheDocument();
   });
 
   it('says purchasing is not available yet, with no link, when no store is configured', async () => {
@@ -236,7 +253,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Remove key' }));
     expect(screen.getByText('Remove this key from this server?')).toBeInTheDocument();
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Remove key' }).at(-1)!);
+    await fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
     await waitFor(() => expect(sdkMock.removeLicenseKey).toHaveBeenCalled());
   });
 
@@ -269,7 +286,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
 
       await waitFor(() => expect(sdkMock.redeemLicenseLinkCode).toHaveBeenCalledWith({ licenseLinkCodeDto: { code } }));
       expect(sdkMock.redeemLicenseLinkCode).toHaveBeenCalledTimes(1);
-      expect(await screen.findByText('Thank you! Your key is active.')).toBeInTheDocument();
+      expect(await screen.findByText('Thank you. Your key is active.')).toBeInTheDocument();
       expect(await screen.findByText(/ends in 8EL6/)).toBeInTheDocument();
       expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
       expect(sdkMock.activateLicense).not.toHaveBeenCalled();

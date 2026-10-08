@@ -13,7 +13,16 @@ import { draftFromWorkflow } from '$lib/frameleaf/workflows';
 import en from '../../../../../i18n/en.json';
 import WorkflowDesigner from './WorkflowDesigner.svelte';
 
+const confirmMock = vi.hoisted(() => ({ confirmFrameleaf: vi.fn() }));
+vi.mock('$lib/frameleaf/confirm', () => confirmMock);
+
 const t = en.frameleaf_workflows;
+const discardQuestion = {
+  title: t.discard_prompt,
+  confirmText: t.discard_confirm,
+  cancelText: t.discard_keep,
+  danger: true,
+};
 const id = '00000000-0000-4000-8000-000000000010';
 const runId = '00000000-0000-4000-8000-000000000020';
 const assetId = '00000000-0000-4000-8000-000000000030';
@@ -224,21 +233,30 @@ describe('WorkflowDesigner', () => {
     expect(screen.getByLabelText(t.name)).toHaveValue('Renamed');
   });
 
+  it('closes once discarding the draft is confirmed', async () => {
+    confirmMock.confirmFrameleaf.mockResolvedValue(true);
+    setup([webhook({ url: { type: 'string', title: 'URL' } })]);
+
+    await fireEvent.input(screen.getByLabelText(t.name), { target: { value: 'Changed' } });
+    await fireEvent.click(screen.getByRole('button', { name: t.cancel }));
+
+    await waitFor(() => expect(confirmMock.confirmFrameleaf).toHaveBeenCalledWith(discardQuestion));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('guards X against discarding an edited draft', async () => {
-    const confirm = vi.fn().mockReturnValue(false);
-    vi.stubGlobal('confirm', confirm);
+    confirmMock.confirmFrameleaf.mockResolvedValue(false);
     setup([webhook({ url: { type: 'string', title: 'URL' } })]);
 
     await fireEvent.input(screen.getByLabelText(t.name), { target: { value: 'Changed' } });
     await fireEvent.click(screen.getByRole('button', { name: en.close }));
 
-    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    await waitFor(() => expect(confirmMock.confirmFrameleaf).toHaveBeenCalledWith(discardQuestion));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('guards Escape against discarding unapplied workflow JSON', async () => {
-    const confirm = vi.fn().mockReturnValue(false);
-    vi.stubGlobal('confirm', confirm);
+    confirmMock.confirmFrameleaf.mockResolvedValue(false);
     setup([webhook({ url: { type: 'string', title: 'URL' } })]);
 
     await fireEvent.click(screen.getByRole('button', { name: t.tab_json }));
@@ -247,13 +265,12 @@ describe('WorkflowDesigner', () => {
     await fireEvent(screen.getByRole('dialog'), cancelEvent);
 
     expect(cancelEvent.defaultPrevented).toBe(true);
-    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    await waitFor(() => expect(confirmMock.confirmFrameleaf).toHaveBeenCalledWith(discardQuestion));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('guards footer Cancel against discarding unapplied parameter JSON', async () => {
-    const confirm = vi.fn().mockReturnValue(false);
-    vi.stubGlobal('confirm', confirm);
+    confirmMock.confirmFrameleaf.mockResolvedValue(false);
     setup([webhook({ url: { type: 'string', title: 'URL' } })]);
 
     await fireEvent.click(screen.getByText(t.method_json));
@@ -261,7 +278,7 @@ describe('WorkflowDesigner', () => {
     await fireEvent.input(screen.getByLabelText(t.parameter_json), { target: { value: '{"url":"https://new.test"}' } });
     await fireEvent.click(screen.getByRole('button', { name: t.cancel }));
 
-    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    await waitFor(() => expect(confirmMock.confirmFrameleaf).toHaveBeenCalledWith(discardQuestion));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

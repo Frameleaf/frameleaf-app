@@ -8,6 +8,11 @@
   import { page } from '$app/state';
   import BackupSummary from '$lib/components/frameleaf/cloud/BackupSummary.svelte';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
+  import CountUp from '$lib/components/frameleaf/CountUp.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { Route } from '$lib/route';
@@ -45,6 +50,7 @@
     mdiCloudOutline,
     mdiDesktopTowerMonitor,
     mdiImageSearchOutline,
+    mdiRefresh,
     mdiServerOutline,
   } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
@@ -60,6 +66,8 @@
   let compatibility = $state<RenderWorkerCompatibilityResponseDto>();
   let ml = $state<{ destinations: MlDestinationResponseDto[]; routes: MlWorkloadRouteDto[] }>();
   let failed = $state(false);
+  /** True while a snapshot is being read; the last one stays on screen until the next arrives. */
+  let loading = $state(true);
   let retry = $state(0);
   const scope = $derived(page.url.searchParams.get('scope') ?? 'all');
   const failures = $derived(queues?.reduce((sum, queue) => sum + queue.statistics.failed, 0));
@@ -100,6 +108,33 @@
       .sort((a, b) => a.filename.match(/\d{8}T\d{6}/)![0].localeCompare(b.filename.match(/\d{8}T\d{6}/)![0]))
       .at(-1)?.filename,
   );
+  /**
+   * When the latest backup was made, as its file name records it (the server's own clock), shown
+   * as a time and a date like the reference ("02:00 · 19 Sep"). The file name stays in the tooltip.
+   */
+  const latestBackupTime = $derived.by(() => {
+    const stamp = latestBackup?.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
+    if (!stamp) {
+      return;
+    }
+    const [year, month, day, hour, minute] = stamp.slice(1).map(Number);
+    const at = new Date(Date.UTC(year, month - 1, day, hour, minute));
+    const part = (options: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat($locale, { ...options, timeZone: 'UTC' }).format(at);
+    return {
+      time: part({ hour: '2-digit', minute: '2-digit' }),
+      date: part({
+        day: 'numeric',
+        month: 'short',
+        year: at.getUTCFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+      }),
+    };
+  });
+  /** The storage percentage with the decimals the server reported, for the counting figure. */
+  const percent = (value: number) => {
+    const digits = (String(storage?.diskUsagePercentage ?? '').split('.', 2)[1] ?? '').length;
+    return `${value.toFixed(Math.min(digits, 2))}%`;
+  };
   const href = (area: SettingsAreaId, section?: string) => commandCenterUrl(area, section);
   /**
    * The storage key (CommandCenter.jsx:1839-1867): thumbnails & proxies, and database & other, read
@@ -159,14 +194,9 @@
     const selected = scope;
     void retry;
     let cancelled = false;
-    report = undefined;
-    about = undefined;
-    storage = undefined;
-    queues = undefined;
-    backups = undefined;
-    restore = undefined;
-    compatibility = undefined;
-    ml = undefined;
+    // The previous snapshot stays in place (dimmed) while the next one is read, so a scope change
+    // or a refresh updates the figures where they are instead of blanking the page (finding 69).
+    loading = true;
     failed = false;
     void (async () => {
       const [inventory, version, disk, jobs, backup, restoreTest, workers, destinations, routes] =
@@ -184,236 +214,276 @@
       if (cancelled) {
         return;
       }
+      loading = false;
       if (inventory.status === 'fulfilled') {
         report = inventory.value;
       } else {
+        // Another scope's figures must not stand in for the one that could not be read.
+        report = undefined;
         failed = true;
       }
-      if (version.status === 'fulfilled') {
-        about = version.value;
-      }
-      if (disk.status === 'fulfilled') {
-        storage = disk.value;
-      }
-      if (jobs.status === 'fulfilled') {
-        queues = jobs.value;
-      }
-      if (backup.status === 'fulfilled') {
-        backups = backup.value.backups;
-      }
-      if (restoreTest.status === 'fulfilled') {
-        restore = restoreTest.value;
-      }
-      if (workers.status === 'fulfilled') {
-        compatibility = workers.value;
-      }
-      if (destinations.status === 'fulfilled' && routes.status === 'fulfilled') {
-        ml = { destinations: destinations.value, routes: routes.value.routes };
-      }
+      // A reading that could not be taken shows as not measured, never as the last one.
+      about = version.status === 'fulfilled' ? version.value : undefined;
+      storage = disk.status === 'fulfilled' ? disk.value : undefined;
+      queues = jobs.status === 'fulfilled' ? jobs.value : undefined;
+      backups = backup.status === 'fulfilled' ? backup.value.backups : undefined;
+      restore = restoreTest.status === 'fulfilled' ? restoreTest.value : undefined;
+      compatibility = workers.status === 'fulfilled' ? workers.value : undefined;
+      ml =
+        destinations.status === 'fulfilled' && routes.status === 'fulfilled'
+          ? { destinations: destinations.value, routes: routes.value.routes }
+          : undefined;
     })();
     return () => {
       cancelled = true;
     };
   });
+
+  /**
+   * Coming back to the window takes a new snapshot (design review finding 77), at most twice a
+   * minute; the figures on screen stay in place while it is read.
+   */
+  const RETURN_REFRESH_MS = 30_000;
+  let lastReturn = Date.now();
+  const refreshOnReturn = () => {
+    if (document.visibilityState !== 'visible' || loading || Date.now() - lastReturn < RETURN_REFRESH_MS) {
+      return;
+    }
+    lastReturn = Date.now();
+    retry++;
+  };
 </script>
 
-{#if failed}<p role="alert">
-    {$t('frameleaf_cc_load_failed')} <button type="button" onclick={() => retry++}>{$t('retry')}</button>
-  </p>
-{:else if !report}<p role="status">{$t('loading')}</p>
+<svelte:window onfocus={refreshOnReturn} />
+<svelte:document onvisibilitychange={refreshOnReturn} />
+
+{#if failed}
+  <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={() => retry++} />
+{:else if !report}
+  <!-- The shape of what is coming: four figures, then the panels. -->
+  <div class="overview-loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <div class="metrics">
+      {#each [0, 1, 2, 3] as tile (tile)}<Skeleton variant="block" height="7.25rem" />{/each}
+    </div>
+    <div class="overview-grid">
+      {#each [0, 1, 2, 3] as panel (panel)}<Skeleton variant="block" height="13rem" />{/each}
+    </div>
+  </div>
 {:else}
   <div class="health">
-    <span class="dot"></span><strong>{$t('frameleaf_cc_library_available')}</strong
+    <span class="dot" class:warn={!!attentionCount}></span><strong>{$t('frameleaf_cc_library_available')}</strong
     >{#if attentionCount !== undefined}<span
         >{$t('frameleaf_cc_attention_count', { values: { count: attentionCount } })}</span
-      >{/if}<span class="time"
-      >{$t('frameleaf_cc_snapshot')} · {new Date(report.generatedAt).toLocaleString($locale)}</span
+      >{/if}<span class="time" aria-live="polite"
+      >{loading
+        ? $t('frameleaf_cc_refreshing')
+        : `${$t('frameleaf_cc_snapshot')} · ${new Date(report.generatedAt).toLocaleString($locale)}`}</span
     >
+    <IconButton label={$t('frameleaf_cc_refresh')} disabled={loading} onclick={() => retry++}>
+      <Icon icon={mdiRefresh} size={ICON_SIZE.md} />
+    </IconButton>
   </div>
-  <div class="metrics">
-    <a href={analyticsHref}
-      ><span>{report.scopeLabel || $t('frameleaf_analytics_scope_all')}</span><strong
-        >{report.summary.items.toLocaleString($locale)}</strong
-      ><small>{$t('frameleaf_cc_items')}<Icon icon={mdiChevronRight} size="16" /></small></a
-    >
-    <a href={href('storage')}
-      ><span>{$t('frameleaf_cc_filesystem')}</span><strong
-        >{storage ? storage.diskUse : $t('frameleaf_cc_unmeasured')}</strong
-      ><small
-        >{storage
-          ? $t('frameleaf_cc_available', { values: { size: storage.diskAvailable } })
-          : $t('frameleaf_cc_unmeasured')}<Icon icon={mdiChevronRight} size="16" /></small
-      ></a
-    >
-    <!-- As in the template, the latest backup opens Import & protection → Database backups. -->
-    <a href={href('backup', 'backup')}
-      ><span>{$t('frameleaf_cc_latest_backup')}</span><strong class="filename"
-        >{backups
-          ? (latestBackup ?? $t(backups.length > 0 ? 'frameleaf_cc_unmeasured' : 'frameleaf_cc_no_backup'))
-          : $t('frameleaf_cc_unmeasured')}</strong
-      ><small
-        >{restoreDue ? $t('frameleaf_cc_restore_drill_overdue') : $t('frameleaf_cc_section_backups')}<Icon
-          icon={mdiChevronRight}
-          size="16"
-        /></small
-      ></a
-    >
-    <a href={href('server', 'version-check')}
-      ><span>{$t('frameleaf_cc_version')}</span><strong>{about?.version ?? $t('frameleaf_cc_unmeasured')}</strong><small
-        >{$t('frameleaf_cc_updates')}<Icon icon={mdiChevronRight} size="16" /></small
-      >{#if about?.build}<small>{$t('frameleaf_cc_build')} {about.build}</small>{/if}</a
-    >
-  </div>
-  <div class="overview-grid">
-    <section class="panel">
-      <header>
-        <div>
-          <h2>{$t('frameleaf_cc_growth')}</h2>
-          <p>{$t('frameleaf_cc_growth_period')}</p>
-        </div>
-        <a href={analyticsHref}>{$t('frameleaf_cc_explore')} ›</a>
-      </header>
-      {#if report.series.some((row) => row.items !== null)}<AnalyticsChart
-          compact
-          kind="line"
-          title={$t('frameleaf_cc_growth')}
-          labels={report.series.map((row) => row.key)}
-          datasets={[{ label: $t('frameleaf_cc_items'), values: report.series.map((row) => row.items) }]}
-          unit=""
-        />
-        <details>
-          <summary>{$t('frameleaf_cc_details')}</summary>
-          <table>
-            <tbody
-              >{#each report.series as row (row.key)}<tr
-                  ><th>{row.key}</th><td>{row.items ?? $t('frameleaf_cc_unmeasured')}</td></tr
-                >{/each}</tbody
-            >
-          </table>
-        </details>
-      {:else}<p class="subtle">{$t('frameleaf_analytics_growth_unknown')}</p>{/if}
-    </section>
-    <section class="panel">
-      <header>
-        <h2>{$t('frameleaf_cc_attention')}</h2>
-        {#if attentionCount !== undefined}<span>{attentionCount}</span>{/if}
-      </header>
-      {#if restoreDue}<a class="action" href={href('maintenance', 'backups')}
-          ><Icon icon={mdiBackupRestore} size="18" /><span
-            ><strong>{$t('frameleaf_cc_attention_restore')}</strong><small>{restoreDetail}</small></span
-          ><Icon icon={mdiChevronRight} size="18" /></a
-        >{/if}
-      {#if workersDue && compatibility}<a class="action" href={Route.systemWorkers()}
-          ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
-            ><strong>{$t('frameleaf_cc_attention_workers')}</strong><small
-              >{$t('frameleaf_cc_attention_workers_detail', {
-                values: { kinds: compatibility.unavailable.map((kind) => kindLabel(kind)).join(', ') },
-              })}</small
-            ></span
-          ><Icon icon={mdiChevronRight} size="18" /></a
-        >{/if}
-      {#if failures}<a class="action" href={Route.queues()}
-          ><Icon icon={mdiAlertCircleOutline} size="18" /><span
-            ><strong>{$t('frameleaf_cc_failed_jobs')}</strong><small>{failures} · {$t('frameleaf_cc_server')}</small
-            ></span
-          ><Icon icon={mdiChevronRight} size="18" /></a
-        >{/if}
-      {#if !restoreDue && !workersDue && !failures}<p class="subtle">
-          {$t(queues ? 'frameleaf_cc_no_attention' : 'frameleaf_cc_unmeasured')}
-        </p>{/if}
-      <!-- CommandCenter.jsx:1807 -->
-      <p class="subtle">{$t('frameleaf_cc_attention_footer')}</p>
-    </section>
-    <section class="panel">
-      <header>
-        <div>
-          <h2>{$t('storage')}</h2>
-          <p>{$t('frameleaf_cc_storage_subtitle')}</p>
-        </div>
-        <a href={href('storage')}>{$t('frameleaf_cc_manage')} ›</a>
-      </header>
-      {#if storage}<div class="storage-value">
-          <strong>{storage.diskUsagePercentage}%</strong><span
-            >{$t('frameleaf_cc_storage_of_used', { values: { size: storage.diskSize } })}</span
-          >
-        </div>
-        <meter
-          min="0"
-          max={storage.diskSizeRaw}
-          value={storage.diskUseRaw}
-          aria-label={$t('frameleaf_cc_storage_meter', { values: { used: storage.diskUse, size: storage.diskSize } })}
-        ></meter>{/if}
-      <dl>
-        <div>
-          <dt>{$t('frameleaf_cc_originals')} · {report.scopeLabel || $t('frameleaf_analytics_scope_all')}</dt>
-          <dd>{formatBytes(report.summary.physicalBytes)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_cc_derivatives')}</dt>
-          <dd>{storageValue(() => breakdown!.previewsBytes! + breakdown!.encodedVideoBytes!)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_cc_other')}</dt>
-          <dd>{storageValue(() => breakdown!.databaseBytes + breakdown!.otherBytes)}</dd>
-        </div>
-      </dl>
-      <p class="subtle">{storageNote}</p>
-    </section>
-    <section class="panel">
-      <header>
-        <div>
-          <h2>{$t('frameleaf_cc_processing')}</h2>
-          <p>{$t('frameleaf_cc_server')} · {$t('frameleaf_cc_snapshot')}</p>
-        </div>
-        <a href={Route.queues()}>{$t('frameleaf_cc_queues')} ›</a>
-      </header>
-      {#if queues}{#each snapshotQueues as queue (queue.name)}<a class="service" href={Route.viewQueue(queue)}
-            ><span>{queueTitle(queue.name)}</span><small
-              >{queue.statistics.active} {$t('active')} · {queue.statistics.waiting} {$t('waiting')}</small
-            ></a
-          >{:else}<p class="subtle">{$t('frameleaf_cc_no_attention')}</p>{/each}{:else}<p class="subtle">
-          {$t('frameleaf_cc_unmeasured')}
-        </p>{/if}
-      <a class="activity" href={Route.activity()}>{$t('frameleaf_cc_activity')} ›</a>
-    </section>
-  </div>
-  <BackupSummary />
-  <section class="glance">
-    <h2>{$t('frameleaf_cc_glance')}</h2>
-    <div>
-      <a href={href('server')}
-        ><Icon icon={mdiServerOutline} size="18" /><span
-          ><strong>{$t('frameleaf_cc_api')}</strong><small>{$t('frameleaf_cc_responding')}</small></span
-        ><Icon icon={mdiChevronRight} size="18" /></a
+  <div class="snapshot" class:busy={loading} aria-busy={loading}>
+    <div class="metrics">
+      <a href={analyticsHref} style:--i={0}
+        ><span>{report.scopeLabel || $t('frameleaf_analytics_scope_all')}</span><strong
+          ><CountUp value={report.summary.items} /></strong
+        ><small>{$t('frameleaf_cc_items')}<Icon icon={mdiChevronRight} size="16" /></small></a
       >
-      <a href={href('processing')}
-        ><Icon icon={mdiImageSearchOutline} size="18" /><span
-          ><strong>{$t('frameleaf_cc_ml')}</strong><small
-            >{ml
-              ? $t(`frameleaf_cc_ml_${mlEndpointState(ml.destinations, ml.routes)}` as Translations)
-              : $t('frameleaf_cc_unmeasured')}</small
-          ></span
-        ><Icon icon={mdiChevronRight} size="18" /></a
+      <a href={href('storage')} style:--i={1}
+        ><span>{$t('frameleaf_cc_filesystem')}</span><strong
+          >{storage ? storage.diskUse : $t('frameleaf_cc_unmeasured')}</strong
+        ><small
+          >{storage
+            ? $t('frameleaf_cc_available', { values: { size: storage.diskAvailable } })
+            : $t('frameleaf_cc_unmeasured')}<Icon icon={mdiChevronRight} size="16" /></small
+        ></a
       >
-      <a href={href('processing')}
-        ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
-          ><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small
-            >{compatibility
-              ? $t(`frameleaf_cc_gpu_${gpuStudioState(compatibility)}` as Translations)
-              : $t('frameleaf_cc_unmeasured')}</small
-          ></span
-        ><Icon icon={mdiChevronRight} size="18" /></a
+      <!-- Both backup entry points on this page open Backup → Backups & restore (finding 66). -->
+      <a href={href('maintenance', 'backups')} style:--i={2}
+        ><span>{$t('frameleaf_cc_latest_backup')}</span>{#if latestBackupTime}<strong title={latestBackup}
+            >{latestBackupTime.time}<span class="date">{latestBackupTime.date}</span></strong
+          >{:else}<strong class="note"
+            >{backups
+              ? $t(backups.length > 0 ? 'frameleaf_cc_unmeasured' : 'frameleaf_cc_no_backup')
+              : $t('frameleaf_cc_unmeasured')}</strong
+          >{/if}<small
+          >{restoreDue ? $t('frameleaf_cc_restore_drill_overdue') : $t('frameleaf_cc_section_backups')}<Icon
+            icon={mdiChevronRight}
+            size="16"
+          /></small
+        ></a
       >
-      <a href={href('cloud')} class:attention={cloud?.attention} data-testid="overview-cloud-tile"
-        ><Icon icon={mdiCloudOutline} size="18" /><span
-          ><strong>{$t('frameleaf_settings_area_cloud')}</strong><small>{cloudText}</small></span
-        ><Icon icon={mdiChevronRight} size="18" /></a
+      <a href={href('server', 'version-check')} style:--i={3}
+        ><span>{$t('frameleaf_cc_version')}</span><strong>{about?.version ?? $t('frameleaf_cc_unmeasured')}</strong
+        ><small>{$t('frameleaf_cc_updates')}<Icon icon={mdiChevronRight} size="16" /></small>{#if about?.build}<small
+            >{$t('frameleaf_cc_build')} {about.build}</small
+          >{/if}</a
       >
     </div>
-  </section>
+    <div class="overview-grid">
+      <section class="panel">
+        <header>
+          <div>
+            <h2>{$t('frameleaf_cc_growth')}</h2>
+            <p>{$t('frameleaf_cc_growth_period')}</p>
+          </div>
+          <a href={analyticsHref}>{$t('frameleaf_cc_explore')} ›</a>
+        </header>
+        {#if report.series.some((row) => row.items !== null)}<AnalyticsChart
+            compact
+            kind="line"
+            title={$t('frameleaf_cc_growth')}
+            labels={report.series.map((row) => row.key)}
+            datasets={[{ label: $t('frameleaf_cc_items'), values: report.series.map((row) => row.items) }]}
+            unit=""
+          />
+          <details>
+            <summary>{$t('frameleaf_cc_details')}</summary>
+            <table>
+              <tbody
+                >{#each report.series as row (row.key)}<tr
+                    ><th>{row.key}</th><td>{row.items ?? $t('frameleaf_cc_unmeasured')}</td></tr
+                  >{/each}</tbody
+              >
+            </table>
+          </details>
+        {:else}<p class="subtle">{$t('frameleaf_analytics_growth_unknown')}</p>{/if}
+      </section>
+      <section class="panel">
+        <header>
+          <h2>{$t('frameleaf_cc_attention')}</h2>
+          {#if attentionCount !== undefined}<span>{attentionCount}</span>{/if}
+        </header>
+        {#if restoreDue}<a class="action" href={href('maintenance', 'backups')}
+            ><Icon icon={mdiBackupRestore} size="18" /><span
+              ><strong>{$t('frameleaf_cc_attention_restore')}</strong><small>{restoreDetail}</small></span
+            ><Icon icon={mdiChevronRight} size="18" /></a
+          >{/if}
+        {#if workersDue && compatibility}<a class="action" href={Route.systemWorkers()}
+            ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
+              ><strong>{$t('frameleaf_cc_attention_workers')}</strong><small
+                >{$t('frameleaf_cc_attention_workers_detail', {
+                  values: { kinds: compatibility.unavailable.map((kind) => kindLabel(kind)).join(', ') },
+                })}</small
+              ></span
+            ><Icon icon={mdiChevronRight} size="18" /></a
+          >{/if}
+        {#if failures}<a class="action" href={Route.queues()}
+            ><Icon icon={mdiAlertCircleOutline} size="18" /><span
+              ><strong>{$t('frameleaf_cc_failed_jobs')}</strong><small>{failures} · {$t('frameleaf_cc_server')}</small
+              ></span
+            ><Icon icon={mdiChevronRight} size="18" /></a
+          >{/if}
+        {#if !restoreDue && !workersDue && !failures}<p class="subtle">
+            {$t(queues ? 'frameleaf_cc_no_attention' : 'frameleaf_cc_unmeasured')}
+          </p>{/if}
+        <!-- CommandCenter.jsx:1807 -->
+        <p class="subtle">{$t('frameleaf_cc_attention_footer')}</p>
+      </section>
+      <section class="panel">
+        <header>
+          <div>
+            <h2>{$t('storage')}</h2>
+            <p>{$t('frameleaf_cc_storage_subtitle')}</p>
+          </div>
+          <a href={href('storage')}>{$t('frameleaf_cc_manage')} ›</a>
+        </header>
+        {#if storage}<div class="storage-value">
+            <strong><CountUp value={storage.diskUsagePercentage} format={percent} /></strong><span
+              >{$t('frameleaf_cc_storage_of_used', { values: { size: storage.diskSize } })}</span
+            >
+          </div>
+          <meter
+            min="0"
+            max={storage.diskSizeRaw}
+            value={storage.diskUseRaw}
+            aria-label={$t('frameleaf_cc_storage_meter', { values: { used: storage.diskUse, size: storage.diskSize } })}
+          ></meter>{/if}
+        <dl>
+          <div>
+            <dt>{$t('frameleaf_cc_originals')} · {report.scopeLabel || $t('frameleaf_analytics_scope_all')}</dt>
+            <dd>{formatBytes(report.summary.physicalBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_cc_derivatives')}</dt>
+            <dd>{storageValue(() => breakdown!.previewsBytes! + breakdown!.encodedVideoBytes!)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_cc_other')}</dt>
+            <dd>{storageValue(() => breakdown!.databaseBytes + breakdown!.otherBytes)}</dd>
+          </div>
+        </dl>
+        <p class="subtle">{storageNote}</p>
+      </section>
+      <section class="panel">
+        <header>
+          <div>
+            <h2>{$t('frameleaf_cc_processing')}</h2>
+            <p>{$t('frameleaf_cc_processing_subtitle')}</p>
+          </div>
+          <a href={Route.queues()}>{$t('frameleaf_cc_queues')} ›</a>
+        </header>
+        {#if queues}{#each snapshotQueues as queue (queue.name)}<a class="service" href={Route.viewQueue(queue)}
+              ><span>{queueTitle(queue.name)}</span><small class:failed={queue.statistics.failed > 0}
+                >{queue.statistics.failed > 0 && queue.statistics.active + queue.statistics.waiting === 0
+                  ? $t('frameleaf_cc_queue_failed', { values: { failed: queue.statistics.failed } })
+                  : $t('frameleaf_cc_queue_counts', {
+                      values: { active: queue.statistics.active, waiting: queue.statistics.waiting },
+                    })}</small
+              ></a
+            >{:else}<p class="subtle">{$t('frameleaf_cc_processing_idle')}</p>{/each}{:else}<p class="subtle">
+            {$t('frameleaf_cc_unmeasured')}
+          </p>{/if}
+        <a class="activity" href={Route.activity()}>{$t('frameleaf_cc_activity')} ›</a>
+      </section>
+    </div>
+    <BackupSummary />
+    <section class="glance">
+      <h2>{$t('frameleaf_cc_glance')}</h2>
+      <div>
+        <a href={href('server')}
+          ><Icon icon={mdiServerOutline} size="18" /><span
+            ><strong>{$t('frameleaf_cc_api')}</strong><small>{$t('frameleaf_cc_responding')}</small></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >
+        <a href={href('processing')}
+          ><Icon icon={mdiImageSearchOutline} size="18" /><span
+            ><strong>{$t('frameleaf_cc_ml')}</strong><small
+              >{ml
+                ? $t(`frameleaf_cc_ml_${mlEndpointState(ml.destinations, ml.routes)}` as Translations)
+                : $t('frameleaf_cc_unmeasured')}</small
+            ></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >
+        <a href={href('processing')}
+          ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
+            ><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small
+              >{compatibility
+                ? $t(`frameleaf_cc_gpu_${gpuStudioState(compatibility)}` as Translations)
+                : $t('frameleaf_cc_unmeasured')}</small
+            ></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >
+        <a href={href('cloud')} class:attention={cloud?.attention} data-testid="overview-cloud-tile"
+          ><Icon icon={mdiCloudOutline} size="18" /><span
+            ><strong>{$t('frameleaf_settings_area_cloud')}</strong><small>{cloudText}</small></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >
+      </div>
+    </section>
+  </div>
 {/if}
 
 <style>
+  /* A refresh or a scope change dims the last snapshot until the next one lands. */
+  .snapshot {
+    transition: opacity var(--fl-motion) var(--fl-ease);
+  }
+  .snapshot.busy {
+    opacity: 0.6;
+  }
   .glance {
     margin-top: 22px;
   }
@@ -434,7 +504,7 @@
     padding: 16px;
     border: 1px solid var(--fl-border);
     background: var(--fl-panel);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-card);
     font-size: 12px;
     color: var(--fl-text);
     text-decoration: none;
@@ -450,7 +520,7 @@
   /* The prototype's `cc-glance-attention`: a plan in its grace period or expired. */
   .glance a.attention > :global(svg:first-child),
   .glance a.attention small {
-    color: var(--fl-warning-text, var(--fl-warning));
+    color: var(--fl-warning);
   }
   @media (max-width: 1000px) {
     .glance > div {
@@ -485,6 +555,10 @@
     border-radius: 50%;
     background: var(--fl-accent);
   }
+  /* The dot agrees with the sentence beside it. */
+  .dot.warn {
+    background: var(--fl-warning);
+  }
   .time {
     margin-inline-start: auto;
   }
@@ -501,7 +575,7 @@
     padding: 18px;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-card);
     color: var(--fl-text);
     text-decoration: none;
   }
@@ -519,9 +593,18 @@
     align-items: center;
     justify-content: space-between;
   }
-  .metrics .filename {
-    font-size: 15px;
-    overflow-wrap: anywhere;
+  .metrics strong .date {
+    margin-inline-start: var(--fl-space-2);
+    font-size: var(--fl-font-size);
+    font-weight: 500;
+  }
+  .metrics .note {
+    font-size: var(--fl-font-headline);
+  }
+  /* The four figures arrive one after another on first load; the stagger is `--i`. */
+  .metrics > a {
+    animation: fl-fade-in var(--fl-duration-fade) var(--fl-ease) both;
+    animation-delay: calc(var(--i, 0) * var(--fl-stagger));
   }
   .overview-grid {
     display: grid;
@@ -530,7 +613,7 @@
   }
   .panel {
     border: 1px solid var(--fl-border);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
     padding: 20px;
     min-width: 0;
@@ -565,9 +648,28 @@
     padding: 14px 0;
     border-bottom: 1px solid var(--fl-border);
   }
+  /* A row is read, not skimmed: the link colour and micro size above are for the header links only. */
+  .panel a.action,
+  .panel a.service {
+    font-size: var(--fl-font-callout);
+  }
+  .action small,
+  .service small {
+    font-size: var(--fl-font-small);
+  }
+  .action > :global(svg:first-child) {
+    color: var(--fl-warning);
+  }
+  .action > :global(svg:last-child) {
+    color: var(--fl-muted);
+  }
   .service small {
     color: var(--fl-muted);
     margin-inline-start: auto;
+    font-variant-numeric: var(--fl-numeric);
+  }
+  .service small.failed {
+    color: var(--fl-danger);
   }
   /* command-center.css `.cc-action-row`: icon, title over its detail, chevron. */
   .action > span {
@@ -599,8 +701,29 @@
   }
   meter {
     width: 100%;
-    height: 10px;
+    height: 8px;
     margin: 16px 0;
+    appearance: none;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+    overflow: hidden;
+  }
+  meter::-webkit-meter-bar {
+    height: 8px;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+  }
+  meter::-webkit-meter-optimum-value,
+  meter::-webkit-meter-suboptimum-value,
+  meter::-webkit-meter-even-less-good-value {
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent);
+  }
+  meter::-moz-meter-bar {
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent);
   }
   dl > div {
     display: flex;
@@ -626,9 +749,6 @@
   table {
     width: 100%;
     text-align: start;
-  }
-  button {
-    color: var(--fl-accent);
   }
   @media (max-width: 1100px) {
     .metrics {

@@ -7,6 +7,7 @@ import en from '../../../../../../i18n/en.json';
 import MockText from '../../../../test-data/components/MockText.svelte';
 import SettingsLibraryGroup from '../../../../test-data/frameleaf/SettingsLibraryGroup.svelte';
 import SettingsHost from './SettingsHost.svelte';
+import { ownPreferencesPending } from './own-preferences-pending.svelte';
 
 const state = vi.hoisted(() => ({
   url: new URL('http://localhost/user-settings'),
@@ -36,6 +37,9 @@ vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => 
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
@@ -84,7 +88,10 @@ const accountSection = (key: string, title: string): SettingsHostSection => ({
 const sections = [
   serverSection('storage-template', 'Storage template'),
   serverSection('trash', 'Trash settings'),
-  serverSection('backup', 'Database backups'),
+  serverSection('backup', 'Backup schedule'),
+  serverSection('backups', 'Backups & restore'),
+  serverSection('mode', 'Maintenance mode'),
+  serverSection('cloud-backup', 'Cloud backup'),
   serverSection('integrity-checks', 'Integrity checks'),
   serverSection('external-library', 'External libraries'),
   serverSection('notifications', 'Email delivery'),
@@ -110,15 +117,26 @@ const areaNames = () =>
     button.textContent?.trim(),
   );
 
+/** An area's own button in the navigation (a breadcrumb may carry the same name). */
+const areaButton = (name: string) =>
+  [
+    ...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll<HTMLElement>('button.area'),
+  ].find((button) => button.getAttribute('aria-label') === name)!;
+
+/** The pages listed under Backup in the navigation. */
+const backupPages = () =>
+  within(screen.getByRole('navigation', { name: 'Settings navigation' }))
+    .getByLabelText('Backup pages')
+    .querySelectorAll('button');
+
 describe('the Command Center (FL-71)', () => {
   beforeAll(() => addMessages('dev', en));
 
-  it('is one full-screen shell with Back to library, collapse, the Viewing scope and the grouped areas', async () => {
+  it('is one full-screen shell with Back to library, collapse and the grouped areas', () => {
     open('/user-settings?area=storage');
     render(SettingsHost, { sections });
     expect(screen.getByRole('link', { name: 'Back to library' })).toHaveAttribute('href', '/photos');
     expect(screen.getByRole('button', { name: 'Collapse settings navigation' })).toBeInTheDocument();
-    expect(await screen.findByRole('combobox', { name: 'Account or library scope' })).toBeInTheDocument();
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     const names = areaNames();
     // The template's catalogue order, grouped: Your library keeps care, libraries, utilities (N1).
@@ -139,7 +157,9 @@ describe('the Command Center (FL-71)', () => {
       screen.getByRole('button', { name }).querySelector<HTMLElement>('.tile')!.style.getPropertyValue('--tile');
     expect(tile('Overview')).toBe('#0a84ff');
     expect(tile('Library analytics')).toBe('#bf5af2');
-    expect(tile('Import & protection')).toBe('#30b0c7');
+    // Backup keeps the teal tile; Import & protection no longer shares it (design review finding 66).
+    expect(tile('Backup')).toBe('#30b0c7');
+    expect(tile('Import & protection')).toBe('#64d2ff');
     expect(tile('Library care')).toBe('#30d158');
     expect(tile('Notifications')).toBe('#ff453a');
     for (const button of screen
@@ -205,7 +225,11 @@ describe('the Command Center (FL-71)', () => {
     const directory = container.querySelector<HTMLElement>('.cc-directory')!;
     expect(within(directory).getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
     await userEvent.click(within(directory).getByRole('button', { name: /Missing media/ }));
-    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
+    // The tool stays under Library care (design review finding 67).
+    expect(state.goto).toHaveBeenCalledWith(
+      '/user-settings?area=utilities&section=missing-media&from=care',
+      expect.any(Object),
+    );
   });
 
   it('lists every repair tool for an administrator, in the Utilities order', () => {
@@ -266,7 +290,7 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
   });
 
-  it('names the server as its administrator set it, and falls back to its address (CC-4, CommandCenter.jsx:657)', () => {
+  it('names the server as its administrator set it, and never shows its host and port (CC-4)', () => {
     open('/user-settings?area=storage');
     serverConfig.value.serverName = 'Home archive';
     const { unmount } = render(SettingsHost, { sections });
@@ -275,7 +299,8 @@ describe('the Command Center (FL-71)', () => {
 
     serverConfig.value.serverName = '  ';
     render(SettingsHost, { sections });
-    expect(document.querySelector('.cc-context')).toHaveTextContent('localhost');
+    expect(document.querySelector('.cc-context')).toHaveTextContent('This server');
+    expect(document.querySelector('.cc-context')).not.toHaveTextContent('localhost');
   });
 
   it('keeps the Viewing scope when moving between areas', async () => {
@@ -290,9 +315,7 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
 
     expect(
-      await screen.findByText(
-        'Job and utility queues are filtered by account. This view includes all libraries owned by Ada.',
-      ),
+      await screen.findByText('Jobs are filtered by account, so this view includes every library owned by Ada.'),
     ).toBeInTheDocument();
   });
 
@@ -318,6 +341,8 @@ describe('the Command Center (FL-71)', () => {
     expect(areaNames()).toEqual([
       'Import & protection',
       'People & sharing',
+      // Library care always lists the repair tools the account may run.
+      'Library care',
       'Utilities',
       'Trash',
       'Access & security',
@@ -327,7 +352,7 @@ describe('the Command Center (FL-71)', () => {
     ]);
     // A server area falls back to the first area the account may open.
     expect(screen.getByRole('button', { name: 'Import & protection' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.queryByRole('button', { name: /Database backups/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Backup schedule/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
     expect(screen.getByText('Ada’s library')).toBeInTheDocument();
   });
@@ -370,6 +395,141 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     expect(screen.getByRole('button', { name: 'Watch library' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  });
+
+  describe('the Viewing scope (design review finding 65)', () => {
+    it('offers the picker only where the page reads it', async () => {
+      open('/user-settings?area=overview');
+      const { unmount } = render(SettingsHost, { sections });
+      expect(await screen.findByRole('combobox', { name: 'Account or library scope' })).toBeInTheDocument();
+      unmount();
+
+      open('/user-settings?area=processing&section=queues');
+      const jobs = render(SettingsHost, { sections });
+      expect(await screen.findByRole('combobox', { name: 'Account or library scope' })).toBeInTheDocument();
+      jobs.unmount();
+
+      open('/user-settings?area=storage');
+      render(SettingsHost, { sections });
+      expect(await screen.findByText('Applies to the whole server')).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
+    });
+
+    it('says a page of the account’s own applies to the account', async () => {
+      open('/user-settings?area=preferences&section=account');
+      render(SettingsHost, { sections });
+      expect(await screen.findByText('Applies to your account')).toBeInTheDocument();
+    });
+
+    it('does not claim a queue filter on pages that do not apply one', async () => {
+      open('/user-settings?area=utilities&scope=library%3Al1');
+      render(SettingsHost, { sections });
+      await screen.findByText('Applies to your account');
+      expect(screen.queryByText(/Jobs are filtered by account/)).toBeNull();
+    });
+  });
+
+  it("marks the page on screen while one of the account's own preference forms has changes (finding 70)", async () => {
+    open('/user-settings?area=backups');
+    const { container } = render(SettingsHost, { sections });
+    expect(container.querySelector('.pending')).toBeNull();
+    expect(backupPages()[0]).not.toHaveClass('has-pending');
+
+    const release = ownPreferencesPending.hold();
+    try {
+      await waitFor(() => expect(backupPages()[0]).toHaveClass('has-pending'));
+      expect(container.querySelector(':scope .area.selected .pending')).not.toBeNull();
+      expect(backupPages()[1]).not.toHaveClass('has-pending');
+    } finally {
+      release();
+    }
+    await waitFor(() => expect(container.querySelector('.pending')).toBeNull());
+  });
+
+  describe('one Backup area (design review finding 66)', () => {
+    it('lists off-site copies, the schedule and restore as pages of Backup', () => {
+      open('/user-settings?area=backups');
+      render(SettingsHost, { sections });
+      expect([...backupPages()].map((page) => page.textContent)).toEqual([
+        'Off-site copies',
+        'Backup schedule',
+        'Backups & restore',
+      ]);
+      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('shows the schedule under Backup at the address it always had', () => {
+      open('/user-settings?area=backup&section=backup');
+      render(SettingsHost, { sections });
+      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: 'Import & protection' })).not.toHaveAttribute('aria-current');
+      const heading = screen.getByRole('heading', { level: 1, name: 'Backup schedule' }).parentElement!;
+      expect(within(heading).getByRole('button', { name: 'Backup' })).toBeInTheDocument();
+      expect(backupPages()[1]).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('shows the backups manager under Backup at its Maintenance address', () => {
+      open('/user-settings?area=maintenance&section=backups');
+      const { container } = render(SettingsHost, { sections });
+      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('heading', { level: 1, name: 'Backups & restore' })).toBeInTheDocument();
+      expect(container.querySelector('#setting-backups')).toHaveClass('cc-manager');
+    });
+
+    it('shows Cloud backup under Backup, with off-site copies current', () => {
+      open('/user-settings?area=cloud&section=cloud-backup');
+      render(SettingsHost, { sections });
+      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: 'Frameleaf Cloud' })).not.toHaveAttribute('aria-current');
+      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('no longer lists a backup page under Import & protection, Maintenance or Frameleaf Cloud', () => {
+      for (const area of ['backup', 'maintenance', 'cloud']) {
+        open(`/user-settings?area=${area}`);
+        const { container, unmount } = render(SettingsHost, { sections });
+        const directory = within(container.querySelector<HTMLElement>('.cc-directory')!);
+        expect(directory.queryByRole('button', { name: /Backup schedule|Backups & restore|Cloud backup/ })).toBeNull();
+        unmount();
+      }
+    });
+
+    it('finds the schedule from search under Backup', async () => {
+      open('/user-settings?area=storage');
+      render(SettingsHost, { sections });
+      await userEvent.type(screen.getByRole('searchbox', { name: 'Search all settings' }), 'schedule');
+      const result = await screen.findByRole('button', { name: /Backup schedule/ });
+      expect(result.querySelector('small')).toHaveTextContent('Backup');
+      await userEvent.click(result);
+      expect(state.goto).toHaveBeenCalledWith('/user-settings?area=backup&section=backup', expect.any(Object));
+    });
+  });
+
+  it('keeps a repair tool opened from Library care under Library care', () => {
+    open('/user-settings?area=utilities&section=duplicates&from=care');
+    render(SettingsHost, { sections });
+    expect(screen.getByRole('button', { name: 'Library care' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Utilities' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('walks search results with the arrow keys and opens the first with Enter', async () => {
+    open('/user-settings?area=storage');
+    render(SettingsHost, { sections });
+    const search = screen.getByRole('searchbox', { name: 'Search all settings' });
+    await userEvent.type(search, 'email');
+    const first = await screen.findByRole('button', { name: /Email delivery/ });
+    await userEvent.keyboard('{ArrowDown}');
+    expect(first.parentElement!.querySelector('button')).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(search).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    expect(state.goto).toHaveBeenCalled();
+  });
+
+  it('does not badge Change history with a count of every saved change', () => {
+    open('/user-settings?area=storage');
+    render(SettingsHost, { sections });
+    expect(screen.getByRole('button', { name: 'Change history' }).querySelector('.count')).toBeNull();
   });
 
   it('opens on the Overview for an administrator, as the rail Settings does in the template', () => {

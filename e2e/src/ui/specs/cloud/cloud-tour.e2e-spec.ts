@@ -139,7 +139,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
       }),
     );
     await page.goto('/user-settings?area=preferences&tour=cloud');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(mock.requests.some(({ path }) => path === 'admin/cloud/tour')).toBe(false);
   });

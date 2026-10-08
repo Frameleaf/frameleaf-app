@@ -63,8 +63,8 @@ describe('BestMoments', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Play clip.mov from 1:05' }));
     expect(onPlay).toHaveBeenCalledWith({ asset: clip, timestampMs: 65_000 });
-    await fireEvent.click(screen.getByRole('button', { name: 'Play from 1:05' }));
-    expect(onPlay).toHaveBeenCalledTimes(2);
+    // One control plays the moment: there is no second "Play from" link under the thumbnail.
+    expect(screen.queryByRole('button', { name: 'Play from 1:05' })).toBeNull();
   });
 
   it('offers the cover only once the video has frames to cover from', async () => {
@@ -107,7 +107,7 @@ describe('BestMoments', () => {
     sdkMock.getVideoMoments.mockRejectedValue(new Error('enrichment off'));
     render(BestMoments, { assets: [ranked('clip', AssetTypeEnum.Video, 2000)], onPlay: vi.fn() });
     await waitFor(() => expect(sdkMock.getVideoMoments).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Play from 0:02' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play clip.mov from 0:02' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Use as cover' })).toBeNull();
   });
 });

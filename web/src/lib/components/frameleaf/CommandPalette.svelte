@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    commandGroups,
     groupCommands,
     loadRecentCommands,
     navigationCommands,
@@ -13,7 +12,7 @@
     type CommandGroupResult,
     type CommandItem,
   } from '$lib/frameleaf/command-palette';
-  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { leave, prefersReducedMotion } from '$lib/frameleaf/motion';
   import '$lib/frameleaf/tokens.css';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
@@ -117,6 +116,19 @@
     listElement?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   });
 
+  /**
+   * Close with the Sheet exit (a short sink and fade, the backdrop with it; a crossfade under
+   * Reduce Motion), then tell the host. Where nothing can animate the host is told at once.
+   */
+  let closing = false;
+  const requestClose = () => {
+    if (closing) {
+      return;
+    }
+    closing = true;
+    leave(dialog, 'sheet', onClose, { backdrop: true });
+  };
+
   const run = (command: CommandItem | undefined) => {
     if (!command) {
       return;
@@ -125,7 +137,7 @@
     recent = next;
     saveRecentCommands(localStorage, next);
     onRun?.(command);
-    onClose();
+    requestClose();
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -160,7 +172,13 @@
   aria-label={$t('frameleaf_search_command_palette')}
   oncancel={(event) => {
     event.preventDefault();
-    onClose();
+    requestClose();
+  }}
+  onclick={(event) => {
+    // A press on the backdrop lands on the dialog itself; the keyboard path is Escape and Close.
+    if (event.target === dialog) {
+      requestClose();
+    }
   }}
 >
   <div class="input-row">
@@ -180,7 +198,10 @@
       oninput={(event) => (query = event.currentTarget.value.replace(/^\s*>\s*/, ''))}
       onkeydown={onKeyDown}
     />
-    <kbd aria-hidden="true">Esc</kbd>
+    <!-- A real control, so a pointer or touch can leave without picking a command. -->
+    <button type="button" class="close" aria-label={$t('close')} title={$t('close')} onclick={requestClose}>
+      <kbd aria-hidden="true">Esc</kbd>
+    </button>
   </div>
 
   <div class="list" role="listbox" id={listId} bind:this={listElement} aria-label={$t('frameleaf_search_commands')}>
@@ -235,7 +256,7 @@
     <span aria-live="polite">
       {searching
         ? $t('frameleaf_search_match_count', { values: { count: flat.length } })
-        : $t('frameleaf_search_group_count', { values: { count: commandGroups.length } })}
+        : $t('frameleaf_search_command_hint')}
     </span>
   </div>
 </dialog>
@@ -254,11 +275,9 @@
     background: color-mix(in srgb, var(--fl-panel) 74%, transparent);
     backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
-    border-radius: 20px;
-    box-shadow:
-      0 30px 120px #000a,
-      inset 0 1px 0 #ffffff14;
-    animation: fl-command-palette-in 420ms var(--fl-spring) both;
+    border-radius: var(--fl-radius-sheet);
+    box-shadow: var(--fl-shadow-4);
+    animation: fl-command-palette-in var(--fl-duration-dock) var(--fl-spring) both;
   }
   @supports (corner-shape: squircle) {
     .command-palette {
@@ -284,16 +303,17 @@
     }
   }
   .command-palette.reduced-motion {
-    animation: fl-command-palette-fade 150ms ease both;
+    animation: fl-command-palette-fade var(--fl-duration-reduced) var(--fl-ease) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .command-palette {
-      animation: fl-command-palette-fade 150ms ease both;
+      animation: fl-command-palette-fade var(--fl-duration-reduced) var(--fl-ease) both !important;
     }
   }
   .command-palette::backdrop {
-    background: #0005;
-    backdrop-filter: blur(10px);
+    background: var(--fl-scrim);
+    -webkit-backdrop-filter: var(--fl-scrim-blur);
+    backdrop-filter: var(--fl-scrim-blur);
   }
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
     .command-palette {
@@ -301,7 +321,7 @@
       backdrop-filter: none;
     }
     .command-palette::backdrop {
-      background: rgb(0 0 0 / 67%);
+      background: var(--fl-scrim);
       backdrop-filter: none;
     }
   }
@@ -321,7 +341,24 @@
     color: var(--fl-text);
     background: transparent;
     border: 0;
+    /* The field is the palette's one text target; its row carries the focus mark instead of a ring. */
     outline: none;
+  }
+  .input-row:has(input:focus-visible) {
+    border-bottom-color: var(--fl-accent);
+    box-shadow: inset 0 -1px var(--fl-accent);
+  }
+  .close {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
+    margin: -6px -10px -6px 0;
+    border-radius: var(--fl-radius-control);
+  }
+  .close:hover {
+    background: color-mix(in srgb, var(--fl-text) 8%, transparent);
   }
   .list {
     min-height: 0;
@@ -346,7 +383,7 @@
     color: var(--fl-text);
     background: transparent;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--fl-radius-control);
   }
   .item:hover {
     background: color-mix(in srgb, var(--fl-text) 8%, transparent);
@@ -378,7 +415,7 @@
     color: var(--fl-muted);
     background: color-mix(in srgb, var(--fl-text) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
-    border-radius: 5px;
+    border-radius: var(--fl-radius-xs);
   }
   .empty {
     display: flex;

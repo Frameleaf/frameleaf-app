@@ -194,7 +194,7 @@
   .role {
     padding: 0.125rem 0.5rem;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     color: var(--fl-muted);
     font-size: 0.6875rem;
   }

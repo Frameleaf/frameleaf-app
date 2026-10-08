@@ -46,11 +46,11 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
   };
   const load = async (editor: Locator, label: string) => {
     await editor.getByRole('button', { name: 'Versions', exact: true }).click();
-    await editor.getByRole('menuitem', { name: 'All versions and renders', exact: true }).click();
+    await editor.getByRole('menuitem', { name: 'All versions', exact: true }).click();
     await editor
       .locator('.ed-version')
       .filter({ hasText: label })
-      .getByRole('button', { name: 'Load settings', exact: true })
+      .getByRole('button', { name: 'Edit from this version', exact: true })
       .click();
     await expect(editor.getByRole('tab', { name: 'Adjust', exact: true })).toHaveAttribute('aria-selected', 'true');
   };
@@ -198,11 +198,13 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
       recipe: { ...opaque, contrast: 25 },
     });
     await expect(
-      page.getByText('Edits saved. This recipe requires a newer renderer; the current preview is unchanged.', {
-        exact: true,
-      }),
+      page.getByText(
+        'Saved. Showing this edit needs a newer version of Frameleaf, so the photo looks the same for now.',
+        { exact: true },
+      ),
     ).toBeVisible();
-    await expect(page.getByText(/Version \d+ saved\. Rendering the edited master/)).toHaveCount(0);
+    // Nothing was queued, so the "finishing" message for a queued edit must not appear.
+    await expect(page.getByText(/Saved\. Finishing your edit/)).toHaveCount(0);
     await expect(editor).toBeHidden();
     const after = await read();
     // Two existing rows plus exactly one new row proves the refused first request wrote no revision.
@@ -231,7 +233,8 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
       ...opaque,
       contrast: 25,
     });
-    await editor.getByRole('button', { name: 'Revert', exact: true }).click();
+    await editor.getByRole('button', { name: 'More actions', exact: true }).click();
+    await editor.getByRole('menuitem', { name: 'Reset all edits', exact: true }).click();
     const renderedPromise = observeSave(true);
     await editor.getByRole('button', { name: 'Save version', exact: true }).click();
     const admitted = await renderedPromise;

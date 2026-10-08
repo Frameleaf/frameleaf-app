@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
@@ -30,8 +32,7 @@
   let logoError = $state('');
   let generation = 0;
   let disposed = false;
-  const failure = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'The request could not be completed. Try again.';
+  const failure = (cause: unknown) => $t(photographyErrorKey(cause));
   const fonts = { editorial: 'Georgia, serif', modern: 'system-ui, sans-serif', classic: 'Palatino, Georgia, serif' };
 
   async function reload() {
@@ -84,7 +85,7 @@
       stored = value;
       draft = { ...value.brand };
       logoChanged = false;
-      message = 'Branding saved on your server';
+      message = $t('frameleaf_photography_branding_saved');
       onSaved();
     } catch (error_) {
       if (current === generation) {
@@ -173,15 +174,15 @@
 </script>
 
 {#if error}<div class="phw-notice" role="alert">
-    {error}<Button disabled={busy} onclick={reload}>Reload branding</Button>
+    {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload_branding')}</Button>
   </div>{/if}
-{#if loading}<div class="phw-empty" role="status">Loading studio branding…</div>
+{#if loading}<div class="phw-empty" role="status">{$t('frameleaf_photography_loading_branding')}</div>
 {:else if draft && stored}
   <form class="phw-detail-layout phw-brand-layout" onsubmit={persist} aria-busy={busy}>
     <section class="phw-brand-main">
       <div class="phw-brand-intro">
-        <h2>Your studio identity</h2>
-        <p>Identity and watermark settings are saved privately with your photography workspace.</p>
+        <h2>{$t('frameleaf_photography_identity_title')}</h2>
+        <p>{$t('frameleaf_photography_identity_body')}</p>
       </div>
       <div
         class="phw-brand-card"
@@ -192,7 +193,7 @@
         <div class="phw-brand-logo" style:background={draft.color}>
           {#if draft.logoAssetId && !logoFailed}<img
               src={logoThumbnailUrl(draft.logoAssetId)}
-              alt="Studio logo"
+              alt={$t('frameleaf_photography_studio_logo')}
               onerror={() => (logoFailed = true)}
             />{:else}<span
               >{draft.logoInitials ||
@@ -208,17 +209,16 @@
         <div class="phw-brand-contact"><span>{draft.email}</span><span>{draft.phone}</span></div>
       </div>
       {#if stored.logoUnavailable || logoFailed}<p class="phw-small" role="status">
-          The saved logo is unavailable. Its private reference is retained until you choose a new logo or use initials.
+          {$t('frameleaf_photography_logo_unavailable')}
         </p>{/if}
       <div class="phw-brand-intro">
-        <h2>Your watermark</h2>
+        <h2>{$t('frameleaf_photography_your_watermark')}</h2>
         <p>
-          Legacy placement guide. Open Watermarks to create reusable rendered presets for proofs, web previews and final
-          exports.
+          {$t('frameleaf_photography_your_watermark_body')}
         </p>
       </div>
-      <div class="phw-watermark-guide" aria-label="Watermark placement guide">
-        <span class="phw-guide-label">Placement guide</span><span
+      <div class="phw-watermark-guide" aria-label={$t('frameleaf_photography_placement_guide_label')}>
+        <span class="phw-guide-label">{$t('frameleaf_photography_placement_guide')}</span><span
           class="phw-guide-mark"
           data-position={draft.watermarkPosition}
           style:color={draft.watermarkColor}
@@ -228,9 +228,9 @@
         >
       </div>
       <div class="phw-brand-intro">
-        <h2>Colour palette</h2>
+        <h2>{$t('frameleaf_photography_colour_palette')}</h2>
         <div class="phw-brand-swatches">
-          {#each [[draft.color, 'Accent'], [draft.background, 'Background'], [draft.textColor, 'Text']] as [color, label] (label)}<div
+          {#each [[draft.color, $t('frameleaf_photography_accent')], [draft.background, $t('frameleaf_photography_background')], [draft.textColor, $t('frameleaf_photography_text')]] as [color, label] (label)}<div
             >
               <i style:background={color}></i><span>{label}</span><small>{color}</small>
             </div>{/each}
@@ -239,71 +239,96 @@
     </section>
     <aside class="phw-inspector phw-brand-controls">
       <div class="phw-inspector-body">
-        <h2>Studio details</h2>
+        <h2>{$t('frameleaf_photography_studio_details')}</h2>
         <fieldset disabled={busy}>
           <label class="phw-field"
-            ><span>Studio name</span><input required maxlength="200" bind:value={draft.name} /></label
+            ><span>{$t('frameleaf_photography_studio_name')}</span><input
+              required
+              maxlength="200"
+              bind:value={draft.name}
+            /></label
           >
-          <label class="phw-field"><span>Tagline</span><input maxlength="300" bind:value={draft.tagline} /></label>
           <label class="phw-field"
-            ><span>Contact email</span><input type="email" maxlength="254" bind:value={draft.email} /></label
+            ><span>{$t('frameleaf_photography_tagline')}</span><input
+              maxlength="300"
+              bind:value={draft.tagline}
+            /></label
           >
-          <label class="phw-field"><span>Phone</span><input maxlength="100" bind:value={draft.phone} /></label>
           <label class="phw-field"
-            ><span>Logo initials</span><input maxlength="12" bind:value={draft.logoInitials} /></label
+            ><span>{$t('frameleaf_photography_contact_email')}</span><input
+              type="email"
+              maxlength="254"
+              bind:value={draft.email}
+            /></label
+          >
+          <label class="phw-field"
+            ><span>{$t('frameleaf_photography_phone')}</span><input maxlength="100" bind:value={draft.phone} /></label
+          >
+          <label class="phw-field"
+            ><span>{$t('frameleaf_photography_logo_initials')}</span><input
+              maxlength="12"
+              bind:value={draft.logoInitials}
+            /></label
           >
           <div class="phw-brand-buttons">
             <Button
               onclick={() => {
                 picker = true;
                 void candidates();
-              }}>Choose library logo</Button
-            ><Button onclick={() => choose(null)}>Use initials</Button>
+              }}>{$t('frameleaf_photography_choose_logo')}</Button
+            ><Button onclick={() => choose(null)}>{$t('frameleaf_photography_use_initials')}</Button>
           </div>
-          <p class="phw-small">Choose an image you own: PNG, JPEG or WebP, up to 500 KB. Locked images are excluded.</p>
-          <h3>Typography and colours</h3>
+          <p class="phw-small">
+            {$t('frameleaf_photography_logo_rules')}
+          </p>
+          <h3>{$t('frameleaf_photography_typography_colours')}</h3>
           <label class="phw-field"
-            ><span>Typography</span><select bind:value={draft.font}
-              ><option value="editorial">Editorial serif</option><option value="modern">Modern sans serif</option
-              ><option value="classic">Classic serif</option></select
+            ><span>{$t('frameleaf_photography_typography')}</span><select bind:value={draft.font}
+              ><option value="editorial">{$t('frameleaf_photography_font_editorial')}</option><option value="modern"
+                >{$t('frameleaf_photography_font_modern_serif')}</option
+              ><option value="classic">{$t('frameleaf_photography_font_classic')}</option></select
             ></label
           >
           <label class="phw-field phw-color-field"
-            ><span>Accent</span><input type="color" bind:value={draft.color} /></label
+            ><span>{$t('frameleaf_photography_accent')}</span><input type="color" bind:value={draft.color} /></label
           >
           <label class="phw-field phw-color-field"
-            ><span>Background</span><input type="color" bind:value={draft.background} /></label
+            ><span>{$t('frameleaf_photography_background')}</span><input
+              type="color"
+              bind:value={draft.background}
+            /></label
           >
           <label class="phw-field phw-color-field"
-            ><span>Text</span><input type="color" bind:value={draft.textColor} /></label
+            ><span>{$t('frameleaf_photography_text')}</span><input type="color" bind:value={draft.textColor} /></label
           >
-          <h3>Watermark settings</h3>
-          <div class="phw-brand-buttons" aria-label="Watermark presets">
-            <Button onclick={() => preset('bottom-right', 35, 4)}>Subtle</Button><Button
-              onclick={() => preset('bottom-right', 45, 6)}>Signature</Button
-            ><Button onclick={() => preset('center', 20, 8)}>Centre</Button>
+          <h3>{$t('frameleaf_photography_watermark_settings')}</h3>
+          <div class="phw-brand-buttons" role="group" aria-label={$t('frameleaf_photography_watermark_quick')}>
+            <Button onclick={() => preset('bottom-right', 35, 4)}>{$t('frameleaf_photography_watermark_subtle')}</Button
+            ><Button onclick={() => preset('bottom-right', 45, 6)}
+              >{$t('frameleaf_photography_watermark_signature')}</Button
+            ><Button onclick={() => preset('center', 20, 8)}>{$t('frameleaf_photography_position_centre')}</Button>
           </div>
           <label class="phw-field"
-            ><span>Position</span><select bind:value={draft.watermarkPosition}
-              ><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option
-                value="center">Centre</option
-              ><option value="top-right">Top right</option></select
+            ><span>{$t('frameleaf_photography_position')}</span><select bind:value={draft.watermarkPosition}
+              ><option value="bottom-right">{$t('frameleaf_photography_position_bottom_right')}</option><option
+                value="bottom-left">{$t('frameleaf_photography_position_bottom_left')}</option
+              ><option value="center">{$t('frameleaf_photography_position_centre')}</option><option value="top-right"
+                >{$t('frameleaf_photography_position_top_right')}</option
+              ></select
             ></label
           >
           <label class="phw-field phw-color-field"
-            ><span>Watermark colour</span><input type="color" bind:value={draft.watermarkColor} /></label
-          >
-          <label class="phw-field"
-            ><span>Opacity · {draft.watermarkOpacity}%</span><input
-              type="range"
-              min="10"
-              max="100"
-              step="1"
-              bind:value={draft.watermarkOpacity}
+            ><span>{$t('frameleaf_photography_watermark_colour')}</span><input
+              type="color"
+              bind:value={draft.watermarkColor}
             /></label
           >
           <label class="phw-field"
-            ><span>Size · {draft.watermarkSize}%</span><input
+            ><span>{$t('frameleaf_photography_opacity_value', { values: { value: draft.watermarkOpacity } })}</span
+            ><input type="range" min="10" max="100" step="1" bind:value={draft.watermarkOpacity} /></label
+          >
+          <label class="phw-field"
+            ><span>{$t('frameleaf_photography_size_value', { values: { value: draft.watermarkSize } })}</span><input
               type="range"
               min="3"
               max="12"
@@ -312,30 +337,35 @@
             /></label
           >
         </fieldset>
-        <Button type="submit" variant="primary" disabled={busy || !!error}>{busy ? 'Saving…' : 'Save branding'}</Button>
+        <Button type="submit" variant="primary" disabled={busy || !!error}
+          >{busy ? $t('frameleaf_photography_saving') : $t('frameleaf_photography_save_branding')}</Button
+        >
         <p class="phw-small" aria-live="polite">{message}</p>
       </div>
     </aside>
   </form>
 {/if}
 <Dialog
-  title="Choose studio logo"
-  closeLabel="Close logo picker"
+  title={$t('frameleaf_photography_choose_logo_title')}
+  closeLabel={$t('close')}
   bind:open={picker}
   onRequestClose={() => (picker = false)}
 >
   <div class="phw-new-shoot">
-    <p class="phw-small">Only eligible images you own appear here.</p>
+    <p class="phw-small">{$t('frameleaf_photography_logo_picker_note')}</p>
     {#if logoError}<p role="alert">{logoError}</p>
-      <Button onclick={() => candidates()}>Retry</Button>{/if}
+      <Button onclick={() => candidates()}>{$t('frameleaf_error_retry')}</Button>{/if}
     <div class="phw-logo-grid">
       {#each logos as logo (logo.id)}<button type="button" onclick={() => choose(logo.id)}
           ><img src={logoThumbnailUrl(logo.id)} alt="" loading="lazy" /><span>{logo.fileName}</span></button
         >{/each}
     </div>
-    {#if logoLoading}<p role="status">Loading logos…</p>{:else if logos.length === 0 && !logoError}<p>
-        No eligible images on this page. Add a logo to your library, or use initials.
-      </p>{/if}{#if cursor}<Button disabled={logoLoading} onclick={() => candidates(true)}>Load more images</Button
+    {#if logoLoading}<p role="status">
+        {$t('frameleaf_photography_loading_logos')}
+      </p>{:else if logos.length === 0 && !logoError}<p>
+        {$t('frameleaf_photography_no_logos')}
+      </p>{/if}{#if cursor}<Button disabled={logoLoading} onclick={() => candidates(true)}
+        >{$t('frameleaf_photography_load_more_images')}</Button
       >{/if}
   </div>
 </Dialog>

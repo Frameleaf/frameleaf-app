@@ -18,6 +18,8 @@
     type RailDestination,
     type RailSectionId,
   } from '$lib/frameleaf/navigation';
+  import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -37,7 +39,7 @@
     mdiChevronRight,
     mdiPlus,
   } from '@mdi/js';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
@@ -137,7 +139,36 @@
   const pathname = $derived(page.url.pathname);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The icon-only rail applies on desktop only; the mobile sidebar is a full overlay.
-  const iconOnly = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
+  const wantsIconOnly = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
+  /**
+   * Collapsing is one gesture (review finding 126): the rail narrows over `--fl-duration` while its
+   * labels fade, and only once it is narrow do the rows become icon-only. Taking the labels out at
+   * once made the text vanish before the rail had moved. Opening has nothing to wait for. Under
+   * Reduce Motion, and wherever nothing animates, the change is immediate.
+   */
+  let railElement = $state<HTMLElement>();
+  let iconOnly = $state(untrack(() => wantsIconOnly));
+  let collapsing = $state(false);
+  $effect(() => {
+    if (!wantsIconOnly) {
+      collapsing = false;
+      iconOnly = false;
+      return;
+    }
+    if (untrack(() => iconOnly)) {
+      return;
+    }
+    if (prefersReducedMotion() || !canAnimate(untrack(() => railElement))) {
+      iconOnly = true;
+      return;
+    }
+    collapsing = true;
+    const timer = setTimeout(() => {
+      iconOnly = true;
+      collapsing = false;
+    }, DURATION.spring);
+    return () => clearTimeout(timer);
+  });
   const isSectionOpen = (id: RailSectionId) =>
     iconOnly || !FOLDABLE_RAIL_SECTIONS.includes(id) || !closedSections.includes(id);
 
@@ -167,7 +198,7 @@
     class:fl-nested={nested && !iconOnly}
     class:fl-current={current}
     aria-current={current ? 'page' : undefined}
-    title={iconOnly ? label : undefined}
+    title={iconOnly || nested ? label : undefined}
     aria-label={iconOnly ? label : undefined}
     data-sveltekit-preload-data="hover"
   >
@@ -202,8 +233,13 @@
 
 {#snippet railHeader({ collapsed, toggle }: { collapsed: boolean; toggle: () => void })}
   <!-- LibraryRail.jsx `rail-header`: the "Library" label and the double-chevron toggle (desktop). -->
-  <div class="frameleaf fl-rail-header" class:fl-icon-only={collapsed} data-theme={appTheme}>
-    {#if !collapsed}<span>{$t('library')}</span>{/if}
+  <div
+    class="frameleaf fl-rail-header"
+    class:fl-icon-only={collapsed && iconOnly}
+    class:is-collapsing={collapsing}
+    data-theme={appTheme}
+  >
+    {#if !iconOnly}<span class="fl-label">{$t('library')}</span>{/if}
     <button
       type="button"
       class="fl-rail-toggle"
@@ -218,7 +254,13 @@
 {/snippet}
 
 <Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader}>
-  <div class="frameleaf fl-rail" class:fl-icon-only={iconOnly} data-theme={appTheme}>
+  <div
+    bind:this={railElement}
+    class="frameleaf fl-rail"
+    class:fl-icon-only={iconOnly}
+    class:is-collapsing={collapsing}
+    data-theme={appTheme}
+  >
     {#each sections as section (section.id)}
       {#if section.id === 'footer'}
         <hr class="fl-separator" />
@@ -257,76 +299,88 @@
         </div>
       {/if}
 
-      <div class="fl-section" id="fl-rail-section-{section.id}" hidden={!isSectionOpen(section.id)}>
-        {#each section.destinations as destination (destination.id)}
-          {@render destinationLink(destination)}
+      <!--
+        The section folds with its chevron: the wrapper's one grid row runs between 1fr and 0fr, and
+        a closed section is inert and hidden once the fold has finished, so it keeps no tab stops.
+      -->
+      <div class="fl-fold" data-open={isSectionOpen(section.id)}>
+        <div
+          class="fl-section"
+          id="fl-rail-section-{section.id}"
+          inert={!isSectionOpen(section.id)}
+          aria-hidden={isSectionOpen(section.id) ? undefined : 'true'}
+        >
+          {#each section.destinations as destination (destination.id)}
+            {@render destinationLink(destination)}
 
-          {#if destination.id === 'allAlbums' && !iconOnly}
-            <!-- Collections, each with the albums inside it. One level deep: in this
+            {#if destination.id === 'allAlbums' && !iconOnly}
+              <!-- Collections, each with the albums inside it. One level deep: in this
                product an album never contains another album, and there is no
                subcollection. -->
-            {#each tree.collections as collection (collection.id)}
-              <div class="fl-branch" class:fl-current={isCollectionCurrent(collection)}>
-                <!-- The twisty only opens the branch; the collection keeps its own page,
+              {#each tree.collections as collection (collection.id)}
+                <div class="fl-branch" class:fl-current={isCollectionCurrent(collection)}>
+                  <!-- The twisty only opens the branch; the collection keeps its own page,
                    so every album and collection stays reachable from the rail. -->
-                <button
-                  type="button"
-                  class="fl-twisty"
-                  aria-label={isCollectionOpen(collection.id) ? $t('collapse') : $t('expand')}
-                  aria-expanded={isCollectionOpen(collection.id)}
-                  onclick={() => toggleCollection(collection.id)}
-                >
-                  <Icon
-                    icon={isCollectionOpen(collection.id) ? mdiChevronDown : mdiChevronRight}
-                    size="1em"
-                    aria-hidden={true}
-                    class="fl-chevron"
-                  />
-                </button>
-                <a
-                  href={Route.viewAlbum({ id: collection.id })}
-                  class="fl-link"
-                  aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
-                  data-sveltekit-preload-data="hover"
-                >
-                  <Icon icon={albumIconPath(collection.icon)} size="1.25em" aria-hidden={true} class="fl-icon" />
-                  <span class="fl-label">{collection.name}</span>
-                </a>
-              </div>
-              {#if isCollectionOpen(collection.id)}
-                {#each collection.children as album (album.id)}
-                  {@render albumLink(album)}
-                {/each}
-              {/if}
-            {/each}
+                  <button
+                    type="button"
+                    class="fl-twisty"
+                    aria-label={$t(
+                      isCollectionOpen(collection.id)
+                        ? 'frameleaf_rail_collapse_collection'
+                        : 'frameleaf_rail_expand_collection',
+                      { values: { name: collection.name } },
+                    )}
+                    aria-expanded={isCollectionOpen(collection.id)}
+                    onclick={() => toggleCollection(collection.id)}
+                  >
+                    <!-- One chevron that turns, in step with the section headings. -->
+                    <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} class="fl-chevron" />
+                  </button>
+                  <a
+                    href={Route.viewAlbum({ id: collection.id })}
+                    class="fl-link"
+                    aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
+                    data-sveltekit-preload-data="hover"
+                  >
+                    <Icon icon={albumIconPath(collection.icon)} size="1.25em" aria-hidden={true} class="fl-icon" />
+                    <span class="fl-label" title={collection.name}>{collection.name}</span>
+                  </a>
+                </div>
+                {#if isCollectionOpen(collection.id)}
+                  {#each collection.children as album (album.id)}
+                    {@render albumLink(album)}
+                  {/each}
+                {/if}
+              {/each}
 
-            {#each tree.albums as album (album.id)}
-              {@render albumLink(album)}
-            {/each}
-          {/if}
-          {#if destination.id === 'allAlbums'}
-            <!-- LibraryRail.jsx: saved searches follow the album tree, before Shared links. -->
-            <RailSavedSearches {iconOnly} />
-          {/if}
-        {/each}
-
-        {#if section.id === 'spaces'}
-          {#if !iconOnly}
-            {#each tree.spaces as space (space.id)}
-              {@render spaceLink(space)}
-            {/each}
-          {/if}
-          <!-- LibraryRail.jsx: each partner's library follows the spaces ("Jamie's library"). -->
-          {#each partners as partner (partner.id)}
-            {@render railLink(
-              $t('frameleaf_rail_partner_library', { values: { name: partner.name } }),
-              mdiAccountOutline,
-              Route.viewPartner({ id: partner.id }),
-              pathname.startsWith(Route.viewPartner({ id: partner.id })),
-              false,
-            )}
+              {#each tree.albums as album (album.id)}
+                {@render albumLink(album)}
+              {/each}
+            {/if}
+            {#if destination.id === 'allAlbums'}
+              <!-- LibraryRail.jsx: saved searches follow the album tree, before Shared links. -->
+              <RailSavedSearches {iconOnly} />
+            {/if}
           {/each}
-        {/if}
+
+          {#if section.id === 'spaces'}
+            {#if !iconOnly}
+              {#each tree.spaces as space (space.id)}
+                {@render spaceLink(space)}
+              {/each}
+            {/if}
+            <!-- LibraryRail.jsx: each partner's library follows the spaces ("Jamie's library"). -->
+            {#each partners as partner (partner.id)}
+              {@render railLink(
+                $t('frameleaf_rail_partner_library', { values: { name: partner.name } }),
+                mdiAccountOutline,
+                Route.viewPartner({ id: partner.id }),
+                pathname.startsWith(Route.viewPartner({ id: partner.id })),
+                false,
+              )}
+            {/each}
+          {/if}
+        </div>
       </div>
     {/each}
 
@@ -382,6 +436,28 @@
     justify-content: center;
     padding-inline: 0;
   }
+  /*
+   * While the rail narrows, everything that is text fades and the icons stay where they are; the
+   * rows turn icon-only when the width has arrived. Nothing here can be pressed in the meantime.
+   */
+  .fl-rail :global(.fl-label),
+  .fl-rail-header :global(.fl-label),
+  .fl-heading,
+  .fl-twisty,
+  .fl-rail :global(.fl-rail-text) {
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .is-collapsing :global(.fl-label),
+  .is-collapsing .fl-heading,
+  .is-collapsing .fl-twisty,
+  .is-collapsing :global(.fl-rail-text) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .is-collapsing {
+    overflow: hidden;
+    white-space: nowrap;
+  }
   /* Narrower screens open and close the drawer from the top bar's menu button. */
   @media (min-width: 850px) {
     .fl-rail-header {
@@ -394,7 +470,7 @@
     width: 32px;
     height: 32px;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     background: transparent;
     color: var(--fl-muted);
   }
@@ -420,7 +496,7 @@
     color: var(--fl-text);
   }
   .fl-heading-toggle :global(.fl-heading-chevron) {
-    transition: rotate 320ms var(--fl-spring, ease);
+    transition: rotate var(--fl-duration-pop) var(--fl-spring);
   }
   .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
     rotate: -90deg;
@@ -430,13 +506,46 @@
       transition: none;
     }
   }
+  .fl-fold {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--fl-duration-pop) var(--fl-spring);
+  }
+  .fl-fold[data-open='false'] {
+    grid-template-rows: 0fr;
+  }
   .fl-section {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
+    min-height: 0;
+    overflow: hidden;
+    transition:
+      opacity var(--fl-motion) var(--fl-ease),
+      visibility 0s linear;
   }
-  .fl-section[hidden] {
-    display: none;
+  .fl-fold[data-open='false'] .fl-section {
+    opacity: 0;
+    visibility: hidden;
+    /* Stays painted until the fold has closed over it. */
+    transition:
+      opacity var(--fl-motion) var(--fl-ease),
+      visibility 0s linear var(--fl-duration-pop);
+  }
+  /* The rows clip their section while it folds, so the focus ring is drawn inside the row. */
+  .fl-rail :global(a:focus-visible),
+  .fl-rail :global(button:focus-visible) {
+    outline-offset: var(--fl-focus-inset);
+  }
+  .fl-rail :global(.fl-chevron) {
+    transition: rotate var(--fl-duration-pop) var(--fl-spring);
+  }
+  .fl-twisty[aria-expanded='true'] :global(.fl-chevron) {
+    rotate: 90deg;
+  }
+  :global([dir='rtl']) .fl-twisty[aria-expanded='true'] :global(.fl-chevron) {
+    rotate: -90deg;
   }
   .fl-separator {
     /* `.sidebar-bottom`: Library Care, Settings and Support sit at the bottom of the rail. */
@@ -454,7 +563,7 @@
     width: 24px;
     min-height: 24px;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     background: none;
     color: var(--fl-muted);
   }
@@ -470,7 +579,7 @@
     width: 100%;
     padding: 7px 22px;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     background: transparent;
     color: var(--fl-text);
     text-align: start;
@@ -507,7 +616,7 @@
     align-items: center;
     gap: 0.125rem;
     padding-inline-start: 14px;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
   }
   .fl-branch .fl-link {
     padding-inline-start: 0.25rem;
@@ -520,7 +629,7 @@
     min-height: 28px;
     flex-shrink: 0;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-sm);
     background: transparent;
     color: var(--fl-muted);
   }

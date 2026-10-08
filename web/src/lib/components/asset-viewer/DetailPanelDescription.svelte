@@ -156,7 +156,7 @@
     align-items: center;
     gap: 4px;
     padding: 1px 7px;
-    border: 1px solid #ffffff24;
+    border: 1px solid color-mix(in srgb, var(--fl-viewer-text) 14%, transparent);
     border-radius: 999px;
     font-size: 11px;
     font-weight: 550;
@@ -165,8 +165,8 @@
 
   .fl-provenance-ai {
     border-color: transparent;
-    background: var(--fl-ai, #5e5ce6);
-    color: var(--fl-ai-text, #fff);
+    background: var(--fl-ai);
+    color: var(--fl-ai-text);
     font-weight: 600;
   }
 </style>

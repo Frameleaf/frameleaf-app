@@ -246,12 +246,18 @@
   ]}
 />
 
-<button type="button" class="search-entry" data-testid="search-entry" onclick={openEntry}>
-  <Icon icon={mdiMagnify} size="1.25em" aria-hidden={true} />
-  <span class="label">{isSettings ? $t('search_settings') : currentQuery.text || $t('frameleaf_search_title')}</span>
-  <!-- S-25 / CC-7 (App.jsx:2374 "⌘ K"): the hint names the platform's own modifier. -->
-  <kbd aria-hidden="true">{$t(searchShortcutHintKey())}</kbd>
-</button>
+<!--
+  Settings pages carry their own search field, which Ctrl/Cmd+K focuses (`openSettingsSearch`), so
+  the top bar does not draw a second one beside it. The listeners above stay mounted either way.
+-->
+{#if !isSettings}
+  <button type="button" class="search-entry" data-testid="search-entry" onclick={openEntry}>
+    <Icon icon={mdiMagnify} size="1.25em" aria-hidden={true} />
+    <span class="label">{currentQuery.text || $t('frameleaf_search_title')}</span>
+    <!-- S-25 / CC-7 (App.jsx:2374 "⌘ K"): the hint names the platform's own modifier. -->
+    <kbd aria-hidden="true">{$t(searchShortcutHintKey())}</kbd>
+  </button>
+{/if}
 
 {#if showSearch}
   <SearchPalette
@@ -282,10 +288,7 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    /* The prototype's `.global-search` (styles.css) hardcodes 8px rather than one of the shared
-       radius tokens (control is 6px, card is 10px; neither matches), so this matches the
-       prototype's literal value instead of picking the nearest token. */
-    border-radius: 8px;
+    border-radius: var(--fl-radius-control);
     transition: border-color var(--fl-motion-fast) var(--fl-ease);
   }
   .search-entry:hover {
@@ -306,7 +309,7 @@
     color: var(--fl-muted);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-xs);
   }
   @media (max-width: 48rem) {
     kbd {

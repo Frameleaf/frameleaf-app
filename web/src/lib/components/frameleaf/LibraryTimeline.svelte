@@ -32,6 +32,8 @@
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
   import { animateFlip } from '$lib/frameleaf/motion';
+  import { slidingPlate } from '$lib/components/timeline/sliding-plate';
+  import { dissolveView } from '$lib/components/timeline/view-dissolve';
   import type { TimelineCardTarget } from '$lib/frameleaf/timeline-cards';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
@@ -150,6 +152,23 @@
 
   const maxMd = $derived(mediaQueryManager.maxMd);
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
+  /**
+   * On touch and on narrow screens the scrubber takes no column of its own: it floats over the
+   * photos' edge and shows only while the library is being scrolled or scrubbed.
+   */
+  const overlayScrubber = $derived(coarsePointer || mediaQueryManager.maxMd);
+  const SCRUBBER_LINGER_MS = 1400;
+  let scrolledRecently = $state(false);
+  let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined;
+  const noteScroll = () => {
+    if (!overlayScrubber) {
+      return;
+    }
+    scrolledRecently = true;
+    clearTimeout(scrollIdleTimer);
+    scrollIdleTimer = setTimeout(() => (scrolledRecently = false), SCRUBBER_LINGER_MS);
+  };
+  $effect(() => () => clearTimeout(scrollIdleTimer));
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
   const selection = $derived(session.selection);
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
@@ -353,6 +372,20 @@
     onGroupingChange(value);
   };
 
+  /*
+   * Years, Months, Days and All, and Timeline, Browse and Work, dissolve in rather than cut
+   * (`dissolveView`). The effect runs once the new content is in the document, in the same frame,
+   * so it is never seen at full strength first; the library takes input throughout.
+   */
+  let shownView = untrack(() => `${tileLayout}:${grouping}`);
+  $effect(() => {
+    const view = `${tileLayout}:${grouping}`;
+    if (view !== shownView) {
+      shownView = view;
+      untrack(() => dissolveView(root));
+    }
+  });
+
   const stepGrouping = (delta: number) => {
     const index = MODES.indexOf(grouping);
     changeGrouping(MODES[Math.min(MODES.length - 1, Math.max(0, index + delta))]);
@@ -372,6 +405,13 @@
     }
     changeGrouping(target.grouping);
   };
+
+  /**
+   * Counts the places the scrubber has sent the timeline (`onScrub`, `onJump`). A scroll position
+   * that is put back some frames after a layout or grouping change is dropped when this has moved
+   * on: the person has since chosen where to be, and putting the old place back would undo it.
+   */
+  let scrubberMoves = 0;
 
   /*
    * Leaving the tile flow for the cards unmounts it, and coming back would start at the top. The
@@ -407,10 +447,14 @@
     if (untrack(() => pendingMonth)) {
       return;
     }
+    const moves = scrubberMoves;
     void tick()
       .then(nextFrame)
       .then(nextFrame)
       .then(() => {
+        if (moves !== scrubberMoves) {
+          return;
+        }
         if (!restoreLibraryAnchor(timelineManager, anchor) && top > 0) {
           timelineManager.scrollTo(top);
         }
@@ -422,6 +466,7 @@
   let cards = $state<{ jumpTo: (month: { year: number; month: number }) => boolean }>();
 
   const onCardPeriod = (period: { year: number; month?: number } | undefined) => {
+    noteScroll();
     if (!period) {
       cardTopMonth = undefined;
       return;
@@ -930,10 +975,15 @@
     }
     // Work narrows the timeline for its panel and adds captions: the new width is measured and
     // the months laid out again over the next frames, so the asset is found after that settles.
+    // A month chosen on the scrubber in the meantime (G, then a key) wins over the old place.
+    const moves = scrubberMoves;
     void tick()
       .then(nextFrame)
       .then(nextFrame)
       .then(() => {
+        if (moves !== scrubberMoves) {
+          return;
+        }
         if (!restoreLibraryAnchor(timelineManager, anchor) && anchorId) {
           void scrollToAssetId(anchorId, false);
         }
@@ -950,6 +1000,7 @@
    * there is one scroll implementation, not two.
    */
   const onScrub: ScrubberListener = ({ scrubberMonth, overallScrollPercent, scrubberMonthScrollPercent }) => {
+    scrubberMoves++;
     if (!scrubberMonth || timelineManager.limitedScroll) {
       const offset = timelineManager.maxScrollPercent * overallScrollPercent * timelineManager.totalViewerHeight;
       timelineManager.scrollTo(offset);
@@ -979,6 +1030,7 @@
   const onJump = ({ year, month }: { year: number; month: number }) => {
     const target = timelineManager.months.find(({ yearMonth }) => yearMonth.year === year && yearMonth.month === month);
     if (target) {
+      scrubberMoves++;
       timelineManager.scrollTo(Math.min(target.top, timelineManager.maxScroll));
     }
   };
@@ -992,6 +1044,7 @@
     }
     timelineManager.updateSlidingWindow();
     timelineManager.scrolling = true;
+    noteScroll();
     if (!assetViewerManager.isViewing) {
       lastVisibleScrollTop = scrollable.scrollTop;
     }
@@ -1119,7 +1172,12 @@
       <span class="fl-grouping-hint">
         {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
       </span>
-      <div class="fl-grouping-modes" role="group" aria-label={$t('frameleaf_library_grouping')}>
+      <div
+        class="fl-grouping-modes"
+        role="group"
+        aria-label={$t('frameleaf_library_grouping')}
+        use:slidingPlate={grouping}
+      >
         {#each CONTROL_ORDER as value (value)}
           <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
             {$t(MODE_LABELS[value])}
@@ -1142,7 +1200,7 @@
       class="fl-timeline-cards"
       bind:clientHeight={measuredHeight}
       bind:clientWidth={measuredWidth}
-      style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
+      style:margin-inline-end="{overlayScrubber ? 0 : scrubberWidth}px"
     >
       <TimelineCards
         bind:this={cards}
@@ -1164,6 +1222,8 @@
         viewportTopMonth={cardTopMonth}
         onScrub={onCardScrub}
         onJump={onCardJump}
+        overlay={overlayScrubber}
+        active={scrolledRecently}
         bind:scrubberWidth
       />
     {/if}
@@ -1174,7 +1234,7 @@
       bind:this={scrollable}
       bind:clientHeight={measuredHeight}
       bind:clientWidth={measuredWidth}
-      style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
+      style:margin-inline-end="{overlayScrubber ? 0 : scrubberWidth}px"
       onscroll={handleScroll}
       aria-busy={rangePending || groupPending}
     >
@@ -1231,7 +1291,7 @@
           {/if}
           {#if !month.isLoaded}
             <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
-              <Skeleton height={month.height} title={month.title} />
+              <Skeleton height={month.height} title={month.title} headerHeight={month.groupHeaderHeight} />
             </div>
           {:else if month.isInOrNearViewport}
             <div
@@ -1240,6 +1300,7 @@
               aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
               style:height="{month.height}px"
               style:transform={`translate3d(0,${month.top}px,0)`}
+              style:--fl-month-top="{month.top}px"
               onpointerenter={() => (hoveredMonth = month.viewId)}
               onpointerleave={() => {
                 if (hoveredMonth === month.viewId) {
@@ -1322,6 +1383,8 @@
         {timelineScrollPercent}
         {onScrub}
         {onJump}
+        overlay={overlayScrubber}
+        active={scrolledRecently}
         bind:scrubberWidth
         bind:dragging={scrubbing}
       />
@@ -1407,24 +1470,51 @@
   }
   .fl-grouping-hint {
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro, 11px);
+    font-size: var(--fl-font-micro);
   }
   .fl-grouping-modes {
+    position: relative;
     display: flex;
     padding: 2px;
-    border-radius: var(--fl-radius-control, 6px);
+    border-radius: var(--fl-radius-control-compact);
     background: var(--fl-panel);
     box-shadow: inset 0 0 0 1px var(--fl-border);
   }
+  /* The pressed plate slides between segments (sliding-plate.ts); Reduce Motion makes it jump. */
+  .fl-grouping-modes::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 0;
+    width: var(--plate-w, 0);
+    /* Concentric with the control: its corner less the 2px inset. */
+    border-radius: calc(var(--fl-radius-control-compact) - 2px);
+    background: var(--fl-raised);
+    box-shadow: 0 0 0 1px var(--fl-border);
+    translate: var(--plate-x, 0) 0;
+    opacity: 0;
+  }
+  .fl-grouping-modes:global([data-plate-ready])::before {
+    opacity: 1;
+    transition:
+      translate var(--fl-duration-pop) var(--fl-spring),
+      width var(--fl-duration-pop) var(--fl-spring);
+  }
+  .fl-grouping-modes:global([data-plate-ready]) button[aria-pressed='true'] {
+    background: transparent;
+    box-shadow: none;
+  }
   .fl-grouping-modes button {
+    position: relative;
     min-height: 30px;
     padding: 0 12px;
     border: 0;
-    border-radius: 4px;
+    border-radius: calc(var(--fl-radius-control-compact) - 2px);
     background: transparent;
     color: var(--fl-muted);
     font: inherit;
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
     cursor: pointer;
   }
   .fl-grouping-modes button:hover {

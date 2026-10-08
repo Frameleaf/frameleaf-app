@@ -79,8 +79,8 @@
 }
 
 .fl-libraries :focus-visible {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: 3px;
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
 }
 
 .fl-libraries .resource-toolbar {
@@ -132,7 +132,7 @@
 .fl-libraries .resource-table-scroll {
   overflow: auto;
   border: 1px solid var(--fl-border);
-  border-radius: 8px;
+  border-radius: var(--fl-radius-card);
   background: var(--fl-panel);
 }
 
@@ -154,10 +154,11 @@
   border-bottom: 1px solid var(--fl-border);
   vertical-align: middle;
   font-weight: 400;
+  text-align: start;
 }
 
 .fl-libraries .resource-table thead th {
-  font-size: 10px;
+  font-size: var(--fl-font-micro);
   font-weight: 550;
   text-transform: uppercase;
   letter-spacing: 0.065em;
@@ -242,7 +243,7 @@
 .fl-libraries .resource-detail {
   margin-top: 24px;
   border: 1px solid var(--fl-border);
-  border-radius: 8px;
+  border-radius: var(--fl-radius-card);
   padding: 24px;
   background: var(--fl-panel);
 }
@@ -322,7 +323,7 @@
   letter-spacing: -0.025em;
   margin: 0;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: var(--fl-numeric);
 }
 
 .fl-libraries .resource-footnote {

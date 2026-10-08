@@ -103,6 +103,10 @@ describe('People library merge suggestions', () => {
     });
     render(PeoplePage, { data: data([ada, eve, bob], false) });
 
+    // the quiet answers are in the banner's "More answers" menu
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'frameleaf_people_merge_suggestion_more_answers' }),
+    );
     await fireEvent.click(await screen.findByText('frameleaf_people_merge_suggestion_ignore'));
     await waitFor(() =>
       expect(sdkMock.setMergeVerdict).toHaveBeenCalledWith({

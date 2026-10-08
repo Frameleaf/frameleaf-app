@@ -28,6 +28,8 @@
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
+  import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import PhysicalDedupThumb from '$lib/components/frameleaf/PhysicalDedupThumb.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
@@ -49,7 +51,6 @@
     groupPlanCopies,
     isApplyActive,
     isDecidableGroup,
-    matchesConfirmation,
     mediaDetail,
     normalizeExcluded,
     planMetrics,
@@ -184,7 +185,7 @@
   const decisionsLocked = $derived(['running', 'applying', 'applied'].includes(applyBlocked ?? ''));
   const reviewed = $derived(reviewMatches(review, plan, excluded));
   const canConfirm = $derived(
-    !!plan && reviewed && !stale && !applyBlocked && !busy && matchesConfirmation(plan, confirmation),
+    !!plan && reviewed && !stale && !applyBlocked && !busy && matchesTyped(confirmationPhrase(plan), confirmation),
   );
 
   /** Prototype PhysicalDedupManager.jsx:315-318: `{owner} · {bytes}{detail ? " · " + detail : ""}`. */
@@ -327,7 +328,8 @@
           fingerprint: plan.fingerprint,
           reviewToken: review.reviewToken,
           excludedRetainedAssetIds: review.excludedRetainedAssetIds,
-          confirmation: confirmation.trim(),
+          // The phrase itself, whatever capitals it was typed in.
+          confirmation: confirmationPhrase(plan),
         },
       });
       confirmOpen = false;
@@ -1126,16 +1128,19 @@
         <p>{$t('frameleaf_dedup_hidden_copies', { values: { count: review.hiddenCopies } })}</p>
       {/if}
       <p>{$t('frameleaf_dedup_confirm_backup')}</p>
-      <label>
-        <span>{$t('frameleaf_dedup_confirm_label', { values: { phrase: confirmationPhrase(plan) } })}</span>
-        <input type="text" autocomplete="off" spellcheck="false" maxlength="90" bind:value={confirmation} />
-      </label>
+      <div class="confirm-typed">
+        <TypedConfirmation
+          label={$t('frameleaf_dedup_confirm_label', { values: { phrase: confirmationPhrase(plan) } })}
+          maxlength={90}
+          bind:value={confirmation}
+        />
+      </div>
       {#if conflict || blockedMessage || staleMessage}
         <p class="message" role="alert">{conflict || blockedMessage || staleMessage}</p>
       {/if}
       <div class="confirm-actions">
         <Button onclick={() => (confirmOpen = false)} disabled={busy}>{$t('cancel')}</Button>
-        <Button variant="primary" disabled={!canConfirm} onclick={apply}>
+        <Button variant="danger" disabled={!canConfirm} onclick={apply}>
           {$t('frameleaf_dedup_apply_confirm')}
         </Button>
       </div>
@@ -1496,21 +1501,8 @@
     margin: 0;
     font-weight: 550;
   }
-  .confirm label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4375rem;
+  .confirm-typed {
     margin-block: 1rem;
-    font-size: var(--fl-font-small);
-  }
-  .confirm input {
-    width: 100%;
-    padding: 0.625rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    font: inherit;
   }
   .confirm-actions {
     display: flex;
@@ -1519,7 +1511,7 @@
   }
   .message.error {
     border-color: var(--fl-danger);
-    color: var(--fl-danger-text);
+    color: var(--fl-danger);
   }
   /* The template's `.jm-message.jm-error` with its "Open settings" button (UT-23). */
   .config-error {
@@ -1530,7 +1522,7 @@
     gap: 0.5rem;
   }
   .unavailable-text {
-    color: var(--fl-danger-text);
+    color: var(--fl-danger);
   }
   .message :global(svg) {
     vertical-align: -0.125em;
@@ -1692,7 +1684,7 @@
     font-weight: 600;
   }
   .unavailable-text {
-    color: var(--fl-danger-text) !important;
+    color: var(--fl-danger) !important;
   }
   .history-end {
     display: flex;

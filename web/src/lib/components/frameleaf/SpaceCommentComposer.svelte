@@ -231,7 +231,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     background: var(--fl-raised);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+    box-shadow: var(--fl-shadow-2);
   }
   .mentions button {
     display: flex;
@@ -248,8 +248,8 @@
   }
   .mentions li[aria-selected='true'] button {
     background: var(--fl-panel);
-    outline: 2px solid var(--fl-accent);
-    outline-offset: -2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-inset);
   }
   .mentions small {
     color: var(--fl-muted);

@@ -94,7 +94,7 @@ test.describe('Album', () => {
       { id: album.id, updateAlbumDto: { order: AssetOrder.Asc } },
       { headers: asBearerAuth(admin.accessToken) },
     );
-    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-asc');
+    await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('captured-asc');
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await expect(page.getByRole('region', { name: 'Selected items' })).toContainText('1 selected');
     await page.getByRole('group', { name: 'Layout' }).getByRole('button', { name: 'Work' }).click();
@@ -111,13 +111,13 @@ test.describe('Album', () => {
     await expect(videoTile).toBeVisible();
 
     // Personal sort belongs to this signed-in viewer, even when another member uses the same device.
-    await page.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+    await page.getByRole('combobox', { name: 'Sort by' }).selectOption('filename');
     await utils.setAuthCookies(context, member.accessToken);
     await page.reload();
-    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-asc');
+    await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('captured-asc');
     await utils.setAuthCookies(context, admin.accessToken);
     await page.reload();
-    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+    await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('filename');
 
     const memberContext = await browser.newContext();
     try {
@@ -213,7 +213,7 @@ test.describe('Album', () => {
     await expect(filters).toBeHidden();
     await expect(page).toHaveURL(new RegExp(String.raw`/albums/${album.id}(?:\?|$)`));
     await expect(page.locator(`[data-asset-id="${video.id}"]`)).toHaveCount(0);
-    await page.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+    await page.getByRole('combobox', { name: 'Sort by' }).selectOption('filename');
     await expect(tiles).toHaveCount(2);
     await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
     await expect(tiles.last()).toHaveAttribute('data-asset-id', otherPhoto.id);
@@ -230,7 +230,7 @@ test.describe('Album', () => {
     }
     await page.reload();
     await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
-    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+    await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('filename');
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await expect(tiles).toHaveCount(2);
 
@@ -325,7 +325,7 @@ test.describe('Album', () => {
     await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
-    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+    await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('filename');
     await expect(tiles).toHaveCount(2);
     await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
@@ -627,10 +627,10 @@ test.describe('Album', () => {
     const album = await utils.createAlbum(admin.accessToken, { albumName: 'Shell album' });
 
     await page.goto(`/albums/${album.id}`);
-    // AL-17: the breadcrumb leads back; the header offers Activity even before anyone else joins (AL-14).
+    // AL-17: the breadcrumb leads back; the header offers Likes & comments even before anyone else joins (AL-14).
     const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(crumbs.getByRole('link', { name: 'Albums' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Activity, 0 entries' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Likes & comments', exact: true })).toBeVisible();
     await crumbs.getByRole('link', { name: 'Albums' }).click();
     await page.waitForURL(/\/albums(?:\?|$)/);
   });
@@ -657,6 +657,6 @@ test.describe('Album', () => {
     for (const name of ['Shared links', 'Slideshow', 'Download']) {
       await expect(menu.getByRole('menuitem', { name })).toBeVisible();
     }
-    await expect(menu.getByRole('menuitemcheckbox', { name: 'Activity' })).toBeVisible();
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Likes & comments' })).toBeVisible();
   });
 });

@@ -179,7 +179,7 @@ describe('VideoNativeViewer component', () => {
       expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.asset.id)),
     );
     const api = hlsMocks.instances[0];
-    // The source choice is the footer's Play original / Play encoded segment (V-13, MediaViewer.jsx:1765-1790).
+    // The source choice is the footer's Original / Optimized segment (V-13, MediaViewer.jsx:1765-1790).
     const footer = renderWithTooltips(ViewerFooter, {
       asset: props.asset,
       canNavigateCollection: false,
@@ -192,7 +192,7 @@ describe('VideoNativeViewer component', () => {
       fullscreen: false,
       onToggleFullscreen: () => {},
     });
-    await fireEvent.click(footer.getByText('frameleaf_viewer_play_original'));
+    await fireEvent.click(footer.getByText('frameleaf_viewer_source_original'));
     await waitFor(() =>
       expect(viewer.container.querySelector('video')).toHaveAttribute(
         'src',

@@ -1,5 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { addMessages } from 'svelte-i18n';
+import en from '$i18n/en.json';
 import {
   galleryRequest,
   galleryMedia,
@@ -62,6 +64,7 @@ const view: GuestGallery = {
     logoUrl: null,
   },
 };
+beforeAll(() => addMessages('dev', en));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(galleryRequest).mockReset();
@@ -82,17 +85,43 @@ it('saves the actual scoped capture choices and current server revision without 
   render(PhotographyClient, { galleryId: 'shoot' });
   await screen.findByText('The wedding collection');
   await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Save favourites' }));
-  await waitFor(() =>
-    expect(galleryRequest).toHaveBeenCalledWith('shoot', 'scoped', '/choices', 'PUT', {
-      expectedRevision: 'loaded',
-      captureIds: ['capture'],
-      notes: [],
-    }),
+  // no Save button to find: the favourite saves by itself a moment later, with a quiet status
+  expect(screen.queryByRole('button', { name: /Save/ })).toBeNull();
+  expect(screen.getByText('Saving…')).toBeInTheDocument();
+  await waitFor(
+    () =>
+      expect(galleryRequest).toHaveBeenCalledWith('shoot', 'scoped', '/choices', 'PUT', {
+        expectedRevision: 'loaded',
+        captureIds: ['capture'],
+        notes: [],
+      }),
+    { timeout: 3000 },
   );
+  expect(await screen.findByText('Saved')).toBeInTheDocument();
   expect(document.querySelector('img[src="/never-direct"]')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
   expect(galleryMedia).toHaveBeenCalledWith('shoot', 'capture', 'preview', 'scoped');
+});
+it('saves at once in a request that outlives the page when the tab is hidden with unsaved choices', async () => {
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByText('The wedding collection');
+  await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  try {
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() =>
+      expect(galleryRequest).toHaveBeenCalledWith(
+        'shoot',
+        'scoped',
+        '/choices',
+        'PUT',
+        { expectedRevision: 'loaded', captureIds: ['capture'], notes: [] },
+        { keepalive: true },
+      ),
+    );
+  } finally {
+    visibility.mockRestore();
+  }
 });
 it('drops protected images and the stored session when the server revokes access', async () => {
   render(PhotographyClient, { galleryId: 'shoot' });
@@ -145,13 +174,14 @@ it('retains existing image annotations when saving a changed selection', async (
   render(PhotographyClient, { galleryId: 'shoot' });
   await screen.findByText('The wedding collection');
   await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Save favourites' }));
-  await waitFor(() =>
-    expect(galleryRequest).toHaveBeenCalledWith('shoot', 'scoped', '/choices', 'PUT', {
-      expectedRevision: 'loaded',
-      captureIds: ['capture'],
-      notes: [{ captureId: 'capture', text: 'Warm finish', annotations: [annotation] }],
-    }),
+  await waitFor(
+    () =>
+      expect(galleryRequest).toHaveBeenCalledWith('shoot', 'scoped', '/choices', 'PUT', {
+        expectedRevision: 'loaded',
+        captureIds: ['capture'],
+        notes: [{ captureId: 'capture', text: 'Warm finish', annotations: [annotation] }],
+      }),
+    { timeout: 3000 },
   );
 });
 it('requests only the exact entitled selected outputs in a ZIP', async () => {

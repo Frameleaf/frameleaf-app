@@ -172,7 +172,7 @@
     gap: 0.35rem;
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     padding: 0.15rem 0.35rem 0.15rem 0.6rem;
     font-size: 0.8125rem;
   }

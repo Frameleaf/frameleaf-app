@@ -216,7 +216,7 @@
   }
 
   .fl-rating-wrap :global(.fl-rating-active) {
-    background: #ffffff12;
+    background: color-mix(in srgb, var(--fl-viewer-text) 7%, transparent);
   }
 
   /* .mv-popover + .mv-rating-popover (media-viewer.css:131-192). */
@@ -280,7 +280,7 @@
   .fl-stars .fl-stars-clear:hover:not(:disabled) {
     transform: none;
     color: var(--fl-viewer-text);
-    background: #ffffff0f;
+    background: color-mix(in srgb, var(--fl-viewer-text) 6%, transparent);
   }
 
   .fl-stars .fl-stars-clear:disabled {

@@ -1,5 +1,10 @@
-import { DecodeRefusal, StudioProjectImportKind, StudioRestoredVersionUnavailable } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  DecodeRefusal,
+  MediaOperationStatus,
+  StudioProjectImportKind,
+  StudioRestoredVersionUnavailable,
+} from '@frameleaf/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
 import {
@@ -103,10 +108,19 @@ afterEach(() => {
   clearStudioEngine();
 });
 
+/** Studio with a running editor: the header only shows its project controls once the engine is up. */
+const renderReady = async (props: Record<string, unknown> = {}) => {
+  const engine = stubEngine();
+  render(StudioHost, { ...baseProps(), loadEngine: engine.load, ...props });
+  await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+  return engine;
+};
+
 describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
   it('renames the project from the header, and puts the stored name back when refused', async () => {
     const onRename = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    render(StudioHost, { ...baseProps(), onRename, loadEngine: loadStudioEngine });
+    await renderReady({ onRename });
 
     const field = screen.getByRole('textbox', { name: 'frameleaf_studio_project_name' });
     expect(field).toHaveValue('Summer in the Rockies');
@@ -134,7 +148,7 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
   it('offers Export only when the route wires it, and says how many jobs are queued', async () => {
     const onExport = vi.fn();
     const onOpenActivity = vi.fn();
-    render(StudioHost, { ...baseProps(), onExport, onOpenActivity, queuedJobs: 2, loadEngine: loadStudioEngine });
+    await renderReady({ onExport, onOpenActivity, queuedJobs: 2 });
 
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_export_action' }));
     expect(onExport).toHaveBeenCalled();
@@ -142,16 +156,44 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     expect(onOpenActivity).toHaveBeenCalled();
   });
 
-  it('offers Basic and Advanced only while the engine runs, and hands the choice to it', async () => {
-    const engine = stubEngine();
-    render(StudioHost, { ...baseProps(), loadEngine: engine.load });
-    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+  it('offers no Basic and Advanced switch while the editor does not read it, and still hands the value on', async () => {
+    const engine = await renderReady({ mode: 'advanced' });
+    expect(screen.queryByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'frameleaf_studio_mode_advanced' })).not.toBeInTheDocument();
+    expect(engine.contexts[0].mode).toBe('advanced');
+  });
 
-    const advanced = await screen.findByRole('radio', { name: 'frameleaf_studio_mode_advanced' });
-    expect(screen.getByRole('radio', { name: 'frameleaf_studio_mode_basic' })).toHaveAttribute('aria-checked', 'true');
-    await fireEvent.click(advanced);
-    expect(advanced).toHaveAttribute('aria-checked', 'true');
-    await waitFor(() => expect(engine.update).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'advanced' })));
+  it('shows the project, its save state and who is editing once the editor is up', async () => {
+    await renderReady();
+    expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_studio_all_saved')).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_studio_editing_as')).toBeInTheDocument();
+  });
+
+  it('goes back to the project list with one back button', async () => {
+    const onBack = vi.fn();
+    await renderReady({ onBack });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_back_to_projects' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_back_to_quick_edit' })).not.toBeInTheDocument();
+  });
+
+  it('follows the export in the header and offers the finished video', async () => {
+    const onOpenExport = vi.fn();
+    const job = { id: 'job-1', status: MediaOperationStatus.Rendering, progress: 42, resultAssetId: null };
+    const engine = stubEngine();
+    const { rerender } = render(StudioHost, { ...baseProps(), loadEngine: engine.load, exportJob: job, onOpenExport });
+    const pill = screen.getByTestId('studio-export-job');
+    expect(pill).toHaveAttribute('data-phase', 'working');
+    expect(pill).toHaveTextContent('frameleaf_studio_export_job_progress');
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_export_job_open' })).not.toBeInTheDocument();
+
+    await rerender({
+      exportJob: { ...job, status: MediaOperationStatus.Completed, progress: 100, resultAssetId: 'a' },
+    });
+    expect(screen.getByTestId('studio-export-job')).toHaveAttribute('data-phase', 'ready');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_export_job_open' }));
+    expect(onOpenExport).toHaveBeenCalledTimes(1);
   });
 
   it('hands the stored workspace layout to the engine and keeps saves on the host (FL-91)', async () => {
@@ -188,6 +230,49 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     expect(onBackToEditor).toHaveBeenCalled();
   });
 
+  it('says once that quick edits are waiting, with the way back, and can be dismissed', async () => {
+    const onBackToEditor = vi.fn();
+    render(StudioHost, { ...baseProps(), onBackToEditor, quickEditWaiting: true, loadEngine: loadStudioEngine });
+
+    const note = screen.getByTestId('studio-quick-edit-waiting');
+    expect(note).toHaveTextContent('frameleaf_studio_quick_edit_waiting');
+    await fireEvent.click(within(note).getByRole('button', { name: 'frameleaf_studio_back_to_quick_edit' }));
+    expect(onBackToEditor).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(within(note).getByRole('button', { name: 'dismiss' }));
+    await waitFor(() => expect(screen.queryByTestId('studio-quick-edit-waiting')).not.toBeInTheDocument());
+  });
+
+  it('says nothing about quick edits when none are waiting, or when there is no editor to go back to', () => {
+    const first = render(StudioHost, { ...baseProps(), onBackToEditor: vi.fn(), loadEngine: loadStudioEngine });
+    expect(screen.queryByTestId('studio-quick-edit-waiting')).not.toBeInTheDocument();
+    first.unmount();
+
+    render(StudioHost, { ...baseProps(), quickEditWaiting: true, loadEngine: loadStudioEngine });
+    expect(screen.queryByTestId('studio-quick-edit-waiting')).not.toBeInTheDocument();
+  });
+
+  it('tells the transfer dock how much room Studio needs, and gives it back on leaving', () => {
+    const root = document.documentElement.style;
+    const { unmount } = render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(root.getPropertyValue('--fl-dock-right')).toBe('0px');
+    expect(root.getPropertyValue('--fl-dock-clearance')).toBe('0px');
+    unmount();
+    expect(root.getPropertyValue('--fl-dock-right')).toBe('');
+    expect(root.getPropertyValue('--fl-dock-clearance')).toBe('');
+  });
+
+  it('marks the opening poster as the page end of the card it was opened from', () => {
+    render(StudioHost, {
+      ...baseProps(),
+      capabilities: null,
+      opening: { projectId: 'p-1', name: 'Lake trip', posterUrl: '/poster.jpg' },
+      loadEngine: () => new Promise(() => {}),
+    });
+    const poster = document.querySelector('[data-fl-shared-page]');
+    expect(poster).toHaveAttribute('data-fl-shared', 'studio-project:p-1');
+  });
+
   it('offers no way back to a quick editor when Studio was not opened from one', () => {
     render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
     expect(screen.queryByRole('button', { name: 'frameleaf_studio_back_to_quick_edit' })).not.toBeInTheDocument();
@@ -208,7 +293,7 @@ describe('Studio route, engine absent', () => {
     });
     expect(screen.getByText('frameleaf_studio_engine_absent_body')).toBeInTheDocument();
     // And the way back out is offered both in the chrome and in the state itself.
-    expect(screen.getAllByRole('button', { name: 'frameleaf_studio_back_to_library' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'frameleaf_studio_back_to_projects' })).toHaveLength(2);
   });
 
   it('names the missing workers when the deployment has none', async () => {
@@ -221,11 +306,40 @@ describe('Studio route, engine absent', () => {
     expect(screen.getByText('frameleaf_studio_capability_render_worker')).toBeInTheDocument();
   });
 
-  it('keeps the shell chrome working with no engine at all', () => {
-    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+  it('shows no project controls that the unavailable state would contradict', async () => {
+    render(StudioHost, {
+      ...baseProps(),
+      onRename: vi.fn(),
+      onExport: vi.fn(),
+      onUseRestoration: vi.fn(),
+      loadEngine: loadStudioEngine,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable');
+    });
 
-    expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
-    expect(screen.getByText('frameleaf_studio_editing_as')).toBeInTheDocument();
+    // Nothing was opened, so the header says where the person is and how to leave, and no more.
+    expect(screen.getByRole('heading', { name: 'frameleaf_studio_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Summer in the Rockies' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'frameleaf_studio_project_name' })).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_studio_all_saved')).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_studio_editing_as')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_export_action' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the editor on screen when the connection drops mid-edit, and says the changes are kept', async () => {
+    await renderReady();
+    await fireEvent(globalThis as unknown as Window, new Event('offline'));
+
+    expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument();
+    expect(screen.getByTestId('studio-stage')).not.toHaveAttribute('aria-hidden');
+    expect(screen.getByTestId('studio-save-banner')).toHaveAttribute('data-status', 'offline');
+    expect(screen.getByText('frameleaf_studio_offline_pill')).toBeInTheDocument();
+
+    await fireEvent(globalThis as unknown as Window, new Event('online'));
+    await waitFor(() => expect(screen.queryByTestId('studio-save-banner')).not.toBeInTheDocument());
+    expect(screen.getByText('frameleaf_studio_all_saved')).toBeInTheDocument();
   });
 
   it('reports handoff items this session could not read rather than dropping them silently', () => {
@@ -282,11 +396,19 @@ describe('Studio route, engine absent', () => {
     expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
     unmount();
 
-    render(StudioHost, { ...baseProps(), onUseRestoration: vi.fn(), loadEngine: loadStudioEngine });
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_restore_title' }));
+    await renderReady({ onUseRestoration: vi.fn() });
+    const toggle = screen.getByRole('button', { name: 'frameleaf_studio_restore_title' });
+    toggle.focus();
+    await fireEvent.click(toggle);
     const panel = screen.getByTestId('studio-restore-panel');
     // this project has no library photo or video yet, so there is nothing to restore
     expect(panel).toHaveTextContent('frameleaf_studio_restore_no_sources');
+
+    // A drawer takes focus when it opens, closes on Escape, and gives focus back to its button.
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+    await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('studio-restore-panel')).not.toBeInTheDocument());
+    expect(toggle).toHaveFocus();
   });
 
   it('opens the Restore tab when a command sends a Frameleaf Cloud job there to confirm (FL-162)', () => {
@@ -317,15 +439,16 @@ describe('Studio route, engine absent', () => {
     expect(screen.getByText('frameleaf_studio_queued_open_activity')).toBeInTheDocument();
   });
 
-  it('offers the bundle export only when the route passes it, and opens its dialog (FL-91)', async () => {
-    const exportButton = () => screen.queryByRole('button', { name: /frameleaf_studio_bundle_export_action/ });
+  it('offers saving the project as a file in the More menu, only when the route passes it (FL-91)', async () => {
     const { unmount } = render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
-    expect(exportButton()).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'more' })).not.toBeInTheDocument();
     unmount();
+    clearStudioEngine();
 
     const onExportBundle = vi.fn();
-    render(StudioHost, { ...baseProps(), onExportBundle, loadEngine: loadStudioEngine });
-    await fireEvent.click(exportButton()!);
+    await renderReady({ onExportBundle });
+    await fireEvent.click(screen.getByRole('button', { name: 'more' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: /frameleaf_studio_bundle_export_action/ }));
 
     expect(onExportBundle).toHaveBeenCalledTimes(1);
   });
@@ -333,7 +456,7 @@ describe('Studio route, engine absent', () => {
   it('withdraws the bundle export once the session loses the project', () => {
     render(StudioHost, { ...baseProps(), onExportBundle: vi.fn(), accessLost: true, loadEngine: loadStudioEngine });
 
-    expect(screen.queryByRole('button', { name: /frameleaf_studio_bundle_export_action/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'more' })).not.toBeInTheDocument();
   });
 });
 

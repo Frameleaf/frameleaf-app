@@ -1,5 +1,6 @@
 <script lang="ts" generics="T extends PersonResponseDto">
   import { onDestroy } from 'svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import type { PersonResponseDto } from '@frameleaf/sdk';
 
   interface Props {
@@ -12,7 +13,11 @@
 
   let { people, managed = false, hasNextPage = undefined, loadNextPage, children }: Props = $props();
 
-  let lastPersonContainer: HTMLElement | undefined = $state();
+  let grid: HTMLElement | undefined = $state();
+  // The last card is what the next page loads behind; it is read from the grid, so every card
+  // keeps the same wrapper and can slide when the list is sorted or filtered.
+  const lastPersonContainer = $derived(people.length > 0 ? (grid?.lastElementChild ?? undefined) : undefined);
+  const motion = $derived({ count: people.length });
 
   let retired = false;
   const intersectionObserver = new IntersectionObserver((entries) => {
@@ -37,15 +42,11 @@
   });
 </script>
 
-<div class={managed ? 'managed-grid' : 'library-grid'}>
+<div class={managed ? 'managed-grid' : 'library-grid'} bind:this={grid}>
   {#each people as person, index (person.id)}
-    {#if hasNextPage && index === people.length - 1}
-      <div bind:this={lastPersonContainer}>
-        {@render children?.({ person, index })}
-      </div>
-    {:else}
+    <div class="cell" animate:listFlip={motion} in:listEnter={motion} out:listLeave={motion}>
       {@render children?.({ person, index })}
-    {/if}
+    </div>
   {/each}
 </div>
 
@@ -61,9 +62,13 @@
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 14px;
   }
+  .cell {
+    min-width: 0;
+  }
   @media (max-width: 700px) {
+    /* Two faces on a small phone, three once there is room for them. */
     .library-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 8px;
     }
     .managed-grid {

@@ -64,8 +64,12 @@
 <style>
   .fl-group-header {
     position: sticky;
-    /* Below the frosted results toolbar, whatever its height (LibraryView publishes it). */
-    top: var(--fl-sticky-offset, 0px);
+    /*
+     * Below the frosted results toolbar, whatever its height (LibraryView publishes it). A day's
+     * header sits in a month that is placed by a transform, which sticky positioning does not see:
+     * the month publishes how far it was moved, and the header takes that off.
+     */
+    top: calc(var(--fl-sticky-offset, 0px) - var(--fl-month-top, 0px));
     z-index: 3;
     display: flex;
     align-items: center;
@@ -81,13 +85,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--fl-font-size, 14px);
+    font-size: var(--fl-font-size);
     font-weight: 600;
     line-height: 1.4;
   }
   .fl-group-count {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-small);
     white-space: nowrap;
   }
   .fl-group-select {
@@ -99,7 +103,7 @@
     margin-inline-start: -6px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity var(--fl-motion-fast, 120ms) ease;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
   .fl-group-header:hover .fl-group-select,
   :global(.fl-day:hover) .fl-group-select,
@@ -145,7 +149,7 @@
      touch target. The container is the timeline (`LibraryTimeline` `.fl-timeline`). */
   @container fl-timeline (max-width: 600px) {
     .fl-group-header h2 {
-      font-size: var(--fl-font-small, 12px);
+      font-size: var(--fl-font-small);
     }
     .fl-group-select {
       width: 36px;

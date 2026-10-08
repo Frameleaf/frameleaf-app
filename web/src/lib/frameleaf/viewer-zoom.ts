@@ -84,6 +84,54 @@ export const findViewerHero = (root: ParentNode = document): HTMLElement | null 
   return hero && isOnScreen(hero) ? hero : null;
 };
 
+/**
+ * How long an opening zoom waits for the viewer's photo box. The viewer mounts that box on its
+ * first frame, but the viewer itself is a lazily loaded chunk: on a cold first open the box can
+ * arrive a few frames after the navigation completes. The old page stays frozen while waiting, so
+ * this is kept short; past it the tile simply fades.
+ */
+export const HERO_WAIT_MS = 400;
+const HERO_POLL_MS = 16;
+
+const waitForViewerHero = async (): Promise<HTMLElement | null> => {
+  const deadline = performance.now() + HERO_WAIT_MS;
+  let hero = findViewerHero();
+  while (!hero && performance.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, HERO_POLL_MS));
+    hero = findViewerHero();
+  }
+  return hero;
+};
+
+const TILE_SELECTOR = '[data-asset-id], [data-asset]';
+const WARM_EVENTS = ['pointerover', 'touchstart', 'focusin'] as const;
+
+/**
+ * Loads the viewer's chunk the first time a grid tile is pointed at, touched or focused, so the
+ * first open is not a cold import with nothing for the zoom to land on. Runs once per page load.
+ */
+const warmViewerOnIntent = () => {
+  const warm = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(TILE_SELECTOR) || target.closest(VIEWER_SELECTOR)) {
+      return;
+    }
+    for (const type of WARM_EVENTS) {
+      document.removeEventListener(type, warm, true);
+    }
+    void import('$lib/components/asset-viewer/AssetViewer.svelte').catch(() => {
+      // Offline or a failed chunk: the open itself reports it.
+    });
+  };
+  for (const type of WARM_EVENTS) {
+    document.addEventListener(type, warm, { capture: true, passive: true });
+  }
+};
+
+if (typeof document !== 'undefined' && import.meta.env.MODE !== 'test') {
+  warmViewerOnIntent();
+}
+
 type StartViewTransition = (update: () => Promise<void>) => { finished: Promise<unknown> };
 
 const viewTransitionStarter = (): StartViewTransition | undefined => {
@@ -143,7 +191,7 @@ export const viewerZoomTransition = (navigation: ZoomNavigation): Promise<void> 
         await tick();
         await tick();
         setName(before, '');
-        after = direction.kind === 'open' ? findViewerHero() : findTileImage(direction.assetId);
+        after = direction.kind === 'open' ? await waitForViewerHero() : findTileImage(direction.assetId);
         setName(after, HERO_TRANSITION_NAME);
       });
       void transition.finished.then(clear).catch(clear);

@@ -80,23 +80,62 @@
     onExport: (choice: StudioExportChoice) => void;
   } = $props();
 
-  const formats: { value: StudioExportFormat; label: Translations }[] = [
-    { value: StudioExportFormat.SdrJpeg, label: 'frameleaf_studio_export_format_sdr_jpeg' },
-    { value: StudioExportFormat.HdrJpeg, label: 'frameleaf_studio_export_format_hdr_jpeg' },
-    { value: StudioExportFormat.HdrHeic, label: 'frameleaf_studio_export_format_hdr_heic' },
+  // A film is exported as a video far more often than as one frame of it, so video comes first.
+  const videoFormats: { value: StudioExportFormat; label: Translations }[] = [
     { value: StudioExportFormat.Mp4HevcMain10, label: 'frameleaf_studio_export_format_hevc' },
     { value: StudioExportFormat.Mp4H264, label: 'frameleaf_studio_export_format_h264' },
     { value: StudioExportFormat.WebmAv1, label: 'frameleaf_studio_export_format_av1' },
     { value: StudioExportFormat.Prores422Hq, label: 'frameleaf_studio_export_format_prores' },
+  ];
+  const stillFormats: { value: StudioExportFormat; label: Translations }[] = [
+    { value: StudioExportFormat.SdrJpeg, label: 'frameleaf_studio_export_format_sdr_jpeg' },
+    { value: StudioExportFormat.HdrJpeg, label: 'frameleaf_studio_export_format_hdr_jpeg' },
+    { value: StudioExportFormat.HdrHeic, label: 'frameleaf_studio_export_format_hdr_heic' },
+  ];
+  const formatGroups: { label: Translations; items: typeof videoFormats }[] = [
+    { label: 'frameleaf_studio_export_video_group', items: videoFormats },
+    { label: 'frameleaf_studio_export_stills_group', items: stillFormats },
+  ];
+  /** Three places to start from; every choice below can still be changed afterwards. */
+  const presets: {
+    id: string;
+    label: Translations;
+    format: StudioExportFormat;
+    resolution: StudioExportResolution;
+    quality: StudioExportQuality;
+  }[] = [
+    {
+      id: 'share',
+      label: 'frameleaf_studio_export_preset_share',
+      format: StudioExportFormat.Mp4H264,
+      resolution: StudioExportResolution.$1080P,
+      quality: StudioExportQuality.High,
+    },
+    {
+      id: 'best',
+      label: 'frameleaf_studio_export_preset_best',
+      format: StudioExportFormat.Mp4HevcMain10,
+      resolution: StudioExportResolution.$2160P,
+      quality: StudioExportQuality.High,
+    },
+    {
+      id: 'archive',
+      label: 'frameleaf_studio_export_preset_archive',
+      format: StudioExportFormat.Prores422Hq,
+      resolution: StudioExportResolution.$2160P,
+      quality: StudioExportQuality.Ultra,
+    },
   ];
   const colors: { value: StudioExportColor; label: Translations }[] = [
     { value: StudioExportColor.Preserve, label: 'frameleaf_studio_export_color_preserve' },
     { value: StudioExportColor.Hdr10, label: 'frameleaf_studio_export_color_hdr10' },
     { value: StudioExportColor.DolbyVision, label: 'frameleaf_studio_export_color_dolby' },
   ];
-  // Largest first, as in the prototype.
-  const resolutions: { value: StudioExportResolution; label: Translations }[] = [
+  // Largest first, as in the prototype. A still keeps the size of its frame; a video is given one.
+  const stillResolutions: { value: StudioExportResolution; label: Translations }[] = [
     { value: StudioExportResolution.Original, label: 'original' },
+  ];
+  const videoResolutions: { value: StudioExportResolution; label: Translations }[] = [
     { value: StudioExportResolution.$2160P, label: 'frameleaf_studio_export_resolution_2160' },
     { value: StudioExportResolution.$1440P, label: 'frameleaf_studio_export_resolution_1440' },
     { value: StudioExportResolution.$1080P, label: 'frameleaf_studio_export_resolution_1080' },
@@ -139,7 +178,9 @@
   let inPoint = $state<number | undefined>(0);
   let outPoint = $state<number | undefined>(1);
   let destination = $state(MediaOperationDestination.Local);
+  let advancedOpen = $state(false);
   const fieldId = $props.id();
+  const resolutions = $derived(photo ? stillResolutions : videoResolutions);
 
   /* Smooth motion after export (FL-162; prototype ExportDialog frame-rate conversion and FrameMethod). */
   const SMOOTH_FACTORS = [2, 4, 8] as const;
@@ -214,6 +255,7 @@
     outPoint = 1;
     destination = MediaOperationDestination.Local;
     smoothFactor = null;
+    advancedOpen = false;
   });
 
   const choices = $derived(studioRenderChoices(renderEvidence, destination, { format, color, resolution }));
@@ -260,6 +302,48 @@
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
     list.find((entry) => entry.value === value)?.verdict.supported === false;
 
+  const presetSupported = (preset: (typeof presets)[number]) =>
+    evaluateStudioRender(renderEvidence, destination, {
+      format: preset.format,
+      color: StudioExportColor.Preserve,
+      resolution: preset.resolution,
+    }).supported;
+  const activePreset = $derived(
+    presets.find(
+      (preset) =>
+        preset.format === format &&
+        preset.resolution === resolution &&
+        preset.quality === quality &&
+        color === StudioExportColor.Preserve,
+    )?.id ?? null,
+  );
+  const applyPreset = (preset: (typeof presets)[number]) => {
+    format = preset.format;
+    color = StudioExportColor.Preserve;
+    resolution = preset.resolution;
+    quality = preset.quality;
+  };
+
+  // Something under Advanced that stops the export must not stay folded away with its reason.
+  $effect(() => {
+    if ((rangeMode === 'frames' && selectedRange === null) || (needsMastering && mastering === null)) {
+      advancedOpen = true;
+    }
+  });
+
+  /** One line of what the person will get, in the same words as the choices above it. */
+  const summary = $derived(
+    $t('frameleaf_studio_export_summary', {
+      values: {
+        format: $t([...videoFormats, ...stillFormats].find((item) => item.value === format)?.label ?? 'unknown'),
+        resolution: $t(
+          [...stillResolutions, ...videoResolutions].find((item) => item.value === resolution)?.label ?? 'unknown',
+        ),
+        destination: $t(destinations.find((item) => item.value === destination)?.label ?? 'unknown'),
+      },
+    }),
+  );
+
   const submit = () => {
     if (canExport) {
       onExport({
@@ -284,28 +368,39 @@
   closeLabel={$t('close')}
 >
   <div class="export" data-testid="studio-export-dialog">
+    <div class="presets">
+      <span id="{fieldId}-preset">{$t('frameleaf_studio_export_preset')}</span>
+      <div class="segmented" role="radiogroup" use:rovingFocus aria-labelledby="{fieldId}-preset">
+        {#each presets as preset (preset.id)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={activePreset === preset.id}
+            disabled={!presetSupported(preset)}
+            onclick={() => applyPreset(preset)}
+          >
+            {$t(preset.label)}
+          </button>
+        {/each}
+      </div>
+    </div>
+
     <div class="grid">
       <label class="field" for="{fieldId}-format">
         <span>{$t('frameleaf_studio_export_format')}</span>
         <select id="{fieldId}-format" bind:value={format}>
-          {#each formats as item (item.value)}
-            <option
-              value={item.value}
-              disabled={unsupported(availableChoices.formats, item.value) ||
-                ((!hdrEnabled || outputIntent !== 'hdr') &&
-                  [StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(item.value))}
-              >{$t(item.label)}</option
-            >
-          {/each}
-        </select>
-      </label>
-      <label class="field" for="{fieldId}-color">
-        <span>{$t('frameleaf_studio_export_color')}</span>
-        <select id="{fieldId}-color" bind:value={color} disabled={photo}>
-          {#each colors as item (item.value)}
-            <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
-              >{$t(item.label)}</option
-            >
+          {#each formatGroups as group (group.label)}
+            <optgroup label={$t(group.label)}>
+              {#each group.items as item (item.value)}
+                <option
+                  value={item.value}
+                  disabled={unsupported(availableChoices.formats, item.value) ||
+                    ((!hdrEnabled || outputIntent !== 'hdr') &&
+                      [StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(item.value))}
+                  >{$t(item.label)}</option
+                >
+              {/each}
+            </optgroup>
           {/each}
         </select>
       </label>
@@ -325,14 +420,6 @@
           {/each}
         </select>
       </label>
-      <label class="field" for="{fieldId}-quality">
-        <span>{$t('frameleaf_studio_export_quality')}</span>
-        <select id="{fieldId}-quality" bind:value={quality} disabled={photo}>
-          {#each qualities as item (item.value)}
-            <option value={item.value}>{$t(item.label)}</option>
-          {/each}
-        </select>
-      </label>
       {#if !photo}
         <label class="field" for="{fieldId}-subtitles">
           <span>{$t('frameleaf_studio_export_subtitles')}</span>
@@ -342,71 +429,98 @@
           </select>
         </label>
       {/if}
-      <label class="field" for="{fieldId}-range">
-        <span>{$t('frameleaf_studio_export_range')}</span>
-        <select id="{fieldId}-range" bind:value={rangeMode}>
-          <option value="all">{$t('frameleaf_studio_export_range_all')}</option>
-          <option value="frames">{$t('frameleaf_studio_export_range_frames')}</option>
-        </select>
-      </label>
-      {#if rangeMode === 'frames'}
-        <label class="field" for="{fieldId}-in-point">
-          <span>{$t('frameleaf_studio_export_range_start')}</span>
-          <input id="{fieldId}-in-point" type="number" min="0" step="1" bind:value={inPoint} />
-        </label>
-        {#if !photo}
-          <label class="field" for="{fieldId}-out-point">
-            <span>{$t('frameleaf_studio_export_range_end')}</span>
-            <input id="{fieldId}-out-point" type="number" min="1" step="1" bind:value={outPoint} />
-          </label>
-        {/if}
-      {/if}
     </div>
-    {#if rangeMode === 'frames' && selectedRange === null}
-      <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
-    {/if}
 
-    {#if !photo && color === StudioExportColor.Preserve}
-      <label class="note">
-        <input type="checkbox" bind:checked={declarePqMastering} />
-        {$t('frameleaf_studio_export_mastering_preserve')}
-      </label>
-    {/if}
-    {#if !photo && needsMastering}
-      <fieldset class="smooth">
-        <legend>{$t('frameleaf_studio_export_mastering_title')}</legend>
-        <p class="note">{$t('frameleaf_studio_export_mastering_hint')}</p>
+    <!-- Colour, quality and a partial range are for the occasional export; most never open this. -->
+    <details class="advanced" bind:open={advancedOpen}>
+      <summary>{$t('frameleaf_studio_export_advanced')}</summary>
+      <div class="advanced-body">
         <div class="grid">
-          <label class="field" for="{fieldId}-mastering-max">
-            <span>{$t('frameleaf_studio_export_mastering_max')}</span>
-            <input
-              id="{fieldId}-mastering-max"
-              type="number"
-              min="0"
-              max="10000"
-              step="0.0001"
-              required
-              bind:value={maxNits}
-            />
+          <label class="field" for="{fieldId}-color">
+            <span>{$t('frameleaf_studio_export_color')}</span>
+            <select id="{fieldId}-color" bind:value={color} disabled={photo}>
+              {#each colors as item (item.value)}
+                <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
+                  >{$t(item.label)}</option
+                >
+              {/each}
+            </select>
           </label>
-          <label class="field" for="{fieldId}-mastering-min">
-            <span>{$t('frameleaf_studio_export_mastering_min')}</span>
-            <input
-              id="{fieldId}-mastering-min"
-              type="number"
-              min="0"
-              max="10000"
-              step="0.0001"
-              required
-              bind:value={minNits}
-            />
+          <label class="field" for="{fieldId}-quality">
+            <span>{$t('frameleaf_studio_export_quality')}</span>
+            <select id="{fieldId}-quality" bind:value={quality} disabled={photo}>
+              {#each qualities as item (item.value)}
+                <option value={item.value}>{$t(item.label)}</option>
+              {/each}
+            </select>
           </label>
+          <label class="field" for="{fieldId}-range">
+            <span>{$t('frameleaf_studio_export_range')}</span>
+            <select id="{fieldId}-range" bind:value={rangeMode}>
+              <option value="all">{$t('frameleaf_studio_export_range_all')}</option>
+              <option value="frames">{$t('frameleaf_studio_export_range_frames')}</option>
+            </select>
+          </label>
+          {#if rangeMode === 'frames'}
+            <label class="field" for="{fieldId}-in-point">
+              <span>{$t('frameleaf_studio_export_range_start')}</span>
+              <input id="{fieldId}-in-point" type="number" min="0" step="1" bind:value={inPoint} />
+            </label>
+            {#if !photo}
+              <label class="field" for="{fieldId}-out-point">
+                <span>{$t('frameleaf_studio_export_range_end')}</span>
+                <input id="{fieldId}-out-point" type="number" min="1" step="1" bind:value={outPoint} />
+              </label>
+            {/if}
+          {/if}
         </div>
-        {#if mastering === null}
-          <p class="note warning" role="status">{$t('frameleaf_studio_export_mastering_invalid')}</p>
+        {#if rangeMode === 'frames' && selectedRange === null}
+          <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
         {/if}
-      </fieldset>
-    {/if}
+
+        {#if !photo && color === StudioExportColor.Preserve}
+          <label class="note">
+            <input type="checkbox" bind:checked={declarePqMastering} />
+            {$t('frameleaf_studio_export_mastering_preserve')}
+          </label>
+        {/if}
+        {#if !photo && needsMastering}
+          <fieldset class="smooth">
+            <legend>{$t('frameleaf_studio_export_mastering_title')}</legend>
+            <p class="note">{$t('frameleaf_studio_export_mastering_hint')}</p>
+            <div class="grid">
+              <label class="field" for="{fieldId}-mastering-max">
+                <span>{$t('frameleaf_studio_export_mastering_max')}</span>
+                <input
+                  id="{fieldId}-mastering-max"
+                  type="number"
+                  min="0"
+                  max="10000"
+                  step="0.0001"
+                  required
+                  bind:value={maxNits}
+                />
+              </label>
+              <label class="field" for="{fieldId}-mastering-min">
+                <span>{$t('frameleaf_studio_export_mastering_min')}</span>
+                <input
+                  id="{fieldId}-mastering-min"
+                  type="number"
+                  min="0"
+                  max="10000"
+                  step="0.0001"
+                  required
+                  bind:value={minNits}
+                />
+              </label>
+            </div>
+            {#if mastering === null}
+              <p class="note warning" role="status">{$t('frameleaf_studio_export_mastering_invalid')}</p>
+            {/if}
+          </fieldset>
+        {/if}
+      </div>
+    </details>
 
     {#if color === StudioExportColor.DolbyVision}
       <p class="note warning">
@@ -480,6 +594,10 @@
       </fieldset>
     {/if}
 
+    <p class="summary" data-testid="studio-export-summary">
+      <span class="sr-only">{$t('frameleaf_studio_export_summary_label')}:</span>
+      {summary}
+    </p>
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button variant="primary" disabled={!canExport} onclick={submit}>
@@ -530,6 +648,46 @@
   .note.warning {
     color: var(--fl-warning);
   }
+  .presets {
+    display: grid;
+    gap: var(--fl-space-1);
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .advanced summary {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: var(--fl-space-2);
+    margin-inline-start: calc(var(--fl-space-2) * -1);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .advanced[open] summary {
+    color: var(--fl-text);
+  }
+  .advanced-body {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding-top: var(--fl-space-2);
+  }
+  /* What the person will get, in one line, just above the button that makes it. */
+  .summary {
+    margin: 0;
+    padding-top: var(--fl-space-3);
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-text);
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
   .smooth {
     display: grid;
     gap: 0.5rem;
@@ -549,7 +707,7 @@
     gap: 2px;
     padding: 2px;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-canvas);
     justify-self: start;
   }
@@ -557,12 +715,15 @@
     min-height: 28px;
     padding: 0 0.75rem;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: transparent;
     color: var(--fl-muted);
     font: inherit;
     font-size: var(--fl-font-small);
     cursor: pointer;
+  }
+  .segmented button:disabled {
+    opacity: 0.45;
   }
   .segmented button[aria-checked='true'] {
     background: var(--fl-panel);

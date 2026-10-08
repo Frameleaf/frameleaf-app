@@ -111,6 +111,20 @@ describe('CloudTour (FL-196)', () => {
     expect(onClose).toHaveBeenCalledWith('finished');
   });
 
+  it('colours the tile by role and carries the brand hairline, with no literal colour', () => {
+    const { dialog } = setup();
+    const tile = dialog.querySelector<HTMLElement>('.ct-tile')!;
+    expect(tile.dataset.tone).toBe('blue');
+    expect(tile.getAttribute('style') ?? '').not.toMatch(/#|--tile/);
+    expect(dialog.querySelector('.fl-brand-line')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('opens a settings page from a step link', async () => {
+    const { dialog, onOpen } = setup({ initialStep: 4 });
+    await fireEvent.click(within(dialog).getByRole('button', { name: /^Open / }));
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ area: 'backups', params: { backupView: 'cloud' } }));
+  });
+
   it('skips with Skip tour or Escape', async () => {
     const { dialog, onClose } = setup();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Skip tour' }));

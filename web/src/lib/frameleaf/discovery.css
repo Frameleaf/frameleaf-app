@@ -26,9 +26,8 @@
 }
 .fl-discovery h1 {
   margin: 0;
-  font-size: 26px;
-  letter-spacing: -0.035em;
-  font-weight: 600;
+  font: var(--fl-type-display);
+  letter-spacing: var(--fl-tracking-display);
 }
 .fl-discovery h2 {
   font-size: 15px;
@@ -75,7 +74,7 @@
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: var(--fl-control-height);
   padding: 0 10px;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
@@ -95,8 +94,8 @@
   outline: none;
 }
 .fl-discovery .dv-search:focus-within {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: 2px;
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
 }
 .fl-discovery .dv-select {
   display: flex;
@@ -259,8 +258,8 @@
   color: var(--fl-accent);
 }
 .fl-discovery .dv-tree-item:focus-visible > .dv-tree-row {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: -2px;
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-inset);
 }
 .fl-discovery .dv-tree-toggle {
   width: 24px;
@@ -573,5 +572,58 @@
   }
   .fl-discovery .dv-details-path {
     display: none;
+  }
+}
+
+/*
+ * Find (Tags, Folders): the match count beside the field, and quiet movement so the tree and the
+ * detail pane respond rather than cut. Colour and opacity only; nothing here moves.
+ */
+.fl-discovery .dv-find-count {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fl-discovery .dv-find-count:empty {
+  display: none;
+}
+.fl-discovery .dv-empty > button {
+  margin-top: var(--fl-space-3);
+}
+.fl-discovery .dv-note {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.fl-discovery .dv-tree-row,
+.fl-discovery .dv-tree-toggle,
+.fl-discovery .dv-chip,
+.fl-discovery .dv-folder-rows button {
+  transition:
+    background-color var(--fl-motion) var(--fl-ease),
+    color var(--fl-motion) var(--fl-ease);
+}
+/* A tag's preview items open in the viewer. */
+.fl-discovery .dv-strip-item {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--fl-radius-control);
+  overflow: hidden;
+  transition: transform var(--fl-duration) var(--fl-spring);
+}
+.fl-discovery .dv-strip-item:active {
+  transform: scale(0.96);
+  transition-duration: var(--fl-duration-press);
+}
+.fl-discovery .dv-strip-item:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fl-discovery .dv-strip-item:active {
+    transform: none;
   }
 }

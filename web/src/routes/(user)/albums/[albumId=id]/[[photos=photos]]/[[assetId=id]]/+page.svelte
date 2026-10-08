@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
-  import { goto, invalidate, onNavigate } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
   import { navigating } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
@@ -18,6 +18,8 @@
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { HERO_PAGE_ATTRIBUTE, HERO_SHARED_ATTRIBUTE } from '$lib/frameleaf/motion';
+  import { findTileImage } from '$lib/frameleaf/viewer-zoom';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -70,6 +72,37 @@
   let viewerInvisible = $state(false);
   let activityOpen = $state(false);
   let tagOptions = $state<{ id: string; name: string }[]>([]);
+
+  /**
+   * The album's cover on Albums travels to that photo in this grid, and back (BRAND.md "Hero",
+   * `data-fl-shared`). The page has no cover of its own, so the photo's tile is the other end; it
+   * belongs to the library grid, so it carries the mark only around a navigation between this
+   * page and Albums. When the tile is not on screen the page crossfades.
+   */
+  const ALBUMS_ROUTE_ID = '/(user)/albums';
+  const markCoverTile = () => {
+    const image = album.albumThumbnailAssetId ? findTileImage(album.albumThumbnailAssetId) : null;
+    image?.setAttribute(HERO_SHARED_ATTRIBUTE, `album:${album.id}`);
+    image?.setAttribute(HERO_PAGE_ATTRIBUTE, '');
+    return image;
+  };
+  const unmarkCoverTile = (image: HTMLElement | null) => {
+    image?.removeAttribute(HERO_SHARED_ATTRIBUTE);
+    image?.removeAttribute(HERO_PAGE_ATTRIBUTE);
+  };
+  beforeNavigate(({ to }) => {
+    if (to?.route.id === ALBUMS_ROUTE_ID) {
+      markCoverTile();
+    }
+  });
+  afterNavigate(({ from }) => {
+    if (from?.route.id !== ALBUMS_ROUTE_ID) {
+      return;
+    }
+    const image = markCoverTile();
+    // The root layout reads the mark in the same turn; a later press on the tile opens the viewer.
+    setTimeout(() => unmarkCoverTile(image), 0);
+  });
 
   // The page keeps its own copy so an inline edit renders what the server returned without
   // waiting for a loader re-run; navigating to a different album replaces it outright.

@@ -108,8 +108,8 @@
     color: var(--fl-accent);
   }
   button:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
     border-radius: var(--fl-radius-control);
   }
   .heading {
@@ -138,7 +138,7 @@
     place-items: center;
     flex-shrink: 0;
     color: var(--fl-muted);
-    transition: transform var(--fl-duration, 380ms) var(--fl-spring, ease);
+    transition: transform var(--fl-duration) var(--fl-spring);
   }
   .open .chevron {
     transform: rotate(180deg);

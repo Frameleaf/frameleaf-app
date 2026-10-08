@@ -8,12 +8,21 @@
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
   import LivePhotosUtility from '$lib/components/frameleaf/LivePhotosUtility.svelte';
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
-  import { UTILITY_GROUPS, utilityTool, utilityToolsFor, type UtilityId } from '$lib/frameleaf/utilities';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import {
+    LIBRARY_CARE_TOOLS,
+    UTILITY_GROUPS,
+    utilityTool,
+    utilityToolsFor,
+    type UtilityId,
+  } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Icon } from '@frameleaf/ui';
@@ -26,6 +35,10 @@
   const requestedStatus = $derived(page.url.searchParams.get('status'));
   const selected = $derived(utilityTool(page.url.searchParams.get('section')));
   const denied = $derived(selected?.adminOnly && !authManager.user.isAdmin);
+  // A repair tool opened from Library care says so and goes back there (design review finding 67).
+  const fromCare = $derived(
+    page.url.searchParams.get('from') === 'care' && !!selected && LIBRARY_CARE_TOOLS.includes(selected.id),
+  );
   const matches = $derived(
     tools.filter((tool) =>
       `${$t(tool.titleKey)} ${$t(tool.descriptionKey)}`.toLowerCase().includes(query.trim().toLowerCase()),
@@ -86,8 +99,11 @@
 
   const select = (section?: UtilityId) => {
     onNavigate?.();
+    if (!section && fromCare) {
+      return goto(commandCenterUrl('care', undefined, { scope: page.url.searchParams.get('scope') ?? undefined }));
+    }
     const url = new URL(page.url);
-    for (const key of ['section', 'assetId', 'status', 'at', 'index', 'workflowId']) {
+    for (const key of ['section', 'assetId', 'status', 'at', 'index', 'workflowId', 'from']) {
       url.searchParams.delete(key);
     }
     if (section) {
@@ -100,7 +116,9 @@
 <header class="heading">
   <SettingsOverline>
     {#if selected && !query.trim()}
-      <button type="button" onclick={() => select()}>{$t('utilities')}</button>
+      <button type="button" onclick={() => select()}
+        >{fromCare ? $t('frameleaf_settings_area_care') : $t('utilities')}</button
+      >
       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />
       {$t(selected.titleKey)}
     {:else}
@@ -112,15 +130,12 @@
 </header>
 
 {#if denied}
-  <p role="alert">{$t('frameleaf_utilities_admin_required')}</p>
+  <InlineError compact message={$t('frameleaf_utilities_admin_required')} />
 {:else if !selected || query.trim()}
   <SettingsDirectory {rows} areaTitle={$t('utilities')} />
   {#if matches.length === 0}<p role="status">{$t('frameleaf_settings_search_empty', { values: { query } })}</p>{/if}
 {:else if failed}
-  <div role="alert">
-    <p>{$t('frameleaf_utilities_load_error')}</p>
-    <button type="button" onclick={() => retry++}>{$t('retry')}</button>
-  </div>
+  <InlineError message={$t('frameleaf_utilities_load_error')} onRetry={() => retry++} />
 {:else if data}
   {#key data}
     <div class="tool">
@@ -161,7 +176,14 @@
       {/if}
     </div>
   {/key}
-{:else}<p role="status">{$t('loading')}</p>{/if}
+{:else}
+  <div class="tool-loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="block" height="3.5rem" />
+    <Skeleton variant="block" height="14rem" />
+    <Skeleton variant="text" lines={3} />
+  </div>
+{/if}
 
 <style>
   .heading {
@@ -180,10 +202,15 @@
     line-height: 1.6;
   }
   button:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .tool {
     min-width: 0;
+  }
+  .tool-loading {
+    display: grid;
+    gap: var(--fl-space-4);
+    max-width: 820px;
   }
 </style>

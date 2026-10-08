@@ -187,9 +187,10 @@
     font: inherit;
   }
   .jm-search:focus-within {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
+  /* The ring is drawn on the field's frame (:focus-within above), not on the bare input. */
   .jm-search input:focus-visible {
     outline: 0;
   }

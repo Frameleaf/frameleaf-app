@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -192,7 +193,7 @@
       {/each}
     </div>
     {#if loading}
-      <Status message={$t('loading')} busy />
+      <div class="loading"><Spinner /></div>
     {:else if nextCursor}
       <div class="more">
         <Button onclick={() => void load(nextCursor!)}>{$t('frameleaf_people_show_more')}</Button>
@@ -248,8 +249,8 @@
     justify-content: center;
     width: 24px;
     height: 24px;
-    color: #fff;
-    background: #000a;
+    color: var(--fl-viewer-text);
+    background: var(--fl-scrim);
     border-radius: 50%;
   }
   .video {
@@ -274,5 +275,11 @@
     .grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+  }
+  .loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-6) 0;
+    color: var(--fl-muted);
   }
 </style>

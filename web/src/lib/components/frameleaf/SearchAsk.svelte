@@ -19,7 +19,7 @@
   import { SEARCH_ASK_EXAMPLES, type SearchAskProblem } from '$lib/frameleaf/search-ask';
   import { Icon } from '@frameleaf/ui';
   import type { AskSearchResponseDto } from '@frameleaf/sdk';
-  import { mdiAlertCircleOutline, mdiClose, mdiCreation, mdiHistory, mdiMagnify } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiClose, mdiCreation, mdiLightbulbOutline, mdiMagnify } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -100,7 +100,11 @@
 </script>
 
 <section class="frameleaf sa" aria-labelledby="{listId}-title">
-  <h2 id="{listId}-title" class="sr-only">{$t('frameleaf_search_ask_title')}</h2>
+  <!-- Named in view, so it does not read as a second copy of the search field above it. -->
+  <h2 id="{listId}-title" class="sa-title">
+    <Icon icon={mdiCreation} size="18" aria-hidden="true" />
+    {$t('frameleaf_search_ask_title')}
+  </h2>
   <div class="sa-panel fl-continuous-corners" role="search">
     <div class="sa-field">
       <Icon icon={mdiMagnify} size="22" aria-hidden="true" />
@@ -189,7 +193,8 @@
                 class:active={index === active}
                 onclick={() => ask(example)}
               >
-                <Icon icon={mdiHistory} size="16" aria-hidden="true" />
+                <!-- An example to try, not something that was searched before. -->
+                <Icon icon={mdiLightbulbOutline} size="16" aria-hidden="true" />
                 <span>{example}</span>
               </div>
             {/each}
@@ -206,9 +211,24 @@
     --sa-row: color-mix(in srgb, var(--fl-text) 8%, transparent);
     --sa-active: color-mix(in srgb, var(--fl-accent) 22%, transparent);
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--fl-space-3);
     width: 100%;
     color: var(--fl-text);
+  }
+  .sa-title {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    width: min(980px, 100%);
+    margin: 0;
+    padding-inline: var(--fl-space-1);
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
+  }
+  .sa-title > :global(svg) {
+    color: var(--fl-ai);
   }
   .sa-panel {
     width: min(980px, 100%);
@@ -253,8 +273,8 @@
     opacity: 0.6;
   }
   .sa-panel:focus-within {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .sa-icon-button {
     display: inline-grid;

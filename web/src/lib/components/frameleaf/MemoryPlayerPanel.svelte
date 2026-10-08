@@ -1090,7 +1090,7 @@
     {#if galleryInView}
       <div class="fmp-scroll-up visible">
         <IconButton
-          label={$t('hide_gallery')}
+          label={$t('frameleaf_memories_back_to_memory')}
           onclick={() => memoryWrapper?.scrollIntoView({ behavior: motionScrollBehavior() })}
         >
           <Icon icon={mdiChevronUp} size="20" />
@@ -1120,7 +1120,8 @@
 
         <!-- CURRENT MEMORY -->
         <div class="fmp-main">
-          <div class="fmp-main-inner">
+          <!-- The route marks this as the Hero end of a memory card (`data-fl-shared`) while arriving or leaving. -->
+          <div class="fmp-main-inner" data-fl-memory-stage={current.memory.id}>
             {#key current.asset.id}
               {#if current.asset.isVideo}
                 <MemoryVideoViewer asset={current.asset} startAtMs={videoStartMs} bind:videoPlayer />
@@ -1482,7 +1483,7 @@
   <section class="frameleaf fmp-gallery-section" data-theme={appTheme}>
     <div class="fmp-scroll-down" class:visible={!galleryInView}>
       <IconButton
-        label={$t('show_gallery')}
+        label={$t('frameleaf_memories_select_items')}
         onclick={() => memoryGallery?.scrollIntoView({ behavior: motionScrollBehavior() })}
       >
         <Icon icon={mdiChevronDown} size="20" />
@@ -1557,7 +1558,7 @@
     font-weight: 600;
   }
   .fmp-heading small {
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     font-size: var(--fl-font-micro);
   }
   .fmp-header-tools {
@@ -1566,7 +1567,7 @@
     gap: 0.25rem;
   }
   .fmp-header-tools :global(button[aria-pressed='true']) {
-    background: var(--fl-viewer-raised, #25272b);
+    background: var(--fl-viewer-raised);
   }
   .fmp-progress {
     display: flex;
@@ -1884,7 +1885,7 @@
     min-height: 44px;
     padding: 0 22px;
     margin-block-start: 0.75rem;
-    color: var(--fl-viewer-text, #f1f1f2);
+    color: var(--fl-viewer-text);
     background: #ffffff1f;
     border: 0;
     border-radius: var(--fl-radius-pill);
@@ -1899,7 +1900,7 @@
     gap: 0.375rem;
     margin-block-start: 0.75rem;
     padding: 0.625rem 1.25rem;
-    color: var(--fl-viewer-canvas, #08090b);
+    color: var(--fl-viewer-canvas);
     background: #fff;
     border: 0;
     border-radius: var(--fl-radius-pill);
@@ -1964,17 +1965,17 @@
     z-index: 5;
     overflow: auto;
     padding: 18px 20px 24px;
-    background: var(--fl-viewer-canvas, #08090b);
+    background: var(--fl-viewer-canvas);
   }
   @supports (backdrop-filter: blur(10px)) {
     .fmp-gallery {
-      background: color-mix(in srgb, var(--fl-viewer-canvas, #08090b) 88%, transparent);
+      background: color-mix(in srgb, var(--fl-viewer-canvas) 88%, transparent);
       backdrop-filter: blur(10px);
     }
   }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
     .fmp-gallery {
-      background: var(--fl-viewer-canvas, #08090b);
+      background: var(--fl-viewer-canvas);
       backdrop-filter: none;
     }
   }
@@ -1992,14 +1993,14 @@
   }
   .fmp-gallery-heading small,
   .fmp-gallery-empty {
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
   }
   .fmp-gallery-tools {
     display: flex;
     gap: 0.25rem;
   }
   .fmp-gallery-tools :global(button[aria-pressed='true']) {
-    background: var(--fl-viewer-raised, #25272b);
+    background: var(--fl-viewer-raised);
   }
   .fmp-gallery-grid {
     display: grid;
@@ -2021,7 +2022,7 @@
     aspect-ratio: 1;
     overflow: hidden;
     padding: 0;
-    background: var(--fl-viewer-raised, #25272b);
+    background: var(--fl-viewer-raised);
     border: 0;
     border-radius: var(--fl-radius-control);
   }
@@ -2032,8 +2033,8 @@
     object-fit: cover;
   }
   .fmp-gallery-item.current {
-    outline: 2px solid var(--fl-viewer-text, #f1f1f2);
-    outline-offset: -2px;
+    outline: 2px solid var(--fl-viewer-text);
+    outline-offset: var(--fl-focus-inset);
   }
   .fmp-gallery-index,
   .fmp-gallery-video {
@@ -2068,8 +2069,8 @@
     place-items: center;
     width: 32px;
     height: 28px;
-    color: var(--fl-viewer-text, #f1f1f2);
-    background: var(--fl-viewer-raised, #25272b);
+    color: var(--fl-viewer-text);
+    background: var(--fl-viewer-raised);
     border: 0;
     border-radius: var(--fl-radius-control);
   }

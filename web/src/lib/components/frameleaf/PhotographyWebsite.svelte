@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { AssetMediaSize } from '@frameleaf/sdk';
   import Button from './Button.svelte';
+  import { photographyErrorKey } from './PhotographyStatus.svelte';
   import {
     siteRequest,
     workflowRequest,
@@ -39,7 +41,7 @@
       siteUrl = result.url ?? siteUrl;
     } catch (error_) {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'Could not load studio website.';
+        error = $t(photographyErrorKey(error_));
       }
     } finally {
       if (!disposed) {
@@ -61,10 +63,12 @@
       }
       stored = result;
       draft = structuredClone(result);
-      message = draft.site.enabled ? 'Studio website saved and published.' : 'Studio website saved.';
+      message = draft.site.enabled
+        ? $t('frameleaf_photography_site_saved_published')
+        : $t('frameleaf_photography_site_saved');
     } catch (error_) {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'Could not save studio website.';
+        error = $t(photographyErrorKey(error_));
       }
     } finally {
       if (!disposed) {
@@ -89,7 +93,7 @@
       }
     } catch (error_) {
       if (!disposed && current === generation) {
-        error = error_ instanceof Error ? error_.message : 'Could not load photographs.';
+        error = $t(photographyErrorKey(error_));
       }
     }
   }
@@ -104,7 +108,7 @@
     }
     chosen = [];
     consent = false;
-    message = 'Portfolio choices added to the draft. Save to publish.';
+    message = $t('frameleaf_photography_site_added');
   }
   function move(index: number, direction: number) {
     if (!draft || index + direction < 0 || !draft.site.portfolio.at(index + direction)) {
@@ -127,67 +131,84 @@
 <div class="phd" aria-busy={busy}>
   <div class="phd-toolbar">
     <div>
-      <span class="phd-eyebrow">Your public studio</span>
-      <h2>Studio website</h2>
-      <p>A curated portfolio with your studio identity, services and contact details.</p>
+      <span class="phd-eyebrow">{$t('frameleaf_photography_site_eyebrow')}</span>
+      <h2>{$t('frameleaf_photography_studio_website')}</h2>
+      <p>{$t('frameleaf_photography_site_lead')}</p>
     </div>
     <div class="phd-actions">
-      <Button disabled={busy} onclick={reload}>Reload</Button><Button
+      <Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button><Button
         variant="primary"
         disabled={busy || !draft}
-        onclick={save}>Save website</Button
+        onclick={save}>{$t('frameleaf_photography_site_save')}</Button
       >
     </div>
   </div>
   {#if error}<div class="phw-notice" role="alert">{error}</div>{/if}{#if message}<p role="status">{message}</p>{/if}
   {#if draft}<section class="phd-card">
       <div class="phd-row">
-        <label><input type="checkbox" bind:checked={draft.site.enabled} />Publish studio website</label
-        >{#if stored?.site.enabled && siteUrl}<a href={siteUrl} target="_blank" rel="noopener">Open studio website ↗</a
+        <label
+          ><input type="checkbox" bind:checked={draft.site.enabled} />{$t('frameleaf_photography_site_publish')}</label
+        >{#if stored?.site.enabled && siteUrl}<a href={siteUrl} target="_blank" rel="noopener"
+            >{$t('frameleaf_photography_site_open')} ↗</a
           >{/if}
       </div>
-      <label>Website title<input required maxlength="200" bind:value={draft.site.title} /></label>
+      <label
+        >{$t('frameleaf_photography_site_title')}<input required maxlength="200" bind:value={draft.site.title} /></label
+      >
       <div class="phd-fields">
-        <label>About<textarea rows="6" maxlength="10000" bind:value={draft.site.about}></textarea></label><label
-          >Services<textarea rows="6" maxlength="10000" bind:value={draft.site.services}></textarea></label
+        <label
+          >{$t('frameleaf_photography_site_about')}<textarea rows="6" maxlength="10000" bind:value={draft.site.about}
+          ></textarea></label
         ><label
-          >Contact introduction<textarea rows="6" maxlength="5000" bind:value={draft.site.contact}></textarea></label
+          >{$t('frameleaf_photography_site_services')}<textarea
+            rows="6"
+            maxlength="10000"
+            bind:value={draft.site.services}></textarea></label
+        ><label
+          >{$t('frameleaf_photography_site_contact_intro')}<textarea
+            rows="6"
+            maxlength="5000"
+            bind:value={draft.site.contact}></textarea></label
         >
       </div>
       <div class="phd-fields">
         <label
-          >Layout<select bind:value={draft.site.presentation.layout}
-            ><option value="editorial">Editorial</option><option value="grid">Portfolio grid</option><option
-              value="slideshow">Slideshow</option
-            ></select
+          >{$t('frameleaf_photography_site_layout')}<select bind:value={draft.site.presentation.layout}
+            ><option value="editorial">{$t('frameleaf_photography_type_editorial')}</option><option value="grid"
+              >{$t('frameleaf_photography_site_layout_grid')}</option
+            ><option value="slideshow">{$t('frameleaf_photography_block_slideshow')}</option></select
           ></label
         ><label
-          >Typography<select bind:value={draft.site.presentation.font}
-            ><option value="editorial">Editorial serif</option><option value="modern">Modern sans</option><option
-              value="script">Studio script</option
-            ></select
+          >{$t('frameleaf_photography_typography')}<select bind:value={draft.site.presentation.font}
+            ><option value="editorial">{$t('frameleaf_photography_font_editorial')}</option><option value="modern"
+              >{$t('frameleaf_photography_font_modern')}</option
+            ><option value="script">{$t('frameleaf_photography_font_script')}</option></select
           ></label
         ><label
-          >Palette<select bind:value={draft.site.presentation.palette}
-            ><option value="studio">Studio colours</option><option value="ivory">Ivory</option><option value="charcoal"
-              >Charcoal</option
-            ></select
+          >{$t('frameleaf_photography_palette')}<select bind:value={draft.site.presentation.palette}
+            ><option value="studio">{$t('frameleaf_photography_palette_studio')}</option><option value="ivory"
+              >{$t('frameleaf_photography_palette_ivory')}</option
+            ><option value="charcoal">{$t('frameleaf_photography_palette_charcoal')}</option></select
           ></label
         ><label
-          >Spacing<select bind:value={draft.site.presentation.spacing}
-            ><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option
-              value="airy">Airy</option
-            ></select
+          >{$t('frameleaf_photography_spacing')}<select bind:value={draft.site.presentation.spacing}
+            ><option value="compact">{$t('frameleaf_photography_spacing_compact')}</option><option value="comfortable"
+              >{$t('frameleaf_photography_spacing_comfortable')}</option
+            ><option value="airy">{$t('frameleaf_photography_spacing_airy')}</option></select
           ></label
         >
       </div>
     </section>
     <section class="phd-card">
-      <h3>Choose portfolio photographs</h3>
-      <p>Use approved versions already published in a project. Portfolio inclusion makes these photographs public.</p>
+      <h3>{$t('frameleaf_photography_site_choose')}</h3>
+      <p>
+        {$t('frameleaf_photography_site_choose_body')}
+      </p>
       <label
-        >Project<select value={project} onchange={(event) => loadProject(event.currentTarget.value)}
-          ><option value="">Choose a project</option
+        >{$t('frameleaf_photography_shoot')}<select
+          value={project}
+          onchange={(event) => loadProject(event.currentTarget.value)}
+          ><option value="">{$t('frameleaf_photography_choose_shoot')}</option
           >{#each shoots.filter((shoot) => !shoot.unavailable) as shoot (shoot.id)}<option value={shoot.id}
               >{shoot.name}</option
             >{/each}</select
@@ -196,7 +217,7 @@
           {#each options as capture (capture.id)}<label
               >{#if capture.assetId}<img
                   src={getAssetMediaUrl({ id: capture.assetId, size: AssetMediaSize.Thumbnail })}
-                  alt={`Photo ${capture.number}`}
+                  alt={$t('frameleaf_photography_photo_number', { values: { number: capture.number } })}
                   loading="lazy"
                 />{/if}<span
                 ><input
@@ -206,38 +227,37 @@
                     (chosen = event.currentTarget.checked
                       ? [...chosen, capture.id]
                       : chosen.filter((id) => id !== capture.id))}
-                />Photo {capture.number}</span
+                />{$t('frameleaf_photography_photo_number', { values: { number: capture.number } })}</span
               ></label
-            >{:else}<p>Approve edited versions and publish this project before adding photographs.</p>{/each}
+            >{:else}<p>{$t('frameleaf_photography_site_none_ready')}</p>{/each}
         </div>{/if}<label
-        ><input type="checkbox" bind:checked={consent} />I have permission to display these photographs in the public
-        portfolio.</label
+        ><input type="checkbox" bind:checked={consent} />{$t('frameleaf_photography_site_consent')}</label
       ><Button
         disabled={busy || chosen.length === 0 || !consent || draft.site.portfolio.length + chosen.length > 200}
-        onclick={include}>Add to portfolio draft</Button
+        onclick={include}>{$t('frameleaf_photography_site_add')}</Button
       >
     </section>
     <section class="phd-card">
-      <h3>Portfolio sequence</h3>
+      <h3>{$t('frameleaf_photography_site_sequence')}</h3>
       {#each draft.site.portfolio as item, index (`${item.shootId}:${item.captureId}`)}<div class="phd-row phd-order">
           <span
-            >{index + 1}. {shoots.find((shoot) => shoot.id === item.shootId)?.name ?? 'Project'} · {item.captureId.slice(
-              0,
-              8,
-            )}</span
+            >{index + 1}. {shoots.find((shoot) => shoot.id === item.shootId)?.name ?? $t('frameleaf_photography_shoot')} ·
+            {item.captureId.slice(0, 8)}</span
           >
           <div class="phd-actions">
             <Button
               disabled={busy || index === 0}
-              label="Move portfolio photograph earlier"
+              label={$t('frameleaf_photography_site_move_earlier', { values: { number: index + 1 } })}
               onclick={() => move(index, -1)}>↑</Button
             ><Button
               disabled={busy || index === draft!.site.portfolio.length - 1}
-              label="Move portfolio photograph later"
+              label={$t('frameleaf_photography_site_move_later', { values: { number: index + 1 } })}
               onclick={() => move(index, 1)}>↓</Button
-            ><Button disabled={busy} onclick={() => draft!.site.portfolio.splice(index, 1)}>Remove</Button>
+            ><Button disabled={busy} onclick={() => draft!.site.portfolio.splice(index, 1)}>{$t('remove')}</Button>
           </div>
-        </div>{:else}<p>No photographs included yet.</p>{/each}
+        </div>{:else}<p>{$t('frameleaf_photography_site_empty')}</p>{/each}
     </section>
-  {:else}<p role="status">{busy ? 'Loading website…' : 'Reload to retry.'}</p>{/if}
+  {:else}<p role="status">
+      {busy ? $t('frameleaf_photography_site_loading') : $t('frameleaf_photography_reload_to_retry')}
+    </p>{/if}
 </div>

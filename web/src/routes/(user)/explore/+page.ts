@@ -43,10 +43,19 @@ const previewAlbums = (albums: AlbumTreeResponseDto): AlbumResponseDto[] => {
     .slice(0, EXPLORE_ALBUM_PREVIEW_COUNT);
 };
 
-export const load = (async ({ url }) => {
-  await authenticate(url);
+/**
+ * "Days to revisit". The memory manager reads the account's memory preferences first; either step
+ * failing only costs this one section.
+ */
+const loadMemories = async () => {
   memoryManager.setFilters({ size: 12, order: MemorySearchOrder.Desc });
   await memoryManager.applyPreferences();
+  await memoryManager.refresh();
+  return memoryManager.memories;
+};
+
+export const load = (async ({ url }) => {
+  await authenticate(url);
 
   const [
     people,
@@ -60,9 +69,11 @@ export const load = (async ({ url }) => {
     facets,
     recentCaptures,
   ] = await Promise.all([
-    getAllPeople({ withHidden: false }),
-    getAlbumTree(),
-    memoryManager.refresh().then(() => memoryManager.memories),
+    // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
+    // only that section says it could not load (`failed` below) instead of the whole page erroring.
+    getAllPeople({ withHidden: false }).catch(() => null),
+    getAlbumTree().catch(() => null),
+    loadMemories().catch(() => null),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
     // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the
     // count is what that page shows: Timeline and Archive, never Locked, and a stack once, as the
@@ -109,13 +120,21 @@ export const load = (async ({ url }) => {
   };
 
   return {
-    peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people.people),
+    failed: {
+      people: people === null,
+      // One facet request feeds People, Places and Things; Places carries its retry.
+      places: facets === null,
+      memories: memories === null,
+      albums: albums === null,
+      recents: recentCaptures === null,
+    },
+    peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
     libraryTotal: facets ? facets.total : null,
     recentCaptures: recentCaptures ?? [],
-    albums: previewAlbums(albums),
-    memories,
+    albums: albums ? previewAlbums(albums) : [],
+    memories: memories ?? [],
     shortcutCounts,
     bestPhotosPreview,
     meta: {

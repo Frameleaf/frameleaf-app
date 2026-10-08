@@ -26,13 +26,31 @@
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <SharedSpacesWorkspace
-      spaces={data.spaces}
-      partners={data.partners}
-      invitations={data.invitations}
-      onRefresh={refresh}
-    />
-    <!-- FL-83 (AL-30b): items people shared with you one by one; share notifications link here. -->
-    <SharedWithYouSection />
+    <!-- The page surface reaches the foot of the window however little is shared. -->
+    <div class="fl-page-fill">
+      <SharedSpacesWorkspace
+        spaces={data.spaces}
+        partners={data.partners}
+        invitations={data.invitations}
+        onRefresh={refresh}
+      />
+      <!-- FL-83 (AL-30b): items people shared with you one by one; share notifications link here. -->
+      <SharedWithYouSection />
+    </div>
   </Theme>
 </UserPageLayout>
+
+<style>
+  /*
+   * Everything below the top bar, less the layout's 8px gutter above and below, so the Frameleaf
+   * surface never stops short of the window with the page background showing under it.
+   */
+  .fl-page-fill {
+    min-height: calc(100dvh - var(--fl-topbar-height) - 1rem);
+  }
+  @media (max-width: 767px) {
+    .fl-page-fill {
+      min-height: calc(100dvh - var(--fl-topbar-height-phone) - 0.5rem - max(0.5rem, var(--fl-tabbar-space, 0px)));
+    }
+  }
+</style>

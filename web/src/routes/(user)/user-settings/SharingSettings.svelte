@@ -13,6 +13,7 @@
    * they receive and how far the first copy has come; the timeline and location toggles are gone.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { backfillProgress, PARTNER_SHARED_ITEMS } from '$lib/frameleaf/partner-sharing';
@@ -399,10 +400,7 @@
       </button>
     </div>
     {#if accountsStatus === 'error'}
-      <p class="cc-error" role="alert">
-        {$t('frameleaf_people_sharing.accounts_error')}
-        <button type="button" class="button" onclick={loadAccounts}>{$t('retry')}</button>
-      </p>
+      <InlineError compact message={$t('frameleaf_people_sharing.accounts_error')} onRetry={loadAccounts} />
     {/if}
     <div class="cc-sharing-list">
       {#each partners as partner (partner.user.id)}
@@ -587,14 +585,6 @@
   }
   .cc-subtle {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .cc-error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 8px;
-    color: var(--fl-danger);
     font-size: var(--fl-font-small);
   }
   .cc-notice {

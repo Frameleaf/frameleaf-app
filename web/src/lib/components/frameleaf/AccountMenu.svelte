@@ -10,6 +10,7 @@
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { formatUsd } from '$lib/frameleaf/cloud';
+  import { canAnimate, leave } from '$lib/frameleaf/motion';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@frameleaf/sdk';
@@ -39,6 +40,10 @@
    * administration for an administrator, the avatar editor, support and sign out.
    * The Locked state is owned by the top bar so the menu and the top bar's Locked icon
    * can never disagree.
+   *
+   * It opens and closes on the Pop pattern like every other menu (BRAND.md): it grows from the
+   * corner under its button and fades out when dismissed. It stays a solid panel: it hangs inside
+   * the frosted top bar, and a frosted surface inside another has nothing behind it to blur.
    */
 
   interface Props {
@@ -52,17 +57,23 @@
 
   let open = $state(false);
   let menu = $state<HTMLDivElement>();
+  // True while the closed menu is still fading out; it stays mounted, inert, until the exit ends.
+  let leaving = $state(false);
+  let cancelLeave: (() => void) | undefined;
 
   /**
    * FL-157 (SystemPanels.jsx:738-761): the Frameleaf Cloud row shows the link state and, for an
    * administrator of a linked server, the AI credit the server last read. Read when the menu opens.
    */
   let cloud = $state<{ linked: boolean; account: string | null; creditUsd: number | null } | null>(null);
+  // Until the first answer the row holds its place with an empty line, so nothing shifts under the pointer.
+  let cloudAsked = $state(false);
   const cloudConfigured = $derived(authManager.user.isAdmin || featureFlagsManager.value.frameleafCloud);
 
   const loadCloud = async () => {
     if (!authManager.user.isAdmin) {
       cloud = { linked: featureFlagsManager.value.frameleafCloud, account: null, creditUsd: null };
+      cloudAsked = true;
       return;
     }
     try {
@@ -72,6 +83,8 @@
       cloud = { linked, account: status.account?.label ?? null, creditUsd: wallet?.availableUsd ?? null };
     } catch {
       cloud = null;
+    } finally {
+      cloudAsked = true;
     }
   };
 
@@ -86,7 +99,27 @@
     authManager.isPurchased && authManager.authenticated && authManager.preferences.purchase.showSupportBadge,
   );
 
-  const close = () => (open = false);
+  const close = () => {
+    if (!open) {
+      return;
+    }
+    open = false;
+    // Without the Web Animations API (and in unit tests) the menu simply unmounts.
+    if (canAnimate(menu) && menu.isConnected) {
+      leaving = true;
+      cancelLeave = leave(menu, 'pop', () => (leaving = false));
+    }
+  };
+  const toggle = () => {
+    if (open) {
+      close();
+      return;
+    }
+    cancelLeave?.();
+    cancelLeave = undefined;
+    leaving = false;
+    open = true;
+  };
   const run = (action: () => void) => {
     close();
     action();
@@ -155,7 +188,7 @@
     aria-haspopup="menu"
     aria-expanded={open}
     aria-label={$t('frameleaf_account_menu_for', { values: { name: authManager.user.name } })}
-    onclick={() => (open = !open)}
+    onclick={toggle}
   >
     {#key authManager.user}
       <UserAvatar user={authManager.user} size="md" noTitle interactive />
@@ -164,12 +197,14 @@
     <Icon icon={mdiChevronDown} size="1em" aria-hidden={true} />
   </button>
 
-  {#if open}
+  {#if open || leaving}
     <div
       bind:this={menu}
-      class="fl-menu"
+      class="fl-menu fl-pop fl-origin-top-end"
       role="menu"
       tabindex="-1"
+      inert={!open}
+      aria-hidden={open ? undefined : 'true'}
       aria-label={$t('account_settings')}
       onkeydown={onMenuKeydown}
       use:focusTrap
@@ -232,16 +267,20 @@
           <Icon icon={mdiCloudOutline} size="1.125em" aria-hidden={true} />
           <span>
             {$t('frameleaf_settings_area_cloud')}
-            <small>
-              {cloud?.linked
-                ? cloud.account
-                  ? $t('frameleaf_account_menu_cloud_linked_to', { values: { account: cloud.account } })
-                  : $t('frameleaf_account_menu_cloud_linked')
-                : $t('frameleaf_account_menu_cloud_not_linked')}
-            </small>
+            {#if cloudAsked}
+              <small class="fl-reveal">
+                {cloud?.linked
+                  ? cloud.account
+                    ? $t('frameleaf_account_menu_cloud_linked_to', { values: { account: cloud.account } })
+                    : $t('frameleaf_account_menu_cloud_linked')
+                  : $t('frameleaf_account_menu_cloud_not_linked')}
+              </small>
+            {:else}
+              <small aria-hidden="true">&nbsp;</small>
+            {/if}
           </span>
           {#if cloud?.creditUsd !== null && cloud?.creditUsd !== undefined}
-            <span class="cloud-pill" title={$t('frameleaf_account_menu_cloud_credit')}>
+            <span class="cloud-pill fl-reveal" title={$t('frameleaf_account_menu_cloud_credit')}>
               {formatUsd(cloud.creditUsd, 2)}
             </span>
           {/if}
@@ -318,11 +357,11 @@
     margin-inline-start: auto;
     padding: 2px 8px;
     border-radius: var(--fl-radius-pill);
-    background: var(--fl-accent-soft, var(--fl-raised));
+    background: var(--fl-accent-soft);
     color: var(--fl-accent);
     font-size: var(--fl-font-micro);
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .fl-account-button {
     display: flex;
@@ -330,7 +369,7 @@
     gap: 0.5rem;
     padding: 0.25rem 0.5rem;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: transparent;
     color: var(--fl-text);
   }
@@ -348,16 +387,16 @@
     position: absolute;
     inset-inline-end: 0;
     top: calc(100% + 0.5rem);
-    z-index: 30;
+    z-index: var(--fl-z-popover);
     display: flex;
     width: min(20rem, calc(100vw - 2rem));
     flex-direction: column;
     gap: 0.125rem;
     padding: 0.5rem;
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+    box-shadow: var(--fl-shadow-2);
   }
   .fl-identity {
     display: flex;
@@ -415,7 +454,7 @@
     width: 100%;
     padding: 0.5rem;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: transparent;
     color: var(--fl-text);
     text-align: start;
@@ -439,31 +478,42 @@
   .fl-item.danger :global(svg) {
     color: var(--fl-danger);
   }
-  /* system.css `.fl-switch` at the menu size (34 × 20, 14px knob). */
+  /*
+   * system.css `.fl-switch` at the menu size (34 × 20, 14px knob), drawn as the Toggle primitive
+   * draws its own: an off track is its 3:1 outline with a muted knob, an on track is the accent.
+   */
   .fl-switch {
     position: relative;
     flex-shrink: 0;
+    box-sizing: border-box;
     width: 34px;
     height: 20px;
+    border: 1px solid var(--fl-border-strong);
     border-radius: var(--fl-radius-pill);
-    background: var(--fl-border);
-    transition: background var(--fl-motion) var(--fl-ease);
+    background: var(--fl-raised);
+    transition:
+      background-color var(--fl-motion) var(--fl-ease),
+      border-color var(--fl-motion) var(--fl-ease);
   }
   .fl-switch::after {
     content: '';
     position: absolute;
-    top: 3px;
-    inset-inline-start: 3px;
+    top: 2px;
+    inset-inline-start: 2px;
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #fff;
-    transition: transform var(--fl-motion) var(--fl-ease);
+    background: var(--fl-muted);
+    transition:
+      transform var(--fl-motion) var(--fl-snappy),
+      background-color var(--fl-motion) var(--fl-ease);
   }
   .fl-item[aria-checked='true'] .fl-switch {
+    border-color: var(--fl-accent);
     background: var(--fl-accent);
   }
   .fl-item[aria-checked='true'] .fl-switch::after {
+    background: var(--fl-accent-text);
     transform: translateX(14px);
   }
   :global([dir='rtl']) .fl-item[aria-checked='true'] .fl-switch::after {
@@ -473,8 +523,11 @@
     color: var(--fl-muted);
     font-size: 0.75rem;
   }
-  /* The prototype hides the name at 1000px and below. */
-  @media (min-width: 1001px) {
+  /*
+   * The prototype hides the name at 1000px and below; up to 1280px the bar is still too tight to
+   * show it without squeezing the search field, so the avatar stands alone there too.
+   */
+  @media (min-width: 1281px) {
     .fl-account-name {
       display: inline;
     }

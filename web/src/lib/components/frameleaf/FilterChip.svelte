@@ -53,10 +53,12 @@
     gap: 0.375rem;
     padding-inline-start: 0.5rem;
     font-size: var(--fl-font-small);
-    border: 1px solid var(--fl-accent);
-    border-radius: var(--fl-radius-pill);
-    background: var(--fl-raised);
+    /* The same accent-tinted chip as the search palette and the search results (SearchChip). */
+    border: 0;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--fl-accent) 22%, transparent);
     color: var(--fl-text);
+    font-weight: 500;
   }
   .chip-icon {
     display: inline-grid;

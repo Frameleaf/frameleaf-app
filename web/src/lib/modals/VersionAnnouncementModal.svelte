@@ -18,18 +18,13 @@
   const { serverVersion, releaseVersion, onClose }: Props = $props();
 
   let open = $state(true);
-  $effect(() => {
-    if (!open) {
-      onClose();
-    }
-  });
 
   // releaseVersion comes from semverToName (e.g. v2.1.0); the notes are the GitHub releases that
   // .github/frameleaf-release.cjs publishes as frameleaf-v<version>-<n>.
   const notesUrl = $derived(releaseNotesUrl(releaseVersion));
 </script>
 
-<Dialog title={$t('frameleaf_version_announcement_title')} closeLabel={$t('close')} bind:open>
+<Dialog title={$t('frameleaf_version_announcement_title')} closeLabel={$t('close')} bind:open onClosed={onClose}>
   <p class="message">
     <FormatMessage key="version_announcement_message">
       {#snippet children({ tag, message })}

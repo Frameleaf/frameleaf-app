@@ -25,6 +25,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import {
     canCreateTag,
@@ -398,7 +399,7 @@
     <h3>{$t('frameleaf_locked_rules_title')}</h3>
     <p>{$t('frameleaf_locked_rules_locked_description')}</p>
     {#if phase === 'loading'}
-      <p role="status">{$t('loading')}</p>
+      <Spinner size="lg" label={$t('loading')} />
     {:else if phase === 'unavailable'}
       <p>{$t('frameleaf_locked_rules_session_unavailable')}</p>
       <Button onclick={() => void load()}>{$t('frameleaf_locked_rules_try_again')}</Button>
@@ -466,7 +467,7 @@
           </label>
         {/each}
         {#if searchingPeople}
-          <p class="muted" role="status">{$t('loading')}</p>
+          <Spinner size="md" label={$t('loading')} />
         {/if}
         {#each personOptions as person (person.id)}
           <label class="option">

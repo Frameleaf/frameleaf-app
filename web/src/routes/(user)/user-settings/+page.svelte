@@ -8,6 +8,7 @@
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
@@ -23,7 +24,9 @@
   let { data }: Props = $props();
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  const personal = $derived(personalSections($t, { oauth: featureFlagsManager.value.oauth }));
+  const personal = $derived(
+    personalSections($t, { oauth: featureFlagsManager.value.oauth, isAdmin: authManager.user.isAdmin }),
+  );
 </script>
 
 {#snippet sectionBody(section: SettingsHostSection)}

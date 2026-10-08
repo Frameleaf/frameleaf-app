@@ -35,6 +35,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
+  import LibraryPhoneMenu from '$lib/components/frameleaf/LibraryPhoneMenu.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
   import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
@@ -77,8 +78,8 @@
   } from '$lib/frameleaf/library-filters';
   import { barOffers, libraryKeysActive, planKeyAction, type KeyItem } from '$lib/frameleaf/library-key-actions';
   import { isTypingTarget, matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
-  import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
+  import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
   import { tileActionAvailability, type TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { captureTimeOf, type CaptureTime } from '$lib/frameleaf/time-zones';
@@ -102,8 +103,18 @@
     updateAsset,
     type ArchiveOperationResponseDto,
   } from '@frameleaf/sdk';
-  import { toastManager } from '@frameleaf/ui';
-  import { mdiCalendarRange, mdiCompare, mdiFilterOffOutline, mdiOpenInNew, mdiPencilOutline } from '@mdi/js';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
+  import { Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
+  import {
+    mdiCalendarRange,
+    mdiCompare,
+    mdiFilterOffOutline,
+    mdiFolderOutline,
+    mdiImageMultipleOutline,
+    mdiOpenInNew,
+    mdiPencilOutline,
+    mdiTrayArrowUp,
+  } from '@mdi/js';
   import { get } from 'svelte/store';
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
@@ -299,6 +310,13 @@
   const canShowInfoPanel = $derived(!publicView && !selectionMode && !mediaQueryManager.maxMd);
   const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen);
   const selecting = $derived(session.selection.length > 0);
+  // The root names its theme itself: the page area has no themed ancestor to inherit one from.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  /**
+   * Phones get one toolbar row: the count, Filter and a single view menu (`LibraryPhoneMenu`)
+   * in place of the layout switch and the toolbar's Sort, Grid / List, Slideshow and More.
+   */
+  const phone = $derived(mediaQueryManager.maxMd);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
 
@@ -924,6 +942,11 @@
       const box = area.getBoundingClientRect();
       host.style.setProperty('--fl-left', `${Math.max(0, Math.round(box.left))}px`);
       host.style.setProperty('--fl-right', `${Math.max(0, Math.round(innerWidth - box.right))}px`);
+      // The transfer dock (root layout) keeps clear of the information panel through this.
+      document.documentElement.style.setProperty(
+        '--fl-dock-right',
+        `${showInfoPanel ? Math.max(0, Math.round(innerWidth - box.right)) : 0}px`,
+      );
       const strip = toolbarStrip;
       if (!strip) {
         return;
@@ -940,7 +963,10 @@
     // The window and the rail change the photo area's own size, so observing it covers both.
     observer.observe(document.documentElement);
     measure();
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty('--fl-dock-right');
+    };
   });
 
   /* ---------------------------------------------------------------------- */
@@ -1028,6 +1054,7 @@
       label: $t('frameleaf_compare_title'),
       icon: mdiCompare,
       disabled: session.selection.length < 2 || !!snapshot,
+      disabledReason: session.selection.length < 2 ? $t('frameleaf_selection_compare_needs_two') : undefined,
       onClick: () => session.patchView({ view: 'compare' }),
     },
     ...(viewer
@@ -1045,7 +1072,7 @@
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
       icon: mdiOpenInNew,
-      primary: true,
+      // Not the accent button: handing a selection to Studio is one option among several.
       disabled: studioIds.length === 0,
       onClick: openInStudio,
     },
@@ -1099,6 +1126,20 @@
     });
   });
   const statusTotal = $derived(appliedFilterCount > 0 ? unfilteredTotal : scopeTotal);
+  /**
+   * A brand-new library: nothing in it and nothing narrowing it. It gets the first-run state with
+   * Upload, and the chrome that only makes sense with photos (layout switch, results toolbar,
+   * grouping, status capsule) stays away until there is something to arrange.
+   */
+  const firstRun = $derived(
+    !publicView &&
+      !selectionMode &&
+      destination?.kind === 'library' &&
+      !options?.bbox &&
+      !options?.userId &&
+      !session.filterActive &&
+      resultCount === 0,
+  );
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -1290,6 +1331,10 @@
 
   const canSlideshow = $derived(libraryChrome && !!viewer && !headerHasSlideshow);
   const canSelectAllMatching = $derived(!selectionBar && !noSelectionBar);
+  /** Grid or List in the toolbar (or the phone menu); the Timeline and a public page have neither. */
+  const toolbarView = $derived(
+    gridLayout === 'timeline' || publicView ? undefined : listView ? ('list' as const) : ('grid' as const),
+  );
 
   /** The tile that holds keyboard focus, if any. The scroll anchor is not a focus. */
   const focusedTileAsset = () => {
@@ -1512,6 +1557,7 @@
 <div
   class="frameleaf fl-library"
   class:has-sticky-toolbar={!publicView}
+  data-theme={appTheme}
   data-testid="frameleaf-library"
   data-layout={gridLayout}
   bind:this={root}
@@ -1531,7 +1577,9 @@
         onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
         showDayHeaders={gridLayout === 'timeline'}
         grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
-        onGroupingChange={gridLayout === 'timeline' ? (grouping) => session.patchView({ grouping }) : undefined}
+        onGroupingChange={gridLayout === 'timeline' && !firstRun
+          ? (grouping) => session.patchView({ grouping })
+          : undefined}
         {enableRouting}
         {selectionMode}
         {singleSelect}
@@ -1547,26 +1595,26 @@
           <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
           <div class="fl-library-header">
             <div class="fl-library-header-content">{@render children?.()}</div>
-            {#if !publicView}
+            {#if !publicView && !phone && !firstRun}
               <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
             {/if}
           </div>
-          {#if !publicView}
+          {#if !publicView && !firstRun}
             <div class="fl-library-toolbar" bind:this={toolbarStrip}>
               <ResultsToolbar
                 {session}
                 {onOpenFilterPanel}
                 count={resultCount}
-                onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
+                onSlideshow={canSlideshow && !phone ? () => void startSlideshow() : undefined}
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-                {sorts}
+                sorts={phone ? undefined : sorts}
                 sort={shownSort}
                 onSortChange={albumSortId ? changeAlbumSort : undefined}
                 unappliedFields={queryApplied.unapplied}
-                view={gridLayout === 'timeline' || publicView ? undefined : listView ? 'list' : 'grid'}
+                view={phone ? undefined : toolbarView}
                 onViewChange={(view) => session.patchView({ view })}
-                onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
+                onMoreActions={libraryChrome && !phone ? () => (moreActionsOpen = true) : undefined}
               >
                 {@render toolbar?.()}
                 <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
@@ -1574,6 +1622,26 @@
                   <WorkFileNamesToggle />
                 {/if}
                 <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
+                {#if phone && libraryChrome}
+                  <LibraryPhoneMenu
+                    {session}
+                    layouts={lockedView ? ['timeline'] : undefined}
+                    current={gridLayout}
+                    {sorts}
+                    sort={shownSort}
+                    onSortChange={albumSortId ? changeAlbumSort : undefined}
+                    view={toolbarView}
+                    onViewChange={(view) => session.patchView({ view })}
+                    onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
+                    selectAllLabel={resultCount === null
+                      ? $t('frameleaf_library_select_all_matching')
+                      : $t('frameleaf_library_select_all_matching_count', { values: { count: resultCount } })}
+                    onSelectAll={canSelectAllMatching
+                      ? () => void (selectAll === 'loaded' ? selectAllLoaded() : selectAllMatching())
+                      : undefined}
+                    empty={resultCount === 0}
+                  />
+                {/if}
               </ResultsToolbar>
             </div>
           {/if}
@@ -1642,22 +1710,30 @@
       />
     {/if}
   {/if}
-  {#if showStatusBar}
-    <LibraryStatusBar
-      count={resultCount}
-      total={statusTotal}
-      outside={selectedOutside}
-      selected={session.selection.length}
-      saved={savedOnDevice}
-      hidden={selecting}
-    >
-      {#snippet controls()}
-        <!-- App.jsx: Thumbnail size on the library's own screen, not a person's or partner's. -->
-        {#if thumbnailControl}
-          <ThumbnailSizeControl />
-        {/if}
-      {/snippet}
-    </LibraryStatusBar>
+  {#if showStatusBar && !firstRun}
+    <!-- The capsule says only what the page does not already show; with nothing to say it is not drawn. -->
+    {#if thumbnailControl}
+      <LibraryStatusBar
+        count={resultCount}
+        total={statusTotal}
+        outside={selectedOutside}
+        saved={savedOnDevice}
+        hidden={selecting}
+      >
+        {#snippet controls()}
+          <!-- App.jsx: Thumbnail size on the library's own screen, not a person's or partner's. -->
+          <ThumbnailSizeControl animateWithin={() => main} />
+        {/snippet}
+      </LibraryStatusBar>
+    {:else}
+      <LibraryStatusBar
+        count={resultCount}
+        total={statusTotal}
+        outside={selectedOutside}
+        saved={savedOnDevice}
+        hidden={selecting}
+      />
+    {/if}
   {/if}
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
@@ -1688,14 +1764,33 @@
     />
   {:else if empty}
     {@render empty()}
+  {:else if firstRun}
+    <!-- A new library leads somewhere: the same pickers as the top bar's Upload menu. -->
+    <LibraryEmptyState
+      icon={mdiTrayArrowUp}
+      title={$t('frameleaf_library_first_run_title')}
+      message={$t('frameleaf_library_first_run_message')}
+      primary
+      action={{
+        label: $t('frameleaf_library_first_run_upload'),
+        icon: mdiImageMultipleOutline,
+        onClick: () => void openFileUploadDialog(),
+      }}
+      secondaryAction={{
+        label: $t('frameleaf_transfer_upload_folder'),
+        icon: mdiFolderOutline,
+        onClick: () => void openFileUploadDialog({ directory: true }),
+      }}
+      hint={mediaQueryManager.pointerCoarse ? undefined : $t('frameleaf_library_first_run_hint')}
+    />
   {:else}
     <LibraryEmptyState icon={mdiCalendarRange} message={$t('frameleaf_library_empty')} />
   {/if}
 {/snippet}
 
 {#if moreActionsOpen}
-  <!-- Prototype `panel === "actions"`: the collection's actions in one sheet. -->
-  <Dialog bind:open={moreActionsOpen} title={$t('frameleaf_library_actions_title')} closeLabel={$t('close')}>
+  <!-- Prototype `panel === "actions"`: the view's actions in one sheet. Compare is on the selection bar only. -->
+  <Dialog bind:open={moreActionsOpen} title={$t('frameleaf_library_view_actions_title')} closeLabel={$t('close')}>
     <div class="fl-action-list">
       {#if canSelectAllMatching}
         <Button
@@ -1720,15 +1815,6 @@
           {$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
         </Button>
       {/if}
-      <Button
-        disabled={session.selection.length < 2 || !!snapshot}
-        onclick={() => {
-          session.patchView({ view: 'compare' });
-          moreActionsOpen = false;
-        }}
-      >
-        {$t('frameleaf_library_compare_selected')}
-      </Button>
     </div>
   </Dialog>
 {/if}

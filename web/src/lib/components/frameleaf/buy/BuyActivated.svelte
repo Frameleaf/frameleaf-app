@@ -18,11 +18,23 @@
     activatedAt: string | Date | null;
     badgeHidden: boolean;
     busy?: boolean;
+    /** A failed badge change or removal, shown here beside the controls it belongs to. */
+    error?: string;
     onBadgeHidden: (hidden: boolean) => void;
     onRemove?: () => void;
   };
 
-  let { name, kind, keyHint, activatedAt, badgeHidden, busy = false, onBadgeHidden, onRemove }: Props = $props();
+  let {
+    name,
+    kind,
+    keyHint,
+    activatedAt,
+    badgeHidden,
+    busy = false,
+    error = '',
+    onBadgeHidden,
+    onRemove,
+  }: Props = $props();
   let confirmRemove = $state(false);
   const titleId = $props.id();
 
@@ -35,7 +47,7 @@
 
 <section class="auth-card fl-continuous-corners" aria-labelledby={titleId}>
   <div class="buy-active">
-    <span class="buy-badge"><Icon icon={mdiHandHeartOutline} size="28" /></span>
+    <span class="buy-badge fl-brand-frame fl-unfurl"><Icon icon={mdiHandHeartOutline} size="28" /></span>
     <div>
       <h3 id={titleId}>
         {name ? $t('frameleaf_buy_thank_you_name', { values: { name } }) : $t('frameleaf_buy_thank_you')}
@@ -73,6 +85,9 @@
       onChange={onBadgeHidden}
     />
   </div>
+  {#if error}
+    <p class="auth-error" role="alert">{error}</p>
+  {/if}
   {#if onRemove}
     <div class="auth-row">
       {#if confirmRemove}
@@ -89,7 +104,7 @@
               onRemove?.();
             }}
           >
-            {$t('frameleaf_license_remove_confirm')}
+            {$t('frameleaf_buy_remove_confirm')}
           </Button>
         </span>
       {:else}

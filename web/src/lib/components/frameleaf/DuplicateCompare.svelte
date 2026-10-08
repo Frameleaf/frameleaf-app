@@ -116,7 +116,7 @@
     {@const size = dimensionsOf(asset)}
     {@const reasons = reasonsFor(asset)}
     {@const differs = differingItems(asset)}
-    <article class:suggested={asset.id === suggestedId}>
+    <article class:suggested={asset.id === suggestedId} data-asset-id={asset.id}>
       <div class="fl-dr-image">
         {#if asset.type === AssetTypeEnum.Video}
           <!-- svelte-ignore a11y_media_has_caption -->
@@ -262,8 +262,8 @@
     padding: 5px 7px;
     font-size: var(--fl-font-micro);
     font-weight: 500;
-    color: #f0f7f3;
-    background: #081311cc;
+    color: var(--fl-viewer-text);
+    background: color-mix(in srgb, var(--fl-viewer-canvas) 80%, transparent);
     border-radius: var(--fl-radius);
     pointer-events: none;
   }

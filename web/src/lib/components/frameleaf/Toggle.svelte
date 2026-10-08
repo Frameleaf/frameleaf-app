@@ -4,8 +4,8 @@
    * both operate it, and the translated on/off text is rendered beside the track: the state
    * is never carried by the accent colour alone.
    *
-   * The knob transition uses the shared motion token, which the token sheet already clamps
-   * under prefers-reduced-motion.
+   * The knob slides on the snappy curve and the track colour follows; the token sheet clamps
+   * both under prefers-reduced-motion, so the switch simply changes state.
    */
   let {
     label,
@@ -32,6 +32,7 @@
 
 <button
   type="button"
+  class="fl-control"
   role="switch"
   aria-checked={checked}
   aria-label={label}
@@ -64,9 +65,13 @@
     flex-shrink: 0;
     width: 2rem;
     height: 1.125rem;
-    background: var(--fl-border);
-    border: 1px solid var(--fl-muted);
+    background: var(--fl-raised);
+    /* The off track is drawn by its edge alone, so the edge is the 3:1 outline. */
+    border: 1px solid var(--fl-border-strong);
     border-radius: var(--fl-radius-pill);
+    transition:
+      background-color var(--fl-motion) var(--fl-ease),
+      border-color var(--fl-motion) var(--fl-ease);
   }
   .track::after {
     content: '';
@@ -77,7 +82,9 @@
     height: 0.6875rem;
     background: var(--fl-muted);
     border-radius: 50%;
-    transition: inset-inline-start var(--fl-motion-fast) var(--fl-ease);
+    transition:
+      inset-inline-start var(--fl-motion) var(--fl-snappy),
+      background-color var(--fl-motion) var(--fl-ease);
   }
   button[aria-checked='true'] {
     color: var(--fl-text);

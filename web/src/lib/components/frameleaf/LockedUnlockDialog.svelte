@@ -8,8 +8,19 @@
    * States follow the prototype: a session without a PIN is sent to PIN settings, six digits
    * unlock through the real `unlockAuthSession` endpoint, and a rejected code is cleared at once.
    * The PIN never leaves this component except in that request.
+   *
+   * It keeps its own native dialog, because closing it by any route has to abandon an unlock that
+   * is still in flight, but it looks and moves like every other Frameleaf dialog: the sheet
+   * corner, elevation, scrim and Sheet entrance come from the same tokens and keyframes as
+   * Dialog.svelte, and the buttons are the shared ones. A correct PIN reports the unlock at once
+   * and then shows an open lock for a beat before the sheet leaves; a wrong one keeps PinCells'
+   * shake. Under Reduce Motion the entrance and exit are a short crossfade.
    */
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import { leave, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { DURATION, ICON_SIZE } from '$lib/frameleaf/tokens';
   import {
     SESSION_UNLOCK_TIMEOUT_MS,
     sessionAccess,
@@ -18,10 +29,9 @@
   } from '$lib/frameleaf/session-access.svelte';
   import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
   import { onDestroy, tick, untrack } from 'svelte';
-  import { Route } from '$lib/route';
   import { getAuthStatus, isHttpError, unlockAuthSession } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import { mdiClose, mdiShieldLockOutline } from '@mdi/js';
+  import { mdiClose, mdiLockOpenVariantOutline, mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -36,7 +46,14 @@
   // `unavailable` is only a revoked session (401); a network failure is `offline` and can retry.
   type Access = 'loading' | 'ready' | 'no-pin' | 'unavailable' | 'offline';
 
+  /** The PIN section of the account's settings. */
+  const PIN_SETTINGS = '/user-settings?isOpen=user-pin-code-settings';
+
   let access = $state<Access>('loading');
+  /** The PIN was right: the open lock shows for a beat, then the sheet leaves. */
+  let unlocked = $state(false);
+  let successTimer: ReturnType<typeof setTimeout> | undefined;
+  let cancelExit: (() => void) | undefined;
   let pin = $state('');
   let error = $state('');
   let working = $state(false);
@@ -86,6 +103,7 @@
   };
   onDestroy(() => {
     active = false;
+    clearTimeout(successTimer);
     abandon();
   });
 
@@ -112,13 +130,18 @@
       }
       pin = '';
       error = '';
+      // The native dialog is closed by now; drop the success moment and the exit's held last frame.
+      clearTimeout(successTimer);
+      cancelExit?.();
+      cancelExit = undefined;
+      unlocked = false;
       return;
     }
     void load();
   });
 
   const unlock = async (code = pin) => {
-    if (!active || !open || sessionAccess.lockPending || unlockInFlight || code.length !== 6) {
+    if (!active || !open || unlocked || sessionAccess.lockPending || unlockInFlight || code.length !== 6) {
       return;
     }
     setWorking(true);
@@ -145,8 +168,15 @@
         return;
       }
       pin = '';
-      open = false;
+      unlocked = true;
+      // The session is unlocked now, so the page behind is told at once; the sheet then leaves.
       onUnlocked();
+      successTimer = setTimeout(
+        () => {
+          cancelExit = leave(dialog, 'sheet', () => (open = false), { backdrop: true });
+        },
+        prefersReducedMotion() ? 0 : DURATION.spring,
+      );
     } catch (error_) {
       // This explicit rejection occurs before the server mutates the session.
       const wrongPin = isWrongPinError(error_);
@@ -176,7 +206,7 @@
 
 <dialog
   bind:this={dialog}
-  class="frameleaf locked-dialog"
+  class="frameleaf locked-dialog fl-continuous-corners"
   data-theme={appTheme}
   aria-labelledby={titleId}
   oncancel={(event) => {
@@ -187,14 +217,26 @@
 >
   <form autocomplete="off" onsubmit={submit}>
     <header>
-      <span class="locked-dialog-mark" aria-hidden="true"><Icon icon={mdiShieldLockOutline} size="26" /></span>
-      <button class="locked-close" type="button" aria-label={$t('frameleaf_locked_dialog_close')} onclick={abandon}>
-        <Icon icon={mdiClose} size="20" />
-      </button>
+      <span class="locked-dialog-mark" class:is-unlocked={unlocked} aria-hidden="true">
+        {#key unlocked}
+          <span class="locked-dialog-icon">
+            <Icon icon={unlocked ? mdiLockOpenVariantOutline : mdiShieldLockOutline} size={ICON_SIZE.hero} />
+          </span>
+        {/key}
+      </span>
+      <IconButton label={$t('frameleaf_locked_dialog_close')} onclick={abandon}>
+        <Icon icon={mdiClose} size={ICON_SIZE.lg} />
+      </IconButton>
     </header>
-    <h2 id={titleId}>{$t('frameleaf_locked_unlock_content')}</h2>
+    <h2 id={titleId}>
+      {access === 'no-pin' ? $t('frameleaf_locked_dialog_set_up_pin') : $t('frameleaf_locked_dialog_title')}
+    </h2>
     {#if access === 'loading'}
-      <p role="status">{$t('loading')}</p>
+      <!-- The PIN row at its final size, so the sheet does not jump when the answer arrives. -->
+      <div class="locked-loading" role="status" aria-label={$t('loading')}>
+        <Skeleton variant="text" lines={2} />
+        <Skeleton variant="block" height="3.25rem" />
+      </div>
     {:else if access === 'unavailable'}
       <p>{$t('frameleaf_locked_dialog_unavailable')}</p>
     {:else if access === 'offline'}
@@ -207,26 +249,35 @@
         bind:value={pin}
         autofocus
         error={!!error}
-        disabled={working}
+        disabled={working || unlocked}
         label={$t('frameleaf_locked_dialog_pin_label')}
         describedBy={error ? `${hintId} ${errorId}` : hintId}
         context="locked"
         oncomplete={(code) => void unlock(code)}
       />
-      <p class="locked-hint" id={hintId}>{$t('frameleaf_locked_dialog_hint_timeout')}</p>
+      {#if unlocked}
+        <p class="locked-hint locked-success" id={hintId} role="status">{$t('frameleaf_locked_revealed')}</p>
+      {:else}
+        <p class="locked-hint" id={hintId}>{$t('frameleaf_locked_dialog_hint_timeout')}</p>
+      {/if}
     {/if}
     {#if error}<p id={errorId} role="alert" class="locked-error">{error}</p>{/if}
     <footer>
-      <a class="locked-settings" href={Route.userSettings()} onclick={abandon}
-        >{$t('frameleaf_locked_dialog_pin_settings')}</a
-      >
+      {#if access === 'ready'}
+        <a class="locked-settings" href={PIN_SETTINGS} onclick={abandon}>{$t('frameleaf_locked_dialog_pin_settings')}</a
+        >
+      {/if}
       <div>
-        <button type="button" onclick={abandon}>{$t('cancel')}</button>
+        <button type="button" class="button" onclick={abandon}>{$t('cancel')}</button>
         {#if access === 'offline'}
-          <button type="button" class="locked-primary" onclick={() => void load()}>{$t('retry')}</button>
+          <button type="button" class="button primary" onclick={() => void load()}>{$t('retry')}</button>
+        {/if}
+        {#if access === 'no-pin'}
+          <!-- The one way forward when there is no PIN yet. -->
+          <a class="button primary" href={PIN_SETTINGS} onclick={abandon}>{$t('frameleaf_locked_dialog_set_up_pin')}</a>
         {/if}
         {#if access === 'ready'}
-          <button type="submit" class="locked-primary" disabled={working || pin.length !== 6}
+          <button type="submit" class="button primary" disabled={working || unlocked || pin.length !== 6}
             >{$t('frameleaf_locked_dialog_unlock')}</button
           >
         {/if}
@@ -236,106 +287,132 @@
 </dialog>
 
 <style>
+  /*
+   * The same sheet as Dialog.svelte: radius, elevation, scrim and the Sheet entrance all come from
+   * the token scale and the shared keyframes (base.css `fl-fade-in`, `fl-sheet-in`).
+   */
   .locked-dialog {
     position: fixed;
     inset: 0;
     margin: auto;
     width: min(430px, calc(100vw - 32px));
     box-sizing: border-box;
-    border: 1px solid var(--fl-border, #42464b);
-    border-radius: 18px;
-    padding: 26px;
-    background: var(--fl-panel, #24272b);
-    color: var(--fl-text, #f0f1f2);
-    box-shadow: 0 20px 80px #0007;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-sheet);
+    padding: var(--fl-space-6);
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-4);
+    animation:
+      fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+      fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
   }
   .locked-dialog::backdrop {
-    background: #1119239c;
-    backdrop-filter: blur(4px);
+    background: var(--fl-scrim);
+    -webkit-backdrop-filter: var(--fl-scrim-blur);
+    backdrop-filter: var(--fl-scrim-blur);
+    animation: fl-fade-in var(--fl-duration-fade) var(--fl-ease) both;
+  }
+  @supports (corner-shape: squircle) {
+    .locked-dialog {
+      border-radius: calc(var(--fl-radius-sheet) * 1.8);
+    }
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .locked-dialog::backdrop {
+      background: var(--fl-scrim);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
   .locked-dialog header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: var(--fl-space-4);
   }
   .locked-dialog-mark {
     display: grid;
     place-items: center;
-    width: 47px;
-    height: 47px;
-    border-radius: 12px;
-    background: var(--fl-raised, rgba(127, 127, 127, 0.13));
-    color: var(--fl-accent, #e1b879);
+    width: var(--fl-control-height-touch);
+    height: var(--fl-control-height-touch);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+    color: var(--fl-accent);
+    transition: background-color var(--fl-motion) var(--fl-ease);
+  }
+  .locked-dialog-mark.is-unlocked {
+    background: var(--fl-accent-soft);
+  }
+  .locked-dialog-icon {
+    display: inline-flex;
+  }
+  /* The quiet success moment: the open lock pops in on the spring. */
+  .is-unlocked .locked-dialog-icon {
+    animation: fl-pop-in var(--fl-duration) var(--fl-spring) both;
   }
   .locked-dialog h2 {
-    font-size: 21px;
-    letter-spacing: -0.4px;
-    line-height: 1.3;
-    margin: 0 0 9px;
-    font-weight: 650;
+    margin: 0 0 var(--fl-space-2);
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
   }
   .locked-dialog p {
-    line-height: 1.55;
-    font-size: 13px;
-    color: var(--fl-muted, #b6bdc7);
-    margin: 8px 0 20px;
+    margin: var(--fl-space-2) 0 var(--fl-space-5);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-size);
+    line-height: 1.5;
   }
-  .locked-dialog button {
-    background: transparent;
-    color: inherit;
-    border: 1px solid var(--fl-border, #42464b);
-    border-radius: 8px;
-    min-height: 36px;
-    padding: 0 12px;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .locked-dialog button.locked-close {
-    border: 0;
-    padding: 6px;
-    display: grid;
-    place-items: center;
+  .locked-loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-4);
+    margin: var(--fl-space-2) 0 var(--fl-space-5);
   }
   .locked-dialog p.locked-hint {
-    font-size: 11px;
-    margin: 10px 0;
-    color: var(--fl-muted, #b6bdc7);
+    margin: var(--fl-space-3) 0;
+    font-size: var(--fl-font-small);
+  }
+  .locked-dialog p.locked-success {
+    color: var(--fl-text);
   }
   .locked-dialog p.locked-error {
-    color: var(--danger, #ef9b97);
-    margin: 14px 0;
+    margin: var(--fl-space-3) 0;
+    color: var(--fl-danger);
   }
   .locked-dialog footer {
-    margin-top: 25px;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--fl-space-3);
+    margin-top: var(--fl-space-6);
   }
   .locked-dialog footer > div {
     display: flex;
-    gap: 8px;
+    gap: var(--fl-space-2);
+    margin-inline-start: auto;
   }
   .locked-dialog .locked-settings {
-    padding: 0;
-    border: 0;
-    color: var(--fl-muted, #b6bdc7);
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--fl-control-height);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
   }
-  .locked-dialog button.locked-primary {
-    background: var(--fl-accent, #e1b879);
-    color: var(--fl-accent-text, #17191c);
-    border-color: transparent;
-    font-weight: 650;
-  }
-  .locked-dialog button:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
+  .locked-dialog a.button {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--fl-control-height);
+    text-decoration: none;
   }
   @media (max-width: 600px) {
     .locked-dialog {
-      padding: 22px;
+      padding: var(--fl-space-5);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .locked-dialog {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
     }
   }
 </style>

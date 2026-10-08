@@ -26,7 +26,14 @@ describe('FirstRunSetup (FL-176)', () => {
     const { container } = render(FirstRunSetup, { initial: createSetup('new'), authenticated: false });
     const root = container.querySelector<HTMLElement>('section.frs-root');
     expect(root?.dataset.theme).toBe('dark');
-    expect(screen.getByText('Your photos, beautifully kept. On your own server.')).toBeInTheDocument();
+    // the one hero line, with the brand rule under it; the kit's own lockup arrives with Unfurl
+    const hero = screen.getByRole('heading', { level: 1, name: 'Your photos, beautifully kept. On your own server.' });
+    expect(hero).toHaveClass('fl-type-hero');
+    expect(container.querySelector(':scope .frs-logo .fl-brand-line')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector(':scope .frs-logo img.fl-logo-arrive')).toHaveAttribute('alt', 'Frameleaf');
+    expect(container.querySelector('.frs-logo-stroke, .frs-logo-glow')).toBeNull();
+    // Continue is live once the short arrival has settled
+    await waitFor(() => expect(screen.getByRole('button', { name: /Continue setup/ })).not.toHaveAttribute('inert'));
     await fireEvent.click(screen.getByRole('button', { name: /Continue setup/ }));
     expect(await screen.findByRole('heading', { name: "How you'll sign in" })).toBeInTheDocument();
     expect(screen.getByText('Frameleaf account')).toBeInTheDocument();
@@ -49,6 +56,38 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(await screen.findByText('Enter your name.')).toBeInTheDocument();
     expect(sdkMock.signUpAdmin).not.toHaveBeenCalled();
     expect(localStorage.getItem('frameleaf:setup:v1')).not.toContain('Correct-Horse-9');
+  });
+
+  it('submits the admin form on Enter, asks for the setup code first and focuses the first problem', async () => {
+    const state = createSetup('new');
+    const account = flowSteps('new').findIndex((entry) => entry.id === 'account');
+    const { container } = render(FirstRunSetup, {
+      initial: { ...state, step: account, reached: account, choices: { ...state.choices, signIn: 'local' } },
+      authenticated: false,
+    });
+    const form = container.querySelector<HTMLFormElement>('form#frs-account-form')!;
+    const fields = [...form.querySelectorAll('input')].map((input) => input.id);
+    expect(fields[0]).toBe('frs-setup-code');
+    // Continue is the form's own submit button, so Enter and the button take the same path
+    expect(screen.getByRole('button', { name: /Continue/ })).toHaveAttribute('form', 'frs-account-form');
+    await fireEvent.submit(form);
+    expect(await screen.findByText('Enter your name.')).toBeInTheDocument();
+    // one announcement for the whole form; each message is tied to its field
+    expect(within(form).getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByLabelText('Name')).toHaveAttribute('aria-describedby', 'frs-name-error');
+    await waitFor(() => expect(screen.getByLabelText('Setup code')).toHaveFocus());
+    expect(sdkMock.signUpAdmin).not.toHaveBeenCalled();
+  });
+
+  it('does not call a library healthy when the check has no data, and links nowhere during setup', async () => {
+    sdkMock.getFrameleafSetupLibrary.mockResolvedValue({ items: 1200, people: 4, albums: 9, bytes: 5e11 } as never);
+    sdkMock.getSummary.mockRejectedValue(new Error('unavailable'));
+    const state = createSetup('existing');
+    const check = flowSteps('existing').findIndex((entry) => entry.id === 'library-check');
+    render(FirstRunSetup, { initial: { ...state, step: check, reached: check }, authenticated: true });
+    expect(await screen.findByText('We could not check the file records just now')).toBeInTheDocument();
+    expect(screen.queryByText(/look healthy/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Library Care/ })).toBeNull();
   });
 
   it('asks the existing library admin to sign in once', () => {

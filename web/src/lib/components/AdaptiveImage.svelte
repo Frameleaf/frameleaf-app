@@ -75,6 +75,12 @@
     onUrlChange?: (url: string) => void;
     onImageReady?: () => void;
     onError?: () => void;
+    /**
+     * Holds the preview and full-size requests until the caller knows their address is final. The
+     * thumbhash and thumbnail show meanwhile, since they never depend on it. The requests start
+     * when this turns false, with whatever address the photo has by then.
+     */
+    holdFullSize?: boolean;
     ref?: HTMLDivElement;
     imgRef?: HTMLImageElement;
     backdrop?: Snippet;
@@ -93,16 +99,27 @@
     onUrlChange,
     onImageReady,
     onError,
+    holdFullSize = false,
     backdrop,
     overlays,
   }: Props = $props();
 
-  const afterThumbnail = (loader: AdaptiveImageLoader) => {
+  const requestFullSize = (loader: AdaptiveImageLoader) => {
     if (assetViewerManager.zoom > 1) {
       loader.trigger('original');
     } else {
       loader.trigger('preview');
     }
+  };
+
+  // The loader whose thumbnail settled while the full-size requests were held. Not reactive on purpose.
+  let heldLoader: AdaptiveImageLoader | undefined;
+  const afterThumbnail = (loader: AdaptiveImageLoader) => {
+    if (holdFullSize) {
+      heldLoader = loader;
+      return;
+    }
+    requestFullSize(loader);
   };
 
   const buildQualityList = (range: typeof dynamicRange) => {
@@ -127,10 +144,14 @@
   // FL-115: the playback cache key changes when the owner's playback choice does, so the loader rebuilds.
   const loaderKey = $derived(`${asset.id}:${playbackCacheKey(asset)}:${sharedLink?.id}`);
 
+  // Read through a derived value so the loader is rebuilt only when the range itself changes, not
+  // whenever another prop of this component does.
+  const loaderRange = $derived(dynamicRange);
+
   let lastReady = $state<{ key: string; range: typeof dynamicRange; url: string }>();
   const adaptiveImageLoader = $derived.by(() => {
     void loaderKey;
-    const range = dynamicRange;
+    const range = loaderRange;
     const key = loaderKey;
 
     return untrack(
@@ -219,7 +240,24 @@
     assetViewerManager.imageLoaderStatus = status;
   });
 
+  // The hold is released: the loader that was waiting carries on. A loader built since (the address
+  // changed) asks for itself once its thumbnail settles.
   $effect(() => {
+    const loader = adaptiveImageLoader;
+    if (holdFullSize || heldLoader === undefined) {
+      return;
+    }
+    const waiting = heldLoader;
+    heldLoader = undefined;
+    if (waiting === loader) {
+      untrack(() => requestFullSize(loader));
+    }
+  });
+
+  $effect(() => {
+    if (holdFullSize) {
+      return;
+    }
     if (assetViewerManager.zoom > 1 && status.quality.original !== 'success') {
       untrack(() => void adaptiveImageLoader.trigger('original'));
     }

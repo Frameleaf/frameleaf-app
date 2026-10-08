@@ -8,7 +8,9 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LibrariesManager from '$lib/components/frameleaf/LibrariesManager.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { buildLibraryRows, loadLibrariesArea, type LibrariesAreaData } from '$lib/frameleaf/libraries';
   import { Route } from '$lib/route';
   import {
@@ -68,30 +70,38 @@
   };
 </script>
 
-{#if data}
-  <LibrariesManager
-    {rows}
-    {owners}
-    libraries={data.libraries}
-    selectedKey={page.url.searchParams.get('selected')}
-    editOnOpen={page.url.searchParams.get('edit') === '1'}
-    createOnOpen={page.url.searchParams.get('new') === '1'}
-    snapshotAt={data.snapshotAt}
-    onSelect={select}
-    onAnalytics={() => goto(Route.libraryAnalytics())}
-    {refresh}
-  />
-{:else if failed}
-  <p class="load-error" role="alert">{$t('frameleaf_libraries_load_error')}</p>
-{:else}
-  <p class="loading" role="status">{$t('loading')}</p>
-{/if}
+<!-- Sits above the external library settings; the space keeps the two cards apart. -->
+<div class="area">
+  {#if data}
+    <LibrariesManager
+      {rows}
+      {owners}
+      libraries={data.libraries}
+      selectedKey={page.url.searchParams.get('selected')}
+      editOnOpen={page.url.searchParams.get('edit') === '1'}
+      createOnOpen={page.url.searchParams.get('new') === '1'}
+      snapshotAt={data.snapshotAt}
+      onSelect={select}
+      onAnalytics={() => goto(Route.libraryAnalytics())}
+      {refresh}
+    />
+  {:else if failed}
+    <InlineError message={$t('frameleaf_libraries_load_error')} onRetry={refresh} />
+  {:else}
+    <div class="loading" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="2.75rem" />
+      <Skeleton variant="block" height="14rem" />
+    </div>
+  {/if}
+</div>
 
 <style>
-  .load-error,
+  .area {
+    margin-bottom: var(--fl-space-6);
+  }
   .loading {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    display: grid;
+    gap: var(--fl-space-3);
   }
 </style>

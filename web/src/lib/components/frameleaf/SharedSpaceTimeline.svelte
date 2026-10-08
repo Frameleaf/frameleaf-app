@@ -1,6 +1,6 @@
 <script lang="ts">
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
-  import Status from '$lib/components/frameleaf/Status.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { filterToNew, shouldPageForNew } from '$lib/frameleaf/shared-space';
@@ -133,7 +133,7 @@
   </ResultsView>
 
   {#if photos.loading}
-    <Status message={$t('loading')} busy={true} />
+    <div class="loading"><Spinner /></div>
   {:else if photos.failed}
     <p class="empty">
       {$t('frameleaf_spaces_error_timeline')}
@@ -166,5 +166,11 @@
     color: var(--fl-text);
     font-size: 0.75rem;
     font-weight: 600;
+  }
+  .loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-6) 0;
+    color: var(--fl-muted);
   }
 </style>

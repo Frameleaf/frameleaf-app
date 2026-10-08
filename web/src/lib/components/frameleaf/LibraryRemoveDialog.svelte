@@ -9,9 +9,15 @@
    * changed in between (a scan imported more, the folders changed), the server refuses and this
    * dialog reviews again rather than confirming consequences nobody saw. Source files are never
    * part of the removal.
+   *
+   * The confirmation is the shared typed one (design review finding 74): the library's name, then
+   * the danger button. The separate "I understand" tick is gone; the number of items it named is
+   * the first consequence in the list, and a new review asks for the name again.
    */
   import '$lib/frameleaf/libraries.css';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
+  import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { serverStatus } from '$lib/frameleaf/libraries';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { getLibraryRemovalReview, removeLibrary, type LibraryRemovalReviewDto } from '@frameleaf/sdk';
@@ -29,12 +35,11 @@
   let open = $state(true);
   let review = $state<LibraryRemovalReviewDto | null>(null);
   let confirmation = $state('');
-  let approved = $state(false);
   let error = $state('');
   let loading = $state(false);
   let removing = $state(false);
 
-  const idPrefix = $props.id();
+  const matched = $derived(!!review && matchesTyped(review.name, confirmation));
 
   $effect(() => {
     if (!open) {
@@ -44,7 +49,8 @@
 
   const load = async () => {
     loading = true;
-    approved = false;
+    // What was typed confirmed the review it was typed under, not the next one.
+    confirmation = '';
     try {
       review = await getLibraryRemovalReview({ id: libraryId });
     } catch (error_) {
@@ -64,7 +70,7 @@
     if (!review) {
       return;
     }
-    if (confirmation !== review.name) {
+    if (!matched) {
       error = $t('frameleaf_libraries_remove_name_mismatch');
       return;
     }
@@ -74,7 +80,7 @@
     try {
       await removeLibrary({
         id: libraryId,
-        libraryRemovalDto: { reviewToken: review.reviewToken, confirmName: confirmation },
+        libraryRemovalDto: { reviewToken: review.reviewToken, confirmName: review.name },
       });
       onRemoved();
       open = false;
@@ -102,6 +108,7 @@
       <form onsubmit={submit}>
         <p>{$t('frameleaf_libraries_remove_intro', { values: { name: review.name } })}</p>
         <ul class="resource-consequences" aria-label={$t('frameleaf_libraries_remove_title')}>
+          <li>{$t('frameleaf_libraries_remove_items', { values: { count: review.total } })}</li>
           {#if review.albums > 0}
             <li>{$t('frameleaf_libraries_remove_albums', { values: { count: review.albums } })}</li>
           {/if}
@@ -119,20 +126,18 @@
           {/if}
           <li>{$t('frameleaf_libraries_remove_locked')}</li>
         </ul>
-        <label class="resource-field" for="{idPrefix}-confirm">
-          <span>{$t('frameleaf_libraries_remove_confirm_name')}</span>
-          <!-- svelte-ignore a11y_autofocus -->
-          <input id="{idPrefix}-confirm" autofocus required bind:value={confirmation} />
-        </label>
-        <label class="resource-check">
-          <input type="checkbox" required bind:checked={approved} />
-          <span>{$t('frameleaf_libraries_remove_ack', { values: { count: review.total } })}</span>
-        </label>
+        <TypedConfirmation
+          label={$t('frameleaf_libraries_remove_confirm_name')}
+          placeholder={review.name}
+          initialFocus
+          disabled={removing}
+          bind:value={confirmation}
+        />
         <footer>
           <button type="button" class="resource-button" onclick={() => (open = false)}>
             {$t('frameleaf_libraries_cancel')}
           </button>
-          <button type="submit" class="resource-button danger" disabled={removing || loading || !approved}>
+          <button type="submit" class="resource-button danger" disabled={removing || loading || !matched}>
             {$t('frameleaf_libraries_remove')}
           </button>
         </footer>

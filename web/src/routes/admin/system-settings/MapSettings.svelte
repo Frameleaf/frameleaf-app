@@ -10,7 +10,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Link } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
-  import { motionFade } from '$lib/frameleaf/motion';
+  import { reveal } from '$lib/frameleaf/motion';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
@@ -22,7 +22,7 @@
 </script>
 
 <div class="mt-2">
-  <div in:motionFade={{ duration: 500 }}>
+  <div in:reveal>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingGroup key="map" title={$t('admin.map_settings')} subtitle={$t('admin.map_settings_description')}>

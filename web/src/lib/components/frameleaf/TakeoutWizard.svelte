@@ -1199,7 +1199,7 @@
     border-color: var(--fl-accent);
   }
   .stepper li.done > span {
-    border-color: var(--fl-teal, var(--fl-border));
+    border-color: var(--fl-teal);
   }
   .facts,
   .report {
@@ -1225,7 +1225,7 @@
     padding: 1rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-panel-radius);
-    background: var(--fl-surface, var(--fl-raised));
+    background: var(--fl-raised);
   }
   .form {
     display: grid;
@@ -1251,7 +1251,7 @@
   .alert {
     margin: 0;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--fl-danger, var(--fl-border));
+    border: 1px solid var(--fl-danger);
     border-radius: var(--fl-radius-control);
     color: var(--fl-text);
     font-size: var(--fl-font-small);
@@ -1259,7 +1259,7 @@
   .warning {
     margin: 0;
     font-size: var(--fl-font-small);
-    color: var(--fl-warning, var(--fl-muted));
+    color: var(--fl-warning);
   }
   .notice {
     margin: 0;

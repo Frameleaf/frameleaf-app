@@ -74,8 +74,8 @@ describe('Utilities area', () => {
     state.load.mockRejectedValue(new Error('offline'));
     render(UtilitiesArea);
     expect(screen.getByRole('button', { name: 'Utilities' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load this tool'));
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('This tool could not be loaded'));
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(state.load).toHaveBeenCalledTimes(2));
   });
   it('does not reload the tool when the photo viewer query changes', async () => {

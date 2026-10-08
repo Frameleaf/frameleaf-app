@@ -160,7 +160,7 @@ test.describe('Explore', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/best-photos');
-    await expect(page.getByText('No best photos have been scored yet.')).toBeVisible();
+    await expect(page.getByText('No best photos yet')).toBeVisible();
     await expect(page.locator('[data-asset-id]')).toHaveCount(0);
   });
 });

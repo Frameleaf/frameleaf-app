@@ -179,7 +179,7 @@
     flex-direction: column;
     gap: 0.75rem;
     max-width: 40rem;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .body p,
   .body h4 {

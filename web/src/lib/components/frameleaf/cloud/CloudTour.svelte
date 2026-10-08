@@ -10,8 +10,9 @@
    * Arrow keys and swipes move between steps, Escape skips, focus moves to each step's heading and
    * the step count is announced. Steps slide in with the spring from the direction of travel and
    * crossfade under Reduce Motion, which is checked here in JavaScript (Web Animations do not follow
-   * the CSS reduced-motion rules). The caller decides what an ending does (`onClose`) and where a
-   * link goes (`onOpen`); this component never calls the server.
+   * the CSS reduced-motion rules). The sheet leaves the way every sheet does (`leave`, motion.ts)
+   * before the caller hears about it. The caller decides what an ending does (`onClose`) and where
+   * a link goes (`onOpen`); this component never calls the server.
    */
   import '$lib/frameleaf/tokens.css';
   import './frameleaf-cloud.css';
@@ -33,6 +34,8 @@
     type CloudTourLink,
     type CloudTourStepId,
   } from '$lib/frameleaf/cloud-tour';
+  import { leave } from '$lib/frameleaf/motion';
+  import { DURATION, EASE } from '$lib/frameleaf/tokens';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiCheckCircle, mdiChevronLeft, mdiChevronRight, mdiShimmer } from '@mdi/js';
@@ -84,6 +87,15 @@
     index = target;
   };
 
+  // Everything that opens also closes: the sheet and its scrim leave, then the caller is told.
+  let cancelLeave: (() => void) | undefined;
+  const end = (finish: () => void) => {
+    cancelLeave?.();
+    cancelLeave = leave(dialog, 'sheet', finish, { backdrop: true });
+  };
+  const close = (ending: Exclude<CloudTourEnding, 'setup'>) => end(() => onClose(ending));
+  const open = (link: CloudTourLink) => end(() => onOpen(link));
+
   onMount(() => {
     const previous = document.activeElement;
     if (!dialog.open) {
@@ -91,6 +103,7 @@
     }
     dialog.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
     return () => {
+      cancelLeave?.();
       if (dialog.open) {
         dialog.close();
       }
@@ -100,9 +113,8 @@
     };
   });
 
-  // Web Animations need a literal easing, so read the shared spring token.
-  const spring = (node: Element) =>
-    getComputedStyle(node).getPropertyValue('--fl-spring').trim() || 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+  // Web Animations need a literal easing, so read the shared spring token (a `linear()` curve).
+  const spring = (node: Element) => getComputedStyle(node).getPropertyValue('--fl-spring').trim() || EASE;
 
   // Slide in from the direction of travel; a plain crossfade under Reduce Motion.
   $effect(() => {
@@ -125,14 +137,14 @@
             { opacity: 1, transform: 'none' },
           ];
       run = node.animate?.(frames, {
-        duration: reduced ? 200 : 460,
-        easing: reduced ? 'ease' : spring(node),
+        duration: reduced ? DURATION.reduced : DURATION.sheet,
+        easing: reduced ? EASE : spring(node),
         fill: 'both',
       });
       tile = reduced
         ? undefined
         : node.querySelector('.ct-tile')?.animate?.([{ transform: 'scale(0.82)' }, { transform: 'none' }], {
-            duration: 520,
+            duration: DURATION.hero,
             easing: spring(node),
           });
     });
@@ -239,9 +251,10 @@
   onkeydown={keydown}
   oncancel={(event) => {
     event.preventDefault();
-    onClose('skipped');
+    close('skipped');
   }}
 >
+  <span class="ct-brand-line fl-brand-line" aria-hidden="true"></span>
   <p class="ct-overline" aria-live="polite">
     <span>{$t('frameleaf_cloud_tour_overline')}</span>
     <span aria-hidden="true">·</span>
@@ -264,7 +277,7 @@
       </p>
     {/if}
     <div class="ct-head">
-      <span class="ct-tile" style:--tile={step.tile} aria-hidden="true">
+      <span class="ct-tile" data-tone={step.tile} aria-hidden="true">
         <Icon icon={step.icon} size="30" aria-hidden />
         {#if step.ai}
           <span class="ct-ai"><Icon icon={mdiShimmer} size="12" aria-hidden /></span>
@@ -298,7 +311,7 @@
       </p>
       <div class="ct-links">
         {#each step.links as link (link.id)}
-          <button type="button" class="ct-link" onclick={() => onOpen(link)}>
+          <button type="button" class="ct-link" onclick={() => open(link)}>
             {$t(linkKey(link.id) as Translations)}
             <Icon icon={mdiChevronRight} size="16" aria-hidden />
           </button>
@@ -322,8 +335,7 @@
     </div>
     <div class="ct-actions">
       {#if !last}
-        <button type="button" class="ct-skip" onclick={() => onClose('skipped')}
-          >{$t('frameleaf_cloud_tour_skip')}</button
+        <button type="button" class="ct-skip" onclick={() => close('skipped')}>{$t('frameleaf_cloud_tour_skip')}</button
         >
       {/if}
       <span class="ct-spacer"></span>
@@ -335,7 +347,7 @@
         </span>
       {/if}
       <span class="ct-next">
-        <Button variant="primary" initialFocus onclick={() => (last ? onClose('finished') : go(index + 1))}>
+        <Button variant="primary" initialFocus onclick={() => (last ? close('finished') : go(index + 1))}>
           {last ? $t('frameleaf_cloud_tour_done') : $t('frameleaf_cloud_tour_next')}
         </Button>
       </span>

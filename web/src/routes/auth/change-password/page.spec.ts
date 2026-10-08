@@ -4,6 +4,7 @@ import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 import en from '../../../../../i18n/en.json';
+import { takeAuthNotice } from '../auth-notice';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -25,18 +26,20 @@ describe('forced password change', () => {
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), {
       target: { value: 'new-password' },
     });
-    const save = screen.getByRole('button', { name: en.frameleaf_auth_save_and_continue });
+    const save = screen.getByRole('button', { name: en.frameleaf_auth_save_and_sign_in });
     expect(save).toBeEnabled();
     await fireEvent.click(save);
     await waitFor(() => expect(updateMyUser).toHaveBeenCalledWith({ userUpdateMeDto: { password: 'new-password' } }));
     expect(goto).toHaveBeenCalledWith('/auth/logout');
+    // the sign-in page that follows says why, and fills the email in
+    expect(takeAuthNotice()).toEqual({ kind: 'password-changed', email: 'user@nas' });
   });
 
   it('waits for a matching confirmation', async () => {
     render(Page);
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), { target: { value: 'abc' } });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), { target: { value: 'abd' } });
-    expect(screen.getByRole('button', { name: en.frameleaf_auth_save_and_continue })).toBeDisabled();
+    expect(screen.getByRole('button', { name: en.frameleaf_auth_save_and_sign_in })).toBeDisabled();
     expect(screen.getByText(en.frameleaf_auth_passwords_mismatch_hint)).toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import { defaults, getBaseUrl } from '@frameleaf/sdk';
+import { codeForStatus, PhotographyError } from './errors';
 
 export type Watermark = {
   type: 'text' | 'logo' | 'both';
@@ -316,7 +317,7 @@ export async function galleryLogo(id: string, session: string): Promise<Blob> {
   const response = await galleryFetch(id, session, '/logo');
   const blob = await response.blob();
   if (blob.type !== 'image/png') {
-    throw new Error('The studio logo is unavailable.');
+    throw new PhotographyError('logo_unavailable');
   }
   return blob;
 }
@@ -330,14 +331,22 @@ export async function publicStudio(ownerId: string): Promise<PublicSite> {
 }
 export const publicStudioMediaUrl = (ownerId: string, path: string) =>
   `${getBaseUrl()}/photography/studios/${encodeURIComponent(ownerId)}${path}`;
+export type GalleryRequestOptions = {
+  /**
+   * Let the request outlive the page (a save started as the tab closes). The browser limits the
+   * body of such a request to 64 KB in total, so use it for the small choices save only.
+   */
+  keepalive?: boolean;
+};
 export async function galleryRequest<T>(
   id: string,
   session: string,
   path = '',
   method = 'GET',
   body?: unknown,
+  options?: GalleryRequestOptions,
 ): Promise<T> {
-  const response = await galleryFetch(id, session, path, method, body);
+  const response = await galleryFetch(id, session, path, method, body, options);
   return response.status === 204 ? (undefined as T) : response.json();
 }
 export async function galleryMedia(
@@ -353,14 +362,7 @@ function checkResponse(response: Response): void {
   if (response.ok) {
     return;
   }
-  const message = [401, 403, 410].includes(response.status)
-    ? 'Gallery access has ended. Open your invitation again.'
-    : response.status === 409
-      ? 'This collection changed. Reload before continuing.'
-      : response.status === 429
-        ? 'Please wait a moment before trying again.'
-        : 'The request could not be completed. Try again.';
-  throw Object.assign(new Error(message), { status: response.status });
+  throw new PhotographyError(codeForStatus(response.status), response.status);
 }
 
 async function galleryFetch(
@@ -369,6 +371,7 @@ async function galleryFetch(
   path: string,
   method = 'GET',
   body?: unknown,
+  options?: GalleryRequestOptions,
 ): Promise<Response> {
   // Gallery invitations must never inherit the owner's SDK Authorization header or browser cookies.
   const headers = new Headers({ Accept: 'application/json' });
@@ -386,6 +389,7 @@ async function galleryFetch(
       credentials: 'omit',
       cache: 'no-store',
       body: body === undefined ? undefined : JSON.stringify(body),
+      ...(options?.keepalive && { keepalive: true }),
     },
   );
   checkResponse(response);
@@ -396,7 +400,7 @@ export async function galleryFile(id: string, session: string, path: string, zip
   const response = await galleryFetch(id, session, path);
   const blob = await response.blob();
   if (!(zip ? ['application/zip', 'application/octet-stream'].includes(blob.type) : blob.type === 'image/jpeg')) {
-    throw new Error('This photograph is not ready. Try again shortly.');
+    throw new PhotographyError('not_ready');
   }
   return blob;
 }
@@ -452,7 +456,7 @@ export async function watermarkPreview(
   checkResponse(response);
   const blob = await response.blob();
   if (blob.type !== 'image/jpeg') {
-    throw new Error('The watermark preview could not be prepared.');
+    throw new PhotographyError('watermark_preview');
   }
   return blob;
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import Button from './Button.svelte';
+  import { photographyErrorKey } from './PhotographyStatus.svelte';
   import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
   import { loadBrand, saveBrand, type Branding } from '$lib/frameleaf/photography/api';
   import { defaultWatermark } from '$lib/frameleaf/photography/workflow-api';
@@ -27,7 +29,7 @@
       active = draft.brand.watermarkPresets?.[0]?.id ?? '';
     } catch (error_) {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'Could not load studio presets.';
+        error = $t(photographyErrorKey(error_));
       }
     } finally {
       if (!disposed) {
@@ -42,7 +44,7 @@
     const id = crypto.randomUUID();
     draft.brand.watermarkPresets!.push({
       id,
-      name: proof ? 'Repeated proof' : 'Web signature',
+      name: proof ? $t('frameleaf_photography_preset_proof_name') : $t('frameleaf_photography_preset_signature_name'),
       version: 1,
       watermark: defaultWatermark(draft.brand.name, proof),
     });
@@ -62,10 +64,10 @@
         return;
       }
       draft = result;
-      message = 'Studio presets saved';
+      message = $t('frameleaf_photography_watermark_presets_saved');
     } catch (error_) {
       if (!disposed) {
-        error = error_ instanceof Error ? error_.message : 'Could not save studio presets.';
+        error = $t(photographyErrorKey(error_));
       }
     } finally {
       if (!disposed) {
@@ -96,29 +98,29 @@
 <div class="phd" aria-busy={busy}>
   <div class="phd-toolbar">
     <div>
-      <span class="phd-eyebrow">Studio branding</span>
-      <h2>Watermarks</h2>
-      <p>Reusable text and logo compositions, with independent defaults for proofs, web previews and exports.</p>
+      <span class="phd-eyebrow">{$t('frameleaf_photography_studio_branding')}</span>
+      <h2>{$t('frameleaf_photography_watermarks')}</h2>
+      <p>{$t('frameleaf_photography_watermarks_body')}</p>
     </div>
     <div class="phd-actions">
-      <Button disabled={busy} onclick={reload}>Reload</Button><Button
+      <Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button><Button
         variant="primary"
         disabled={busy || !draft || missingLogos.length > 0}
-        onclick={save}>Save studio presets</Button
+        onclick={save}>{$t('frameleaf_photography_save_watermark_presets')}</Button
       >
     </div>
   </div>
   {#if error}<div class="phw-notice" role="alert">{error}</div>{/if}{#if message}<p role="status">{message}</p>{/if}
   {#if missingLogos.length}<p class="phw-notice" role="alert">
-      Choose a replacement logo or remove the logo from these presets before saving: {missingLogos
-        .map((item) => item.name)
-        .join(', ')}.
+      {$t('frameleaf_photography_missing_logos', {
+        values: { names: missingLogos.map((item) => item.name).join(', ') },
+      })}
     </p>{/if}
   {#if draft}<section class="phd-card">
       <div class="phd-row">
         <label
-          >Preset<select bind:value={active}
-            ><option value="">Choose a preset</option
+          >{$t('frameleaf_photography_preset')}<select bind:value={active}
+            ><option value="">{$t('frameleaf_photography_choose_preset')}</option
             >{#each draft.brand.watermarkPresets ?? [] as item (item.id)}<option value={item.id}
                 >{item.name} · v{item.version}</option
               >{/each}</select
@@ -126,26 +128,29 @@
         >
         <div class="phd-actions">
           <Button disabled={busy || (draft.brand.watermarkPresets?.length ?? 0) >= 30} onclick={() => add()}
-            >New signature</Button
+            >{$t('frameleaf_photography_new_signature')}</Button
           ><Button disabled={busy || (draft.brand.watermarkPresets?.length ?? 0) >= 30} onclick={() => add(true)}
-            >New repeated proof</Button
-          ><Button disabled={busy || !preset} onclick={remove}>Remove preset</Button>
+            >{$t('frameleaf_photography_new_proof')}</Button
+          ><Button disabled={busy || !preset} onclick={remove}>{$t('frameleaf_photography_remove_preset')}</Button>
         </div>
       </div>
-      {#if preset}<label>Preset name<input maxlength="100" required bind:value={preset.name} /></label
+      {#if preset}<label
+          >{$t('frameleaf_photography_preset_name')}<input maxlength="100" required bind:value={preset.name} /></label
         >{#key preset.id}<PhotographyWatermarkEditor bind:value={preset.watermark} disabled={busy} />{/key}{:else}<p>
-          Create a preset to design your studio’s signature or proof pattern.
+          {$t('frameleaf_photography_create_preset_hint')}
         </p>{/if}
     </section>
     <section class="phd-card">
-      <h3>Defaults for new collections</h3>
+      <h3>{$t('frameleaf_photography_defaults_title')}</h3>
       <div class="phd-fields">
-        {#each [['webWatermarkPresetId', 'Edited web previews'], ['proofWatermarkPresetId', 'Selection proofs'], ['exportWatermarkPresetId', 'Final exports']] as [key, label] (key)}<label
+        {#each [['webWatermarkPresetId', $t('frameleaf_photography_web_previews')], ['proofWatermarkPresetId', $t('frameleaf_photography_selection_proofs')], ['exportWatermarkPresetId', $t('frameleaf_photography_final_exports')]] as [key, label] (key)}<label
             >{label}<select
               value={draft.brand[key as 'webWatermarkPresetId']}
               onchange={(event) => (draft!.brand[key as 'webWatermarkPresetId'] = event.currentTarget.value || null)}
               ><option value=""
-                >{key === 'exportWatermarkPresetId' ? 'Clean edited photograph' : 'Collection default'}</option
+                >{key === 'exportWatermarkPresetId'
+                  ? $t('frameleaf_photography_clean_edit_note')
+                  : $t('frameleaf_photography_collection_default')}</option
               >{#each draft.brand.watermarkPresets ?? [] as item (item.id)}<option value={item.id}
                   >{item.name} · v{item.version}</option
                 >{/each}</select
@@ -153,9 +158,10 @@
           >{/each}
       </div>
       <p>
-        Existing collections retain their saved watermark. Apply the new preset and republish a collection to change its
-        web images.
+        {$t('frameleaf_photography_defaults_note')}
       </p>
     </section>
-  {:else}<p role="status">{busy ? 'Loading studio presets…' : 'Reload to try again.'}</p>{/if}
+  {:else}<p role="status">
+      {busy ? $t('frameleaf_photography_loading_presets') : $t('frameleaf_photography_reload_to_retry')}
+    </p>{/if}
 </div>

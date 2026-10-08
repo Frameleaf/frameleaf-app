@@ -93,7 +93,8 @@
       grid-auto-flow: column;
       padding: 6px;
       border: 1px solid var(--fl-material-edge);
-      border-radius: 26px;
+      /* Concentric: the tabs' corner plus the bar's 6px padding. */
+      border-radius: calc(var(--fl-radius-capsule) + 6px);
       background: var(--fl-material);
       box-shadow: 0 10px 40px rgb(0 0 0 / 44%);
     }
@@ -105,7 +106,7 @@
       min-height: 52px;
       padding: 6px 0 4px;
       border: 0;
-      border-radius: 20px;
+      border-radius: var(--fl-radius-capsule);
       background: transparent;
       /* Text on material uses the on-material colours only (tokens.css). */
       color: var(--fl-on-material-muted);

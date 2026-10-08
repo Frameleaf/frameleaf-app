@@ -148,12 +148,11 @@ describe('TrashManager (FL-47)', () => {
     await waitFor(() =>
       expect(reviewTrash).toHaveBeenCalledWith({ trashReviewDto: { action: TrashReviewAction.Delete, ids: ['lake'] } }),
     );
+    // A few of the account's own selected items: the summary and the danger button confirm it, with
+    // nothing to type (design review finding 74).
     const confirm = await screen.findByRole('button', { name: 'Permanently delete 1 item' });
-    expect(confirm).toBeDisabled();
-
-    await fireEvent.input(screen.getByLabelText(en.frameleaf_trash_review_confirm_label), {
-      target: { value: 'DELETE 1' },
-    });
+    expect(screen.queryByLabelText(en.frameleaf_trash_review_confirm_label)).toBeNull();
+    expect(confirm).toBeEnabled();
     await fireEvent.click(confirm);
 
     await waitFor(() =>
@@ -179,10 +178,13 @@ describe('TrashManager (FL-47)', () => {
     render(TrashManager);
     await screen.findByText('lake.jpg');
     await fireEvent.click(screen.getByRole('button', { name: 'Empty your trash (1)' }));
+    // Emptying the whole trash still asks for the count to be typed; capitals do not matter.
+    const confirm = await screen.findByRole('button', { name: 'Permanently delete 1 item' });
+    expect(confirm).toBeDisabled();
     await fireEvent.input(await screen.findByLabelText(en.frameleaf_trash_review_confirm_label), {
-      target: { value: 'DELETE 1' },
+      target: { value: 'delete 1' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Permanently delete 1 item' }));
+    await fireEvent.click(confirm);
 
     expect(await screen.findByText(en.frameleaf_trash_error_changed)).toBeInTheDocument();
     expect(reviewTrash).toHaveBeenCalledWith({ trashReviewDto: { action: TrashReviewAction.Empty } });
@@ -210,6 +212,88 @@ describe('TrashManager (FL-47)', () => {
         trashApplyDto: { action: TrashReviewAction.Restore, ids: ['lake'], token: 'restore-token' },
       }),
     );
+  });
+
+  describe('Restore all (design review finding 76)', () => {
+    const review = (action: TrashReviewAction, count: number) => ({
+      action,
+      count,
+      bytes: count * 2048,
+      retainedOriginals: 0,
+      retainedBytes: 0,
+      names: [],
+      token: `${action}-token`,
+    });
+    const restoreAll = () => screen.getByRole('button', { name: /^Restore all/ });
+
+    it('clears the page before the server answers', async () => {
+      serve([item('lake'), item('pier')]);
+      let answer!: (value: ReturnType<typeof review>) => void;
+      vi.mocked(reviewTrash).mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+      vi.mocked(applyTrashReview).mockResolvedValue({ count: 2 });
+
+      render(TrashManager);
+      await screen.findByText('lake.jpg');
+      await fireEvent.click(restoreAll());
+
+      await waitFor(() => expect(screen.queryByText('lake.jpg')).not.toBeInTheDocument());
+      expect(screen.queryByText('pier.jpg')).not.toBeInTheDocument();
+      expect(applyTrashReview).not.toHaveBeenCalled();
+
+      answer(review(TrashReviewAction.RestoreAll, 2));
+      await waitFor(() =>
+        expect(applyTrashReview).toHaveBeenCalledWith({
+          trashApplyDto: { action: TrashReviewAction.RestoreAll, ids: undefined, token: 'restore-all-token' },
+        }),
+      );
+    });
+
+    it('puts the items back on the page, with the reason, when the restore fails', async () => {
+      serve([item('lake'), item('pier')]);
+      vi.mocked(reviewTrash).mockRejectedValue(httpError(409));
+
+      render(TrashManager);
+      await screen.findByText('lake.jpg');
+      await fireEvent.click(restoreAll());
+
+      expect(await screen.findByText(en.frameleaf_trash_error_changed)).toBeInTheDocument();
+      expect(screen.getByText('lake.jpg')).toBeInTheDocument();
+      expect(screen.getByText('pier.jpg')).toBeInTheDocument();
+    });
+
+    it('offers Undo, which moves the same items back to the trash', async () => {
+      serve([item('lake'), item('pier'), item('gone', { isOffline: true })]);
+      vi.mocked(reviewTrash).mockImplementation(({ trashReviewDto }) =>
+        Promise.resolve(review(trashReviewDto.action, 2)),
+      );
+      vi.mocked(applyTrashReview).mockResolvedValue({ count: 2 });
+
+      render(TrashManager);
+      await screen.findByText('lake.jpg');
+      await fireEvent.click(restoreAll());
+      await fireEvent.click(await screen.findByRole('button', { name: en.undo }));
+
+      await waitFor(() =>
+        expect(applyTrashReview).toHaveBeenCalledWith({
+          trashApplyDto: { action: TrashReviewAction.Trash, ids: ['lake', 'pier'], token: 'trash-token' },
+        }),
+      );
+      await waitFor(() => expect(screen.queryByRole('button', { name: en.undo })).not.toBeInTheDocument());
+    });
+
+    it('does not offer Undo when the items restored are not the ones it knows', async () => {
+      serve([item('lake'), item('pier')]);
+      vi.mocked(reviewTrash).mockResolvedValue(review(TrashReviewAction.RestoreAll, 3));
+      vi.mocked(applyTrashReview).mockResolvedValue({ count: 3 });
+
+      render(TrashManager);
+      await screen.findByText('lake.jpg');
+      await fireEvent.click(restoreAll());
+
+      await waitFor(() => expect(applyTrashReview).toHaveBeenCalled());
+      expect(await screen.findByText(/^Restored 3 items/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: en.undo })).not.toBeInTheDocument();
+    });
   });
 
   it('lists a missing external original without offering to change it', async () => {

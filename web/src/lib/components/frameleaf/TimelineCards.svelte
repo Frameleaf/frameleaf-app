@@ -260,8 +260,11 @@
     container: fl-tl-cards / inline-size;
     height: 100%;
     overflow-y: auto;
-    outline: none;
     scrollbar-width: none;
+  }
+  .fl-tl-cards-scroll:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-inset);
   }
   /* Template timeline-library.css "Curated Years and Months". */
   .fl-tl-cards {
@@ -291,7 +294,7 @@
     width: 100%;
     padding: 0;
     border: 0;
-    border-radius: var(--fl-radius-card, 12px);
+    border-radius: var(--fl-radius-card);
     overflow: hidden;
     background: var(--fl-panel);
     color: inherit;
@@ -312,8 +315,8 @@
     transform: scale(0.985);
   }
   .fl-tl-card-open:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .fl-tl-card-media {
     position: relative;

@@ -23,6 +23,8 @@
     describedBy,
     oncomplete,
     context = 'auth',
+    success = false,
+    softKeyboard = true,
   }: {
     /** Current digits, most-recent-first is not applied: left-to-right entry order. */
     value?: string;
@@ -39,6 +41,13 @@
     describedBy?: string;
     /** Fires once, with the completed value, the moment the last digit is entered. */
     oncomplete?: (value: string) => void;
+    /** The code was accepted: every cell fills in the accent colour (the value itself may be cleared). */
+    success?: boolean;
+    /**
+     * False when the caller shows its own keypad: the system keyboard stays down (`inputmode="none"`)
+     * while a hardware keyboard, paste and password managers keep working.
+     */
+    softKeyboard?: boolean;
   } = $props();
 
   let focused = $state(false);
@@ -69,6 +78,7 @@
   class:locked-pin-cells={context === 'locked'}
   class:pin-shake={shaking}
   class:error
+  class:success
   class:focused
   onanimationend={() => (shaking = false)}
 >
@@ -76,7 +86,7 @@
     <span
       aria-hidden="true"
       class="pin-cell"
-      class:filled={index < value.length}
+      class:filled={success || index < value.length}
       class:active={index === activeIndex && focused}
     ></span>
   {/each}
@@ -84,7 +94,7 @@
   <input
     class="pin-input"
     type="password"
-    inputmode="numeric"
+    inputmode={softKeyboard ? 'numeric' : 'none'}
     autocomplete="one-time-code"
     pattern="[0-9]*"
     maxlength={length}
@@ -118,7 +128,9 @@
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    transition: border-color var(--fl-motion-fast) var(--fl-ease);
+    transition:
+      border-color var(--fl-motion-fast) var(--fl-ease),
+      color var(--fl-duration-fade) var(--fl-ease);
   }
   .pin-cell.filled::after {
     content: '';
@@ -126,6 +138,20 @@
     height: 0.75rem;
     background: currentColor;
     border-radius: 50%;
+    /* Each digit lands with a small settle; instant under Reduce Motion (the global clamp). */
+    animation: pin-dot-in var(--fl-motion-fast) var(--fl-spring) both;
+  }
+  @keyframes pin-dot-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+  }
+  /* Accepted: the cells turn to the accent colour before the page moves on. */
+  .pin-cells.success .pin-cell {
+    color: var(--fl-accent);
+    border-color: var(--fl-accent);
+    transition-duration: var(--fl-duration-fade);
   }
   .pin-cells.focused .pin-cell.active {
     border-color: var(--fl-accent);
@@ -143,7 +169,7 @@
     height: 56px;
   }
   .pin-shake {
-    animation: pin-shake 420ms var(--fl-ease);
+    animation: pin-shake var(--fl-duration-dock) var(--fl-ease);
   }
   @keyframes pin-shake {
     10%,

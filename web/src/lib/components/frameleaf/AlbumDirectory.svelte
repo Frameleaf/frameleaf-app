@@ -12,6 +12,7 @@
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
@@ -36,6 +37,8 @@
     type AlbumDetailsDraft,
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
+  import { toastUndo } from '$lib/frameleaf/toast';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
@@ -65,7 +68,7 @@
     type ClassificationRuleResponseDto,
     type CreateAlbumDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
@@ -115,6 +118,10 @@
    * Move earlier / Move later as the keyboard and touch alternative. Moving into or out of a
    * collection keeps using the shelves, the take-out zone and Move to…. A move or an order decided on
    * an outdated directory is refused by the server; the page then reloads and says so.
+   *
+   * What an action did is said in a toast at the foot of the page, with Undo for a move and a
+   * reorder. The line under the filters is kept for what stays true until the next action: the drag
+   * hint and "your albums changed since this page loaded".
    */
   interface Props {
     tree: AlbumTreeResponseDto;
@@ -130,7 +137,20 @@
   const view = $derived(normalizeAlbumDirectoryView($albumDirectoryView));
 
   let search = $state('');
+  /** The persistent line under the filters: a drag hint, or that the directory was reloaded. */
   let status = $state('');
+  /** The item Move earlier / Move later just moved; its tile shows a ring that fades. */
+  let movedId = $state<string | undefined>();
+
+  /** An outcome, in a toast (a live region). `undo` puts the change back. */
+  const announce = (message: string, undo?: () => unknown) => {
+    status = '';
+    if (undo) {
+      toastUndo(message, undo);
+    } else {
+      toastManager.primary(message);
+    }
+  };
   let dragged = $state<AlbumResponseDto | undefined>();
   let overRoot = $state(false);
   let busy = $state(false);
@@ -297,7 +317,7 @@
     busy = true;
     try {
       const rule = await createClassificationRule({ classificationRuleCreateDto: dto });
-      status = $t('frameleaf_albums_created', { values: { name: rule.albumName } });
+      announce($t('frameleaf_albums_created', { values: { name: rule.albumName } }));
       await goto(Route.viewAlbum({ id: rule.albumId }));
       return true;
     } catch (error) {
@@ -336,7 +356,7 @@
         return false;
       }
       // Stay on the page and say what happened (Collections.jsx); the new album is in the refreshed tree.
-      status = $t('frameleaf_albums_created', { values: { name: nameOf(album) } });
+      announce($t('frameleaf_albums_created', { values: { name: nameOf(album) } }));
       await refresh();
       return true;
     } finally {
@@ -344,10 +364,11 @@
     }
   };
 
-  const move = async (album: AlbumResponseDto, collectionId: string | null) => {
+  const move = async (album: AlbumResponseDto, collectionId: string | null, undoable = true) => {
     if (album.parentId === collectionId) {
       return;
     }
+    const previousParentId = album.parentId ?? null;
     busy = true;
     try {
       const moved = await handleMoveAlbumToCollection(album, collectionId);
@@ -359,9 +380,13 @@
         return;
       }
       const destination = collectionId ? find(collectionId) : undefined;
-      status = destination
-        ? $t('frameleaf_albums_moved_into', { values: { name: nameOf(album), collection: nameOf(destination) } })
-        : $t('frameleaf_albums_moved_out', { values: { name: nameOf(album) } });
+      announce(
+        destination
+          ? $t('frameleaf_albums_moved_into', { values: { name: nameOf(album), collection: nameOf(destination) } })
+          : $t('frameleaf_albums_moved_out', { values: { name: nameOf(album) } }),
+        // Undo moves it back from where it now is; the refreshed tree has the album's new parent.
+        undoable ? () => void move({ ...album, parentId: collectionId }, previousParentId, false) : undefined,
+      );
       moveDialog = { open: false };
       await refresh();
     } finally {
@@ -379,7 +404,7 @@
   /* ---- custom order (FL-52) ---- */
   const reorderable = $derived(view.sort === 'custom' && view.filter === 'all' && !arrangement.searching);
 
-  const saveOrder = async (album: AlbumResponseDto, parentId: string | null, ids: string[]) => {
+  const saveOrder = async (album: AlbumResponseDto, parentId: string | null, ids: string[], previousIds?: string[]) => {
     busy = true;
     try {
       const saved = await handleSetAlbumOrder(parentId, ids);
@@ -390,10 +415,14 @@
       if (!saved) {
         return;
       }
-      status = $t('frameleaf_albums_reordered', {
-        values: { name: nameOf(album), position: ids.indexOf(album.id) + 1, count: ids.length },
-      });
+      announce(
+        $t('frameleaf_albums_reordered', {
+          values: { name: nameOf(album), position: ids.indexOf(album.id) + 1, count: ids.length },
+        }),
+        previousIds ? () => void saveOrder(album, parentId, previousIds) : undefined,
+      );
       await refresh();
+      movedId = album.id;
     } finally {
       busy = false;
     }
@@ -404,7 +433,7 @@
     const group = orderGroupOf(tree, album.id);
     const ids = group && moveInOrder(group.ids, album.id, direction);
     if (group && ids) {
-      void saveOrder(album, group.parentId, ids);
+      void saveOrder(album, group.parentId, ids, group.ids);
     }
   };
   const canStep = (album: AlbumResponseDto, direction: -1 | 1) => {
@@ -425,7 +454,7 @@
     const group = orderGroupOf(tree, albumId);
     const ids = group && placeBefore(group.ids, albumId, target.id);
     if (album && group && ids) {
-      void saveOrder(album, group.parentId, ids);
+      void saveOrder(album, group.parentId, ids, group.ids);
     }
   };
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
@@ -440,10 +469,11 @@
     }
     const ok = await handleDeleteAlbum(album, { notify: false });
     if (ok) {
-      status =
+      announce(
         album.kind === AlbumKind.Collection
           ? $t('frameleaf_albums_deleted_collection', { values: { name: nameOf(album) } })
-          : $t('frameleaf_albums_deleted', { values: { name: nameOf(album) } });
+          : $t('frameleaf_albums_deleted', { values: { name: nameOf(album) } }),
+      );
     }
     await refresh();
   };
@@ -455,7 +485,7 @@
     }
     const left = await handleLeaveAlbum(album);
     if (left) {
-      status = $t('frameleaf_albums_left', { values: { name: nameOf(album) } });
+      announce($t('frameleaf_albums_left', { values: { name: nameOf(album) } }));
     }
     await refresh();
   };
@@ -492,7 +522,7 @@
     }
     const saved = await handleEditAlbumDetails(album, draft);
     if (saved) {
-      status = $t('frameleaf_albums_saved', { values: { name: nameOf(saved) } });
+      announce($t('frameleaf_albums_saved', { values: { name: nameOf(saved) } }));
     }
     return !!saved;
   };
@@ -505,11 +535,16 @@
   /* ---- drag an album onto a collection shelf; touch uses Move to… ---- */
   const startDrag = (album: AlbumResponseDto) => {
     dragged = album;
+    movedId = undefined;
     status = reorderable ? $t('frameleaf_albums_reorder_hint') : $t('frameleaf_albums_drag_hint');
   };
   const endDrag = () => {
     dragged = undefined;
     overRoot = false;
+    // The hint is only true while something is being dragged.
+    if (status === $t('frameleaf_albums_reorder_hint') || status === $t('frameleaf_albums_drag_hint')) {
+      status = '';
+    }
   };
   const dropOnCollection = async (albumId: string, collection: AlbumResponseDto) => {
     const album = find(albumId);
@@ -541,7 +576,7 @@
     }
 
     endDrag();
-    status = $t('frameleaf_albums_move_cancelled');
+    announce($t('frameleaf_albums_move_cancelled'));
   };
 
   const draggedParent = $derived(dragged?.parentId ? find(dragged.parentId) : undefined);
@@ -634,18 +669,26 @@
   {#if view.view === 'grid'}
     <div class="grid">
       {#each list as album (album.id)}
-        <AlbumTile
-          {album}
-          {currentUserId}
-          draggable={canDrag(album)}
-          dragging={dragged?.id === album.id}
-          acceptsReorder={acceptsReorder(album)}
-          onDragStart={startDrag}
-          onDragEnd={endDrag}
-          onReorderDrop={(albumId) => dropBefore(albumId, album)}
+        <div
+          class="cell"
+          animate:listFlip={{ count: list.length }}
+          in:listEnter={{ count: list.length }}
+          out:listLeave={{ count: list.length }}
         >
-          {#snippet actions()}{@render menu(album)}{/snippet}
-        </AlbumTile>
+          <AlbumTile
+            {album}
+            {currentUserId}
+            draggable={canDrag(album)}
+            dragging={dragged?.id === album.id}
+            acceptsReorder={acceptsReorder(album)}
+            moved={movedId === album.id}
+            onDragStart={startDrag}
+            onDragEnd={endDrag}
+            onReorderDrop={(albumId) => dropBefore(albumId, album)}
+          >
+            {#snippet actions()}{@render menu(album)}{/snippet}
+          </AlbumTile>
+        </div>
       {/each}
       {#if list.length === 0 && emptyText}
         <p class="shelf-empty">{emptyText}</p>
@@ -654,7 +697,12 @@
   {:else}
     <div class="list" role="list">
       {#each list as album (album.id)}
-        <div role="listitem">
+        <div
+          role="listitem"
+          animate:listFlip={{ count: list.length }}
+          in:listEnter={{ count: list.length }}
+          out:listLeave={{ count: list.length }}
+        >
           <AlbumTile
             {album}
             {currentUserId}
@@ -662,6 +710,7 @@
             draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
             acceptsReorder={acceptsReorder(album)}
+            moved={movedId === album.id}
             onDragStart={startDrag}
             onDragEnd={endDrag}
             onReorderDrop={(albumId) => dropBefore(albumId, album)}
@@ -762,7 +811,7 @@
     {/each}
   </div>
 
-  <Status message={status} {busy} />
+  <div class="status" class:has-message={!!status}><Status message={status} {busy} /></div>
 
   {#each arrangement.shelves as shelf (shelf.collection.id)}
     {@const editor = canEdit(shelf.collection, currentUserId)}
@@ -846,8 +895,13 @@
     </div>
   {/if}
 
+  <!--
+    Take an album out of its collection: a bar that rises at the foot of the window while such an
+    album is being dragged, wherever the page is scrolled to. Pointer only; keyboard and touch use
+    Move to… in the album's menu.
+  -->
   <div
-    class="root-drop"
+    class="root-drop fl-material fl-material-capsule"
     class:visible={!!draggedParent}
     class:over={overRoot}
     aria-hidden="true"
@@ -857,6 +911,7 @@
     ondrop={onRootDrop}
   >
     {#if dragged && draggedParent}
+      <Icon icon={mdiFolderMoveOutline} size={ICON_SIZE.lg} />
       {$t('frameleaf_albums_drop_take_out', { values: { name: nameOf(dragged), collection: nameOf(draggedParent) } })}
     {/if}
   </div>
@@ -951,7 +1006,7 @@
     sources={ruleEdit.sources}
     bind:open={ruleEdit.open}
     onSaved={(_saved, message) => {
-      status = message;
+      announce(message);
       void refresh();
     }}
   />
@@ -963,7 +1018,7 @@
     sources={reevaluate.sources}
     bind:open={reevaluate.open}
     onApplied={(message) => {
-      status = message;
+      announce(message);
       void refresh();
     }}
   />
@@ -976,8 +1031,22 @@
    * between shelves and sections, 17px section titles and a 164px (132px compact) grid.
    */
   .albums {
-    padding: 18px 24px 120px;
+    padding: 18px 24px 64px;
     color: var(--fl-text);
+  }
+  /* The line under the filters takes no room while it has nothing to say (it stays a live region). */
+  .status {
+    margin-block: -8px 16px;
+    font-size: var(--fl-font-small);
+  }
+  .status:not(.has-message) {
+    height: 0;
+    margin-block: 0;
+    overflow: hidden;
+  }
+  .cell {
+    position: relative;
+    min-width: 0;
   }
   .albums > :global(*) {
     max-width: 1400px;
@@ -1026,12 +1095,13 @@
     color: var(--fl-text);
     font: inherit;
   }
+  /* The field is the whole capsule, so the capsule wears the one focus ring in the input's place. */
   .search input:focus-visible {
     outline: none;
   }
-  .search:focus-within {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+  .search:has(input:focus-visible) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   .view {
     display: inline-flex;
@@ -1061,7 +1131,7 @@
   .filters button {
     padding: 0 0.875rem;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-panel);
     color: var(--fl-text);
     font-size: 0.875rem;
@@ -1189,25 +1259,46 @@
     color: var(--fl-accent-text);
   }
   .root-drop {
-    display: none;
-    padding: 1rem;
-    border: 2px dashed var(--fl-border);
-    border-radius: 10px;
-    color: var(--fl-muted);
+    position: sticky;
+    bottom: calc(var(--fl-space-4) + var(--fl-tabbar-space, 0px));
+    z-index: var(--fl-z-dock);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-2);
+    width: fit-content;
+    max-width: min(36rem, 100%);
+    min-height: var(--fl-control-height-touch);
+    margin-block-start: var(--fl-space-4);
+    padding: var(--fl-space-3) var(--fl-space-5);
+    border: 1px dashed var(--fl-border);
+    color: var(--fl-on-material-muted);
+    font-size: var(--fl-font-callout);
     text-align: center;
-    font-size: 0.875rem;
+    /* Out of the way until an album that lives in a collection is being dragged. */
+    opacity: 0;
+    translate: 0 100%;
+    pointer-events: none;
+    transition:
+      translate var(--fl-duration) var(--fl-spring),
+      scale var(--fl-motion) var(--fl-snappy),
+      opacity var(--fl-duration-fade) var(--fl-ease),
+      border-color var(--fl-motion-fast) var(--fl-ease);
   }
   .root-drop.visible {
-    display: block;
+    opacity: 1;
+    translate: 0 0;
+    pointer-events: auto;
   }
   .root-drop.over {
     border-color: var(--fl-accent);
+    border-style: solid;
     color: var(--fl-text);
-    background: var(--fl-raised);
+    scale: 1.02;
   }
   @media (max-width: 700px) {
     .albums {
-      padding: 14px 16px 120px;
+      padding: 14px 16px 64px;
     }
     .head {
       flex-direction: column;

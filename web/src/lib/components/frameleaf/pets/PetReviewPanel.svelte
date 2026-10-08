@@ -29,6 +29,11 @@
     /** Why it is unavailable is said by `PetRecognitionPanel` above this panel (FL-58). */
     recognitionAvailable: boolean;
     busyCandidateId?: string | null;
+    /**
+     * Name the recognition model behind each suggestion. For an administrator comparing revisions;
+     * it means nothing to anyone else, so it is off unless asked for.
+     */
+    showModel?: boolean;
     onAccept: (candidate: PetCandidateResponseDto) => void;
     onReassign: (candidate: PetCandidateResponseDto, petId: string) => void;
     onReject: (candidate: PetCandidateResponseDto) => void;
@@ -39,6 +44,7 @@
     pets,
     recognitionAvailable,
     busyCandidateId = null,
+    showModel = false,
     onAccept,
     onReassign,
     onReject,
@@ -100,14 +106,16 @@
                         values: { percent: confidencePercent(candidate.score) },
                       })}
                     </span>
-                    <span aria-hidden="true">&middot;</span>
-                    <!-- The model identity is shown because a proposal is only as good as
-                         the revision that made it, and that revision can change. -->
-                    <span>
-                      {$t('frameleaf_pets_review_model', {
-                        values: { model: candidate.modelName, revision: candidate.modelRevision },
-                      })}
-                    </span>
+                    {#if showModel}
+                      <span aria-hidden="true">&middot;</span>
+                      <!-- For an administrator: a proposal is only as good as the revision that
+                           made it, and that revision can change. -->
+                      <span>
+                        {$t('frameleaf_pets_review_model', {
+                          values: { model: candidate.modelName, revision: candidate.modelRevision },
+                        })}
+                      </span>
+                    {/if}
                     {#if candidate.detectedSpecies}
                       <span aria-hidden="true">&middot;</span>
                       <span>

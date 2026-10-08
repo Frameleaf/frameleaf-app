@@ -161,7 +161,7 @@
     color: var(--fl-muted);
   }
   .filename {
-    font-family: var(--fl-font-mono, monospace);
+    font-family: var(--fl-family-mono);
     word-break: break-all;
   }
   .mt-status {

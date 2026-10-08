@@ -34,7 +34,7 @@
 <button
   {type}
   {disabled}
-  class={variant}
+  class="fl-control {variant}"
   aria-pressed={pressed}
   aria-label={label}
   data-initial-focus={initialFocus ? '' : undefined}
@@ -56,11 +56,12 @@
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+    /* The Press pattern (base.css): settle on the spring, colours on the ease curve. */
     transition:
-      background var(--fl-motion-fast) var(--fl-ease),
+      transform var(--fl-duration) var(--fl-spring),
+      background-color var(--fl-motion-fast) var(--fl-ease),
       border-color var(--fl-motion-fast) var(--fl-ease),
-      color var(--fl-motion-fast) var(--fl-ease),
-      transform var(--fl-motion-fast) var(--fl-ease);
+      color var(--fl-motion-fast) var(--fl-ease);
   }
   /* The 44px/48px height floor comes from tokens.css; the prototype's 34px is not ported. */
   button:hover:not(:disabled) {
@@ -74,6 +75,11 @@
   }
   button.primary:hover:not(:disabled) {
     background: var(--fl-accent-hover);
+    border-color: var(--fl-accent-hover);
+  }
+  button.primary:active:not(:disabled) {
+    background: var(--fl-accent-pressed);
+    border-color: var(--fl-accent-pressed);
   }
   button.danger {
     font-weight: 600;
@@ -92,7 +98,13 @@
     border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
   }
   button:active:not(:disabled) {
-    transform: translateY(1px);
+    transform: scale(0.96);
+    transition-duration: var(--fl-duration-press);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:active:not(:disabled) {
+      transform: none;
+    }
   }
   /* Last so a disabled button of any variant reads as disabled, as the prototype dims it. */
   button:disabled {

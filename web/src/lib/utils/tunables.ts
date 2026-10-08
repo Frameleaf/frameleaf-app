@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { DURATION } from '$lib/frameleaf/tokens';
 
 function getBoolean(string: string | null, fallback: boolean) {
   if (string === null) {
@@ -29,7 +30,8 @@ export const TUNABLES = {
     NAVIGATE_ON_ASSET_IN_VIEW: getBoolean(storage.getItem('ASSET_GRID.NAVIGATE_ON_ASSET_IN_VIEW'), false),
   },
   IMAGE_THUMBNAIL: {
-    THUMBHASH_FADE_DURATION: getNumber(storage.getItem('THUMBHASH_FADE_DURATION'), 100),
+    // The brand's base duration (--fl-motion): a placeholder gives way to its photo like any other reveal.
+    THUMBHASH_FADE_DURATION: getNumber(storage.getItem('THUMBHASH_FADE_DURATION'), DURATION.base),
   },
   IMAGE_RASTER: {
     MAX_PIXELS: getNumber(storage.getItem('IMAGE_RASTER.MAX_PIXELS'), 0),

@@ -32,7 +32,7 @@
     min-height: 2rem;
     padding: 0 0.875rem;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-panel);
     color: var(--fl-text);
     font-size: 0.875rem;
@@ -42,7 +42,7 @@
     background: var(--fl-raised);
   }
   .fl-locked-filter button:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 2px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
 </style>

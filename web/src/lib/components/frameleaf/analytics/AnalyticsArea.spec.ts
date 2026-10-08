@@ -59,9 +59,9 @@ describe('AnalyticsArea', () => {
     expect(sdk.getAnalyticsReport).toHaveBeenCalledWith({ scope: 'all', range: AnalyticsRange.Year });
   });
 
-  it('withholds the previous report while a changed selection loads and when it fails', async () => {
+  it('keeps the last report dimmed and out of reach while a changed selection loads, and withholds it when that fails', async () => {
     state.url = new SvelteURL('http://localhost/admin/system-settings?area=analytics');
-    render(AnalyticsArea);
+    const { container } = render(AnalyticsArea);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument());
     let rejectNext!: (reason: Error) => void;
     const next = new Promise<never>((_resolve, reject) => {
@@ -76,8 +76,11 @@ describe('AnalyticsArea', () => {
         range: AnalyticsRange.$90Days,
       }),
     );
-    expect(screen.getByRole('status')).toHaveTextContent(en.frameleaf_analytics_loading);
-    expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();
+    // The previous figures stay in place, marked busy and inert so nothing of them can be used or exported.
+    const report = container.querySelector('.report')!;
+    expect(report).toHaveAttribute('aria-busy', 'true');
+    expect(report).toHaveAttribute('inert');
+    expect(screen.getByText(en.frameleaf_analytics_loading)).toHaveAttribute('role', 'status');
     rejectNext(new Error('scope unavailable'));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load analytics'));
     expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();

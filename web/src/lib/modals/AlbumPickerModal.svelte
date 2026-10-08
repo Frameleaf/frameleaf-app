@@ -162,20 +162,20 @@
       {#if loading}
         <!-- eslint-disable-next-line svelte/require-each-key -->
         {#each { length: 3 } as _}
-          <div class="flex animate-pulse gap-4 px-6 py-2">
-            <div class="size-12 rounded-xl bg-slate-200"></div>
+          <div class="flex animate-pulse gap-4 px-6 py-2" aria-hidden="true">
+            <div class="size-12 rounded-xl bg-(--fl-raised)"></div>
             <div class="flex flex-col items-start justify-center gap-2">
-              <span class="h-4 w-36 animate-pulse bg-slate-200"></span>
-              <div class="flex animate-pulse gap-1">
-                <span class="h-3 w-8 bg-slate-200"></span>
-                <span class="h-3 w-20 bg-slate-200"></span>
+              <span class="h-4 w-36 rounded-sm bg-(--fl-raised)"></span>
+              <div class="flex gap-1">
+                <span class="h-3 w-8 rounded-sm bg-(--fl-raised)"></span>
+                <span class="h-3 w-20 rounded-sm bg-(--fl-raised)"></span>
               </div>
             </div>
           </div>
         {/each}
       {:else}
         <input
-          class="border-b-4 border-immich-bg px-6 py-2 text-2xl focus:border-immich-primary dark:border-immich-dark-gray dark:focus:border-immich-dark-primary"
+          class="border-b-2 border-(--fl-border) bg-transparent px-6 py-2 text-xl text-(--fl-text) placeholder:text-(--fl-muted) focus:border-(--fl-accent)"
           placeholder={$t('search')}
           {onkeydown}
           bind:value={search}
@@ -214,13 +214,13 @@
     <div class="flex w-full justify-around">
       <div class="flex gap-4">
         <div class="flex place-items-center gap-1">
-          <span class="rounded-sm bg-gray-300 p-1 dark:bg-gray-500">
+          <span class="rounded-sm border border-(--fl-border) bg-(--fl-raised) p-1 text-(--fl-muted)">
             <Icon icon={mdiKeyboardReturn} size="1rem" />
           </span>
           <Text size="tiny">{$t('to_select')}</Text>
         </div>
         <div class="flex place-items-center gap-1">
-          <span class="rounded-sm bg-gray-300 p-1 dark:bg-gray-500">
+          <span class="rounded-sm border border-(--fl-border) bg-(--fl-raised) p-1 text-(--fl-muted)">
             <Text size="tiny">CTRL</Text>
           </span>
           <Text size="tiny">{$t('to_multi_select')}</Text>

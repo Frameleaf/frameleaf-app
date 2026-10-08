@@ -18,7 +18,7 @@
   let covers = $state<AssetResponseDto[]>([]);
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
+<UserPageLayout scrollbar={true}>
   <TagBrowserPanel tags={data.tags} statistics={data.statistics} path={data.path} bind:covers />
 </UserPageLayout>
 

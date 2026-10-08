@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { t } from 'svelte-i18n';
   import NavigationArea from '../NavigationArea.svelte';
 
@@ -16,5 +17,5 @@
 </script>
 
 <NavigationArea onClick={onNextAsset} label={$t('view_next_asset')}>
-  <Icon icon={mdiChevronRight} size="36" aria-hidden />
+  <Icon icon={mdiChevronRight} size={ICON_SIZE.xl} aria-hidden />
 </NavigationArea>

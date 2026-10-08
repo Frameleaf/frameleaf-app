@@ -1,7 +1,7 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { motionFly } from '$lib/frameleaf/motion';
+  import { dock } from '$lib/frameleaf/motion';
   import { type DownloadState, downloadManager, EmptyDownloadError } from '$lib/managers/download-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
@@ -79,7 +79,7 @@
 
 {#if downloadManager.isDownloading}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
-    <section class="fl-panel" aria-label={$t('frameleaf_transfer_downloads')} in:motionFly={{ y: 12, duration: 280 }}>
+    <section class="fl-panel" aria-label={$t('frameleaf_transfer_downloads')} in:dock|global out:dock|global>
       <header class="fl-panel-head">
         <Icon icon={summary.active ? mdiProgressDownload : mdiDownloadOutline} size="20" aria-hidden="true" />
         <div class="fl-panel-head-text">

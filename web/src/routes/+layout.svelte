@@ -22,6 +22,8 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
+  import { installFrameleafKit } from '$lib/frameleaf/kit-bridge';
+  import { heroNavigation, installHeroIntent, sectionCrossfade } from '$lib/frameleaf/motion';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
@@ -35,7 +37,6 @@
     setTranslations,
     Theme,
     themeManager,
-    toastManager,
     TooltipProvider,
   } from '@frameleaf/ui';
   import { En } from 'media-chrome/lang/en';
@@ -44,11 +45,20 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import '../app.css';
+  // The brand tokens, on the document root for every page (BRAND.md). After app.css so the
+  // shared layer order is already declared.
+  import '$lib/frameleaf/tokens.css';
 
   trackSessionModals(modalManager);
+  // The legacy kit takes the brand: Frameleaf toasts and the one confirmation dialog.
+  installFrameleafKit();
 
   // FL-35: a photo grows out of its thumbnail into the viewer and back (interactions.js viewerTransition).
-  onNavigate((navigation) => viewerZoomTransition(navigation));
+  // A card that opens a page travels into it (`data-fl-shared`, $lib/frameleaf/motion heroNavigation).
+  // Any other move between sections of the app crossfades instead of cutting (BRAND.md "Hero").
+  onNavigate(
+    (navigation) => viewerZoomTransition(navigation) ?? heroNavigation(navigation) ?? sectionCrossfade(navigation),
+  );
 
   // The browser chrome follows the app theme, not the OS colour scheme (App.jsx:2193-2203).
   $effect(() => applyThemeColor(themeManager.value === Theme.Dark ? 'dark' : 'light'));
@@ -190,8 +200,6 @@
 
   let showNavigationLoadingBar = $state(false);
 
-  toastManager.setOptions({ class: 'top-16 fixed' });
-
   onMount(() => {
     const element = document.querySelector('#stencil');
     element?.remove();
@@ -205,7 +213,10 @@
     }
     // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
     const removeSearchShortcuts = installSearchShortcuts();
+    // The press that starts a card-to-page Hero transition.
+    const removeHeroIntent = installHeroIntent();
     return () => {
+      removeHeroIntent();
       sessionAccess.retryLock = undefined;
       stopWatchingLockOwner();
       removeSearchShortcuts?.();
@@ -285,7 +296,7 @@
 <VersionAnnouncement />
 
 <svelte:head>
-  <title>{page.data.meta?.title || 'Web'} - Frameleaf</title>
+  <title>{page.data.meta?.title ? `${page.data.meta.title} - Frameleaf` : 'Frameleaf'}</title>
   <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
 
   {#if page.data.meta}

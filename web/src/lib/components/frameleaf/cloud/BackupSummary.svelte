@@ -196,8 +196,8 @@
     font-weight: 600;
   }
   a:focus-visible {
-    outline: 2px solid var(--fl-accent);
-    outline-offset: 3px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   dl {
     display: grid;

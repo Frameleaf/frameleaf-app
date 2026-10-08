@@ -18,12 +18,15 @@ export const load = (async ({ url }) => {
 
   // An address for a folder that no longer holds anything opens its nearest folder that still does.
   const folder = resolveFolder(tree, requested);
-  const assets = folder.directCount > 0 ? await foldersStore.fetchAssetsByPath(folder.path) : [];
+  // The open folder's files are one section of the page: if they cannot load, the tree, the counts
+  // and the subfolders still show, and that section offers a retry.
+  const assets = folder.directCount > 0 ? await foldersStore.fetchAssetsByPath(folder.path).catch(() => null) : [];
 
   return {
     tree,
     path: folder.path,
-    assets,
+    assets: assets ?? [],
+    assetsFailed: assets === null,
     meta: {
       title: $t('folders'),
     },

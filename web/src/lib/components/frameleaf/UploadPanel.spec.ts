@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
 import en from '../../../../../i18n/en.json';
@@ -130,6 +131,69 @@ describe('UploadPanel', () => {
     render(UploadPanel);
 
     expect(screen.queryByRole('button', { name: en.frameleaf_transfer_dismiss_errors })).toBeNull();
+  });
+
+  it('keeps the bar its own colour when a file fails and marks the failed share as a segment', () => {
+    uploadAssetsStore.addItem({ id: 'ok', file: makeFile('ok.jpg', 9000) });
+    uploadAssetsStore.addItem({ id: 'bad', file: makeFile('bad.jpg', 1000) });
+    uploadAssetsStore.updateItem('ok', { state: UploadState.DONE });
+    uploadAssetsStore.track('success');
+    uploadAssetsStore.updateItem('bad', { state: UploadState.ERROR, error: 'nope' });
+    uploadAssetsStore.track('error');
+
+    const { container } = render(UploadPanel);
+    const [done, failed] = [...container.querySelectorAll<HTMLElement>(':scope .fl-progress > span')];
+
+    expect(done.style.width).toBe('90%');
+    expect(failed).toHaveClass('fl-progress-failed');
+    expect(failed.style.width).toBe('10%');
+  });
+
+  it('draws no failed segment when nothing failed', () => {
+    uploadAssetsStore.addItem({ id: 'ok', file: makeFile('ok.jpg') });
+    uploadAssetsStore.updateItem('ok', { state: UploadState.DONE });
+    uploadAssetsStore.track('success');
+
+    const { container } = render(UploadPanel);
+
+    expect(container.querySelector('.fl-progress-failed')).toBeNull();
+  });
+
+  it('keeps the parallel-uploads tuning behind Options', () => {
+    uploadAssetsStore.addItem({ id: 'a', file: makeFile('a.jpg') });
+
+    const { container } = render(UploadPanel);
+    const options = container.querySelector('details.fl-options')!;
+
+    expect(options).not.toHaveAttribute('open');
+    expect(options.querySelector('summary')).toHaveTextContent(en.frameleaf_transfer_options);
+    expect(options.querySelector('input[type="range"]')).not.toBeNull();
+  });
+
+  it('offers the way to what just arrived once everything has finished', () => {
+    uploadAssetsStore.addItem({ id: 'ok', file: makeFile('ok.jpg') });
+    uploadAssetsStore.updateItem('ok', { state: UploadState.DONE });
+    uploadAssetsStore.track('success');
+
+    render(UploadPanel);
+
+    expect(screen.getByRole('link', { name: en.frameleaf_transfer_show_recent })).toHaveAttribute(
+      'href',
+      '/recently-added',
+    );
+    expect(screen.getByRole('button', { name: en.done })).toBeInTheDocument();
+  });
+
+  it('puts the panel away on Done, then clears the list', async () => {
+    uploadAssetsStore.addItem({ id: 'ok', file: makeFile('ok.jpg') });
+    uploadAssetsStore.updateItem('ok', { state: UploadState.DONE });
+    uploadAssetsStore.track('success');
+
+    render(UploadPanel);
+    await fireEvent.click(screen.getByRole('button', { name: en.done }));
+
+    await waitFor(() => expect(screen.queryByRole('region', { name: en.frameleaf_transfer_uploads })).toBeNull());
+    await waitFor(() => expect(get(uploadAssetsStore)).toHaveLength(0));
   });
 
   it('minimises to a pill with the label and overall percent (U-2)', async () => {

@@ -137,7 +137,7 @@
   {#each frames as asset, offset (asset.id)}
     {@const index = start + offset}
     {@const keeper = keeperIds.includes(asset.id)}
-    <article class:focused={focused.id === asset.id} class:keeper>
+    <article class:focused={focused.id === asset.id} class:keeper data-asset-id={asset.id}>
       <button
         type="button"
         class="fl-dr-frame"
@@ -303,8 +303,8 @@
     border-radius: var(--fl-radius-control);
   }
   article.focused {
-    outline: 1px solid var(--fl-text);
-    outline-offset: 1px;
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
   article.keeper {
     background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-panel));

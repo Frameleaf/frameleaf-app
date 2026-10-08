@@ -16,6 +16,6 @@
   let { data }: Props = $props();
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
-  <FolderBrowserPanel tree={data.tree} path={data.path} assets={data.assets} />
+<UserPageLayout scrollbar={true}>
+  <FolderBrowserPanel tree={data.tree} path={data.path} assets={data.assets} assetsFailed={data.assetsFailed} />
 </UserPageLayout>

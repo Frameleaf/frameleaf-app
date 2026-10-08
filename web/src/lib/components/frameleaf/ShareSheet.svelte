@@ -1,10 +1,13 @@
 <script lang="ts">
   import AssetCollage from './AssetCollage.svelte';
   import Dialog from './Dialog.svelte';
-  import SharedLinkForm from './SharedLinkForm.svelte';
+  import InlineError from './InlineError.svelte';
+  import SharedLinkFormBody from './SharedLinkFormBody.svelte';
+  import Skeleton from './Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import {
     canCopyImageToClipboard,
     copyAssetImageToClipboard,
@@ -20,6 +23,7 @@
     shareItems,
     SharedLinkType,
     unshareItems,
+    type SharedLinkResponseDto,
     type UserResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
@@ -51,6 +55,11 @@
    * FL-83 AL-31: the strip above shows the items as a collage with "N items · X photos, Y videos"
    * (SharedLinks.jsx:510-517), and the shortcuts below offer "Copy image" for exactly one photo and
    * "Download" (SharedLinks.jsx:598-612), through the web client's clipboard and download helpers.
+   *
+   * The title says what is shared ("Share 1 photo", "Share 12 items"), not a file name. The primary
+   * button is available only once the chosen people differ from who already has the items, and it
+   * names that change: "Share with Jamie", "Stop sharing with Sam", or "Save changes" for both.
+   * "Copy image" is shown only when it applies.
    */
   type ShareItem = { id: string; isVideo: boolean; originalFileName?: string; size?: number; ownerId?: string };
   let {
@@ -63,11 +72,16 @@
     assetIds: string[];
     /** The same items with their kind, for the count line and the shortcuts. */
     assets?: ShareItem[];
-    /** Called once the sheet and the link form it opened have both closed. */
+    /** Called once the sheet has closed. */
     onClosed?: () => void;
   } = $props();
 
-  let linkFormOpen = $state(false);
+  /* A public link is made in the sheet itself: the form takes the place of the people list, and
+     the sheet ends on "Link ready" without a second dialog opening over it. */
+  const sheetId = $props.id();
+  const linkFormId = `${sheetId}-link-form`;
+  let linkCreated = $state<SharedLinkResponseDto | undefined>();
+  let linkSaving = $state(false);
 
   /* Share with people in this library (AL-30b) ------------------------------------------------- */
   const ownItems = $derived(
@@ -167,15 +181,6 @@
     recipients = next;
   };
 
-  const chosen = $derived(people.filter((person) => recipients.has(person.id)));
-  const primaryLabel = $derived(
-    chosen.length === 1
-      ? $t('frameleaf_sharing.share_with_person', { values: { name: chosen[0].name } })
-      : chosen.length > 1
-        ? $t('frameleaf_sharing.share_with_people', { values: { count: chosen.length } })
-        : $t('frameleaf_sharing.save_sharing'),
-  );
-
   /** The ids in `from` that are not in `other` (Set#difference is not in every supported browser). */
   const without = (from: Set<string>, other: Set<string>) => {
     const result: string[] = [];
@@ -186,6 +191,41 @@
     }
     return result;
   };
+
+  /**
+   * What saving would do, as `saveSharing` works it out: who gains the items and who loses them.
+   * `changeRevision` stands in for the saved state, which is not reactive on its own.
+   */
+  let changeRevision = $state(0);
+  const pending = $derived.by(() => {
+    void changeRevision;
+    void loadedFor;
+    return {
+      add: without(recipients, initialAllRecipients).filter((id) => !partialRecipients.has(id)),
+      remove: without(initialRecipients, recipients),
+    };
+  });
+  const changed = $derived(pending.add.length > 0 || pending.remove.length > 0);
+  const nameOfPerson = (id: string) => people.find((person) => person.id === id)?.name ?? '';
+  const primaryLabel = $derived.by(() => {
+    const { add, remove } = pending;
+    if (add.length > 0 && remove.length > 0) {
+      return $t('frameleaf_share_sheet_save_changes');
+    }
+    if (add.length === 1) {
+      return $t('frameleaf_sharing.share_with_person', { values: { name: nameOfPerson(add[0]) } });
+    }
+    if (add.length > 1) {
+      return $t('frameleaf_sharing.share_with_people', { values: { count: add.length } });
+    }
+    if (remove.length === 1) {
+      return $t('frameleaf_share_sheet_stop_person', { values: { name: nameOfPerson(remove[0]) } });
+    }
+    if (remove.length > 1) {
+      return $t('frameleaf_share_sheet_stop_people', { values: { count: remove.length } });
+    }
+    return $t('frameleaf_sharing.save_sharing');
+  });
 
   const saveSharing = async () => {
     const savedAssetIds = [...assetIds];
@@ -203,6 +243,7 @@
         if (isCurrentSelection()) {
           initialRecipients = new Set([...initialRecipients, ...toAdd]);
           initialAllRecipients = new Set([...initialAllRecipients, ...toAdd]);
+          changeRevision++;
         }
       }
       if (toRemove.length > 0) {
@@ -213,6 +254,7 @@
       }
       initialRecipients = savedRecipients;
       initialAllRecipients = new Set(without(savedRecipients, savedPartialRecipients));
+      changeRevision++;
       toastManager.primary($t('frameleaf_sharing.sharing_saved'));
       open = false;
     } catch (error) {
@@ -236,24 +278,35 @@
 
   let wasActive = false;
   $effect(() => {
-    const active = open || linkFormOpen;
-    if (active) {
+    if (open) {
       wasActive = true;
     } else if (wasActive) {
       wasActive = false;
+      linkCreated = undefined;
       onClosed?.();
     }
   });
 
+  /** What a public link to these items is called: the file's name for one item, else the count. */
   const subject = $derived(
-    assetIds.length === 1
-      ? assets?.[0]?.originalFileName || 'item'
-      : $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }),
+    (assetIds.length === 1 && assets?.[0]?.originalFileName) ||
+      $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }),
   );
   const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });
 
   const videos = $derived(assets?.filter((asset) => asset.isVideo).length ?? 0);
   const photos = $derived(assets ? assets.length - videos : 0);
+  /** The sheet's title says what is shared: "Share 1 photo", "Share 3 videos", "Share 12 items". */
+  const title = $derived.by(() => {
+    const count = assetIds.length;
+    if (assets && assets.length === count && videos === 0) {
+      return $t('frameleaf_share_sheet_title_photos', { values: { count } });
+    }
+    if (assets && assets.length === count && photos === 0) {
+      return $t('frameleaf_share_sheet_title_videos', { values: { count } });
+    }
+    return $t('frameleaf_share_sheet_title_items', { values: { count } });
+  });
   const countLine = $derived.by(() => {
     const items = $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } });
     if (assetIds.length < 2 || !assets) {
@@ -294,15 +347,10 @@
     open = false;
     void sendCopiesWithFeedback(assetIds);
   };
-
-  const openLinkForm = () => {
-    open = false;
-    linkFormOpen = true;
-  };
 </script>
 
 <Dialog
-  title={$t('frameleaf_sharing.share_subject', { values: { subject } })}
+  title={linkCreated ? $t('frameleaf_sharing.link_ready_title') : title}
   closeLabel={$t('close')}
   compactControls
   onkeydown={(event) => event.stopPropagation()}
@@ -312,7 +360,7 @@
     <AssetCollage ids={assetIds} class="ss-collage" />
     <span>{countLine}</span>
   </div>
-  {#if ownItems}
+  {#if ownItems && !linkCreated}
     <div
       class="ss-options"
       role="radiogroup"
@@ -323,28 +371,28 @@
       <button
         type="button"
         role="radio"
-        disabled={saving}
+        disabled={saving || linkSaving}
         data-mode="people"
         aria-checked={mode === 'people'}
         tabindex={mode === 'people' ? 0 : -1}
         class="ss-option"
         onclick={() => (mode = 'people')}
       >
-        <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />
+        <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden={true} />
         <strong>{$t('frameleaf_sharing.people_option_title')}</strong>
         <small>{$t('frameleaf_sharing.people_option_description')}</small>
       </button>
       <button
         type="button"
         role="radio"
-        disabled={saving}
+        disabled={saving || linkSaving}
         data-mode="link"
         aria-checked={mode === 'link'}
         tabindex={mode === 'link' ? 0 : -1}
         class="ss-option"
         onclick={() => (mode = 'link')}
       >
-        <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
+        <Icon icon={mdiLinkVariant} size={ICON_SIZE.lg} aria-hidden={true} />
         <strong>{$t('frameleaf_sharing.link_option_title')}</strong>
         <small>{$t('frameleaf_sharing.link_option_description')}</small>
       </button>
@@ -352,14 +400,25 @@
   {/if}
   {#if peopleMode}
     {#if loading}
-      <p role="status" class="ss-link-copy">{$t('loading')}</p>
+      <!-- Avatar placeholders at their final size, so the sheet does not jump when people arrive. -->
+      <div class="ss-people ss-people-loading" role="status" aria-label={$t('loading')}>
+        {#each [0, 1, 2, 3] as placeholder (placeholder)}
+          <span class="ss-person-loading">
+            <Skeleton variant="circle" width="60px" height="60px" />
+            <Skeleton variant="text" width="48px" />
+          </span>
+        {/each}
+      </div>
     {:else if loadFailed}
-      <p role="alert" class="ss-link-copy">{$t('frameleaf_sharing.people_load_failed')}</p>
-      <button type="button" class="button" onclick={() => void loadPeople(assetIds.join(','))}>
-        {$t('frameleaf_error_retry')}
-      </button>
+      <div class="ss-load-failed">
+        <InlineError
+          message={$t('frameleaf_sharing.people_load_failed')}
+          onRetry={() => void loadPeople(assetIds.join(','))}
+          compact
+        />
+      </div>
     {:else if people.length > 0}
-      <div class="ss-people" role="group" aria-label={$t('frameleaf_sharing.people_to_share_with')}>
+      <div class="ss-people fl-reveal" role="group" aria-label={$t('frameleaf_sharing.people_to_share_with')}>
         {#each people as person (person.id)}
           {@const selected = recipients.has(person.id)}
           {@const partial = partialRecipients.has(person.id)}
@@ -385,47 +444,64 @@
       <p class="ss-link-copy">{$t('frameleaf_sharing.no_other_people')}</p>
     {/if}
   {:else}
-    <p class="ss-link-copy">
-      {ownItems ? $t('frameleaf_sharing.link_form_hint') : $t('frameleaf_sharing.link_option_description')}
-    </p>
-  {/if}
-  <div class="ss-shortcuts">
-    <button type="button" class="button" disabled={!canCopyImage} onclick={() => void copyImage()}>
-      <Icon icon={mdiContentCopy} size="18" aria-hidden={true} />
-      {$t('frameleaf_sharing.copy_image')}
-    </button>
-    <button type="button" class="button" onclick={download}>
-      <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />
-      {$t('download')}
-    </button>
-  </div>
-  {#snippet actions()}
-    {#if canSendCopies() && sendCopyPermitted()}
-      <button type="button" class="button" onclick={sendCopy}>
-        <Icon icon={mdiExportVariant} size="18" aria-hidden={true} />
-        {$t('frameleaf_send_copy')}
-      </button>
+    {#if !ownItems && !linkCreated}
+      <p class="ss-link-copy">{$t('frameleaf_sharing.link_option_description')}</p>
     {/if}
-    <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
-    {#if peopleMode}
-      <button
-        type="button"
-        class="button primary"
-        disabled={saving || loadedFor !== assetIds.join(',')}
-        onclick={() => void saveSharing()}
-      >
-        {primaryLabel}
+    <div class="ss-link-form">
+      <SharedLinkFormBody
+        active={open}
+        target={linkTarget}
+        formId={linkFormId}
+        compact
+        bind:created={linkCreated}
+        bind:saving={linkSaving}
+      />
+    </div>
+  {/if}
+  {#if !linkCreated}
+    <div class="ss-shortcuts">
+      <!-- Offered for exactly one photo in a browser that can copy images; otherwise it is left out. -->
+      {#if canCopyImage}
+        <button type="button" class="button" onclick={() => void copyImage()}>
+          <Icon icon={mdiContentCopy} size={ICON_SIZE.lg} aria-hidden={true} />
+          {$t('frameleaf_sharing.copy_image')}
+        </button>
+      {/if}
+      <button type="button" class="button" onclick={download}>
+        <Icon icon={mdiDownloadOutline} size={ICON_SIZE.lg} aria-hidden={true} />
+        {$t('download')}
       </button>
+    </div>
+  {/if}
+  {#snippet actions()}
+    {#if linkCreated}
+      <button type="button" class="button primary" onclick={() => (open = false)}>{$t('done')}</button>
     {:else}
-      <button type="button" class="button primary" onclick={openLinkForm}>
-        <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
-        {$t('frameleaf_sharing.create_public_link')}
-      </button>
+      {#if canSendCopies() && sendCopyPermitted()}
+        <button type="button" class="button" onclick={sendCopy}>
+          <Icon icon={mdiExportVariant} size={ICON_SIZE.lg} aria-hidden={true} />
+          {$t('frameleaf_send_copy')}
+        </button>
+      {/if}
+      <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
+      {#if peopleMode}
+        <button
+          type="button"
+          class="button primary"
+          disabled={saving || loadedFor !== assetIds.join(',') || !changed}
+          onclick={() => void saveSharing()}
+        >
+          {primaryLabel}
+        </button>
+      {:else}
+        <button type="submit" form={linkFormId} class="button primary" disabled={linkSaving}>
+          <Icon icon={mdiLinkVariant} size={ICON_SIZE.lg} aria-hidden={true} />
+          {$t('frameleaf_sharing.create_public_link')}
+        </button>
+      {/if}
     {/if}
   {/snippet}
 </Dialog>
-
-<SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
 
 <style>
   .ss-strip {
@@ -448,6 +524,9 @@
     gap: 8px;
     padding-top: 14px;
     border-top: 1px solid var(--fl-border);
+  }
+  .ss-link-form {
+    margin-bottom: 16px;
   }
   .ss-link-copy {
     margin: 0 0 12px;
@@ -510,6 +589,19 @@
     margin: 18px 0 6px;
     max-height: 16rem;
     overflow-y: auto;
+  }
+  .ss-people-loading {
+    overflow: hidden;
+  }
+  .ss-person-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 8px 10px;
+  }
+  .ss-load-failed {
+    margin: 0 0 12px;
   }
   .ss-person {
     display: flex;

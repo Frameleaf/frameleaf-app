@@ -32,7 +32,16 @@
   import type { UsageByUserDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
-  let { users, usage = [] }: { users: UserAdminResponseDto[]; usage?: UsageByUserDto[] } = $props();
+  let {
+    users,
+    usage = [],
+    selectedId,
+  }: {
+    users: UserAdminResponseDto[];
+    usage?: UsageByUserDto[];
+    /** The account whose detail is open, marked in the list (as the Libraries table marks its row). */
+    selectedId?: string;
+  } = $props();
 
   const usageById = $derived(new Map(usage.map((row) => [row.userId, row])));
   const count = (value: number) => value.toLocaleString($locale);
@@ -102,9 +111,9 @@
         {@const quota = accountQuotaUsage(user)}
         {@const stats = usageById.get(user.id)}
         {@const used = user.quotaUsageInBytes ?? 0}
-        <tr>
+        <tr data-selected={user.id === selectedId}>
           <th scope="row">
-            <a href={Route.viewUser(user)}>
+            <a href={Route.viewUser(user)} aria-current={user.id === selectedId ? 'true' : undefined}>
               <UserAvatar {user} size="sm" />
               <span>
                 <strong>{user.name}</strong>
@@ -213,6 +222,9 @@
     font-weight: 600;
     color: var(--fl-muted);
     border-bottom: 1px solid var(--fl-border);
+  }
+  tbody tr[data-selected='true'] {
+    background: color-mix(in srgb, var(--fl-accent) 8%, var(--fl-panel));
   }
   tbody tr + tr {
     border-top: 1px solid var(--fl-border);

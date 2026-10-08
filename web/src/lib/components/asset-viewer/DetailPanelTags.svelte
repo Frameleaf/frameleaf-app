@@ -273,7 +273,7 @@
   /* .mv-info h3 (media-viewer.css:979-989). */
   h3 {
     margin: 0 0 10px;
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     font-size: var(--fl-font-micro, 11px);
     font-weight: 550;
     letter-spacing: 0.05em;
@@ -295,12 +295,12 @@
     padding: 3px 4px 3px 9px;
     border: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
     border-radius: var(--fl-radius-pill, 999px);
-    color: var(--fl-viewer-text, #f1f1f2);
+    color: var(--fl-viewer-text);
     font-size: var(--fl-font-small, 13px);
   }
 
   .fl-tag > :global(svg) {
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
   }
 
   .fl-tag a {
@@ -321,18 +321,18 @@
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     cursor: pointer;
   }
 
   .fl-tag button:hover:not(:disabled) {
-    background: #ffffff14;
-    color: var(--fl-viewer-text, #f1f1f2);
+    background: var(--fl-viewer-border);
+    color: var(--fl-viewer-text);
   }
 
   .fl-no-tags {
     margin: 0;
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
     font-size: var(--fl-font-small, 13px);
   }
 
@@ -345,8 +345,8 @@
     padding: 0 10px;
     border: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
     border-radius: var(--fl-radius-control, 10px);
-    background: #ffffff06;
-    color: var(--fl-viewer-muted, #979ba2);
+    background: color-mix(in srgb, var(--fl-viewer-text) 2.5%, transparent);
+    color: var(--fl-viewer-muted);
   }
 
   .fl-combobox:focus-within {
@@ -359,14 +359,14 @@
     min-height: 34px;
     border: 0;
     background: transparent;
-    color: var(--fl-viewer-text, #f1f1f2);
+    color: var(--fl-viewer-text);
     font: inherit;
     font-size: var(--fl-font-small, 13px);
     outline: none;
   }
 
   .fl-combobox input::placeholder {
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
   }
 
   .fl-listbox {
@@ -378,7 +378,7 @@
     margin: 0;
     padding: 6px;
     list-style: none;
-    background: var(--fl-viewer-raised, #25272b);
+    background: var(--fl-viewer-raised);
     border: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
     border-radius: var(--fl-radius-card, 14px);
     box-shadow: var(--fl-shadow-2);
@@ -393,18 +393,18 @@
     min-height: 34px;
     padding: 6px 10px;
     border-radius: var(--fl-radius-control, 10px);
-    color: var(--fl-viewer-text, #f1f1f2);
+    color: var(--fl-viewer-text);
     font-size: var(--fl-font-small, 13px);
     cursor: pointer;
   }
 
   .fl-listbox li :global(svg) {
-    color: var(--fl-viewer-muted, #979ba2);
+    color: var(--fl-viewer-muted);
   }
 
   .fl-listbox li.active,
   .fl-listbox li:hover {
-    background: #ffffff0f;
+    background: color-mix(in srgb, var(--fl-viewer-text) 6%, transparent);
   }
 
   @supports (corner-shape: squircle) {

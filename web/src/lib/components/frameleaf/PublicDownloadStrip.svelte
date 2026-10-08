@@ -133,7 +133,7 @@
     display: block;
     block-size: 0.25rem;
     overflow: hidden;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
   }
   .pv-progress > span {

@@ -95,9 +95,10 @@
         {$t('frameleaf_viewer_position', { values: { index: position.index + 1, total: position.total } })}
       </span>
     {/if}
+    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play, the position and the filmstrip. -->
     <button
       type="button"
-      class="fl-tool"
+      class="fl-tool fl-wide-only"
       aria-label={$t('frameleaf_viewer_slideshow_settings')}
       title={$t('frameleaf_viewer_slideshow_settings')}
       data-slideshow-settings
@@ -133,15 +134,15 @@
     {#if isVideoAsset(asset)}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
         <button type="button" aria-pressed={isPlayingOriginalVideo} onclick={() => setPlayOriginalVideo(true)}>
-          {$t('frameleaf_viewer_play_original')}
+          {$t('frameleaf_viewer_source_original')}
         </button>
         <button
           type="button"
           aria-pressed={!isPlayingOriginalVideo}
-          title={$t('frameleaf_viewer_encoded_rendition')}
+          title={$t('frameleaf_viewer_optimized_title')}
           onclick={() => setPlayOriginalVideo(false)}
         >
-          {$t('frameleaf_viewer_play_encoded')}
+          {$t('frameleaf_viewer_source_optimized')}
         </button>
       </div>
     {/if}
@@ -162,43 +163,48 @@
       </button>
     {/if}
     {#if zoomable}
+      <!-- Pinch and double-tap cover zoom on a phone, so these three stay off its footer. -->
+      <span class="fl-zoom">
+        <button
+          type="button"
+          class="fl-tool"
+          aria-label={$t('frameleaf_viewer_zoom_out')}
+          title={$t('frameleaf_viewer_zoom_out')}
+          disabled={zoom <= 1}
+          onclick={() => setZoom(zoom / STEP)}
+        >
+          <Icon icon={mdiMagnifyMinusOutline} size="21" aria-hidden />
+        </button>
+        <button type="button" class="fl-fit" title={$t('frameleaf_viewer_fit_title')} onclick={() => setZoom(1)}>
+          {zoom <= 1
+            ? $t('frameleaf_viewer_fit')
+            : $t('frameleaf_viewer_percent_of_fit', { values: { percent: Math.round(zoom * 100) } })}
+        </button>
+        <button
+          type="button"
+          class="fl-tool"
+          aria-label={$t('frameleaf_viewer_zoom_in')}
+          title={$t('frameleaf_viewer_zoom_in')}
+          disabled={zoom >= MAX_ZOOM}
+          onclick={() => setZoom(zoom * STEP)}
+        >
+          <Icon icon={mdiMagnifyPlusOutline} size="21" aria-hidden />
+        </button>
+      </span>
+    {/if}
+    <!-- A browser that cannot go full screen (iPhone Safari) gets no button rather than a dead one. -->
+    {#if fullscreenEnabled || fullscreen}
       <button
         type="button"
         class="fl-tool"
-        aria-label={$t('frameleaf_viewer_zoom_out')}
-        title={$t('frameleaf_viewer_zoom_out')}
-        disabled={zoom <= 1}
-        onclick={() => setZoom(zoom / STEP)}
+        aria-label={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+        title={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+        aria-pressed={fullscreen}
+        onclick={onToggleFullscreen}
       >
-        <Icon icon={mdiMagnifyMinusOutline} size="21" aria-hidden />
-      </button>
-      <button type="button" class="fl-fit" title={$t('frameleaf_viewer_fit_title')} onclick={() => setZoom(1)}>
-        {zoom <= 1
-          ? $t('frameleaf_viewer_fit')
-          : $t('frameleaf_viewer_percent_of_fit', { values: { percent: Math.round(zoom * 100) } })}
-      </button>
-      <button
-        type="button"
-        class="fl-tool"
-        aria-label={$t('frameleaf_viewer_zoom_in')}
-        title={$t('frameleaf_viewer_zoom_in')}
-        disabled={zoom >= MAX_ZOOM}
-        onclick={() => setZoom(zoom * STEP)}
-      >
-        <Icon icon={mdiMagnifyPlusOutline} size="21" aria-hidden />
+        <Icon icon={fullscreen ? mdiFullscreenExit : mdiFullscreen} size="21" aria-hidden />
       </button>
     {/if}
-    <button
-      type="button"
-      class="fl-tool"
-      aria-label={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-      title={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-      aria-pressed={fullscreen}
-      disabled={!fullscreenEnabled}
-      onclick={onToggleFullscreen}
-    >
-      <Icon icon={fullscreen ? mdiFullscreenExit : mdiFullscreen} size="21" aria-hidden />
-    </button>
   </div>
 </footer>
 
@@ -215,8 +221,8 @@
     padding: 8px max(18px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
       max(18px, env(safe-area-inset-left));
     overflow-x: auto;
-    border-top: 1px solid #ffffff14;
-    color: #f1f1f2;
+    border-top: 1px solid var(--fl-viewer-border);
+    color: var(--fl-viewer-text);
   }
 
   .fl-viewer-foot::before {
@@ -224,7 +230,7 @@
     position: absolute;
     inset: 0;
     z-index: -1;
-    background: #1c1c1e99;
+    background: color-mix(in srgb, var(--fl-viewer-panel) 60%, transparent);
     backdrop-filter: var(--fl-material-blur);
   }
 
@@ -244,7 +250,7 @@
     height: 38px;
     padding: 7px;
     border: 1px solid transparent;
-    border-radius: var(--fl-radius-control, 9px);
+    border-radius: var(--fl-radius-control);
     background: transparent;
     color: inherit;
     cursor: pointer;
@@ -252,11 +258,11 @@
 
   .fl-tool:hover:not(:disabled),
   .fl-fit:hover {
-    background: #ffffff14;
+    background: var(--fl-viewer-border);
   }
 
   .fl-tool.active {
-    background: #ffffff1f;
+    background: color-mix(in srgb, var(--fl-viewer-text) 12%, transparent);
   }
 
   .fl-tool:disabled {
@@ -267,21 +273,25 @@
   .fl-tool:focus-visible,
   .fl-fit:focus-visible,
   .fl-segment button:focus-visible {
-    outline: 2px solid var(--fl-viewer-focus, #a5d4ef);
-    outline-offset: 2px;
+    outline: 2px solid var(--fl-viewer-focus);
+    outline-offset: var(--fl-focus-offset);
+  }
+
+  .fl-zoom {
+    display: contents;
   }
 
   .fl-position {
     min-width: 58px;
-    color: #c7c7cc;
-    font-size: 12px;
+    color: var(--fl-on-material-muted);
+    font-size: var(--fl-font-small);
     font-variant-numeric: tabular-nums;
     text-align: center;
   }
 
   .fl-key-hint {
-    color: #aeaeb2;
-    font-size: 11px;
+    color: var(--fl-on-material-muted);
+    font-size: var(--fl-font-micro);
     white-space: nowrap;
     word-spacing: 3px;
   }
@@ -295,11 +305,11 @@
     height: 34px;
     padding: 5px 8px;
     border: 0;
-    border-radius: var(--fl-radius-control, 9px);
+    border-radius: var(--fl-radius-control);
     background: transparent;
     color: inherit;
     font: inherit;
-    font-size: 11px;
+    font-size: var(--fl-font-micro);
     font-variant-numeric: tabular-nums;
     cursor: pointer;
   }
@@ -308,25 +318,25 @@
     display: inline-flex;
     margin-inline-end: 6px;
     padding: 3px;
-    border: 1px solid #ffffff14;
-    border-radius: var(--fl-radius-control, 9px);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-control);
   }
 
   .fl-segment button {
     min-height: 28px;
     padding: 3px 10px;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--fl-radius-sm);
     background: transparent;
-    color: #c7c7cc;
+    color: var(--fl-on-material-muted);
     font: inherit;
-    font-size: 11px;
+    font-size: var(--fl-font-micro);
     cursor: pointer;
   }
 
   .fl-segment button[aria-pressed='true'] {
-    background: #ffffff24;
-    color: #fff;
+    background: color-mix(in srgb, var(--fl-viewer-text) 14%, transparent);
+    color: var(--fl-viewer-text);
   }
 
   @media (max-width: 760px) {
@@ -341,15 +351,29 @@
   }
 
   @media (max-width: 700px) {
+    .fl-viewer-foot {
+      overflow-x: visible;
+    }
+
     .fl-tool {
-      min-width: 44px;
-      height: 44px;
+      min-width: var(--fl-control-height);
+      height: var(--fl-control-height);
+    }
+
+    /* One row that fits a 320px phone: Play, the position and the filmstrip, then what the item needs. */
+    .fl-zoom,
+    .fl-wide-only {
+      display: none;
+    }
+
+    .fl-segment button {
+      min-height: 36px;
     }
   }
 
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
     .fl-viewer-foot::before {
-      background: #1c1c1e;
+      background: var(--fl-viewer-panel);
       backdrop-filter: none;
     }
   }

@@ -7,9 +7,10 @@
   import { fileUploadHandler } from '$lib/utils/file-uploader';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import { mdiCloudUploadOutline } from '@mdi/js';
+  import { mdiCloudUploadOutline, mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
 
   /**
    * Drag-and-drop upload overlay for library pages (FL-45), restyled from the legacy
@@ -17,11 +18,36 @@
    * directory-reading and paste handling are unchanged from the production component this
    * replaces; only the drop card's appearance is new (`design/frameleaf/template/src/App.jsx`
    * `DragDropOverlay`). Files still go straight to `fileUploadHandler`, never a simulation.
+   *
+   * The card says where the files will go, because it depends on the page: on an album they also
+   * join that album, and in Locked they are uploaded as Locked. The page shows through a frosted
+   * veil rather than being covered, so the album you are dropping into stays in view.
    */
 
   let albumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
   let isInLockedFolder = $derived(isLockedFolderRoute(page.route.id));
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  /** The album page's own album, when its loader put one in the page data. */
+  const albumName = $derived.by(() => {
+    const album = albumId ? (page.data as { album?: { id?: string; albumName?: string } } | undefined)?.album : null;
+    return album && album.id === albumId ? album.albumName?.trim() || null : null;
+  });
+  const dropTitle = $derived(
+    isInLockedFolder
+      ? $t('frameleaf_transfer_drop_title_locked')
+      : albumId
+        ? albumName
+          ? $t('frameleaf_transfer_drop_title_album', { values: { album: albumName } })
+          : $t('frameleaf_transfer_drop_title_this_album')
+        : $t('frameleaf_transfer_drop_title'),
+  );
+  const dropHint = $derived(
+    isInLockedFolder
+      ? $t('frameleaf_transfer_drop_hint_locked')
+      : albumId
+        ? $t('frameleaf_transfer_drop_hint_album')
+        : $t('frameleaf_transfer_drop_hint'),
+  );
 
   let dragStartTarget: EventTarget | null = $state(null);
   let isInternalDrag = false;
@@ -195,14 +221,14 @@
     data-theme={appTheme}
     role="status"
     aria-live="polite"
-    transition:motionFade={{ duration: 250 }}
+    transition:motionFade={{ duration: DURATION.fade }}
     ondragover={onDragOver}
   >
     <div class="fl-drop-frame" aria-hidden="true"></div>
-    <div class="fl-drop-card">
-      <Icon icon={mdiCloudUploadOutline} size="40" aria-hidden="true" />
-      <strong>{$t('frameleaf_transfer_drop_title')}</strong>
-      <span>{$t('frameleaf_transfer_drop_hint')}</span>
+    <div class="fl-drop-card fl-pop fl-origin-center">
+      <Icon icon={isInLockedFolder ? mdiShieldLockOutline : mdiCloudUploadOutline} size="40" aria-hidden="true" />
+      <strong>{dropTitle}</strong>
+      <span>{dropHint}</span>
     </div>
   </div>
 {/if}
@@ -211,12 +237,22 @@
   .fl-drop-overlay {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    z-index: var(--fl-z-toast);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--fl-canvas), transparent 8%);
+    /* A frosted veil: the page behind stays recognisable. */
+    background: color-mix(in srgb, var(--fl-canvas) 55%, transparent);
+    -webkit-backdrop-filter: var(--fl-scrim-blur);
+    backdrop-filter: var(--fl-scrim-blur);
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .fl-drop-overlay {
+      background: color-mix(in srgb, var(--fl-canvas), transparent 8%);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
   .fl-drop-frame {
     position: absolute;
@@ -234,11 +270,17 @@
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-dialog);
-    box-shadow: var(--fl-shadow-2);
+    border-radius: var(--fl-radius-sheet);
+    box-shadow: var(--fl-shadow-4);
+    max-width: min(28rem, calc(100vw - 3rem));
+    text-align: center;
+  }
+  .fl-drop-card :global(svg) {
+    color: var(--fl-accent);
   }
   .fl-drop-card strong {
     font-size: 1.0625rem;
+    overflow-wrap: anywhere;
   }
   .fl-drop-card span {
     color: var(--fl-muted);

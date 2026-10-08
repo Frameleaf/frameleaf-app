@@ -12,6 +12,8 @@
    *   Locked-content rules appear only as changed.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { historyValue, type HistoryValue } from '$lib/frameleaf/settings-history';
   import { configPathLabel } from '$lib/frameleaf/system-config-draft';
   import {
@@ -137,10 +139,7 @@
 </script>
 
 {#if error}
-  <div class="notice" role="alert">
-    <span>{$t('frameleaf_settings_history_load_failed')}</span>
-    <Button onclick={onRetry}>{$t('retry')}</Button>
-  </div>
+  <InlineError message={$t('frameleaf_settings_history_load_failed')} {onRetry} />
 {:else if items && items.length === 0}
   <div class="empty">
     <Icon icon={mdiHistory} size="2.25rem" aria-hidden={true} />
@@ -192,10 +191,20 @@
     {/each}
   </div>
 {:else}
-  <p role="status">{$t('loading')}</p>
+  <div class="loading" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="block" height="4.5rem" />
+    <Skeleton variant="block" height="4.5rem" />
+    <Skeleton variant="block" height="4.5rem" />
+  </div>
 {/if}
 
 <style>
+  .loading {
+    display: grid;
+    gap: var(--fl-space-3);
+    max-width: 820px;
+  }
   .empty {
     padding: 4.375rem 1.25rem;
     text-align: center;
@@ -216,17 +225,6 @@
     margin: 0.75rem auto 1.25rem;
     color: var(--fl-muted);
     line-height: 1.7;
-  }
-  .notice {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
   }
   .history article {
     padding: 1.25rem 0;

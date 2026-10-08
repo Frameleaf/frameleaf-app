@@ -43,7 +43,7 @@
       light canvas below before first paint, and kept in step with the app theme by
       $lib/frameleaf/theme-color.ts afterwards.
     -->
-    <meta name="theme-color" content="#101416" />
+    <meta name="theme-color" content="#0d1115" />
     <script>
       try {
         const preference = JSON.parse(localStorage.getItem('immich-ui-theme'));
@@ -51,7 +51,7 @@
         if (preference === 'light' || (preference !== 'dark' && !prefersDark)) {
           document.documentElement.classList.remove('dark');
           document.documentElement.classList.add('light');
-          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f3f6f8');
         }
       } catch {
         // noop
@@ -67,12 +67,13 @@
         width: 100%;
       }
 
+      /* The canvas of each theme (brand-tokens.json), so the first paint is already Frameleaf. */
       html.dark {
-        background-color: black;
+        background-color: #0d1115;
       }
 
       html.light {
-        background-color: white;
+        background-color: #f3f6f8;
       }
 
       body,
@@ -87,14 +88,23 @@
         }
       }
 
-      @keyframes loadspin {
-        100% {
-          transform: rotate(360deg);
+      /*
+       * The loading mark never spins: a logo is not a spinner. It unfurls once, the brand's
+       * signature move (BRAND.md decision 6): out of its lower left corner, where the leaf meets
+       * the frame, with one soft overshoot. Then it holds still until the app replaces it.
+       */
+      @keyframes stencilUnfurl {
+        from {
+          opacity: 0;
+          transform: scale(0.86) rotate(-8deg);
+        }
+        35% {
+          opacity: 1;
         }
       }
 
       #stencil {
-        --stencil-width: 150px;
+        --stencil-width: 64px;
         display: flex;
         width: var(--stencil-width);
         margin-left: auto;
@@ -103,11 +113,22 @@
         margin-bottom: 100vh;
         place-items: center;
         justify-content: center;
-        overflow: hidden;
         visibility: hidden;
+        transform-origin: bottom left;
         animation:
           0s linear 0.3s forwards delayedVisibility,
-          loadspin 8s linear infinite;
+          stencilUnfurl 440ms cubic-bezier(0.2, 1.5, 0.4, 1) 0.3s both;
+      }
+
+      #stencil svg {
+        width: 100%;
+        height: auto;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #stencil {
+          animation: 0s linear 0.3s forwards delayedVisibility;
+        }
       }
     </style>
     <link rel="stylesheet" href="/custom.css" />
@@ -120,8 +141,8 @@
   <body class="bg-light text-dark">
     <!--
       FL-135: the loading mark is design/frameleaf/brand-kit/frameleaf-symbol.svg, inlined verbatim
-      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2) so it can spin with
-      the existing #stencil keyframes without an extra network request. It replaces the original
+      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2) so it can show
+      before any stylesheet or script has loaded, without an extra network request. It replaces the original
       Immich loading mark; the artwork itself is untouched, only embedded.
     -->
     <div id="stencil">
@@ -132,7 +153,7 @@
         height="256"
         viewBox="0 0 256 256"
         role="img"
-        aria-labelledby="stencil-title stencil-desc"
+        aria-labelledby="stencil-title"
       >
         <title id="stencil-title">Frameleaf — gradient symbol</title>
         <desc id="stencil-desc">

@@ -35,9 +35,8 @@ test('shares one item with a person and removes it when the owner revokes access
     await ownerPage.goto(`/photos/${shared.id}`);
     const share = ownerPage.getByTestId('asset-viewer-navbar-actions').getByRole('button', { name: 'Share' });
     await share.click();
-    // ShareSheet.svelte titles a single-asset share by its filename, not a generic "1 item"
-    // (subject = assets?.[0]?.originalFileName for a single asset) — match that real title.
-    const sheet = ownerPage.getByRole('dialog', { name: 'Share shared-fl198.png' });
+    // ShareSheet.svelte titles the sheet by what is shared ("Share 1 photo"), not by a file name.
+    const sheet = ownerPage.getByRole('dialog', { name: 'Share 1 photo' });
     await expect(sheet.getByRole('radio', { name: /Share with people in this library/ })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -84,7 +83,8 @@ test('shares one item with a person and removes it when the owner revokes access
     await share.click();
     await expect(jamie).toHaveAttribute('aria-pressed', 'true');
     await jamie.click();
-    await sheet.getByRole('button', { name: 'Save sharing' }).click();
+    // the primary button names the change it will make
+    await sheet.getByRole('button', { name: 'Stop sharing with Jamie Recipient' }).click();
     await expect(sheet).toHaveCount(0);
     await expect(viewer).toHaveCount(0);
     expect(await mediaStatus(recipientPage, shared.id, 'thumbnail')).toBe(400);

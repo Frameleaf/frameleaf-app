@@ -1,5 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import en from '$i18n/en.json';
 import { loadBrand } from '$lib/frameleaf/photography/api';
 import {
   workflowRequest,
@@ -22,6 +24,7 @@ vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   watermarkPreview: vi.fn().mockResolvedValue(new Blob(['protected'], { type: 'image/jpeg' })),
 }));
 vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn() }));
+beforeAll(() => addMessages('dev', en));
 const shoot = {
   id: 'shoot',
   albumId: 'album',
@@ -131,12 +134,12 @@ it('saves human-readable prices in integer minor units and a studio preset with 
 it('assigns a chapter without overwriting existing photographer or camera-clock values', async () => {
   render(PhotographyWorkflow, { shoot, panel: 'intake' });
   await screen.findByRole('heading', { name: 'Assemble selected captures' });
-  await fireEvent.click(screen.getByRole('button', { name: 'Select available captures in this view' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Select the available captures shown' }));
   const chapter = screen
     .getAllByRole('combobox', { name: 'Chapter' })
     .find((element) => [...(element as HTMLSelectElement).options].some((option) => option.value === '__unchanged'))!;
   await fireEvent.change(chapter, { target: { value: 'chapter' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 captures' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 capture' }));
   await fireEvent.click(screen.getAllByRole('button', { name: 'Save assembly' })[0]);
   await waitFor(() =>
     expect(workflowRequest).toHaveBeenCalledWith(

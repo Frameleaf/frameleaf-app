@@ -1,5 +1,6 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Icon } from '@frameleaf/ui';
   import { mdiImageMultipleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -11,6 +12,9 @@
    *
    * `keepNote` carries the promise the prototype makes explicitly: deleting an album never
    * deletes its photos, and deleting a collection never deletes its albums.
+   *
+   * The footer is the one every Frameleaf confirmation has (ConfirmDialog): Cancel, which takes
+   * the first focus, then the filled destructive action.
    */
   interface Props {
     title: string;
@@ -42,15 +46,18 @@
     <p>{body}</p>
     {#if keepNote}
       <p class="keep">
-        <span aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size="18" /></span>
+        <span aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.lg} /></span>
         {keepNote}
       </p>
     {/if}
-    <div class="buttons">
-      <button type="button" disabled={busy} onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="button" class="danger" disabled={busy} onclick={() => void confirm()}>{confirmLabel}</button>
-    </div>
   </div>
+  {#snippet actions()}
+    <button type="button" class="button" data-initial-focus disabled={busy} onclick={() => (open = false)}
+      >{$t('cancel')}</button
+    >
+    <button type="button" class="button fl-danger" disabled={busy} onclick={() => void confirm()}>{confirmLabel}</button
+    >
+  {/snippet}
 </Dialog>
 
 <style>
@@ -58,7 +65,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    margin-block-start: 1rem;
     width: min(28rem, 100%);
   }
   p {
@@ -74,26 +80,5 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border-radius: var(--fl-radius);
-  }
-  .buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .buttons button {
-    padding: 0 1rem;
-    min-height: 44px;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-  }
-  .buttons .danger {
-    color: var(--fl-danger-text);
-    background: var(--fl-danger);
-    border-color: var(--fl-danger);
-  }
-  .buttons button:disabled {
-    opacity: 0.6;
   }
 </style>

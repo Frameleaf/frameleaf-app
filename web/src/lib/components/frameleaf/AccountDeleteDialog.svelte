@@ -12,6 +12,8 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
+  import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { handleDeleteUserAdmin } from '$lib/services/user-admin.service';
   import type { UserAdminResponseDto } from '@frameleaf/sdk';
@@ -25,8 +27,7 @@
   let working = $state(false);
 
   const delay = $derived(serverConfigManager.value.userDeleteDelay);
-  const valid = $derived(confirmation.trim().toLowerCase() === user.email.toLowerCase());
-  const confirmId = $props.id();
+  const valid = $derived(matchesTyped(user.email, confirmation));
 
   $effect(() => {
     if (!open) {
@@ -64,20 +65,13 @@
     {#if force}
       <p class="danger" role="alert">{$t('frameleaf_users_delete_force_warning')}</p>
     {/if}
-    <label class="field" for={confirmId}>
-      <span>{$t('frameleaf_users_delete_confirm_label')}</span>
-      <input
-        id={confirmId}
-        type="text"
-        autocomplete="off"
-        spellcheck="false"
-        required
-        data-initial-focus
-        placeholder={user.email}
-        bind:value={confirmation}
-        disabled={working}
-      />
-    </label>
+    <TypedConfirmation
+      label={$t('frameleaf_users_delete_confirm_label')}
+      placeholder={user.email}
+      initialFocus
+      disabled={working}
+      bind:value={confirmation}
+    />
 
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
@@ -109,24 +103,9 @@
     margin-bottom: 0.75rem;
     color: var(--fl-text);
   }
-  .field {
-    display: grid;
-    gap: 0.375rem;
-    margin-bottom: 1rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .field input {
-    padding: 0.4375rem 0.6875rem;
-    font: inherit;
-    font-size: var(--fl-font-size);
-    color: var(--fl-text);
-    background: var(--fl-canvas);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
   footer {
     display: flex;
+    margin-top: 1rem;
     justify-content: flex-end;
     gap: 0.5rem;
   }

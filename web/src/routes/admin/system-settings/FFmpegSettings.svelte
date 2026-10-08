@@ -23,7 +23,7 @@
   import { mdiHelpCircleOutline } from '@mdi/js';
   import { isEqual, sortBy } from 'lodash-es';
   import { t } from 'svelte-i18n';
-  import { motionFade } from '$lib/frameleaf/motion';
+  import { reveal } from '$lib/frameleaf/motion';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
@@ -32,7 +32,7 @@
 </script>
 
 <div>
-  <div in:motionFade={{ duration: 500 }}>
+  <div in:reveal>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <p class="text-sm dark:text-immich-dark-fg">

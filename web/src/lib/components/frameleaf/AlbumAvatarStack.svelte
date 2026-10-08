@@ -45,7 +45,7 @@
     min-width: 1.5rem;
     height: 1.5rem;
     padding: 0 0.25rem;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
     color: var(--fl-muted);
     font-size: 0.75rem;

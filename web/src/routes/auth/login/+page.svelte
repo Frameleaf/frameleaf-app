@@ -2,6 +2,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
+    mdiCheckCircleOutline,
     mdiEarth,
     mdiInformationOutline,
     mdiLanConnect,
@@ -38,6 +39,7 @@
   import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { takeAuthNotice } from '../auth-notice';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -49,6 +51,10 @@
   let oauthLoading = $state(true);
   let forgot = $state(false);
   let rememberMe = $state(true);
+  /** A rejected sign-in nudges the card once (auth.css; no movement under Reduce Motion). */
+  let rejected = $state(false);
+  /** Set when a forced password change just ended the session (change-password page). */
+  let passwordChanged = $state(false);
 
   const serverConfig = $derived(serverConfigManager.value);
   const publicConfig = $derived(data.publicConfig);
@@ -105,6 +111,11 @@
   };
 
   onMount(async () => {
+    const notice = takeAuthNotice();
+    if (notice?.kind === 'password-changed') {
+      passwordChanged = true;
+      email = notice.email;
+    }
     const frameleafRequest = oauth.isCallback(location) ? takeFrameleafCallbackRequest(location.href) : null;
     const frameleafCallback = frameleafRequest?.purpose ?? null;
     if (oauth.isCallback(location)) {
@@ -221,6 +232,7 @@
     }
     try {
       errorMessage = '';
+      passwordChanged = false;
       loading = true;
       const user = await login({ loginCredentialDto: { email: address, password, rememberMe } });
       if (user.isAdmin && !serverConfig.isOnboarded) {
@@ -239,6 +251,7 @@
     } catch (error) {
       errorMessage = getServerErrorMessage(error) || $t('errors.incorrect_email_or_password');
       password = '';
+      rejected = true;
     } finally {
       loading = false;
     }
@@ -317,9 +330,10 @@
   >
 {/snippet}
 
-<AuthShell hero="summit">
-  <div class="auth-heading">
+<AuthShell hero="summit" arrive>
+  <div class="auth-heading hero">
     <h1>{$t('frameleaf_auth_welcome_title')}</h1>
+    <span class="auth-brand-rule fl-brand-line" aria-hidden="true"></span>
     <p>{$t('frameleaf_auth_welcome_body')}</p>
   </div>
 
@@ -370,8 +384,19 @@
       {/if}
     </div>
   {:else}
-    <form class="auth-card auth-form" {onsubmit} novalidate>
+    <form
+      class="auth-card auth-form"
+      class:auth-shake={rejected}
+      onanimationend={() => (rejected = false)}
+      {onsubmit}
+      novalidate
+    >
       {#if publicConfig.passwordLogin.enabled}
+        {#if passwordChanged}
+          <p class="auth-info auth-success" role="status">
+            <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_auth_password_changed')}</span>
+          </p>
+        {/if}
         {#if errorMessage}<p class="auth-error" role="alert">
             <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
           </p>{/if}

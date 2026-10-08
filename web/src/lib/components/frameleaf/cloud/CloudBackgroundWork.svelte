@@ -56,7 +56,7 @@
       {@const title = $t(row.titleKey)}
       {@const runState = stateOf(row.id)}
       <div class="fc-last-run">
-        <h3><a href={commandCenterUrl('cloud', 'cloud-backup')}>{title}</a></h3>
+        <h3><a href={commandCenterUrl('backups', undefined, { backupView: 'cloud' })}>{title}</a></h3>
         <p class="fc-muted" role="status">
           {[
             $t(ACTIVITY_STAGE_KEYS[row.stage]),
@@ -87,7 +87,7 @@
   }
   .cloud-background-work h2 {
     margin: 0 0 8px;
-    font-size: 14px;
+    font-size: var(--fl-font-size);
     font-weight: 600;
   }
   .cloud-background-work h3 a {

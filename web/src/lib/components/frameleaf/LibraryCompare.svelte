@@ -244,7 +244,7 @@
     padding: 0;
     overflow: hidden;
     cursor: zoom-in;
-    background: #080b0d;
+    background: var(--fl-viewer-canvas);
     border: 0;
     border-radius: var(--fl-radius-control);
   }

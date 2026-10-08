@@ -61,7 +61,10 @@ it('reports conflicts and failures instead of returning empty or optimistic succ
   transport.fetch
     .mockResolvedValueOnce(new Response(null, { status: 409 }))
     .mockRejectedValueOnce(new Error('offline'));
-  await expect(saveWorkspace({ revision: null, shoots: [] })).rejects.toThrow('Reload before saving');
+  await expect(saveWorkspace({ revision: null, shoots: [] })).rejects.toMatchObject({
+    code: 'settings_changed',
+    status: 409,
+  });
   await expect(loadWorkspace()).rejects.toThrow('offline');
 });
 

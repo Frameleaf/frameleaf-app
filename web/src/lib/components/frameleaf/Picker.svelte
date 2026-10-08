@@ -82,8 +82,8 @@
     .picker :global([role='combobox']:focus-visible),
     .picker :global(button:focus-visible) {
       /* Same layer as app.css's important reset; scope wins on specificity. */
-      outline: 2px solid var(--fl-accent) !important;
-      outline-offset: 3px !important;
+      outline: var(--fl-focus-ring) !important;
+      outline-offset: var(--fl-focus-offset) !important;
     }
   }
   .picker :global([role='option'][aria-disabled='true']),

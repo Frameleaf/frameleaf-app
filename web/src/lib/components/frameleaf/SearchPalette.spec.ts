@@ -150,15 +150,43 @@ describe('SearchPalette', () => {
     }
   });
 
-  it('keeps the Places section when the library has no places, as the prototype does', async () => {
+  it('shows no Places heading over an empty list when the library has no places', async () => {
     sdkMock.searchFacets.mockResolvedValue({
       total: 42,
       facets: [{ fieldName: SearchFacetField.City, counts: [] }],
     });
     setup();
     await waitFor(() => expect(sdkMock.searchFacets).toHaveBeenCalled());
-    const heading = await screen.findByRole('heading', { name: 'Places' });
-    expect(heading.nextElementSibling?.querySelectorAll('button')).toHaveLength(0);
+    await screen.findAllByText('42 matches');
+    expect(screen.queryByRole('heading', { name: 'Places' })).toBeNull();
+  });
+
+  it('says the search failed and retries, instead of reporting no matches', async () => {
+    sdkMock.searchSmartStatistics.mockRejectedValue(new Error('offline'));
+    sdkMock.searchSmart.mockRejectedValue(new Error('offline'));
+    const { input } = setup();
+    await type(input, 'sunset');
+
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getAllByText('Couldn’t search just now').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No matches/)).toBeNull();
+
+    sdkMock.searchSmartStatistics.mockResolvedValue({ total: 1, capped: false });
+    sdkMock.searchSmart.mockResolvedValue(searchResponse([asset('a2', 'IMG_0002.jpg')]) as never);
+    await fireEvent.click(retry);
+    expect(await screen.findByRole('option', { name: 'IMG_0002.jpg' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull());
+  });
+
+  it('treats a refine facet as a toggle: a second click takes its chip away', async () => {
+    const { input } = setup();
+    await type(input, 'sunset');
+    const facet = await screen.findByRole('button', { name: /Banff/, pressed: false });
+
+    await fireEvent.click(facet);
+    expect(await screen.findByRole('button', { name: /^Remove .*Banff/ })).toBeInTheDocument();
+    await fireEvent.click(await screen.findByRole('button', { name: /Banff/, pressed: true }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Remove .*Banff/ })).toBeNull());
   });
 
   it('turns a completed operator into a removable chip and searches with the structured filter', async () => {
@@ -327,7 +355,7 @@ describe('SearchPalette', () => {
     await type(input, 'person:Jamie ');
     await type(input, 'sunset');
     await fireEvent.click(screen.getByRole('button', { name: 'Save search' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Save this collection' });
+    const dialog = await screen.findByRole('dialog', { name: 'Save search' });
     const name = within(dialog).getByRole('textbox', { name: 'Name' });
     expect(name).toHaveValue('person:Jamie sunset');
     await fireEvent.input(name, { target: { value: 'Sunsets' } });
@@ -365,6 +393,18 @@ describe('SearchPalette', () => {
     await waitFor(() =>
       expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
         userPreferencesUpdateDto: { savedSearches: [], expectedRevision: 'r1' },
+      }),
+    );
+
+    // The deletion can be taken back: Undo saves the same search under the same name.
+    expect(await screen.findByText('Deleted “Jamie hikes”')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() =>
+      expect(sdkMock.updateMyPreferences).toHaveBeenLastCalledWith({
+        userPreferencesUpdateDto: {
+          savedSearches: [expect.objectContaining({ name: 'Jamie hikes' })],
+          expectedRevision: 'r2',
+        },
       }),
     );
   });

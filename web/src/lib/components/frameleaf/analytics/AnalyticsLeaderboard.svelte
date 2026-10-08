@@ -59,10 +59,10 @@
     height: 28px;
     color: var(--fl-muted);
     background: var(--fl-raised);
-    border-radius: 9px;
+    border-radius: var(--fl-radius-control-compact);
     font-size: 12px;
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
   }
   .rank.first {
     color: var(--fl-text);
@@ -92,7 +92,7 @@
     background: var(--an-4);
   }
   strong {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     font-weight: 600;
     text-align: end;
   }

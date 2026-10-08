@@ -55,7 +55,7 @@
 }
 .fl-editor :focus-visible {
   outline: 2px solid var(--fl-viewer-focus);
-  outline-offset: 2px;
+  outline-offset: var(--fl-focus-offset);
 }
 .fl-editor button {
   font: inherit;
@@ -162,6 +162,81 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/*
+ * Grouped by intent: leaving and the title on the left, history and compare as two clusters in the
+ * middle, versions, More and Save on the right. The middle stays centred whatever the sides hold.
+ */
+.ed-top.grouped {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--fl-space-3);
+}
+.ed-top-start,
+.ed-top-center,
+.ed-top-end {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-1);
+  min-width: 0;
+}
+.ed-top-center {
+  gap: var(--fl-space-2);
+}
+.ed-top-end {
+  justify-content: flex-end;
+}
+.ed-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fl-space-half);
+  padding: var(--fl-space-half);
+  border: 1px solid var(--fl-viewer-border);
+  border-radius: calc(var(--fl-radius-control) + var(--fl-space-half));
+}
+.ed-cluster .ed-tool {
+  height: 34px;
+  min-width: 36px;
+}
+.ed-title strong {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-2);
+}
+.fl-editor .ed-title .ed-name {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: inherit;
+  text-overflow: ellipsis;
+}
+/* Unsaved work is a state of the photo, not a fact about the file: a quiet accent chip beside the name. */
+.fl-editor .ed-title .ed-edited {
+  flex-shrink: 0;
+  padding: 1px var(--fl-space-2);
+  border-radius: var(--fl-radius-pill);
+  background: var(--fl-accent-soft);
+  color: var(--fl-on-material-accent, var(--fl-accent));
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  animation: ed-fade var(--fl-motion) var(--fl-ease);
+}
+.ed-contents {
+  display: contents;
+}
+.ed-version-details {
+  grid-column: 1 / -1;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-micro);
+}
+.ed-version-details summary {
+  width: fit-content;
+  cursor: pointer;
+  border-radius: var(--fl-radius-xs);
+}
+.ed-version-details small {
+  display: block;
+  margin-top: var(--fl-space-1);
+}
 .ed-sep {
   width: 1px;
   height: 24px;
@@ -255,14 +330,12 @@
   border-radius: var(--fl-radius-card);
   box-shadow: var(--fl-shadow-2);
   z-index: 6;
+  /* The Pop pattern (BRAND.md): grows on the spring from the corner it hangs from. The exit is the
+     short fade that EditorMenu and VideoVersionsMenu play through motion.ts `leave()`. */
   transform-origin: top right;
-  animation: ed-pop var(--fl-duration) var(--fl-spring);
-}
-@keyframes ed-pop {
-  from {
-    opacity: 0;
-    scale: 0.92;
-  }
+  animation:
+    fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+    fl-pop-in var(--fl-duration-pop) var(--fl-spring) both;
 }
 .fl-editor .ed-menu h3 {
   margin: 4px 10px 6px;
@@ -408,7 +481,7 @@
   border: 1px solid #ffffff1f;
   border-radius: 999px;
   /* Frosted dark material: badges always sit on the photo, whatever the theme. */
-  background: #1c1c1e99;
+  background: color-mix(in srgb, var(--fl-viewer-panel) 60%, transparent);
   backdrop-filter: var(--fl-material-blur);
   color: #f5f5f7;
   font-size: var(--fl-font-micro);
@@ -511,7 +584,7 @@
     );
 }
 .ed-crop:focus-visible {
-  outline-offset: 4px;
+  outline-offset: var(--fl-focus-offset);
 }
 .ed-handle {
   position: absolute;
@@ -659,6 +732,22 @@
 }
 .ed-panel-body {
   animation: ed-rise var(--fl-duration) var(--fl-spring);
+}
+/* Opening the editor: the tools arrive from their edge, the panel a beat after the rail. */
+@keyframes ed-slide-in {
+  from {
+    opacity: 0;
+    translate: 16px 0;
+  }
+}
+@media (min-width: 701px) {
+  .ed-rail,
+  .ed-panel {
+    animation: ed-slide-in var(--fl-duration) var(--fl-spring) both;
+  }
+  .ed-panel {
+    animation-delay: var(--fl-stagger);
+  }
 }
 .ed-panel-head {
   display: flex;
@@ -1114,7 +1203,7 @@
 }
 .ed-dial:has(input:focus-visible) {
   outline: 2px solid var(--fl-viewer-focus);
-  outline-offset: 2px;
+  outline-offset: var(--fl-focus-offset);
 }
 
 /* Versions list inside the panel */
@@ -1240,7 +1329,7 @@
 .ed-button.primary {
   border-color: var(--fl-accent);
   background: var(--fl-accent);
-  color: var(--fl-accent-text, #fff);
+  color: var(--fl-accent-text);
 }
 .ed-button.primary:hover:not(:disabled) {
   filter: brightness(1.08);
@@ -1277,9 +1366,9 @@
   gap: 6px;
   margin: 8px 0 0;
   padding: 8px 10px;
-  border: 1px solid var(--fl-warning, #d9a441);
+  border: 1px solid var(--fl-warning);
   border-radius: var(--fl-radius-control);
-  background: #d9a44118;
+  background: color-mix(in srgb, var(--fl-warning) 9%, transparent);
   color: var(--fl-viewer-text);
   font-size: var(--fl-font-micro);
 }
@@ -1423,6 +1512,56 @@
     padding: 0 8px;
     gap: 2px;
   }
+  /* One row on a phone: Cancel, Undo, Redo, Compare, More, Save. The name gives way first. */
+  .ed-top.grouped {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: var(--fl-space-1);
+    flex-wrap: nowrap;
+  }
+  .ed-top.grouped .ed-title span:not(.ed-name, .ed-edited) {
+    display: none;
+  }
+  .ed-top.grouped .ed-title {
+    padding: 0 var(--fl-space-1);
+  }
+  .ed-top.grouped .ed-edited {
+    padding: 0;
+    width: var(--fl-space-2);
+    height: var(--fl-space-2);
+    overflow: hidden;
+    background: var(--fl-accent);
+    color: transparent;
+  }
+  .ed-cluster {
+    padding: 0;
+    border: 0;
+    gap: 0;
+  }
+  .ed-cluster .ed-tool {
+    height: 44px;
+    min-width: 40px;
+  }
+  .ed-top-center {
+    gap: 0;
+  }
+  .ed-desk,
+  .ed-desk.ed-contents {
+    display: none;
+  }
+  /* A text trigger in the row (the clip's Versions) keeps its icon only. */
+  .ed-top.grouped .ed-menu > .ed-tool.labelled > span {
+    display: none;
+  }
+  .ed-top.grouped .ed-tool.primary {
+    padding: 0 var(--fl-space-3);
+  }
+  .ed-progress {
+    padding: 0 var(--fl-space-1);
+    gap: var(--fl-space-1);
+  }
+  .ed-progress progress {
+    width: 32px;
+  }
   .ed-tool,
   .ed-icon,
   .ed-chip,
@@ -1531,6 +1670,10 @@
   }
   .ed-shell {
     animation: none;
+  }
+  .ed-rail,
+  .ed-panel {
+    animation: ed-fade var(--fl-duration-reduced) var(--fl-ease) both;
   }
   .ed-group-toggle .ed-chevron,
   .ed-slider input[type='range']::-webkit-slider-thumb,
@@ -1652,7 +1795,7 @@
 }
 .ed-mask-handle:focus-visible {
   outline: 2px solid var(--fl-viewer-focus);
-  outline-offset: 2px;
+  outline-offset: var(--fl-focus-offset);
 }
 .ed-preset-list {
   display: grid;
@@ -2018,5 +2161,11 @@
   .ed-switch,
   .ed-switch::after {
     transition: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .ed-top.grouped .ed-cluster .ed-tool {
+    min-width: 34px;
   }
 }

@@ -15,6 +15,6 @@
   let { data }: Props = $props();
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
-  <MemoriesPanel />
+<UserPageLayout scrollbar={true}>
+  <MemoriesPanel loadFailed={data.loadFailed} />
 </UserPageLayout>

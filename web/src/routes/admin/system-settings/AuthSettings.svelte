@@ -16,7 +16,7 @@
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { Link, Text, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
-  import { motionFade } from '$lib/frameleaf/motion';
+  import { reveal } from '$lib/frameleaf/motion';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
@@ -62,7 +62,7 @@
 </script>
 
 <div>
-  <div in:motionFade={{ duration: 500 }}>
+  <div in:reveal>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
       <div class="flex flex-col">
         <SettingGroup key="oauth" title={$t('admin.oauth_settings')} subtitle={$t('admin.oauth_settings_description')}>

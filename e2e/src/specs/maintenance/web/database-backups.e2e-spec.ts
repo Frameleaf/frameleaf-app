@@ -18,9 +18,10 @@ const confirmRestore = async (page: Page) => {
 };
 
 /**
- * FL-71: database backups are the Command Center's Maintenance → Database backups section (the old
- * `/admin/maintenance?isOpen=backups` address redirects there). Maintenance mode returns to the page
- * it was started from, so the restore flows come back to that section.
+ * FL-71: database backups are a Command Center page (the old `/admin/maintenance?isOpen=backups`
+ * address redirects there). The page is shown under Backup as "Backups & restore"; its address is
+ * unchanged, and nothing here depends on its heading. Maintenance mode returns to the page it was
+ * started from, so the restore flows come back to that section.
  */
 const databaseBackups = '/user-settings?area=maintenance&section=backups';
 const backToMaintenance = '/user-settings?area=maintenance**';

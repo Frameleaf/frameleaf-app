@@ -27,7 +27,7 @@
   {#if leading}<span class="leading" aria-hidden="true">{@render leading()}</span>{/if}
   <span class="label">{label}</span>
   {#if onRemove && removeLabel}
-    <button type="button" aria-label={removeLabel} onclick={onRemove}>
+    <button type="button" class="fl-control" aria-label={removeLabel} onclick={onRemove}>
       <span aria-hidden="true">&times;</span>
     </button>
   {/if}
@@ -40,8 +40,9 @@
     gap: 0.375rem;
     max-width: 100%;
     padding-inline-start: 0.6875rem;
-    padding-block: 0.25rem;
+    min-height: 1.75rem;
     font-size: var(--fl-font-small);
+    font-variant-numeric: var(--fl-numeric);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -51,6 +52,7 @@
   .chip.selected {
     border-color: var(--fl-accent);
     background: var(--fl-accent-soft);
+    font-weight: 500;
   }
   .chip:not(:has(button)) {
     padding-inline-end: 0.6875rem;
@@ -63,13 +65,30 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  /*
+   * The remove mark is drawn at chip size so a removable chip is as tall as a plain one; the
+   * pseudo-element keeps the pointer target at the full control height around it.
+   */
   button {
+    position: relative;
+    display: inline-grid;
     flex-shrink: 0;
-    min-width: 44px;
+    place-items: center;
+    width: 1.5rem;
+    min-width: 0;
+    height: 1.5rem;
+    min-height: 0;
+    margin-inline-end: 0.125rem;
+    padding: 0;
     color: inherit;
     background: transparent;
     border: 0;
     border-radius: var(--fl-radius-pill);
+  }
+  button::after {
+    position: absolute;
+    inset: calc((1.5rem - var(--fl-control-height)) / 2);
+    content: '';
   }
   button:hover {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 12%);

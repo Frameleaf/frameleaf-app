@@ -24,8 +24,10 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { memoryMotionStyle, memoryOverlineKey, memoryPreviewMotion } from '$lib/frameleaf/memory-engine';
   import {
@@ -37,7 +39,8 @@
     type MemoryEntry,
     type MemoryStoryKind,
   } from '$lib/frameleaf/memory-stories';
-  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { FLIP_DURATION_MS, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { toastUndo } from '$lib/frameleaf/toast';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
   import { userPreferencesManager, type MemoriesPreferences } from '$lib/managers/user-preferences-manager.svelte';
   import { Route } from '$lib/route';
@@ -51,7 +54,7 @@
     type MemoryShowLessDto,
     type MemoryShowLessResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, LoadingSpinner } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountHeartOutline,
     mdiCakeVariantOutline,
@@ -73,9 +76,31 @@
     mdiStarOutline,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
   import { t } from 'svelte-i18n';
+
+  interface Props {
+    /** The page could not load the memories: the index says so with a retry, never "no memories". */
+    loadFailed?: boolean;
+  }
+
+  let { loadFailed = false }: Props = $props();
+
+  // svelte-ignore state_referenced_locally
+  let failed = $state(loadFailed);
+  let retrying = $state(false);
+  const retry = async () => {
+    retrying = true;
+    try {
+      await memoryManager.applyPreferences();
+      failed = false;
+    } catch {
+      failed = true;
+    } finally {
+      retrying = false;
+    }
+  };
 
   /** Memories.jsx:20-25, plus the two server kinds the template has no card for. */
   const KIND_ICON: Record<MemoryStoryKind, string> = {
@@ -148,11 +173,42 @@
     return run(() => memoryManager.toggleMemorySaved(memory.id), message);
   };
 
-  const hide = (memory: MemoryResponseDto) =>
-    run(
-      () => memoryManager.hideMemory(memory.id),
-      $t('frameleaf_memories_hidden_status', { values: { title: $memoryHeadline(memory).title } }),
-    );
+  /**
+   * Hiding a memory: the cards that remain slide into the space it leaves instead of jumping, and
+   * the message carries Undo, which restores it. Under Reduce Motion the cards take their new
+   * places at once.
+   */
+  let root = $state<HTMLElement>();
+  const hide = async (memory: MemoryResponseDto) => {
+    const message = $t('frameleaf_memories_hidden_status', { values: { title: $memoryHeadline(memory).title } });
+    const cards = [...(root?.querySelectorAll<HTMLElement>('.fm-card') ?? [])];
+    const before = new Map(cards.map((card) => [card, card.getBoundingClientRect()]));
+    try {
+      await memoryManager.hideMemory(memory.id);
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+      return;
+    }
+    toastUndo(message, () => restore(memory));
+    await tick();
+    if (!root || prefersReducedMotion()) {
+      return;
+    }
+    const easing = getComputedStyle(root).getPropertyValue('--fl-spring').trim() || 'ease-out';
+    for (const [card, from] of before) {
+      if (!card.isConnected || typeof card.animate !== 'function') {
+        continue;
+      }
+      const to = card.getBoundingClientRect();
+      const [x, y] = [from.left - to.left, from.top - to.top];
+      if (x || y) {
+        card.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: 'none' }], {
+          duration: FLIP_DURATION_MS,
+          easing,
+        });
+      }
+    }
+  };
 
   const restore = (memory: MemoryResponseDto) =>
     run(
@@ -201,8 +257,10 @@
 {#snippet coverImage(memory: MemoryResponseDto | undefined, motion: boolean)}
   {@const cover = coverOf(memory)}
   {#if cover}
+    <!-- `data-fl-shared` (cards only): the card's cover travels into the player's stage, and back (BRAND.md "Hero"). -->
     <img
       class="fm-cover"
+      data-fl-shared={memory && motion ? `memory:${memory.id}` : undefined}
       src={getAssetMediaUrl({ id: cover.id, size: AssetMediaSize.Preview })}
       alt=""
       loading="lazy"
@@ -275,7 +333,7 @@
   </article>
 {/snippet}
 
-<div class="fm">
+<div class="fm" bind:this={root}>
   <header class="fm-header">
     <div>
       <h1>{$t('memories')}</h1>
@@ -379,8 +437,21 @@
           {@render card(entry, position === 0 ? 'hero' : 'regular')}
         {/each}
       </div>
+    {:else if failed && nothing}
+      <InlineError
+        title={$t('frameleaf_memories_failed_title')}
+        message={$t('frameleaf_memories_failed_body')}
+        onRetry={retry}
+        {retrying}
+      />
     {:else if memoryManager.loading && nothing}
-      <div class="fm-loading"><LoadingSpinner size="giant" /></div>
+      <!-- The shape of what is coming: the day's lead memory and two beside it. -->
+      <div class="fm-hero frameleaf" style:background="transparent" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        <Skeleton variant="block" height="20rem" />
+        <Skeleton variant="block" height="20rem" />
+        <Skeleton variant="block" height="20rem" />
+      </div>
     {:else}
       <div class="fm-quiet">
         {#if quietCover}
@@ -428,31 +499,34 @@
     </section>
   {/if}
 
-  <section class="fm-section" aria-label={$t('frameleaf_memories_earlier')}>
-    <div class="fm-section-heading">
-      <h2>{$t('frameleaf_memories_earlier')}</h2>
+  <!-- When nothing loaded, the retry above speaks for the page: no empty "Earlier" under it. -->
+  {#if !(failed && nothing)}
+    <section class="fm-section" aria-label={$t('frameleaf_memories_earlier')}>
+      <div class="fm-section-heading">
+        <h2>{$t('frameleaf_memories_earlier')}</h2>
+        {#if sections.earlier.length > 0}
+          <small>{$t('frameleaf_memories_earlier_caption')}</small>
+        {/if}
+      </div>
       {#if sections.earlier.length > 0}
-        <small>{$t('frameleaf_memories_earlier_caption')}</small>
+        <div class="fm-grid">
+          {#each sections.earlier as entry (entry.memory.id)}
+            {@render card(entry, 'regular')}
+          {/each}
+        </div>
+      {:else if !memoryManager.loading && !failed}
+        <div class="fm-empty" role="status">
+          <Icon icon={mdiHistory} size="30" aria-hidden="true" />
+          <strong>{nothing ? $t('frameleaf_memories_empty_title') : $t('frameleaf_memories_nothing_earlier')}</strong>
+          <p>
+            {preferences.onlyFavorites
+              ? $t('frameleaf_memories_empty_favorites')
+              : $t('frameleaf_memories_empty_description')}
+          </p>
+        </div>
       {/if}
-    </div>
-    {#if sections.earlier.length > 0}
-      <div class="fm-grid">
-        {#each sections.earlier as entry (entry.memory.id)}
-          {@render card(entry, 'regular')}
-        {/each}
-      </div>
-    {:else if !memoryManager.loading}
-      <div class="fm-empty" role="status">
-        <Icon icon={mdiHistory} size="30" aria-hidden="true" />
-        <strong>{nothing ? $t('frameleaf_memories_empty_title') : $t('frameleaf_memories_nothing_earlier')}</strong>
-        <p>
-          {preferences.onlyFavorites
-            ? $t('frameleaf_memories_empty_favorites')
-            : $t('frameleaf_memories_empty_description')}
-        </p>
-      </div>
-    {/if}
-  </section>
+    </section>
+  {/if}
 
   {#if memoryManager.hidden.length > 0}
     <section class="fm-section fm-hidden" aria-label={$t('frameleaf_memories_hidden')}>
@@ -488,10 +562,22 @@
 </div>
 
 <style>
+  /* The same page frame as Explore, Places, Tags and Folders (discovery.css `.fl-discovery`). */
   .fm {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 26px 30px 36px;
     color: var(--fl-text);
+    font-size: var(--fl-font-size);
+  }
+  @media (max-width: 640px) {
+    .fm {
+      padding: var(--fl-space-4) var(--fl-space-3) var(--fl-space-6);
+    }
   }
   /* discovery.css:56-75 */
   .fm-header {
@@ -503,7 +589,9 @@
     margin-block-end: 1.5rem;
   }
   .fm-header h1 {
-    font-size: 1.25rem;
+    margin: 0;
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
   }
   .fm-header p {
     margin: 0.5rem 0 0;
@@ -636,7 +724,9 @@
     margin-block-end: 0.875rem;
   }
   .fm-section-heading h2 {
-    font-size: 1rem;
+    margin: 0;
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
   }
   .fm-section-heading > small {
     flex: 1;
@@ -834,12 +924,7 @@
   .fm-quiet small {
     line-height: 1.5;
   }
-  .fm-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 0;
-  }
+
   /* discovery.css:173-190 */
   .fm-empty {
     padding: 3.125rem 0.75rem;

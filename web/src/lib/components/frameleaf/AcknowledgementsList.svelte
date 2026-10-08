@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   /**
    * Acknowledgements (FL-86; owner decisions FL-146, 2026-09-25): every third-party engine, model,
    * voice, font and asset Frameleaf uses that needs credit, with its author, licence and link, and
@@ -74,7 +75,10 @@
   >
     <summary>{$t('frameleaf_ack_licence_text', { values: { file } })}</summary>
     {#if loaded[file] === undefined}
-      <p class="ack-muted">{$t('loading')}</p>
+      <div class="ack-muted" role="status" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        <Skeleton variant="text" lines={4} />
+      </div>
     {:else}
       <pre>{loaded[file]}</pre>
     {/if}

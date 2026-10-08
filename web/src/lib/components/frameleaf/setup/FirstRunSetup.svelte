@@ -12,19 +12,20 @@
    * re-checks the administrator and the library location.
    */
   import { goto } from '$app/navigation';
-  import logoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import AuthPasswordQuality from '$lib/components/frameleaf/AuthPasswordQuality.svelte';
+  import Brand from '$lib/components/frameleaf/Brand.svelte';
+  import CountUp from '$lib/components/frameleaf/CountUp.svelte';
+  import Logo from '$lib/components/frameleaf/Logo.svelte';
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
-  import SetupCountUp from '$lib/components/frameleaf/setup/SetupCountUp.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
   import SetupImports from '$lib/components/frameleaf/setup/SetupImports.svelte';
   import SetupLogoIntro from '$lib/components/frameleaf/setup/SetupLogoIntro.svelte';
   import SetupRadio from '$lib/components/frameleaf/setup/SetupRadio.svelte';
   import SetupRecommended from '$lib/components/frameleaf/setup/SetupRecommended.svelte';
   import SetupSwitch from '$lib/components/frameleaf/setup/SetupSwitch.svelte';
-  import { stepIn, staggerIn } from '$lib/components/frameleaf/setup/setup-motion';
+  import { stageOut, staggerIn, stepIn } from '$lib/components/frameleaf/setup/setup-motion';
   import { findCloudBackup, type FoundCloudBackup } from '$lib/frameleaf/cloud-backup-discovery';
   import {
     accountToolSections,
@@ -60,6 +61,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { DURATION, ICON_SIZE, STAGGER_MS } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { lang, locale } from '$lib/stores/preferences.store';
@@ -121,6 +123,7 @@
     mdiShieldCheck,
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
+    mdiShieldOutline,
     mdiSprout,
     mdiTimerSandComplete,
     mdiTranslate,
@@ -128,6 +131,16 @@
   } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { locale as i18nLocale, t } from 'svelte-i18n';
+
+  /** After a failed Continue on the administrator form: the first field that needs attention. */
+  const focusFirstInvalid = () =>
+    document.querySelector<HTMLElement>('#frs-account-form [aria-invalid="true"]')?.focus();
+
+  /** A line of copy as its sentences, so each can keep to a row of its own; one piece when it has none. */
+  const sentences = (text: string) => {
+    const parts = (text.match(/[^.!?。！？]+[.!?。！？]*/gu) ?? []).map((part) => part.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : [text];
+  };
 
   type Props = { initial: SetupState; authenticated: boolean };
   const { initial, authenticated }: Props = $props();
@@ -141,8 +154,19 @@
   let formError = $state('');
   let direction = $state(1);
   let introReady = $state(false);
+  /** The welcome figures start counting as the logo lands, one after another. */
+  const countDelay = (index: number) => DURATION.unfurl + index * STAGGER_MS;
   let busy = $state(false);
+  /** What Continue is waiting on, so the button can say it (the account step's two long calls). */
+  let busyWith = $state<'' | 'account' | 'sign-in'>('');
+  /** Where "Open Frameleaf" has got to: each named step shows on the button as its call runs. */
+  let finishPhase = $state<'' | 'saving' | 'starting' | 'opening'>('');
+  let choicesSaved = $state(false);
   let heading = $state<HTMLHeadingElement>();
+  let stage = $state<HTMLElement>();
+  /** True while the library, health and hardware requests are out, so nothing reads as zero meanwhile. */
+  // svelte-ignore state_referenced_locally
+  let serverLoading = $state(authenticated);
 
   let storage = $state<FrameleafSetupStorageResponseDto | null>(null);
   let config = $state<AdminConfigDto | null>(null);
@@ -164,6 +188,7 @@
   const blocked = $derived(!validateStep(setup, current.id, context).ok);
 
   const loadServerData = async () => {
+    serverLoading = true;
     const [storageResult, configResult, libraryResult, summary, hardwareResult, usersResult] = await Promise.allSettled(
       [
         getFrameleafSetupStorage(),
@@ -180,9 +205,12 @@
     if (summary.status === 'fulfilled' && summary.value) {
       const queues = summary.value.queues;
       health = { missing: queues.missing, damaged: queues.damagedConfirmed + queues.damagedSuspected };
+    } else {
+      health = null;
     }
     hardware = hardwareResult.status === 'fulfilled' ? hardwareResult.value : null;
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    serverLoading = false;
   };
 
   /**
@@ -247,6 +275,7 @@
   let firstStep = true;
   $effect(() => {
     void setup.step;
+    void accountPart;
     errors = {};
     formError = '';
     if (firstStep) {
@@ -303,6 +332,7 @@
    */
   const leaveStep = async () => {
     if (current.id === 'admin-sign-in' && !signedIn) {
+      busyWith = 'sign-in';
       const user = await login({ loginCredentialDto: { email: secrets.email.trim(), password: secrets.password } });
       secrets.password = '';
       if (!user.isAdmin) {
@@ -320,6 +350,7 @@
     if (current.id === 'account' && setup.flow === 'new' && createsAdmin && !choices.accountCreated) {
       const linkNext = choices.signIn === 'frameleaf';
       const email = choices.adminEmail.trim();
+      busyWith = 'account';
       await signUpAdmin({
         signUpDto: {
           email,
@@ -372,6 +403,8 @@
       const check = validateStep(setup, current.id, context);
       if (!check.ok) {
         errors = translateErrors(check.errors);
+        // One announcement (the summary), and focus on the first field that needs attention.
+        void tick().then(focusFirstInvalid);
         return;
       }
       busy = true;
@@ -384,11 +417,22 @@
         return;
       } finally {
         busy = false;
+        busyWith = '';
       }
     }
     move(target);
   };
   const next = () => go(setup.step + 1);
+
+  /** Undoes the hand-off fade when setup is still on screen after it (a failed or returned navigation). */
+  const showStage = () => {
+    if (!stage?.isConnected || typeof stage.getAnimations !== 'function') {
+      return;
+    }
+    for (const animation of stage.getAnimations({ subtree: true })) {
+      animation.cancel();
+    }
+  };
 
   const finish = async () => {
     if (busy) {
@@ -404,9 +448,13 @@
     }
     busy = true;
     formError = '';
+    choicesSaved = false;
+    finishPhase = 'saving';
     try {
       const current = await getConfig();
       await handleSystemConfigSave(applySetupChoices(current, setup));
+      choicesSaved = true;
+      finishPhase = 'starting';
       if (needsReindex(current, setup)) {
         await runQueueCommandLegacy({
           name: QueueName.SmartSearch,
@@ -420,7 +468,11 @@
       await setUserOnboarding({ onboardingDto: { isOnboarded: true } });
       setup = { ...setup, completed: true };
       clearLocalSetup();
+      finishPhase = 'opening';
       await serverConfigManager.loadServerConfig();
+      // The hand-off: the stage fades with the logo growing a touch, then the app crossfades the
+      // library in. The theme changes behind the always-dark stage, so the flip is never seen.
+      await stageOut(stage, stage?.querySelector('.frs-rail-logo'));
       themeManager.setPreference(
         themeAfterSetup(choices.theme) === 'light' ? ThemePreference.Light : ThemePreference.Dark,
       );
@@ -428,8 +480,13 @@
         choices.restore === 'restore' && linked ? commandCenterUrl('cloud', 'cloud-account') : Route.photos(),
         { invalidateAll: true },
       );
+      // Still here (the navigation was turned back): never leave the faded stage on screen.
+      showStage();
     } catch (error) {
+      showStage();
       formError = getServerErrorMessage(error) || $t('frameleaf_setup_error_generic');
+      finishPhase = '';
+      choicesSaved = false;
     } finally {
       busy = false;
     }
@@ -457,10 +514,33 @@
   const tier = $derived(modelTiers.find((entry) => entry.id === choices.model) ?? modelTiers[1]);
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
   const perHour = $derived(itemsPerHour(gpu, hardware?.benchmark?.embeddingMs));
+  const existing = $derived(setup.flow === 'existing');
   const items = $derived(library?.items ?? 0);
+  /** Whether the file records were read: never show "0 of 0 healthy" for a check that has no data. */
+  const libraryCheck = $derived(serverLoading ? 'loading' : library && health ? 'known' : 'unknown');
+  /**
+   * On the Frameleaf path of a server not linked yet the account step has two parts under one step:
+   * create the administrator, then link. 0 anywhere else.
+   */
+  const accountPart = $derived(
+    current.id === 'account' && !existing && choices.signIn === 'frameleaf' && !frameleafSignIn
+      ? choices.accountCreated
+        ? 2
+        : 1
+      : 0,
+  );
+  /** The administrator form is on screen: Continue submits it, so Enter in any field works too. */
+  const accountForm = $derived(
+    current.id === 'account' &&
+      !existing &&
+      !choices.accountCreated &&
+      (choices.signIn === 'local' || !frameleafSignIn),
+  );
+  const fieldErrors = $derived(
+    ['setupCode', 'name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length,
+  );
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
-  const existing = $derived(setup.flow === 'existing');
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   const hardwareName = (entry: HardwareCheckResponseDto['ml'] | undefined) =>
     entry ? [entry.vendor, entry.model].filter(Boolean).join(' ') || entry.backend.toUpperCase() : '';
@@ -569,10 +649,45 @@
   </label>
 {/snippet}
 
-{#snippet stat(icon: string, value: number, label: string, delay: number, format?: (value: number) => string)}
+{#snippet continueLabel()}
+  {#if busy}
+    <Icon icon={mdiLoading} size={ICON_SIZE.md} class="frs-spin" aria-hidden={true} />
+    <span role="status">
+      {busyWith === 'account'
+        ? $t('frameleaf_setup_creating_account')
+        : busyWith === 'sign-in'
+          ? $t('frameleaf_setup_signing_in')
+          : $t('frameleaf_setup_working')}
+    </span>
+  {:else}
+    {usesRecommended && isRecommendedChoice ? $t('frameleaf_setup_use_recommended') : $t('continue')}
+    <Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
+  {/if}
+{/snippet}
+
+<!-- The welcome line, a sentence to a row (first-run-setup.css `.frs-tagline > span`). -->
+{#snippet tagline(text: string)}
+  {#each sentences(text) as sentence, index (index)}{index > 0 ? ' ' : ''}<span>{sentence}</span>{/each}
+{/snippet}
+
+{#snippet stat(
+  icon: string,
+  value: number | undefined,
+  label: string,
+  delay: number,
+  format?: (value: number) => string,
+)}
   <div class="frs-stat">
     <Icon {icon} size="20" aria-hidden={true} />
-    <strong><SetupCountUp {value} {format} {delay} /></strong>
+    <strong>
+      {#if value !== undefined}
+        <CountUp {value} {format} {delay} />
+      {:else if serverLoading}
+        <span class="frs-skeleton" aria-hidden="true"></span>
+      {:else}
+        <span aria-label={$t('frameleaf_setup_health_not_checked')}>—</span>
+      {/if}
+    </strong>
     <span>{label}</span>
   </div>
 {/snippet}
@@ -620,7 +735,7 @@
     <div class="frs frs-stage-screen">
       <div class="frs-stage">
         <div class="frs-gate">
-          <img class="frs-gate-logo" src={logoDarkUrl} alt="Frameleaf" />
+          <Brand surface="dark" size="small" arrive />
           <div class="frs-gate-note">
             <Icon icon={mdiDatabaseCheckOutline} size="20" aria-hidden={true} />
             <span>{$t('frameleaf_setup_gate_note')}</span>
@@ -653,7 +768,12 @@
               bind:value={secrets.password}
             />
             <button type="submit" class="button primary auth-submit" disabled={busy}>
-              {$t('frameleaf_setup_gate_submit')}
+              {#if busy}
+                <Icon icon={mdiLoading} size={ICON_SIZE.md} class="frs-spin" aria-hidden={true} />
+                {$t('frameleaf_setup_signing_in')}
+              {:else}
+                {$t('frameleaf_setup_gate_submit')}
+              {/if}
             </button>
           </form>
         </div>
@@ -668,12 +788,14 @@
         </div>
         {#if !existing}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
-            <p class="frs-tagline" data-intro>{$t('frameleaf_setup_tagline_new')}</p>
+            <h1 class="frs-tagline fl-type-hero" data-intro>{@render tagline($t('frameleaf_setup_tagline_new'))}</h1>
+            <span class="frs-brand-rule fl-brand-line" data-intro aria-hidden="true"></span>
             <button
               type="button"
               class="button primary frs-continue"
               data-intro
               data-ready={introReady || undefined}
+              inert={!introReady}
               onclick={() => void next()}
             >
               {$t('frameleaf_setup_continue_setup')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
@@ -681,13 +803,27 @@
           </SetupLogoIntro>
         {:else}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
-            <p class="frs-tagline" data-intro>{$t('frameleaf_setup_tagline_existing')}</p>
+            <h1 class="frs-tagline fl-type-hero" data-intro>
+              {@render tagline($t('frameleaf_setup_tagline_existing'))}
+            </h1>
+            <span class="frs-brand-rule fl-brand-line" data-intro aria-hidden="true"></span>
             <div class="frs-safe" data-intro>
               <div class="frs-stats" aria-label={$t('frameleaf_setup_your_library')}>
-                {@render stat(mdiImageMultipleOutline, library?.items ?? 0, $t('frameleaf_setup_stat_items'), 2600)}
-                {@render stat(mdiAccountMultipleOutline, library?.people ?? 0, $t('frameleaf_setup_stat_people'), 2700)}
-                {@render stat(mdiImageAlbum, library?.albums ?? 0, $t('frameleaf_setup_stat_albums'), 2800)}
-                {@render stat(mdiHarddisk, library?.bytes ?? 0, $t('frameleaf_setup_stat_originals'), 2900, formatTb)}
+                {@render stat(mdiImageMultipleOutline, library?.items, $t('frameleaf_setup_stat_items'), countDelay(0))}
+                {@render stat(
+                  mdiAccountMultipleOutline,
+                  library?.people,
+                  $t('frameleaf_setup_stat_people'),
+                  countDelay(1),
+                )}
+                {@render stat(mdiImageAlbum, library?.albums, $t('frameleaf_setup_stat_albums'), countDelay(2))}
+                {@render stat(
+                  mdiHarddisk,
+                  library?.bytes,
+                  $t('frameleaf_setup_stat_originals'),
+                  countDelay(3),
+                  formatTb,
+                )}
               </div>
               <p class="frs-safe-note">
                 <Icon icon={mdiShieldCheckOutline} size="16" aria-hidden={true} />{$t('frameleaf_setup_safe_note')}
@@ -707,6 +843,7 @@
               class="button primary frs-continue"
               data-intro
               data-ready={introReady || undefined}
+              inert={!introReady}
               onclick={() => void next()}
             >
               {$t('frameleaf_setup_continue_setup')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
@@ -717,9 +854,9 @@
     </div>
   {:else}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="frs frs-flow" data-flow={setup.flow} {onkeydown}>
+    <div class="frs frs-flow" data-flow={setup.flow} {onkeydown} bind:this={stage}>
       <aside class="frs-rail">
-        <img class="frs-rail-logo" src={logoDarkUrl} alt="Frameleaf" />
+        <Logo variant="lockup" surface="dark" size="tiny" class="frs-rail-logo" />
         <nav aria-label={$t('frameleaf_setup_chapters')}>
           <ol style:--frs-progress={chapterAt / (setupChapters.length - 1)}>
             {#each setupChapters as chapter, position (chapter.id)}
@@ -752,7 +889,8 @@
         {@render languagePicker()}
       </aside>
       <main class="frs-main">
-        {#key current.id}
+        <!-- Keyed on the part too, so the second half of the account step slides in like a step. -->
+        {#key `${current.id}:${accountPart}`}
           <div class="frs-step" use:stepIn={direction}>
             <header class="frs-head">
               <span class="frs-eyebrow">
@@ -761,7 +899,16 @@
                 })}
               </span>
               <h1 bind:this={heading} tabindex="-1">{headingText}</h1>
-              {#if current.required}<span class="frs-required">{$t('frameleaf_setup_required')}</span>{/if}
+              {#if current.required || accountPart}
+                <span class="frs-tags">
+                  {#if current.required}<span class="frs-required">{$t('frameleaf_setup_required')}</span>{/if}
+                  {#if accountPart}
+                    <span class="frs-part">
+                      {$t('frameleaf_setup_part', { values: { part: accountPart, count: 2 } })}
+                    </span>
+                  {/if}
+                </span>
+              {/if}
             </header>
             <div class="frs-body">
               {#if formError}
@@ -934,50 +1081,32 @@
                 {#if choices.signIn === 'frameleaf' && !choices.accountCreated}
                   <p class="frs-lead">{$t('frameleaf_setup_frameleaf_admin_lead')}</p>
                 {/if}
-                <div class="frs-form">
-                  {#if choices.accountCreated}
+                {#if choices.accountCreated}
+                  <div class="frs-form">
                     <p class="frs-quiet">
                       <Icon icon={mdiCheckCircle} size="16" aria-hidden={true} />
                       {$t('frameleaf_setup_account_created', { values: { email: choices.adminEmail } })}
                     </p>
-                  {:else}
-                    <div class="auth-field">
-                      <label for="frs-name">{$t('frameleaf_auth_name')}</label>
-                      <input
-                        id="frs-name"
-                        autocomplete="name"
-                        value={choices.adminName}
-                        aria-invalid={errors.name ? true : undefined}
-                        oninput={(event) => choose({ adminName: event.currentTarget.value })}
-                      />
-                    </div>
-                    {#if errors.name}<p class="auth-error" role="alert">{errors.name}</p>{/if}
-                    <div class="auth-field">
-                      <label for="frs-email">{$t('frameleaf_auth_email')}</label>
-                      <input
-                        id="frs-email"
-                        type="email"
-                        autocomplete="username"
-                        value={choices.adminEmail}
-                        aria-invalid={errors.email ? true : undefined}
-                        oninput={(event) => choose({ adminEmail: event.currentTarget.value })}
-                      />
-                    </div>
-                    {#if errors.email}<p class="auth-error" role="alert">{errors.email}</p>{/if}
-                    <AuthPasswordField
-                      id="frs-password"
-                      label={$t('frameleaf_auth_password')}
-                      bind:value={secrets.password}
-                      describedBy="frs-password-quality"
-                    />
-                    <AuthPasswordQuality id="frs-password-quality" password={secrets.password} />
-                    {#if errors.password}<p class="auth-error" role="alert">{errors.password}</p>{/if}
-                    <AuthPasswordField
-                      id="frs-confirm"
-                      label={$t('frameleaf_auth_confirm_password')}
-                      bind:value={secrets.confirm}
-                    />
-                    {#if errors.confirm}<p class="auth-error" role="alert">{errors.confirm}</p>{/if}
+                  </div>
+                {:else}
+                  <!-- A real form: Enter in any field continues. Continue (below) is its submit button. -->
+                  <form
+                    id="frs-account-form"
+                    class="frs-form"
+                    novalidate
+                    onsubmit={(event) => {
+                      event.preventDefault();
+                      void next();
+                    }}
+                  >
+                    <!-- One live summary; each message is tied to its field with aria-describedby. -->
+                    {#if fieldErrors > 0}
+                      <p class="auth-error" role="alert">
+                        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+                        <span>{$t('frameleaf_setup_form_errors', { values: { count: fieldErrors } })}</span>
+                      </p>
+                    {/if}
+                    <!-- First, so the owner knows what to fetch from the server before choosing a password. -->
                     <div class="auth-field">
                       <label for="frs-setup-code">{$t('frameleaf_setup_claim_code')}</label>
                       <input
@@ -988,16 +1117,68 @@
                         spellcheck="false"
                         maxlength="9"
                         placeholder="XXXX-XXXX"
-                        aria-describedby="frs-setup-code-note"
+                        aria-describedby={errors.setupCode
+                          ? 'frs-setup-code-note frs-setup-code-error'
+                          : 'frs-setup-code-note'}
                         aria-invalid={errors.setupCode ? true : undefined}
                         bind:value={secrets.setupCode}
                       />
                     </div>
-                    <p id="frs-setup-code-note" class="auth-note">{$t('frameleaf_setup_claim_code_note')}</p>
-                    {#if errors.setupCode}<p class="auth-error" role="alert">{errors.setupCode}</p>{/if}
+                    <p id="frs-setup-code-note" class="auth-note frs-field-note">
+                      {$t('frameleaf_setup_claim_code_note')}
+                    </p>
+                    {#if errors.setupCode}
+                      <p id="frs-setup-code-error" class="auth-error frs-field-error">{errors.setupCode}</p>
+                    {/if}
+                    <div class="auth-field">
+                      <label for="frs-name">{$t('frameleaf_auth_name')}</label>
+                      <input
+                        id="frs-name"
+                        autocomplete="name"
+                        value={choices.adminName}
+                        aria-invalid={errors.name ? true : undefined}
+                        aria-describedby={errors.name ? 'frs-name-error' : undefined}
+                        oninput={(event) => choose({ adminName: event.currentTarget.value })}
+                      />
+                    </div>
+                    {#if errors.name}<p id="frs-name-error" class="auth-error frs-field-error">{errors.name}</p>{/if}
+                    <div class="auth-field">
+                      <label for="frs-email">{$t('frameleaf_auth_email')}</label>
+                      <input
+                        id="frs-email"
+                        type="email"
+                        autocomplete="username"
+                        value={choices.adminEmail}
+                        aria-invalid={errors.email ? true : undefined}
+                        aria-describedby={errors.email ? 'frs-email-error' : undefined}
+                        oninput={(event) => choose({ adminEmail: event.currentTarget.value })}
+                      />
+                    </div>
+                    {#if errors.email}<p id="frs-email-error" class="auth-error frs-field-error">{errors.email}</p>{/if}
+                    <AuthPasswordField
+                      id="frs-password"
+                      label={$t('frameleaf_auth_password')}
+                      bind:value={secrets.password}
+                      invalid={!!errors.password}
+                      describedBy={errors.password ? 'frs-password-quality frs-password-error' : 'frs-password-quality'}
+                    />
+                    <AuthPasswordQuality id="frs-password-quality" password={secrets.password} />
+                    {#if errors.password}<p id="frs-password-error" class="auth-error frs-field-error">
+                        {errors.password}
+                      </p>{/if}
+                    <AuthPasswordField
+                      id="frs-confirm"
+                      label={$t('frameleaf_auth_confirm_password')}
+                      bind:value={secrets.confirm}
+                      invalid={!!errors.confirm}
+                      describedBy={errors.confirm ? 'frs-confirm-error' : undefined}
+                    />
+                    {#if errors.confirm}<p id="frs-confirm-error" class="auth-error frs-field-error">
+                        {errors.confirm}
+                      </p>{/if}
                     <p class="auth-note">{$t('frameleaf_setup_password_note')}</p>
-                  {/if}
-                </div>
+                  </form>
+                {/if}
               {:else if current.id === 'library'}
                 <section class="frs-panel">
                   <div class="auth-field">
@@ -1052,33 +1233,52 @@
                   {@render layoutChoices(false)}
                 </SetupChange>
               {:else if current.id === 'library-check'}
-                <div class="frs-health">
-                  <div class="frs-health-ring" aria-hidden="true"><Icon icon={mdiShieldCheck} size="34" /></div>
-                  <div>
-                    <strong>
-                      {$t('frameleaf_setup_health_healthy', {
-                        values: {
-                          healthy: formatCount(Math.max(0, items - (health?.missing ?? 0) - (health?.damaged ?? 0))),
-                          count: formatCount(items),
-                        },
-                      })}
-                    </strong>
-                    <span>{$t('frameleaf_setup_health_body')}</span>
+                <div class="frs-health" data-state={libraryCheck}>
+                  <div class="frs-health-ring" aria-hidden="true">
+                    <Icon icon={libraryCheck === 'known' ? mdiShieldCheck : mdiShieldOutline} size="34" />
+                  </div>
+                  <div role="status">
+                    {#if libraryCheck === 'loading'}
+                      <strong>{$t('frameleaf_setup_health_checking')}</strong>
+                      <span>{$t('frameleaf_setup_health_body')}</span>
+                    {:else if libraryCheck === 'unknown'}
+                      <strong>{$t('frameleaf_setup_health_unknown')}</strong>
+                      <span>{$t('frameleaf_setup_health_unknown_body')}</span>
+                    {:else}
+                      <strong>
+                        {$t('frameleaf_setup_health_healthy', {
+                          values: {
+                            healthy: formatCount(Math.max(0, items - (health?.missing ?? 0) - (health?.damaged ?? 0))),
+                            count: formatCount(items),
+                          },
+                        })}
+                      </strong>
+                      <span>{$t('frameleaf_setup_health_body')}</span>
+                    {/if}
                   </div>
                 </div>
+                <!-- Static tiles: Library Care opens only once setup is finished. -->
                 <div class="frs-health-grid">
-                  <a class="frs-health-card" class:warn={(health?.missing ?? 0) > 0} href={Route.missingMediaUtility()}>
-                    <Icon icon={mdiFolderSearchOutline} size="20" aria-hidden={true} />
-                    <strong><SetupCountUp value={health?.missing ?? 0} duration={900} /></strong>
-                    <span>{$t('frameleaf_setup_health_missing')}</span>
-                    <small>{$t('frameleaf_setup_health_review')}</small>
-                  </a>
-                  <a class="frs-health-card" class:warn={(health?.damaged ?? 0) > 0} href={Route.corruptMediaUtility()}>
-                    <Icon icon={mdiImageBrokenVariant} size="20" aria-hidden={true} />
-                    <strong><SetupCountUp value={health?.damaged ?? 0} duration={900} /></strong>
-                    <span>{$t('frameleaf_setup_health_damaged')}</span>
-                    <small>{$t('frameleaf_setup_health_review')}</small>
-                  </a>
+                  {#each [[mdiFolderSearchOutline, health?.missing, 'frameleaf_setup_health_missing'], [mdiImageBrokenVariant, health?.damaged, 'frameleaf_setup_health_damaged']] as const as [icon, found, label] (label)}
+                    <div class="frs-health-card" class:warn={(found ?? 0) > 0}>
+                      <Icon {icon} size="20" aria-hidden={true} />
+                      <strong>
+                        {#if libraryCheck === 'known' && found !== undefined}
+                          <CountUp value={found} />
+                        {:else if libraryCheck === 'loading'}
+                          <span class="frs-skeleton" aria-hidden="true"></span>
+                        {:else}
+                          <span aria-hidden="true">—</span>
+                        {/if}
+                      </strong>
+                      <span>{$t(label)}</span>
+                      {#if libraryCheck === 'unknown'}
+                        <small>{$t('frameleaf_setup_health_not_checked')}</small>
+                      {:else if (found ?? 0) > 0}
+                        <small>{$t('frameleaf_setup_health_review_after')}</small>
+                      {/if}
+                    </div>
+                  {/each}
                 </div>
                 <SetupChange>
                   {#snippet summary()}
@@ -1216,9 +1416,11 @@
                         <p>{$t('frameleaf_setup_cloud_backup_body')}</p>
                       </div>
                     </header>
-                    <a class="auth-link" href={commandCenterUrl('cloud', 'cloud-account')}
-                      >{$t('frameleaf_setup_cloud_backup_link')}</a
-                    >
+                    <p class="frs-later">
+                      <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(
+                        'frameleaf_setup_cloud_backup_after',
+                      )}
+                    </p>
                   </section>
                 {:else}
                   <p class="frs-quiet">
@@ -1274,9 +1476,10 @@
               {:else if current.id === 'imports'}
                 <SetupImports />
               {:else if current.id === 'ready'}
-                <ul class="frs-ready" use:staggerIn>
-                  {#each summaryRows as [label, value] (label)}
-                    <li>
+                <!-- While Frameleaf opens, the ticks clear and land again as the choices are saved. -->
+                <ul class="frs-ready" use:staggerIn data-finishing={finishPhase ? true : undefined}>
+                  {#each summaryRows as [label, value], index (label)}
+                    <li data-saved={choicesSaved || undefined} style:--i={index}>
                       <span class="frs-ready-check"><Icon icon={mdiCheck} size="14" aria-hidden={true} /></span>
                       <span>{label}</span>
                       <strong>{value}</strong>
@@ -1303,7 +1506,11 @@
                     </div>
                   {/each}
                   {#if jobs.length > 0}
-                    <a class="auth-link" href={Route.activity()}>{$t('frameleaf_setup_jobs_follow')}</a>
+                    <p class="frs-later">
+                      <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(
+                        'frameleaf_setup_jobs_follow_after',
+                      )}
+                    </p>
                   {/if}
                 </section>
                 <div class="frs-theme" role="radiogroup" aria-label={$t('frameleaf_setup_theme_after')}>
@@ -1336,19 +1543,54 @@
           </button>
           <div>
             {#if last}
-              <button type="button" class="button primary frs-open" onclick={() => void finish()} disabled={busy}>
-                {$t('frameleaf_setup_open')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
-              </button>
-            {:else}
               <button
                 type="button"
-                class="button primary"
-                onclick={() => void next()}
-                aria-disabled={blocked || busy || undefined}
+                class="button primary frs-open"
+                onclick={() => void finish()}
+                disabled={busy}
+                aria-busy={busy || undefined}
               >
-                {usesRecommended && isRecommendedChoice ? $t('frameleaf_setup_use_recommended') : $t('continue')}
-                <Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
+                {#if finishPhase}
+                  <Icon icon={mdiLoading} size={ICON_SIZE.md} class="frs-spin" aria-hidden={true} />
+                  <span role="status">
+                    {finishPhase === 'saving'
+                      ? $t('frameleaf_setup_finish_saving')
+                      : finishPhase === 'starting'
+                        ? $t('frameleaf_setup_finish_starting')
+                        : $t('frameleaf_setup_finish_opening')}
+                  </span>
+                {:else}
+                  {$t('frameleaf_setup_open')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
+                {/if}
               </button>
+            {:else}
+              <!--
+                On the administrator form this is the form's submit button, so Enter and Continue agree.
+                It is a separate element from the plain Continue: were one button to change type as the
+                step changes, the click that arrives at the form would also submit it, and the form
+                would open already marked with errors.
+              -->
+              {#if accountForm}
+                <button
+                  type="submit"
+                  form="frs-account-form"
+                  class="button primary"
+                  aria-disabled={blocked || busy || undefined}
+                  aria-busy={busy || undefined}
+                >
+                  {@render continueLabel()}
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  class="button primary"
+                  onclick={() => void next()}
+                  aria-disabled={blocked || busy || undefined}
+                  aria-busy={busy || undefined}
+                >
+                  {@render continueLabel()}
+                </button>
+              {/if}
             {/if}
           </div>
         </div>
@@ -1370,7 +1612,7 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    background: #050b10;
+    background: var(--fl-canvas);
     color-scheme: dark;
   }
   .sr-only {
@@ -1381,7 +1623,10 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  h1:focus {
-    outline: none;
+  /* Each step moves focus to its heading so it is read; only a keyboard move shows the ring. */
+  h1:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+    border-radius: var(--fl-radius-xs);
   }
 </style>

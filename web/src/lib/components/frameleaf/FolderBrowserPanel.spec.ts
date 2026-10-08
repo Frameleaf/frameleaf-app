@@ -170,8 +170,29 @@ describe('FolderBrowserPanel', () => {
 
   it('says a folder holds only subfolders (FD-5)', () => {
     renderPanel('/data/library', []);
-    expect(screen.getByText('No files directly in this folder')).toBeInTheDocument();
-    expect(screen.getByText('Open a subfolder to see its originals.')).toBeInTheDocument();
+    // One quiet line under the subfolders, not a second empty state beneath them.
+    expect(
+      screen.getByText('No files directly in this folder. Open a subfolder to see its originals.'),
+    ).toBeInTheDocument();
+    expect(document.querySelector('.dv-empty')).toBeNull();
+  });
+
+  it('narrows the tree to the folders that match Find, and offers Clear when none do', async () => {
+    renderPanel();
+    const find = screen.getByRole('searchbox', { name: 'Find a folder' });
+
+    await fireEvent.input(find, { target: { value: '2026' } });
+    const tree = screen.getByRole('tree', { name: 'Folders' });
+    const rows = () => [...tree.querySelectorAll<HTMLElement>('[data-tree-id]')].map((row) => row.dataset.treeId);
+    expect(rows()).toContain('/data/library/2026');
+    expect(rows()).not.toContain('/data/library/2025');
+    expect(rows()).not.toContain('/data/library/2026/trip');
+    expect(screen.getByText('1 folder matches')).toBeInTheDocument();
+
+    await fireEvent.input(find, { target: { value: 'zebra' } });
+    expect(screen.getByText('No folders match “zebra”')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByRole('tree', { name: 'Folders' })).toBeInTheDocument();
   });
 
   it('says "No folders yet" for an empty library, with Show in timeline disabled (FD-5)', () => {

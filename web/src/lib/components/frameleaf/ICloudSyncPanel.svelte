@@ -1056,7 +1056,7 @@
     font-size: var(--fl-font-micro);
     color: var(--fl-accent);
     border: 1px solid var(--fl-border);
-    border-radius: 3px;
+    border-radius: var(--fl-radius-xs);
   }
   .ic-badge.warning {
     color: var(--fl-warning-text);

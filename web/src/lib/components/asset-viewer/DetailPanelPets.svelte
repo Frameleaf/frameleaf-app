@@ -272,7 +272,7 @@
   }
   .pet-link:focus-visible {
     outline: 2px solid var(--fl-accent, currentColor);
-    outline-offset: 2px;
+    outline-offset: var(--fl-focus-offset);
   }
   .name {
     overflow: hidden;

@@ -36,7 +36,13 @@
 
 <div role="group" aria-label={label} class="segments">
   {#each options as option (option.value)}
-    <button type="button" {disabled} aria-pressed={value === option.value} onclick={() => select(option.value)}>
+    <button
+      type="button"
+      class="fl-control"
+      {disabled}
+      aria-pressed={value === option.value}
+      onclick={() => select(option.value)}
+    >
       {option.label}{#if option.hint}<small aria-hidden="true">{option.hint}</small>{/if}
     </button>
   {/each}
@@ -53,11 +59,13 @@
   button {
     flex: 1;
     padding: 0.3125rem 0.625rem;
+    white-space: nowrap;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
     background: transparent;
     border: 0;
-    border-radius: var(--fl-radius);
+    /* Concentric with the track: its corner less its padding. */
+    border-radius: calc(var(--fl-radius-control) - 0.1875rem);
     transition:
       background var(--fl-motion-fast) var(--fl-ease),
       color var(--fl-motion-fast) var(--fl-ease);
@@ -66,6 +74,7 @@
     color: var(--fl-text);
   }
   button[aria-pressed='true'] {
+    font-weight: 600;
     color: var(--fl-text);
     background: var(--fl-panel);
     box-shadow: var(--fl-shadow-1);
@@ -77,6 +86,7 @@
   small {
     margin-inline-start: 0.3125rem;
     font-size: var(--fl-font-micro);
+    font-variant-numeric: var(--fl-numeric);
     color: var(--fl-muted);
   }
 </style>

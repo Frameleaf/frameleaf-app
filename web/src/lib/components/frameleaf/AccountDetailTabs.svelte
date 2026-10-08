@@ -18,6 +18,7 @@
    * so changes made from this page show up, and paged with "Show more".
    */
   import AccountLifecyclePanel from '$lib/components/frameleaf/AccountLifecyclePanel.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import AccountPreferencesEditor from '$lib/components/frameleaf/AccountPreferencesEditor.svelte';
   import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -290,7 +291,10 @@
     </ol>
   {/if}
   {#if historyStatus === 'loading'}
-    <p class="resource-empty" role="status">{$t('loading')}</p>
+    <div class="resource-empty" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="text" lines={3} />
+    </div>
   {:else if historyStatus === 'error'}
     <div class="resource-error" role="alert">
       <span>{$t('frameleaf_account_history_error')}</span>
@@ -352,7 +356,7 @@
   .resource-stats dd {
     margin: 0;
     font-size: 1.375rem;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     letter-spacing: -0.025em;
     white-space: nowrap;
   }
@@ -486,7 +490,7 @@
     padding: 0.75rem;
     border: 1px solid var(--fl-danger);
     border-radius: 0.375rem;
-    color: var(--fl-danger-text);
+    color: var(--fl-danger);
     font-size: 0.75rem;
     line-height: 1.6;
   }
