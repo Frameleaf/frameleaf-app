@@ -89,6 +89,33 @@ const hasEncoder = (() => {
   return result.status === 0 && /libx265/.test(result.stdout) && spawnSync('ffprobe', ['-version']).status === 0;
 })();
 
+test('two-frame 4K masters preserve presentation order and independent picture values', { skip: !hasEncoder }, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-short-4k-'));
+  const width = 3840;
+  const height = 2160;
+  const values = [pqEncode(100), pqEncode(900)];
+  try {
+    const frames = values.map((value) => frame(width, height, () => [value, value, value, 1]));
+    const output = path.join(dir, 'master.mp4');
+    await encodeHdrMaster({ frames, fps: 24, transfer: 'pq', output, lossless: true,
+      mastering: { maxNits: 1000, minNits: 0.005 }, validate: ({ probe, decoded, output: partial }) => {
+        assert.equal(probe.frames, 2);
+        assert.equal(probe.rFrameRate, '24/1');
+        const timestamps = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_frames',
+          '-show_entries', 'frame=pts_time', '-of', 'json', partial], { encoding: 'utf8' });
+        assert.equal(timestamps.status, 0, timestamps.stderr);
+        assert.deepEqual(JSON.parse(timestamps.stdout).frames.map((value) => value.pts_time), ['0.000000', '0.041667']);
+        decoded.forEach((pixels, index) => {
+          for (const [x, y] of [[0, 0], [width / 2, height / 2], [width - 1, height - 1]]) {
+            for (let channel = 0; channel < 3; channel++)
+              assert.ok(Math.abs(pixels[(y * width + x) * 3 + channel] - values[index]) <= 2 / 1023);
+          }
+        });
+      } });
+    assert.ok(!readdirSync(dir).some((name) => name.endsWith('.partial.mp4')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('encoding and QC validation precede atomic publication', { skip: !hasEncoder }, async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-publish-'));
   try {
