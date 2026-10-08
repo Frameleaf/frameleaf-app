@@ -594,6 +594,24 @@
       "source": "Hugging Face cards PaddlePaddle/PP-OCRv5_* (license: apache-2.0); PaddleOCR repository licence"
     },
     {
+      "status": "looked-up",
+      "notice": "Clean Up Remove fills (owner decision 2026-10-08): the big-lama weights as the fp32 ONNX export lama_fp32.onnx by Carve (huggingface.co/Carve/LaMa-ONNX, revision c3c0c9e468934d62e79c329e35d82dd09ff8c444, SHA-256 1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6), served unchanged by the Frameleaf model mirror. Runs on the instance-local ML worker only.",
+      "id": "lama-inpaint",
+      "group": "library-models",
+      "name": "LaMa big-lama inpainting (ONNX conversion)",
+      "author": "Samsung AI Center Moscow (Suvorov et al., advimman/lama); ONNX conversion by Carve",
+      "licence": "Apache-2.0",
+      "link": "https://github.com/advimman/lama",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:inpaint:*"
+      ],
+      "source": "advimman/lama repository LICENSE (Apache-2.0); Hugging Face card Carve/LaMa-ONNX (license: apache-2.0); the model file is served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/frameleaf-inpaint)"
+    },
+    {
       "status": "to-confirm",
       "notice": "The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.",
       "id": "qwen2.5-vl",
