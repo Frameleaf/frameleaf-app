@@ -150,6 +150,15 @@ Microphone device/permission/hotplug/latency, browser and native recording,
 sample/channel/pitch/EQ/transition rendering, silence/filler undo and full caption
 styling/export acceptance remain open FL-103 gates.
 
+Patch 0108 permanently retires a disposed microphone recorder. A permission
+request that resolves after cancellation releases its stream before metering or
+capture starts; disposal also settles a pending native start wait, and a queued
+start event cannot revive the recorder. Synchronous
+recorder setup failures release acquired resources. Deferred-acquisition tests
+exercise the production recorder, alongside existing terminal-event and
+origin-owned finalization controls. This source change does not qualify actual
+browser/native microphone, hotplug or latency behavior.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

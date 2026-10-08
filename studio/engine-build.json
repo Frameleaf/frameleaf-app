@@ -519,7 +519,12 @@
       "path": "patches/0107-histogram-bin-correspondence.patch",
       "sha256": "ee37477f84d5309ea4b5441550f62e9a58e657c65e2efd87694c283add9d7ee5",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0108-microphone-acquisition-retirement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c4f442213790711e3d85382a2eaea9e321640175e81d599943ddee953b7aac8c"
     }
   ],
-  "sourceSha256": "c212cc40fde85a70a9054489b2da1a15dec75cea6bd9e9333230875d68a2d470"
+  "sourceSha256": "6a94f497df2b949fe43059094ed7cdaff656b06dd47422021fc55b079c7f7889"
 }
