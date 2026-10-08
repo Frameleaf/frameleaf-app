@@ -16,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
 import { loginDto, signupDto } from 'src/fixtures.js';
+import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, TEN_TIMES, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -396,7 +397,9 @@ describe('/search', () => {
       });
       const { status, body } = await request(app).post(`/search/metadata?key=${sharedLink.key}`).send({});
       expect(status).toBe(400);
-      expect(body).toEqual({ message: 'Shared link access is only allowed in combination with an albumIds filter' });
+      expect(body).toEqual(
+        errorDto.badRequest('Shared link access is only allowed in combination with an albumIds filter'),
+      );
     });
 
     it('should allow shared link access for albums', async () => {

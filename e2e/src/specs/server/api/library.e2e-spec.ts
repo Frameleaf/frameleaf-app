@@ -443,9 +443,7 @@ describe('/libraries', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ reviewToken: stale.reviewToken, confirmName: 'FL-78 stale renamed' });
       expect(status).toBe(409);
-      expect(body).toEqual({
-        message: 'The library changed after it was reviewed. Review the removal again.',
-      });
+      expect(body).toEqual(errorDto.conflict('The library changed after it was reviewed. Review the removal again.'));
     });
 
     it('refuses a confirmation whose typed name does not match', async () => {

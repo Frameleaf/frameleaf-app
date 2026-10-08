@@ -631,7 +631,8 @@ describe('/people', () => {
       expect(update.status).toBe(400);
       // request validation names the refused field in `errors`, under a generic message
       expect(update.body).toEqual({
-        message: 'Validation failed',
+        ...errorDto.badRequest('Validation failed'),
+        displayError: { ...errorDto.badRequest().displayError, code: 'request_validation_failed' },
         errors: [expect.objectContaining({ path: ['birthDate'], message: 'Birth date cannot be in the future' })],
       });
 

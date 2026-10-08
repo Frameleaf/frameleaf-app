@@ -222,7 +222,7 @@ describe('/shared-links', () => {
         .query({ key: linkWithAlbum.key + 'foo' });
 
       expect(status).toBe(401);
-      expect(body).toEqual({ message: 'Invalid share key' });
+      expect(body).toEqual(errorDto.unauthorized('Invalid share key'));
     });
 
     it('says an expired link expired, with the same message and nothing about the link', async () => {
@@ -236,21 +236,21 @@ describe('/shared-links', () => {
       const { status, body } = await request(app).get('/shared-links/me').query({ key: expired.key });
 
       expect(status).toBe(401);
-      expect(body).toEqual({ message: 'Invalid share key', reason: 'expired' });
+      expect(body).toEqual({ ...errorDto.unauthorized('Invalid share key'), reason: 'expired' });
     });
 
     it('should return unauthorized if target has been soft deleted', async () => {
       const { status, body } = await request(app).get('/shared-links/me').query({ key: linkWithDeletedAlbum.key });
 
       expect(status).toBe(401);
-      expect(body).toEqual({ message: 'Invalid share key' });
+      expect(body).toEqual(errorDto.unauthorized('Invalid share key'));
     });
 
     it('should return unauthorized for password protected link', async () => {
       const { status, body } = await request(app).get('/shared-links/me').query({ key: linkWithPassword.key });
 
       expect(status).toBe(401);
-      expect(body).toEqual({ message: 'Password required' });
+      expect(body).toEqual(errorDto.unauthorized('Password required'));
     });
 
     it('should get data for correct password protected link', async () => {

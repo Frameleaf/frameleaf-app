@@ -166,7 +166,7 @@ describe('/api-keys', () => {
 
       const oldResponse = await request(app).get('/users/me').set('x-api-key', oldSecret);
       expect(oldResponse.status).toBe(401);
-      expect(oldResponse.body).toEqual(errorDto.badRequest('Invalid API key'));
+      expect(oldResponse.body).toEqual(errorDto.unauthorized('Invalid API key'));
 
       const newResponse = await request(app).get('/users/me').set('x-api-key', body.secret);
       expect(newResponse.status).toBe(200);

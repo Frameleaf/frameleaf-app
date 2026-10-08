@@ -67,7 +67,7 @@ describe('/sessions', () => {
       const response = await request(app)
         .post('/auth/validateToken')
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(response.body).toEqual({ message: 'Invalid user token' });
+      expect(response.body).toEqual(errorDto.unauthorized('Invalid user token'));
       expect(response.status).toBe(401);
     });
 
@@ -85,7 +85,7 @@ describe('/sessions', () => {
 
       const response = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
       expect(response.status).toBe(401);
-      expect(response.body).toEqual(errorDto.badRequest('Invalid user token'));
+      expect(response.body).toEqual(errorDto.unauthorized('Invalid user token'));
 
       const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${other.accessToken}`);
       expect(stillSignedIn.status).toBe(200);

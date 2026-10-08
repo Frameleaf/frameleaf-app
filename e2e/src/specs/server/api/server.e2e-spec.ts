@@ -163,6 +163,26 @@ describe('/server', () => {
         cloudMl: false,
         cloudBackup: false,
         supporter: false,
+        imageCapabilities: {
+          experimentalEnabled: false,
+          qualified: false,
+          renderer: 'frameleaf-develop-hdr/4',
+          codecs: { libheif: expect.any(String), libultrahdr: expect.any(String) },
+          decode: [
+            'gain-map-jpeg',
+            'sdr-heic',
+            'pq-heic',
+            'hlg-heic',
+            'sdr-avif',
+            'pq-avif',
+            'hlg-avif',
+            'apple-gain-map-heic',
+            'iso-adaptive-heif',
+          ],
+          render: ['linear-hdr-develop'],
+          export: ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'],
+          unavailable: [],
+        },
       });
     });
   });
