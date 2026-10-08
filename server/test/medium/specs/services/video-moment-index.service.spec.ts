@@ -67,6 +67,8 @@ const setup = () => {
     Promise.resolve({ workload, destinationId: destination.id, modelId: null, updatedAt: new Date() }),
   );
   mlDestinations.getById.mockResolvedValue(destination);
+  // This ordinary synthetic destination has no recovery binding.
+  mlDestinations.assertRecoveryAuthority.mockResolvedValue();
   mlDestinations.getSpend.mockResolvedValue(0);
   mlDestinations.recordProbe.mockResolvedValue();
   mlDestinations.recordAccounting.mockResolvedValue();
