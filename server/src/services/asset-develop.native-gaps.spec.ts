@@ -5,9 +5,11 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { AssetDevelopArtifactKind } from 'src/dtos/asset-develop.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AssetType, Colorspace } from 'src/enum.js';
+import { AssetType, AssetVisibility, Colorspace } from 'src/enum.js';
+import { assertPublicationMotionSource } from 'src/queue/transaction.js';
 import { InpaintUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
+import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -44,7 +46,15 @@ describe('AssetDevelopService native API gaps', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([still.id]));
-    mocks.asset.getById.mockResolvedValue({ ...still, originalPath, livePhotoVideoId: motionId } as never);
+    mocks.asset.getById.mockImplementation((id) =>
+      Promise.resolve({
+        ...still,
+        id,
+        originalPath,
+        livePhotoVideoId: id === still.id ? motionId : null,
+        visibility: id === motionId ? AssetVisibility.Hidden : AssetVisibility.Timeline,
+      } as never),
+    );
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({ ...getForGenerateThumbnail(still), originalPath });
     mocks.assetJob.getForVideoConversion.mockResolvedValue({
       id: motionId,
@@ -77,6 +87,12 @@ describe('AssetDevelopService native API gaps', () => {
   });
 
   describe('keyFrame (Live and Motion Photos)', () => {
+    it('fails closed when motion adoption has no database transaction', async () => {
+      await expect(
+        assertPublicationMotionSource(still.id, still.ownerId, still.checksum, motionId, Buffer.alloc(20, 4)),
+      ).rejects.toThrow('Motion publication requires a database transaction');
+    });
+
     it('decodes the still from the motion clip frame at the key frame time', async () => {
       const source = { ...getForGenerateThumbnail(still), originalPath };
       const result = await sut['decodeSource'](source, defaults.image, 1280, { timeMs: 1200 });
@@ -89,6 +105,46 @@ describe('AssetDevelopService native API gaps', () => {
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(output, expect.objectContaining({ size: 1280 }));
       expect(mocks.media.inspectImageEncoding).not.toHaveBeenCalled();
       expect(result.colorspace).toBe(Colorspace.Srgb);
+    });
+
+    it('authorizes the linked clip separately before preview decoding', async () => {
+      await expect(
+        sut.preview(authStub.user1, still.id, {
+          recipe: { ...defaultDevelopRecipe(), keyFrame: { timeMs: 1000 } },
+          size: 100,
+        }),
+      ).rejects.toThrow();
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        new Set([motionId]),
+        undefined,
+      );
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it.each([{ isLocked: true }, { deletedAt: new Date() }, { isOffline: true }])(
+      'refuses an unavailable motion clip in background decoding: %j',
+      async (state) => {
+        mocks.asset.getById.mockImplementation((id) =>
+          Promise.resolve({ ...still, id, livePhotoVideoId: motionId, ...state } as never),
+        );
+        await expect(
+          sut['decodeSource'](getForGenerateThumbnail(still), defaults.image, 1280, { timeMs: 0 }),
+        ).rejects.toThrow();
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not round fractional duration up to admit an offset after the last frame', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        id: motionId,
+        ownerId: still.ownerId,
+        format: { duration: 2.5004 },
+      } as never);
+      await expect(sut['requireMotionClip'](still, 2501)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'develop_key_frame_out_of_range' }),
+      });
+      await expect(sut['requireMotionClip'](still, 2500)).resolves.toBeDefined();
     });
 
     it('refuses a key frame for a photo without a motion clip', async () => {
@@ -107,7 +163,10 @@ describe('AssetDevelopService native API gaps', () => {
       await expect(sut['requireMotionClip'](still, 2600)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'develop_key_frame_out_of_range' }),
       });
-      await expect(sut['requireMotionClip'](still, 2500)).resolves.toBeDefined();
+      await expect(sut['requireMotionClip'](still, 2500)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'develop_key_frame_out_of_range' }),
+      });
+      await expect(sut['requireMotionClip'](still, 2499)).resolves.toBeDefined();
     });
   });
 

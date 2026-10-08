@@ -1217,7 +1217,7 @@ describe(AssetDevelopService.name, () => {
       await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.storage.rename).not.toHaveBeenCalled();
-      expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+      expect(mocks.storage.unlink).toHaveBeenCalledTimes(4);
       expect(developRepository.update).toHaveBeenCalledWith(revision.id, {
         status: AssetDevelopRevisionStatus.Cancelled,
         progress: 0,
@@ -1291,6 +1291,166 @@ describe(AssetDevelopService.name, () => {
         expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered, sourceChecksum: originalSha }),
       );
     });
+
+    const keyframeRevision = () =>
+      revisionStub({
+        assetId: asset.id,
+        status: AssetDevelopRevisionStatus.Queued,
+        recipe: { ...defaultDevelopRecipe(), keyFrame: { timeMs: 1000 } },
+      });
+    const motion = {
+      id: 'motion-id',
+      ownerId: asset.ownerId,
+      originalPath: '/motion.mov',
+      checksum: Buffer.alloc(20, 4),
+      format: { duration: 2.5 },
+      videoStream: { index: 0 },
+    };
+    const prepareKeyframe = () => {
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.resolve({
+          ...asset,
+          id,
+          livePhotoVideoId: id === asset.id ? motion.id : null,
+          visibility: id === asset.id ? AssetVisibility.Timeline : AssetVisibility.Hidden,
+        } as never),
+      );
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(motion as never);
+      mocks.crypto.hashFile.mockImplementation((file) =>
+        Promise.resolve(file === motion.originalPath ? Buffer.alloc(32, 4) : originalSha),
+      );
+      developRepository.get.mockResolvedValue(keyframeRevision());
+    };
+
+    it.each(['save', 'render', 'inherited save'] as const)(
+      'authorizes the linked clip before queueing %s',
+      async (action) => {
+        prepareKeyframe();
+        const revision = keyframeRevision();
+        developRepository.create.mockResolvedValue(revision);
+        const request =
+          action === 'render'
+            ? sut.render(authStub.user1, asset.id, revision.id)
+            : sut.save(authStub.user1, asset.id, {
+                recipe: action === 'inherited save' ? { version: 1 } : revision.recipe,
+                render: true,
+                ...(action === 'inherited save' && { sourceRevisionId: revision.id }),
+              });
+        await expect(request).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+          authStub.user1.user.id,
+          new Set([motion.id]),
+          undefined,
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
+
+    it('prepares the motion source checksum and defers its lineage publication to the queue claim', async () => {
+      prepareKeyframe();
+      const context: QueueExecution = {
+        claim: { id: 'queue-job', token: 'queue-token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      await expect(queueExecution.run(context, () => sut.handleRender({ id: keyframeRevision().id }))).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(mocks.crypto.hashFile).toHaveBeenCalledWith(motion.originalPath, 'sha256');
+      expect(context.adoptions).toHaveLength(1);
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        keyframeRevision().id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+      );
+    });
+
+    it('fails direct motion rendering without a publication transaction and preserves the previous rendition', async () => {
+      prepareKeyframe();
+      const previous = { masterPath: '/previous/master.jpeg', previewPath: '/previous/preview.jpeg' };
+      developRepository.get.mockResolvedValue({ ...keyframeRevision(), ...previous });
+      await expect(sut.handleRender({ id: keyframeRevision().id })).resolves.toBe(JobStatus.Failed);
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        keyframeRevision().id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+      );
+      const prepared = mocks.storage.rename.mock.calls.map(([, output]) => output);
+      expect(prepared).toHaveLength(2);
+      for (const output of prepared) expect(mocks.storage.unlink).toHaveBeenCalledWith(output);
+      for (const output of Object.values(previous)) expect(mocks.storage.unlink).not.toHaveBeenCalledWith(output);
+    });
+
+    it.each(['unlink', 'lock'] as const)(
+      'fails direct publication if %s happens after the final clip snapshot',
+      async (change) => {
+        prepareKeyframe();
+        let reads = 0;
+        mocks.assetJob.getForVideoConversion.mockImplementation(() => {
+          if (++reads === 2)
+            mocks.asset.getById.mockImplementation((id) =>
+              Promise.resolve({
+                ...asset,
+                id,
+                livePhotoVideoId: change === 'unlink' ? null : motion.id,
+                isLocked: change === 'lock' && id === motion.id,
+              } as never),
+            );
+          return Promise.resolve(motion as never);
+        });
+        await expect(sut.handleRender({ id: keyframeRevision().id })).resolves.toBe(JobStatus.Failed);
+        expect(reads).toBe(2);
+        expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        expect(developRepository.update).not.toHaveBeenCalledWith(
+          keyframeRevision().id,
+          expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+        );
+        for (const [, output] of mocks.storage.rename.mock.calls)
+          expect(mocks.storage.unlink).toHaveBeenCalledWith(output);
+      },
+    );
+
+    it.each(['checksum', 'unlink', 'replace', 'lock'])(
+      'refuses a keyframe when its motion source changes before publication: %s',
+      async (change) => {
+        prepareKeyframe();
+        mocks.storage.rename.mockImplementation(() => {
+          if (change === 'checksum')
+            mocks.assetJob.getForVideoConversion.mockResolvedValue({
+              ...motion,
+              checksum: Buffer.alloc(20, 5),
+            } as never);
+          else
+            mocks.asset.getById.mockImplementation((id) =>
+              Promise.resolve({
+                ...asset,
+                id,
+                livePhotoVideoId:
+                  id === asset.id
+                    ? change === 'unlink'
+                      ? null
+                      : change === 'replace'
+                        ? 'new-motion'
+                        : motion.id
+                    : null,
+                isLocked: change === 'lock' && id === motion.id,
+              } as never),
+            );
+          return Promise.resolve();
+        });
+        await expect(sut.handleRender({ id: keyframeRevision().id })).resolves.toBe(JobStatus.Failed);
+        expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        expect(developRepository.update).not.toHaveBeenCalledWith(
+          keyframeRevision().id,
+          expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalled();
+      },
+    );
 
     it('renders selective masks into the edited master', async () => {
       const plain = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });

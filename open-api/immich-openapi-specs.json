@@ -58315,8 +58315,15 @@
             "nullable": true,
             "type": "string"
           },
+          "sourceAssetId": {
+            "description": "Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "sourceChecksum": {
-            "description": "SHA-256 (hex) of the original this version was rendered or developed from",
+            "description": "SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources",
             "nullable": true,
             "type": "string"
           },

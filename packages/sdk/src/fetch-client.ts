@@ -4385,7 +4385,9 @@ export type AssetDevelopRevisionResponseDto = {
     revision: number;
     /** Application an imported version was developed with, when known */
     software: string | null;
-    /** SHA-256 (hex) of the original this version was rendered or developed from */
+    /** Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage */
+    sourceAssetId?: string | null;
+    /** SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources */
     sourceChecksum: string | null;
     status: AssetDevelopRevisionStatus;
     /** When the revision last changed */
