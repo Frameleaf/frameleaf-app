@@ -22,10 +22,8 @@
  * generated intermediates, and it cannot tell a worker not to fetch a URL. This module covers
  * those. `server/src/services/studio-resource.service.ts` applies the actual access checks.
  *
- * The vendored engine (`studio/vendor/freecut`) is not present in this checkout, so the graph
- * keys recognised here are the ones the host contract and the prototype's project model use
- * (`web/src/lib/frameleaf/studio/commands.ts`, `design/frameleaf/template/src/studio-project.mjs`)
- * plus one explicit escape hatch, `$resource`, for the adapter to declare anything else. A key
+ * Recognises canonical project timeline/composition and immutable subtitle shapes alongside
+ * the supported prototype sequences, plus `$resource` declarations for explicit resource kinds. A key
  * this walker does not recognise is not a resource; a resource the adapter forgets to declare
  * is an undeclared dependency and the worker will fail to find it, which is the intended
  * failure mode rather than a silent fetch.
@@ -813,6 +811,8 @@ const walk = (
   state: StudioReferenceExtraction,
   seen: Set<string>,
   currentSequence: string | null,
+  definitions: ReadonlyMap<string, string>,
+  captionProvenance: Set<string>,
 ): void => {
   if (depth > STUDIO_MAX_GRAPH_DEPTH) {
     if (state.violations.every((violation) => violation.reason !== StudioRefusalReason.DepthExceeded)) {
@@ -827,7 +827,7 @@ const walk = (
 
   if (Array.isArray(node)) {
     for (const [index, item] of node.entries()) {
-      walk(item, `${graphPath}/${index}`, depth + 1, state, seen, currentSequence);
+      walk(item, `${graphPath}/${index}`, depth + 1, state, seen, currentSequence, definitions, captionProvenance);
     }
     return;
   }
@@ -836,13 +836,62 @@ const walk = (
     return;
   }
 
-  // A sequence definition: `{ id, tracks: [...] }` under a `sequences` array, or the root of a
-  // single-sequence document. Its id becomes the parent for nested references found beneath it.
-  let sequence = currentSequence;
-  if (Array.isArray(node.tracks) && isStudioIdentifier(node.id)) {
-    sequence = node.id;
-    if (!state.sequences.has(sequence)) {
-      state.sequences.set(sequence, []);
+  // Only root/schema-owned containers define sequences; arbitrary id/tracks objects do not.
+  const sequence = definitions.get(graphPath) ?? currentSequence;
+  const itemContainer = graphPath.replace(/\/items\/\d+$/, '');
+  const canonicalItem = itemContainer !== graphPath && definitions.has(itemContainer);
+  if (canonicalItem && node.type === 'subtitle') {
+    const ids = new Set<string>();
+    let lastStart = -1;
+    const validCues =
+      Array.isArray(node.cues) &&
+      node.cues.every((cue) => {
+        if (
+          !isRecord(cue) ||
+          !isStudioIdentifier(cue.id) ||
+          ids.has(cue.id) ||
+          typeof cue.startSeconds !== 'number' ||
+          !Number.isFinite(cue.startSeconds) ||
+          typeof cue.endSeconds !== 'number' ||
+          !Number.isFinite(cue.endSeconds) ||
+          cue.startSeconds < 0 ||
+          cue.startSeconds < lastStart ||
+          cue.endSeconds <= cue.startSeconds ||
+          typeof cue.text !== 'string'
+        )
+          return false;
+        ids.add(cue.id);
+        lastStart = cue.startSeconds;
+        return true;
+      });
+    const source = node.source;
+    const validSource =
+      isRecord(source) &&
+      (((source.type === 'transcript' || source.type === 'embedded-subtitles') &&
+        isStudioIdentifier(source.mediaId) &&
+        isStudioIdentifier(source.clipId) &&
+        (source.type !== 'embedded-subtitles' ||
+          (Number.isSafeInteger(source.trackNumber) && Number(source.trackNumber) >= 0))) ||
+        (source.type === 'subtitle-import' &&
+          typeof source.fileName === 'string' &&
+          (source.format === 'srt' || source.format === 'vtt')));
+    if (!validCues || !validSource || !isStudioIdentifier(node.id) || !Array.isArray(node.cues)) {
+      state.violations.push({
+        reason: StudioRefusalReason.InvalidId,
+        graphPath,
+        detail: 'Invalid immutable subtitle cues or provenance.',
+      });
+    } else {
+      // Cues are the revision-owned render payload. Only this exact source mediaId is provenance;
+      // continue scanning its other fields for locators and unrelated resource declarations.
+      captionProvenance.add(`${graphPath}/source`);
+      if (node.cues.length > 0)
+        pushReference(state, seen, {
+          kind: StudioResourceKind.Captions,
+          id: node.id,
+          graphPath: `${graphPath}/cues`,
+          inlineLines: node.cues.length,
+        });
     }
   }
 
@@ -879,6 +928,7 @@ const walk = (
   const clipKind = typeof node.kind === 'string' ? node.kind : null;
 
   for (const key of ['assetId', 'mediaId']) {
+    if (key === 'mediaId' && captionProvenance.has(graphPath)) continue;
     const id = readId(state, node, key, graphPath);
     const restorationId = id ? parseStudioRestoredMediaId(id) : null;
     if (restorationId) {
@@ -971,14 +1021,32 @@ const walk = (
     });
   }
 
-  // Nested sequence placement: a clip of kind `sequence` (or `composition`) naming another sequence.
-  if ((clipKind === 'sequence' || clipKind === 'composition') && 'sequenceId' in node) {
-    const target = readId(state, node, 'sequenceId', graphPath);
-    if (target) {
+  // Canonical composition placements and supported prototype sequence clips share one closure.
+  const canonicalPlacement = node.type === 'composition';
+  const prototypePlacement = clipKind === 'sequence' || clipKind === 'composition';
+  if (canonicalPlacement || prototypePlacement) {
+    const contradiction =
+      (typeof node.type === 'string' && node.type !== 'composition') ||
+      (typeof node.kind === 'string' && !prototypePlacement);
+    const canonicalTarget = readId(state, node, 'compositionId', graphPath);
+    const prototypeTarget = readId(state, node, 'sequenceId', graphPath);
+    const target = canonicalTarget ?? prototypeTarget;
+    if (
+      contradiction ||
+      !target ||
+      (canonicalPlacement && !canonicalTarget) ||
+      (prototypePlacement && !prototypeTarget) ||
+      (canonicalTarget && prototypeTarget && canonicalTarget !== prototypeTarget) ||
+      !sequence
+    ) {
+      state.violations.push({
+        reason: StudioRefusalReason.InvalidId,
+        graphPath,
+        detail: 'Contradictory or unbound composition placement.',
+      });
+    } else {
       pushReference(state, seen, { kind: StudioResourceKind.NestedSequence, id: target, graphPath });
-      if (sequence) {
-        state.sequences.get(sequence)?.push(target);
-      }
+      state.sequences.get(sequence)?.push(target);
     }
   }
 
@@ -1019,7 +1087,7 @@ const walk = (
     if (key === '$resource' || (value !== null && typeof value !== 'object')) {
       continue;
     }
-    walk(value, `${graphPath}/${key}`, depth + 1, state, seen, sequence);
+    walk(value, `${graphPath}/${key}`, depth + 1, state, seen, sequence, definitions, captionProvenance);
   }
 };
 
@@ -1030,7 +1098,43 @@ const walk = (
  */
 export const extractStudioResourceReferences = (graph: unknown): StudioReferenceExtraction => {
   const state: StudioReferenceExtraction = { references: [], violations: [], sequences: new Map() };
-  walk(graph, '', 0, state, new Set(), null);
+  const definitions = new Map<string, string>();
+  const register = (node: unknown, graphPath: string, id: unknown): void => {
+    if (
+      !isRecord(node) ||
+      !Array.isArray(node.tracks) ||
+      (graphPath.startsWith('/timeline') && !Array.isArray(node.items)) ||
+      !isStudioIdentifier(id)
+    ) {
+      state.violations.push({
+        reason: StudioRefusalReason.InvalidId,
+        graphPath,
+        detail: 'Invalid sequence definition.',
+      });
+    } else if (state.sequences.has(id)) {
+      state.violations.push({ reason: StudioRefusalReason.InvalidId, graphPath, detail: `Duplicate sequence ${id}.` });
+    } else {
+      state.sequences.set(id, []);
+      definitions.set(graphPath, id);
+    }
+  };
+  if (isRecord(graph)) {
+    if (isRecord(graph.timeline)) {
+      if (graph.id !== undefined || Array.isArray(graph.timeline.compositions))
+        register(graph.timeline, '/timeline', graph.id);
+      if (Array.isArray(graph.timeline.compositions)) {
+        for (const [index, composition] of graph.timeline.compositions.entries()) {
+          register(composition, `/timeline/compositions/${index}`, isRecord(composition) ? composition.id : undefined);
+        }
+      }
+    } else if (Array.isArray(graph.tracks)) register(graph, '', graph.id);
+    if (Array.isArray(graph.sequences)) {
+      for (const [index, definition] of graph.sequences.entries()) {
+        register(definition, `/sequences/${index}`, isRecord(definition) ? definition.id : undefined);
+      }
+    }
+  }
+  walk(graph, '', 0, state, new Set(), null, definitions, new Set());
   return state;
 };
 
@@ -1073,51 +1177,57 @@ export const checkNestedSequences = (
     }
   }
 
-  const visiting = new Set<string>();
-  const depths = new Map<string, number>();
-
-  const visit = (id: string, depth: number, trail: string[]): number => {
-    if (refused.has(id)) {
-      return 0;
-    }
-    if (visiting.has(id)) {
-      const cycle = [...trail.slice(trail.indexOf(id)), id].join(' -> ');
-      for (const member of trail.slice(trail.indexOf(id))) {
-        if (!refused.has(member)) {
-          refused.set(member, {
-            id: member,
-            reason: StudioRefusalReason.CyclicSequence,
-            detail: `Sequence nesting forms a cycle: ${cycle}.`,
-          });
-        }
+  // Iterative postorder detects cycles without recursive stack growth. Every definition is
+  // considered, including unused definitions; reverse postorder then propagates longest prefixes.
+  const done = new Set<string>();
+  const postorder: string[] = [];
+  for (const root of sequences.keys()) {
+    if (done.has(root)) continue;
+    const stack = [{ id: root, next: 0 }];
+    const active = new Map<string, number>([[root, 0]]);
+    while (stack.length > 0) {
+      const frame = stack.at(-1)!;
+      const targets = sequences.get(frame.id) ?? [];
+      if (frame.next >= targets.length) {
+        postorder.push(frame.id);
+        done.add(frame.id);
+        active.delete(frame.id);
+        stack.pop();
+        continue;
       }
-      return 0;
+      const target = targets[frame.next++];
+      if (!sequences.has(target)) continue;
+      const cycleStart = active.get(target);
+      if (cycleStart !== undefined) {
+        const members = stack.slice(cycleStart).map((entry) => entry.id);
+        for (const id of members)
+          if (!refused.has(id))
+            refused.set(id, {
+              id,
+              reason: StudioRefusalReason.CyclicSequence,
+              detail: `Sequence nesting forms a cycle: ${[...members, target].join(' -> ')}.`,
+            });
+      } else if (!done.has(target)) {
+        active.set(target, stack.length);
+        stack.push({ id: target, next: 0 });
+      }
     }
-    const known = depths.get(id);
-    if (known !== undefined) {
-      return known;
-    }
-    if (depth > maxDepth) {
-      refused.set(id, {
-        id,
-        reason: StudioRefusalReason.DepthExceeded,
-        detail: `Sequence nesting deeper than ${maxDepth} at ${[...trail, id].join(' -> ')}.`,
-      });
-      return 0;
-    }
-
-    visiting.add(id);
-    let deepest = 0;
+  }
+  const depths = new Map<string, number>();
+  for (const id of postorder.toReversed()) {
+    if (refused.get(id)?.reason === StudioRefusalReason.CyclicSequence) continue;
+    const depth = depths.get(id) ?? 0;
     for (const target of sequences.get(id) ?? []) {
-      deepest = Math.max(deepest, 1 + visit(target, depth + 1, [...trail, id]));
+      if (!sequences.has(target) || refused.get(target)?.reason === StudioRefusalReason.CyclicSequence) continue;
+      const nextDepth = Math.max(depths.get(target) ?? 0, depth + 1);
+      depths.set(target, nextDepth);
+      if (nextDepth > maxDepth && !refused.has(target))
+        refused.set(target, {
+          id: target,
+          reason: StudioRefusalReason.DepthExceeded,
+          detail: `Sequence nesting deeper than ${maxDepth} at ${target}.`,
+        });
     }
-    visiting.delete(id);
-    depths.set(id, deepest);
-    return deepest;
-  };
-
-  for (const id of sequences.keys()) {
-    visit(id, 0, []);
   }
 
   return { refused: refused.values().toArray() };

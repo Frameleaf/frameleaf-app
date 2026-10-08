@@ -188,6 +188,218 @@ describe(isExternalLocator.name, () => {
 });
 
 describe(extractStudioResourceReferences.name, () => {
+  it('registers canonical containers only and scans unused definitions', () => {
+    const graph = {
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [{ type: 'composition', compositionId: 'used' }],
+        compositions: [
+          { id: 'used', tracks: [], items: [{ type: 'image', mediaId: assetId }] },
+          {
+            id: 'unused',
+            tracks: [],
+            items: [{ type: 'composition', compositionId: 'missing' }, { src: 'https://evil.test/x' }],
+          },
+        ],
+      },
+      extension: { id: 'missing', tracks: [] },
+    };
+    const result = extractStudioResourceReferences(graph);
+    expect([...result.sequences]).toEqual([
+      ['main', ['used']],
+      ['used', []],
+      ['unused', ['missing']],
+    ]);
+    expect(result.references).toContainEqual(
+      expect.objectContaining({ kind: StudioResourceKind.NestedSequence, id: 'used', graphPath: '/timeline/items/0' }),
+    );
+    expect(result.references).toContainEqual(
+      expect.objectContaining({ kind: StudioResourceKind.LibraryAsset, id: assetId }),
+    );
+    expect(result.violations).toContainEqual(
+      expect.objectContaining({
+        reason: StudioRefusalReason.ExternalLocator,
+        graphPath: '/timeline/compositions/1/items/1',
+      }),
+    );
+    expect(checkNestedSequences(result.sequences).refused).toContainEqual(
+      expect.objectContaining({ id: 'missing', reason: StudioRefusalReason.UnknownSequence }),
+    );
+  });
+
+  it.each([
+    { type: 'composition', kind: 'video', compositionId: 'child' },
+    { type: 'video', kind: 'composition', sequenceId: 'child' },
+    { type: 'composition', kind: 'sequence', compositionId: 'child', sequenceId: 'other' },
+    { type: 'composition' },
+  ])('refuses contradictory or missing placements: %j', (item) => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: { tracks: [], items: [item], compositions: [{ id: 'child', tracks: [], items: [] }] },
+    });
+    expect(result.violations).toContainEqual(
+      expect.objectContaining({ reason: StudioRefusalReason.InvalidId, graphPath: '/timeline/items/0' }),
+    );
+  });
+
+  it('does not register arbitrary nested id/tracks objects as definitions', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      tracks: [],
+      extension: { id: 'fake', tracks: [] },
+      clips: [{ kind: 'sequence', sequenceId: 'fake' }],
+    });
+    expect(result.sequences.keys().toArray()).toEqual(['main']);
+    expect(checkNestedSequences(result.sequences).refused).toContainEqual(
+      expect.objectContaining({ id: 'fake', reason: StudioRefusalReason.UnknownSequence }),
+    );
+  });
+
+  it('refuses malformed canonical definitions and duplicate root/prototype namespaces', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: { tracks: [], items: [], compositions: [{ id: 'bad', tracks: [] }] },
+      sequences: [{ id: 'main', tracks: [] }],
+    });
+    expect(result.violations.map((v) => v.graphPath)).toEqual(['/timeline/compositions/0', '/sequences/0']);
+  });
+
+  it('validates captions in every canonical definition, even when unused', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [],
+        compositions: [
+          {
+            id: 'unused',
+            tracks: [],
+            items: [
+              {
+                id: 'caption',
+                type: 'subtitle',
+                cues: [{ id: 'a', startSeconds: 0, endSeconds: 1, text: 'caption' }],
+                source: { type: 'subtitle-import', fileName: 'owned.srt', format: 'srt' },
+                fontFamily: 'Inter',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.references).toContainEqual(
+      expect.objectContaining({
+        kind: StudioResourceKind.Captions,
+        id: 'caption',
+        graphPath: '/timeline/compositions/0/items/0/cues',
+        inlineLines: 1,
+      }),
+    );
+  });
+
+  it('accepts matching placement spellings but rejects duplicate definitions', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [{ type: 'composition', kind: 'sequence', compositionId: 'child', sequenceId: 'child' }],
+        compositions: [
+          { id: 'child', tracks: [], items: [] },
+          { id: 'child', tracks: [], items: [] },
+        ],
+      },
+    });
+    expect(result.sequences.get('main')).toEqual(['child']);
+    expect(result.violations).toContainEqual(
+      expect.objectContaining({ reason: StudioRefusalReason.InvalidId, graphPath: '/timeline/compositions/1' }),
+    );
+  });
+
+  it('complete inline subtitle cues need fonts but not provenance media bytes', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [
+          {
+            id: 'sub',
+            type: 'subtitle',
+            fontFamily: 'Inter',
+            cues: [{ id: 'cue', startSeconds: 0, endSeconds: 1, text: 'https://example.test' }],
+            source: { type: 'embedded-subtitles', mediaId: otherAssetId, clipId: 'retired', trackNumber: 1 },
+          },
+        ],
+      },
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.references).toContainEqual(
+      expect.objectContaining({
+        kind: StudioResourceKind.Captions,
+        id: 'sub',
+        inlineLines: 1,
+        graphPath: '/timeline/items/0/cues',
+      }),
+    );
+    expect(result.references.filter((r) => r.kind === StudioResourceKind.LibraryAsset)).toEqual([]);
+    expect(result.references).toContainEqual(expect.objectContaining({ kind: StudioResourceKind.Font, id: 'Inter' }));
+  });
+
+  it.each([
+    [{ id: 'cue', startSeconds: 1, endSeconds: 0, text: 'backwards' }],
+    [{ id: 'cue', startSeconds: NaN, endSeconds: 1, text: 'nan' }],
+    [{ id: 'cue', startSeconds: 0, endSeconds: Infinity, text: 'infinite' }],
+    [{ id: 'cue', startSeconds: -1, endSeconds: 1, text: 'negative' }],
+    [{ id: 'cue', startSeconds: 0, endSeconds: 1, text: 42 }],
+    [
+      { id: 'cue', startSeconds: 0, endSeconds: 1, text: 'a' },
+      { id: 'cue', startSeconds: 1, endSeconds: 2, text: 'b' },
+    ],
+    [
+      { id: 'a', startSeconds: 2, endSeconds: 3, text: 'a' },
+      { id: 'b', startSeconds: 0, endSeconds: 1, text: 'b' },
+    ],
+  ])('refuses malformed immutable cues: %j', (...cues) => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [
+          { id: 'sub', type: 'subtitle', cues, source: { type: 'transcript', mediaId: assetId, clipId: 'clip' } },
+        ],
+      },
+    });
+    expect(result.violations.some((v) => v.reason === StudioRefusalReason.InvalidId)).toBe(true);
+  });
+
+  it('does not hide source locators or unrelated nested references', () => {
+    const result = extractStudioResourceReferences({
+      id: 'main',
+      timeline: {
+        tracks: [],
+        items: [
+          {
+            id: 'sub',
+            type: 'subtitle',
+            cues: [],
+            source: {
+              type: 'transcript',
+              mediaId: assetId,
+              clipId: 'clip',
+              url: 'https://evil.test',
+              extra: { mediaId: otherAssetId },
+            },
+          },
+        ],
+      },
+    });
+    expect(result.violations.some((v) => v.reason === StudioRefusalReason.ExternalLocator)).toBe(true);
+    expect(result.references).toContainEqual(
+      expect.objectContaining({ kind: StudioResourceKind.LibraryAsset, id: otherAssetId }),
+    );
+  });
+
   it('enumerates every class the prototype graph references, once each', () => {
     const { references, violations, sequences } = extractStudioResourceReferences(prototypeGraph());
 
@@ -367,6 +579,32 @@ describe(extractStudioResourceReferences.name, () => {
 });
 
 describe(checkNestedSequences.name, () => {
+  it.each([false, true])('enforces 16/17 edges with leaf-first order %s', (leafFirst) => {
+    const chain = (edges: number) => {
+      const entries: [string, string[]][] = Array.from({ length: edges + 1 }, (_, i) => [
+        `s${i}`,
+        i < edges ? [`s${i + 1}`] : [],
+      ]);
+      return new Map(leafFirst ? entries.toReversed() : entries);
+    };
+    expect(checkNestedSequences(chain(16)).refused).toEqual([]);
+    expect(checkNestedSequences(chain(17)).refused).toContainEqual(
+      expect.objectContaining({ id: 's17', reason: StudioRefusalReason.DepthExceeded }),
+    );
+  });
+
+  it.each([false, true])('shared subtrees cannot borrow a short-path budget (%s)', (reverse) => {
+    const entries: [string, string[]][] = [
+      ['leaf', []],
+      ['shared', ['leaf']],
+      ['short', ['shared']],
+    ];
+    for (let i = 15; i >= 0; i--) entries.push([`long${i}`, [i === 15 ? 'shared' : `long${i + 1}`]]);
+    expect(checkNestedSequences(new Map(reverse ? entries.toReversed() : entries)).refused).toContainEqual(
+      expect.objectContaining({ id: 'leaf', reason: StudioRefusalReason.DepthExceeded }),
+    );
+  });
+
   it('accepts an acyclic tree within the depth cap', () => {
     const sequences = new Map([
       ['main', ['intro', 'outro']],

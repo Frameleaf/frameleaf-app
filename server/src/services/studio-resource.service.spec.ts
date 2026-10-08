@@ -101,6 +101,53 @@ describe(StudioResourceService.name, () => {
     Object.assign(rightsTable, actual.studioResourceRights);
   });
 
+  it('canonical complete captions resolve without granting their provenance media bytes', async () => {
+    const { manifest } = await sut.resolveProjectResources(
+      auth,
+      context({
+        id: 'main',
+        timeline: {
+          tracks: [],
+          items: [
+            {
+              id: 'caption',
+              type: 'subtitle',
+              cues: [{ id: 'cue', startSeconds: 0, endSeconds: 1, text: 'owned immutable caption' }],
+              source: { type: 'transcript', mediaId: newUuid(), clipId: 'retired' },
+            },
+          ],
+        },
+      }),
+    );
+    expect(manifest.complete).toBe(true);
+    expect(manifest.entries).toEqual([
+      expect.objectContaining({ kind: StudioResourceKind.Captions, grant: 'none', checksum: null, path: null }),
+    ]);
+    expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+  });
+
+  it('unused canonical definitions cannot hide cyclic nesting', async () => {
+    const { manifest, refused } = await sut.resolveProjectResources(
+      auth,
+      context({
+        id: 'main',
+        timeline: {
+          tracks: [],
+          items: [],
+          compositions: [{ id: 'unused', tracks: [], items: [{ type: 'composition', compositionId: 'unused' }] }],
+        },
+      }),
+    );
+    expect(manifest.complete).toBe(false);
+    expect(refused).toContainEqual(
+      expect.objectContaining({
+        id: 'unused',
+        reason: StudioRefusalReason.CyclicSequence,
+        graphPath: '/timeline/compositions/0/items/0',
+      }),
+    );
+  });
+
   it('should work', () => {
     expect(sut).toBeDefined();
   });
