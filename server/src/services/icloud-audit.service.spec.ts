@@ -7,6 +7,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { manualAuditClaimHolder } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -33,12 +34,15 @@ describe(ICloudAuditService.name, () => {
     allocate: vi.fn(),
     publishMatch: vi.fn(),
     housekeeping: vi.fn(),
+    stopState: vi.fn(),
   };
   const sync = { progress: vi.fn(), get: vi.fn(), withSession: vi.fn(), resource: vi.fn(), finish: vi.fn() };
   const identities = { claim: vi.fn(), renew: vi.fn(), release: vi.fn() };
   const transport = { enabled: vi.fn(), download: vi.fn(), decodeSession: vi.fn(), encodeSession: vi.fn() };
   const operations = {
     reportProgress: vi.fn(),
+    settlePause: vi.fn(),
+    getForWorker: vi.fn(),
     heartbeat: vi.fn(),
     requeue: vi.fn(),
     fail: vi.fn(),
@@ -152,11 +156,25 @@ describe(ICloudAuditService.name, () => {
         current ? { source: resource, connection, private: false, request: { expectedSha256: expected } } : undefined,
       ),
     );
+    repository.stopState.mockImplementation(() =>
+      Promise.resolve({
+        live: operation.claimToken === token && operation.claimExpiresAt! > new Date(),
+        pauseRequestedAt: operation.pauseRequestedAt,
+        cancelRequestedAt: operation.cancelRequestedAt,
+      }),
+    );
     repository.allocate.mockResolvedValue(resource);
     identities.claim.mockImplementation(() =>
-      Promise.resolve([{ id: claimId, holder: `icloud-sync:audit:${operation.id}` }]),
+      Promise.resolve([
+        {
+          id: claimId,
+          holder: manualAuditClaimHolder(operation.ownerId, { operationId: operation.id, operationClaimToken: token }),
+        },
+      ]),
     );
     identities.renew.mockResolvedValue([{ id: claimId }]);
+    identities.release.mockResolvedValue([]);
+    sync.finish.mockResolvedValue(undefined);
     sync.progress.mockResolvedValue(true);
     sync.get.mockResolvedValue(connection);
     sync.withSession.mockImplementation(async (_id, _owner, callback) => (await callback(connection)).value);
@@ -170,6 +188,8 @@ describe(ICloudAuditService.name, () => {
         size: fresh.length,
       }),
     );
+    operations.requeue.mockResolvedValue(true);
+    operations.acknowledgeCancel.mockResolvedValue(true);
     operations.reportProgress.mockResolvedValue(true);
     operations.heartbeat.mockResolvedValue(true);
     operations.beginValidation.mockResolvedValue(true);
@@ -207,6 +227,22 @@ describe(ICloudAuditService.name, () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('derives an owner/operation/incarnation-scoped digest without placing the raw token in claim metadata', () => {
+    const authority = { operationId: operation.id, operationClaimToken: token };
+    const holder = manualAuditClaimHolder(operation.ownerId, authority);
+    const digest = createHash('sha256')
+      .update('frameleaf:manual-identity-audit:item-claim:v1\0')
+      .update(JSON.stringify([operation.ownerId, operation.id, token]))
+      .digest('hex');
+    expect(holder).toBe(`icloud-sync:audit:${operation.id}:v1:${digest}`);
+    expect(holder).not.toContain(token);
+    expect(manualAuditClaimHolder(randomUUID(), authority)).not.toBe(holder);
+    expect(manualAuditClaimHolder(operation.ownerId, { ...authority, operationId: randomUUID() })).not.toBe(holder);
+    expect(manualAuditClaimHolder(operation.ownerId, { ...authority, operationClaimToken: randomUUID() })).not.toBe(
+      holder,
+    );
   });
 
   it.each([{ purpose: 'scheduled-weekly' }, { grantId: null }, { cohortId: 'reserved' }, { purpose: null }])(
@@ -283,11 +319,273 @@ describe(ICloudAuditService.name, () => {
     expect(identities.release).toHaveBeenCalled();
   });
 
+  it('settles an owner pause during the real on-demand audit stream without consuming a failure retry', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    operations.getForWorker.mockImplementation(() => Promise.resolve(operation));
+    operations.settlePause.mockResolvedValue(true);
+    sync.resource.mockImplementation(() => Promise.resolve({ ...resource, status: 'running' }));
+    transport.download.mockImplementation(() =>
+      Promise.resolve({
+        stream: Readable.from(
+          (async function* () {
+            entered.resolve();
+            await release.promise;
+            yield fresh;
+          })(),
+        ),
+        session: {},
+        fingerprint: resource.fingerprint,
+        size: fresh.length,
+      }),
+    );
+    const running = service.run(operation, token);
+    await entered.promise;
+    operation.pauseRequestedAt = new Date();
+    // The production DB guard excludes paused requests; retain that real guard outcome at this mocked DB boundary.
+    current = false;
+    release.resolve();
+    await running;
+    expect(repository.publishMatch).not.toHaveBeenCalled();
+    expect(recovery.reconcile).not.toHaveBeenCalled();
+    expect(operations.complete).not.toHaveBeenCalled();
+    expect(identities.release).toHaveBeenCalled();
+    expect(sync.finish).toHaveBeenCalled();
+    expect(operations.fail).not.toHaveBeenCalled();
+    expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+      delayMs: 0,
+      returnAttempt: true,
+      requireActiveClaim: true,
+    });
+    expect(sync.finish.mock.invocationCallOrder[0]).toBeLessThan(operations.requeue.mock.invocationCallOrder[0]);
+    expect(identities.release.mock.invocationCallOrder[0]).toBeLessThan(operations.requeue.mock.invocationCallOrder[0]);
+    operation.pauseRequestedAt = null;
+    current = true;
+    sync.resource.mockImplementation(() => Promise.resolve({ ...resource, status: 'committed' }));
+    await service.run(operation, token);
+    expect(transport.download).toHaveBeenCalledTimes(2);
+    expect(repository.publishMatch).toHaveBeenCalledTimes(1);
+    expect(operations.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('withdraws a pause at settlement into a fresh verification without reusing interrupted bytes', async () => {
+    current = false;
+    operation.pauseRequestedAt = new Date();
+    operations.requeue.mockImplementation(() => {
+      operation.pauseRequestedAt = null;
+      return Promise.resolve(true);
+    });
+    await service.run(operation, token);
+    expect(operations.fail).not.toHaveBeenCalled();
+    expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+      delayMs: 0,
+      returnAttempt: true,
+      requireActiveClaim: true,
+    });
+    expect(repository.publishMatch).not.toHaveBeenCalled();
+    current = true;
+    await service.run(operation, token);
+    expect(transport.download).toHaveBeenCalledTimes(1);
+    expect(repository.publishMatch).toHaveBeenCalledTimes(1);
+    expect(operations.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['expired', 'replaced', 'cancelled'])(
+    'hands an interrupted %s claim to token-fenced control settlement',
+    async (reason) => {
+      current = false;
+      switch (reason) {
+        case 'expired': {
+          operation.claimExpiresAt = new Date(0);
+          break;
+        }
+        case 'replaced': {
+          operation.claimToken = randomUUID();
+          break;
+        }
+        case 'cancelled': {
+          operation.cancelRequestedAt = new Date();
+          operation.pauseRequestedAt = new Date();
+          break;
+        }
+      }
+      await service.run(operation, token);
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(repository.publishMatch).not.toHaveBeenCalled();
+      expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+        delayMs: 0,
+        returnAttempt: true,
+        requireActiveClaim: true,
+      });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, token, {
+        released: true,
+        requireActiveClaim: true,
+      });
+    },
+  );
+
+  it.each(['transport', 'integrity'])('retains a genuine %s failure when a pause is also pending', async (reason) => {
+    if (reason === 'transport') {
+      transport.download.mockImplementation(() => {
+        operation.pauseRequestedAt = new Date();
+        throw new Error('fixture_transport_error');
+      });
+    } else {
+      // The fixture decoder is a boundary mock; malformed bytes still exercise the real validator refusal.
+      transport.download.mockImplementation(() => {
+        operation.pauseRequestedAt = new Date();
+        return Promise.resolve({
+          stream: Readable.from([Buffer.alloc(fresh.length - 1)]),
+          session: {},
+          fingerprint: resource.fingerprint,
+          size: fresh.length,
+        });
+      });
+    }
+    await service.run(operation, token);
+    expect(operations.fail).toHaveBeenCalledWith(
+      operation.id,
+      token,
+      { error: 'iCloud audit did not complete', errorCode: 'icloud_audit_failed' },
+      { requireActiveClaim: true },
+    );
+    expect(operations.requeue).not.toHaveBeenCalled();
+    expect(repository.publishMatch).not.toHaveBeenCalled();
+    expect(identities.release).toHaveBeenCalled();
+  });
+
+  it('settles a mismatch-copy publication authority pause without treating a genuine recovery failure as a pause', async () => {
+    expected = Buffer.alloc(32, 9);
+    recovery.reconcile.mockImplementation(() => {
+      operation.pauseRequestedAt = new Date();
+      return Promise.resolve({ outcome: 'retry', reason: 'manual_audit_authority_changed' });
+    });
+    await service.run(operation, token);
+    expect(operations.fail).not.toHaveBeenCalled();
+    expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+      delayMs: 0,
+      returnAttempt: true,
+      requireActiveClaim: true,
+    });
+    expect(identities.release.mock.invocationCallOrder[0]).toBeLessThan(operations.requeue.mock.invocationCallOrder[0]);
+    operation.pauseRequestedAt = null;
+    recovery.reconcile.mockImplementation(() => {
+      operation.pauseRequestedAt = new Date();
+      return Promise.resolve({ outcome: 'retry', reason: 'recovery_not_committed' });
+    });
+    await service.run(operation, token);
+    expect(operations.fail).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['claim', 'allocation'])(
+    'acknowledges a cancellation that arrives during %s capacity refusal',
+    async (phase) => {
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      if (phase === 'claim')
+        identities.claim.mockImplementation(async () => {
+          entered.resolve();
+          await release.promise;
+          return [];
+        });
+      else
+        repository.allocate.mockImplementation(async () => {
+          entered.resolve();
+          await release.promise;
+          return;
+        });
+      operations.requeue.mockResolvedValue(false);
+      const running = service.run(operation, token);
+      await entered.promise;
+      operation.cancelRequestedAt = new Date();
+      release.resolve();
+      await running;
+      expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+        delayMs: 60_000,
+        returnAttempt: true,
+        requireActiveClaim: true,
+      });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, token, {
+        released: true,
+        requireActiveClaim: true,
+      });
+      expect(transport.download).not.toHaveBeenCalled();
+      if (phase === 'allocation')
+        expect(identities.release.mock.invocationCallOrder[0]).toBeLessThan(
+          operations.acknowledgeCancel.mock.invocationCallOrder[0],
+        );
+      else expect(identities.release).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['cancel', 'pause'].flatMap((stop) => ['resource', 'finish', 'claim'].map((cleanup) => ({ stop, cleanup }))))(
+    'retains $cleanup cleanup failure during $stop without a false release acknowledgement or successful pause',
+    async ({ stop, cleanup }) => {
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      transport.download.mockImplementation(() =>
+        Promise.resolve({
+          stream: Readable.from(
+            (async function* () {
+              entered.resolve();
+              await release.promise;
+              yield fresh;
+            })(),
+          ),
+          session: {},
+          fingerprint: resource.fingerprint,
+          size: fresh.length,
+        }),
+      );
+      sync.resource.mockResolvedValue({ ...resource, status: 'running' });
+      if (cleanup === 'resource') sync.resource.mockRejectedValue(new Error('fixture_resource_cleanup_failure'));
+      else if (cleanup === 'finish') sync.finish.mockRejectedValue(new Error('fixture_finish_cleanup_failure'));
+      else identities.release.mockRejectedValue(new Error('fixture_claim_cleanup_failure'));
+      const running = service.run(operation, token);
+      await entered.promise;
+      if (stop === 'cancel') operation.cancelRequestedAt = new Date();
+      else operation.pauseRequestedAt = new Date();
+      current = false;
+      release.resolve();
+      await running;
+      expect(identities.release).toHaveBeenCalledTimes(1);
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        operation.id,
+        token,
+        { error: 'iCloud audit did not complete', errorCode: 'icloud_audit_failed' },
+        { requireActiveClaim: true },
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(repository.publishMatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('backs off a live older incarnation without inheriting or releasing its item claim', async () => {
+    identities.claim.mockResolvedValue([{ id: randomUUID(), holder: `icloud-sync:audit:${operation.id}` }]);
+    await service.run(operation, token);
+    expect(repository.allocate).not.toHaveBeenCalled();
+    expect(transport.download).not.toHaveBeenCalled();
+    expect(identities.release).not.toHaveBeenCalled();
+    expect(operations.fail).not.toHaveBeenCalled();
+    expect(operations.requeue).toHaveBeenCalledWith(operation.id, token, {
+      delayMs: 60_000,
+      returnAttempt: true,
+      requireActiveClaim: true,
+    });
+  });
+
   it('releases the item claim before requeuing a staging-capacity refusal', async () => {
     repository.allocate.mockResolvedValue(undefined);
     await service.run(operation, token);
     expect(transport.download).not.toHaveBeenCalled();
-    expect(identities.release).toHaveBeenCalled();
+    expect(identities.release).toHaveBeenCalledWith(
+      operation.ownerId,
+      [expect.any(String)],
+      manualAuditClaimHolder(operation.ownerId, { operationId: operation.id, operationClaimToken: token }),
+    );
+    expect(identities.release.mock.invocationCallOrder[0]).toBeLessThan(operations.requeue.mock.invocationCallOrder[0]);
     expect(operations.requeue).toHaveBeenCalled();
     expect(operations.complete).not.toHaveBeenCalled();
   });
