@@ -345,6 +345,122 @@ describe('PostgreSQL shared services', () => {
     );
   }, 35_000);
 
+  it.each([false, true])(
+    'joins actual remote configuration handlers and propagates failure=%s',
+    async (fixtureFailure) => {
+      server = await socketServer();
+      transport = new PostgresSocketTransport(config);
+      await transport.attach(server);
+      const websocket = new WebsocketRepository({} as never, { setContext: vi.fn(), debug: vi.fn() } as never);
+      Reflect.set(websocket, 'server', server);
+      child = fork(fileURLToPath(new URL('../../fixtures/postgres-config-worker.mjs', import.meta.url)), [], {
+        env: { ...process.env, FRAMELEAF_TEST_DATABASE_URL: url },
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      });
+      const peerMessage = (type: string) =>
+        new Promise<unknown>((resolve, reject) => {
+          const peer = child!;
+          const listener = (message: unknown) => {
+            if ((message as { type?: string }).type !== type) return;
+            clearTimeout(timer);
+            peer.off('message', listener);
+            resolve(message);
+          };
+          const timer = setTimeout(() => {
+            peer.off('message', listener);
+            reject(new Error(`Owned peer did not reach ${type}`));
+          }, 10_000);
+          peer.on('message', listener);
+        });
+      const ready = (await peerMessage('ready')) as { pid: number };
+      expect(ready.pid).not.toBe(process.pid);
+      const entered = peerMessage('config-entered');
+      let settled = false;
+      const outcome = websocket
+        .awaitConfigUpdate({ fixtureFailure } as never)
+        .then(() => ({ success: true }))
+        .catch((error: unknown) => ({ error }))
+        .finally(() => (settled = true));
+      await entered;
+      expect(settled).toBe(false);
+      child.send({ type: 'release' });
+      const result = await outcome;
+      if (fixtureFailure) {
+        expect(result).toHaveProperty('error');
+        expect((result as { error: Error }).error.message).toMatch(/failed configuration reconciliation/);
+      } else {
+        expect(result).toEqual({ success: true });
+      }
+    },
+    20_000,
+  );
+
+  it.each([false, true])(
+    'binds newly joined peer ACKs to discovered identities after installed adapter eviction; expected worker ACK=%s',
+    async (expectedWorkerAck) => {
+      server = await socketServer();
+      transport = new PostgresSocketTransport(config);
+      await transport.attach(server);
+      const publisher = server;
+      const peerA = await socketServer();
+      const transportA = new PostgresSocketTransport(config);
+      const peerB = await socketServer();
+      const transportB = new PostgresSocketTransport(config);
+      server = publisher;
+      try {
+        await transportA.attach(peerA);
+        let enteredA!: () => void;
+        const receivedA = new Promise<void>((resolve) => (enteredA = resolve));
+        let ackA!: (result: unknown) => void;
+        let publicationA!: Record<string, unknown>;
+        peerA.on('ConfigUpdate', (...args: unknown[]) => {
+          publicationA = args.at(-2) as Record<string, unknown>;
+          ackA = args.at(-1) as (result: unknown) => void;
+          enteredA();
+        });
+        peerB.on('ConfigUpdate', (...args: unknown[]) => {
+          const ack = args.at(-1) as (result: unknown) => void;
+          const publication = args.at(-2) as Record<string, unknown>;
+          ack({ ...publication, workerId: transportB.workerId, result: 'ok' });
+        });
+        const discover = transport.discoverWorkers.bind(transport);
+        let discovered: unknown;
+        vi.spyOn(transport, 'discoverWorkers').mockImplementation(async (publisher) => {
+          const expected = await discover(publisher, true);
+          discovered = expected;
+          await transportB.attach(peerB);
+          await vi.waitFor(async () => expect(await server!.sockets.adapter.serverCount()).toBe(3));
+          // Vitest types overloaded mocks using the final restart signature (number).
+          return expected as never;
+        });
+        const websocket = new WebsocketRepository({} as never, { setContext: vi.fn() } as never);
+        Reflect.set(websocket, 'server', server);
+        const outcome = websocket
+          .awaitConfigUpdate({} as never)
+          .then(() => ({ success: true }))
+          .catch((error: unknown) => ({ error }));
+        await receivedA;
+        expect(discovered).toEqual([transportA.workerId]);
+        if (expectedWorkerAck)
+          await transportA.publish(() => ackA({ ...publicationA, workerId: transportA.workerId, result: 'ok' }));
+        await peerA.close();
+        const result = await outcome;
+        if (expectedWorkerAck) {
+          expect(result).toEqual({ success: true });
+        } else {
+          expect(result).toHaveProperty('error');
+          expect((result as { error: Error }).error.message).toMatch(/failed configuration reconciliation/);
+        }
+      } finally {
+        await peerA.close();
+        await transportA.close();
+        await peerB.close();
+        await transportB.close();
+      }
+    },
+    20_000,
+  );
+
   it('rejects restart discovery with no live worker instead of accepting an empty ACK set', async () => {
     server = await socketServer();
     transport = new PostgresSocketTransport(config);

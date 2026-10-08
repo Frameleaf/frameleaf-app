@@ -6,6 +6,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { randomUUID } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AlbumUserRole } from 'src/enum.js';
@@ -13,10 +14,17 @@ import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { NotificationDto } from 'src/dtos/notification.dto.js';
 import { ReleaseEventV1, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
 import { SyncAssetEditV1, SyncAssetExifV1, SyncAssetV2 } from 'src/dtos/sync.dto.js';
-import { withSocketPublication } from 'src/middleware/websocket.adapter.js';
+import { withSocketConfigUpdate, withSocketPublication } from 'src/middleware/websocket.adapter.js';
 import { type AppRestartEvent, type ArgsOf, EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+
+type ConfigUpdatePublication = {
+  kind: 'frameleaf-config-reconciliation-v1';
+  publicationId: string;
+  publisherWorkerId: string;
+};
+type ConfigUpdateAcknowledgement = ConfigUpdatePublication & { workerId: string; result: 'ok' | 'error' };
 
 export const serverEvents = [
   'ConfigUpdate',
@@ -130,7 +138,33 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
     for (const event of serverEvents) {
       server.on(event, (...args: ArgsOf<any>) => {
         this.logger.debug(`Server event: ${event} (receive)`);
-        handlePromiseError(this.eventRepository.onEvent({ name: event, args, server: true }), this.logger);
+        if (event === 'ConfigUpdate' && typeof args.at(-1) === 'function') {
+          const ack = args.pop() as (result: ConfigUpdateAcknowledgement) => void;
+          const publication = args.pop() as ConfigUpdatePublication | undefined;
+          const reconcile = async () => {
+            if (
+              publication?.kind !== 'frameleaf-config-reconciliation-v1' ||
+              typeof publication.publicationId !== 'string' ||
+              !publication.publicationId ||
+              typeof publication.publisherWorkerId !== 'string' ||
+              !publication.publisherWorkerId
+            ) {
+              throw new Error('Configuration publication identity is unavailable');
+            }
+            const acknowledge = (result: 'ok' | 'error') =>
+              withSocketPublication(this.requireServer(), (workerId) => ack({ ...publication, workerId, result }));
+            try {
+              await this.eventRepository.onEvent({ name: event, args, server: true });
+            } catch (error) {
+              await acknowledge('error');
+              throw error;
+            }
+            await acknowledge('ok');
+          };
+          handlePromiseError(reconcile(), this.logger);
+        } else {
+          handlePromiseError(this.eventRepository.onEvent({ name: event, args, server: true }), this.logger);
+        }
       });
     }
   }
@@ -192,6 +226,38 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
       throw new Error('Websocket server is unavailable for restart publication');
     }
     return this.server;
+  }
+
+  async awaitConfigUpdate(update: ArgsOf<'ConfigUpdate'>[0]): Promise<void> {
+    const server = this.requireServer();
+    await withSocketConfigUpdate(server, async (expectedWorkers, publisherWorkerId) => {
+      const publication: ConfigUpdatePublication = {
+        kind: 'frameleaf-config-reconciliation-v1',
+        publicationId: randomUUID(),
+        publisherWorkerId,
+      };
+      const responses: ConfigUpdateAcknowledgement[] = await server.serverSideEmitWithAck(
+        'ConfigUpdate',
+        update,
+        publication,
+      );
+      const acknowledged = new Set<string>();
+      for (const response of responses) {
+        if (
+          response?.kind !== publication.kind ||
+          response.publicationId !== publication.publicationId ||
+          response.publisherWorkerId !== publisherWorkerId ||
+          typeof response.workerId !== 'string' ||
+          response.result !== 'ok'
+        ) {
+          throw new Error('One or more websocket workers failed configuration reconciliation');
+        }
+        acknowledged.add(response.workerId);
+      }
+      if (expectedWorkers.some((workerId) => !acknowledged.has(workerId))) {
+        throw new Error('One or more websocket workers failed configuration reconciliation');
+      }
+    });
   }
 
   serverSend<T extends ServerEvents>(event: T, ...args: ArgsOf<T>): void {
