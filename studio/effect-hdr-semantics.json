@@ -278,8 +278,8 @@
     "gpu-temperature": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Existing additive temperature/tint offsets in linear BT.709 project units; signed RGB and headroom preserved to the finite half-float limit, alpha unchanged. SDR retains its pinned clamp and equations."
     },
     "gpu-threshold": {
       "sdrParity": true,
