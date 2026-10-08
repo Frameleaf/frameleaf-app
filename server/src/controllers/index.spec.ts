@@ -68,6 +68,8 @@ const ADMIN_ROUTES = new Set([
   'GET queues/:name/statistics',
   'GET server/statistics',
   'GET system-config',
+  'GET system-config/config-file/activation',
+  'POST system-config/config-file/reload',
   'GET system-config/defaults',
   'GET system-config/storage-template-options',
   'GET system-metadata/admin-onboarding',

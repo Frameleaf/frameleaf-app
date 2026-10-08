@@ -18,6 +18,7 @@ import {
 } from 'src/enum.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
@@ -130,7 +131,7 @@ describe(AnalyticsService.name, () => {
   const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn(), getDevice: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
   const configRepository = { getEnv: () => ({ configFile: undefined }) };
-  const systemMetadataRepository = { get: vitest.fn() };
+  const systemMetadataRepository = newSystemMetadataRepositoryMock();
   const checksumRepository = {};
 
   let sut: AnalyticsService;
