@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
+  createStudioHostRefresh,
   probeStudioCapabilities,
   probeStudioHost,
   toStudioCapabilities,
@@ -102,5 +103,114 @@ describe('probeStudioCapabilities (FL-110)', () => {
 
     sdkMock.getMlCapabilities.mockRejectedValue(new Error('offline'));
     await expect(probeStudioHost()).resolves.toEqual({ capabilities: expect.any(Object), renderEvidence: [] });
+  });
+});
+
+const deferredSnapshot = () => {
+  let resolve!: (value: never) => void;
+  const done = new Promise<never>((finish) => {
+    resolve = finish;
+  });
+  return { done, resolve };
+};
+const healthySnapshot = { ...snapshot({ gpuWorker: true, renderWorker: true }) };
+
+describe('event-driven Studio host refresh authority', () => {
+  beforeEach(() => sdkMock.getMlCapabilities.mockReset());
+
+  it('coalesces overlapping events and publishes matching capabilities/evidence together', async () => {
+    const response = deferredSnapshot();
+    const row = {
+      destination: 'owned-worker',
+      sessions: 1,
+      gpuMemoryBytes: null,
+      codecs: ['h264'],
+      maxBitDepth: 8,
+      hdr10: false,
+      dolbyVision: false,
+      candidates: [],
+    };
+    sdkMock.getMlCapabilities.mockReturnValueOnce(response.done);
+    const published: unknown[] = [];
+    const gate = createStudioHostRefresh({
+      hasAccess: () => true,
+      onChange: (next) => {
+        published.push(next);
+      },
+    });
+    const first = gate.refresh();
+    const second = gate.refresh();
+    const third = gate.refresh();
+    expect(published).toEqual([]);
+    response.resolve({ ...healthySnapshot, studio: { ...healthySnapshot.studio, render: [row] } } as never);
+    expect(await Promise.all([first, second, third])).toEqual([true, true, true]);
+    expect(published).toEqual([
+      { capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true }, renderEvidence: [row] },
+    ]);
+    expect(sdkMock.getMlCapabilities).toHaveBeenCalledTimes(1);
+    gate.dispose();
+  });
+
+  it('fences out-of-order responses after offline invalidation even if transport ignores cancellation', async () => {
+    const older = deferredSnapshot();
+    const newer = deferredSnapshot();
+    sdkMock.getMlCapabilities.mockReturnValueOnce(older.done).mockReturnValueOnce(newer.done);
+    const published: unknown[] = [];
+    const gate = createStudioHostRefresh({
+      hasAccess: () => true,
+      onChange: (next) => {
+        published.push(next);
+      },
+    });
+    const stale = gate.refresh();
+    const signal = sdkMock.getMlCapabilities.mock.calls[0][0]?.signal;
+    gate.invalidate();
+    expect(signal?.aborted).toBe(true);
+    const current = gate.refresh();
+    newer.resolve(snapshot({}) as never);
+    expect(await current).toBe(true);
+    older.resolve(healthySnapshot as never);
+    expect(await stale).toBe(false);
+    expect(published).toEqual([{ capabilities: emptyStudioCapabilities(), renderEvidence: [] }]);
+    gate.dispose();
+  });
+
+  it('keeps continued refusal truthful and clears render evidence on a fresh request failure', async () => {
+    sdkMock.getMlCapabilities.mockRejectedValueOnce(new Error('still refused'));
+    const published: unknown[] = [];
+    const gate = createStudioHostRefresh({
+      hasAccess: () => true,
+      onChange: (next) => {
+        published.push(next);
+      },
+    });
+    expect(await gate.refresh()).toBe(true);
+    expect(published).toEqual([{ capabilities: emptyStudioCapabilities(), renderEvidence: [] }]);
+    gate.dispose();
+  });
+
+  it.each(['access-loss', 'dispose'] as const)('never publishes or revives after pending %s', async (reason) => {
+    const response = deferredSnapshot();
+    sdkMock.getMlCapabilities.mockReturnValueOnce(response.done);
+    let access = true;
+    const published: unknown[] = [];
+    const gate = createStudioHostRefresh({
+      hasAccess: () => access,
+      onChange: (next) => {
+        published.push(next);
+      },
+    });
+    const pending = gate.refresh();
+    if (reason === 'dispose') {
+      gate.dispose();
+    } else {
+      access = false;
+    }
+    response.resolve(healthySnapshot as never);
+    expect(await pending).toBe(false);
+    expect(published).toEqual([]);
+    expect(await gate.refresh()).toBe(false);
+    expect(sdkMock.getMlCapabilities).toHaveBeenCalledTimes(1);
+    gate.dispose();
   });
 });

@@ -68,14 +68,70 @@ export const toStudioRenderEvidence = (studio: Pick<StudioCapabilitiesDto, 'rend
   );
 
 /** Capabilities and render evidence from one request; a failure reports neither. */
-export const probeStudioHost = async (): Promise<{
+export interface StudioHostSnapshot {
   capabilities: StudioCapabilities;
   renderEvidence: StudioRenderEvidence[];
-}> => {
+}
+
+export const probeStudioHost = async (signal?: AbortSignal): Promise<StudioHostSnapshot> => {
   try {
-    const { studio } = await getMlCapabilities();
+    const { studio } = await getMlCapabilities(signal ? { signal } : undefined);
     return { capabilities: toStudioCapabilities(studio), renderEvidence: toStudioRenderEvidence(studio) };
   } catch {
     return { capabilities: emptyStudioCapabilities(), renderEvidence: [] };
   }
+};
+
+/** One event-driven request per live generation; admission and evidence publish together. */
+export const createStudioHostRefresh = ({
+  hasAccess,
+  onChange,
+  probe = probeStudioHost,
+}: {
+  hasAccess: () => boolean;
+  onChange: (snapshot: StudioHostSnapshot) => void;
+  probe?: typeof probeStudioHost;
+}) => {
+  let generation = 0;
+  let disposed = false;
+  let pending: { generation: number; controller: AbortController; done: Promise<boolean> } | null = null;
+
+  const invalidate = () => {
+    generation += 1;
+    pending?.controller.abort();
+    pending = null;
+  };
+
+  return {
+    refresh(): Promise<boolean> {
+      if (disposed || !hasAccess()) {
+        return Promise.resolve(false);
+      }
+      if (pending) {
+        return pending.done;
+      }
+      const current = ++generation;
+      const controller = new AbortController();
+      const done = probe(controller.signal)
+        .then((snapshot) => {
+          if (disposed || current !== generation || !hasAccess()) {
+            return false;
+          }
+          onChange(snapshot);
+          return true;
+        })
+        .finally(() => {
+          if (pending?.generation === current) {
+            pending = null;
+          }
+        });
+      pending = { generation: current, controller, done };
+      return done;
+    },
+    invalidate,
+    dispose() {
+      disposed = true;
+      invalidate();
+    },
+  };
 };
