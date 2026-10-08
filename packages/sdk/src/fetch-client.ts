@@ -6621,6 +6621,8 @@ export type ICloudEditEvidenceResponseDto = {
 export type ICloudEditSuccessorDto = {
     channel: ICloudEditPublicationChannel;
     expectedGeneration: number;
+    /** Supersede requires explicit current local publication CAS; null only for no existing local publication */
+    expectedPublicationId?: string | null;
     expectedVersionId: string;
     policy?: ICloudEditRetentionPolicy;
     requestId: string;

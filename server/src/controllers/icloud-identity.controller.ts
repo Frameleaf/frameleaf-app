@@ -75,7 +75,7 @@ export class ICloudIdentityController {
   @Endpoint({
     summary: 'Accept verified bytes as an administrative edit successor',
     description:
-      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Unsupported or unsafe supersede decisions require review.',
+      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Supersede explicitly binds the current local publication, verified eligible render set, effective config and owner-local policy sequence; first publication refuses changed policy, privacy or authority. Accepted decisions, committed bytes, queued effects and delivered effects are distinct.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   acceptICloudEditSuccessor(

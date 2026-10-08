@@ -56,7 +56,7 @@ import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
-import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { LocalEffectsPendingError, MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
@@ -1091,6 +1091,13 @@ export class ICloudSyncService {
       if (committed?.status !== 'committed') {
         return;
       }
+      if (committed.auditRequestId === null && ['edited-image', 'edited-video'].includes(committed.role)) {
+        try {
+          await this.relations.enqueue();
+        } catch {
+          throw new LocalEffectsPendingError();
+        }
+      }
       for (const job of committed.pendingJobs) {
         if (job.name === JobName.AssetExtractMetadata || job.name === JobName.AssetGenerateThumbnails) {
           const data: IEntityJob = { id: job.data.id };
@@ -1109,7 +1116,13 @@ export class ICloudSyncService {
       await this.repository.finalize(resource, () => this.staging.cleanup(committed));
     } catch (error) {
       const editReason = editAuthorityReviewReason(error);
-      const reason = editReason ?? (error instanceof ICloudTransportError ? error.code : 'icloud_transfer_failed');
+      const reason =
+        editReason ??
+        (error instanceof LocalEffectsPendingError
+          ? 'local_effects_pending'
+          : error instanceof ICloudTransportError
+            ? error.code
+            : 'icloud_transfer_failed');
       const current = await this.repository.resource(resource.id);
       await this.repository.finish(
         resource,

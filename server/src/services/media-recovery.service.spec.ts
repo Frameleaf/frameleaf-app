@@ -160,7 +160,7 @@ describe(MediaRecoveryService.name, () => {
       assetId: candidate.id,
     });
     repository.enqueueLocalEffects.mockRejectedValueOnce(new Error('queue unavailable'));
-    expect(await sut.verifyMapped(input)).toEqual({ outcome: 'retry', reason: 'reuse_not_committed' });
+    await expect(sut.verifyMapped(input)).rejects.toThrow('local_effects_pending');
     expect(repository.commitVerifiedReuse).toHaveBeenCalledOnce();
     const entered = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();

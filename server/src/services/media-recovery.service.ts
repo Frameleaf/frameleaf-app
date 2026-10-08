@@ -25,6 +25,12 @@ export type MediaRecoveryInput = RecoveryAuthority & {
   scheduledVerified?: Extract<MediaIntegrityResult, { status: 'healthy' }>;
 };
 
+export class LocalEffectsPendingError extends Error {
+  constructor() {
+    super('local_effects_pending');
+  }
+}
+
 @Injectable()
 export class MediaRecoveryService {
   constructor(
@@ -98,10 +104,15 @@ export class MediaRecoveryService {
         resource.auditRequestId === null &&
         ['edited-image', 'edited-video'].includes(resource.role)
       ) {
-        await this.repository.enqueueLocalEffects();
+        try {
+          await this.repository.enqueueLocalEffects();
+        } catch {
+          throw new LocalEffectsPendingError();
+        }
       }
       return committed;
     } catch (error) {
+      if (error instanceof LocalEffectsPendingError) throw error;
       const reason = editAuthorityReviewReason(error);
       return reason ? { outcome: 'needs-review', reason } : { outcome: 'retry', reason: 'reuse_not_committed' };
     }
@@ -301,10 +312,15 @@ export class MediaRecoveryService {
         resource.auditRequestId === null &&
         ['edited-image', 'edited-video'].includes(resource.role)
       ) {
-        await this.repository.enqueueLocalEffects();
+        try {
+          await this.repository.enqueueLocalEffects();
+        } catch {
+          throw new LocalEffectsPendingError();
+        }
       }
       return committed;
     } catch (error) {
+      if (error instanceof LocalEffectsPendingError) throw error;
       const reason = editAuthorityReviewReason(error);
       if (reason) {
         return { outcome: 'needs-review', reason };

@@ -56,6 +56,20 @@ const key = (ownerId: string) => `${JobName.ICloudRelations}:owner-stream:${owne
 export class AssetLocalEffectRepository {
   constructor(private db: Kysely<DB>) {}
 
+  /** Canonical pair initialization; never touches an existing dispatch cursor under policy locks. */
+  static async lockStreamHead(tx: Transaction<DB>, ownerId: string) {
+    const initialized = await sql`INSERT INTO asset_local_effect_stream("ownerId","streamEpoch")
+      VALUES(${ownerId}::uuid,${randomUUID()}::uuid) ON CONFLICT("ownerId") DO NOTHING RETURNING "ownerId"`.execute(tx);
+    const {
+      rows: [head],
+    } = await sql<{ streamEpoch: string; sequence: string }>`SELECT "streamEpoch","nextSequence"::text AS sequence
+      FROM asset_local_effect_stream WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(tx);
+    if (!head || BigInt(head.sequence) >= 9_223_372_036_854_775_807n) unavailable();
+    if (initialized.rows.length === 1)
+      await sql`INSERT INTO asset_local_effect_cursor("ownerId") VALUES(${ownerId}::uuid)`.execute(tx);
+    return head;
+  }
+
   static async sourceEpochs(db: Kysely<DB>, ids: string[]): Promise<SourceEpoch[]> {
     if (ids.length === 0) return [];
     const { rows } = await sql<SourceEpoch>`SELECT a.id AS "assetId",a."ownerId",
@@ -214,14 +228,7 @@ export class AssetLocalEffectRepository {
       const actual = await AssetLocalEffectRepository.selectLockedAdmissions(tx, lockedCascade.assetIds);
       if (canonicalJson(actual) !== canonicalJson(lockedCascade)) unavailable();
     }
-    const initialized =
-      await sql`INSERT INTO asset_local_effect_stream("ownerId","streamEpoch") VALUES(${ownerId}::uuid,${randomUUID()}::uuid)
-      ON CONFLICT("ownerId") DO NOTHING RETURNING "ownerId"`.execute(tx);
-    const {
-      rows: [stream],
-    } = await sql<{ streamEpoch: string; sequence: string }>`SELECT "streamEpoch","nextSequence"::text AS sequence
-      FROM asset_local_effect_stream WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(tx);
-    if (!stream || BigInt(stream.sequence) >= 9_223_372_036_854_775_807n) unavailable();
+    const stream = await AssetLocalEffectRepository.lockStreamHead(tx, ownerId);
     const epochs = await AssetLocalEffectRepository.sourceEpochs(
       tx,
       assets.map((a) => a.assetId),
@@ -264,9 +271,6 @@ export class AssetLocalEffectRepository {
     await sql`UPDATE asset_local_effect_stream SET "nextSequence"="nextSequence"+1 WHERE "ownerId"=${ownerId}::uuid`.execute(
       tx,
     );
-    // A committed stream already owns its cursor; do not touch a row a dispatcher may hold across await.
-    if (initialized.rows.length === 1)
-      await sql`INSERT INTO asset_local_effect_cursor("ownerId") VALUES(${ownerId}::uuid)`.execute(tx);
     return bundle;
   }
 
