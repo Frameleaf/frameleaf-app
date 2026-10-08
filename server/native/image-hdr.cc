@@ -158,20 +158,8 @@ bool hasGainMap(Input& input) {
   if (status.error_code == UHDR_CODEC_MEM_ERROR) check(status);
   return status.error_code == UHDR_CODEC_OK;
 }
-// Ultra HDR requires a primary ICC; an absent/invalid profile cannot inherit the codec's HDR-only sRGB guess.
-bool jpegHdrProfileValid(const Input& input, const Decoder& dec) {
-  const auto* bytes = static_cast<const uint8_t*>(input.data);
-  if (input.size < 2 || bytes[0] != 255 || bytes[1] != 216) return true;
-  const auto* icc = uhdr_dec_get_icc(dec.get());
-  if (!icc || !icc->data || icc->data_sz <= 14 || icc->data_sz > 1048576
-      || std::memcmp(icc->data, "ICC_PROFILE\0", 12) != 0) return false;
-  // libultrahdr retains the 12-byte JPEG ICC identifier and two chunk bytes.
-  auto profile = cmsOpenProfileFromMem(static_cast<const uint8_t*>(icc->data) + 14, cmsUInt32Number(icc->data_sz - 14));
-  if (!profile) return false;
-  const bool valid = cmsGetColorSpace(profile) == cmsSigRgbData && cmsIsMatrixShaper(profile);
-  cmsCloseProfile(profile);
-  return valid;
-}
+// A primary ICC must match the pinned JPEG decoder's known primaries and sRGB transfer.
+bool jpegHdrProfileValid(const Input& input, const Decoder& dec, int* colorPrimaries = nullptr);
 Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
   auto dec = preparedDecoder(input);
   if (linear || sdr) {
@@ -432,6 +420,45 @@ ColorProfile rgbProfile(int primaries, int transfer) {
   ColorProfile profile(cmsCreateRGBProfile(&white, &colors, curves), cmsCloseProfile);
   if (!profile) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
   return profile;
+}
+bool jpegHdrProfileValid(const Input& input, const Decoder& dec, int* colorPrimaries) {
+  const auto* bytes = static_cast<const uint8_t*>(input.data);
+  if (input.size < 2 || bytes[0] != 255 || bytes[1] != 216) return true;
+  const auto* icc = uhdr_dec_get_icc(dec.get());
+  if (!icc || !icc->data || icc->data_sz <= 14 || icc->data_sz > 1048576
+      || std::memcmp(icc->data, "ICC_PROFILE\0", 12) != 0) return false;
+  // libultrahdr retains the JPEG ICC identifier and two chunk bytes.
+  ColorProfile profile(cmsOpenProfileFromMem(static_cast<const uint8_t*>(icc->data) + 14,
+    cmsUInt32Number(icc->data_sz - 14)), cmsCloseProfile);
+  if (!profile || cmsGetColorSpace(profile.get()) != cmsSigRgbData || !cmsIsMatrixShaper(profile.get())) return false;
+  for (int primaries : {1, 12, 9}) {
+    auto reference = rgbProfile(primaries, 13);
+    bool matches = true;
+    for (auto tag : {cmsSigRedColorantTag, cmsSigGreenColorantTag, cmsSigBlueColorantTag}) {
+      const auto* actual = static_cast<const cmsCIEXYZ*>(cmsReadTag(profile.get(), tag));
+      const auto* expected = static_cast<const cmsCIEXYZ*>(cmsReadTag(reference.get(), tag));
+      // Match the pinned decoder's 0.001 XYZ primary tolerance; never default unknown primaries to sRGB.
+      if (!actual || !expected || !std::isfinite(actual->X) || !std::isfinite(actual->Y) || !std::isfinite(actual->Z)
+          || std::abs(actual->X - expected->X) > 0.001 || std::abs(actual->Y - expected->Y) > 0.001
+          || std::abs(actual->Z - expected->Z) > 0.001) { matches = false; break; }
+    }
+    if (!matches) continue;
+    for (auto tag : {cmsSigRedTRCTag, cmsSigGreenTRCTag, cmsSigBlueTRCTag}) {
+      auto* actual = static_cast<cmsToneCurve*>(cmsReadTag(profile.get(), tag));
+      auto* expected = static_cast<cmsToneCurve*>(cmsReadTag(reference.get(), tag));
+      if (!actual || !expected) { matches = false; break; }
+      // Allow quantized ICC curves, while refusing linear/gamma/other transfers the decoder cannot interpret.
+      for (int sample = 0; sample <= 256; ++sample) {
+        const float value = cmsEvalToneCurveFloat(actual, float(sample) / 256);
+        if (!std::isfinite(value) || std::abs(value - cmsEvalToneCurveFloat(expected, float(sample) / 256)) > 0.001) {
+          matches = false; break;
+        }
+      }
+      if (!matches) break;
+    }
+    if (matches) { if (colorPrimaries) *colorPrimaries = primaries; return true; }
+  }
+  return false;
 }
 ColorProfile appleColorProfile(const Input& input, const heif_image_handle* primary) {
   const size_t size = heif_image_handle_get_raw_color_profile_size(primary);
@@ -752,7 +779,9 @@ napi_value inspect(napi_env env, napi_callback_info info) {
       const bool swapped = jpegOrientation(input) >= 5;
       field(env, result, "width", double(swapped ? uhdr_dec_get_image_height(dec.get()) : uhdr_dec_get_image_width(dec.get())));
       field(env, result, "height", double(swapped ? uhdr_dec_get_image_width(dec.get()) : uhdr_dec_get_image_height(dec.get())));
-      const bool profileValid = jpegHdrProfileValid(input, dec);
+      int primaries = 0;
+      const bool profileValid = jpegHdrProfileValid(input, dec, &primaries);
+      if (jpeg && profileValid) field(env, result, "colorPrimaries", double(primaries));
       field(env, result, "reconstructionAvailable", profileValid);
       if (!profileValid) field(env, result, "fallbackReason", "hdr-profile-unsupported");
       return result;

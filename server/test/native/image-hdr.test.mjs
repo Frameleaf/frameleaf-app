@@ -121,14 +121,17 @@ test('resource limits and invalid working pixels fail before encoding', () => {
 test('an authored SDR baseline survives HDR reconstruction and re-encoding', () => {
   const sdr = Buffer.alloc(width * height * 4, 60);
   for (let i = 3; i < sdr.length; i += 4) sdr[i] = 255;
-  const encoded = codec.encodePaired(bytes(), width, height, 0, ...limits, sdr, 0);
-  const pair = codec.decodePaired(encoded, ...limits);
-  assert.deepEqual([pair.width, pair.height, pair.gamut], [width, height, 0]);
-  assert.equal(pair.sdrGamut, 0);
-  assert.equal(pair.sdr.length, sdr.length);
-  for (let i = 0; i < sdr.length; i++) assert.ok(Math.abs(pair.sdr[i] - sdr[i]) <= 2);
-  const decoded = new Float32Array(pair.data.buffer, pair.data.byteOffset, pair.data.length / 4);
-  assert.ok(decoded[(32 * width + 60) * 4] > 31);
+  for (const gamut of [0, 1, 2]) {
+    const encoded = codec.encodePaired(bytes(), width, height, gamut, ...limits, sdr, gamut);
+    assert.equal(codec.inspect(encoded, ...limits).colorPrimaries, [1, 12, 9][gamut]);
+    const pair = codec.decodePaired(encoded, ...limits);
+    assert.deepEqual([pair.width, pair.height, pair.gamut], [width, height, gamut]);
+    assert.equal(pair.sdrGamut, gamut);
+    assert.equal(pair.sdr.length, sdr.length);
+    for (let i = 0; i < sdr.length; i++) assert.ok(Math.abs(pair.sdr[i] - sdr[i]) <= 2);
+    const decoded = new Float32Array(pair.data.buffer, pair.data.byteOffset, pair.data.length / 4);
+    assert.ok(decoded[(32 * width + 60) * 4] > 31);
+  }
   assert.throws(() => codec.encodePaired(bytes(), width, height, 0, ...limits, sdr.subarray(4), 0), {
     code: 'INVALID_SDR_BASELINE',
   });
@@ -614,6 +617,7 @@ test(
     ];
     for (const gamut of [0, 1, 2]) {
       const encoded = codec.encode(Buffer.from(pixels.buffer), 64, 64, gamut, ...limits);
+      assert.equal(codec.inspect(encoded, ...limits).colorPrimaries, 12); // The pinned tone mapper outputs Display P3.
       const decoded = codec.decode(encoded, ...limits);
       assert.equal(decoded.gamut, 1);
       const values = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
@@ -937,4 +941,33 @@ test('Ultra HDR JPEG without a valid primary ICC cannot advertise or render reco
       assert.throws(() => operation(input, ...limits), { code: 'HDR_PROFILE_UNSUPPORTED' });
   }
   assert.equal(createHash('sha256').update(original).digest('hex'), checksum);
+});
+
+test('structurally valid custom ICC primaries and transfer cannot inherit sRGB HDR interpretation', () => {
+  const original = codec.encode(bytes(), width, height, 1, ...limits);
+  for (const [tag, field, value] of [
+    ['rXYZ', 8, 0.65],
+    ['rTRC', 12, 1],
+  ]) {
+    const input = Buffer.from(original),
+      base = input.indexOf('ICC_PROFILE\0') + 14;
+    assert.ok(base >= 14);
+    let changed = false;
+    for (let i = 0; i < input.readUInt32BE(base + 128); i++) {
+      const at = base + 132 + i * 12;
+      if (input.toString('ascii', at, at + 4) === tag) {
+        const data = base + input.readUInt32BE(at + 4);
+        assert.equal(input.toString('ascii', data, data + 4), tag === 'rXYZ' ? 'XYZ ' : 'para');
+        input.writeInt32BE(Math.round(value * 65536), data + field);
+        changed = true;
+        break;
+      }
+    }
+    assert.ok(changed, tag);
+    const info = codec.inspect(input, ...limits);
+    assert.equal(info.reconstructionAvailable, false, tag);
+    assert.equal(info.fallbackReason, 'hdr-profile-unsupported');
+    for (const operation of [codec.decode, codec.decodePaired])
+      assert.throws(() => operation(input, ...limits), { code: 'HDR_PROFILE_UNSUPPORTED' });
+  }
 });
