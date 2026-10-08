@@ -4,7 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { SafetyLookupDto, SafetyLookupResponseDto, SafetySummaryDto } from 'src/dtos/safety.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { SafetyService } from 'src/services/safety.service.js';
 
 @ApiTags(ApiTag.Assets)
@@ -14,6 +14,7 @@ export class SafetyController {
 
   @Post('lookup')
   @HttpCode(HttpStatus.OK)
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
     summary: 'Look up own asset safety by SHA-256',

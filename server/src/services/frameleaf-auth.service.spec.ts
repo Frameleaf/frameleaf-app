@@ -151,7 +151,13 @@ describe(FrameleafAuthService.name, () => {
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
     mocks.session.create.mockImplementation((row) => Promise.resolve({ id: 'session-1', ...row } as never));
     mocks.frameleafAccount.upsertLink.mockImplementation((row) =>
-      Promise.resolve({ ...row, linkedAt: new Date(), lastSignInAt: null }),
+      Promise.resolve({
+        ...row,
+        access: row.access ?? null,
+        linkedAt: new Date(),
+        lastSignInAt: null,
+        scopeGrantedAt: null,
+      }),
     );
     serveIssuer();
   });
@@ -372,6 +378,97 @@ describe(FrameleafAuthService.name, () => {
         await signInLinked(user);
         expect(mocks.user.update).not.toHaveBeenCalled();
         expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(user.id, expect.objectContaining({ role: null }));
+      });
+    });
+
+    describe('frameleaf_access viewer: server-level Viewer (FL-235)', () => {
+      const createViewer = async () => {
+        const created = UserFactory.create({ email: 'remote@example.test', isAdmin: false });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(created as never);
+        await sut.callback(callbackDto, {}, loginDetails);
+        return created;
+      };
+
+      beforeEach(() => {
+        idClaims.frameleaf_access = 'viewer';
+        mocks.frameleafAccount.getUserIdsByAccess.mockResolvedValue(['owner-1']);
+      });
+
+      it('records the access and shares the server owner’s library with a new viewer', async () => {
+        const created = await createViewer();
+
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: created.id, access: 'viewer' }),
+        );
+        expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(
+          created.id,
+          expect.objectContaining({ access: 'viewer' }),
+        );
+        expect(mocks.frameleafAccount.getUserIdsByAccess).toHaveBeenCalledWith('owner');
+        expect(mocks.partner.create).toHaveBeenCalledWith({
+          sharedById: 'owner-1',
+          sharedWithId: created.id,
+          inTimeline: true,
+        });
+        expect(mocks.frameleafAccount.markScopeGranted).toHaveBeenCalledWith(created.id);
+      });
+
+      it('never makes a viewer an administrator, whatever frameleaf_role says', async () => {
+        idClaims.frameleaf_role = 'admin';
+        await createViewer();
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ isAdmin: false }));
+      });
+
+      it('keeps the scope the library owners chose at later sign-ins', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({
+          userId: user.id,
+          sub: 'fl-sub',
+          access: 'viewer',
+          scopeGrantedAt: new Date(),
+        } as never);
+        mocks.user.get.mockResolvedValue(user as never);
+
+        await sut.callback(callbackDto, {}, loginDetails);
+        expect(mocks.partner.create).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.markScopeGranted).not.toHaveBeenCalled();
+      });
+
+      it('grants the scope again to a viewer whose access was revoked and who was invited again', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({
+          userId: user.id,
+          sub: 'fl-sub',
+          access: 'viewer',
+          scopeGrantedAt: null,
+        } as never);
+        mocks.user.get.mockResolvedValue(user as never);
+
+        await sut.callback(callbackDto, {}, loginDetails);
+        expect(mocks.partner.create).toHaveBeenCalledWith(expect.objectContaining({ sharedWithId: user.id }));
+      });
+
+      it('lifts the restriction when the cloud raises the share to editor', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        idClaims.frameleaf_access = 'editor';
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({
+          userId: user.id,
+          sub: 'fl-sub',
+          access: 'viewer',
+          scopeGrantedAt: new Date(),
+        } as never);
+        mocks.user.get.mockResolvedValue(user as never);
+
+        await sut.callback(callbackDto, {}, loginDetails);
+        expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(
+          user.id,
+          expect.objectContaining({ access: 'editor' }),
+        );
+        expect(mocks.partner.create).not.toHaveBeenCalled();
       });
     });
 
@@ -862,6 +959,21 @@ describe(FrameleafAuthService.name, () => {
         expect.objectContaining({ userId: user.id, sub: 'fl-sub', email: 'remote@example.test' }),
       );
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_frameleaf_cloud', user.id, { topic: 'account' });
+    });
+
+    it('records the access the cloud gives the linked account on this server (FL-235)', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.from(user).build();
+      idClaims.frameleaf_access = 'viewer';
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.frameleafAccount.getUserIdsByAccess.mockResolvedValue(['owner-1']);
+      mocks.user.get.mockResolvedValue(user as never);
+
+      await sut.link(auth, callbackDto, {});
+      expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user.id, access: 'viewer' }),
+      );
+      expect(mocks.partner.create).toHaveBeenCalledWith(expect.objectContaining({ sharedWithId: user.id }));
     });
 
     it('unlinks and ends the other Frameleaf sessions, keeping this one', async () => {

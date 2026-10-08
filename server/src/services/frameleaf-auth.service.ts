@@ -31,12 +31,15 @@ import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_TYPE,
+  type FrameleafAccess,
+  frameleafAccess,
   frameleafCallbackUrl,
   frameleafOAuthConfig,
   frameleafRedirectUri,
   frameleafRole,
   hasInstanceAccess,
 } from 'src/utils/frameleaf-sign-in.js';
+import { grantViewerScope } from 'src/utils/frameleaf-viewer.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
 
@@ -123,6 +126,9 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
  *   from the cloud ends it, and remote-access enforcement can recognise it.
  * - A Frameleaf app can exchange a server-audience token from the identity provider for a session
  *   without a browser (FL-230, `exchangeToken`), under the same account rules and session tagging.
+ * - FL-235: `frameleaf_access` is recorded on every sign-in and link. A `viewer` is never an
+ *   administrator and is held to reading (`src/utils/frameleaf-viewer.ts`); when an account becomes
+ *   a viewer (or is invited again after its access was revoked) it is given its scope.
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
@@ -263,7 +269,9 @@ export class FrameleafAuthService extends BaseService {
     if (emailProblem) {
       throw refuse('email', emailProblem);
     }
-    const role = frameleafRole(profile);
+    const access = frameleafAccess(profile);
+    // FL-235: a viewer is never an administrator, whatever frameleaf_role says
+    const role = access === 'viewer' ? 'user' : frameleafRole(profile);
 
     let user: UserAdmin | undefined;
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
@@ -290,6 +298,7 @@ export class FrameleafAuthService extends BaseService {
           emailVerified: true,
           role,
           autoRegistered: false,
+          access,
         });
         await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
       }
@@ -309,13 +318,15 @@ export class FrameleafAuthService extends BaseService {
         emailVerified: true,
         role,
         autoRegistered: true,
+        access,
       });
       await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
     }
     if (role && user.isAdmin !== (role === 'admin')) {
       user = await this.applyRole(user, role);
     }
-    await this.frameleafAccountRepository.touchLink(user.id, { email, emailVerified: true, role });
+    await this.frameleafAccountRepository.touchLink(user.id, { email, emailVerified: true, role, access });
+    await this.grantViewerScopeIfDue(user.id, link?.userId === user.id ? link : undefined, access);
 
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
@@ -438,14 +449,18 @@ export class FrameleafAuthService extends BaseService {
         owner ? 'This Frameleaf account is already linked to another account on this server' : DELETED_ACCOUNT_MESSAGE,
       );
     }
+    const previous = await this.frameleafAccountRepository.getLinkByUser(auth.user.id);
+    const access = frameleafAccess(profile);
     await this.frameleafAccountRepository.upsertLink({
       userId: auth.user.id,
       sub: profile.sub,
       email,
       emailVerified: true,
-      role: frameleafRole(profile),
+      role: access === 'viewer' ? 'user' : frameleafRole(profile),
       autoRegistered: false,
+      access,
     });
+    await this.grantViewerScopeIfDue(auth.user.id, previous, access);
     const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
     if (user) {
       await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
@@ -474,6 +489,25 @@ export class FrameleafAuthService extends BaseService {
       await this.auditLink(user, AdminAuditAction.FrameleafAccountUnlinked, removed.email);
     }
     this.websocketRepository.clientSend('on_frameleaf_cloud', auth.user.id, { topic: 'account' });
+  }
+
+  /**
+   * FL-235: an account that becomes a viewer, or a viewer invited again after its access was revoked,
+   * is given its scope (the server owner's library). A viewer that keeps its scope keeps whatever the
+   * library owners chose since.
+   */
+  private async grantViewerScopeIfDue(
+    userId: string,
+    previous: { access?: FrameleafAccess | null; scopeGrantedAt?: Date | null } | undefined,
+    access: FrameleafAccess | null,
+  ) {
+    if (access !== 'viewer' || (previous?.access === 'viewer' && previous.scopeGrantedAt)) {
+      return;
+    }
+    const granted = await grantViewerScope(this.viewerAccess, userId);
+    if (granted.length > 0) {
+      this.logger.log(`Shared the server owner’s library with the viewer ${userId}`);
+    }
   }
 
   /** A removed account takes its Frameleaf link with it (the fork table has no foreign key). */

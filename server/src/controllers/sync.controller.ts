@@ -5,7 +5,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { SyncAckDeleteDto, SyncAckDto, SyncAckSetDto, SyncStreamDto } from 'src/dtos/sync.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { SyncService } from 'src/services/sync.service.js';
 
@@ -18,6 +18,7 @@ export class SyncController {
   ) {}
 
   @Post('stream')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.SyncStream })
   @Header('Content-Type', 'application/jsonlines+json')
   @HttpCode(HttpStatus.OK)
@@ -47,6 +48,7 @@ export class SyncController {
   }
 
   @Post('ack')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.SyncCheckpointUpdate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
@@ -60,6 +62,7 @@ export class SyncController {
   }
 
   @Delete('ack')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.SyncCheckpointDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({

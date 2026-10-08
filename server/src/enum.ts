@@ -1898,6 +1898,8 @@ export enum ApiCustomExtension {
   History = 'x-immich-history',
   State = 'x-immich-state',
   Required = 'x-immich-required',
+  /** FL-235: a route other than GET that a server Viewer may call (see `ServerRole.Viewer`). */
+  ViewerAllowed = 'x-frameleaf-viewer-allowed',
 }
 
 export enum MetadataKey {
@@ -1915,6 +1917,26 @@ export enum MetadataKey {
   RemoteMediaCeiling = 'remote_media_ceiling',
   /** FL-161: a route any valid session may reach through remote access (signing out). */
   RemoteSignInExempt = 'remote_sign_in_exempt',
+  /** FL-235: a route other than GET that a server Viewer may call (a read sent as POST, or signing out). */
+  ViewerAllowed = 'viewer_allowed',
+}
+
+/**
+ * FL-235: a person's role on this server, reported by `GET /users/me`.
+ *
+ * - `owner`: an administrator whose Frameleaf account owns this server's Frameleaf Cloud link;
+ * - `admin`: any other administrator;
+ * - `user`: a person with their own library, who may upload;
+ * - `viewer`: an account Frameleaf Cloud invited to this server as a viewer (`frameleaf_access`
+ *   `viewer`). It sees what library owners share with it (the server owner's library from its first
+ *   sign-in) and may call every GET route plus the routes marked `x-frameleaf-viewer-allowed`; every
+ *   other route answers 403 `frameleaf_viewer_read_only`. It signs in with Frameleaf only.
+ */
+export enum ServerRole {
+  Owner = 'owner',
+  Admin = 'admin',
+  User = 'user',
+  Viewer = 'viewer',
 }
 
 export enum RouteKey {

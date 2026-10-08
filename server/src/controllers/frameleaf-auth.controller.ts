@@ -15,7 +15,7 @@ import {
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
-import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, GetLoginDetails, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
@@ -117,6 +117,7 @@ export class FrameleafAuthController {
   }
 
   @Post('handoff')
+  @ViewerAllowed()
   @Authenticated()
   @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({

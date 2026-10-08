@@ -154,6 +154,34 @@ const RELAY_MEDIA_ROUTES = [
   'GET users/:id/profile-image',
 ];
 
+/**
+ * FL-235: the routes other than GET that a server Viewer may call, i.e. `@ViewerAllowed()`: reads sent
+ * as POST (searches, download planning and archives, the sync stream and the checkpoints that keep the
+ * app's mirror in step) and ending or handing over the Viewer's own session or video stream. Every other route that is not GET refuses a Viewer.
+ */
+const VIEWER_ALLOWED_ROUTES = new Set([
+  'DELETE assets/:id/video/stream/:sessionId',
+  'DELETE sync/ack',
+  'POST assets/safety/lookup',
+  'POST auth/logout',
+  'POST auth/validateToken',
+  'POST download/archive',
+  'POST download/info',
+  'POST enrichment/moments/search',
+  'POST oauth/frameleaf/handoff',
+  'POST search/ask',
+  'POST search/facets',
+  'POST search/histogram',
+  'POST search/large-assets',
+  'POST search/metadata',
+  'POST search/random',
+  'POST search/smart',
+  'POST search/smart/statistics',
+  'POST search/statistics',
+  'POST sync/ack',
+  'POST sync/stream',
+]);
+
 /** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
 const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST auth/login': RATE_LIMITS.login,
@@ -209,6 +237,7 @@ const getRoutes = () => {
         homeNetworkOnly:
           reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
         rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
+        viewerAllowed: reflector.get<boolean | undefined>(MetadataKey.ViewerAllowed, handler) === true,
       };
     });
   });
@@ -274,6 +303,15 @@ describe('controllers', () => {
     );
 
     expect(limited).toEqual(RATE_LIMITED_ROUTES);
+  });
+
+  it('should let a server Viewer call only the expected routes other than GET (FL-235)', () => {
+    const marked = routes.filter((route) => route.viewerAllowed);
+
+    expect(new Set(marked.map((route) => route.id))).toEqual(VIEWER_ALLOWED_ROUTES);
+    // a GET route is always open to a Viewer; marking one would only blur the list above
+    expect(marked.filter((route) => route.id.startsWith('GET ')).map((route) => route.id)).toEqual([]);
+    expect(marked.filter((route) => route.auth?.admin || route.auth?.public).map((route) => route.id)).toEqual([]);
   });
 
   it('should require admin access for routes with an admin permission', () => {

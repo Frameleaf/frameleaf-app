@@ -3,10 +3,12 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  RequestMethod,
   SetMetadata,
   applyDecorators,
   createParamDecorator,
 } from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ApiBearerAuth, ApiCookieAuth, ApiExtension, ApiOkResponse, ApiQuery, ApiSecurity } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -86,6 +88,20 @@ export const HomeNetworkOnly = (): MethodDecorator & ClassDecorator => SetMetada
  * cleared from away.
  */
 export const RemoteSignInExempt = (): MethodDecorator => SetMetadata(MetadataKey.RemoteSignInExempt, true);
+
+/**
+ * FL-235: marks a route other than GET that a server Viewer may call: a read sent as POST (a search,
+ * download planning or an archive, the sync stream and the checkpoints that keep the app's mirror in
+ * step) or ending or handing over the Viewer's own session or video stream. A GET route needs no mark;
+ * every other route refuses a Viewer. Documented as `x-frameleaf-viewer-allowed`.
+ */
+export const ViewerAllowed = (): MethodDecorator =>
+  applyDecorators(SetMetadata(MetadataKey.ViewerAllowed, true), ApiExtension(ApiCustomExtension.ViewerAllowed, true));
+
+/** FL-235: whether a server Viewer may call this route handler (any GET route, or one marked `@ViewerAllowed()`). */
+export const isViewerAllowedRoute = (reflector: Reflector, handler: ReflectorTarget) =>
+  reflector.get<RequestMethod | undefined>(METHOD_METADATA, handler) === RequestMethod.GET ||
+  reflector.get<boolean | undefined>(MetadataKey.ViewerAllowed, handler) === true;
 
 export const Auth = createParamDecorator((data, context: ExecutionContext): AuthDto => {
   return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
@@ -176,6 +192,7 @@ export class AuthGuard implements CanActivate {
         refreshElevation,
         via,
         remoteSignInExempt,
+        viewerAllowed: isViewerAllowedRoute(this.reflector, context.getHandler()),
       },
     });
 

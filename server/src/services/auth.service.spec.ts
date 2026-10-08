@@ -442,6 +442,27 @@ describe(AuthService.name, () => {
         expect(mocks.session.delete).toHaveBeenCalledWith('session-3');
       });
 
+      describe('for a server Viewer (FL-235, owner decision 2026-10-01)', () => {
+        it.each([
+          ['one session', { sid: 'fl-sid', sub: 'fl-sub' }],
+          ['sign out everywhere', { sub: 'fl-sub' }],
+        ])('only ends the sessions on %s, keeping every share (owner-added ones too)', async (_name, claims) => {
+          mocks.oauth.validateLogoutToken.mockResolvedValue(claims);
+          mocks.frameleafAccount.getAccess.mockResolvedValue('viewer');
+          mocks.frameleafAccount.findSessions.mockResolvedValue([
+            { sessionId: 'session-1', userId: 'viewer-1', sub: 'fl-sub' },
+          ] as never);
+          mocks.session.delete.mockResolvedValue();
+
+          await sut.backchannelLogout({ logout_token: token('instance-1') });
+
+          expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+          expect(mocks.partner.remove).not.toHaveBeenCalled();
+          expect(mocks.partner.getAll).not.toHaveBeenCalled();
+          expect(mocks.frameleafAccount.clearScopeGranted).not.toHaveBeenCalled();
+        });
+      });
+
       it('leaves a token for another audience to the administrator’s own provider', async () => {
         await expect(sut.backchannelLogout({ logout_token: token('someone-else') })).rejects.toThrow(
           'Received backchannel logout request but OAuth is not enabled',

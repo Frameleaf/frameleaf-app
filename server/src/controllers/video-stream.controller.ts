@@ -13,7 +13,7 @@ import {
   HlsVariantParamDto,
 } from 'src/dtos/streaming.dto.js';
 import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -94,6 +94,7 @@ export class VideoStreamController {
 
   @Delete(':id/video/stream/:sessionId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
   @Endpoint({
     summary: 'End HLS streaming session',

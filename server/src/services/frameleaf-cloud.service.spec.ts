@@ -2618,6 +2618,24 @@ describe(FrameleafCloudService.name, () => {
       expect(stored?.frameleafCloud?.signIn?.clientSecret ?? '').toBe('');
     });
 
+    it('ends every server Viewer’s access before the account links go (FL-235)', async () => {
+      await linkNow();
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
+      mocks.frameleafAccount.getUserIdsByAccess.mockImplementation((access) =>
+        Promise.resolve(access === 'viewer' ? ['viewer-1'] : []),
+      );
+      mocks.partner.getAll.mockResolvedValue([{ sharedById: 'owner-1', sharedWithId: 'viewer-1' }] as never);
+      mocks.session.getByUserId.mockResolvedValue([{ id: 'viewer-session' }] as never);
+      mocks.session.delete.mockResolvedValue();
+      mocks.frameleafAccount.deleteAllSessions.mockResolvedValue([]);
+
+      await sut.unlink(authStub.admin);
+      expect(mocks.frameleafAccount.getUserIdsByAccess).toHaveBeenCalledWith('viewer');
+      expect(mocks.partner.remove).toHaveBeenCalledWith({ sharedById: 'owner-1', sharedWithId: 'viewer-1' });
+      expect(mocks.session.delete).toHaveBeenCalledWith('viewer-session');
+      expect(mocks.frameleafAccount.deleteAllLinks).toHaveBeenCalled();
+    });
+
     it('removes the plan certificate and keeps the supporter key’s (FL-177, as-built decision #12)', async () => {
       await linkNow();
       cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));

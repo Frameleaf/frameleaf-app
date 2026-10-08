@@ -6,6 +6,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { pinCodeRegex } from 'src/dtos/auth.dto.js';
 import {
   AdminAuditActionSchema,
+  ServerRole,
   UserAvatarColor,
   UserAvatarColorSchema,
   UserMetadataKey,
@@ -224,6 +225,25 @@ const UserAdminResponseSchema = UserResponseSchema.extend({
 }).meta({ id: 'UserAdminResponseDto' });
 
 export class UserAdminResponseDto extends createZodDto(UserAdminResponseSchema) {}
+
+const ServerRoleSchema = z
+  .enum(ServerRole)
+  .describe(
+    'Your role on this server. `owner` and `admin` administer it, `user` has their own library, and `viewer` (an account Frameleaf Cloud invited as a viewer) may only view: every GET route and the routes marked `x-frameleaf-viewer-allowed` answer, every other route answers 403 `frameleaf_viewer_read_only`, and it signs in with Frameleaf only.',
+  )
+  .meta({ id: 'ServerRole' });
+
+const UserMeResponseSchema = UserAdminResponseSchema.extend({
+  serverRole: ServerRoleSchema.meta(new HistoryBuilder().added('v3').getExtensions()),
+  canUpload: z
+    .boolean()
+    .describe(
+      'Whether you may upload to this server, so an app shows backup ("this phone backs up here") only where it is true: false for a viewer, and for an API key without asset.upload',
+    )
+    .meta(new HistoryBuilder().added('v3').getExtensions()),
+}).meta({ id: 'UserMeResponseDto' });
+
+export class UserMeResponseDto extends createZodDto(UserMeResponseSchema) {}
 
 export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
   const metadata = entity.metadata || [];

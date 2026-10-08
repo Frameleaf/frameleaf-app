@@ -4,6 +4,7 @@ import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
+import type { ViewerAccessDeps } from 'src/utils/frameleaf-viewer.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
@@ -495,6 +496,17 @@ export class BaseService {
    * the service that made the change, after it succeeded. Recording never undoes or fails the change
    * it records: if the insert fails, the change stands and the failure is logged.
    */
+  /** FL-235: what granting or revoking a server Viewer's access needs (`src/utils/frameleaf-viewer.ts`). */
+  protected get viewerAccess(): ViewerAccessDeps {
+    return {
+      frameleafAccountRepository: this.frameleafAccountRepository,
+      partnerRepository: this.partnerRepository,
+      sessionRepository: this.sessionRepository,
+      eventRepository: this.eventRepository,
+      websocketRepository: this.websocketRepository,
+    };
+  }
+
   protected async recordAdminEvents(events: Insertable<AdminAuditEventTable>[]): Promise<void> {
     if (events.length === 0) {
       return;

@@ -33,7 +33,7 @@ import {
   VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
@@ -116,6 +116,7 @@ export class EnrichmentController {
 
   @Post('moments/search')
   @HttpCode(HttpStatus.OK)
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
     summary: 'Search video moments',

@@ -19,7 +19,14 @@ import {
   mapPreferences,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
+import {
+  UserAdminResponseDto,
+  UserMeResponseDto,
+  UserResponseDto,
+  UserUpdateMeDto,
+  mapUser,
+  mapUserAdmin,
+} from 'src/dtos/user.dto.js';
 import {
   CacheControl,
   JobName,
@@ -36,6 +43,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { canUploadAs, getServerRole } from 'src/utils/frameleaf-viewer.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -97,13 +105,15 @@ export class UserService extends BaseService {
     return users.map((user) => mapUser(user));
   }
 
-  async getMe(auth: AuthDto): Promise<UserAdminResponseDto> {
+  async getMe(auth: AuthDto): Promise<UserMeResponseDto> {
     const user = await this.userRepository.get(auth.user.id, {});
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
-    return mapUserAdmin(user);
+    // FL-235: the role here, so an app can label the server and show backup only where it may upload
+    const serverRole = getServerRole(user.isAdmin, await this.frameleafAccountRepository.getAccess(user.id));
+    return { ...mapUserAdmin(user), serverRole, canUpload: canUploadAs(serverRole, auth.apiKey?.permissions) };
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {

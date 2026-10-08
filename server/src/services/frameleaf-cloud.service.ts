@@ -94,6 +94,7 @@ import {
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { edgeStateCurrent, heartbeatEndpoints } from 'src/utils/frameleaf-remote-access.js';
+import { revokeViewerAccess } from 'src/utils/frameleaf-viewer.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /**
@@ -812,8 +813,17 @@ export class FrameleafCloudService extends BaseService {
   /**
    * FL-158: with the link gone Frameleaf Cloud can no longer vouch for anyone, so every Sign in with
    * Frameleaf session ends and the account links are removed. Local sign-in is unchanged.
+   * FL-235: every server Viewer's access is revoked first (its partner shares go, so the deletes
+   * reach the mirrors, and every session it holds ends): without the link nobody invited it.
    */
   private async endFrameleafSignIns() {
+    try {
+      for (const viewerId of await this.frameleafAccountRepository.getUserIdsByAccess('viewer')) {
+        await revokeViewerAccess(this.viewerAccess, viewerId);
+      }
+    } catch (error) {
+      this.logger.error(`Could not end the viewers’ access: ${error}`);
+    }
     try {
       const sessionIds = await this.frameleafAccountRepository.deleteAllSessions();
       for (const sessionId of sessionIds) {

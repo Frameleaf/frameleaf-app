@@ -44,6 +44,7 @@ import {
   isRemoteVia,
   logoutTokenAudiences,
 } from 'src/utils/frameleaf-sign-in.js';
+import { isServerViewer, viewerReadOnlyError, viewerSignInRequiredError } from 'src/utils/frameleaf-viewer.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
@@ -111,6 +112,11 @@ export type ValidateRequest = {
     via?: FrameleafVia | null;
     /** FL-161: signing out, which any valid session may do through remote access. */
     remoteSignInExempt?: boolean;
+    /**
+     * FL-235: a route a server Viewer may call (any GET route, or one marked `@ViewerAllowed()`).
+     * Absent means it may not: a Viewer is refused.
+     */
+    viewerAllowed?: boolean;
   };
 };
 
@@ -472,6 +478,10 @@ export class AuthService extends BaseService {
       throw new ForbiddenException(`Missing required permission: ${requestedPermission}`);
     }
 
+    if (!authDto.sharedLink && !authDto.user.isAdmin) {
+      await this.requireViewerAccess(authDto, metadata);
+    }
+
     // FL-34: sensitive media is hidden by its lock record (`src/utils/locked.ts`), which every read
     // applies, so it is no longer part of this per-session filter: anything hidden while locked is in
     // the Locked view. The filter keeps the owner's own suppressed people, tags and pets.
@@ -513,6 +523,30 @@ export class AuthService extends BaseService {
     }
     this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
     throw frameleafSignInRequired();
+  }
+
+  /**
+   * FL-235: a server Viewer (`frameleaf_access = viewer`) reaches this server only through a Sign in
+   * with Frameleaf session, so the cloud's invitation stays the authority (signing out excepted), and
+   * only for the routes a Viewer may call. Everyone else passes.
+   */
+  private async requireViewerAccess(auth: AuthDto, metadata: ValidateRequest['metadata']): Promise<void> {
+    const access = await this.frameleafAccountRepository.getAccess(auth.user.id);
+    if (!isServerViewer(auth.user.isAdmin, access)) {
+      return;
+    }
+    if (!metadata.remoteSignInExempt) {
+      const tagged =
+        auth.session && !auth.apiKey && (await this.frameleafAccountRepository.getSession(auth.session.id));
+      if (!tagged) {
+        this.logger.warn(`Denied a viewer that did not sign in with Frameleaf: ${metadata.uri}`);
+        throw viewerSignInRequiredError();
+      }
+    }
+    if (!metadata.viewerAllowed) {
+      this.logger.warn(`Denied a viewer a route that changes the server: ${metadata.uri}`);
+      throw viewerReadOnlyError();
+    }
   }
 
   /**
@@ -572,7 +606,8 @@ export class AuthService extends BaseService {
     const auth = await this.authenticate({
       headers,
       queryParams: {},
-      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io', via },
+      // FL-235: the socket only delivers events, so a Viewer may open it
+      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io', via, viewerAllowed: true },
     });
     return { auth, via };
   }

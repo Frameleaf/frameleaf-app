@@ -6,7 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
-import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  CacheControl,
+  CalendarHeatmapType,
+  JobName,
+  Permission,
+  ServerRole,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
 import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -99,6 +108,30 @@ describe(UserService.name, () => {
       await expect(sut.getMe(authStub.admin)).resolves.toMatchObject({
         id: user.id,
         email: user.email,
+      });
+    });
+
+    describe('role on this server (FL-235)', () => {
+      it.each([
+        [authStub.admin, 'owner', ServerRole.Owner, true],
+        [authStub.admin, null, ServerRole.Admin, true],
+        [authStub.user1, null, ServerRole.User, true],
+        [authStub.user1, 'editor', ServerRole.User, true],
+        [authStub.user1, 'viewer', ServerRole.Viewer, false],
+      ] as const)('reports %#: access %s as %s, upload %s', async (auth, access, serverRole, canUpload) => {
+        mocks.frameleafAccount.getAccess.mockResolvedValue(access ?? undefined);
+
+        await expect(sut.getMe(auth)).resolves.toMatchObject({ id: auth.user.id, serverRole, canUpload });
+        expect(mocks.frameleafAccount.getAccess).toHaveBeenCalledWith(auth.user.id);
+      });
+
+      it('hides backup from an API key that may not upload', async () => {
+        const auth = AuthFactory.from(authStub.user1.user)
+          .apiKey({ permissions: [Permission.AssetRead] })
+          .build();
+        mocks.user.get.mockResolvedValue(userStub.user1 as never);
+
+        await expect(sut.getMe(auth)).resolves.toMatchObject({ serverRole: ServerRole.User, canUpload: false });
       });
     });
   });

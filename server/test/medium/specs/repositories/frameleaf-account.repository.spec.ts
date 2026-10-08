@@ -3,6 +3,7 @@ import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as links from 'src/fork-schema/migrations/0000000000202-FrameleafAccountLinks.js';
 import * as sessions from 'src/fork-schema/migrations/0000000000203-FrameleafSessions.js';
+import * as access from 'src/fork-schema/migrations/0000000000211-FrameleafAccountAccess.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -44,10 +45,12 @@ it('matches the private catalog and rolls back without modifying the official ca
   for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
     expect(before[kind].filter((entry) => isOurs(entry))).toEqual(manifest[kind].filter((entry) => isOurs(entry)));
   }
+  await access.down(db);
   await sessions.down(db);
   await links.down(db);
   await links.up(db);
   await sessions.up(db);
+  await access.up(db);
   const after = await getCatalogEvidence(db);
   for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
     expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
@@ -110,4 +113,37 @@ it('refuses writes while the server is being handed over', async () => {
   } finally {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
+});
+
+it('records the access Frameleaf Cloud gives each account on this server, and the Viewer scope grant (FL-235)', async () => {
+  const { ctx, sut } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: viewer } = await ctx.newUser();
+  const { user: gone } = await ctx.newUser({ deletedAt: new Date() });
+
+  await sut.upsertLink({ ...link(owner.id, `sub-${newUuid()}`), access: 'owner' });
+  await sut.upsertLink({ ...link(viewer.id, `sub-${newUuid()}`), access: 'viewer' });
+  await sut.upsertLink({ ...link(gone.id, `sub-${newUuid()}`), access: 'owner' });
+  await expect(sut.getAccess(owner.id)).resolves.toBe('owner');
+  await expect(sut.getAccess(viewer.id)).resolves.toBe('viewer');
+  await expect(sut.getAccess(newUuid())).resolves.toBeUndefined();
+  // an account in the trash shares nothing
+  await expect(sut.getUserIdsByAccess('owner')).resolves.toEqual(expect.arrayContaining([owner.id]));
+  await expect(sut.getUserIdsByAccess('owner')).resolves.not.toContain(gone.id);
+  await expect(sut.getUserIdsByAccess('viewer')).resolves.toContain(viewer.id);
+
+  await expect(sut.getLinkByUser(viewer.id)).resolves.toMatchObject({ access: 'viewer', scopeGrantedAt: null });
+  await sut.markScopeGranted(viewer.id);
+  await expect(sut.getLinkByUser(viewer.id)).resolves.toMatchObject({ scopeGrantedAt: expect.any(Date) });
+  // a sign-in records the latest access and keeps the grant
+  await sut.touchLink(viewer.id, { email: 'v@example.test', emailVerified: true, role: 'user', access: 'viewer' });
+  await expect(sut.getLinkByUser(viewer.id)).resolves.toMatchObject({ scopeGrantedAt: expect.any(Date) });
+  await sut.clearScopeGranted(viewer.id);
+  await expect(sut.getLinkByUser(viewer.id)).resolves.toMatchObject({ access: 'viewer', scopeGrantedAt: null });
+
+  await sut.touchLink(viewer.id, { email: 'v@example.test', emailVerified: true, role: 'user', access: 'editor' });
+  await expect(sut.getAccess(viewer.id)).resolves.toBe('editor');
+  await expect(sut.upsertLink({ ...link(newUuid(), `sub-${newUuid()}`), access: 'root' as never })).rejects.toThrow(
+    /frameleaf_account_link_access_check/,
+  );
 });

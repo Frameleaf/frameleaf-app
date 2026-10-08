@@ -9745,6 +9745,7 @@
         "tags": [
           "Assets"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3",
@@ -13203,6 +13204,7 @@
         "tags": [
           "Assets"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3",
@@ -13678,6 +13680,7 @@
         "tags": [
           "Authentication"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -14025,6 +14028,7 @@
         "tags": [
           "Authentication"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -16215,6 +16219,7 @@
         "tags": [
           "Download"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -16292,6 +16297,7 @@
         "tags": [
           "Download"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -16791,6 +16797,7 @@
         "tags": [
           "Enrichment"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3.0.0",
@@ -23798,6 +23805,7 @@
         "tags": [
           "Authentication"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3.2.0",
@@ -30256,6 +30264,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v2.7.0",
@@ -30457,6 +30466,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3.2.0",
@@ -30513,6 +30523,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3.2.0",
@@ -31397,6 +31408,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -31474,6 +31486,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -31672,6 +31685,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -31732,6 +31746,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -31792,6 +31807,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v3.2.0",
@@ -31848,6 +31864,7 @@
         "tags": [
           "Search"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -38199,6 +38216,7 @@
         "tags": [
           "Sync"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -38301,6 +38319,7 @@
         "tags": [
           "Sync"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -38354,6 +38373,7 @@
         "tags": [
           "Sync"
         ],
+        "x-frameleaf-viewer-allowed": true,
         "x-immich-history": [
           {
             "version": "v1",
@@ -42556,7 +42576,7 @@
     },
     "/users/me": {
       "get": {
-        "description": "Retrieve information about the user making the API request.",
+        "description": "Retrieve information about the user making the API request, with their role on this server (`serverRole`) and whether they may upload here (`canUpload`), so an app can label the server and show backup only where it is allowed. `owner` and `admin` administer the server and `user` has their own library. `viewer` is an account Frameleaf Cloud invited to this server as a viewer: it sees what library owners share with it (the server owner’s library from its first sign-in), signs in with Frameleaf only (otherwise 403 `frameleaf_viewer_sign_in_required`), and may call every GET route and the routes marked `x-frameleaf-viewer-allowed`; every other route, every upload and every administration route answers 403 `frameleaf_viewer_read_only`.",
         "operationId": "getMyUser",
         "parameters": [],
         "responses": {
@@ -42564,7 +42584,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserAdminResponseDto"
+                  "$ref": "#/components/schemas/UserMeResponseDto"
                 }
               }
             },
@@ -82157,6 +82177,16 @@
         ],
         "type": "object"
       },
+      "ServerRole": {
+        "description": "Your role on this server. `owner` and `admin` administer it, `user` has their own library, and `viewer` (an account Frameleaf Cloud invited as a viewer) may only view: every GET route and the routes marked `x-frameleaf-viewer-allowed` answer, every other route answers 403 `frameleaf_viewer_read_only`, and it signs in with Frameleaf only.",
+        "enum": [
+          "owner",
+          "admin",
+          "user",
+          "viewer"
+        ],
+        "type": "string"
+      },
       "ServerStatsResponseDto": {
         "properties": {
           "photos": {
@@ -93832,6 +93862,156 @@
           "activatedAt",
           "keyHint",
           "kind"
+        ],
+        "type": "object"
+      },
+      "UserMeResponseDto": {
+        "properties": {
+          "avatarColor": {
+            "$ref": "#/components/schemas/UserAvatarColor"
+          },
+          "canUpload": {
+            "description": "Whether you may upload to this server, so an app shows backup (\"this phone backs up here\") only where it is true: false for a viewer, and for an API key without asset.upload",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
+          "clusterGroupId": {
+            "description": "Cluster group the user is a member of",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "deletedAt": {
+            "description": "Deletion date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "email": {
+            "description": "User email",
+            "format": "email",
+            "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+            "type": "string"
+          },
+          "id": {
+            "description": "User ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isAdmin": {
+            "description": "Is admin user",
+            "type": "boolean"
+          },
+          "license": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserLicense"
+              }
+            ],
+            "nullable": true
+          },
+          "name": {
+            "description": "User name",
+            "type": "string"
+          },
+          "oauthId": {
+            "description": "OAuth ID",
+            "type": "string"
+          },
+          "profileChangedAt": {
+            "description": "Profile change date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "profileImagePath": {
+            "description": "Profile image path",
+            "type": "string"
+          },
+          "quotaSizeInBytes": {
+            "description": "Storage quota in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "quotaUsageInBytes": {
+            "description": "Storage usage in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "serverRole": {
+            "$ref": "#/components/schemas/ServerRole",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
+          "shouldChangePassword": {
+            "description": "Require password change on next login",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "storageLabel": {
+            "description": "Storage label",
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "avatarColor",
+          "canUpload",
+          "clusterGroupId",
+          "createdAt",
+          "deletedAt",
+          "email",
+          "id",
+          "isAdmin",
+          "license",
+          "name",
+          "oauthId",
+          "profileChangedAt",
+          "profileImagePath",
+          "quotaSizeInBytes",
+          "quotaUsageInBytes",
+          "serverRole",
+          "shouldChangePassword",
+          "status",
+          "storageLabel",
+          "updatedAt"
         ],
         "type": "object"
       },

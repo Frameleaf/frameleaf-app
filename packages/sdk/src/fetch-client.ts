@@ -10940,6 +10940,44 @@ export type TrashSummaryResponseDto = {
     /** Items already permanently deleted whose files are still being removed from storage */
     pendingDeletion: number;
 };
+export type UserMeResponseDto = {
+    avatarColor: UserAvatarColor;
+    /** Whether you may upload to this server, so an app shows backup ("this phone backs up here") only where it is true: false for a viewer, and for an API key without asset.upload */
+    canUpload: boolean;
+    /** Cluster group the user is a member of */
+    clusterGroupId: string;
+    /** Creation date */
+    createdAt: string;
+    /** Deletion date */
+    deletedAt: string | null;
+    /** User email */
+    email: string;
+    /** User ID */
+    id: string;
+    /** Is admin user */
+    isAdmin: boolean;
+    license: (UserLicense) | null;
+    /** User name */
+    name: string;
+    /** OAuth ID */
+    oauthId: string;
+    /** Profile change date */
+    profileChangedAt: string;
+    /** Profile image path */
+    profileImagePath: string;
+    /** Storage quota in bytes */
+    quotaSizeInBytes: number | null;
+    /** Storage usage in bytes */
+    quotaUsageInBytes: number | null;
+    serverRole: ServerRole;
+    /** Require password change on next login */
+    shouldChangePassword: boolean;
+    status: UserStatus;
+    /** Storage label */
+    storageLabel: string | null;
+    /** Last update date */
+    updatedAt: string;
+};
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
     /** User email */
@@ -22116,7 +22154,7 @@ export function searchUsers(opts?: Oazapfts.RequestOpts) {
 export function getMyUser(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: UserAdminResponseDto;
+        data: UserMeResponseDto;
     }>("/users/me", {
         ...opts
     }));
@@ -25179,6 +25217,12 @@ export enum TrashItemSort {
     Recent = "recent",
     Size = "size",
     Name = "name"
+}
+export enum ServerRole {
+    Owner = "owner",
+    Admin = "admin",
+    User = "user",
+    Viewer = "viewer"
 }
 export enum Evidence {
     RegisteredCurrentOriginals = "registered-current-originals"

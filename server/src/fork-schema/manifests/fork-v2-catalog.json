@@ -889,6 +889,10 @@
       "identity": "immich_fork.frameleaf_consent.version"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_account_link.access"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.frameleaf_account_link.autoRegistered"
     },
@@ -911,6 +915,10 @@
     {
       "definition": "text|nullable|||",
       "identity": "immich_fork.frameleaf_account_link.role"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_account_link.scopeGrantedAt"
     },
     {
       "definition": "text|not null|||",
@@ -8035,6 +8043,10 @@
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
     },
     {
+      "definition": "CHECK (access IS NULL OR (access = ANY (ARRAY['owner'::text, 'admin'::text, 'editor'::text, 'viewer'::text])))",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_access_check"
+    },
+    {
       "definition": "PRIMARY KEY (\"userId\")",
       "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_pkey"
     },
@@ -10275,7 +10287,8 @@
     "0000000000207-StudioGeneratedResources",
     "0000000000208-StudioProjectImports",
     "0000000000209-StudioHdrIntermediates",
-    "0000000000210-FrameleafTokenExchange"
+    "0000000000210-FrameleafTokenExchange",
+    "0000000000211-FrameleafAccountAccess"
   ],
   "functions": [
     {

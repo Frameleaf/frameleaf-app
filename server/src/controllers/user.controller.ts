@@ -31,7 +31,7 @@ import {
   UserPreferencesUpdateDto,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
+import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
@@ -97,10 +97,11 @@ export class UserController {
   @Authenticated({ permission: Permission.UserRead })
   @Endpoint({
     summary: 'Get current user',
-    description: 'Retrieve information about the user making the API request.',
+    description:
+      'Retrieve information about the user making the API request, with their role on this server (`serverRole`) and whether they may upload here (`canUpload`), so an app can label the server and show backup only where it is allowed. `owner` and `admin` administer the server and `user` has their own library. `viewer` is an account Frameleaf Cloud invited to this server as a viewer: it sees what library owners share with it (the server owner’s library from its first sign-in), signs in with Frameleaf only (otherwise 403 `frameleaf_viewer_sign_in_required`), and may call every GET route and the routes marked `x-frameleaf-viewer-allowed`; every other route, every upload and every administration route answers 403 `frameleaf_viewer_read_only`.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMyUser(@Auth() auth: AuthDto): Promise<UserAdminResponseDto> {
+  getMyUser(@Auth() auth: AuthDto): Promise<UserMeResponseDto> {
     return this.service.getMe(auth);
   }
 

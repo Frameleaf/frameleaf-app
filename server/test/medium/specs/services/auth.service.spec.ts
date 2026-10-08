@@ -8,6 +8,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -30,6 +31,8 @@ const setup = (db?: Kysely<DB>) => {
       ConfigRepository,
       CryptoRepository,
       DatabaseRepository,
+      // FL-235: the access Frameleaf Cloud gives each account (a server Viewer is held to reading)
+      FrameleafAccountRepository,
       SessionRepository,
       SystemMetadataRepository,
       UserRepository,

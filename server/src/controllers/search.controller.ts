@@ -27,7 +27,7 @@ import {
   StatisticsSearchDto,
 } from 'src/dtos/search.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, ViewerAllowed } from 'src/middleware/auth.guard.js';
 import { SearchService } from 'src/services/search.service.js';
 
 @ApiTags(ApiTag.Search)
@@ -36,6 +36,7 @@ export class SearchController {
   constructor(private service: SearchService) {}
 
   @Post('metadata')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -48,6 +49,7 @@ export class SearchController {
   }
 
   @Post('statistics')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetStatistics })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -60,6 +62,7 @@ export class SearchController {
   }
 
   @Post('facets')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -73,6 +76,7 @@ export class SearchController {
   }
 
   @Post('histogram')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -86,6 +90,7 @@ export class SearchController {
   }
 
   @Post('smart/statistics')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -99,6 +104,7 @@ export class SearchController {
   }
 
   @Post('random')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -111,6 +117,7 @@ export class SearchController {
   }
 
   @Post('large-assets')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -123,6 +130,7 @@ export class SearchController {
   }
 
   @Post('smart')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -135,6 +143,7 @@ export class SearchController {
   }
 
   @Post('ask')
+  @ViewerAllowed()
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({

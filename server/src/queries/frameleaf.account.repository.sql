@@ -16,6 +16,27 @@ FROM
 WHERE
   sub = $1
 
+-- FrameleafAccountRepository.getAccess
+SELECT
+  access
+FROM
+  immich_fork.frameleaf_account_link
+WHERE
+  "userId" = $1::uuid
+
+-- FrameleafAccountRepository.getUserIdsByAccess
+SELECT
+  link."userId"
+FROM
+  immich_fork.frameleaf_account_link link
+  INNER JOIN public."user" u ON u.id = link."userId"
+  AND u."deletedAt" IS NULL
+WHERE
+  link.access = $1
+ORDER BY
+  link."linkedAt",
+  link."userId"
+
 -- FrameleafAccountRepository.countLinks
 SELECT
   count(*)::text AS count
