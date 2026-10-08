@@ -414,7 +414,12 @@
       "path": "patches/0086-scope-capture-retry.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "037f7ea5361557b097eff755d3a4fcad3cd0da3d9d6a5bef5dd980ef9551e5ef"
+    },
+    {
+      "path": "patches/0087-preview-track-gain.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "51cf183c97dc3dde68257df4cab21976d9d2527c090a9895a37279219925e8c0"
     }
   ],
-  "sourceSha256": "645a7ab96525f8bc039996cfe720ef55b8882221b0747644a391580eb676e79d"
+  "sourceSha256": "6547c4e703e1c6c747f4e49dbf55a1fd313c26a9203eb5b70af8e47b01ef046f"
 }
