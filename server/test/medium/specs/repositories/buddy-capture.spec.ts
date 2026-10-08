@@ -23,9 +23,11 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy-backup-capture.service.js';
@@ -78,6 +80,12 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         }),
     } as ConfigRepository;
     repository = new BuddyBackupRepository(db, config);
+    // Ordinary synthetic deployment identity, backed by an actual key in this test's private directory.
+    // Recovery still reads the real database identity and captures its authority under C1.
+    await new SystemMetadataRepository(db).set(
+      SystemMetadataKey.FrameleafInstance,
+      await new InstanceIdentityRepository().loadOrCreate(join(root, 'identity'), null),
+    );
     physical = new PhysicalFileRepository(db);
     ring = { version: 1, vaultId: randomUUID(), current: 1, keys: { 1: randomBytes(32).toString('base64url') } };
     settings = {
@@ -695,7 +703,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     );
 
     const { capture, backups, keys } = fixture();
-    const { manifest } = await capture.capture(options());
+    const input = options();
+    const captured = await capture.capture(input);
+    const { manifest } = captured;
     await repository.update((state) => ({ ...state, settings }));
     const recovery = new BuddyBackupRecoveryService(
       repository,
@@ -741,14 +751,17 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       join(serverDirectory, 'prepared.json'),
       JSON.stringify({ version: 1, scope: 'server', mode: 'replace', manifest, files: [] }),
     );
-    const replacement = { instanceId: randomUUID(), heartbeat: { cloneSuspected: false } };
-    await writeFile(
-      join(serverDirectory, 'replacement.json'),
-      JSON.stringify({
-        keys: [SystemMetadataKey.FrameleafCloudLink],
-        metadata: [{ key: SystemMetadataKey.FrameleafCloudLink, value: replacement }],
-      }),
-    );
+    const replacement = {
+      status: 'unlinked' as const,
+      cloudUrl: 'https://synthetic-replacement.invalid',
+      instanceId: randomUUID(),
+      heartbeat: { failures: 0, cloneSuspected: false },
+    };
+    await new SystemMetadataRepository(db).set(SystemMetadataKey.FrameleafCloudLink, replacement);
+    const dump = manifest.library.database!;
+    await writeFile(join(serverDirectory, 'database.sql.gz'), await restoreBytes(captured, input.runId, dump.sha256));
+    backups.verifyDatabaseBackup = vi.fn<DatabaseBackupService['verifyDatabaseBackup']>().mockResolvedValue();
+    await recovery.prepare(serverId, async () => {});
     const maintenance = {
       isMaintenanceMode: true,
       action: { restoreBackupFilename: `buddy-restore-${serverId}-${basename(manifest.library.database!.key)}` },
@@ -833,7 +846,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       await repository.update((state) => ({ ...state, settings: destination, ...authority }));
       const identity = join(root, 'identity', 'instance-key.pem');
       const grants = join(repository.root(), 'grant.json');
-      await writeFile(identity, 'replacement identity');
+      const replacementKey = await readFile(identity);
       await writeFile(grants, 'replacement grant');
       const recovery = new BuddyBackupRecoveryService(
         repository,
@@ -855,7 +868,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         await writeFile(staged, await restoreBytes(captured, input.runId, dump.sha256));
         // The fixture's dump process supplies synthetic bytes; prepare still verifies their hash and size.
         backups.verifyDatabaseBackup = vi.fn<DatabaseBackupService['verifyDatabaseBackup']>().mockResolvedValue();
-        expect(await recovery.prepare(id)).toBe(`buddy-restore-${id}-${basename(dump.key)}`);
+        expect(await recovery.prepare(id, async () => {})).toBe(`buddy-restore-${id}-${basename(dump.key)}`);
         expect(backups.verifyDatabaseBackup).toHaveBeenCalledWith(staged);
         const replacement = JSON.parse(await readFile(join(directory, 'replacement.json'), 'utf8'));
         expect(replacement.keys).toEqual(
@@ -898,7 +911,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
               pausedSending: true,
             },
       );
-      expect(await readFile(identity, 'utf8')).toBe('replacement identity');
+      expect(await readFile(identity)).toEqual(replacementKey);
       expect(await readFile(grants, 'utf8')).toBe('replacement grant');
       await repository.update((state) => ({ ...state, settings: { ...state.settings!, uploadMbps: 333 } }));
       await run();
