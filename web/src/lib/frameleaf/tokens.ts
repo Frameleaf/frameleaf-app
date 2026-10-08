@@ -47,8 +47,6 @@ export const DURATION = {
   dock: 420,
   sheet: 480,
   hero: 520,
-  /** Unfurl, the signature: the logo, the selection tick, a done mark, an empty-state icon. */
-  unfurl: 440,
   /** The opacity crossfade every pattern becomes under Reduce Motion. */
   reduced: 150,
   /** One turn of the ring spinner. */
@@ -92,23 +90,6 @@ export const Z_INDEX = {
 export const EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
 /** tokens.css `--fl-snappy`: small moves and every exit. */
 export const SNAPPY = 'cubic-bezier(0.2, 0.9, 0.1, 1)';
-/** tokens.css `--fl-unfurl`: the signature curve, one soft overshoot. */
-export const UNFURL = 'cubic-bezier(0.2, 1.5, 0.4, 1)';
-/** Where Unfurl starts: a little small and turned back, like a leaf before it opens. */
-export const UNFURL_FROM = { scale: 0.86, rotate: -8 } as const;
-
-/** The brand gradient, Leaf Light (tokens.css `--fl-brand-gradient`), for canvas or SVG drawing. */
-export const BRAND_GRADIENT = {
-  angle: 137,
-  stops: [
-    ['#86f345', 0],
-    ['#36ec72', 25],
-    ['#00c4d6', 57],
-    ['#00c7b0', 76],
-    ['#00d874', 100],
-  ],
-} as const;
-
 /** Logo rules (Logo.svelte enforces them): clear space as a share of height, and minimum heights in px. */
 export const LOGO_CLEAR_SPACE = 0.25;
 export const LOGO_MIN_HEIGHT = { symbol: 16, lockup: 20 } as const;

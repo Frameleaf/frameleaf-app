@@ -86,7 +86,6 @@ describe('login mandatory-change routing', () => {
     const { container } = render(Page, { data: data(false) } as never);
     const heading = screen.getByRole('heading', { level: 1, name: 'Welcome back' });
     expect(heading.closest('.auth-heading')).toHaveClass('hero');
-    expect(container.querySelector(':scope .auth-heading .fl-brand-line')).toHaveAttribute('aria-hidden', 'true');
     expect(container.querySelector(':scope .auth-brand .fl-logo-arrive')).not.toBeNull();
     // the lockup stands on the page by itself: no plate behind it
     expect(container.querySelector('.auth-brand-plate')).toBeNull();

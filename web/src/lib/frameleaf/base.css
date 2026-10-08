@@ -81,7 +81,7 @@
 
   /*
    * Headings sit on the type scale (tokens.css): h1 display, h2 headline, h3 body size. Their
-   * tracking follows the step, so a title tightens as it grows (BRAND.md decision 5).
+   * tracking follows the step, so a title tightens as it grows.
    */
   :where(.frameleaf h1) {
     font-size: var(--fl-font-display);
@@ -223,7 +223,7 @@
    * only: cards and sheets grow their radius so the squircle reads at the same size. Controls and
    * chips keep the plain 12px and pill corners: a squircle at an ungrown radius reads as about
    * 7px, which made a `.button`, a field and a chip squarer than the Button primitive beside
-   * them and squarer than the logo's frame ratio (BRAND.md decision 7).
+   * them and squarer than the logo's frame ratio.
    */
   @supports (corner-shape: squircle) {
     :where(
@@ -444,61 +444,6 @@
   }
 
   /*
-   * UNFURL, the Frameleaf signature (BRAND.md decision 6). A mark grows out of its lower
-   * inline-start corner, where the leaf meets the frame in the logo, turning eight degrees as it
-   * opens and settling with one soft overshoot. Only for marks: the logo on sign-in, first run and
-   * the loading screen, the selection tick, a done mark, the icon of an empty state. Never for a
-   * container, a menu or a list; those are Pop, Sheet, Dock and Reveal. `in:unfurl` in motion.ts
-   * is the same move.
-   */
-  :where(.frameleaf .fl-unfurl, .fl-scope .fl-unfurl, .frameleaf.fl-unfurl) {
-    transform-origin: bottom left;
-    animation:
-      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
-      fl-unfurl-in var(--fl-duration-unfurl) var(--fl-unfurl) both;
-  }
-
-  :where(.frameleaf .fl-unfurl:dir(rtl), .fl-scope .fl-unfurl:dir(rtl), .frameleaf.fl-unfurl:dir(rtl)) {
-    transform-origin: bottom right;
-    animation:
-      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
-      fl-unfurl-in-rtl var(--fl-duration-unfurl) var(--fl-unfurl) both;
-  }
-
-  :where(.frameleaf .fl-unfurl.fl-leaving, .fl-scope .fl-unfurl.fl-leaving, .frameleaf.fl-unfurl.fl-leaving) {
-    animation: fl-fade-out var(--fl-duration-pop-out) var(--fl-ease) both;
-  }
-
-  /*
-   * LEAF LIGHT, the brand gradient, in the only two shapes the product draws it (BRAND.md
-   * decision 3). `fl-brand-line` is a hairline: the navigation line, the finished end of a
-   * progress bar, the rule under a sign-in or first-run heading. `fl-brand-frame` is the logo's
-   * frame around one icon: an empty state, a done mark. The frame's corner is the logo's own 27%.
-   * Neither ever touches a photograph, fills a control or sits behind text.
-   */
-  :where(.frameleaf .fl-brand-line, .fl-scope .fl-brand-line, .frameleaf.fl-brand-line) {
-    display: block;
-    height: 2px;
-    background: var(--fl-brand-gradient);
-    border-radius: var(--fl-radius-pill);
-  }
-
-  :where(.frameleaf .fl-brand-frame, .fl-scope .fl-brand-frame, .frameleaf.fl-brand-frame) {
-    display: inline-grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: var(--fl-brand-frame-size, 56px);
-    height: var(--fl-brand-frame-size, 56px);
-    color: var(--fl-text);
-    background:
-      linear-gradient(var(--fl-brand-frame-fill, var(--fl-panel)), var(--fl-brand-frame-fill, var(--fl-panel)))
-        padding-box,
-      var(--fl-brand-gradient) border-box;
-    border: 1.5px solid transparent;
-    border-radius: 27%;
-  }
-
-  /*
    * The loading placeholder (Skeleton.svelte) and the one ring spinner (Spinner.svelte). The
    * placeholder breathes; the ring turns. Under Reduce Motion both hold still: the shape alone
    * says "loading", and Spinner carries the text for assistive technology.
@@ -536,20 +481,6 @@
   @keyframes fl-pop-in {
     from {
       scale: 0.9;
-    }
-  }
-
-  @keyframes fl-unfurl-in {
-    from {
-      scale: 0.86;
-      rotate: -8deg;
-    }
-  }
-
-  @keyframes fl-unfurl-in-rtl {
-    from {
-      scale: 0.86;
-      rotate: 8deg;
     }
   }
 
@@ -621,9 +552,6 @@
       .frameleaf .fl-dock,
       .fl-scope .fl-dock,
       .frameleaf.fl-dock,
-      .frameleaf .fl-unfurl,
-      .fl-scope .fl-unfurl,
-      .frameleaf.fl-unfurl,
       .frameleaf .fl-reveal,
       .fl-scope .fl-reveal,
       .frameleaf.fl-reveal

@@ -37,41 +37,41 @@
   --font-mono: ui-monospace, SFMono-Regular, 'GoogleSansCode', monospace;
 
   /*
-   * Neutrals: Tailwind's gray and neutral ramps become the Frameleaf Ink family
+   * Neutrals: Tailwind's gray and neutral ramps become the Frameleaf neutrals
    * (src/lib/frameleaf/brand-tokens.json `neutral`; tokens.spec.ts keeps the two in step), so a
    * remaining `bg-gray-100 dark:bg-gray-800` reads as the Frameleaf raised surface in each theme.
    */
-  --color-gray-50: #f3f6f8;
-  --color-gray-100: #eaeef2;
-  --color-gray-200: #d4dadf;
+  --color-gray-50: #f4f6f7;
+  --color-gray-100: #eef1f3;
+  --color-gray-200: #d6dce0;
   --color-gray-300: #b4bfc9;
-  --color-gray-400: #9aa6b0;
+  --color-gray-400: #a1adb8;
   --color-gray-500: #64727d;
-  --color-gray-600: #505e6a;
-  --color-gray-700: #303b43;
-  --color-gray-800: #1f2830;
-  --color-gray-900: #141c21;
-  --color-gray-950: #0d1115;
-  --color-neutral-50: #f3f6f8;
-  --color-neutral-100: #eaeef2;
-  --color-neutral-200: #d4dadf;
+  --color-gray-600: #53636d;
+  --color-gray-700: #303940;
+  --color-gray-800: #222a30;
+  --color-gray-900: #171d21;
+  --color-gray-950: #101416;
+  --color-neutral-50: #f4f6f7;
+  --color-neutral-100: #eef1f3;
+  --color-neutral-200: #d6dce0;
   --color-neutral-300: #b4bfc9;
-  --color-neutral-400: #9aa6b0;
+  --color-neutral-400: #a1adb8;
   --color-neutral-500: #64727d;
-  --color-neutral-600: #505e6a;
-  --color-neutral-700: #303b43;
-  --color-neutral-800: #1f2830;
-  --color-neutral-900: #141c21;
-  --color-neutral-950: #0d1115;
+  --color-neutral-600: #53636d;
+  --color-neutral-700: #303940;
+  --color-neutral-800: #222a30;
+  --color-neutral-900: #171d21;
+  --color-neutral-950: #101416;
 
   /*
-   * Radii (brand-tokens.json `radius`): `rounded-lg` is the 12px control corner, `rounded-xl` the
-   * 16px card, `rounded-2xl` the 20px capsule and `rounded-3xl` the 24px sheet.
+   * Radii (brand-tokens.json `radius`): `rounded-lg` is the 9px control corner, `rounded-xl` the
+   * 12px card, `rounded-2xl` the 16px capsule and `rounded-3xl` the 22px sheet.
    */
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-3xl: 24px;
+  --radius-lg: 9px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 22px;
 
   --spacing-18: 4.5rem;
 
@@ -125,14 +125,14 @@
     /* light */
     --immich-primary: 21 123 64;
     --immich-bg: 255 255 255;
-    --immich-fg: 14 27 36;
-    --immich-gray: 243 246 248;
+    --immich-fg: 24 37 43;
+    --immich-gray: 244 246 247;
 
     /* dark */
     --immich-dark-primary: 34 197 94;
-    --immich-dark-bg: 13 17 21;
+    --immich-dark-bg: 16 20 22;
     --immich-dark-fg: 229 231 235;
-    --immich-dark-gray: 31 40 48;
+    --immich-dark-gray: 34 42 48;
   }
 
   button:not(:disabled),
@@ -304,7 +304,7 @@
 }
 
 /*
- * The page is the canvas in both themes (BRAND.md decision 1). `<body class="bg-light">` paints
+ * The page is the canvas in both themes, as in the prototype. `<body class="bg-light">` paints
  * the kit's `light`, which in the light theme is the panel white that filled buttons need for
  * their text, so signed-in pages were white with grey canvas blocks wherever a Frameleaf screen
  * painted its own background. Unlayered, so it outranks the utility; the viewer keeps its black.

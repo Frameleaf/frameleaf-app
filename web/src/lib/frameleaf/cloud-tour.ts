@@ -54,7 +54,7 @@ export type CloudTourTile = 'blue' | 'teal' | 'accent' | 'ai' | 'neutral';
 export type CloudTourStep = {
   id: CloudTourStepId;
   icon: string;
-  /** The icon tile's role colour. Indigo is for the AI step only (BRAND.md decision 8). */
+  /** The icon tile's role colour. Indigo is for the AI step only. */
   tile: CloudTourTile;
   /** Carries the reserved AI mark (a sparkle on indigo). */
   ai?: boolean;

@@ -26,10 +26,9 @@ describe('FirstRunSetup (FL-176)', () => {
     const { container } = render(FirstRunSetup, { initial: createSetup('new'), authenticated: false });
     const root = container.querySelector<HTMLElement>('section.frs-root');
     expect(root?.dataset.theme).toBe('dark');
-    // the one hero line, with the brand rule under it; the kit's own lockup arrives with Unfurl
+    // the one hero line; the kit's own lockup fades in
     const hero = screen.getByRole('heading', { level: 1, name: 'Your photos, beautifully kept. On your own server.' });
     expect(hero).toHaveClass('fl-type-hero');
-    expect(container.querySelector(':scope .frs-logo .fl-brand-line')).toHaveAttribute('aria-hidden', 'true');
     expect(container.querySelector(':scope .frs-logo img.fl-logo-arrive')).toHaveAttribute('alt', 'Frameleaf');
     expect(container.querySelector('.frs-logo-stroke, .frs-logo-glow')).toBeNull();
     // Continue is live once the short arrival has settled

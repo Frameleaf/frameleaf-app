@@ -67,7 +67,7 @@
   font-size: var(--fl-font-micro);
 }
 /*
- * The lockup stands on the page by itself (BRAND.md decision 9: never boxed). Brand.svelte picks the
+ * The lockup stands on the page by itself (BRAND.md: never boxed). Brand.svelte picks the
  * artwork for the theme and keeps the clear space; the negative margin lines its ink up with the
  * pane's edge despite that space.
  */
@@ -84,19 +84,13 @@
   font: var(--fl-type-display);
   text-wrap: balance;
 }
-/*
- * Sign-in is one of the three places the hero step is for (BRAND.md decision 5), with Leaf Light as
- * a short rule under it: Frameleaf greeting you, not a control.
- */
+/* Sign-in is one of the three places the hero step is for. */
 .auth-screen .auth-heading.hero {
   gap: 10px;
 }
 .auth-screen .auth-heading.hero h1 {
   font: var(--fl-type-hero);
   letter-spacing: var(--fl-tracking-hero);
-}
-.auth-screen .auth-heading .auth-brand-rule {
-  width: 56px;
 }
 .auth-screen .auth-heading p {
   color: var(--fl-muted);

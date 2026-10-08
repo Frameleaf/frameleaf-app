@@ -116,7 +116,6 @@ describe('CloudTour (FL-196)', () => {
     const tile = dialog.querySelector<HTMLElement>('.ct-tile')!;
     expect(tile.dataset.tone).toBe('blue');
     expect(tile.getAttribute('style') ?? '').not.toMatch(/#|--tile/);
-    expect(dialog.querySelector('.fl-brand-line')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('opens a settings page from a step link', async () => {

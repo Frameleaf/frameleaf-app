@@ -47,7 +47,6 @@ describe('PIN prompt', () => {
     const { container } = render(Page, { data } as never);
     expect(container.querySelector('.auth-brand')).not.toBeNull();
     expect(container.querySelector('.fl-logo-arrive')).toBeNull();
-    expect(container.querySelector('.fl-brand-line')).toBeNull();
   });
 
   const deferredUnlock = () => {

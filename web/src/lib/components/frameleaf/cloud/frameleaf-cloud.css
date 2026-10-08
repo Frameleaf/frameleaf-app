@@ -23,17 +23,13 @@
   border: 1px solid var(--fl-border);
 }
 /*
- * The link-to-Cloud card carries Leaf Light as a hairline along its top edge: Frameleaf offering
- * Frameleaf Cloud (BRAND.md decision 3). Never a wash, never on any other card.
+ * The link-to-Cloud card carries an accent hairline along its top edge: Frameleaf offering
+ * Frameleaf Cloud. Never a wash, never on any other card.
  */
 .fc-card.is-brand {
   position: relative;
   overflow: hidden;
-}
-.fc-card > .fc-card-brand {
-  position: absolute;
-  inset: 0 0 auto;
-  border-radius: 0;
+  border-top: 2px solid var(--fl-accent);
 }
 .fc-card-title {
   display: flex;

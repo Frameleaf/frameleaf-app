@@ -156,13 +156,15 @@
   gap: 16px;
   align-items: center;
 }
-/*
- * The thank-you mark: a done mark in the logo's frame, arriving with Unfurl (the element carries
- * fl-brand-frame and fl-unfurl; base.css makes Unfurl a fade under Reduce Motion). BRAND.md
- * decisions 3 and 6.
- */
+/* The thank-you mark: a done mark on a soft accent plate. */
 .buy-screen .buy-badge {
-  --fl-brand-frame-size: 56px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-accent-soft);
   color: var(--fl-accent);
 }
 /* The store is open in another tab. */

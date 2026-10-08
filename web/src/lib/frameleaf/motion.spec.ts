@@ -18,8 +18,6 @@ const {
   armHero,
   heroNavigation,
   installHeroIntent,
-  unfurl,
-  unfurlEasing,
   routeSection,
   sectionCrossfade,
   REDUCED_MOTION_FADE_MS,
@@ -445,49 +443,6 @@ describe('Frameleaf motion', () => {
         request.mockRestore();
         cancelFrame.mockRestore();
       });
-    });
-  });
-
-  describe('unfurl, the signature', () => {
-    it('opens a mark out of its lower inline-start corner with one soft overshoot', () => {
-      const node = document.createElement('span');
-      document.body.append(node);
-      const config = unfurl(node);
-      expect(config.duration).toBe(440);
-      const start = config.css?.(0, 1) ?? '';
-      expect(start).toContain('transform-origin: bottom left');
-      expect(start).toContain('opacity: 0');
-      expect(start).toContain('scale: 0.86');
-      expect(start).toContain('rotate: -8deg');
-      const end = config.css?.(1, 0) ?? '';
-      expect(end).toContain('opacity: 1');
-      expect(end).toContain('scale: 1;');
-      // Past the resting value once, by less than a tenth of the travel, and home at the end.
-      const samples = Array.from({ length: 101 }, (_, index) => unfurlEasing(index / 100));
-      expect(Math.max(...samples)).toBeGreaterThan(1.03);
-      expect(Math.max(...samples)).toBeLessThan(1.1);
-      expect(unfurlEasing(0)).toBe(0);
-      expect(unfurlEasing(1)).toBe(1);
-      node.remove();
-    });
-
-    it('mirrors in a right-to-left page, leaves with a short fade, and crossfades under Reduce Motion', () => {
-      const node = document.createElement('span');
-      node.style.direction = 'rtl';
-      document.body.append(node);
-      const mirrored = unfurl(node).css?.(0, 1) ?? '';
-      expect(mirrored).toContain('transform-origin: bottom right');
-      expect(mirrored).toContain('rotate: 8deg');
-
-      const exit = unfurl(node, {}, { direction: 'out' });
-      expect(exit.duration).toBe(120);
-      expect(exit.css?.(0.5, 0.5)).toBe('opacity: 0.5');
-
-      media.reducedMotion = true;
-      const reduced = unfurl(node);
-      expect(reduced.duration).toBe(REDUCED_MOTION_FADE_MS);
-      expect(reduced.css?.(0.5, 0.5) ?? '').not.toMatch(/scale|rotate|translate/);
-      node.remove();
     });
   });
 

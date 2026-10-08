@@ -1,9 +1,9 @@
 @import './base.css';
 
 /*
- * The Frameleaf brand tokens. Source of truth: ./brand-tokens.json (version 3), copied byte for
- * byte to design/frameleaf/tokens.json; BRAND.md gives the reason for every value and how to use
- * them. Scoped to .frameleaf; never import the prototype stylesheets into production.
+ * The Frameleaf design tokens. Source of truth: ./brand-tokens.json, copied byte for byte to
+ * design/frameleaf/tokens.json; the values follow the prototype (design/frameleaf/template).
+ * Scoped to .frameleaf; never import the prototype stylesheets into production.
  * web/src/app.css maps the same values onto the legacy UI kit and Tailwind's neutral ramp, and
  * ./tokens.ts mirrors the numeric scales for script use.
  *
@@ -14,11 +14,6 @@
  * foregrounds, so the readable per-theme values are used here instead; the brand
  * hues themselves stay in brand-tokens.json `brand`.
  * web/src/lib/frameleaf/tokens.spec.ts enforces both contracts.
- *
- * Surfaces are the Ink family (BRAND.md decision 1): one hue, the brand kit's canvas blue, with
- * the least colour on the canvas that sits behind photographs, more in the chrome around it, and
- * none to speak of in the viewer. tokens.spec.ts caps the chroma of each so a photograph is never
- * judged against a tinted surround.
  */
 /*
  * The asset viewer (`.fl-media-viewer`) is portaled outside every .frameleaf root, yet the
@@ -34,13 +29,13 @@
 .fl-media-viewer,
 .frameleaf[data-theme='dark'] {
   --fl-accent: #22c55e;
-  --fl-border: #303b43;
+  --fl-border: #303940;
   /* The outline of a control whose edge is its only affordance: 3:1 on every surface. */
-  --fl-border-strong: #64727d;
-  --fl-canvas: #0d1115;
-  --fl-muted: #9aa6b0;
-  --fl-panel: #141c21;
-  --fl-raised: #1f2830;
+  --fl-border-strong: #687682;
+  --fl-canvas: #101416;
+  --fl-muted: #a1adb8;
+  --fl-panel: #171d21;
+  --fl-raised: #222a30;
   --fl-text: #e5e7eb;
   --fl-accent-text: #072211;
   /* The prototype's primary hover (styles.css `.button.primary:hover`). */
@@ -66,8 +61,7 @@
    * --fl-accent are not: use the on-material pair for secondary text and accent marks on material.
    */
   --fl-on-material-muted: #d3dae0;
-  /* The brand lime (the app icon's highlight edge): light on glass, never on a light surface. */
-  --fl-on-material-accent: #b3ff8b;
+  --fl-on-material-accent: #8be9ab;
   /* Elevation: 1 raised controls and cards, 2 menus and toasts, 3 floating capsules, 4 sheets. */
   --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
   --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
@@ -81,23 +75,23 @@
    */
   --fl-viewer-canvas: #08090b;
   --fl-viewer-panel: #17181a;
-  --fl-viewer-raised: #262729;
+  --fl-viewer-raised: #25272b;
   --fl-viewer-border: rgb(255 255 255 / 8%);
   --fl-viewer-text: #f1f1f2;
   --fl-viewer-muted: #979ba2;
-  --fl-viewer-focus: #b3ff8b;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: dark;
 }
 :root:not(.dark),
 .frameleaf[data-theme='light'] {
   --fl-accent: #157b40;
-  --fl-border: #d4dadf;
+  --fl-border: #d6dce0;
   --fl-border-strong: #64727d;
-  --fl-canvas: #f3f6f8;
-  --fl-muted: #505e6a;
+  --fl-canvas: #f4f6f7;
+  --fl-muted: #53636d;
   --fl-panel: #ffffff;
-  --fl-raised: #eaeef2;
-  --fl-text: #0e1b24;
+  --fl-raised: #eef1f3;
+  --fl-text: #18252b;
   --fl-accent-text: #ffffff;
   /*
    * Lightening the accent as the prototype does leaves white text at 4.42:1 in this theme,
@@ -124,31 +118,29 @@
   --fl-shadow-4: 0 18px 80px rgb(0 0 0 / 24%);
   --fl-viewer-canvas: #08090b;
   --fl-viewer-panel: #17181a;
-  --fl-viewer-raised: #262729;
+  --fl-viewer-raised: #25272b;
   --fl-viewer-border: rgb(255 255 255 / 8%);
   --fl-viewer-text: #f1f1f2;
   --fl-viewer-muted: #979ba2;
-  --fl-viewer-focus: #b3ff8b;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: light;
 }
 :root,
 .fl-media-viewer,
 .frameleaf {
   /*
-   * Radius scale, tied to the logo: its frame turns a corner at 27% of its side, so a control's
-   * corner is 27% of its height (12px at 44px, 9px at the 34px compact height) and each larger
-   * surface steps up 4px so nested corners stay concentric. xs badges, kbd and inner chips; sm
-   * small wells and thumbnails; control buttons, fields and menu items; card cards, menus and
-   * panels; capsule floating bars; sheet dialogs and sheets; pill chips and switches.
+   * Radius scale (apple-style.css): xs badges, kbd and inner chips; sm small wells and
+   * thumbnails; control buttons, fields and menu items; card cards, menus and panels; capsule
+   * floating bars; sheet dialogs and sheets; pill chips and switches.
    */
   --fl-radius-xs: 4px;
   --fl-radius-sm: 6px;
-  --fl-radius: 12px;
-  --fl-radius-control: 12px;
-  --fl-radius-control-compact: 9px;
-  --fl-radius-card: 16px;
-  --fl-radius-capsule: 20px;
-  --fl-radius-dialog: 24px;
+  --fl-radius: 9px;
+  --fl-radius-control: 9px;
+  --fl-radius-control-compact: 7px;
+  --fl-radius-card: 12px;
+  --fl-radius-capsule: 16px;
+  --fl-radius-dialog: 22px;
   --fl-radius-pill: 999px;
   /*
    * Retained as an alias so components written against the first token pass, including
@@ -219,13 +211,6 @@
   --fl-duration-sheet-out: 180ms;
   --fl-duration-dock-out: 200ms;
   --fl-duration-reduced: 150ms;
-  /*
-   * UNFURL, the signature (BRAND.md decision 6): the mark grows out of its lower inline-start
-   * corner, where the leaf meets the frame, and settles with one soft overshoot. For the logo, the
-   * selection tick, a done mark and an empty-state icon only; never for a container.
-   */
-  --fl-duration-unfurl: 440ms;
-  --fl-unfurl: cubic-bezier(0.2, 1.5, 0.4, 1);
   /* Continuous indicators: one turn of the ring spinner, one breath of a skeleton. */
   --fl-duration-spin: 800ms;
   --fl-duration-pulse: 1600ms;
@@ -338,16 +323,6 @@
   --fl-accent-soft: color-mix(in srgb, var(--fl-accent), transparent 86%);
   --fl-accent-soft-strong: color-mix(in srgb, var(--fl-accent), transparent 76%);
   --fl-ai-soft: color-mix(in srgb, var(--fl-ai), transparent 84%);
-  /*
-   * Leaf Light, the brand gradient: the five stops and the axis of the logo frame
-   * (brand-kit/frameleaf-symbol.svg #frame-gradient). It marks Frameleaf speaking, never a
-   * control: the logo, the loading mark and navigation line, sign-in and first run, the frame of
-   * an empty-state or done icon, a finished progress bar. Use the `fl-brand-line` and
-   * `fl-brand-frame` classes (base.css); tokens.spec.ts lists the files that may name the token.
-   */
-  --fl-brand-gradient: linear-gradient(137deg, #86f345 0%, #36ec72 25%, #00c4d6 57%, #00c7b0 76%, #00d874 100%);
-  /* The lime highlight of the app icon's edge. Dark surfaces only (see --fl-on-material-accent). */
-  --fl-lime: #b3ff8b;
   /* Success is the brand green: one hue for "done", selection and the primary action. */
   --fl-success: var(--fl-accent);
   --fl-success-text: var(--fl-accent-text);
@@ -388,7 +363,7 @@
   }
   :root:not(.dark),
   .frameleaf[data-theme='light'] {
-    --fl-accent: color(display-p3 0.08 0.49 0.25);
+    --fl-accent: color(display-p3 0.1 0.5 0.26);
   }
 }
 /*

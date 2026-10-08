@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import tokens from '../../../../design/frameleaf/tokens.json';
 import brand from './brand-tokens.json';
 import {
-  BRAND_GRADIENT,
   CONTROL_HEIGHT,
   DURATION,
   EASE,
@@ -15,8 +14,6 @@ import {
   SNAPPY,
   SPRING_STOPS,
   STAGGER_MS,
-  UNFURL,
-  UNFURL_FROM,
   Z_INDEX,
 } from './tokens';
 
@@ -92,21 +89,6 @@ const ratio = (first: number, second: number) => {
 };
 
 const contrast = (a: string, b: string) => ratio(luminance(a), luminance(b));
-
-/** OKLCH chroma and hue of a hex colour: how much colour a neutral carries, and which. */
-const oklch = (color: string) => {
-  const [r, g, b] = [1, 3, 5].map((offset) => linear(Number.parseInt(color.slice(offset, offset + 2), 16) / 255));
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
-  const bAxis = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
-  return {
-    lightness: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-    chroma: Math.hypot(a, bAxis),
-    hue: ((Math.atan2(bAxis, a) * 180) / Math.PI + 360) % 360,
-  };
-};
 
 /** `share` of `top` composited over `bottom`, per channel, as a hex colour. */
 const composite = (top: string, bottom: string, share: number) => {
@@ -193,44 +175,6 @@ describe('Frameleaf theme contract', () => {
   });
 
   for (const theme of ['dark', 'light'] as const) {
-    it(`keeps the ${theme} surfaces in the Ink family without tinting the stage`, () => {
-      const { hue, maxChroma, minStep, stage, chrome, viewer } = brand.surface;
-      const color = (name: string) => hex(theme, name);
-      // The canvas sits behind photographs: next to no colour of its own.
-      for (const name of stage) {
-        expect(oklch(color(name)).chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.stage);
-      }
-      // The chrome around it carries the brand ink, within a cap, all of one hue.
-      for (const name of chrome) {
-        const { chroma, hue: actual } = oklch(color(name));
-        expect(chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.chrome);
-        if (chroma > 0.004) {
-          expect(Math.abs(actual - hue), `${name} hue (${theme})`).toBeLessThanOrEqual(12);
-        }
-      }
-      // The viewer is neutral in both themes.
-      for (const name of viewer) {
-        expect(oklch(color(name)).chroma, `${name} chroma (${theme})`).toBeLessThanOrEqual(maxChroma.viewer);
-      }
-      // Each surface steps clearly from the one it sits on.
-      // Dark builds up from the canvas; light sets white panels on the canvas and wells into them.
-      const steps =
-        theme === 'dark'
-          ? [
-              ['canvas', 'panel'],
-              ['panel', 'raised'],
-              ['raised', 'border'],
-            ]
-          : [
-              ['panel', 'canvas'],
-              ['panel', 'raised'],
-              ['raised', 'border'],
-            ];
-      for (const [from, to] of steps) {
-        expect(contrast(color(from), color(to)), `${from} to ${to} (${theme})`).toBeGreaterThanOrEqual(minStep);
-      }
-    });
-
     it(`keeps ${theme} non-text marks and outlines at 3:1`, () => {
       const minimum = brand.focus.nonTextContrast;
       // The focus ring is the accent; a control drawn by its edge alone uses border-strong; status
@@ -248,87 +192,6 @@ describe('Frameleaf theme contract', () => {
       }
     });
   }
-
-  it('reserves the lime for dark glass: accent marks on material and the viewer focus ring', () => {
-    expect(base.get('--fl-lime')).toBe(brand.lime.color);
-    expect(brand.brand.lime).toBe(brand.lime.color);
-    expect(themes.dark.get('--fl-on-material-accent')).toBe(brand.lime.color);
-    for (const theme of ['dark', 'light'] as const) {
-      expect(themes[theme].get('--fl-viewer-focus')).toBe(brand.lime.color);
-    }
-    // Never on a light surface: it cannot be read there.
-    expect(themes.light.get('--fl-on-material-accent')).not.toBe(brand.lime.color);
-    expect(contrast(brand.lime.color, brand.color.light.panel)).toBeLessThan(3);
-  });
-
-  it('takes the brand gradient from the logo and keeps it out of everything but brand moments', () => {
-    const gradient = base.get('--fl-brand-gradient');
-    expect(gradient).toBe(brand.brand.gradient.css);
-    // The stops and the axis are the logo frame's own (brand-kit/frameleaf-symbol.svg).
-    const symbol = readFileSync('../design/frameleaf/brand-kit/frameleaf-symbol.svg', 'utf8');
-    const frame =
-      /<linearGradient id="frame-gradient"[^>]*x1="(\d+)" y1="(\d+)" x2="(\d+)" y2="(\d+)">([\S\s]*?)<\/linearGradient>/.exec(
-        symbol,
-      );
-    expect(frame).not.toBeNull();
-    const [, x1, y1, x2, y2, stopMarkup] = frame as RegExpExecArray;
-    const stops = [...stopMarkup.matchAll(/offset="([\d.]+)" stop-color="(#[\da-f]{6})"/g)].map(([, offset, color]) => [
-      color,
-      Math.round(Number(offset) * 100),
-    ]);
-    expect(brand.brand.gradient.stops).toEqual(stops);
-    expect(BRAND_GRADIENT.stops).toEqual(stops);
-    const angle = 180 - (Math.atan2(Number(x2) - Number(x1), Number(y2) - Number(y1)) * 180) / Math.PI;
-    expect(Math.round(angle)).toBe(brand.brand.gradient.angle);
-    expect(BRAND_GRADIENT.angle).toBe(brand.brand.gradient.angle);
-    expect(gradient).toBe(
-      `linear-gradient(${brand.brand.gradient.angle}deg, ${stops.map(([color, at]) => `${color} ${at}%`).join(', ')})`,
-    );
-
-    // Only these files may name the token. Everything else uses the fl-brand-line and
-    // fl-brand-frame classes, or the Logo, so the gradient cannot spread to controls or photos.
-    const allowed = [
-      /^src\/lib\/frameleaf\/(tokens|base|auth|first-run-setup)\.css$/,
-      /^src\/lib\/frameleaf\/(BRAND\.md|brand-tokens\.json|tokens\.spec\.ts|tokens\.ts)$/,
-      /^src\/lib\/components\/frameleaf\/(EmptyState|Logo|Brand|Spinner|Skeleton)\.svelte$/,
-      /^src\/lib\/components\/frameleaf\/(setup|cloud|buy)\//,
-      /^src\/routes\/NavigationLoadingBar\.svelte$/,
-      /^src\/routes\/auth\//,
-    ];
-    const offenders = (readdirSync('src', { recursive: true }) as string[])
-      .map((file) => `src/${file.replaceAll('\\', '/')}`)
-      .filter((file) => /\.(svelte|css|ts)$/.test(file))
-      .filter((file) => allowed.every((pattern) => !pattern.test(file)))
-      .filter((file) => readFileSync(file, 'utf8').includes('--fl-brand-gradient'));
-    expect(offenders).toEqual([]);
-
-    // The two shapes the product draws it in.
-    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
-    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-line\) {[^}]*background: var\(--fl-brand-gradient\);/);
-    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-frame\) {[^}]*var\(--fl-brand-gradient\) border-box;/);
-    expect(withoutComments).toMatch(/\.frameleaf\.fl-brand-frame\) {[^}]*border-radius: 27%;/);
-    expect(brand.radius.frameRatio).toBe(0.27);
-  });
-
-  it('defines Unfurl, the signature motion, for marks only', () => {
-    expect(base.get('--fl-unfurl')).toBe(brand.motion.unfurl);
-    expect(UNFURL).toBe(brand.motion.unfurl);
-    expect(brand.motion.signature.ease).toBe(brand.motion.unfurl);
-    expect(brand.motion.signature.duration).toBe(brand.motion.duration.unfurl);
-    expect(UNFURL_FROM).toEqual({
-      scale: brand.motion.signature.from.scale,
-      rotate: brand.motion.signature.from.rotate,
-    });
-    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
-    expect(withoutComments).toMatch(
-      /\.frameleaf\.fl-unfurl\) {\s*transform-origin: bottom left;\s*animation:\s*fl-fade-in var\(--fl-duration-reduced\) var\(--fl-ease\) both,\s*fl-unfurl-in var\(--fl-duration-unfurl\) var\(--fl-unfurl\) both;/,
-    );
-    expect(withoutComments).toMatch(/@keyframes fl-unfurl-in {\s*from {\s*scale: 0\.86;\s*rotate: -8deg;/);
-    // It mirrors in a right-to-left page, and is a plain crossfade under Reduce Motion.
-    expect(withoutComments).toContain('@keyframes fl-unfurl-in-rtl {');
-    const reduced = blockAfter(withoutComments, '@media (prefers-reduced-motion: reduce)');
-    expect(reduced).toContain('.frameleaf.fl-unfurl,');
-  });
 
   it('keeps the logo rules where scripts and specs can read them', () => {
     expect(LOGO_CLEAR_SPACE).toBe(brand.logo.clearSpace);
@@ -421,13 +284,6 @@ describe('Frameleaf theme contract', () => {
       );
     }
     expect(base.get('--fl-radius-dialog')).toBe(`${brand.radius.sheet}px`);
-    // The frame ratio: a control's corner is 27% of its height, as the logo's frame is.
-    expect(Math.round(brand.control.default * brand.radius.frameRatio)).toBe(brand.radius.control);
-    expect(Math.round(brand.control.compact * brand.radius.frameRatio)).toBe(brand.radius['control-compact']);
-    // Each larger surface steps up by one grid unit, so nested corners stay concentric.
-    expect(brand.radius.card - brand.radius.control).toBe(4);
-    expect(brand.radius.capsule - brand.radius.card).toBe(4);
-    expect(brand.radius.sheet - brand.radius.capsule).toBe(4);
 
     expect(Object.keys(brand.icon)).toHaveLength(6);
     expect(ICON_PX).toEqual(brand.icon);
@@ -488,11 +344,10 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-ease')).toBe(brand.motion.ease);
     expect(EASE).toBe(brand.motion.ease);
     expect(SNAPPY).toBe(brand.motion.snappy);
-    // Seven patterns, and one signature on top of them.
+    // Seven patterns.
     expect(Object.keys(brand.motion.patterns).sort()).toEqual(
       ['press', 'pop', 'sheet', 'dock', 'reflow', 'hero', 'reveal'].sort(),
     );
-    expect(brand.motion.signature.name).toBe('Unfurl');
     // The view transition's pseudo-elements hang off <html>: the hero duration comes from the root tokens.
     expect(appCss).toMatch(/::view-transition-group\(fl-hero\) {\s*animation-duration: var\(--fl-duration-hero\);/);
   });
@@ -702,12 +557,12 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-motion')).toBe('180ms');
     expect(base.get('--fl-motion-slow')).toBe('240ms');
     expect(base.get('--fl-ease')).toBeDefined();
-    // Continuous corners on the frame ratio (BRAND.md decision 7).
-    expect(base.get('--fl-radius-control')).toBe('12px');
-    expect(base.get('--fl-radius-control-compact')).toBe('9px');
-    expect(base.get('--fl-radius-card')).toBe('16px');
-    expect(base.get('--fl-radius-capsule')).toBe('20px');
-    expect(base.get('--fl-radius-dialog')).toBe('24px');
+    // The prototype's corners (apple-style.css).
+    expect(base.get('--fl-radius-control')).toBe('9px');
+    expect(base.get('--fl-radius-control-compact')).toBe('7px');
+    expect(base.get('--fl-radius-card')).toBe('12px');
+    expect(base.get('--fl-radius-capsule')).toBe('16px');
+    expect(base.get('--fl-radius-dialog')).toBe('22px');
     expect(base.get('--fl-radius-pill')).toBe('999px');
     expect(base.get('--fl-radius-sheet')).toBe('var(--fl-radius-dialog)');
     expect(`${tokens.radius.sheet}px`).toBe(base.get('--fl-radius-dialog'));

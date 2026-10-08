@@ -19,7 +19,7 @@
     surface?: 'light' | 'dark' | 'auto';
     mono?: boolean;
     size?: 'tiny' | 'small' | 'medium';
-    /** Play the Unfurl signature once as the lockup appears (sign-in, first run). */
+    /** Fade the lockup in once as it appears (sign-in, first run). */
     arrive?: boolean;
   } = $props();
 </script>

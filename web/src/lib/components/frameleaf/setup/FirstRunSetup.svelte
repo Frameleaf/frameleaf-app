@@ -155,7 +155,7 @@
   let direction = $state(1);
   let introReady = $state(false);
   /** The welcome figures start counting as the logo lands, one after another. */
-  const countDelay = (index: number) => DURATION.unfurl + index * STAGGER_MS;
+  const countDelay = (index: number) => DURATION.pop + index * STAGGER_MS;
   let busy = $state(false);
   /** What Continue is waiting on, so the button can say it (the account step's two long calls). */
   let busyWith = $state<'' | 'account' | 'sign-in'>('');
@@ -789,7 +789,6 @@
         {#if !existing}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
             <h1 class="frs-tagline fl-type-hero" data-intro>{@render tagline($t('frameleaf_setup_tagline_new'))}</h1>
-            <span class="frs-brand-rule fl-brand-line" data-intro aria-hidden="true"></span>
             <button
               type="button"
               class="button primary frs-continue"
@@ -806,7 +805,6 @@
             <h1 class="frs-tagline fl-type-hero" data-intro>
               {@render tagline($t('frameleaf_setup_tagline_existing'))}
             </h1>
-            <span class="frs-brand-rule fl-brand-line" data-intro aria-hidden="true"></span>
             <div class="frs-safe" data-intro>
               <div class="frs-stats" aria-label={$t('frameleaf_setup_your_library')}>
                 {@render stat(mdiImageMultipleOutline, library?.items, $t('frameleaf_setup_stat_items'), countDelay(0))}

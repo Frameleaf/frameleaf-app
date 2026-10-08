@@ -847,8 +847,7 @@
           {#key exportPhase}
             <span class="fl-studio-job-label" aria-hidden="true" in:reveal>
               {#if exportPhase === 'ready'}
-                <!-- The film is done: the mark arrives with the brand's Unfurl, once. -->
-                <span class="fl-studio-job-done fl-unfurl"><Icon icon={mdiCheckCircle} size={ICON_SIZE.sm} /></span>
+                <span class="fl-studio-job-done fl-pop"><Icon icon={mdiCheckCircle} size={ICON_SIZE.sm} /></span>
                 {$t('frameleaf_studio_export_job_ready')}
               {:else if exportPhase === 'failed'}
                 <Icon icon={mdiAlertCircleOutline} size={ICON_SIZE.sm} />

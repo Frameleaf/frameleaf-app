@@ -333,7 +333,6 @@
 <AuthShell hero="summit" arrive>
   <div class="auth-heading hero">
     <h1>{$t('frameleaf_auth_welcome_title')}</h1>
-    <span class="auth-brand-rule fl-brand-line" aria-hidden="true"></span>
     <p>{$t('frameleaf_auth_welcome_body')}</p>
   </div>
 

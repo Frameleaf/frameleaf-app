@@ -584,8 +584,7 @@
     />
     <span aria-hidden="true">
       {#if selected}
-        <!-- The mark unfurls, the brand's signature (BRAND.md decision 6); a fade under Reduce Motion. -->
-        <i class="fl-tile-tick fl-unfurl"><Icon icon={mdiCheck} size="15" /></i>
+        <i class="fl-tile-tick"><Icon icon={mdiCheck} size="15" /></i>
       {/if}
     </span>
   </label>
@@ -1011,7 +1010,7 @@
   .fl-tile-select:hover > span {
     scale: 1.08;
   }
-  /* A filled accent plate; the tick on it unfurls once as the photo settles. */
+  /* A filled accent plate behind the tick. */
   .fl-tile.is-selected .fl-tile-select > span {
     border-color: var(--fl-accent);
     background: var(--fl-accent);

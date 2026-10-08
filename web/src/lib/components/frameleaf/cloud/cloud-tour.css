@@ -4,8 +4,8 @@
  * pattern: a coloured icon tile, a short title, a grouped list and a quiet footer; phones get a
  * bottom sheet with 44pt controls. The sheet chrome is the Frameleaf `.dialog` (Dialog.svelte, whose
  * styles are scoped there): the sheet radius with continuous corners, the Sheet entrance, the shared
- * scrim, and a crossfade under Reduce Motion. A Leaf Light hairline runs along the top edge: the tour
- * is Frameleaf introducing Frameleaf Cloud (BRAND.md decision 3). Step changes are animated in CloudTour.svelte, gated in JavaScript.
+ * scrim, and a crossfade under Reduce Motion. An accent hairline runs along the top edge: the tour
+ * is Frameleaf introducing Frameleaf Cloud. Step changes are animated in CloudTour.svelte, gated in JavaScript.
  */
 .dialog.cloud-tour {
   /* Centred in the window: the page reset zeroes the margin a modal dialog is centred by. */
@@ -69,11 +69,6 @@
   letter-spacing: var(--fl-tracking-micro);
   text-transform: uppercase;
   font-variant-numeric: var(--fl-numeric);
-}
-/* Leaf Light along the top edge, inside the sheet's clipped corners. */
-.cloud-tour .ct-brand-line {
-  flex: none;
-  border-radius: 0;
 }
 .cloud-tour .ct-body {
   flex: 1;

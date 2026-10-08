@@ -75,9 +75,9 @@ describe('Frameleaf brand primitives', () => {
       expect(secondary.classList).not.toContain('primary');
     });
 
-    it('frames the icon in the brand gradient at full size, and stays plain when compact', async () => {
+    it('frames the icon at full size, and stays plain when compact', async () => {
       const { container, rerender } = render(EmptyState, { icon: 'M0 0', message: 'No albums yet.' });
-      // A full-size empty state has no photographs beside it, so it carries the brand frame.
+      // A full-size empty state has no photographs beside it, so it carries the framed icon.
       expect(container.querySelector('.icon')?.classList).toContain('framed');
       await rerender({ icon: 'M0 0', message: 'No albums yet.', compact: true });
       expect(container.querySelector('.icon')?.classList).not.toContain('framed');
@@ -136,14 +136,6 @@ describe('Frameleaf brand primitives', () => {
       const toast = screen.getByRole('status');
       expect(toast).toHaveTextContent('Added 3 photos to Summer');
       expect(toast).not.toHaveTextContent(en.success);
-    });
-
-    it('unfurls the done mark, and nothing else', () => {
-      const done = render(Toast, { description: 'Saved', color: 'success' });
-      expect(done.container.querySelector('.fl-toast-icon')?.classList).toContain('fl-unfurl');
-      done.unmount();
-      const failed = render(Toast, { description: 'Not saved', color: 'danger' });
-      expect(failed.container.querySelector('.fl-toast-icon')?.classList).not.toContain('fl-unfurl');
     });
 
     it('announces an error as an alert and keeps a real title', () => {
@@ -217,7 +209,7 @@ describe('Frameleaf brand primitives', () => {
       expect(light.getByText('Frameleaf')).toBeInTheDocument();
     });
 
-    it('unfurls only when asked to arrive', () => {
+    it('fades in only when asked to arrive', () => {
       const still = render(Logo, { variant: 'symbol' });
       expect(still.container.querySelector('img')?.classList).not.toContain('fl-logo-arrive');
       still.unmount();

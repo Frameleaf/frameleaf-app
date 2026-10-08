@@ -4,11 +4,10 @@
    Animations API (setup-motion.ts), gated on mediaQueryManager.reducedMotion,
    and falls back to plain fades.
 
-   Brand (BRAND.md): the stage is plain Ink, with no washes or glows. Leaf Light
-   appears as a hairline only: under the welcome heading, along the chapter
-   rail's progress and across the top of the link-to-Cloud card. The logo arrives
-   with Unfurl (Logo arrive); done marks sit in the logo's frame. The import art
-   uses neutral tiles instead of sample photos. */
+   The stage is the plain canvas, with no washes or glows; the accent appears
+   along the chapter rail's progress and across the top of the link-to-Cloud
+   card. The logo fades in (Logo arrive). The import art uses neutral tiles
+   instead of sample photos. */
 
 .frs {
   flex: 1 1 auto;
@@ -80,7 +79,7 @@
   text-align: center;
   max-width: 980px;
 }
-/* The one hero line of first run (BRAND.md decision 5); the display step on a phone. */
+/* The one hero line of first run; the display step on a phone. */
 .frs .frs-tagline {
   font: var(--fl-type-hero);
   letter-spacing: var(--fl-tracking-hero);
@@ -100,10 +99,6 @@
 .frs-tagline > span {
   display: block;
   text-wrap: balance;
-}
-/* Leaf Light under the welcome heading: Frameleaf introducing itself (BRAND.md decision 3). */
-.frs-brand-rule {
-  width: 64px;
 }
 .frs-continue {
   min-height: 44px;
@@ -262,7 +257,7 @@
   background: var(--fl-border);
 }
 .frs-rail ol::after {
-  background: var(--fl-brand-gradient);
+  background: var(--fl-accent);
   transform-origin: top;
   transform: scaleY(var(--frs-progress));
   transition: transform var(--fl-motion-slow) var(--fl-ease);
@@ -451,7 +446,7 @@
 .frs-choice:hover {
   background: var(--fl-raised);
 }
-/* A flat tint: the chosen card is marked by its edge and its tick, never by a wash (BRAND.md principle 3). */
+/* A flat tint: the chosen card is marked by its edge and its tick, never by a wash. */
 .frs-choice.checked {
   border-color: var(--fl-accent);
   background: color-mix(in srgb, var(--fl-accent) 7%, var(--fl-panel));
@@ -708,12 +703,15 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
 }
-/*
- * The link landed: the done mark sits in the logo's frame and arrives with Unfurl (the element
- * carries fl-brand-frame and fl-unfurl; base.css turns Unfurl into a fade under Reduce Motion).
- */
+/* The link landed: a done mark on a soft accent plate. */
 .frs-linked .frs-linked-badge {
-  --fl-brand-frame-size: 44px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-accent-soft);
   color: var(--fl-success);
 }
 /* The code waiting for approval: the same block Settings shows (CloudPendingCode), then its actions. */
@@ -1364,12 +1362,6 @@
   border: 1px solid var(--fl-border);
   position: relative;
   overflow: hidden;
-}
-/* Leaf Light across the top of the link-to-Cloud card (a hairline, never a wash). */
-.frs-link-card > .fl-brand-line {
-  position: absolute;
-  inset: 0 0 auto;
-  border-radius: 0;
 }
 .frs-link-art {
   display: grid;

@@ -267,7 +267,6 @@
       </header>
 
       <section class="frs-link-card" class:linked={isDone('frameleaf')} aria-labelledby="frs-tool-frameleaf">
-        <span class="fl-brand-line" aria-hidden="true"></span>
         <div class="frs-link-art" aria-hidden="true"><img src={symbolUrl} alt="" /></div>
         <div class="frs-link-copy">
           <span class="frs-eyebrow">{$t('frameleaf_setup_recommended')}</span>
