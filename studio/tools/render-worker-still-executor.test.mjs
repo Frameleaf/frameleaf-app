@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { stillRecipe, renderStillImage } from './render-worker-still-executor.mjs';
+import { stillRecipe, renderStillImage, ownedOutputBytes } from './render-worker-still-executor.mjs';
 const claim = () => ({
   settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
   snapshot: {
@@ -248,4 +248,31 @@ test('whole visual timelines use explicit integer bounds even below the renderer
   assert.equal(result.frames, 4);
   assert.deepEqual(result.frameBounds, { inPoint: 0, outPoint: 4 });
   assert.equal(result.range, null);
+});
+
+
+test('private output accounting counts staging, deduplicates publication links and rejects traversal', async () => {
+  const { mkdtemp, mkdir, writeFile, link, symlink, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-output-accounting-'));
+  try {
+    const staged = join(folder, '.sharp-abc123');
+    await mkdir(staged);
+    await writeFile(join(staged, 'output.jpg'), Buffer.alloc(13));
+    await writeFile(join(folder, 'signal.bin'), Buffer.alloc(7));
+    assert.equal(await ownedOutputBytes(folder), 20);
+    await link(join(staged, 'output.jpg'), join(folder, 'published.jpg'));
+    assert.equal(await ownedOutputBytes(folder), 20);
+    await symlink(join(folder, 'signal.bin'), join(staged, 'link.jpg'));
+    await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
+    await rm(join(staged, 'output.jpg'));
+    await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
+    await rm(staged, { recursive: true });
+    await mkdir(join(folder, 'unexpected'));
+    await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
+    await rm(join(folder, 'unexpected'), { recursive: true });
+    await mkdir(join(folder, '.sharp-abc123', 'nested'), { recursive: true });
+    await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
+  } finally { await rm(folder, { recursive: true, force: true }); }
 });

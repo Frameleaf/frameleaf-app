@@ -1,7 +1,9 @@
+import { watch } from 'node:fs';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
+import fs from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, stat, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -528,6 +530,180 @@ test('explicit SDR export remains available when primary ICC blocks HDR reconstr
     }
   } finally {
     await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('cancellation removes partial HDR outputs before admitting the next task', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-abort-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 1, graceMs: 100 });
+  const keepAlive = setInterval(() => {}, 1000);
+  let watcher;
+  try {
+    const pixels = new Float32Array(1024 * 512 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 1024, 512, 1, ...limits);
+    const input = join(folder, 'original.jpg');
+    const prior = Buffer.from('previous working rendition');
+    await writeFile(input, original);
+    await writeFile(join(folder, 'prior.jpg'), prior);
+    const abort = new AbortController();
+    let observed = false;
+    watcher = watch(folder, { recursive: true }, (_event, name) => {
+      // Observe the first actual output write, including inside parent-owned staging.
+      if (String(name).endsWith('attempt-preview.jpg') && !observed) {
+        observed = true;
+        abort.abort(new Error('cancel after partial output'));
+      }
+    });
+    const work = pool.run(
+      'generateHdrRenditions',
+      [input, [{ path: join(folder, 'attempt-preview.jpg'), size: 16 }, { path: join(folder, 'attempt-master.jpg') }]],
+      abort.signal,
+    );
+    const failed = assert.rejects(work, /cancel after partial output/);
+    const queued = pool.run('inspectImageEncoding', [input]).then(async () => {
+      assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+    });
+    await failed;
+    await queued;
+    assert.equal(observed, true);
+    assert.deepEqual(await readFile(input), original);
+    assert.deepEqual(await readFile(join(folder, 'prior.jpg')), prior);
+  } finally {
+    watcher?.close();
+    await pool.close();
+    clearInterval(keepAlive);
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('HDR publication rolls back only its own files when a destination already exists', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-conflict-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  try {
+    const pixels = new Float32Array(16 * 8 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 16, 8, 1, ...limits);
+    const input = join(folder, 'original.jpg'),
+      first = join(folder, 'first.jpg'),
+      prior = join(folder, 'prior.jpg');
+    const previous = Buffer.from('keep this working rendition');
+    await writeFile(input, original);
+    await writeFile(prior, previous);
+    await assert.rejects(pool.run('generateHdrRenditions', [input, [{ path: first }, { path: prior }]]), /EEXIST/);
+    assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+    assert.deepEqual(await readFile(prior), previous);
+    await assert.rejects(pool.run('generateHdrRenditions', [input, [{ path: input }]]), /overwrite original/);
+    await assert.rejects(
+      pool.run('exportPhotoStill', [input, input, 'hdr-jpeg', createHash('sha256').update(original).digest()]),
+      /overwrite original/,
+    );
+    assert.deepEqual(await readFile(input), original);
+    const results = await pool.run('generateHdrRenditions', [input, [{ path: first }]]);
+    assert.equal(results[0].path, first);
+    assert.deepEqual((await readdir(folder)).sort(), ['first.jpg', 'original.jpg', 'prior.jpg']);
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+for (const operation of ['generateHdrRenditions', 'exportPhotoStill']) {
+  test(`${operation} rolls back publication cancelled after the exclusive link`, async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-publish-abort-'));
+    const pool = new SharpProcessPool({ workers: 1, pending: 1, graceMs: 100 });
+    const keepAlive = setInterval(() => {}, 1000);
+    const originalLink = fs.link;
+    try {
+      const pixels = new Float32Array(16 * 8 * 4);
+      for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+      const original = codec.encode(Buffer.from(pixels.buffer), 16, 8, 1, ...limits);
+      const input = join(folder, 'original.jpg'),
+        output = join(folder, 'published.jpg');
+      await writeFile(input, original);
+      const abort = new AbortController();
+      let observed = false;
+      // Cancel at the syscall boundary; filesystem notifications can arrive after completion.
+      fs.link = async (source, destination) => {
+        await originalLink(source, destination);
+        if (destination === output) {
+          observed = true;
+          abort.abort(new Error('cancel during publication'));
+        }
+      };
+      syncBuiltinESMExports();
+      const work =
+        operation === 'generateHdrRenditions'
+          ? pool.run(operation, [input, [{ path: output }]], abort.signal)
+          : pool.run(
+              operation,
+              [input, output, 'hdr-jpeg', createHash('sha256').update(original).digest()],
+              abort.signal,
+            );
+      const failed = assert.rejects(work, /cancel during publication/);
+      const queued = pool.run('inspectImageEncoding', [input]).then(async () => {
+        assert.deepEqual(await readdir(folder), ['original.jpg']);
+      });
+      const queuedOutcome = queued.then(
+        () => undefined,
+        (error) => error,
+      );
+      await failed;
+      const error = await queuedOutcome;
+      if (error) throw error;
+      assert.equal(observed, true);
+      assert.deepEqual(await readFile(input), original);
+    } finally {
+      fs.link = originalLink;
+      syncBuiltinESMExports();
+      await pool.close();
+      clearInterval(keepAlive);
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+}
+
+test('failed owned-output cleanup closes admission instead of starting queued work', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-cleanup-failure-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 1, graceMs: 100 });
+  const originalRm = fs.rm;
+  const keepAlive = setInterval(() => {}, 1000);
+  let watcher;
+  try {
+    const pixels = new Float32Array(1024 * 512 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 1024, 512, 1, ...limits);
+    const input = join(folder, 'original.jpg');
+    await writeFile(input, original);
+    fs.rm = async (file, options) => {
+      if (String(file).startsWith(join(folder, '.sharp-'))) {
+        throw Object.assign(new Error('owned cleanup denied'), { code: 'EACCES' });
+      }
+      return originalRm(file, options);
+    };
+    syncBuiltinESMExports();
+    const abort = new AbortController();
+    watcher = watch(folder, { recursive: true }, (_event, name) => {
+      if (String(name).endsWith('preview.jpg')) abort.abort(new Error('cancel partial output'));
+    });
+    const work = pool.run(
+      'generateHdrRenditions',
+      [input, [{ path: join(folder, 'preview.jpg'), size: 16 }, { path: join(folder, 'master.jpg') }]],
+      abort.signal,
+    );
+    const failed = assert.rejects(work, /owned cleanup denied/);
+    const queued = assert.rejects(pool.run('inspectImageEncoding', [input]), /owned cleanup denied/);
+    await Promise.all([failed, queued]);
+    await assert.rejects(pool.run('inspectImageEncoding', [input]), /pool is closed/);
+    assert.deepEqual(await readFile(input), original);
+    assert.equal((await readdir(folder)).filter((name) => name.startsWith('.sharp-')).length, 2);
+  } finally {
+    fs.rm = originalRm;
+    syncBuiltinESMExports();
+    watcher?.close();
+    await pool.close();
+    clearInterval(keepAlive);
     await rm(folder, { recursive: true, force: true });
   }
 });
