@@ -11,7 +11,12 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const GRAPH_LIMIT = 8 * 1024 * 1024;
 const TABLE_LIMIT = 8 * 1024 * 1024;
 
-export async function deriveClaimFileLuts(prepared, isLeaseActive) {
+export async function deriveClaimFileLuts(
+  prepared,
+  isLeaseActive,
+  waitForLease,
+) {
+  if (waitForLease) await waitForLease();
   assert.ok(isLeaseActive(), "LEASE_LOST");
   assert.ok(
     prepared.operationId && prepared.claimToken && prepared.revisionId,
@@ -100,6 +105,7 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
   let expansion = Buffer.byteLength(serialized);
   let modules;
   for (const key of keys) {
+    if (waitForLease) await waitForLease();
     assert.ok(isLeaseActive(), "LEASE_LOST");
     const uses = consumers.filter((consumer) => consumer.key === key);
     const entry = entries.find((value) => value.key === key);
@@ -162,6 +168,7 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
           { parentURL: import.meta.url, tsconfig: false },
         ),
       ]);
+    if (waitForLease) await waitForLease();
     assert.ok(isLeaseActive(), "LEASE_LOST");
     const text = new TextDecoder("utf-8", { fatal: true }).decode(input.bytes);
     const descriptor = modules[0].validateStudioCubeLut(text);
@@ -201,6 +208,7 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
       sha256: input.sha256,
       materializationSha256,
     });
+    if (waitForLease) await waitForLease();
     assert.ok(isLeaseActive(), "LEASE_LOST");
   }
   // No authorized LUT bytes may survive without an exact consuming effect.
@@ -211,6 +219,7 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
     Buffer.byteLength(execution) <= GRAPH_LIMIT,
     "GRAPH_RESOURCE_LIMIT",
   );
+  if (waitForLease) await waitForLease();
   assert.ok(isLeaseActive(), "LEASE_LOST");
   return {
     project,
@@ -227,8 +236,17 @@ export async function deriveClaimFileLuts(prepared, isLeaseActive) {
   };
 }
 
-export async function verifyClaimFileLuts(prepared, derived, isLeaseActive) {
-  const recomputed = await deriveClaimFileLuts(prepared, isLeaseActive);
+export async function verifyClaimFileLuts(
+  prepared,
+  derived,
+  isLeaseActive,
+  waitForLease,
+) {
+  const recomputed = await deriveClaimFileLuts(
+    prepared,
+    isLeaseActive,
+    waitForLease,
+  );
   assert.deepEqual(derived, recomputed, "FILE_LUT_EXECUTION_CHANGED");
   return recomputed.project;
 }
