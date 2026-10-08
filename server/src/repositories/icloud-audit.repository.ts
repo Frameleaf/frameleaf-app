@@ -23,6 +23,17 @@ export type AuditAuthority = {
   operationId: string;
   operationClaimToken: string;
 };
+/** Private ownership discriminator; never a replacement for any operation/session/publication fence. */
+export function manualAuditClaimHolder(
+  ownerId: string,
+  authority: Pick<AuditAuthority, 'operationId' | 'operationClaimToken'>,
+) {
+  const digest = createHash('sha256')
+    .update('frameleaf:manual-identity-audit:item-claim:v1\0')
+    .update(canonicalJson([ownerId, authority.operationId, authority.operationClaimToken]))
+    .digest('hex');
+  return `icloud-sync:audit:${authority.operationId}:v1:${digest}`;
+}
 type AuditSnapshot = {
   sourceRevision: string;
   masterRevision: string;
@@ -312,7 +323,7 @@ export async function guardAudit(
   if (requireClaim && request.itemClaimId) {
     const claimed = await sql`SELECT 1 FROM public.icloud_claim WHERE id=${request.itemClaimId}::uuid
       AND "ownerId"=${ownerId}::uuid AND "cplAssetRecordName"=upper(${source.sourceAssetId})
-      AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp()
+      AND holder=${manualAuditClaimHolder(ownerId, authority)} AND "expiresAt">clock_timestamp()
       ${lock ? sql`FOR SHARE` : sql``}`.execute(db);
     if (claimed.rows.length === 0) {
       return;
@@ -563,6 +574,16 @@ export class ICloudAuditRepository {
     const { rows } = await sql<{ purpose: string }>`SELECT DISTINCT purpose FROM public.icloud_identity_audit
       WHERE "operationId"=${operationId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(this.db);
     return rows.length === 1 ? rows[0].purpose : rows.length > 0 ? 'invalid' : undefined;
+  }
+
+  /** A stop observation is never authority to publish; settlement still checks the live token at its write. */
+  async stopState(operationId: string, ownerId: string, claimToken: string) {
+    const { rows } = await sql<{ cancelRequestedAt: Date | null; pauseRequestedAt: Date | null; live: boolean }>`
+      SELECT "cancelRequestedAt", "pauseRequestedAt",
+        ("claimToken"=${claimToken}::uuid AND "claimExpiresAt">clock_timestamp()) AS live
+      FROM public.media_operation WHERE id=${operationId}::uuid AND "ownerId"=${ownerId}::uuid
+        AND kind='icloud_sync' AND snapshot->>'task'='identity-audit'`.execute(this.db);
+    return rows[0];
   }
 
   async check(authority: AuditAuthority, ownerId: string, requireClaim = true) {
@@ -852,7 +873,7 @@ export async function publishAudit(
         AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp()
         AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL)
       AND EXISTS (SELECT 1 FROM public.icloud_claim WHERE id=${guarded.request.itemClaimId}::uuid
-        AND "ownerId"=${ownerId}::uuid AND holder=${`icloud-sync:audit:${authority.operationId}`}
+        AND "ownerId"=${ownerId}::uuid AND holder=${manualAuditClaimHolder(ownerId, authority)}
         AND "expiresAt">clock_timestamp())
       AND EXISTS (SELECT 1 FROM public.icloud_resource WHERE id=${resource.id}::uuid
         AND "ownerId"=${ownerId}::uuid AND "auditRequestId"=${authority.auditRequestId}::uuid

@@ -321,6 +321,14 @@ export class MediaRecoveryService {
       return committed;
     } catch (error) {
       if (error instanceof LocalEffectsPendingError) throw error;
+      if (
+        input.audit &&
+        input.audit.purpose !== 'scheduled-weekly' &&
+        error instanceof Error &&
+        ['audit_authority_changed', 'audit_authority_expired'].includes(error.message)
+      ) {
+        return { outcome: 'retry', reason: 'manual_audit_authority_changed' };
+      }
       const reason = editAuthorityReviewReason(error);
       if (reason) {
         return { outcome: 'needs-review', reason };
