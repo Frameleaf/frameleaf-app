@@ -214,14 +214,24 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
             ] }] }),
           });
         },
-        // W3C element-origin offsets are measured from the element's center, not its top-left.
+        // W3C element origin is the clipped in-view center, including partially visible backgrounds.
         async hover(selector, position) {
           const id = await element(selector);
-          const rect = await call(`/element/${id}/rect`, { method: 'GET' });
+          const offset = await page.evaluate(({selector, position}) => {
+            const rect = document.querySelector(selector).getClientRects()[0];
+            if (!rect) throw new Error('hover requires a rendered element');
+            const x = Math.round(rect.x + position.x), y = Math.round(rect.y + position.y);
+            if (x < 0 || x >= innerWidth || y < 0 || y >= innerHeight)
+              throw new Error('hover point must be visible');
+            return {
+              x: x - Math.floor((Math.max(0, rect.x) + Math.min(innerWidth, rect.x + rect.width)) / 2),
+              y: y - Math.floor((Math.max(0, rect.y) + Math.min(innerHeight, rect.y + rect.height)) / 2),
+            };
+          }, {selector, position});
           return call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ actions: [{ type: 'pointer', id: 'fixture-mouse', parameters: { pointerType: 'mouse' }, actions: [
               { type: 'pointerMove', origin: { 'element-6066-11e4-a52e-4f735466cecf': id },
-                x: Math.round(position.x - rect.width / 2), y: Math.round(position.y - rect.height / 2), duration: 0 },
+                x: offset.x, y: offset.y, duration: 0 },
             ] }] }),
           });
         },
