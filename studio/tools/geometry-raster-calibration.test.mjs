@@ -348,3 +348,27 @@ test('exact source102 admits fixed fixtures without changing bounds or unknown-s
   }
   assert.equal(JSON.stringify(envelope), original)
 })
+
+test('exact source103 admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const source103 = 'c212cc40fde85a70a9054489b2da1a15dec75cea6bd9e9333230875d68a2d470'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source103))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source100))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [source103.slice(0, -1) + '1', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source103),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
