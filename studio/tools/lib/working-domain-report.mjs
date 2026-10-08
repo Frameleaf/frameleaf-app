@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { HDR_BLURS } from '../blur-reference.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -11,7 +12,7 @@ export const WORKING_DOMAINS = {
 };
 export const REPORT_BINDINGS = ['studio/tools/lib/working-domain-report.mjs', 'studio/tools/lib/cross-browser-harness.mjs',
   'studio/tools/lib/browser-driver.mjs', 'studio/tools/photometric-goldens.mjs',
-  'studio/tools/hdr-master.mjs', 'studio/tools/hdr-source-validation.mjs',
+  'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/hdr-source-validation.mjs',
   'studio/effect-hdr-semantics.json', 'studio/transition-semantics.json'];
 const root = new URL('../../../', import.meta.url);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -45,7 +46,7 @@ export function domainObservations(report) {
     observations.push({ fixtureId: `${family === 'effects' ? 'effect' : family}.${id}/apply/${name}`,
       workingDomain, expected, observed: expected, result: 'passed', witness,
       oracle: workingDomain === WORKING_DOMAINS.sdr ? oracle : expected === 'rendered' ?
-        (family === 'effects' ? 'independent linear brightness, contrast, exposure and artistic saturation equations, parameter limits, resolver, alpha and stack assertions' :
+        (family === 'effects' ? 'independent linear tone equations and premultiplied spatial-kernel equations, parameter limits, resolver, alpha and stack assertions' :
           'independent linear straight-alpha source-over equation') : 'actual registered operator throws shared HdrRenderUnavailableError' });
   };
   const rows = family === 'effects' ? report.effects : family === 'blend' ? report.results : report.transitions;
@@ -56,9 +57,9 @@ export function domainObservations(report) {
     if (family === 'effects') {
       for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
         add(id, name, WORKING_DOMAINS.sdr, `effects.${index}.${route}`);
-      if (id === 'gpu-brightness' || id === 'gpu-contrast' || id === 'gpu-exposure' || id === 'gpu-saturation') {
+      if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation'].includes(id) || HDR_BLURS.includes(id)) {
         for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
-          add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.hdr.${route}`);
+          add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.${row.hdr ? 'hdr' : 'hdrSpatial'}.${route}`);
       } else add(id, 'extreme', WORKING_DOMAINS.hdr, `effects.${index}.hdrRefusal`, 'refused');
     } else {
       const prefix = family === 'blend' ? `results.${index}` : `transitions.${index}`;

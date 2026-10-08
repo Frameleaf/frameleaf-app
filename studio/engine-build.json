@@ -389,7 +389,12 @@
       "path": "patches/0082-video-byte-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "ebf6668bde64e3fee0e8c16818901dbeeee68f11d1f3af891bacfb78356031da"
+    },
+    {
+      "path": "patches/0081-linear-hdr-spatial-blur.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3c319dac2eaa672984ac463d1e9cc1e7bb8eabd452f237b1b4867a2efdbabdf5"
     }
   ],
-  "sourceSha256": "2c2271bcf16a7f0c53472b29508496e25bb14ce7dafea934f9f391b49f253824"
+  "sourceSha256": "75b8c24bd7531bc2044795bbf54fec66387d711d2aa4298da146de51a340cde3"
 }

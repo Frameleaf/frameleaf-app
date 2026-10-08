@@ -26,8 +26,8 @@
     "gpu-box-blur": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
     },
     "gpu-brightness": {
       "sdrParity": true,
@@ -110,8 +110,8 @@
     "gpu-gaussian-blur": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
     },
     "gpu-glass-mosaic": {
       "sdrParity": true,
@@ -194,8 +194,8 @@
     "gpu-motion-blur": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
     },
     "gpu-pixel-sort": {
       "sdrParity": true,
