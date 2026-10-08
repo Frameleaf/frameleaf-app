@@ -7,6 +7,7 @@ on:
         'manager/**',
         '.github/verify-release-bundle*',
         '.github/verify-manager-release*',
+        '.github/verify-manager-installers*',
         'packaging/nas/**',
         '.github/frameleaf-release.cjs',
         'docker/postgres/**',
@@ -28,7 +29,7 @@ on:
       tag:
         description: Manager component version matching manager/package.json
         type: string
-        default: manager-v0.1.0
+        default: manager-v0.1.1
 permissions:
   contents: read
 concurrency:
@@ -67,7 +68,7 @@ jobs:
       - name: Shared release verification and NAS packaging tests
         env:
           NODE_PATH: ${{ github.workspace }}/manager/node_modules
-        run: node --test .github/verify-release-bundle.test.cjs packaging/nas/manager.test.cjs packaging/nas/build.test.cjs
+        run: node --test .github/verify-release-bundle.test.cjs packaging/nas/manager.test.cjs packaging/nas/manager-installers.test.cjs packaging/nas/build.test.cjs
       - name: Build standalone UI and API
         run: npm run build --prefix manager
       - name: Install browser for Manager interaction checks
@@ -302,6 +303,7 @@ jobs:
               buildRun:("https://github.com/Frameleaf/frameleaf-app/actions/runs/"+$run),
               architectures:[$amd64[0],$arm64[0]]}' \
             > "$RUNNER_TEMP/manager-manifest.json"
+          node packaging/nas/manager-installers.cjs "$RUNNER_TEMP/manager-manifest.json" "$RUNNER_TEMP"
           cosign attest --yes --key env://COSIGN_PRIVATE_KEY \
             --type https://frameleaf.net/attestations/manager-release/v1 \
             --predicate "$RUNNER_TEMP/manager-manifest.json" "$image@$digest"
@@ -323,9 +325,10 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$GITHUB_REF"
           [[ "$(git rev-parse FETCH_HEAD)" == "$SOURCE_SHA" ]]
-          (cd "$RUNNER_TEMP" && sha256sum manager-manifest.json > SHA256SUMS)
+          (cd "$RUNNER_TEMP" && sha256sum manager-manifest.json frameleaf-manager.xml frameleaf-manager.compose.yaml > SHA256SUMS)
           printf 'Standalone Frameleaf Manager %s. Image: ghcr.io/frameleaf/frameleaf-manager@%s\nOnly Manager is published from source %s. NAS installers consume the authenticated manifest and immutable digest.\n' "$RELEASE_TAG" "$DIGEST" "$SOURCE_SHA" > "$RUNNER_TEMP/manager-notes.md"
           gh release create "$RELEASE_TAG" "$RUNNER_TEMP/manager-manifest.json" "$RUNNER_TEMP/SHA256SUMS" \
+            "$RUNNER_TEMP/frameleaf-manager.xml" "$RUNNER_TEMP/frameleaf-manager.compose.yaml" \
             --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Frameleaf Manager $RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/manager-notes.md" --latest=false
           oras tag "ghcr.io/frameleaf/frameleaf-manager@$DIGEST" "$RELEASE_TAG" latest
