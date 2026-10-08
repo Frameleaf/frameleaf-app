@@ -321,7 +321,11 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-
       const { readFile } = await import('node:fs/promises');
       const codec = createRequire(import.meta.url)(process.env.FRAMELEAF_HDR_BINDING);
       const pixels = new Float32Array(sourceWidth * sourceHeight * 4);
-      for (let i = 0; i < pixels.length; i += 4) pixels.set([large && i >= pixels.length / 2 ? 12 : 8, 4, 2, 1], i);
+      for (let i = 0; i < pixels.length; i += 4) {
+        // Neutral row markers keep this alignment check invariant across BT.2020/P3 conversion.
+        const marker = i >= pixels.length / 2 ? 12 : 8;
+        pixels.set(large ? [marker, marker, marker, 1] : [8, 4, 2, 1], i);
+      }
       const source =
         format === 'sdr-document'
           ? await sharp({ create: { width: 64, height: 32, channels: 3, background: '#6080c0' } })
@@ -421,7 +425,7 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-
                   [height - 1, 12],
                 ]) {
                   const offset = (row * width + Math.floor(width / 2)) * 4;
-                  assert.ok(Math.abs(rgb[offset] - red) < 1, 'HDR_READBACK_ROWS_CHANGED');
+                  assert.ok(Math.abs(rgb[offset] - red) < 1, `HDR_READBACK_ROWS_CHANGED: row ${row}, expected ${red}, actual ${rgb[offset]}`);
                 }
               }
               rgb.fill(0);
@@ -437,6 +441,12 @@ for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-
             ...claim.snapshot.studio.graph.timeline.items[0],
             id: 'clip2',
             mediaId: secondId,
+          });
+          claim.snapshot.studio.resources.push({
+            ...claim.snapshot.studio.resources[0],
+            key: `library-asset:${secondId}`,
+            id: secondId,
+            graphPath: '/timeline/items/1',
           });
           claim.inputs.set(`library-asset:${secondId}`, { ...input, resourceId: secondId });
           await assert.rejects(
