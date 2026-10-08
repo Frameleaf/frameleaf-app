@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-imports -- Pre-application startup must use only pure relative imports. */
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { lstat, open, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import z from 'zod';
@@ -12,6 +12,7 @@ import { BuddyBootDeclarationSchema, readBuddyBootConfiguration } from './buddy-
 import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
 import { EnvSchema } from './environment-schema.ts';
 import { parseWorkerSelection } from './environment-values.ts';
+import { discoverMediaLocation } from './media-location.ts';
 
 // Capture alone never authorizes identity/security, deployment profiles,
 // feature enabling or dependency credentials.
@@ -210,8 +211,9 @@ const validateMountProfile = async (
   maintenance = false,
 ) => {
   if (!binding.mountService) return;
-  // ponytail: require an explicit media root; default-path discovery needs a separately verified adapter.
-  if (resolveEnvAliases(env).env.FRAMELEAF_MEDIA_LOCATION !== storageRoot) throw refusal();
+  // Use normal startup discovery, then prove the exact original mounted directory below.
+  if (discoverMediaLocation(resolveEnvAliases(env).env.FRAMELEAF_MEDIA_LOCATION, existsSync) !== storageRoot)
+    throw refusal();
   const roots = binding.mountService.roots.map((root) => root.path);
   for (const root of binding.mountService.roots) {
     await buddyRecoveryTarget(root.path, roots, []);
